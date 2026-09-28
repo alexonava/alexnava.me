@@ -433,7 +433,7 @@ test("the compacted chunk keeps its anchors and Three still unrolls the near-fie
     assert.match(unrolled, /pointLights\[ 0 \][\s\S]*pointLights\[ 1 \]/);
     assert.equal(unrolled.match(/RE_Direct\(/g).length, 2);
     for (const directive of ["#if defined( USE_EMISSIVEMAP ) && 2 > 0", "#ifdef USE_EMISSIVEMAP", "#ifndef FLAT_SHADED", "#include <lights_fragment_end>", "#include <emissivemap_fragment>"])
-      assert.match(unrolled, new RegExp(`(^|\\n)${directive.replace(/[()]/g, "\\$&")}(\\n|$)`), directive);
+      assert.match(unrolled, new RegExp(`(^|\\n)${directive.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\n|$)`), directive);
     flame.dispose();
   } finally {
     await rm(scratch, { recursive: true, force: true });

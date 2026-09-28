@@ -266,7 +266,7 @@ test("each ground shading has its own program cache key; the slate's shading nee
   }
   const contacts = createSlateContacts();
   const { fragment, uniforms } = compile(false, true, true, null, { slate: true, detail, contacts });
-  const horizon = TERRAIN_HORIZON.replace(/[.()]/g, "\\$&");
+  const horizon = TERRAIN_HORIZON.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   assert.match(fragment, new RegExp(`gl_FragColor\\.rgb = mix\\(gl_FragColor\\.rgb, ${horizon}, earthHorizon\\);\\s*#endif\\s*gl_FragColor\\.a = 0\\.6667;`));
   // Delay distance haze so the phone foreground retains texture; the outer
   // 190-unit square boundary still reaches the shared mountain-foot tone.
