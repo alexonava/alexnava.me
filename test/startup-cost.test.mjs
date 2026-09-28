@@ -619,7 +619,13 @@ test("scene bootstrap warms shaders before drawing and records start-up marks", 
   // A ground program that changes before the reveal links through compileAsync
   // (both shading call sites), so the first draw never blocks on it.
   assert.equal((index.match(/contacts: groundContacts \}\);\s*warmGround\?\.\(\);/g) || []).length, 2);
-  assert.match(index, /warmGround = \(\) => \{\s*if \(!canvasShown\) warmShaders\("ground"\);\s*\};/);
+  assert.match(index, /warmGround = \(\) => canvasShown \|\| warmShaders\("ground"\);/);
+  // The film terrain never holds the reveal: it builds in short slices and its
+  // root shading links on a detached stand-in once the canvas shows, both
+  // landing only where they cannot show mid-shot, so the film takes the tour
+  // (terrain-build.js), not the scene's warm-up.
+  assert.match(index, /createFilmScene\(\{[^}]*tour: cameraTour,/);
+  assert.doesNotMatch(index, /createFilmScene\(\{[^}]*warm[:,]/);
 
   for (const path of ["shared/webgl-probe.js", "scene/quality.js", "scene/rendering.js"]) {
     assert.doesNotMatch(await source(path), /high-performance/, path);

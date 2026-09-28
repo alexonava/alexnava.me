@@ -408,10 +408,33 @@ test("film grading survives quality changes and restores the current profile wit
   assert.equal(pipeline.passes.bloom.enabled, false);
   assert.equal(g.uCelMix.value, 0.24);
   assert.equal(v.uTextProtection.value, 1);
+  // The mountains' moonlit relief is exempt from the cel step and ink in film only.
+  assert.equal(g.uLayerRelief.value, 1);
   pipeline.setFilmTreatment(false);
   assert.equal(g.uCelMix.value, 0.24);
   assert.equal(g.uInkMix.value, 0.14);
+  assert.equal(g.uLayerRelief.value, 0);
   assert.equal(v.uTextProtection.value, 0);
+  pipeline.dispose();
+});
+
+test("in film the grade leaves the mountains' relief to their own shading and hairline", () => {
+  const pipeline = createPipeline({ postprocessGrading: true });
+  const shader = pipeline.passes.grading.material.fragmentShader,
+    g = pipeline.passes.grading.uniforms;
+  assert.equal(g.uLayerRelief.value, 0, "outside film the grade is unchanged");
+  pipeline.setFilmTreatment(true);
+  assert.equal(g.uLayerRelief.value, 1);
+  // Only the mountains' depth code (1/3, depth-layers.js) is exempt, and the cel
+  // step returns below graded luma .1 so the fogged feet match the ground's crush.
+  assert.match(shader, /float relief = uLayerRelief \* \(1\.0 - smoothstep\(0\.04, 0\.12, abs\(texel\.a - 0\.3333\)\)\);/);
+  assert.match(shader, /color = mix\(color, celColor, uCelMix \* \(1\.0 - relief \* smoothstep\(0\.05, 0\.1, gradedLuma\)\)\);/);
+  // The post ink skips the mountains and the sky pixel beside a crest, which
+  // draws its own hairline; it still reads the same four neighbours.
+  assert.equal((shader.match(/texture2D\(tDiffuse, vUv [+-] vec2\(/g) || []).length, 4);
+  assert.match(shader, /inkContour \* uInkMix \* \(1\.0 - max\(relief, skySide\)\)/);
+  // With uLayerRelief 0 both factors vanish: the grade of every other view is unchanged.
+  assert.match(shader, /float skySide = uLayerRelief \*/);
   pipeline.dispose();
 });
 

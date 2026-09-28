@@ -1,9 +1,7 @@
 import {
   CanvasTexture,
-  PlaneGeometry,
   RepeatWrapping,
   SRGBColorSpace,
-  Vector3,
 } from "three";
 import { createStoneDetailController, GROUND_DETAIL_SETTINGS, slateMaterialUrl } from "./stone-detail.js";
 import { SLATE_TILING } from "./mud-ground.js";
@@ -36,35 +34,6 @@ export const FILM_GROUND_PRESETS = Object.freeze({
     material: "Poly Haven Dirt",
   }),
 });
-
-export function createEarthGeometry(groundHeight) {
-  const geometry = new PlaneGeometry(
-    EARTH.width,
-    EARTH.width,
-    EARTH.subdivisions,
-    EARTH.subdivisions,
-  );
-  const p = geometry.attributes.position,
-    n = geometry.attributes.normal,
-    normal = new Vector3(),
-    step = EARTH.width / EARTH.subdivisions / 2;
-  // Ground mesh is rotated -PI/2: local +Y becomes world -Z. Normals come from
-  // the height field itself (central differences over half a quad) rather than
-  // averaged face normals, so lit earth shows no quad-aligned shading grid.
-  for (let i = 0; i < p.count; i++) {
-    const x = p.getX(i),
-      z = -p.getY(i);
-    p.setZ(i, groundHeight(x, z));
-    const dx = (groundHeight(x + step, z) - groundHeight(x - step, z)) / (2 * step),
-      dz = (groundHeight(x, z + step) - groundHeight(x, z - step)) / (2 * step);
-    // World normal (-dx, 1, -dz) expressed in the plane's local frame.
-    normal.set(-dx, dz, 1).normalize();
-    n.setXYZ(i, normal.x, normal.y, normal.z);
-  }
-  geometry.computeBoundingBox();
-  geometry.computeBoundingSphere();
-  return geometry;
-}
 
 export function createEarthDetail({
   preset: presetName = "earth",

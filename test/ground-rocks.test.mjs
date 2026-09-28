@@ -214,6 +214,30 @@ test("the rock scatter waits for the reveal, film, tree and tier, loads its chun
   assert.equal(root.parent, null);
 });
 
+test("the rock scatter waits for the film terrain and seats the rocks on its root-aware height", async () => {
+  const fake = { setFilmActive() {}, take: () => false, dispose() {} };
+  for (const [terrainHeight, expected] of [[(x, z) => x + z, "terrain"], [undefined, "analytic"]]) {
+    let seen = null, release;
+    const rocks = createRockScatter({
+      tier: "high",
+      parent: new Group(),
+      groundHeight: flat,
+      load: async () => ({ createRocks: (lib, options) => ((seen = options.groundHeight), fake) }),
+      terrain: () => new Promise((resolve) => { release = resolve; }),
+    });
+    rocks.setFilmActive(true);
+    rocks.setTreeStatus("ready");
+    rocks.setRevealed();
+    for (let i = 0; i < 4; i++) await tick();
+    assert.equal(seen, null, "no rocks before the film terrain settles");
+    // The earth comparison's film has no root supports: the analytic ground.
+    release(terrainHeight);
+    for (let i = 0; i < 4; i++) await tick();
+    assert.equal(seen, expected === "terrain" ? terrainHeight : flat, expected);
+    rocks.dispose();
+  }
+});
+
 test("a failed stone leaves no rocks and reports a fallback", async () => {
   const statuses = [];
   const parent = new Group();

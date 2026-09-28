@@ -181,19 +181,11 @@
 
     </main>
 
-    <nav class="bottom-bar" aria-label="Primary">
-      <a class="bottom-btn bottom-btn--icon" href="#about-text" aria-label="About" data-scene-fallback>
-        <span class="btn-icon-label">About</span>
-        <img class="btn-icon" src="/images/nav-about.webp" alt="" width="256" height="256" />
-      </a>
-      <button class="bottom-btn bottom-btn--icon scene-entry" data-panel="about" aria-label="About" aria-expanded="false" aria-controls="panel-about" hidden>
-        <span class="btn-icon-label">About</span>
-        <img class="btn-icon" src="/images/nav-about.webp" alt="" width="256" height="256" /><img class="btn-icon btn-icon--active" src="/images/nav-about-active.webp" alt="" width="256" height="256" />
-      </button>
-    </nav>
+    <!-- Retain the tour's measured lower safe area without a corner control. -->
+    <div class="bottom-bar" aria-hidden="true"><span class="bottom-btn--icon"></span></div>
     <footer class="site-footer">
-      <p class="site-copyright">&copy; 2026 Alex Nava</p>
-      <!--email_off--><a class="site-footer__link site-footer__email" href="mailto:alexonava@gmail.com">Email</a><!--/email_off-->
+      <a class="site-footer__link site-footer__about" href="#about-text" aria-label="About" data-scene-fallback><span class="about-link__label">About</span></a>
+      <button class="bottom-btn site-footer__link site-footer__about scene-entry" data-panel="about" aria-label="About" aria-expanded="false" aria-controls="panel-about" hidden><span class="about-link__label">About</span></button>
     </footer>
 
     <div class="panel-overlay" id="panel-about" role="dialog" aria-modal="true" aria-labelledby="panel-about-title" hidden>

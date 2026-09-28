@@ -44,7 +44,7 @@
   /* Muted stone used for the hero anchor ("design."). It keeps the focal word
      clear without turning accent color into a personality layer. */
   --accent-muted: #c8d0ca;
-  /* One tier below the anchor. Ambient meta text (copyright, footer controls,
+  /* One tier below the anchor. Ambient meta text (footer controls,
      developer HUD labels) uses this so it whispers rather than
      competing with the hero word. Warm off-white — reads as legible white
      against the blue-black scene without clashing with the warm scene. */
@@ -76,8 +76,8 @@
   box-sizing: border-box;
 }
 
-/* Behind Safari's translucent bars, the notch and any overscroll the page shows
-   the scene's own night, never a lighter band; the fixed scene never bounces. */
+/* Night fallback for Safari's native top fill, the notch and overscroll.
+   Touch WebKit extends the scene downward beneath the bottom toolbar. */
 html {
   scroll-behavior: smooth;
   background: var(--night-900);
@@ -315,6 +315,9 @@ main:focus {
     rgba(7, 10, 18, 0.3) 44%,
     rgba(7, 10, 18, 0) 72%
   );
+  /* Fade below the text before the element's bottom clips the radial halo. */
+  -webkit-mask-image: linear-gradient(#000 0 calc(100% - 96px), transparent 100%);
+  mask-image: linear-gradient(#000 0 calc(100% - 96px), transparent 100%);
 }
 
 .hero-intro {
@@ -504,9 +507,8 @@ main:focus {
   color: var(--text);
 }
 
-/* Copyright and Email hold the left inset; Pause scene mirrors it on the right.
-   Lines are 16px tall and the controls' 44px targets hang into negative
-   margins, so the row keeps the copyright's baseline. */
+/* About sits at the left inset. Its 44px target
+   hang into negative margins so the visible row stays 16px tall. */
 .site-footer {
   position: fixed;
   right: max(20px, calc(env(safe-area-inset-right) + 8px));
@@ -514,7 +516,7 @@ main:focus {
   left: max(20px, calc(env(safe-area-inset-left) + 8px));
   z-index: 10;
   display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  grid-template-columns: max-content minmax(0, 1fr);
   align-items: end;
   row-gap: 6px;
   color: var(--text-accent);
@@ -525,23 +527,16 @@ main:focus {
   pointer-events: none;
 }
 
-.site-copyright {
-  margin: 0;
-}
-
-.site-copyright::after {
-  content: "\00b7";
-  content: "\00b7" / "";
-  margin-inline: 0.6em;
-}
-
 .site-footer__link {
   display: inline-flex;
   align-items: center;
   min-height: 44px;
   margin: -14px;
   padding: 0 14px;
+  border: 0;
   border-radius: 6px;
+  background: transparent;
+  font: inherit;
   color: inherit;
   letter-spacing: inherit;
   text-decoration: none;
@@ -549,6 +544,8 @@ main:focus {
   pointer-events: auto;
   transition: color 180ms ease;
 }
+
+.site-footer__about[aria-expanded="true"] { color: var(--text); }
 
 /* The shared ring hugs the 16px line, 2px clear of the text, so a stacked
    footer line never falls inside it. */
@@ -562,7 +559,7 @@ main:focus {
     color: var(--text);
   }
 
-  .site-footer__email:hover {
+  .site-footer__about:hover {
     text-decoration: underline;
     text-decoration-color: rgba(229, 228, 223, 0.5);
     text-underline-offset: 3px;
@@ -951,6 +948,31 @@ body[data-panel-open]::after {
   }
 }
 
+/* Extend the decorative scene downward beneath iPhone Safari's bottom toolbar,
+   keeping its existing top: 0 origin and Safari's native top fill. Moving the
+   nav's bottom padding into its inset preserves button positions and the top
+   edge used for camera fitting, without a fixed box touching the bottom bar. */
+@supports (-webkit-touch-callout: none) {
+  @media (hover: none) and (pointer: coarse) {
+    .scene-shell,
+    .site-shell {
+      position: absolute;
+      bottom: auto;
+      height: 100vh;
+      height: 100lvh;
+    }
+
+    .bottom-bar {
+      bottom: max(30px, calc(22px + env(safe-area-inset-bottom)));
+      padding-bottom: 0;
+    }
+
+    .bottom-bar::before {
+      display: none;
+    }
+  }
+}
+
 @media (prefers-reduced-transparency: reduce) {
   .hero-minimal::before,
   .bottom-bar::before {
@@ -1192,7 +1214,7 @@ body.dev-mode-active::after {
   }
 
   a,
-  .site-footer__email {
+  .site-footer__about {
     color: LinkText;
   }
 }

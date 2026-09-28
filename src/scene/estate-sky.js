@@ -139,8 +139,8 @@ float gapG=exp(-dot(gapUV,gapUV)), eaveG=exp(-dot(eaveUV,eaveUV));
 float shape=exp(-dot(bankUV,bankUV))*.24+exp(-dot(sunBankUV,sunBankUV))*.30-gapG*.19
 -eaveG*.17-thin*.06-smoothstep(.70,.84,altitude)*.22;
 d+=shape; da+=shape;
-float horizonFade=smoothstep(-.03,.17,altitude);
-float w=mix(.05,.034,smoothstep(.45,.8,altitude));
+float horizonFade=uNebulaLayers>1.5?smoothstep(0.,.045,altitude):smoothstep(-.03,.17,altitude);
+float w=uNebulaLayers>1.5?.034:mix(.05,.034,smoothstep(.45,.8,altitude));
 float cover=smoothstep(.548-w,.548+w,d)*horizonFade*uClouds;
 float lit=clamp(.45+(d-da)*4.0,0.0,1.0);
 float thick=smoothstep(.52,.8,d);

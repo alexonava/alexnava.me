@@ -29,6 +29,23 @@ const asset = () => {
   return { scene };
 };
 
+test("bare tree metadata suppresses derived leaves through quality and film changes", () => {
+  const source = asset();
+  source.scene.userData.tree = { foliage: false };
+  const tree = createTreeArchitecture({ asset: source, groundHeight: () => 0 });
+  for (const tier of ["high", "balanced", "low", "high"]) {
+    tree.setFilmTreatment(true);
+    tree.applyQuality({ tier });
+    assert.equal(tree.root.getObjectByName("estate-canopy-leaves"), undefined);
+    assert.ok(tree.root.getObjectByName("tree-lantern-light"));
+    tree.setFilmTreatment(false);
+  }
+  assert.equal(tree.dispose(), true);
+  assert.equal(tree.dispose(), false);
+  source.scene.children[0].geometry.dispose();
+  source.scene.children[0].material.dispose();
+});
+
 test("wall deformation follows the tapered shell with finite unit normals", () => {
   const geometry = new BoxGeometry(1, 1, 1, 8, 2, 1).translate(0, 0.5, 0);
   bendWall(geometry, { bottom: 18.5, height: 4.25, arc: Math.PI / 8 });
@@ -175,10 +192,14 @@ test("tree retains its anchor and height with a quality-scaled non-shadow lanter
   assert.equal(replacement.light.intensity, 2);
   assert.equal(replacement.fillLight.intensity, 1.2);
   replacement.light.distance=39; // A previously applied prop-scale range.
+  replacement.fillLight.distance=37.8;
   replacement.setFilmTreatment(true);replacement.applyQuality({lighting:{practicalIntensityScale:1}});
   assert.equal(replacement.light.intensity,4.8);assert.equal(replacement.light.distance,10.5);
   assert.equal(replacement.fillLight.intensity,2.4*.95);assert.equal(replacement.fillLight.color.getHex(),0xc2d2ec);assert.equal(tree.material.emissiveIntensity,.04);
+  // The unshadowed crown fill stops short of the lantern clearing in film.
+  assert.equal(replacement.fillLight.distance,24);
   replacement.setFilmTreatment(false);assert.equal(replacement.light.distance,39);assert.equal(tree.material.emissiveIntensity,.22);
+  assert.equal(replacement.fillLight.distance,37.8);
   replacement.applyQuality({lighting:{practicalIntensityScale:.5}});assert.equal(replacement.light.distance,39);
   assert.equal(replacement.dispose(), true);
   assert.equal(replacement.dispose(), false);

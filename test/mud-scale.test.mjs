@@ -4,6 +4,7 @@ import { Box3, BoxGeometry, Group, Mesh, MeshStandardMaterial, Vector3, PointLig
 import { DOOR_HEIGHT as D, mudSample, wantsMud, wantsPropScale } from "../src/scene/mud-ground.js";
 import { createPropScale } from "../src/scene/prop-scale.js";
 import { DIRECTED_SHOTS, measureShot, fitShot } from "../src/scene/directed-shots.js";
+import { TERRAIN_HORIZON } from "../src/scene/hill-silhouette.js";
 const size = (o) => new Box3().setFromObject(o).getSize(new Vector3());
 const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-5, `${a} != ${b}`);
 function fixture() {
@@ -250,8 +251,8 @@ test("each ground shading has its own program cache key; the slate's shading nee
     [[true, true, true, grass], "moonlit-earth-grass-v1", false, false],
     [[false, true, true, grass, { slate: true, detail }], "moonlit-earth-grass-v1", false, false],
     // The procedural surface while the maps load, or after a fallback.
-    [[false, true, true, null, { slate: true }], "moonlit-slate-v2-p", true, false],
-    [[false, true, true, null, { slate: true, detail }], "moonlit-slate-v2", true, true],
+    [[false, true, true, null, { slate: true }], "moonlit-slate-v3-p", true, false],
+    [[false, true, true, null, { slate: true, detail }], "moonlit-slate-v3", true, true],
   ]) {
     const compiled = compile(...args);
     assert.equal(compiled.key, key, JSON.stringify(args));
@@ -265,13 +266,22 @@ test("each ground shading has its own program cache key; the slate's shading nee
   }
   const contacts = createSlateContacts();
   const { fragment, uniforms } = compile(false, true, true, null, { slate: true, detail, contacts });
-  assert.match(fragment, /gl_FragColor\.rgb = mix\(gl_FragColor\.rgb, fogColor, earthHorizon\);\s*#endif\s*gl_FragColor\.a = 0\.6667;/);
-  // Camera-distance horizon shared with the mountains' feet (hill-silhouette.js HORIZON_HAZE).
-  assert.match(fragment, /float earthHorizon = max\([^;]*,\s*smoothstep\(150\.0, 190\.0, vFogDepth\)\);/);
+  const horizon = TERRAIN_HORIZON.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  assert.match(fragment, new RegExp(`gl_FragColor\\.rgb = mix\\(gl_FragColor\\.rgb, ${horizon}, earthHorizon\\);\\s*#endif\\s*gl_FragColor\\.a = 0\\.6667;`));
+  // Delay distance haze so the phone foreground retains texture; the outer
+  // 190-unit square boundary still reaches the shared mountain-foot tone.
+  assert.match(fragment, /float earthHorizon = max\([^;]*,\s*smoothstep\(230\.0, 330\.0, vFogDepth\)\);/);
   // The film specular clamp stays; the wet term only relaxes it, within the
   // brief's 1 + 1.6 bound; puddles take the existing moon and lantern glints.
   assert.match(fragment, /reflectedLight\.directSpecular \*= mix\(\.12, \.22, damp\);/);
-  assert.match(fragment, /reflectedLight\.directSpecular \*= \(1\.0 \+ 0\.8\*slateWet\)\*\(1\.0 \+ 4\.0\*slatePuddle\);/);
+  assert.match(fragment, /reflectedLight\.directSpecular \*= \(1\.0 \+ 0\.8\*slateWet\)\*\(1\.0 \+ 4\.0\*slatePuddle - 3\.2\*slateLanternPuddle\);/);
+  assert.match(fragment, /roughnessFactor = mix\(roughnessFactor, 0\.2, slateLanternPuddle\);/);
+  assert.match(fragment, /reflectedLight\.directSpecular \/= 1\.0 \+ 2\.5\*dot\(reflectedLight\.directSpecular,vec3\(\.2126,\.7152,\.0722\)\)\*slateLanternPuddle;/);
+  // The zone's explicit support prevents dark detail texels elsewhere from
+  // receiving the lantern override; parentheses preserve the 1 - fade mask.
+  assert.match(fragment, /float slateLanternPuddle = slatePuddle\*\(1\.-smoothstep\(\.5,1\.,length\([^;]*\)\/2\.8\)\);/);
+  assert.equal(SLATE_PUDDLES.lantern.specular, 0.8);
+  assert.equal(SLATE_PUDDLES.lantern.roughness, 0.2);
   assert.ok(SLATE_WET.specular <= 1.6);
   assert.ok(SLATE_WET.fresnel <= 0.2, "the grazing sheen stays low behind the intro text and in the distance");
   assert.ok(fragment.indexOf("slateWet = ") > fragment.indexOf("float worn ="), "wetness follows the worn mask");

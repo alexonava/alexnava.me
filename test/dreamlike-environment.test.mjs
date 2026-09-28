@@ -183,6 +183,38 @@ test("estate sky uses one world-space shell with preserved baseline uniforms and
   material.dispose();
 });
 
+test("film clouds keep defined low-sky silhouettes while low quality retains its original fade", () => {
+  const material = createEstateSkyMaterial({ sunDirection: new Vector3(0, 1, 0), shellOpacity: .52 });
+  const smoothstep = (a, b, x) => {
+    const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+    return t * t * (3 - 2 * t);
+  };
+  const mix = (a, b, t) => a + (b - a) * t;
+  // Evaluate the emitted scalar GLSL expressions, so this checks the shader's
+  // actual opacity and edge width instead of a second set of tuning constants.
+  const scalar = (name) => new Function("uNebulaLayers", "altitude", "smoothstep", "mix",
+    `return ${material.fragmentShader.match(new RegExp(`float ${name}=([^;]+);`))[1]}`);
+  const fade = scalar("horizonFade"), edge = scalar("w");
+  for (const layers of [2, 3]) {
+    assert.equal(fade(layers, 0, smoothstep, mix), 0, "no seam below the horizon");
+    assert.ok(fade(layers, Math.sin(2 * Math.PI / 180), smoothstep, mix) > .85,
+      "cloud bodies remain distinct two degrees above the shell horizon");
+    assert.equal(fade(layers, .045, smoothstep, mix), 1);
+    let previous = 0;
+    for (const altitude of [-.1, 0, .01, .02, .03, .04, .045, .1, .3, .8, 1]) {
+      const value = fade(layers, altitude, smoothstep, mix);
+      assert.ok(value >= previous && value <= 1, "the narrow fade is smooth and bounded");
+      assert.equal(edge(layers, altitude, smoothstep, mix), .034);
+      previous = value;
+    }
+  }
+  for (const altitude of [-.1, 0, .02, .045, .1, .17, .5, .8, 1]) {
+    assert.equal(fade(0, altitude, smoothstep, mix), smoothstep(-.03, .17, altitude));
+    assert.equal(edge(0, altitude, smoothstep, mix), mix(.05, .034, smoothstep(.45, .8, altitude)));
+  }
+  material.dispose();
+});
+
 test("cloud controls apply to the sky veil and preserve their state across film and late binding", () => {
   const atmosphere = createSceneAtmosphere({ parent: new Group(), profile });
   const sky = { uniforms: { uClouds: { value: 1 } } };

@@ -37,6 +37,7 @@ const GRADING_SHADER = {
     uHighlightWarmMix: { value: 0.2 },
     uShadowCoolMix: { value: 0.34 },
     uTexelSize: { value: new Vector2(1, 1) },
+    uLayerRelief: { value: 0 },
   },
   vertexShader: PASS_VERTEX_SHADER,
   fragmentShader: `
@@ -47,15 +48,12 @@ uniform float uContrast;
 uniform float uHighlightWarmMix;
 uniform float uShadowCoolMix;
 uniform vec2 uTexelSize;
+uniform float uLayerRelief;
 varying vec2 vUv;
 
 vec3 saturateColor(vec3 color, float amount) {
   float luma = dot(color, vec3(0.299, 0.587, 0.114));
   return mix(vec3(luma), color, amount);
-}
-
-float luminanceAt(vec2 offset) {
-  return dot(texture2D(tDiffuse, vUv + offset).rgb, vec3(0.299, 0.587, 0.114));
 }
 
 void main() {
@@ -79,16 +77,26 @@ void main() {
   color = mix(color, parchmentHighlight, uHighlightWarmMix * highlightMix);
 
   float gradedLuma = max(0.02, dot(color, vec3(0.299, 0.587, 0.114)));
+  // Film (uLayerRelief 1): the mountains (depth code 1/3) keep their moonlit relief.
+  // The cel step fades off them, returning below luma .1 so the fogged feet match
+  // the ground's crush, and the post ink skips them and the sky beside them, where
+  // each crest draws its own hairline (hill-silhouette.js).
+  float relief = uLayerRelief * (1.0 - smoothstep(0.04, 0.12, abs(texel.a - 0.3333)));
   float tonalBand = floor(gradedLuma * 5.0 + 0.5) / 5.0;
   vec3 celColor = color * (tonalBand / gradedLuma);
-  color = mix(color, celColor, uCelMix);
+  color = mix(color, celColor, uCelMix * (1.0 - relief * smoothstep(0.05, 0.1, gradedLuma)));
   color = saturateColor(color, 1.04);
 
   if (uInkMix > 0.0) {
-  float horizontalEdge = abs(luminanceAt(vec2(uTexelSize.x, 0.0)) - luminanceAt(vec2(-uTexelSize.x, 0.0)));
-  float verticalEdge = abs(luminanceAt(vec2(0.0, uTexelSize.y)) - luminanceAt(vec2(0.0, -uTexelSize.y)));
+  vec3 Y = vec3(0.299, 0.587, 0.114);
+  vec4 e1 = texture2D(tDiffuse, vUv + vec2(uTexelSize.x, 0.0)), e2 = texture2D(tDiffuse, vUv - vec2(uTexelSize.x, 0.0));
+  vec4 e3 = texture2D(tDiffuse, vUv + vec2(0.0, uTexelSize.y)), e4 = texture2D(tDiffuse, vUv - vec2(0.0, uTexelSize.y));
+  float horizontalEdge = abs(dot(e1.rgb, Y) - dot(e2.rgb, Y));
+  float verticalEdge = abs(dot(e3.rgb, Y) - dot(e4.rgb, Y));
   float inkContour = smoothstep(0.2, 0.48, max(horizontalEdge, verticalEdge));
-  color = mix(color, vec3(0.035, 0.055, 0.095), inkContour * uInkMix);
+  float nearest = max(max(e1.a, e2.a), max(e3.a, e4.a));
+  float skySide = uLayerRelief * step(texel.a, 0.02) * step(0.2, nearest) * step(nearest, 0.5);
+  color = mix(color, vec3(0.035, 0.055, 0.095), inkContour * uInkMix * (1.0 - max(relief, skySide)));
   }
 
   gl_FragColor = vec4(clamp(color, 0.0, 1.0), texel.a);
@@ -400,6 +408,7 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
     gradingPass.uniforms.uContrast.value = settings.contrast ?? 1.06;
     gradingPass.uniforms.uHighlightWarmMix.value = settings.highlightWarmMix ?? 0.14;
     gradingPass.uniforms.uShadowCoolMix.value = settings.shadowCoolMix ?? 0.25;
+    gradingPass.uniforms.uLayerRelief.value = film ? 1 : 0;
     // In film the final pass always draws: it staggers the dissolve and writes
     // opaque alpha, so layer codes never reach the transparent canvas.
     vignetteGrainPass.enabled = film || vignetteEnabled || grainEnabled || phase !== IDLE;

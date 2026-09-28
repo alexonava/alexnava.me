@@ -17,20 +17,28 @@ export const DIRECTED_SHOTS = {
       // reached the fixed sun on desktop. A wider, slightly higher view three
       // degrees round restores the camera distance and sky gap. Higher than 0.68
       // pushes the sun against the top edge on landscape phones; portrait is unchanged.
+      // Two more degrees round (-9) keep the sun clear of the eave corner through
+      // the end-of-hold push-in on desktop and landscape phones.
       region: [0.5, 1],
       fov: 32,
-      azimuth: -7,
+      azimuth: -9,
       height: 0.68,
       arc: 2,
       hold: 9,
       portrait: { region: [0.62, 1], targetHeight: 1.11, azimuth: -4, height: 0.66 },
+      // Landscape phones hold the intro over the upper third, where the snowy
+      // range projected; lower and further round, it runs between text and tower.
+      landscape: { height: 0.55, azimuth: -12 },
     },
     {
       name: "Threshold",
       // The lookout's threshold: the ladder on its +Z access side arriving
       // through the gap in the gallery railing. Nearer the ladder's face than 82
-      // degrees brings the sun behind the name on landscape phones.
-      region: [0.62, 0.9],
+      // degrees brings the sun behind the name on landscape phones. The region
+      // is raised to 0.64-0.93 so the gable apex keeps headroom under the top
+      // edge through the end-of-hold push-in on desktop and landscape phones;
+      // portrait phones, which had that headroom, keep 0.62-0.90.
+      region: [0.64, 0.93],
       fov: 36,
       azimuth: 82,
       height: 0.5,
@@ -38,7 +46,7 @@ export const DIRECTED_SHOTS = {
       hold: 7,
       focus: { width: 0.3, depth: [0.06, 0.34] },
       margin: 0.91,
-      portrait: { focus: { width: 0.22, depth: [0.06, 0.34] } },
+      portrait: { region: [0.62, 0.9], focus: { width: 0.22, depth: [0.06, 0.34] } },
     },
     {
       // The comparison name and URL are retained; for the timber lookout it is a
@@ -53,25 +61,29 @@ export const DIRECTED_SHOTS = {
       height: 0.4,
       arc: 1,
       focus: { width: 0.2, depth: [0.13, 0.36] },
-      margin: 0.91,
+      // Keeps the far corner leg off the right frame edge through its drift.
+      margin: 0.87,
       portrait: { focus: { width: 0.16, depth: [0.13, 0.36] } },
     },
     {
       name: "Gallery detail",
       // Gallery floor (0.77) to eave (0.93), seen across the corner between the
-      // cabin's local +X plank panel and its back gable; the sun is about 70
+      // cabin's local +X plank panel and its back gable; the sun is about 60-85
       // degrees off the view axis. Facing that panel (azimuth -30) centred the
       // balanced tier's faceted reduction patch, which every phone sees; here the
       // panel falls oblique and into shade. Nearer -8 the sun showed between rails.
+      // Ten degrees further round (-100) keeps the plank panel clear of the
+      // intro's last words through the end-of-hold push-in on desktop and
+      // landscape phones; portrait phones keep -90.
       region: [0.72, 0.94],
       fov: 31,
-      azimuth: -90,
+      azimuth: -100,
       height: 0.62,
       arc: 1,
       hold: 7,
       focus: { width: 0.27, depth: [0.13, 0.41] },
       margin: 0.91,
-      portrait: { focus: { width: 0.2, depth: [0.13, 0.41] } },
+      portrait: { azimuth: -90, focus: { width: 0.2, depth: [0.13, 0.41] } },
     },
   ],
   tree: [
@@ -98,14 +110,15 @@ export const DIRECTED_SHOTS = {
     },
     {
       name: "Close-up",
-      region: [0.28, 0.46],
+      // The replacement's twisted fork sits higher than the old leafy trunk.
+      region: [0.38, 0.56],
       fov: 30,
       azimuth: -155,
-      height: 0.32,
+      height: 0.42,
       arc: 2,
       hold: 6,
       focus: { width: 0.23, depth: [-0.09, 0.14] },
-      margin: 0.91,
+      margin: 0.83,
       portrait: { focus: { width: 0.16, depth: [-0.09, 0.14] } },
     },
     {
@@ -113,7 +126,7 @@ export const DIRECTED_SHOTS = {
       region: [0, 0.16],
       fov: 32,
       azimuth: -115,
-      height: 0.16,
+      height: 0.14,
       arc: 1,
       hold: 6,
       focus: { width: 0.3, depth: [-0.1, 0.32] },
@@ -123,14 +136,16 @@ export const DIRECTED_SHOTS = {
   ],
 };
 
-// Each portrait variant is built once, so a shot and orientation always resolve
-// to the same object: the cinematic camera keys its measurements and fits on it.
-const portraitShots = new WeakMap();
+// Each portrait or short-landscape variant is built once, so a shot and
+// orientation always resolve to the same object: the cinematic camera keys its
+// measurements and fits on it.
+const variantShots = new WeakMap();
 export function resolveDirectedShot(shot, width, height) {
-  if (!shot.portrait || (width >= 600 && height <= width)) return shot;
-  let portrait = portraitShots.get(shot);
-  if (!portrait) portraitShots.set(shot, (portrait = { ...shot, ...shot.portrait }));
-  return portrait;
+  const variant = width < 600 || height > width ? shot.portrait : height < 500 && shot.landscape;
+  if (!variant) return shot;
+  let resolved = variantShots.get(variant);
+  if (!resolved) variantShots.set(variant, (resolved = { ...shot, ...variant }));
+  return resolved;
 }
 
 // Clip each triangle against the directed volume, retaining intersections rather

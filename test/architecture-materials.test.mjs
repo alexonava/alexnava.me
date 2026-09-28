@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { BoxGeometry, BufferAttribute, Group, Mesh, MeshStandardMaterial, Texture } from "three";
-import { createCompleteTowerArchitecture, createTreeArchitecture } from "../src/scene/architecture.js";
+import { createCompleteTowerArchitecture, createTreeArchitecture, materialFor } from "../src/scene/architecture.js";
 
 function sourceAsset(mapped) {
   const scene = new Group(),
@@ -136,4 +136,25 @@ test("timber lookout reads its baked normal map at full strength with one unifor
     "no height band may single out part of the all-timber tower");
   tower.dispose();
   for (const resource of [geometry, material, material.map, material.normalMap]) resource.dispose();
+});
+
+test("the bare tree takes no procedural film extras and the rocks darken above their sunk base", () => {
+  const source = sourceAsset(true),
+    tree = createTreeArchitecture({ asset: source, groundHeight: () => 0 }),
+    treeShader = materialShader(tree.root.getObjectByName("meshy-tree").material);
+  // The leafy asset's leaf lift tinted the bare tree's mossy upper trunk cyan;
+  // its sub-pixel furrow only printed aliased lines.
+  assert.doesNotMatch(treeShader.fragmentShader, /leafMask|furrow|fwidth/);
+  tree.dispose();
+  source.resources.forEach((resource) => resource.dispose());
+  const stone = sourceAsset(false),
+    rock = materialFor({ scene: stone.scene }, 1, "rock"),
+    band = materialShader(rock).fragmentShader.match(/mix\(([\d.]+), 1\., smoothstep\(([\d.]+), ([\d.]+), babelLocal\.y\)\)/);
+  assert.ok(band, "the rock darkens toward its base in local height");
+  // rock-build.js sinks each stone up to 0.35 of its height: the band must
+  // still show above the slate.
+  assert.ok(Number(band[3]) >= 0.35 + 0.1, `band ends at ${band[3]}`);
+  assert.ok(Number(band[1]) >= 0.4 && Number(band[1]) < 1);
+  rock.dispose();
+  stone.resources.forEach((resource) => resource.dispose());
 });
