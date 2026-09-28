@@ -324,8 +324,8 @@ test("every contact address sits inside Cloudflare email_off markers", async () 
     html.match(/<!--email_off--><a [^>]*href="mailto:[^"]+"[^>]*>[^<]+<\/a><!--\/email_off-->/g) || [];
   assert.equal(
     wrapped.length,
-    3,
-    "the fallback Contact section, Contact dialog and footer Email keep literal links",
+    2,
+    "the fallback Contact section and Contact dialog keep literal links",
   );
   const outside = html.replace(/<!--email_off-->[\s\S]*?<!--\/email_off-->/g, "");
   assert.doesNotMatch(outside, /mailto:|[\w.+-]+@[\w-]+\.[a-z]{2,}/i);
@@ -449,7 +449,7 @@ test("fixed chrome and dialogs clear left and right safe-area insets", async () 
 test("landmarks and heading levels describe the page structure", async () => {
   const html = await readIndexHtml();
   const styles = await readStyles();
-  assert.match(html, /<footer class="site-footer">\s*<p class="site-copyright">&copy; 2026 Alex Nava<\/p>[\s\S]*?<\/footer>/);
+  assert.match(html, /<footer class="site-footer">[\s\S]*?data-panel="about"[\s\S]*?<\/footer>/);
   assert.match(styles, /body\.dev-mode-active > \*:not\(\.scene-shell\):not\(\.dev-mode-hud\)/);
   const fallback = html.match(/<div class="scene-fallback-content"[\s\S]*?<\/main>/)[0];
   assert.deepEqual(
@@ -514,27 +514,21 @@ function contrast(foreground, background) {
   return (light + 0.05) / (dark + 0.05);
 }
 
-test("the footer carries copyright and a protected Email link; About holds the right corner", async () => {
+test("About is the only footer control and keeps the corner clear", async () => {
   const html = await readIndexHtml();
   const footer = html.match(/<footer class="site-footer">([\s\S]*?)<\/footer>/)?.[1] || "";
-  assert.match(
-    footer,
-    /^\s*<p class="site-copyright">&copy; 2026 Alex Nava<\/p>\s*<!--email_off--><a class="site-footer__link site-footer__email" href="mailto:alexonava@gmail\.com">Email<\/a><!--\/email_off-->\s*$/,
-  );
-  // A direct child of body, outside the primary nav, so dev mode hides it and
-  // the bottom bar keeps Contact inside the estate.
-  assert.match(html, /<\/nav>\s*<footer class="site-footer">/);
-  assert.doesNotMatch(html.match(/<main[\s\S]*?<\/main>/)[0], /site-footer/);
-  // The Pause scene control was retired (2026-09-24); About takes its corner.
+  assert.doesNotMatch(footer, /site-copyright|&copy;|©|2026 Alex Nava/);
+  assert.match(footer, /href="#about-text"[^>]*data-scene-fallback/);
+  assert.match(footer, /data-panel="about"[^>]*aria-controls="panel-about"/);
+  assert.equal((footer.match(/>About<\/span>/g) || []).length, 2);
+  assert.doesNotMatch(footer, /mailto:|Email/);
+  const safeArea = html.match(/<div class="bottom-bar"[\s\S]*?<\/div>/)[0];
+  assert.match(safeArea, /aria-hidden="true"/);
+  assert.doesNotMatch(safeArea, /<button|<a /);
   assert.doesNotMatch(html, /scene-pause|Pause scene/);
-  const styles = await readStyles();
-  assert.doesNotMatch(styles, /scene-pause/);
-  const bar = cssRule(styles, ".bottom-bar");
-  assert.match(bar, /justify-content:\s*flex-end;/);
-  assert.match(bar, /padding:\s*0 max\(20px, calc\(env\(safe-area-inset-right\) \+ 8px\)\) max\(30px, calc\(22px \+ env\(safe-area-inset-bottom\)\)\);/);
 });
 
-test("footer controls keep 44px targets on the copyright baseline without blocking the scene", async () => {
+test("footer controls keep 44px targets without blocking the scene", async () => {
   const styles = await readStyles();
   const footer = cssRule(styles, ".site-footer");
   assert.match(footer, /position:\s*fixed;/);
@@ -560,22 +554,21 @@ test("footer controls keep 44px targets on the copyright baseline without blocki
   // Touch browsers keep :hover after a tap, so only the pressed state stays bright.
   const hover = mediaBlock(styles, "(hover: hover)");
   assert.match(hover, /\.site-footer__link:hover\s*\{\s*color:\s*var\(--text\);/);
-  assert.match(hover, /\.site-footer__email:hover\s*\{[^}]*text-decoration:\s*underline;/);
-  const footerHover = /\.site-footer__(?:link|email):hover/g;
+  assert.match(hover, /\.site-footer__about:hover\s*\{[^}]*text-decoration:\s*underline;/);
+  const footerHover = /\.site-footer__(?:link|about):hover/g;
   assert.equal((styles.match(footerHover) || []).length, (hover.match(footerHover) || []).length);
 
-  // The separator is generated, with empty alternative text for assistive tech.
-  assert.match(cssRule(styles, ".site-copyright::after"), /content:\s*"\\00b7";\s*content:\s*"\\00b7" \/ "";/);
-  assert.doesNotMatch(await readIndexHtml(), /Alex Nava<\/p>\s*(?:&middot;|Â·)/);
+  assert.doesNotMatch(styles, /\.site-copyright/);
+  assert.match(footer, /grid-template-columns:\s*max-content minmax\(0, 1fr\);/);
 
-  // With About in the right corner, narrow phones keep one footer line.
+  // The short About label keeps narrow phones on one footer line.
   assert.doesNotMatch(styles, /@media \(max-width: 480px\)/);
 
   const phone = mediaBlock(styles, "(max-width: 640px)");
   assert.match(phone, /\.site-footer\s*\{[^}]*right:\s*max\(16px, calc\(env\(safe-area-inset-right\) \+ 8px\)\);[^}]*left:\s*max\(16px, calc\(env\(safe-area-inset-left\) \+ 8px\)\);/);
 
   const forced = styles.slice(styles.indexOf("/* Windows High Contrast"));
-  assert.match(forced, /a,\s*\.site-footer__email\s*\{\s*color:\s*LinkText;/);
+  assert.match(forced, /a,\s*\.site-footer__about\s*\{\s*color:\s*LinkText;/);
   assert.match(styles, /body\.dev-mode-active > \*:not\(\.scene-shell\):not\(\.dev-mode-hud\),\s*body\.dev-mode-active::after\s*\{/);
 });
 

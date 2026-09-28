@@ -99,7 +99,10 @@ export function createPropScale({
     for (const light of [tree.light, tree.fillLight])
       if (light) {
         const distance = light.distance;
-        save(light, treeUndo);
+        // Only the fill position is scaled here. Restoring the practical's
+        // untouched position would overwrite a subsequently loaded lantern's
+        // authored luminous centre.
+        if (light === tree.fillLight) save(light, treeUndo);
         treeUndo.push(() => {
           light.distance = distance;
         });

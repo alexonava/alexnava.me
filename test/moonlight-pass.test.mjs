@@ -217,7 +217,7 @@ test("supplied tower and tree switch between source and moonlight grades without
   close(u.babelHighlights.value, 0.3);
   close(u.babelTint.value.r, 0.93);
   close(u.babelShadowTint.value.b, 0.2);
-  close(u.babelLift.value, 0.1);
+  close(u.babelLift.value, 0.14);
   tower.setFilmTreatment(false);
   close(u.babelSaturation.value, 0.94);
   assert.equal(u.babelTint.value.r, 1);

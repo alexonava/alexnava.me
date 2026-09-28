@@ -72,8 +72,9 @@ const MATERIAL_PROFILES = Object.freeze({
   },
   // The film's scattered Meshy rocks (rock-scatter.js): baked colour with its
   // ambient occlusion and a tangent-space normal map made for scale 1. Their
-  // geometry is unit height, so materialFor darkens the lowest 0.3 toward the
-  // buried base in local y.
+  // geometry is unit height, so materialFor darkens local y 0.1-0.5 toward the
+  // base: rock-build.js sinks each stone 0.12-0.35 of its height, so the band
+  // must reach above the slate for the stones to sit in it rather than on it.
   rock: { color: 0xa8a49e, normalScale: 1, roughness: 0.9 },
 });
 
@@ -92,7 +93,7 @@ const FILM_GRADES = Object.freeze({
     highlights: 0.3,
     tint: [0.93, 0.97, 1.0],
     shadowTint: [0.12, 0.15, 0.2],
-    lift: 0.1,
+    lift: 0.14,
   },
   tree: {
     saturation: 0.8,
@@ -156,7 +157,7 @@ export function sourceMesh(asset) {
   return meshes[0];
 }
 
-function editableGeometry(source) {
+export function editableGeometry(source) {
   const geometry = source.clone();
   // Quantized GLB attributes are compact transport data. Decode before applying
   // transforms: normalized Int16 setters cannot store world-space coordinates.
@@ -359,16 +360,7 @@ export function materialFor(asset, anisotropy, role) {
           diffuseColor.rgb *= 1.0 - babelHighlights * smoothstep(0.30, 0.85, babelLuma);
           diffuseColor.rgb = mix(diffuseColor.rgb, babelShadowTint, babelLift * (1.0 - smoothstep(0.02, 0.22, babelLuma)));
           diffuseColor.rgb *= babelTint;
-          ${role === "rock" ? "diffuseColor.rgb *= mix(.55, 1., smoothstep(0., .3, babelLocal.y));" : ""}
-          ${role === "tree" ? `
-          float leafMask = smoothstep(0.98, 1.14, diffuseColor.g / max(0.001, diffuseColor.r)) * smoothstep(7.0, 11.0, babelLocal.y);
-          diffuseColor.rgb += babelFilm * leafMask * vec3(0.012, 0.022, 0.027);
-          float bend = sin(babelLocal.y*.7 + babelLocal.x*.3)*.08;
-          float grain = sin((babelLocal.x+bend)*42.0 + sin(babelLocal.z*30.0)*2.0);
-          float furrow = smoothstep(.5,.98,grain) * (.65+.35*sin(babelLocal.y*5.0+babelLocal.z*12.0));
-          float detail = 1.0-smoothstep(.06,.18,fwidth(grain));
-          diffuseColor.rgb *= 1.0 - babelFilm*(1.0-leafMask)*furrow*detail*.18;
-          ` : ""}`,
+          ${role === "rock" ? "diffuseColor.rgb *= mix(.45, 1., smoothstep(.1, .5, babelLocal.y));" : ""}`,
         );
     };
     if (material.normalScale && profile.normalScale) {
@@ -672,7 +664,9 @@ export function createTreeArchitecture({ asset, groundHeight, anisotropy = 4, an
     tree.name = "meshy-tree";
     tree.castShadow = tree.receiveShadow = true;
     root.add(tree);
-    foliage = createTreeFoliage(geometry, tree);
+    // Bare authored trees keep their branch silhouette; older leafy assets
+    // retain the existing derived canopy accents.
+    if (asset.scene.userData?.tree?.foliage !== false) foliage = createTreeFoliage(geometry, tree);
     const normalAttribute = geometry.attributes.normal;
     const originalNormals = normalAttribute.array.slice(), softenedNormals = smoothTreeNormals(geometry).array;
     const lantern = new Group();
@@ -770,11 +764,13 @@ export function createTreeArchitecture({ asset, groundHeight, anisotropy = 4, an
     fillLight.position.set(-3.8, ARCHITECTURE.treeHeight * 0.42, -2.5);
     fillLight.castShadow = false;
     root.add(fillLight);
-    let film = false, currentProfile = {}, savedDistance = light.distance, savedDecay = light.decay;
+    let film = false, currentProfile = {}, savedDistance = light.distance, savedDecay = light.decay, savedFillDistance = fillLight.distance;
+    let lanternBaseIntensity = TREE_LANTERN_INTENSITY, lanternFlicker = 1;
     const originalFillColor = fillLight.color.clone(), originalEmission = material.emissiveIntensity;
     function applyTreeLighting() {
       const intensityScale = currentProfile.lighting?.practicalIntensityScale ?? 1;
-      light.intensity = (film ? 4.8 : TREE_LANTERN_INTENSITY) * intensityScale;
+      lanternBaseIntensity = (film ? 4.8 : TREE_LANTERN_INTENSITY) * intensityScale;
+      light.intensity = lanternBaseIntensity * lanternFlicker;
       fillLight.intensity = TREE_FILL_INTENSITY * (film ? .95 : 1) * intensityScale;
       fillLight.color.copy(originalFillColor);
       if (film) fillLight.color.setHex(0xc2d2ec);
@@ -784,19 +780,29 @@ export function createTreeArchitecture({ asset, groundHeight, anisotropy = 4, an
       applyFilmGrade(material, film);
       normalAttribute.array.set(film ? softenedNormals : originalNormals);
       normalAttribute.needsUpdate = true;
-      foliage.setActive(film);
-      foliage.applyQuality(currentProfile);
-      if (film) { light.distance = 10.5; light.decay = 1.2; }
+      foliage?.setActive(film);
+      foliage?.applyQuality(currentProfile);
+      // The unshadowed fill sits in the crown about 10 units above the lantern.
+      // In film its reach drops from the prop-scaled 37.8 to 24, so it still
+      // models the bark and the lantern cap but no longer floods the clearing.
+      if (film) { light.distance = 10.5; light.decay = 1.2; fillLight.distance = 24; }
     }
     return {
       root,
       light,
       fillLight,
+      // Per-frame flicker changes only the existing practical. Reapplying the
+      // whole tree treatment here would upload its normals every frame.
+      setLanternFlicker(value = 1) {
+        if (disposed) return;
+        lanternFlicker = Math.max(.88, Math.min(1.12, Number.isFinite(value) ? value : 1));
+        light.intensity = lanternBaseIntensity * lanternFlicker;
+      },
       setFilmTreatment(active) {
         const next = Boolean(active); if (disposed || next === film) return;
-        if (next) { savedDistance = light.distance; savedDecay = light.decay; }
+        if (next) { savedDistance = light.distance; savedDecay = light.decay; savedFillDistance = fillLight.distance; }
         film = next;
-        if (!film) { light.distance = savedDistance; light.decay = savedDecay; }
+        if (!film) { light.distance = savedDistance; light.decay = savedDecay; fillLight.distance = savedFillDistance; }
         applyTreeLighting();
       },
       applyQuality(profile = {}) {

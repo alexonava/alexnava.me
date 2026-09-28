@@ -1,3 +1,4 @@
+import { createEarthGeometry } from "../src/scene/terrain-build.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -20,7 +21,7 @@ import {
   resolveDirectedShot,
 } from "../src/scene/directed-shots.js";
 import { createCinematicCamera, cinematicSafeArea } from "../src/scene/cinematic.js";
-import { createEarthGeometry, createEarthDetail, EARTH, FILM_GROUND_PRESETS } from "../src/scene/filmic-earth.js";
+import { createEarthDetail, EARTH, FILM_GROUND_PRESETS } from "../src/scene/filmic-earth.js";
 import { createGrassDetail } from "../src/scene/grass-detail.js";
 import { createFilmScene } from "../src/scene/film-scene.js";
 
@@ -139,7 +140,7 @@ test("indexed terrain covers the full square and samples the correct world Z wit
   assert.equal(EARTH.width / EARTH.tile, 384 / 6.3);
   geometry.dispose();
 });
-test("film scene restores geometry, effects, lighting and sky before disposal and tolerates repeated teardown", () => {
+test("film scene restores geometry, effects, lighting and sky before disposal and tolerates repeated teardown", async () => {
   const ground = new Mesh(new BoxGeometry(), new MeshStandardMaterial()),
     original = ground.geometry,
     effect = new Group();
@@ -155,6 +156,7 @@ test("film scene restores geometry, effects, lighting and sky before disposal an
     onGroundChange() {},
   });
   controller.setActive(true);
+  await controller.ready;
   const terrain = ground.geometry;
   assert.notEqual(terrain, original);
   assert.equal(effect.visible, false);

@@ -33,6 +33,7 @@ import {
   Vector3,
 } from "three";
 import { createArchitectureAssetController } from "./architecture-assets.js";
+import { createLanternMount } from "./lantern.js";
 import { createCompleteTowerArchitecture, createTowerArchitecture, createTreeArchitecture } from "./architecture.js";
 import { createSceneAtmosphere } from "./atmosphere.js";
 import { createSceneEnvironment } from "./environment.js";
@@ -528,14 +529,21 @@ function setSrgbTexture(texture) {
       environmentRoot.add(groundMesh));
     groundSurface = groundMesh;
     subsystemRegistry.register(groundTextures);
+    // The film ranges are a lazy chunk (mountain-build.js), requested once the film is
+    // on at high or balanced (film comparisons keep their backdrop too); they build in
+    // slices and land only while unseen (before the reveal, under its fade, on a cut).
     const hillSilhouette = createHillSilhouette({ groundHeight, skyRadius: WORLD.SKY_DOME_RADIUS,
-      shellOpacity: skyConfig.shellOpacity, sunPosition: WORLD.SUN_POSITION });
+      shellOpacity: skyConfig.shellOpacity, sunPosition: WORLD.SUN_POSITION,
+      rendering, tour: cameraTour, invalidate: invalidateContent,
+      onStatus: (status) => { if (qualityDebug) qualityDebug.mountains = status; } });
+    hillSilhouette.applyQuality(state.profile);
     environmentRoot.add(hillSilhouette.mesh);
     subsystemRegistry.register(hillSilhouette);
     // The film's scattered rocks: loaded once the film is on and the tree has
-    // settled (high and balanced only), committed on a tour cut below.
+    // settled (high and balanced only), seated on the film terrain's root
+    // supports, committed on a tour cut below.
     const rockScatter = createRockScatter({
-      parent: environmentRoot, groundHeight, tier: assetTier, anisotropy: chooseAnisotropy(2, 6),
+      parent: environmentRoot, groundHeight, terrain: () => filmScene.ready, tier: assetTier, anisotropy: chooseAnisotropy(2, 6),
       enabled: filmEnabled && !modes.legacy && modes.rocks,
       compile: () => rendering.compileShaders(), contacts: groundContacts.slateContacts.value,
       onStatus: (status) => { if (qualityDebug) qualityDebug.rocks = status; },
@@ -612,10 +620,17 @@ function setSrgbTexture(texture) {
     // The orbital sun stays in the directed scene: it is the one warm celestial
     // anchor in an otherwise cool night, and reads as distance rather than clutter.
     filmScene = createFilmScene({ ground: groundSurface, groundHeight, rendering, atmosphere: atmosphereSystem,
-      effects: filmEffects, skyMaterial: skyShell.material,
+      effects: filmEffects, skyMaterial: skyShell.material, foothills: slateGround, invalidate: invalidateContent, tour: cameraTour,
       onGroundChange(active) { environmentSystem.setFilmTreatment(active); hillSilhouette.setFilmTreatment(active); filmActive = active; towerSystem.setFilmTreatment(active); completeTower?.setFilmTreatment(active); groundTextures.setFilmActive(active); rockScatter.setFilmActive(active); },
     });
     subsystemRegistry.register(filmScene);
+    // Light shafts: a lazy chunk for high and balanced film on WebGL2 only
+    // (light-shafts.js). A failed import leaves the scene as it is; a late one
+    // registers nothing.
+    if (filmEnabled && !modes.legacy && assetTier != "low" && renderer.capabilities.isWebGL2) {
+      import("./light-shafts.js").then(({ lightShafts }) => subsystemRegistry.disposed ||
+        subsystemRegistry.register(lightShafts(rendering, cinematic, cameraTour, filmScene, environmentRoot, invalidateContent)), () => {});
+    }
     function getReplacedMeshes() {
       const world = legacyWorld.current;
       return completeTowerEnabled && world
@@ -664,9 +679,8 @@ function setSrgbTexture(texture) {
     // visible stays hidden until its programs are ready.
     let canvasShown = false;
     const shaderWarmup = createShaderWarmup({ compile: () => rendering.compileShaders() });
-    warmGround = () => {
-      if (!canvasShown) warmShaders("ground");
-    };
+    // A detail or grass change before the reveal links the ground's new program.
+    warmGround = () => canvasShown || warmShaders("ground");
     function warmShaders(label, subject = null) {
       const start = sceneNow();
       shaderWarmup.warm(subject, (ready) => {
@@ -676,9 +690,30 @@ function setSrgbTexture(texture) {
         invalidateContent();
       });
     }
+    const lanternMount = createLanternMount({
+      anisotropy: chooseAnisotropy(2, 6),
+      camera,
+      onPrepared: invalidateContent,
+      onChange({ committed, tree }) {
+        if (runtimeDisposed) return;
+        // Re-measure both lantern shots from the replacement, even though the
+        // tree root's matrix is unchanged. Its normalized foot stays on the
+        // existing grounded tree-lantern transform.
+        cinematic.setSubject("tree", tree?.root ?? null);
+        cameraTour?.prepareNext();
+        rendering.invalidateShadows();
+        qualityState.holdSampling();
+        invalidateContent();
+        if (committed) warmShaders("lantern");
+        if (qualityDebug) qualityDebug.lanternCommitted = committed;
+      },
+    });
+    subsystemRegistry.register(lanternMount);
     const architectureAssets = createArchitectureAssetController({
       disabled: !architectureEnabled,
       towerModel: completeTowerEnabled ? "complete" : "assembled",
+      includeLantern: !modes.legacy,
+      onLanternReady: (asset) => lanternMount.stage(asset),
       onTowerReady(assets) {
         const assemblyStart = sceneNow();
         const replacement = completeTowerEnabled
@@ -739,6 +774,7 @@ function setSrgbTexture(texture) {
           classicTree.visible = false;
         }
         treeArchitecture = replacement;
+        lanternMount.setTree(replacement);
         propScale.setTree(replacement);
         replacement.setFilmTreatment(filmActive);
         cinematic.setSubject("tree", replacement.root);
@@ -749,6 +785,7 @@ function setSrgbTexture(texture) {
         return () => { replacement.dispose(); treeArchitecture = null; };
       },
       onRestoreTree() {
+        lanternMount.setTree(null);
         cinematic.setSubject("tree", null);
         treeArchitecture?.setFilmTreatment(false);
         propScale.setTree(null);
@@ -766,7 +803,7 @@ function setSrgbTexture(texture) {
         cameraTour?.prepareNext();
         // The rocks wait for the tree channel to settle either way.
         if (status.kind === "tree") rockScatter.setTreeStatus(status.status);
-        if (!runtimeDisposed && (status.status === "fallback" ||
+        if (!runtimeDisposed && status.kind !== "lantern" && (status.status === "fallback" ||
           (status.status === "procedural" && sceneReadyMarked))) {
           try {
             ensureLegacyWorld();
@@ -929,6 +966,7 @@ function setSrgbTexture(texture) {
       // its one-off work.
       const adaptiveProfile = adaptiveSteps.take({ cut: transition.cut, running: cameraTour?.running === true, nowMs });
       if (adaptiveProfile) applyActiveQualityProfile(adaptiveProfile, "adaptive");
+      lanternMount.take({ revealed: canvasShown, running: cameraTour?.running === true, cut: transition.cut });
       // The rocks appear on a cut too, with their ground contacts.
       if (rockScatter.take({ cut: transition.cut, running: cameraTour?.running === true, nowMs })) {
         groundContacts.slateRockContact.value = 1;
@@ -967,7 +1005,9 @@ function setSrgbTexture(texture) {
       cloudAnchor.position.z = camera.position.z;
       if (cinematicApplied) cloudLookTarget.copy(cinematic.target); else cloudLookTarget.set(0, lookAtHeight, 0);
       subsystemRegistry.update({
+          deltaSeconds,
           elapsedSeconds: elapsedTime,
+          motionPaused: visitorHold?.paused || document.body.hasAttribute("data-panel-open"),
           reducedMotion,
           render: false,
           visibilityScale: visibilityScale,
@@ -1097,6 +1137,48 @@ function setSrgbTexture(texture) {
         });
       })
       .catch((error) => console.warn("Scene developer tools failed to attach.", error));
+    // A local authoring action only. Its exporter stays in a separate chunk
+    // and is fetched only when explicitly called, never during scene startup.
+    if (qualityControls.debug && ["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname)) {
+      let exporting = false;
+      scene.exportBlenderSnapshot = async (options = {}) => {
+        if (exporting) throw new Error("A Blender snapshot is already being exported.");
+        if (runtimeDisposed || !canvasShown || shaderWarmup.pending || scene.devMode?.active)
+          throw new Error("Wait for the scene to finish loading and leave the developer camera before exporting.");
+        const architecture = qualityDebug?.architecture;
+        if (architectureEnabled && ["high", "balanced"].includes(assetTier)) {
+          const required = modes.legacy ? ["tower", "tree"] : ["tower", "tree", "lantern"];
+          if (required.some((kind) => architecture?.[kind]?.status !== "ready") || (!modes.legacy && !lanternMount.committed))
+            throw new Error("The complete architecture and lantern must finish loading before export.");
+        }
+        if (filmEnabled && !modes.legacy && modes.rocks && ["high", "balanced"].includes(assetTier) && !rockScatter.committed)
+          throw new Error("Wait for the scattered rocks to finish loading before export.");
+        if ([qualityDebug?.ground, qualityDebug?.grass].some((entry) => entry?.status === "loading"))
+          throw new Error("Wait for the ground textures to finish loading before export.");
+        exporting = true;
+        const wasPaused = scene.isVisitorPaused();
+        scene.setVisitorPaused(true);
+        try {
+          const { exportBlenderSnapshot } = await import("./blender-export.js");
+          if (runtimeDisposed) throw new Error("The scene was closed before export.");
+          return await exportBlenderSnapshot({
+            ...options, scene: homeScene, camera, location: window.location,
+            viewport: { width: viewport.width, height: viewport.height },
+            metadata: {
+              selection: qualityDebug?.cinematic?.current ?? scene.cinematicSelection,
+              angle: qualityDebug?.cinematic?.angle ?? scene.cinematicAngle,
+              shot: qualityDebug?.cinematic?.shot,
+              tier: state.profile.tier, assetTier, architecture,
+              rocks: qualityDebug?.rocks, ground: qualityDebug?.ground,
+              browserEffects: "Blender approximates film shaders, fog, clouds, wet ground and postprocessing.",
+            },
+          });
+        } finally {
+          exporting = false;
+          if (!runtimeDisposed) scene.setVisitorPaused(wasPaused);
+        }
+      };
+    }
     scene.disposeHomeSceneRuntime = function disposeHomeSceneRuntime() {
       if (runtimeDisposed) return false;
       runtimeDisposed = true;
@@ -1125,6 +1207,7 @@ function setSrgbTexture(texture) {
       subsystemRegistry.dispose();
       const disposedResources = rendering.disposeResult;
       frameScheduler = null;
+      delete scene.exportBlenderSnapshot;
       scene.setClouds = () => false;
       scene.toggleClouds = () => false;
       scene.setVisitorPaused = () => false;

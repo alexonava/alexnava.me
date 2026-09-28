@@ -71,7 +71,7 @@ test("CSS asset URLs and bytes are portable across checkout line endings", async
       await writeFile(path.join(fixture, "images", `${name}.webp`), paper);
     }
     for (const tier of ["high", "balanced"]) {
-      for (const role of ["stairs", "wall", "base", "crown", "tower", "tree", "lichen-rock", "weathered-stone"]) {
+      for (const role of ["stairs", "wall", "base", "crown", "tower", "tree", "lantern", "lichen-rock", "weathered-stone"]) {
         await writeFile(path.join(fixture, "images", "architecture", `${role}-${tier}.glb`), paper);
       }
     }

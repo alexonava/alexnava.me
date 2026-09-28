@@ -1,4 +1,4 @@
-import { createEarthGeometry } from "./filmic-earth.js";
+import { EARTH } from "./filmic-earth.js";
 
 // Borrow existing resources; restore originals before freeing the derived terrain.
 export function createFilmScene({
@@ -9,10 +9,15 @@ export function createFilmScene({
   effects = [],
   skyMaterial,
   onGroundChange = () => {},
+  invalidate = () => {},
+  tour,
+  foothills = true,
+  loadTerrain = () => import("./terrain-build.js"),
 }) {
   let active = false,
     disposed = false,
     terrain = null,
+    pending = null,
     clouds = [],
     undo = [];
   const cloudVisibility = new Map(),
@@ -31,6 +36,7 @@ export function createFilmScene({
   }
   return {
     lifecycleOrder: 18,
+    get ready() { return pending; },
     get active() {
       return active;
     },
@@ -43,8 +49,21 @@ export function createFilmScene({
       if (disposed || active === Boolean(next)) return;
       active = Boolean(next);
       if (active) {
-        terrain ||= createEarthGeometry(groundHeight);
-        ground.geometry = terrain;
+        if (terrain) ground.geometry = terrain;
+        // The terrain builds in short slices and arrives only where the new
+        // ground cannot show mid-shot (terrain-build.js); before the reveal it
+        // takes idle time only, and it stops if the scene is disposed first. The tufts and the
+        // slate's root shading then follow the tree's root supports, and ready
+        // resolves to the height the rocks sit on. The earth comparison has no
+        // supports.
+        pending ||= loadTerrain().then(async ({ createEarthGeometry, settleRoots }) => {
+          if (disposed || !(terrain = await createEarthGeometry(groundHeight, foothills, EARTH, rendering, tour, () => disposed))) return;
+          // A terrain finished after disposal is freed, never kept.
+          if (disposed) return terrain.dispose();
+          if (active) ground.geometry = terrain;
+          invalidate();
+          if (foothills) return settleRoots?.(terrain, ground, rendering, groundHeight, invalidate, tour);
+        }).catch(() => {}); // Keep the borrowed procedural ground on failure.
         for (const o of effects) {
           const visible = o.visible;
           undo.push(() => {

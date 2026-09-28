@@ -18,7 +18,8 @@ import {
 import { createPropScale } from "../src/scene/prop-scale.js";
 import { DIRECTED_SHOTS } from "../src/scene/directed-shots.js";
 import { createCinematicCamera, cinematicSafeArea } from "../src/scene/cinematic.js";
-import { createMountainGeometry, MOUNTAINS, snowReach } from "../src/scene/hill-silhouette.js";
+import { snowReach } from "../src/scene/hill-silhouette.js";
+import { createMountainGeometry, MOUNTAINS } from "../src/scene/mountain-build.js";
 
 // The film mountains follow the camera, so their framing depends only on where each
 // directed shot puts it: fit the real tower and tree, then project the crest line.
@@ -155,6 +156,8 @@ test("the camera-centred ranges frame every tour shot: sun, roof lane, tree shot
     terrain = mountains.attributes.aTerrain,
     { columns, rows } = MOUNTAINS,
     perRange = rows.length * columns;
+  const elevationOf = (v) =>
+    (Math.atan2(position.getY(v), Math.hypot(position.getX(v), position.getZ(v))) * 180) / Math.PI;
   try {
     for (const layout of LAYOUTS) {
       const { width, height, hero, nav } = layout,
@@ -208,9 +211,12 @@ test("the camera-centred ranges frame every tour shot: sun, roof lane, tree shot
               }
             }
           assert.ok(crest.length > 0, label + " shows no mountains");
-          if (desktop)
+          // Landscape phones keep the opening shot's snow out from behind the intro too.
+          // snowReach mirrors the shader's snowline: the vertex's elevation against
+          // its massif (aTerrain.w), with the jitter and gully tongue at their most generous.
+          if (desktop || (name === "The watch" && height < 500))
             for (let v = 0; v < terrain.count; v++) {
-              if (!snowReach(terrain.getX(v), terrain.getW(v))) continue;
+              if (!snowReach(elevationOf(v), terrain.getW(v))) continue;
               const p = screen(vertex(v));
               assert.ok(
                 p.depth <= 0 ||

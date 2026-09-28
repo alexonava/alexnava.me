@@ -1,6 +1,6 @@
 import { resolveSceneModes } from "./scene-modes.js";
 import { DEPTH_LAYER } from "./depth-layers.js";
-import { HORIZON_HAZE } from "./hill-silhouette.js";
+import { TERRAIN_HORIZON } from "./hill-silhouette.js";
 import { ESTATE, estateLantern, estatePoint } from "./estate-layout.js";
 // The estate's human scale for props, trees and mud tiles: one doorway height.
 // It was measured on the earlier stone tower's arched door (sill 1.64 to arch
@@ -182,6 +182,7 @@ export const SLATE_PUDDLES = Object.freeze({
   darken: 0.5,
   flatten: 0.85,
   specular: 4,
+  lantern: Object.freeze({ roughness: 0.20, specular: 0.8 }),
   sky: 2,
   zenith: Object.freeze([0.07, 0.085, 0.13]),
   lanternPathRelease: Object.freeze([4.0, 7.0]), // the path is wet only this near the lantern
@@ -211,15 +212,15 @@ const PATH_LENGTH = glslNumber(+Math.hypot(ESTATE.tree.x - ESTATE.tower.x, ESTAT
 const SECOND = SLATE_TILING.second,
   DETAIL = SLATE_TILING.detail;
 // Each zone: 1 inside half its radius, 0 at its radius.
-const PUDDLE_GLSL = SLATE_PUDDLES.zones
+const PUDDLE_ZONES_GLSL = SLATE_PUDDLES.zones
   .map(({ anchor, deg, dist, radius, stretch = 1, along = 0 }) => {
     const offset = `(vMudWorld.xz-${glslPoint(estatePoint(anchor, deg, dist))})`,
       c = +Math.cos((along * Math.PI) / 180).toFixed(4),
       s = +Math.sin((along * Math.PI) / 180).toFixed(4);
     const local = stretch === 1 ? offset : `mat2(${[c, -s, s, c].map(glslNumber)})*${offset}/vec2(${glslNumber(stretch)},1.)`;
     return `1.-smoothstep(.5,1.,length(${local})/${glslNumber(radius)})`;
-  })
-  .reduce((all, zone) => `max(${all},${zone})`);
+  });
+const PUDDLE_GLSL = PUDDLE_ZONES_GLSL.reduce((all, zone) => `max(${all},${zone})`);
 
 // Film ground material, chosen from the mode rather than the published maps,
 // so the procedural surface shown while maps load, or after a fallback,
@@ -257,20 +258,23 @@ export function configureMudShading(
   const authored = Boolean(useWet && detail);
   const uniforms = contacts ?? createSlateContacts();
   if (authored) uniforms.slateDetail.value = detail;
+  // terrain-build.js settleRoots() sets material.userData.slateRoot once the film
+  // terrain and its root attribute arrive; the slate then applies it last
+  // (the roots' contact shade and settled soil) under a "+root" key.
   material.customProgramCacheKey = () =>
-    film
+    (film
       ? useGrass
         ? "moonlit-earth-grass-v1"
         : useWet
           ? authored
-            ? "moonlit-slate-v2"
-            : "moonlit-slate-v2-p"
+            ? "moonlit-slate-v3"
+            : "moonlit-slate-v3-p"
           : "moonlit-earth-v2"
       : active
         ? quiet
           ? "mud-quiet-earth-v2"
           : "mud-world-variation-v1"
-        : "ground-baseline";
+        : "ground-baseline") + (useWet && material.userData.slateRoot ? "+root" : "");
   material.onBeforeCompile = (shader) => {
     if (!active && !film) return;
     if (useGrass) {
@@ -361,8 +365,10 @@ float slateNoise(vec2 p){vec2 i=floor(p),f=fract(p);f*=f*(3.-2.*f);return mix(mi
       float slateDry = max(max(footingDry, 1.0-smoothstep(${SLATE_WET.rootDry.map(glslNumber)}, slateTree)), approach*smoothstep(${SLATE_PUDDLES.lanternPathRelease.map(glslNumber)}, length(vMudWorld.xz-${glslPoint(estateLantern())})));
       float slateWet = clamp(max(slateHollow, slateCrack*${glslNumber(SLATE_WET.crackWeight)}) + (1.0-smoothstep(${SLATE_WET.halo.map(glslNumber)}, slateTree))*${glslNumber(SLATE_WET.haloWeight)}, 0.0, 1.0)*(1.0-slateDry);
       float slatePuddle = smoothstep(-.04, .04, ${PUDDLE_GLSL}*(.45+.4*slateNoise(vMudWorld.xz*.9))-slateH)*(1.0-slateDry);
+      float slateLanternPuddle = slatePuddle*(${PUDDLE_ZONES_GLSL[0]});
       slateWet = max(slateWet, slatePuddle);
       roughnessFactor = mix(mix(roughnessFactor, ${glslNumber(SLATE_WET.roughness)}, slateWet*${glslNumber(SLATE_WET.roughnessWeight)}), ${glslNumber(SLATE_PUDDLES.roughness)}, slatePuddle);
+      roughnessFactor = mix(roughnessFactor, ${glslNumber(SLATE_PUDDLES.lantern.roughness)}, slateLanternPuddle);
       diffuseColor.rgb *= (1.0 - ${glslNumber(SLATE_WET.darken)}*slateWet)*(1.0 - ${glslNumber(SLATE_PUDDLES.darken)}*slatePuddle);
       float slateAo = 0.0;
       for (int i = 0; i < ${SLATE_CONTACTS}; i++) slateAo = max(slateAo, (1.0-smoothstep(.55, 1.35, length(vMudWorld.xz-slateContacts[i].xy)/max(slateContacts[i].z, .001)))*slateContacts[i].w*(i < 2 ? 1.0 : slateRockContact));
@@ -410,7 +416,8 @@ float slateNoise(vec2 p){vec2 i=floor(p),f=fract(p);f*=f*(3.-2.*f);return mix(mi
       ${
         useWet
           ? `
-      reflectedLight.directSpecular *= (1.0 + ${glslNumber(SLATE_WET.specular)}*slateWet)*(1.0 + ${glslNumber(SLATE_PUDDLES.specular)}*slatePuddle);
+      reflectedLight.directSpecular *= (1.0 + ${glslNumber(SLATE_WET.specular)}*slateWet)*(1.0 + ${glslNumber(SLATE_PUDDLES.specular)}*slatePuddle - ${glslNumber(SLATE_PUDDLES.specular - SLATE_PUDDLES.lantern.specular)}*slateLanternPuddle);
+      reflectedLight.directSpecular /= 1.0 + 2.5*dot(reflectedLight.directSpecular,vec3(.2126,.7152,.0722))*slateLanternPuddle;
       #ifdef USE_FOG
       float slateFresnel = pow(1.0 - saturate(dot(geometryNormal, geometryViewDir)), 5.0);
       vec3 slateSheen = mix(fogColor, vec3(dot(fogColor, vec3(.2126,.7152,.0722))), ${glslNumber(SLATE_WET.fresnelNeutral)});
@@ -424,15 +431,16 @@ float slateNoise(vec2 p){vec2 i=floor(p),f=fract(p);f*=f*(3.-2.*f);return mix(mi
         )
         .replace(
           "#include <fog_fragment>",
-          `#include <fog_fragment>
+          `
       #ifdef USE_FOG
-      float earthHorizon = max(smoothstep(116.0, 174.0, max(abs(vMudWorld.x),abs(vMudWorld.z))),
-        smoothstep(${glslNumber(HORIZON_HAZE.near)}, ${glslNumber(HORIZON_HAZE.far)}, vFogDepth));
-      gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, earthHorizon);
+      float earthHorizon = max(smoothstep(155.0, 190.0, max(abs(vMudWorld.x),abs(vMudWorld.z))),
+        smoothstep(230.0, 330.0, vFogDepth));
+      gl_FragColor.rgb = mix(gl_FragColor.rgb, ${TERRAIN_HORIZON}, earthHorizon);
       #endif
       gl_FragColor.a = ${DEPTH_LAYER.ground};
     `,
         );
+    if (useWet) material.userData.slateRoot?.(shader);
   };
   material.needsUpdate = true;
 }

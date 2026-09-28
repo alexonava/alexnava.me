@@ -119,3 +119,20 @@ test("seeded stars preserve positions between tiers and remain distant while cam
   assert.equal(parent.children.length, 0);
   [a, b, c].forEach((g) => g.dispose());
 });
+
+test("solar prominence loops run along the meridian, so side-limb loops rise as arches", () => {
+  const geometry = makeLoopGeometry(),
+    position = geometry.attributes.position,
+    perLoop = (56 + 1) * 2;
+  for (let loop = 0; loop < SOLAR_QUALITY.high.loops; loop++) {
+    // The loop's feet: its first and last centreline samples on the photosphere.
+    const a = new Vector3().fromBufferAttribute(position, loop * perLoop),
+      b = new Vector3().fromBufferAttribute(position, loop * perLoop + perLoop - 2);
+    const chord = b.clone().sub(a).normalize(),
+      eastWest = new Vector3(0, 1, 0).cross(a.clone().add(b).normalize()).normalize();
+    // East-west loops lie in the view ray's plane at the side limbs and read
+    // as flat radial handles.
+    assert.ok(Math.abs(chord.dot(eastWest)) < 0.1, `loop ${loop} runs east-west`);
+  }
+  geometry.dispose();
+});

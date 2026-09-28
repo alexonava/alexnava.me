@@ -79,7 +79,9 @@ test("scene bundle stays under the deferred-payload budget", async () => {
   // placement load on demand only. The owner raised the limit from 810 KiB to
   // 820 KiB on 2026-09-24 for the slate v2 ground and rocks.
   const { loaded } = await sceneScripts();
-  assert.ok(loaded.size >= 1 && loaded.size <= 2, `scene loads ${[...loaded.keys()]}`);
+  // The exporter's additional lazy consumer separates the existing Pass base
+  // classes from the shared Three.js core. There is still one copy of Three.
+  assert.equal(loaded.size, 3, `scene loads ${[...loaded.keys()]}`);
   let bytes = 0;
   for (const name of loaded.keys()) bytes += (await stat(path.join(scriptsDir, name))).size;
   const kb = bytes / 1024;
@@ -91,10 +93,10 @@ test("scene bundle stays under the deferred-payload budget", async () => {
 
 test("developer tools are a lazy scene chunk that default visitors never download", async () => {
   const { entry, loaded, lazy } = await sceneScripts();
-  // The named lazy chunks: the developer tools and the film's rock placement.
+  // Optional effects and owner tools remain outside the initial static code.
   assert.deepEqual(
     lazy.map((name) => name.replace(/\.[a-f0-9]{8}\.js$/, "")).sort(),
-    ["scene.developer-tools", "scene.rock-build"],
+    ["scene.blender-export", "scene.developer-tools", "scene.lantern-flame", "scene.light-shafts", "scene.mountain-build", "scene.rock-build", "scene.terrain-build"],
   );
   const developerName = lazy.find((name) => name.startsWith("scene.developer-tools."));
   const developer = await readFile(path.join(scriptsDir, developerName), "utf8");
@@ -121,6 +123,43 @@ test("developer tools are a lazy scene chunk that default visitors never downloa
   }
 });
 
+test("the optional lantern flame shader stays in its own lazy chunk", async () => {
+  const { loaded, lazy } = await sceneScripts();
+  const flameName = lazy.find((name) => name.startsWith("scene.lantern-flame."));
+  assert.ok(flameName);
+  const flame = await readFile(path.join(scriptsDir, flameName), "utf8");
+  const statics = [...loaded.values()].join("\n");
+  const app = await readFile(await findHashedScript("app"), "utf8");
+  assert.match(flame, /lanternFire/);
+  assert.doesNotMatch(statics, /lanternFire/);
+  assert.doesNotMatch(app, /lantern-flame/);
+  for (const dependency of chunkImports(flame).static)
+    assert.ok(loaded.has(dependency), "flame reuses the already loaded Three.js instance");
+});
+
+test("Blender export and GLTFExporter stay exclusively in the explicit local action's lazy chunk", async () => {
+  const { entry, loaded, lazy } = await sceneScripts();
+  const exporterName = lazy.find((name) => name.startsWith("scene.blender-export."));
+  assert.ok(exporterName, "the editable scene exporter has its own hashed lazy chunk");
+  const exporter = await readFile(path.join(scriptsDir, exporterName), "utf8");
+  const app = await readFile(await findHashedScript("app"), "utf8");
+  const statics = [...loaded.values()].join("\n");
+  for (const marker of [/THREE\.GLTFExporter/, /babel-blender-snapshot-v1/, /Blender export requires localhost/]) {
+    assert.match(exporter, marker);
+    assert.doesNotMatch(statics, marker, `${marker} leaked into the default scene payload`);
+    assert.doesNotMatch(app, marker, `${marker} leaked into the UI payload`);
+  }
+  assert.ok(!app.includes(exporterName), "the UI must not preload the export module");
+  assert.match(loaded.get(entry), new RegExp(`import\\(\\s*"\\./${exporterName.replaceAll(".", "\\.")}"\\s*\\)`));
+  assert.ok(!exporter.includes("Multiple instances of Three.js being imported"), "the exporter reuses Three.js");
+  for (const dependency of chunkImports(exporter).static) {
+    assert.ok(loaded.has(dependency), `exporter imports a separate Three.js dependency: ${dependency}`);
+  }
+  const source = await readFile(path.join(projectRoot, "src", "scene", "index.js"), "utf8");
+  assert.match(source, /if \(qualityControls\.debug && \["localhost", "127\.0\.0\.1", "\[::1\]"\]\.includes\(window\.location\.hostname\)\)/);
+  assert.match(source, /scene\.exportBlenderSnapshot = async \(options = \{\}\) => \{[\s\S]*?await import\("\.\/blender-export\.js"\)/);
+});
+
 test("the film's rock placement is a lazy chunk that imports nothing", async () => {
   const { entry, loaded, lazy } = await sceneScripts();
   const rockName = lazy.find((name) => name.startsWith("scene.rock-build."));
@@ -132,6 +171,62 @@ test("the film's rock placement is a lazy chunk that imports nothing", async () 
   assert.match(rocks, /film-rocks/);
   assert.doesNotMatch(statics, /film-rocks/, "rock placement leaked into the visitor scene payload");
   assert.match(loaded.get(entry), new RegExp(`import\\(\\s*"\\./${rockName.replaceAll(".", "\\.")}"\\s*\\)`));
+});
+
+test("the film's light shafts are a lazy chunk outside the visitor payload", async () => {
+  const { entry, loaded, lazy } = await sceneScripts();
+  const shaftsName = lazy.find((name) => name.startsWith("scene.light-shafts."));
+  assert.ok(shaftsName, "the light shafts have their own hashed lazy chunk");
+  const shafts = await readFile(path.join(scriptsDir, shaftsName), "utf8");
+  const statics = [...loaded.values()].join("\n");
+  const app = await readFile(await findHashedScript("app"), "utf8");
+  // Markers that survive minification and GLSL compaction: the march, the
+  // box material's name and the subjects' program key suffix.
+  for (const marker of [/shaftMarch/, /LightShafts/, /light-shafts-/]) {
+    assert.match(shafts, marker);
+    assert.doesNotMatch(statics, marker, `${marker} leaked into the visitor scene payload`);
+    assert.doesNotMatch(app, marker, `${marker} leaked into the UI payload`);
+  }
+  // The entry imports it on demand and nothing preloads it.
+  assert.match(loaded.get(entry), new RegExp(`import\\(\\s*"\\./${shaftsName.replaceAll(".", "\\.")}"\\s*\\)`));
+  assert.ok(!app.includes(shaftsName), "the UI must not preload the light shafts");
+  // It reuses the visitor's Three.js and carries no first-party modules.
+  assert.ok(!shafts.includes("Multiple instances of Three.js being imported"), "Three.js is duplicated in the light shafts");
+  assert.deepEqual(chunkImports(shafts).dynamic, []);
+  for (const dependency of chunkImports(shafts).static) {
+    assert.ok(loaded.has(dependency), `the light shafts import ${dependency}, which visitors do not load`);
+  }
+  assert.doesNotMatch(shafts, /initHomeScene/);
+});
+
+test("the film mountains' generator is a lazy chunk that imports only Three.js", async () => {
+  const { entry, loaded, lazy } = await sceneScripts();
+  const mountainName = lazy.find((name) => name.startsWith("scene.mountain-build."));
+  assert.ok(mountainName, "the film ranges have their own hashed lazy chunk");
+  const mountains = await readFile(path.join(scriptsDir, mountainName), "utf8");
+  const statics = [...loaded.values()].join("\n");
+  const app = await readFile(await findHashedScript("app"), "utf8");
+  // Markers that survive minification: the generator's hash constant (0x9e3779b1,
+  // shared by no other scene module) and its ring and row constants.
+  for (const marker of [/2654435761|0x9e3779b1|-1640531535/, /15485863/, /104729/]) {
+    assert.match(mountains, marker);
+    assert.doesNotMatch(statics, marker, `${marker} leaked into the visitor scene payload`);
+    assert.doesNotMatch(app, marker, `${marker} leaked into the UI payload`);
+  }
+  // The entry keeps the ranges' material and requests the chunk on demand;
+  // nothing preloads it.
+  assert.match(statics, /EstateMountains/);
+  assert.match(loaded.get(entry), new RegExp(`import\\(\\s*"\\./${mountainName.replaceAll(".", "\\.")}"\\s*\\)`));
+  assert.ok(!app.includes(mountainName), "the UI must not preload the mountains");
+  // It reuses the visitor's Three.js through the shared chunk and carries no
+  // first-party scene module or further chunk.
+  assert.ok(!mountains.includes("Multiple instances of Three.js being imported"), "Three.js is duplicated in the mountain chunk");
+  assert.deepEqual(chunkImports(mountains).dynamic, []);
+  const statically = chunkImports(mountains).static;
+  assert.ok(statically.length >= 1);
+  for (const dependency of statically)
+    assert.ok(loaded.has(dependency) && dependency.startsWith("scene.shared."), `the mountains import ${dependency}`);
+  assert.doesNotMatch(mountains, /BabelSite|initHomeScene|EstateMountains/);
 });
 
 test("the UI names exactly the scene entry's static chunks for modulepreload", async () => {
@@ -469,7 +564,7 @@ test("the default film slate set and rocks are deferred and fit their own and th
   // their hashed copies.
   const app = await readFile(await findHashedScript("app"), "utf8");
   const { entry, loaded } = await sceneScripts();
-  assert.doesNotMatch(app, /slate-|lichen-rock|weathered-stone/);
+  assert.doesNotMatch(app, /slate-|lichen-rock|weathered-stone|lantern-high|lantern-balanced/);
   for (const [tier, size, limit, rockLimit, totalLimit] of [
     ["high", 1024, 640 * 1024, 320 * 1024, 6 * 1024 * 1024],
     ["balanced", 512, 224 * 1024, 128 * 1024, 3 * 1024 * 1024],
@@ -490,10 +585,10 @@ test("the default film slate set and rocks are deferred and fit their own and th
       assert.ok(source.length <= rockLimit, `${role}-${tier}: ${source.length}`);
       bytes += source.length;
     }
-    for (const role of ["tower", "tree"]) {
+    for (const role of ["tower", "tree", "lantern"]) {
       bytes += (await stat(path.join(projectRoot, "images", "architecture", `${role}-${tier}.glb`))).size;
     }
-    assert.ok(bytes <= totalLimit, `${tier} scene incl. slate and rocks: ${bytes}`);
+    assert.ok(bytes <= totalLimit, `${tier} scene incl. slate, rocks and lantern: ${bytes}`);
   }
 });
 test("homepage discovers the deferred scene while its UI excludes the renderer and model loading", async () => {
@@ -508,7 +603,7 @@ test("homepage discovers the deferred scene while its UI excludes the renderer a
   assert.doesNotMatch(app, /gl_Position|WebGLRenderer|GLTFLoader|Invalid architecture GLB/);
 });
 
-test("About model icon states are fingerprinted and emitted intact", async () => {
+test("retired About case assets remain intact while About uses real text", async () => {
   const html = await readFile(path.join(distDir, "index.html"), "utf8");
   let total = 0;
   for (const name of ["nav-about", "nav-about-active"]) {
@@ -516,11 +611,12 @@ test("About model icon states are fingerprinted and emitted intact", async () =>
     const hash = createHash("sha256").update(bytes).digest("hex").slice(0, 8);
     total += bytes.length;
     const hashedName = `${name}.${hash}.webp`;
-    assert.ok(html.includes(`src="/images/${hashedName}"`));
+    assert.ok(!html.includes(`src="/images/${hashedName}"`));
     assert.ok(!html.includes(`src="/images/${name}.webp"`));
     assert.deepEqual(await readFile(path.join(distDir, "images", hashedName)), bytes);
   }
   assert.ok(total <= 80 * 1024);
+  assert.match(html, /class="about-link__label">About<\/span>/);
   assert.doesNotMatch(html, /nav-contact|Leather_Envelope|Stylized_3D/);
 });
 

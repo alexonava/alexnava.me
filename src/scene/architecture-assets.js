@@ -6,8 +6,8 @@ const TOWER_ROLES = Object.freeze({
   assembled: ["stairs", "wall", "base", "crown"],
   complete: ["tower"],
 });
-// The film's scattered rocks (rock-scatter.js) load through the same manifest.
-const ROLES = [...TOWER_ROLES.assembled, "tower", "tree", "lichen-rock", "weathered-stone"];
+// The optional lantern and scattered rocks load through the same manifest.
+const ROLES = [...TOWER_ROLES.assembled, "tower", "tree", "lantern", "lichen-rock", "weathered-stone"];
 export const ARCHITECTURE_ASSET_BUDGETS = Object.freeze({
   high: 6 * 1024 * 1024,
   balanced: 3 * 1024 * 1024,
@@ -53,7 +53,7 @@ function validateEmbeddedGlb(buffer, maxBytes) {
   if (json.skins?.length || json.animations?.length) {
     throw new Error("Architecture assets must be static");
   }
-  const supported = new Set(["EXT_texture_webp", "KHR_texture_transform", "KHR_mesh_quantization"]);
+  const supported = new Set(["EXT_texture_webp", "KHR_texture_transform", "KHR_mesh_quantization", "KHR_materials_emissive_strength"]);
   if ((json.extensionsRequired || []).some((extension) => !supported.has(extension))) {
     throw new Error("Architecture GLB requires an unsupported extension");
   }
@@ -181,12 +181,15 @@ export function collectResources(asset, extraTextures = []) {
 export function createArchitectureAssetController({
   disabled = false,
   towerModel = "assembled",
+  includeLantern = false,
   loadAsset = loadArchitectureAsset,
   urls = ARCHITECTURE_ASSET_URLS,
   onTowerReady = () => {},
   onTreeReady = () => {},
+  onLanternReady = () => {},
   onRestoreTower = () => {},
   onRestoreTree = () => {},
+  onRestoreLantern = () => {},
   onStatus = () => {},
 } = {}) {
   if (!Object.hasOwn(TOWER_ROLES, towerModel)) {
@@ -203,6 +206,7 @@ export function createArchitectureAssetController({
   const channels = [
     { kind: "tower", roles: TOWER_ROLES[towerModel], ready: onTowerReady, restore: onRestoreTower },
     { kind: "tree", roles: ["tree"], ready: onTreeReady, restore: onRestoreTree },
+    ...(includeLantern ? [{ kind: "lantern", roles: ["lantern"], ready: onLanternReady, restore: onRestoreLantern }] : []),
   ].map((channel) => ({ ...channel, run: null, leases: [], active: false, cleanup: null }));
 
   function safely(callback) {
@@ -311,10 +315,11 @@ export function createArchitectureAssetController({
         channel.leases = [...run.leases.values()];
         run.leases.clear();
         channel.active = true;
-        // Ready callbacks borrow source resources and synchronously commit their
-        // assembly. Returned cleanup owns only derived geometry/material clones.
+        // Ready callbacks borrow source resources and synchronously assemble or
+        // stage them. Returned cleanup restores any attachment and owns only
+        // derived geometry/material clones; staged assets retain their lease.
         // A throwing callback must roll back its own partial allocations.
-        const cleanup = channel.ready(channel.kind === "tree" ? assets.tree : assets, { tier });
+        const cleanup = channel.ready(channel.kind === "tower" ? assets : assets[channel.kind], { tier });
         if (cleanup !== undefined && typeof cleanup !== "function") {
           throw new Error(
             "Architecture ready callback must return a cleanup function or undefined",

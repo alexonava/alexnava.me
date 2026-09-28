@@ -435,6 +435,58 @@ test("reopening the live gate retries failed assets once without a per-frame ret
   h.controller.dispose();
 });
 
+test("optional lantern loads independently and its failure cannot block the tree", async () => {
+  const h = harness({ towerModel: "complete", includeLantern: true });
+  h.controller.setQuality({ tier: "high" }, true);
+  assert.deepEqual(h.requests.map(({ role }) => role), ["tower", "tree", "lantern"]);
+  const [tree] = complete(h, ["tree"]);
+  await flush();
+  assert.equal(h.treeReady.length, 1);
+  assert.equal(h.statuses.findLast((s) => s.kind === "lantern").status, "loading");
+  request(h, "lantern").reject(new Error("404 or image decode failed"));
+  await flush();
+  assert.equal(h.statuses.findLast((s) => s.kind === "lantern").status, "fallback");
+  assertReleased(tree, 0);
+  assert.equal(request(h, "tree").signal.aborted, false);
+  h.controller.dispose();
+  assertReleased(tree);
+});
+
+test("optional lantern releases staged and late parses after tier switches, gate closure and disposal", async () => {
+  for (const action of ["tier", "gate", "dispose"]) {
+    const ready = [], events = [];
+    const h = harness({ towerModel: "complete", includeLantern: true,
+      onLanternReady(parsed, { tier }) { ready.push(tier); return () => events.push("cleanup"); },
+      onRestoreLantern() { events.push("restore"); },
+    });
+    h.controller.setQuality({ tier: "high" }, true);
+    const old = request(h, "lantern");
+    if (action === "tier") h.controller.applyQuality({ tier: "balanced" });
+    else if (action === "gate") h.controller.setLive(false);
+    else h.controller.dispose();
+    assert.equal(old.signal.aborted, true);
+    const stale = asset("stale");
+    old.resolve(stale);
+    await flush();
+    assertReleased(stale);
+    assert.deepEqual(ready, []);
+    if (action === "tier") {
+      const current = asset("balanced", events);
+      request(h, "lantern", "balanced").resolve(current);
+      await flush();
+      assert.deepEqual(ready, ["balanced"]);
+      assertReleased(current, 0);
+      h.controller.applyQuality({ tier: "low" }, { assetTier: "balanced" });
+      assertReleased(current, 0, "adaptive cost changes keep the startup model tier");
+      h.controller.dispose();
+      assertReleased(current);
+      assert.ok(events.indexOf("restore") < events.indexOf("cleanup"));
+      assert.ok(events.indexOf("cleanup") < events.indexOf("balanced:geometry"));
+    }
+    h.controller.dispose();
+  }
+});
+
 function glb(json, binary = Buffer.alloc(0)) {
   const source = Buffer.from(JSON.stringify(json));
   const jsonLength = Math.ceil(source.length / 4) * 4;
