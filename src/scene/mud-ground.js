@@ -1,97 +1,11 @@
-import { resolveSceneModes } from "./scene-modes.js";
 import { DEPTH_LAYER } from "./depth-layers.js";
 import { TERRAIN_HORIZON } from "./hill-silhouette.js";
 import { ESTATE, estateLantern, estatePoint } from "./estate-layout.js";
-// The estate's human scale for props, trees and mud tiles: one doorway height.
+// The estate's human scale for props and trees: one doorway height.
 // It was measured on the earlier stone tower's arched door (sill 1.64 to arch
 // ~8.24). The timber lookout keeps the same scale: its cabin rises about 6.5
 // from gallery floor (29.9) to eave (36.4) above a railing about 3.9 high.
 export const DOOR_HEIGHT = 6.6;
-export const MUD_TILE_WIDTH = DOOR_HEIGHT * 1.6;
-export function wantsMud(search = "") {
-  return resolveSceneModes(search).mud;
-}
-export function wantsPropScale(search = "") {
-  return resolveSceneModes(search).propScale;
-}
-const smooth = (x) => x * x * (3 - 2 * x);
-function noise(u, v, cells) {
-  const x = u * cells,
-    y = v * cells,
-    ix = Math.floor(x),
-    iy = Math.floor(y);
-  const h = (a, b) => {
-    const n =
-      Math.sin(
-        (((a % cells) + cells) % cells) * 127.1 + (((b % cells) + cells) % cells) * 311.7 + 19.3,
-      ) * 43758.5453;
-    return n - Math.floor(n);
-  };
-  const fx = smooth(x - ix),
-    fy = smooth(y - iy);
-  return (
-    (h(ix, iy) * (1 - fx) + h(ix + 1, iy) * fx) * (1 - fy) +
-    (h(ix, iy + 1) * (1 - fx) + h(ix + 1, iy + 1) * fx) * fy
-  );
-}
-// Periodic world-scaled fields: same features at every quality tier.
-export function mudSample(u, v) {
-  const broad = noise(u, v, 4),
-    soil = noise(u, v, 16),
-    grain = noise(u, v, 64);
-  const wet = smooth(Math.max(0, Math.min(1, (broad - 0.67) / 0.22)));
-  return {
-    height: 0.6 * soil + 0.16 * grain,
-    tone: broad * 0.6 + soil * 0.4,
-    wet,
-    roughness: 0.9 - 0.35 * wet,
-  };
-}
-export function makeMudCanvases(source, createCanvas = () => document.createElement("canvas")) {
-  const size = source.width,
-    maps = {};
-  const original = source.getContext("2d").getImageData(0, 0, size, size).data;
-  const heights = new Float32Array(size * size);
-  for (const kind of ["color", "normal", "roughness"]) {
-    const canvas = createCanvas();
-    canvas.width = canvas.height = size;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("Mud canvas unavailable");
-    maps[kind] = { canvas, ctx, pixels: ctx.createImageData(size, size) };
-  }
-  for (let y = 0; y < size; y++)
-    for (let x = 0; x < size; x++) {
-      const i = y * size + x,
-        p = i * 4,
-        s = mudSample(x / size, y / size);
-      heights[i] = s.height;
-      const detail = (original[p] + original[p + 1] + original[p + 2]) / 3 / 255 - 0.5;
-      const shade = 0.78 + 0.34 * s.tone - 0.12 * s.wet + 0.1 * detail;
-      const c = maps.color.pixels.data,
-        r = maps.roughness.pixels.data;
-      c[p] = 82 * shade;
-      c[p + 1] = 69 * shade;
-      c[p + 2] = 56 * shade;
-      c[p + 3] = 255;
-      r[p] = r[p + 1] = r[p + 2] = Math.round(s.roughness * 255);
-      r[p + 3] = 255;
-    }
-  const h = (x, y) => heights[((y + size) % size) * size + ((x + size) % size)];
-  for (let y = 0; y < size; y++)
-    for (let x = 0; x < size; x++) {
-      const p = (y * size + x) * 4,
-        n = maps.normal.pixels.data;
-      const dx = (h(x + 1, y) - h(x - 1, y)) * size * 0.008,
-        dy = (h(x, y + 1) - h(x, y - 1)) * size * 0.008;
-      const len = Math.hypot(dx, dy, 1);
-      n[p] = 128 - (127 * dx) / len;
-      n[p + 1] = 128 - (127 * dy) / len;
-      n[p + 2] = 128 + 127 / len;
-      n[p + 3] = 255;
-    }
-  for (const map of Object.values(maps)) map.ctx.putImageData(map.pixels, 0, 0);
-  return Object.fromEntries(Object.entries(maps).map(([k, v]) => [k, v.canvas]));
-}
 
 // The terrain's dune field, helpers.js dune(): amplitude * wave(frequency *
 // (sx * x + sz * z)) in world x/z. Restated here so the slate's wet sheen can
@@ -222,39 +136,23 @@ const PUDDLE_ZONES_GLSL = SLATE_PUDDLES.zones
   });
 const PUDDLE_GLSL = PUDDLE_ZONES_GLSL.reduce((all, zone) => `max(${all},${zone})`);
 
-// Film ground material, chosen from the mode rather than the published maps,
-// so the procedural surface shown while maps load, or after a fallback,
-// matches the loaded ground. `slate` (the default film ground) takes the
-// slate tint, the wet sheen, puddles and contacts. `surface` is palette.js
-// GROUND_SURFACE_MATERIAL.
-export const FILM_EARTH_SURFACE = Object.freeze({ color: 0x615447, roughness: 0.93 });
-export function filmGroundSurface({ muddy = false, film = false, slate = false, surface }) {
-  if (muddy) return { color: 0xffffff, roughness: 1, metalness: 0, slate: false };
-  if (!film) return { color: surface.color, roughness: surface.roughness, metalness: surface.metalness, slate: false };
-  if (slate) return { color: surface.filmColor, roughness: surface.roughness, metalness: 0, slate: true };
-  return { ...FILM_EARTH_SURFACE, metalness: 0, slate: false };
+// The ground's material follows the film treatment rather than the published
+// maps, so the procedural surface shown while the slate maps load matches the
+// loaded ground: under film it takes the slate tint, before the film starts the
+// classic ground's. `surface` is palette.js GROUND_SURFACE_MATERIAL.
+export function filmGroundSurface({ film = false, surface }) {
+  if (!film) return { color: surface.color, roughness: surface.roughness, metalness: surface.metalness };
+  return { color: surface.filmColor, roughness: surface.roughness, metalness: 0 };
 }
 
-// `grass`, when present, is { grassColorMap, grassMaskMap, grassTile } and only ever applies
-// under `film` — patchy grass blended in away from the worn tower/root rings
-// `earthContact` already tracks, using its own lower-frequency sine field so
-// it doesn't correlate with the earth patchiness pattern. `slate` adds the
-// default slate's wetness, puddles and contacts under `film`; the earth
-// comparison's grass never takes them. `detail` is the slate's detail map: with
-// it (the authored maps) the slate also blends its two tile lookups and adds
-// the close relief; without it (the procedural surface while maps load, or
-// after a fallback) the `-p` program skips both. `contacts` is the shared
-// createSlateContacts() uniform set.
-export function configureMudShading(
-  material,
-  active,
-  quiet = false,
-  film = false,
-  grass = null,
-  { slate = false, detail = null, contacts = null } = {},
-) {
-  const useGrass = Boolean(film && grass);
-  const useWet = Boolean(film && slate && !grass);
+// The film slate's shading: wetness, puddles and contacts. `detail` is the
+// slate's detail map: with it (the authored maps) the slate also blends its two
+// tile lookups and adds the close relief; without it (the procedural surface
+// while maps load, or after a fallback) the `-p` program skips both.
+// `contacts` is the shared createSlateContacts() uniform set. Without film the
+// ground keeps Three's own program.
+export function configureGroundShading(material, film = false, { detail = null, contacts = null } = {}) {
+  const useWet = Boolean(film);
   const authored = Boolean(useWet && detail);
   const uniforms = contacts ?? createSlateContacts();
   if (authored) uniforms.slateDetail.value = detail;
@@ -262,26 +160,11 @@ export function configureMudShading(
   // terrain and its root attribute arrive; the slate then applies it last
   // (the roots' contact shade and settled soil) under a "+root" key.
   material.customProgramCacheKey = () =>
-    (film
-      ? useGrass
-        ? "moonlit-earth-grass-v1"
-        : useWet
-          ? authored
-            ? "moonlit-slate-v3"
-            : "moonlit-slate-v3-p"
-          : "moonlit-earth-v2"
-      : active
-        ? quiet
-          ? "mud-quiet-earth-v2"
-          : "mud-world-variation-v1"
-        : "ground-baseline") + (useWet && material.userData.slateRoot ? "+root" : "");
+    (useWet ? (authored ? "moonlit-slate-v3" : "moonlit-slate-v3-p") : "ground-baseline") +
+    (useWet && material.userData.slateRoot ? "+root" : "");
   material.onBeforeCompile = (shader) => {
-    if (!active && !film) return;
-    if (useGrass) {
-      shader.uniforms.grassColor = { value: grass.grassColorMap };
-      shader.uniforms.grassMask = { value: grass.grassMaskMap };
-    }
-    if (useWet) Object.assign(shader.uniforms, uniforms);
+    if (!useWet) return;
+    Object.assign(shader.uniforms, uniforms);
     // The dune field varies over 100+ world units; the film terrain's 3-unit
     // quads carry it per vertex, so fragments only read the interpolated height.
     const wetVarying = useWet ? "varying float vSlateDune;\n" : "";
@@ -293,7 +176,6 @@ export function configureMudShading(
     );
     // Hoskins' sine-free hash, so every GPU draws the same value noise.
     shader.fragmentShader =
-      (useGrass ? "uniform sampler2D grassColor;\nuniform sampler2D grassMask;\n" : "") +
       "varying vec3 vMudWorld;\n" +
       wetVarying +
       (useWet
@@ -318,7 +200,6 @@ float slateNoise(vec2 p){vec2 i=floor(p),f=fract(p);f*=f*(3.-2.*f);return mix(mi
       diffuseColor *= sampledDiffuseColor;
       #endif`,
       );
-    const tree = ESTATE.tree;
     shader.fragmentShader = shader.fragmentShader.replace(
       "#include <roughnessmap_fragment>",
       `#include <roughnessmap_fragment>
@@ -327,16 +208,7 @@ float slateNoise(vec2 p){vec2 i=floor(p),f=fract(p);f*=f*(3.-2.*f);return mix(mi
       roughnessFactor = mix(0.9, roughnessFactor, smoothstep(0.72, 0.95, mudPatch) * (1.0 - footingDry));
       diffuseColor.rgb *= 1.0 - 0.08 * footingDry;
       diffuseColor.rgb *= 0.9 + 0.15 * mudPatch;
-      ${
-        quiet && !film
-          ? `
-      float rootContact = 1.0 - smoothstep(1.8, 6.5, length(vMudWorld.xz - ${TREE_GLSL}));
-      float dryContact = max(footingDry, rootContact);
-      roughnessFactor = mix(0.94, max(0.72, roughnessFactor), smoothstep(0.84, 0.99, mudPatch) * (1.0 - dryContact));
-      diffuseColor.rgb *= 1.0 - 0.08 * rootContact;
-      `
-          : ""
-      }
+      
       ${
         film
           ? `
@@ -376,18 +248,7 @@ float slateNoise(vec2 p){vec2 i=floor(p),f=fract(p);f*=f*(3.-2.*f);return mix(mi
       `
           : ""
       }
-      ${
-        useGrass
-          ? `
-      vec2 grassUv = vMudWorld.xz / ${grass.grassTile.toFixed(3)};
-      vec3 grassColorSample = texture2D(grassColor, grassUv).rgb;
-      float grassMaskSample = texture2D(grassMask, grassUv).r;
-      float grassAmount = clamp((grassMaskSample - 0.28) / 0.48, 0.0, 1.0) * .22 * (1.0 - worn);
-      diffuseColor.rgb = mix(diffuseColor.rgb, grassColorSample, grassAmount);
-      roughnessFactor = mix(roughnessFactor, .82, grassAmount);
-      `
-          : ""
-      }
+      
       `
           : ""
       }

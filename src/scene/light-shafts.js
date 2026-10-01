@@ -1,7 +1,7 @@
 // Cinematic light shafts. A lazily imported chunk (scene.light-shafts.HASH.js):
 // index.js requests it only for high and balanced film scenes on WebGL2, never
 // for low, WebGL1 (its shaders take derivatives and its back map has two
-// channels), legacy comparisons or the static posters, and keeps no other
+// channels) or the static posters, and keeps no other
 // code for it.
 // Keep first-party imports out of this chunk: everything it needs arrives as
 // arguments, and its Three.js imports reuse the shared chunk.
@@ -253,8 +253,10 @@ export function shaftDrift(time, [amplitude, period], out = { x: 0, y: 0 }) {
 // on the crown),
 // caps it softly (shaftCeil), for the star at the streaks' peak (the dark
 // between streaks keeps its share, so a bright ray never becomes a veil), and scales it down
-// behind the name and intro (shaftText, the text's feathered box in screen
-// units): by 90%, or fully where the phone's text protection is on. shaftQuad
+// behind the name and intro (shaftText, the text's box on screen, fading out
+// round it over a fifth of the screen's smaller side, so neither the rays nor
+// the haze stop at a straight edge): by 90%, or fully where the phone's text
+// protection is on. shaftQuad
 // averages the air over its 2 x 2 pixel quad (derivatives, taken outside any
 // branch), skipping a neighbour across a depth step, so the blue-noise start
 // leaves less stipple.
@@ -286,7 +288,7 @@ float t=b*smoothstep(-soft,soft+rise,past)*(1.-smoothstep(shaftReach.x,shaftReac
 if(ground<1.)t*=max(ground,1.-smoothstep(shaftReach.z,shaftReach.z+shaftReach.w,u.z-shaftDepth(shaftTex(shaftBack,u.xy,0.).r)));
 return t;
 }
-float shaftBehindText(vec2 v){vec2 f=max(max(shaftText.xy-v,v-shaftText.zw),0.);return 1.-smoothstep(0.,.08,max(f.x,f.y));}
+float shaftBehindText(vec2 v){vec2 f=max(max(shaftText.xy-v,v-shaftText.zw),0.)*vec2(shaftSource.z,1.)/min(shaftSource.z,1.);return 1.-smoothstep(0.,.2,length(f));}
 float shaftHash(float i,float p){return fract(sin(mod(i,p)*78.233+p*.37)*43758.5453);}
 float shaftRay(vec2 v,out float r){
 vec2 d=(v-shaftSource.xy)*vec2(shaftSource.z,1.);
@@ -726,25 +728,17 @@ const SUBJECTS = [["tower", "complete-meshy-tower"], ["tree", "meshy-tree"]];
 // A light that lands mid-hold fades in over this long rather than popping.
 const RAMP_MS = 1000;
 
-const merged = (base, patch) =>
-  patch && typeof patch === "object" && !Array.isArray(patch)
-    ? Object.fromEntries([...new Set([...Object.keys(base ?? {}), ...Object.keys(patch)])].map((k) => [k, merged(base?.[k], patch[k])]))
-    : patch === undefined ? base : patch;
-
 // The subsystem index.js registers: lightShafts(rendering, cinematic,
 // cameraTour, filmScene, environmentRoot, invalidateContent). It finds the
 // subjects, the moon and the shot on screen through them and checks them each
-// frame, so a film, legacy, earth or quality change that removes or replaces a
+// frame, so a film or quality change that removes or replaces a
 // subject or its material disposes that subject's light (restoring its own
 // program first) and rebuilds it. Everything lives in the environment root's
 // frame, which a composition change moves as a whole (shaftShift).
 export function lightShafts(rendering, cinematic, tour, film, root, invalidate = () => {}) {
   const scene = rendering.homeScene, camera = rendering.camera, moonLight = rendering.lights?.sun;
   const finalPass = rendering.postprocessPipeline?.passes?.vignetteGrain?.uniforms ?? {};
-  const debug = window.BabelSite?.sceneDebug ?? null;
-  // sceneDebug review only: window.__shaftsTune overrides the constants.
-  const config = debug && window.__shaftsTune ? merged(SHAFTS, window.__shaftsTune) : SHAFTS;
-  const off = /[?&]shafts=off\b/.test(window.location?.search ?? "");
+  const config = SHAFTS;
   const idle = typeof window.requestIdleCallback === "function"
     ? (task) => window.requestIdleCallback(task, { timeout: 120 })
     : (task) => window.setTimeout(task, 16);
@@ -770,7 +764,6 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
   let disposed = false,
     running = null,
     shown = "",
-    forced = null,
     time = 0,
     frames = 0,
     filmWas = null,
@@ -778,8 +771,7 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
     blend = 1,
     rampFrom = 0,
     revealedAt = null,
-    revealFade = 0,
-    longest = 0;
+    revealFade = 0;
   // A subject mesh by name under the root, found again when the film changes
   // or a known one leaves the root or changes material, every 30th frame (one
   // replaced in place), and on every frame drawn while it is missing (one that
@@ -829,7 +821,7 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
     return { min, max, center: min.clone().add(max).multiplyScalar(0.5), size: max.clone().sub(min) };
   }
   // The terrain under a box: the film terrain's own height (its root supports
-  // included), or the analytic ground for the earth comparison.
+  // included), or the analytic ground without it.
   function terrainTop(height, min, max, heading) {
     let top = -Infinity;
     for (let i = 0; i <= 10; i++)
@@ -1027,7 +1019,7 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
     const part = !shared.shaftNoise.value ? noiseJob : ["tower", "tree"].map((subject) => parts[subject]).find((each) => each && !each.done);
     if (!part) return;
     running = part;
-    const noise = part === noiseJob, job = noise ? part.job : buildPart(part), started = performance.now();
+    const noise = part === noiseJob, job = noise ? part.job : buildPart(part);
     let resolved;
     const step = (deadline) => {
       if (disposed || (!noise && parts[part.subject] !== part)) {
@@ -1053,10 +1045,7 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
           if (done) {
             finished = true;
             if (noise) shared.shaftNoise.value = value;
-            else {
-              part.done = true;
-              part.buildMs = Math.round(performance.now() - started);
-            }
+            else part.done = true;
             break;
           }
           if (value?.then) {
@@ -1074,14 +1063,11 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
           clear(part);
           part.done = part.failed = true;
         }
-        report({ error: String(error?.message || error) });
       }
-      longest = Math.max(longest, performance.now() - begun);
       if (wait) wait.then((result) => { resolved = result; idle(step); }, () => idle(step));
       else if (!finished) idle(step);
       else {
         running = null;
-        report();
         pump();
       }
     };
@@ -1104,12 +1090,11 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
         yield link(part, set);
       }
       if (!part.relinking) part.ready = true;
-      report();
       invalidate();
     }
   }
   function link(part, set) {
-    const mesh = part.mesh, started = performance.now();
+    const mesh = part.mesh;
     // The subject's own uniform objects: show() copies a treatment's values in.
     part.uniforms = {
       ...Object.fromEntries(Object.entries(set.values).map(([name, value]) => [name, { value }])),
@@ -1129,7 +1114,6 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
     part.lights = lightKey();
     return linkPrograms(part, [part.probe, set.volume]).then((linked) => {
       part.linked = linked;
-      part.linkMs = Math.round(performance.now() - started);
     });
   }
   // Program keys count the scene's lights and whether shadows draw. Until a
@@ -1189,7 +1173,6 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
   // The treatment the shot on screen calls for, and whether the eye sits in
   // its box: then its light would fill the lens, so only the gobo stays.
   function wanted() {
-    if (forced === false || off) return "";
     const kind = shaftTreatment(cinematic.shot?.name), part = parts[cinematic.current];
     const set = kind && part?.ready ? part.sets.find((s) => s.kind === kind) : null;
     if (!set) return "";
@@ -1227,7 +1210,6 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
     }
     if (lit.length) rays(lit[0][1], true);
     gains();
-    report();
   }
   // The rays on screen radiate from the light's own place in the frame (the
   // star, or the moon's vanishing point), as crepuscular rays do: the air
@@ -1323,25 +1305,23 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
     const tint = set.gobo.color, scale = set.kind === "moon" && moonLight ? moonLight.intensity * Math.PI : 0;
     return scale ? target.set(moonLight.color.r * scale * tint[0], moonLight.color.g * scale * tint[1], moonLight.color.b * scale * tint[2]) : target.set(...tint);
   }
-  function report(extra = {}) {
-    if (!debug) return;
-    const list = Object.values(parts), status = !list.length ? "waiting" : list.every((part) => part.done) ? (list.some((part) => part.failed) ? "fallback" : "ready") : "building";
-    debug.shafts = {
-      ...debug.shafts, status, shown, level: Math.round(level * 100) / 100, blend: Math.round(blend * 100) / 100, steps: shared.shaftSteps.value, longestSliceMs: Math.round(longest * 10) / 10,
-      parts: list.map(({ subject, buildMs, linkMs, ready, linked }) => ({ subject, buildMs, linkMs, ready, linked })),
-      sets: list.flatMap((part) => part.sets.map(({ key, lo, hi, coverage }) => ({ key, lo: lo.toArray().map(Math.round), hi: hi.toArray().map(Math.round), coverage: +coverage.toFixed(3) }))),
-      ...extra,
-    };
-  }
-
   const subsystem = {
     lifecycleOrder: 30,
+    // Read-only inspection for tests: the build status, the treatment shown,
+    // its fade and dissolve levels, and the subjects found. Nothing in the page
+    // reads it.
+    get state() {
+      if (disposed) return undefined;
+      const list = Object.values(parts);
+      const status = !list.length ? "waiting" : list.every((part) => part.done) ? (list.some((part) => part.failed) ? "fallback" : "ready") : "building";
+      return { status, shown, level, blend, parts: list.map(({ subject, ready, linked }) => ({ subject, ready, linked })) };
+    },
     update({ deltaSeconds = 0, reducedMotion = false, motionPaused = false } = {}) {
-      if (disposed || off) return;
+      if (disposed) return;
       frames++;
       // Reduced motion and pauses hold the light still.
       if (!reducedMotion && !motionPaused) time += Math.min(0.1, Math.max(0, deltaSeconds));
-      // A film, legacy, earth or quality change that removes or replaces a
+      // A film or quality change that removes or replaces a
       // subject or its material disposes that subject's light and rebuilds it.
       // A tier step keeps it: the hooked programs carry both shadow states,
       // and rendering.prepareQuality() links a step's variant before it lands.
@@ -1356,7 +1336,6 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
         if (part && mesh === part.mesh && mesh.material === part.material) continue;
         teardown(subject);
         if (mesh) parts[subject] = { subject, mesh, material: mesh.material, sets: [], done: false };
-        report();
       }
       filmWas = active;
       pump();
@@ -1374,7 +1353,6 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
         level = Math.min(1, (performance.now() - rampFrom) / RAMP_MS);
         gains();
         invalidate();
-        if (level === 1) report();
       }
       // A dissolve into the shot shows its subject last (postprocess.js, the
       // subject layer's stagger), so its light follows the subject layer and
@@ -1385,7 +1363,6 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
         blend = settle;
         gains();
         invalidate();
-        report();
       }
       const want = wanted();
       if (want === shown) return;
@@ -1417,7 +1394,6 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
       high = Boolean(profile?.shadows?.enabled);
       gains();
       if (lit.length) rays(lit[0][1]);
-      report();
       invalidate();
     },
     dispose() {
@@ -1431,21 +1407,8 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
       });
       maps.clear();
       shared.shaftNoise.value?.dispose();
-      if (debug) {
-        delete debug.shafts;
-        delete debug.setShafts;
-      }
       return true;
     },
   };
-  // sceneDebug only: show or hide the light in place for same-frame comparisons.
-  if (debug) {
-    debug.setShafts = (on) => {
-      forced = on === null || on === undefined ? null : Boolean(on);
-      show(wanted());
-      invalidate();
-    };
-  }
-  report();
   return subsystem;
 }

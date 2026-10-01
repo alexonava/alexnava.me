@@ -2,14 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createStoneDetailController,
-  groundMaterialUrl,
   GROUND_DETAIL_SETTINGS,
-  paintStoneCell,
-  STONE_DETAIL_SETTINGS,
+  slateMaterialUrl,
 } from "../src/scene/stone-detail.js";
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
-function harness({ tier = "high", disabled = false, failApply = false, kinds, urlFor } = {}) {
+// A two-map fixture set; the controller itself names no maps.
+const fixtureUrl = (kind, size) => `/images/materials/stone-${kind}-${size}.webp`;
+function harness({ tier = "high", disabled = false, failApply = false, kinds = ["color", "roughness"], urlFor = fixtureUrl } = {}) {
   const requests = [],
     applied = [],
     resets = [],
@@ -167,101 +167,8 @@ test("disposing an in-flight layer prevents late canvas mutation and closes both
   assert.ok(images.every((image) => image.closed === 1));
 });
 
-test("brick detail uses matching source crops within the stone cell and leaves context state balanced", () => {
-  const operations = [];
-  const context = (kind) => ({
-    save() {
-      operations.push([kind, "save"]);
-    },
-    restore() {
-      operations.push([kind, "restore"]);
-    },
-    scale(...args) {
-      operations.push([kind, "scale", ...args]);
-    },
-    drawImage(...args) {
-      operations.push([kind, "draw", ...args]);
-    },
-  });
-  const colorCtx = context("color"),
-    roughnessCtx = context("roughness");
-  const sources = {
-    color: { width: 1024, height: 1024 },
-    roughness: { width: 1024, height: 1024 },
-  };
-  paintStoneCell({
-    colorCtx,
-    roughnessCtx,
-    sources,
-    cell: { x: 7, y: 9, width: 31, height: 47 },
-    sample: { x: 0.2, y: 0.7 },
-    scale: 0.5,
-  });
-  const draws = operations.filter((op) => op[1] === "draw");
-  assert.equal(draws[0][2], sources.color);
-  assert.equal(draws[1][2], sources.roughness);
-  assert.deepEqual(draws[0].slice(3), draws[1].slice(3));
-  assert.deepEqual(draws[0].slice(-4), [7, 9, 31, 47]);
-  assert.equal(colorCtx.globalCompositeOperation, "soft-light");
-  assert.equal(colorCtx.globalAlpha, STONE_DETAIL_SETTINGS.colorStrength);
-  for (const kind of ["color", "roughness"]) {
-    assert.deepEqual(
-      operations.filter((op) => op[0] === kind).map((op) => op[1]),
-      kind === "color" ? ["save", "draw", "restore"] : ["save", "scale", "draw", "restore"],
-    );
-  }
-});
-
-test("ground material reuses the loader with color and normal kinds keyed by name", async () => {
-  const h = harness({ kinds: ["color", "normal"], urlFor: groundMaterialUrl });
-  assert.deepEqual(
-    h.requests.map((r) => r.url),
-    ["/images/materials/ground-color-1024.webp", "/images/materials/ground-normal-1024.webp"],
-  );
-  const color = h.image(),
-    normal = h.image();
-  h.requests[0].resolve(color);
-  h.requests[1].resolve(normal);
-  await flush();
-  assert.equal(h.applied.length, 1);
-  assert.equal(h.applied[0].color, color);
-  assert.equal(h.applied[0].normal, normal);
-  assert.equal("roughness" in h.applied[0], false);
-  assert.equal(h.statuses.at(-1).status, "ready");
-  assert.equal(h.controller.applyQuality({ tier: "balanced" }), true);
-  assert.deepEqual(h.resets, [{ disposing: false }]);
-  assert.equal(h.requests.at(-1).url, "/images/materials/ground-normal-512.webp");
-  h.controller.dispose();
-});
-
-test("ground material keeps the procedural pair when the normal map fails", async () => {
-  const h = harness({ kinds: ["color", "normal"], urlFor: groundMaterialUrl });
-  const color = h.image();
-  h.requests[0].resolve(color);
-  h.requests[1].reject(new Error("404"));
-  await flush();
-  assert.equal(h.applied.length, 0);
-  assert.equal(color.closed, 1);
-  assert.equal(h.statuses.at(-1).status, "fallback");
-  h.controller.dispose();
-});
-
-test("ground detail settings stay restrained", () => {
-  assert.ok(GROUND_DETAIL_SETTINGS.repeat >= 4 && GROUND_DETAIL_SETTINGS.repeat <= 8);
+test("ground detail settings stay restrained and unhashed slate URLs keep their source names", () => {
   assert.ok(GROUND_DETAIL_SETTINGS.normalScale > 0 && GROUND_DETAIL_SETTINGS.normalScale <= 1);
+  assert.equal(slateMaterialUrl("color", 1024), "/images/materials/slate-color-1024.webp");
 });
 
-
-test("ground map preparation releases a completed color map if normal preparation fails", async () => {
-  const { createGroundDetailMaps } = await import("../src/scene/stone-detail.js");
-  let disposed = 0;
-  const color = { dispose() { disposed++; } };
-  assert.throws(() => createGroundDetailMaps({}, (_, kind) => {
-    if (kind === "normal") throw new Error("canvas unavailable");
-    return color;
-  }), /canvas unavailable/);
-  assert.equal(disposed, 1);
-  const normal = { dispose() { throw new Error("premature disposal"); } };
-  assert.deepEqual(createGroundDetailMaps({ color, normal }, source => source), { color, normal });
-  assert.equal(disposed, 1);
-});

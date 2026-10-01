@@ -160,8 +160,8 @@ test("the rock scatter waits for the reveal, film, tree and tier, loads its chun
   };
   const parent = new Group();
   const loadAsset = async () => ({ scene: fakeAsset() });
-  // Low tier and ?rocks=off never fetch the chunk.
-  for (const options of [{ tier: "low" }, { tier: "high", enabled: false }]) {
+  // The low tier (the static poster) never fetches the chunk.
+  for (const options of [{ tier: "low" }]) {
     const idle = createRockScatter({ ...options, parent, groundHeight: flat, load, loadAsset });
     idle.setFilmActive(true);
     idle.setTreeStatus("ready");

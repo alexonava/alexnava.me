@@ -128,7 +128,6 @@ const VIGNETTE_GRAIN_SHADER = {
     tPrev: { value: null },
     uProgress: { value: 1 },
     uLayered: { value: 0 },
-    uLayerView: { value: 0 },
     uStagger: { value: new Vector2(LAYER_STAGGER.step, LAYER_STAGGER.window) },
     uCodeTexel: { value: new Vector2(1, 1) },
     uPrevScale: { value: 1 },
@@ -147,7 +146,6 @@ uniform float uTextBottom;
 uniform sampler2D tPrev;
 uniform float uProgress;
 uniform float uLayered;
-uniform float uLayerView;
 uniform vec2 uStagger;
 uniform vec2 uCodeTexel;
 uniform float uPrevScale;
@@ -193,7 +191,6 @@ void main() {
 
   float textShade = smoothstep(1.0 - uTextBottom - .12, 1.0 - uTextBottom + .10, vUv.y);
   color *= 1.0 - .28 * protection * textShade;
-  if (uLayerView > 0.5) color = vec3(uProgress < 1.0 ? w : layerCode(tDiffuse, vUv));
   gl_FragColor = vec4(clamp(color, 0.0, 1.0), uLayered > 0.5 ? 1.0 : texel.a);
 }
 `,
@@ -553,10 +550,5 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
       applySamples(currentProfile);
     },
     resize,
-    // sceneDebug only: draws each pixel's layer code as grey, or its dissolve
-    // weight during a transition, for checking the stagger in captures.
-    showLayers(on) {
-      finalUniforms.uLayerView.value = on ? 1 : 0;
-    },
   };
 }

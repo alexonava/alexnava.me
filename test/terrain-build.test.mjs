@@ -15,7 +15,7 @@ import {
 } from "../src/scene/terrain-build.js";
 import { bakeRootShade, formatRootTables, latticeGround, latticeGuard, rootProbe, SHADE_PIN, shadeGuard, treeMesh } from "../tools/bake-root-shade.mjs";
 import { ESTATE, estateLantern, estatePoint } from "../src/scene/estate-layout.js";
-import { configureMudShading, DOOR_HEIGHT, SLATE_PUDDLES } from "../src/scene/mud-ground.js";
+import { configureGroundShading, DOOR_HEIGHT, SLATE_PUDDLES } from "../src/scene/mud-ground.js";
 import { TERRAIN_HORIZON } from "../src/scene/hill-silhouette.js";
 import { LANTERN_AUTHORING_HEIGHT } from "../src/scene/lantern.js";
 import { createEstateGroundDetail } from "../src/scene/estate-ground-detail.js";
@@ -306,17 +306,15 @@ const count = (text, pattern) => text.split(pattern).length - 1;
 test("the lazy ground shading extends only the slate's program, under its own key, with the puddle mirror and the root shading", () => {
   const material = new MeshStandardMaterial(), detail = { isTexture: true };
   const compile = (...args) => {
-    configureMudShading(material, ...args);
+    configureGroundShading(material, ...args);
     const shader = PHYSICAL();
     material.onBeforeCompile(shader);
     return { key: material.customProgramCacheKey(), ...shader };
   };
   const cases = [
-    [[false, true, true, null, { slate: true, detail }], "moonlit-slate-v3", true],
-    [[false, true, true, null, { slate: true }], "moonlit-slate-v3-p", false],
-    [[true, true, true], "moonlit-earth-v2", null],
-    [[true, true, false, null, { slate: true, detail }], "mud-quiet-earth-v2", null],
-    [[false], "ground-baseline", null],
+    [[true, { detail }], "moonlit-slate-v3", true],
+    [[true], "moonlit-slate-v3-p", false],
+    [[false, { detail }], "ground-baseline", null],
   ];
   for (const [args, key, authored] of cases) {
     const before = compile(...args);
@@ -402,7 +400,7 @@ test("the lazy ground shading extends only the slate's program, under its own ke
 test("the puddle mirror and the root shading apply without each other", () => {
   const material = new MeshStandardMaterial();
   for (const detail of [{ isTexture: true }, null]) {
-    configureMudShading(material, false, true, true, null, { slate: true, detail });
+    configureGroundShading(material, true, { detail });
     const program = () => { const shader = PHYSICAL(); material.onBeforeCompile(shader); return shader; };
     // Without a puddle anchor, the roots still apply; the puddle list changes nothing.
     const noWater = program();
@@ -449,7 +447,7 @@ test("the ground shading also finds its anchors in the published, compacted chun
     }
     const material = new MeshStandardMaterial();
     for (const [detail, roots] of [[{ isTexture: true }, 9], [null, 7]]) {
-      shipped["mud-ground"].configureMudShading(material, false, true, true, null, { slate: true, detail });
+      shipped["mud-ground"].configureGroundShading(material, true, { detail });
       const plain = PHYSICAL();
       material.onBeforeCompile(plain);
       assert.doesNotMatch(plain.fragmentShader, /slateAo\*slateContactGain; |float slateWet = /, "the bundle is compacted");
@@ -478,7 +476,7 @@ test("the ground shading also finds its anchors in the published, compacted chun
 // compileAsync (held until finish()) and a container that takes "is-ready".
 function linkRig({ revealed = false, parallel = true } = {}) {
   const base = groundBase(), terrain = createEarthGeometry(base, true), root = new Group(), material = new MeshStandardMaterial();
-  configureMudShading(material, false, true, true, null, { slate: true, detail: { isTexture: true } });
+  configureGroundShading(material, true, { detail: { isTexture: true } });
   const ground = new Mesh(terrain, material), tufts = createEstateGroundDetail(base);
   root.add(ground, tufts.mesh);
   const names = new Set(revealed ? ["is-ready"] : []), links = [];
@@ -1170,7 +1168,7 @@ test("the mirrored flame takes the flame module's draught: height and lean, none
 
 test("the mirrored flame is the flame's own light as the frame shows it, after the knee, at the flame's size", () => {
   const shader = PHYSICAL(), material = new MeshStandardMaterial();
-  configureMudShading(material, false, true, true, null, { slate: true, detail: { isTexture: true } });
+  configureGroundShading(material, true, { detail: { isTexture: true } });
   material.onBeforeCompile(shader);
   assert.equal(shadeSlatePuddles(shader), true);
   const fragment = shader.fragmentShader, at = (v) => String(+v.toFixed(4));
@@ -1280,7 +1278,7 @@ test("the puddle mirror's restated constants follow their sources", async () => 
   assert.deepEqual(KEY_LIGHT, [x / length, y / length, z / length]);
   // The trunk occluder stands on TREE_FOOTING + TRUNK.
   const shader = PHYSICAL(), material = new MeshStandardMaterial();
-  configureMudShading(material, false, true, true, null, { slate: true, detail: { isTexture: true } });
+  configureGroundShading(material, true, { detail: { isTexture: true } });
   material.onBeforeCompile(shader);
   shadeSlatePuddles(shader);
   const at = (v) => { const r = +v.toFixed(2); return Number.isInteger(r) ? r.toFixed(1) : String(r); };

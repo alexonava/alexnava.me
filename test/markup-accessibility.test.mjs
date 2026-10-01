@@ -284,11 +284,7 @@ test("first-paint hero, action cursors, microcopy, and short-landscape labels st
     /font-size:\s*(?:[0-9](?:\.[0-9]+)?|1[01](?:\.[0-9]+)?)px/,
     "user-facing microcopy must not fall below 12px",
   );
-  assert.match(
-    styles,
-    /@media \(orientation: landscape\) and \(max-height: 500px\)[\s\S]*?\.btn-icon-label\s*\{[^}]*opacity:\s*1;/,
-  );
-  assert.match(styles, /\.btn-icon-label\s*\{[^}]*opacity:\s*1;/);
+  assert.doesNotMatch(styles, /\.btn-icon/, "no rules for the retired icon buttons");
   // The one top-level sheet rule holds every paper's height at all widths.
   assert.match(cssRule(styles, ".panel-parchment__sheet"), /min-height:\s*370px;/);
   assert.doesNotMatch(
@@ -316,6 +312,26 @@ test("first-paint hero, action cursors, microcopy, and short-landscape labels st
     mediaBlock(styles, "(max-width: 600px)"),
     /\.panel-parchment__sheet \.panel-body\s*\{[^}]*font-size:\s*16px;/,
   );
+});
+
+test("the hero backdrop fades to transparent before every edge of its box", async () => {
+  // The owner saw a clear pane beside the name (2026-09-28): the old farthest-corner
+  // ellipse was still ~40% dark where its box clipped it on the left. A closest-side
+  // ellipse reaches its last stop at the nearest edge on each axis, so every edge
+  // (and every corner beyond it) is fully transparent.
+  const styles = await readStyles();
+  const rule = styles.match(/\n\.hero-minimal::before\s*\{([^}]*)\}/)?.[1];
+  assert.ok(rule, "the hero backdrop rule exists");
+  const gradient = rule.match(/radial-gradient\(([\s\S]*?)\);/)?.[1];
+  assert.ok(gradient, "the backdrop is a radial gradient");
+  assert.match(gradient, /^\s*closest-side\s*,/, "sized to the box's nearest sides, so it ends inside the box");
+  const stops = [...gradient.matchAll(/rgba\(7, 10, 18, ([\d.]+)\) ([\d.]+)%/g)].map(([, a, at]) => [+a, +at / 100]);
+  assert.equal(stops.at(-1).join(), "0,1", "fully transparent at the ellipse's edge");
+  assert.equal(stops[0][0], 0.58, "as dark as before right behind the name");
+  for (const [alpha, t] of stops) {
+    assert.ok(Math.abs(alpha - 0.58 * (1 - t * t) ** 2) < 0.006, `a smooth (1 - t²)² falloff at ${t}`);
+  }
+  assert.doesNotMatch(rule, /mask-image/, "no mask edge of its own");
 });
 
 test("every contact address sits inside Cloudflare email_off markers", async () => {
@@ -352,13 +368,6 @@ test("variable font faces supply real weights without the retired static face", 
   ]) {
     assert.match(styles, rule);
   }
-});
-
-test("the visible About label forwards clicks to its control", async () => {
-  const styles = await readStyles();
-  const label = styles.match(/\.btn-icon-label\s*\{[^}]*\}/)[0];
-  assert.match(label, /position:\s*absolute;/, "the label stays outside the bar's layout rectangle");
-  assert.match(label, /pointer-events:\s*auto;/);
 });
 
 test("forced colors and high-contrast modes keep system colors and the system cursor", async () => {
@@ -450,7 +459,7 @@ test("landmarks and heading levels describe the page structure", async () => {
   const html = await readIndexHtml();
   const styles = await readStyles();
   assert.match(html, /<footer class="site-footer">[\s\S]*?data-panel="about"[\s\S]*?<\/footer>/);
-  assert.match(styles, /body\.dev-mode-active > \*:not\(\.scene-shell\):not\(\.dev-mode-hud\)/);
+  assert.doesNotMatch(styles, /dev-mode/, "no developer HUD rules");
   const fallback = html.match(/<div class="scene-fallback-content"[\s\S]*?<\/main>/)[0];
   assert.deepEqual(
     [...fallback.matchAll(/<(h[1-6])>([^<]+)<\/h[1-6]>/g)].map((match) => `${match[1]} ${match[2]}`),
@@ -517,7 +526,7 @@ function contrast(foreground, background) {
 test("About is the only footer control and keeps the corner clear", async () => {
   const html = await readIndexHtml();
   const footer = html.match(/<footer class="site-footer">([\s\S]*?)<\/footer>/)?.[1] || "";
-  assert.doesNotMatch(footer, /site-copyright|&copy;|�|2026 Alex Nava/);
+  assert.doesNotMatch(footer, /site-copyright|&copy;|�|2026 Alex Nava/);
   assert.match(footer, /href="#about-text"[^>]*data-scene-fallback/);
   assert.match(footer, /data-panel="about"[^>]*aria-controls="panel-about"/);
   assert.equal((footer.match(/>About<\/span>/g) || []).length, 2);
@@ -569,7 +578,6 @@ test("footer controls keep 44px targets without blocking the scene", async () =>
 
   const forced = styles.slice(styles.indexOf("/* Windows High Contrast"));
   assert.match(forced, /a,\s*\.site-footer__about\s*\{\s*color:\s*LinkText;/);
-  assert.match(styles, /body\.dev-mode-active > \*:not\(\.scene-shell\):not\(\.dev-mode-hud\),\s*body\.dev-mode-active::after\s*\{/);
 });
 
 test("category copy stays minimal and matches its Markdown equivalent", async () => {
@@ -681,9 +689,6 @@ test("dialog polish keeps readable ink, touch cues and paper-safe controls", asy
   for (const [, size] of styles.matchAll(/\.bottom-btn--icon\s*\{[^}]*?width:\s*(\d+)px;/g)) {
     assert.ok(Number(size) >= 44 && Number(size) <= 52, `About target ${size}px`);
   }
-  const label = cssRule(styles, ".btn-icon-label");
-  assert.match(label, /color:\s*var\(--text-accent\);/);
-  assert.match(label, /font-size:\s*13px;[^}]*letter-spacing:\s*0\.14em;/);
 });
 
 test("the 404 is a centered cotton-paper sheet with dark ink", async () => {

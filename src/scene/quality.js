@@ -16,8 +16,6 @@
         orbitScrollDelta: 2.4,
         orbitTrim: 0.144,
       },
-      cloudAnchorY: -7.5,
-      countScale: 1,
       name: "compact",
       sceneOffsetY: -7.5,
       towerScale: 1,
@@ -34,8 +32,6 @@
         orbitScrollDelta: 2.4,
         orbitTrim: 0.144,
       },
-      cloudAnchorY: -7.5,
-      countScale: 1,
       name: "desktop",
       sceneOffsetY: -7.5,
       towerScale: 1,
@@ -52,18 +48,13 @@
         orbitScrollDelta: 1.7,
         orbitTrim: 0.124,
       },
-      cloudAnchorY: -6.8,
-      // Fog already hides most of the backside on portrait framing, so we trim
-      // active particle counts by 30% — fragment-shading win with no visible
-      // loss at phone viewport sizes.
-      countScale: 0.7,
       name: "portraitPhone",
       sceneOffsetY: -6.8,
       towerScale: 1,
     },
     // Phone rotated to landscape (~844x390). Viewport is very short, so the
     // camera pulls up and the look-at target lowers to keep the tower in the
-    // frame. Phone-class countScale still applies.
+    // frame.
     landscapePhone: {
       camera: {
         fov: 55.8,
@@ -76,15 +67,12 @@
         orbitScrollDelta: 1.9,
         orbitTrim: 0.144,
       },
-      cloudAnchorY: -7.2,
-      countScale: 0.7,
       name: "landscapePhone",
       sceneOffsetY: -7.2,
       towerScale: 1,
     },
     // Tablet in portrait (iPad-class, ~810x1080). Wider than a phone but still
-    // touch-primary; framing sits between portraitPhone and compact with a
-    // modest count trim for thermal headroom.
+    // touch-primary; framing sits between portraitPhone and compact.
     tabletPortrait: {
       camera: {
         fov: 48.52,
@@ -97,8 +85,6 @@
         orbitScrollDelta: 2.1,
         orbitTrim: 0.134,
       },
-      cloudAnchorY: -7.2,
-      countScale: 0.85,
       name: "tabletPortrait",
       sceneOffsetY: -7.2,
       towerScale: 1,
@@ -112,17 +98,11 @@
       anisotropy: { min: 1, max: 8 },
       textures: {
         groundSize: 1024,
-        overlaySize: 512,
-        towerWidth: 1280,
-        cloudAtlasSize: 512,
       },
       geometry: {
         skyWidthSegments: 24,
         skyHeightSegments: 14,
         circleSegments: 88,
-        overlaySegments: 80,
-        pointFieldCount: 210,
-        marbleCanvasSize: 1024,
       },
       shadows: {
         enabled: true,
@@ -151,29 +131,6 @@
         fillIntensity: 0.46,
         extraDirectional: true,
         practicalIntensityScale: 1.08,
-        towerLightIntensityScale: 1,
-      },
-      counts: {
-        orbitalGlowLayers: 3,
-        haloSprites: 90,
-        haloBands: 50,
-        haloTwisters: 28,
-        upperGlowSprites: 14,
-        midCloudTextures: 8,
-        midCloudSprites: 26,
-        groundPlantSprites: 220,
-        backdropPlantSprites: 72,
-        backdropPlantClusters: 7,
-        buttresses: 8,
-        reliefBricks: 36,
-        driftClouds: 16,
-        emberClouds: 34,
-        hazeClouds: 40,
-        pulseClouds: 4,
-        pulsePuffsPerCluster: 5,
-        plumeColumns: 18,
-        craterHaze: 7,
-        marbleVeinCount: 16,
       },
     },
     balanced: {
@@ -181,17 +138,11 @@
       anisotropy: { min: 1, max: 6 },
       textures: {
         groundSize: 768,
-        overlaySize: 384,
-        towerWidth: 768,
-        cloudAtlasSize: 384,
       },
       geometry: {
         skyWidthSegments: 20,
         skyHeightSegments: 12,
         circleSegments: 72,
-        overlaySegments: 64,
-        pointFieldCount: 160,
-        marbleCanvasSize: 512,
       },
       // Mobile and slow-CPU desktops land here. Shadows are a full extra
       // render pass of every shadow-casting object each frame — big win on
@@ -223,29 +174,6 @@
         fillIntensity: 0.28,
         extraDirectional: true,
         practicalIntensityScale: 0.84,
-        towerLightIntensityScale: 0.58,
-      },
-      counts: {
-        orbitalGlowLayers: 2,
-        haloSprites: 64,
-        haloBands: 36,
-        haloTwisters: 20,
-        upperGlowSprites: 10,
-        midCloudTextures: 6,
-        midCloudSprites: 20,
-        groundPlantSprites: 160,
-        backdropPlantSprites: 48,
-        backdropPlantClusters: 5,
-        buttresses: 7,
-        reliefBricks: 24,
-        driftClouds: 12,
-        emberClouds: 24,
-        hazeClouds: 28,
-        pulseClouds: 3,
-        pulsePuffsPerCluster: 4,
-        plumeColumns: 12,
-        craterHaze: 5,
-        marbleVeinCount: 12,
       },
     },
     low: {
@@ -254,17 +182,11 @@
       anisotropy: { min: 1, max: 4 },
       textures: {
         groundSize: 512,
-        overlaySize: 256,
-        towerWidth: 320,
-        cloudAtlasSize: 256,
       },
       geometry: {
         skyWidthSegments: 16,
         skyHeightSegments: 10,
         circleSegments: 56,
-        overlaySegments: 48,
-        pointFieldCount: 110,
-        marbleCanvasSize: 256,
       },
       shadows: {
         enabled: false,
@@ -293,29 +215,6 @@
         fillIntensity: 0,
         extraDirectional: false,
         practicalIntensityScale: 0.58,
-        towerLightIntensityScale: 0,
-      },
-      counts: {
-        orbitalGlowLayers: 1,
-        haloSprites: 40,
-        haloBands: 24,
-        haloTwisters: 14,
-        upperGlowSprites: 8,
-        midCloudTextures: 4,
-        midCloudSprites: 18,
-        groundPlantSprites: 110,
-        backdropPlantSprites: 34,
-        backdropPlantClusters: 4,
-        buttresses: 6,
-        reliefBricks: 18,
-        driftClouds: 8,
-        emberClouds: 18,
-        hazeClouds: 18,
-        pulseClouds: 2,
-        pulsePuffsPerCluster: 3,
-        plumeColumns: 9,
-        craterHaze: 4,
-        marbleVeinCount: 8,
       },
     },
   };
@@ -344,7 +243,6 @@
       postprocessSamples: profile.postprocessSamples,
       postprocessSettings: { ...profile.postprocessSettings },
       lighting: { ...profile.lighting },
-      counts: { ...profile.counts },
     };
   }
 
@@ -352,8 +250,6 @@
     const profile = SCENE_COMPOSITION_PROFILES[name] || SCENE_COMPOSITION_PROFILES.desktop;
     return {
       camera: { ...profile.camera },
-      cloudAnchorY: profile.cloudAnchorY,
-      countScale: typeof profile.countScale === "number" ? profile.countScale : 1,
       name: profile.name,
       sceneOffsetY: profile.sceneOffsetY,
       towerScale: profile.towerScale,

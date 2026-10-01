@@ -42,7 +42,7 @@ function chunkImports(text) {
 
 // Everything a default visitor's scene load fetches: the entry named by the
 // page plus every chunk reachable through static imports. Lazily imported
-// chunks (the ?sceneDebug=1 developer tools) are listed separately.
+// chunks (the film's optional effects) are listed separately.
 async function sceneScripts() {
   const entry = path.basename(await findHashedScript("scene"));
   const loaded = new Map();
@@ -74,14 +74,13 @@ test("UI bundle stays under the LCP budget", async () => {
 
 test("scene bundle stays under the deferred-payload budget", async () => {
   // The budget covers every byte a default visitor's scene load downloads:
-  // the entry and each chunk it imports statically. The ?sceneDebug=1
-  // developer tools (developer camera + OutlinePass) and the film's rock
-  // placement load on demand only. The owner raised the limit from 810 KiB to
-  // 820 KiB on 2026-09-24 for the slate v2 ground and rocks.
+  // the entry and each chunk it imports statically. The film's terrain,
+  // ranges, rocks, light shafts and lantern flame load on demand only. The
+  // owner raised the limit from 810 KiB to 820 KiB on 2026-09-24 for the slate
+  // v2 ground and rocks.
   const { loaded } = await sceneScripts();
-  // The exporter's additional lazy consumer separates the existing Pass base
-  // classes from the shared Three.js core. There is still one copy of Three.
-  assert.equal(loaded.size, 3, `scene loads ${[...loaded.keys()]}`);
+  // The entry and one shared Three.js chunk.
+  assert.equal(loaded.size, 2, `scene loads ${[...loaded.keys()]}`);
   let bytes = 0;
   for (const name of loaded.keys()) bytes += (await stat(path.join(scriptsDir, name))).size;
   const kb = bytes / 1024;
@@ -91,29 +90,25 @@ test("scene bundle stays under the deferred-payload budget", async () => {
   );
 });
 
-test("developer tools are a lazy scene chunk that default visitors never download", async () => {
+test("the film's optional effects are the only lazy chunks, and no developer tool ships", async () => {
   const { entry, loaded, lazy } = await sceneScripts();
-  // Optional effects and owner tools remain outside the initial static code.
   assert.deepEqual(
     lazy.map((name) => name.replace(/\.[a-f0-9]{8}\.js$/, "")).sort(),
-    ["scene.blender-export", "scene.developer-tools", "scene.lantern-flame", "scene.light-shafts", "scene.mountain-build", "scene.rock-build", "scene.terrain-build"],
+    ["scene.lantern-flame", "scene.light-shafts", "scene.mountain-build", "scene.rock-build", "scene.terrain-build"],
   );
-  const developerName = lazy.find((name) => name.startsWith("scene.developer-tools."));
-  const developer = await readFile(path.join(scriptsDir, developerName), "utf8");
+  // The developer camera, its outline pass and the Blender exporter are gone
+  // from every published script.
+  const names = await readdir(scriptsDir);
+  for (const name of names) {
+    assert.doesNotMatch(name, /developer-tools|blender-export/);
+    const text = await readFile(path.join(scriptsDir, name), "utf8");
+    for (const marker of [/dev-mode-hud/, /changeVisibilityOfSelectedObjects/, /Backquote/, /GLTFExporter/, /babel-blender-snapshot/, /exportBlenderSnapshot/, /__shaftsTune/]) {
+      assert.doesNotMatch(text, marker, `${marker} ships in ${name}`);
+    }
+  }
   const statics = [...loaded.values()].join("\n");
-  // Markers that survive minification: the developer HUD id and an OutlinePass method.
-  for (const marker of [/dev-mode-hud/, /changeVisibilityOfSelectedObjects/, /Backquote/]) {
-    assert.match(developer, marker);
-    assert.doesNotMatch(statics, marker, `${marker} leaked into the visitor scene payload`);
-  }
-  assert.match(loaded.get(entry), new RegExp(`import\\(\\s*"\\./${developerName.replaceAll(".", "\\.")}"\\s*\\)`));
-  // The lazy chunk reuses the visitor's Three.js instead of carrying a copy.
   const threeMarker = "Multiple instances of Three.js being imported";
-  assert.ok(!developer.includes(threeMarker), "Three.js is duplicated in the developer chunk");
   assert.equal(statics.split(threeMarker).length - 1, 1, "Three.js ships exactly once");
-  for (const chunk of chunkImports(developer).static) {
-    assert.ok(loaded.has(chunk), `developer tools import ${chunk}, which visitors do not load`);
-  }
   // A statically imported chunk evaluates before the entry's ordered imports
   // (scene-entry.js), so it must carry no first-party BabelSite registration.
   for (const [name, text] of loaded) {
@@ -135,29 +130,6 @@ test("the optional lantern flame shader stays in its own lazy chunk", async () =
   assert.doesNotMatch(app, /lantern-flame/);
   for (const dependency of chunkImports(flame).static)
     assert.ok(loaded.has(dependency), "flame reuses the already loaded Three.js instance");
-});
-
-test("Blender export and GLTFExporter stay exclusively in the explicit local action's lazy chunk", async () => {
-  const { entry, loaded, lazy } = await sceneScripts();
-  const exporterName = lazy.find((name) => name.startsWith("scene.blender-export."));
-  assert.ok(exporterName, "the editable scene exporter has its own hashed lazy chunk");
-  const exporter = await readFile(path.join(scriptsDir, exporterName), "utf8");
-  const app = await readFile(await findHashedScript("app"), "utf8");
-  const statics = [...loaded.values()].join("\n");
-  for (const marker of [/THREE\.GLTFExporter/, /babel-blender-snapshot-v1/, /Blender export requires localhost/]) {
-    assert.match(exporter, marker);
-    assert.doesNotMatch(statics, marker, `${marker} leaked into the default scene payload`);
-    assert.doesNotMatch(app, marker, `${marker} leaked into the UI payload`);
-  }
-  assert.ok(!app.includes(exporterName), "the UI must not preload the export module");
-  assert.match(loaded.get(entry), new RegExp(`import\\(\\s*"\\./${exporterName.replaceAll(".", "\\.")}"\\s*\\)`));
-  assert.ok(!exporter.includes("Multiple instances of Three.js being imported"), "the exporter reuses Three.js");
-  for (const dependency of chunkImports(exporter).static) {
-    assert.ok(loaded.has(dependency), `exporter imports a separate Three.js dependency: ${dependency}`);
-  }
-  const source = await readFile(path.join(projectRoot, "src", "scene", "index.js"), "utf8");
-  assert.match(source, /if \(qualityControls\.debug && \["localhost", "127\.0\.0\.1", "\[::1\]"\]\.includes\(window\.location\.hostname\)\)/);
-  assert.match(source, /scene\.exportBlenderSnapshot = async \(options = \{\}\) => \{[\s\S]*?await import\("\.\/blender-export\.js"\)/);
 });
 
 test("the film's rock placement is a lazy chunk that imports nothing", async () => {
@@ -236,7 +208,7 @@ test("the UI names exactly the scene entry's static chunks for modulepreload", a
   const statics = [...loaded.keys()].filter((name) => name !== entry);
   assert.ok(statics.length >= 1, "the shared Three.js chunk is a static import");
   assert.deepEqual([...named].sort(), statics.map((name) => `/scripts/${name}`).sort());
-  // The page names the entry; the developer chunk is never preloaded.
+  // The page names the entry; no lazy chunk is preloaded.
   for (const name of [entry, ...lazy]) assert.ok(!app.includes(name), `${name} is named by the UI`);
   assert.match(app, /modulepreload/);
 });
@@ -268,97 +240,54 @@ test("Three.js does not leak into the UI bundle", async () => {
   assert.doesNotMatch(text, /gl_Position/, "app bundle contains Three.js GLSL");
 });
 
-test("authored material requests stay inside the deferred scene bundle", async () => {
+test("the scene requests only the slate's material maps, and only from the deferred bundle", async () => {
   const app = await readFile(await findHashedScript("app"), "utf8");
   const scene = await readSceneStatic();
-  assert.doesNotMatch(app, /images\/materials\/stone-/);
-  assert.match(scene, /images\/materials\/stone-/);
-  assert.doesNotMatch(app, /images\/materials\/ground-/);
-  assert.match(scene, /images\/materials\/ground-/);
+  assert.doesNotMatch(app, /images\/materials\//);
+  assert.match(scene, /images\/materials\/slate-/);
+  for (const prefix of ["stone", "ground", "earth", "grass"]) {
+    assert.doesNotMatch(scene, new RegExp(`images/materials/${prefix}-`), prefix);
+  }
+  assert.doesNotMatch(scene, /stone-brick\.bin|stone-tread\.bin|BRK1/);
+  // The retired maps are gone from the source and the published output.
+  const materials = await readdir(path.join(projectRoot, "images", "materials"));
+  assert.ok(materials.every((name) => name.startsWith("slate-")), materials.join(", "));
+  const published = await readdir(path.join(distDir, "images", "materials"));
+  assert.ok(published.every((name) => /^slate-[\w-]+\.[a-f0-9]{8}\.webp$/.test(name)), published.join(", "));
 });
 
-test("authored material pairs fit transfer budgets and are copied intact into dist", async () => {
-  for (const [prefix, kinds, budgets] of [
-    ["stone", ["color", "roughness"], { 1024: 750 * 1024, 512: 256 * 1024 }],
-    ["ground", ["color", "normal"], { 1024: 640 * 1024, 512: 224 * 1024 }],
-  ]) {
-    for (const [size, budget] of Object.entries(budgets)) {
-      let bytes = 0;
-      for (const kind of kinds) {
-        const relative = path.join("images", "materials", `${prefix}-${kind}-${size}.webp`);
-        const source = await readFile(path.join(projectRoot, relative));
-        const published = await readFile(path.join(distDir, relative));
-        assert.ok(source.length > 0);
-        assert.equal(source.toString("ascii", 8, 12), "WEBP", `${relative} must be WebP`);
-        assert.deepEqual(published, source);
-        bytes += source.length;
-      }
-      assert.ok(bytes <= budget, `${size} ${prefix} pair is ${bytes} bytes; budget ${budget}`);
+test("dist/images publishes fingerprinted sources only under their hashed names", async () => {
+  async function files(directory, prefix = "") {
+    const out = [];
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) out.push(...(await files(path.join(directory, entry.name), relative)));
+      else out.push(relative);
+    }
+    return out;
+  }
+  const sources = await files(path.join(projectRoot, "images"));
+  const published = new Set(await files(path.join(distDir, "images")));
+  assert.ok(sources.length > 0);
+  for (const source of sources) {
+    assert.ok(!published.has(source), `${source} is also published under its plain name`);
+    const bytes = await readFile(path.join(projectRoot, "images", source));
+    const hash = createHash("sha256").update(bytes).digest("hex").slice(0, 8);
+    const hashed = source.replace(/\.(webp|glb)$/, `.${hash}.$1`);
+    assert.ok(published.has(hashed), `${hashed} is published`);
+  }
+  for (const name of published) assert.match(name, /\.[a-f0-9]{8}\.(webp|glb)$/, name);
+  // No page or stylesheet names a plain source path.
+  const css = (await readdir(path.join(distDir, "css"))).map((name) => path.join(distDir, "css", name));
+  for (const file of [path.join(distDir, "index.html"), path.join(distDir, "404.html"), ...css]) {
+    const text = await readFile(file, "utf8");
+    for (const url of text.match(/\/images\/[\w./-]+/g) ?? []) {
+      assert.match(url, /\.[a-f0-9]{8}\.(webp|glb)$/, `${path.basename(file)} names ${url}`);
     }
   }
 });
 
-test("construction geometry requests and BRK1 decoder stay inside the deferred scene bundle", async () => {
-  const app = await readFile(await findHashedScript("app"), "utf8");
-  const scene = await readSceneStatic();
-  for (const marker of [
-    /images\/materials\/stone-brick\.bin/,
-    /images\/materials\/stone-tread\.bin/,
-    /Invalid BRK1 brick geometry/,
-  ]) {
-    assert.doesNotMatch(app, marker, "geometry loading or decoding leaked into the UI bundle");
-    assert.match(scene, marker, "deferred scene is missing a geometry loader or decoder");
-  }
-});
-
-test("shared brick and tread fit the combined detail transfer budgets", async () => {
-  const relative = path.join("images", "materials", "stone-brick.bin");
-  const source = await readFile(path.join(projectRoot, relative));
-  const published = await readFile(path.join(distDir, relative));
-  assert.equal(source.toString("ascii", 0, 4), "BRK1");
-  assert.ok(
-    source.length > 8 && source.length < 48 * 1024,
-    `brick binary is ${source.length} bytes`,
-  );
-  assert.deepEqual(published, source);
-  const treadBytes = (await stat(path.join(distDir, "images", "materials", "stone-tread.bin")))
-    .size;
-
-  for (const [size, budget] of [
-    [1024, 750 * 1024],
-    [512, 256 * 1024],
-  ]) {
-    let bytes = source.length + treadBytes;
-    for (const kind of ["color", "roughness"]) {
-      const map = path.join(distDir, "images", "materials", `stone-${kind}-${size}.webp`);
-      bytes += (await stat(map)).size;
-    }
-    assert.ok(
-      bytes <= budget,
-      `${size} maps plus shared brick and tread are ${bytes} bytes; budget ${budget}`,
-    );
-  }
-});
-
-test("the shared tread is at most 200 triangles and crown reuse adds no geometry asset", async () => {
-  const relative = path.join("images", "materials", "stone-tread.bin");
-  const source = await readFile(path.join(projectRoot, relative));
-  assert.ok(source.length >= 8 && source.length <= 9608, `tread is ${source.length} bytes`);
-  assert.equal(source.toString("ascii", 0, 4), "BRK1");
-  const vertices = source.readUInt32LE(4);
-  assert.ok(
-    vertices > 0 && vertices % 3 === 0 && vertices <= 600,
-    `${vertices / 3} tread triangles`,
-  );
-  assert.equal(source.length, 8 + vertices * 16, "BRK1 attributes must match the vertex count");
-  assert.deepEqual(await readFile(path.join(distDir, relative)), source);
-  const binaries = (await readdir(path.join(distDir, "images", "materials"))).filter((name) =>
-    /\.(bin|glb|gltf)$/i.test(name),
-  );
-  assert.deepEqual(binaries.sort(), ["stone-brick.bin", "stone-tread.bin"]);
-});
-
-test("published responsive posters use content hashes and retain intact compatibility copies", async () => {
+test("published responsive posters use content hashes, without plain-name copies", async () => {
   const html = await readFile(path.join(distDir, "index.html"), "utf8");
   const expectedNames = [];
   for (const [orientation, attribute] of [
@@ -372,7 +301,7 @@ test("published responsive posters use content hashes and retain intact compatib
     expectedNames.push(hashedName);
     assert.ok(html.includes(`${attribute}="/images/${hashedName}"`), "first paint references the current responsive poster hash");
     assert.deepEqual(await readFile(path.join(distDir, "images", hashedName)), source);
-    assert.deepEqual(await readFile(path.join(distDir, "images", stableName)), source);
+    await assert.rejects(readFile(path.join(distDir, "images", stableName)), { code: "ENOENT" });
   }
   const emittedNames = (await readdir(path.join(distDir, "images"))).filter((name) =>
     /^scene-poster-(landscape|portrait)\.[a-f0-9]{8}\.webp$/.test(name),
@@ -384,8 +313,10 @@ test("published responsive posters use content hashes and retain intact compatib
 test("the build refuses a shared scene chunk that would carry first-party modules", async () => {
   const fixture = await mkdtemp(path.join(scratchRoot, "shared-chunk-build-"));
   try {
-    // The sanitized static payload supplies the model files the manifest reads.
+    // The sanitized static payload, plus the source images (models, maps and
+    // posters) the build hashes, which dist carries only under hashed names.
     await cp(distDir, fixture, { recursive: true });
+    await cp(path.join(projectRoot, "images"), path.join(fixture, "images"), { recursive: true });
     await cp(path.join(projectRoot, "build.mjs"), path.join(fixture, "build.mjs"));
     await cp(path.join(projectRoot, "tools"), path.join(fixture, "tools"), { recursive: true });
     await mkdir(path.join(fixture, "src"));
@@ -418,9 +349,11 @@ test("changing only fixture poster bytes changes only that poster URL", async ()
   const sourcePath = path.join(projectRoot, "images", "scene-poster-landscape.webp");
   const sourceBefore = await readFile(sourcePath);
   try {
-    // Reuse the sanitized static payload; only the actual build script and its
-    // unrewritten HTML/CSS inputs are copied from source. No user data or deps.
+    // Reuse the sanitized static payload; only the actual build script, its
+    // unrewritten HTML/CSS inputs and the source images are copied from
+    // source. No user data or deps.
     await cp(distDir, fixture, { recursive: true });
+    await cp(path.join(projectRoot, "images"), path.join(fixture, "images"), { recursive: true });
     for (const file of ["build.mjs", "index.html", "404.html", "styles.css", "site-agents.md"]) {
       await cp(path.join(projectRoot, file), path.join(fixture, file));
     }
@@ -474,7 +407,7 @@ test("architecture stays deferred and each selected model fits both tier budgets
     ["balanced", 3 * 1024 * 1024],
   ]) {
     const bytesByRole = {};
-    for (const role of ["stairs", "wall", "base", "crown", "tower", "tree"]) {
+    for (const role of ["tower", "tree"]) {
       const name = role + "-" + tier + ".glb";
       const source = await readFile(path.join(projectRoot, "images", "architecture", name));
       const hash = createHash("sha256").update(source).digest("hex").slice(0, 8);
@@ -507,61 +440,21 @@ test("architecture stays deferred and each selected model fits both tier budgets
         assert.ok(Number.isInteger(primitive.attributes[semantic]));
       bytesByRole[role] = source.length;
     }
-    // The authored ground pair loads alongside either supplied model set.
-    const groundSize = tier === "high" ? 1024 : 512;
+    // The slate maps load alongside the models.
+    const slateSize = tier === "high" ? 1024 : 512;
     let groundBytes = 0;
-    for (const kind of ["color", "normal"]) {
-      const file = path.join(projectRoot, "images", "materials", `ground-${kind}-${groundSize}.webp`);
-      groundBytes += (await stat(file)).size;
+    for (const file of [`slate-color-${slateSize}.webp`, `slate-normal-${slateSize}.webp`, "slate-detail-512.webp"]) {
+      groundBytes += (await stat(path.join(projectRoot, "images", "materials", file))).size;
     }
-    for (const [model, roles] of Object.entries({
-      assembled: ["stairs", "wall", "base", "crown", "tree"],
-      complete: ["tower", "tree"],
-    })) {
-      const total = roles.reduce((sum, role) => sum + bytesByRole[role], groundBytes);
-      assert.ok(
-        total <= limit,
-        tier + " " + model + " architecture plus ground is " + total + " bytes; budget " + limit,
-      );
-    }
+    const total = bytesByRole.tower + bytesByRole.tree + groundBytes;
+    assert.ok(total <= limit, tier + " architecture plus ground is " + total + " bytes; budget " + limit);
   }
 });
 
-
-test("the ?ground=earth comparison's earth maps are deferred and fit both material and complete-scene budgets", async () => {
-  const app=await readFile(await findHashedScript("app"),"utf8");assert.doesNotMatch(app,/earth-(?:color|normal|roughness)/);
-  for(const [tier,size,limit,totalLimit] of [["high",1024,600*1024,6*1024*1024],["balanced",512,200*1024,3*1024*1024]]) {
-    let bytes=0;
-    for(const kind of ["color","normal","roughness"]) {
-      const file=`earth-${kind}-${size}.webp`,source=await readFile(path.join(projectRoot,"images","materials",file));
-      assert.equal(source.toString("ascii",8,12),"WEBP");assert.deepEqual(await readFile(path.join(distDir,"images","materials",file)),source);bytes+=source.length;
-    }
-    assert.ok(bytes<=limit,`${tier} earth: ${bytes}`);
-    for(const role of ["tower","tree"])bytes+=(await stat(path.join(projectRoot,"images","architecture",`${role}-${tier}.glb`))).size;
-    assert.ok(bytes<=totalLimit,`${tier} scene: ${bytes}`);
-  }
-});
-
-test("the ?ground=earth comparison's grass color/mask maps are deferred and fit both their own and the complete-scene budgets", async () => {
-  const app=await readFile(await findHashedScript("app"),"utf8");assert.doesNotMatch(app,/grass-(?:color|mask)/);
-  for(const [tier,size,limit,totalLimit] of [["high",1024,250*1024,6*1024*1024],["balanced",512,90*1024,3*1024*1024]]) {
-    let bytes=0;
-    for(const kind of ["color","mask"]) {
-      const file=`grass-${kind}-${size}.webp`,source=await readFile(path.join(projectRoot,"images","materials",file));
-      assert.equal(source.toString("ascii",8,12),"WEBP");assert.deepEqual(await readFile(path.join(distDir,"images","materials",file)),source);bytes+=source.length;
-    }
-    assert.ok(bytes<=limit,`${tier} grass: ${bytes}`);
-    for(const role of ["tower","tree"])bytes+=(await stat(path.join(projectRoot,"images","architecture",`${role}-${tier}.glb`))).size;
-    for(const kind of ["color","normal","roughness"])bytes+=(await stat(path.join(projectRoot,"images","materials",`earth-${kind}-${size}.webp`))).size;
-    assert.ok(bytes<=totalLimit,`${tier} scene incl. earth+grass: ${bytes}`);
-  }
-});
 
 test("the default film slate set and rocks are deferred and fit their own and the complete-scene budgets", async () => {
-  // Default film pages request the slate's color, normal and shared detail map,
-  // and on high and balanced the two rock models (the ?ground=earth comparison
-  // keeps the earth and grass maps budgeted above). Only the scene entry names
-  // their hashed copies.
+  // Film pages request the slate's color, normal and shared detail map, and
+  // the two rock models. Only the scene entry names their hashed copies.
   const app = await readFile(await findHashedScript("app"), "utf8");
   const { entry, loaded } = await sceneScripts();
   assert.doesNotMatch(app, /slate-|lichen-rock|weathered-stone|lantern-high|lantern-balanced/);
@@ -603,38 +496,29 @@ test("homepage discovers the deferred scene while its UI excludes the renderer a
   assert.doesNotMatch(app, /gl_Position|WebGLRenderer|GLTFLoader|Invalid architecture GLB/);
 });
 
-test("retired About case assets remain intact while About uses real text", async () => {
+test("the retired About case images are gone while About uses real text", async () => {
   const html = await readFile(path.join(distDir, "index.html"), "utf8");
-  let total = 0;
-  for (const name of ["nav-about", "nav-about-active"]) {
-    const bytes = await readFile(path.join(projectRoot, "images", `${name}.webp`));
-    const hash = createHash("sha256").update(bytes).digest("hex").slice(0, 8);
-    total += bytes.length;
-    const hashedName = `${name}.${hash}.webp`;
-    assert.ok(!html.includes(`src="/images/${hashedName}"`));
-    assert.ok(!html.includes(`src="/images/${name}.webp"`));
-    assert.deepEqual(await readFile(path.join(distDir, "images", hashedName)), bytes);
+  for (const directory of [path.join(projectRoot, "images"), path.join(distDir, "images")]) {
+    assert.ok(!(await readdir(directory)).some((name) => name.startsWith("nav-about")), directory);
   }
-  assert.ok(total <= 80 * 1024);
+  assert.doesNotMatch(html, /nav-about/);
   assert.match(html, /class="about-link__label">About<\/span>/);
   assert.doesNotMatch(html, /nav-contact|Leather_Envelope|Stylized_3D/);
 });
 
-test("paper textures and category vignettes are fingerprinted and stay under 200 KiB combined", async () => {
+test("paper textures and category vignettes are fingerprinted", async () => {
   const cssDir = path.join(distDir, "css");
   const cssName = (await readdir(cssDir)).find((name) => /^styles\.[a-f0-9]{8}\.css$/.test(name));
   const css = await readFile(path.join(cssDir, cssName), "utf8");
   assert.equal(cssName, `styles.${createHash("sha256").update(css).digest("hex").slice(0, 8)}.css`);
-  let total = 0;
+  // Their 200 KiB budget is held in paper-vignettes.test.mjs.
   for (const name of ["paper-grain", "paper-edge", "paper-vignette-profile", "paper-vignette-experience", "paper-vignette-contact"]) {
     const source = await readFile(path.join(projectRoot, "images", `${name}.webp`));
-    total += source.length;
     const hash = createHash("sha256").update(source).digest("hex").slice(0, 8);
     assert.ok(css.includes(`/images/${name}.${hash}.webp`));
     assert.ok(!css.includes(`/images/${name}.webp`));
     assert.deepEqual(await readFile(path.join(distDir, "images", `${name}.${hash}.webp`)), source);
   }
-  assert.ok(total <= 200 * 1024, `${total} bytes of paper textures exceeds budget`);
 });
 
 

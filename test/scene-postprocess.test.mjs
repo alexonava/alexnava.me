@@ -665,10 +665,9 @@ test("film always draws the final pass, staggered and opaque; outside film it is
   assert.ok(Object.isFrozen(LAYER_STAGGER));
   // The final pass writes opaque alpha only in film; elsewhere it passes alpha through.
   assert.match(pass.material.fragmentShader, /gl_FragColor = vec4\(clamp\(color, 0\.0, 1\.0\), uLayered > 0\.5 \? 1\.0 : texel\.a\);/);
-  pipeline.showLayers(true);
-  assert.equal(pass.uniforms.uLayerView.value, 1);
-  pipeline.showLayers(false);
-  assert.equal(pass.uniforms.uLayerView.value, 0);
+  // No grey layer-code view: the final pass has no debug uniform.
+  assert.equal("showLayers" in pipeline, false);
+  assert.equal(pass.uniforms.uLayerView, undefined);
   pipeline.dispose();
 });
 

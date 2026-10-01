@@ -11,9 +11,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // The UI entry stays small for first paint. The scene entry carries Three.js
 // and the tower runtime, then main.js loads it after the hero has rendered.
 // The scene is an ES module split by esbuild: code reached only through a
-// dynamic import() (the ?sceneDebug=1 developer tools) becomes a lazy chunk,
-// and code it shares with the entry (Three.js) becomes one static chunk that
-// the entry imports. Every chunk keeps the scene.*.js prefix and a content hash.
+// dynamic import() (the film's terrain, ranges, rocks, light shafts and lantern
+// flame) becomes a lazy chunk, and code it shares with the entry (Three.js)
+// becomes one static chunk that the entry imports. Every chunk keeps the scene.*.js prefix and a content hash.
 // The scene builds first: the UI names the scene's static chunks so main.js
 // can preload them beside the entry (see buildScripts).
 const APP_ENTRY = "src/app.js";
@@ -59,7 +59,16 @@ const FINGERPRINTED_PAPER = [
   "estate-map-desktop.webp",
   "estate-map-portrait.webp",
 ];
-const FINGERPRINTED_ICONS = ["nav-about.webp", "nav-about-active.webp"];
+// Sources the build publishes only as hashed copies (path relative to the
+// project root, any separator).
+export function isFingerprintedSource(file) {
+  const path = file.split(sep).join("/");
+  return (
+    [...FINGERPRINTED_POSTERS, ...FINGERPRINTED_PAPER].some((name) => path === `images/${name}`) ||
+    /^images\/architecture\/[^/]+\.glb$/.test(path) ||
+    /^images\/materials\/slate-[^/]+\.webp$/.test(path)
+  );
+}
 export const BUILD_INPUT_FILES = [
   ...STATIC_FILES,
   ...STATIC_FILE_ALIASES.map(({ source }) => source),
@@ -116,7 +125,7 @@ async function architectureAssetManifest() {
   const files = [];
   for (const tier of ["high", "balanced"]) {
     urls[tier] = {};
-    for (const role of ["stairs", "wall", "base", "crown", "tower", "tree", "lantern", "lichen-rock", "weathered-stone"]) {
+    for (const role of ["tower", "tree", "lantern", "lichen-rock", "weathered-stone"]) {
       const name = role + "-" + tier + ".glb";
       const bytes = await readFile(join(__dirname, "images", "architecture", name));
       const hashedName = name.replace(".glb", "." + sha8(bytes) + ".glb");
@@ -127,9 +136,8 @@ async function architectureAssetManifest() {
   return { urls, files };
 }
 
-// The film slate's maps (images/materials/slate-*.webp) get hashed copies too:
-// { stable name: hashed URL }, which the scene entry reads (stone-detail.js).
-// The other material maps keep their stable, revalidated URLs.
+// The film slate's maps (images/materials/slate-*.webp) are hashed too:
+// { source name: hashed URL }, which the scene entry reads (stone-detail.js).
 const SLATE_MAPS = ["color-1024", "normal-1024", "color-512", "normal-512", "detail-512"];
 async function materialAssetManifest() {
   const urls = {};
@@ -250,7 +258,7 @@ async function buildScriptBundle({ basename, entry, split }, architecture, mater
 // static import (the shared Three.js chunk) only after downloading and parsing
 // the whole entry, one round trip later; the UI bundle therefore names those
 // chunks, and main.js adds a modulepreload for each beside the entry script.
-// The lazily imported developer chunk is not named. Returns [{ script, chunks }].
+// The lazily imported chunks are not named. Returns [{ script, chunks }].
 async function buildScripts(architecture, materials) {
   const built = [];
   let sceneModulePreloads;
@@ -294,7 +302,7 @@ async function writePayload(DIST_DIR) {
   const architecture = await architectureAssetManifest();
   const materials = await materialAssetManifest();
   const fingerprintedImages = new Map();
-  for (const name of [...FINGERPRINTED_POSTERS, ...FINGERPRINTED_ICONS, ...FINGERPRINTED_PAPER]) {
+  for (const name of [...FINGERPRINTED_POSTERS, ...FINGERPRINTED_PAPER]) {
     fingerprintedImages.set(name, await readFile(join(__dirname, "images", name)));
   }
 
@@ -347,22 +355,32 @@ async function writePayload(DIST_DIR) {
       copyFile(join(__dirname, source), join(DIST_DIR, destination)),
     ),
   );
+  // Fingerprinted sources publish only under their hashed names: the posters,
+  // paper and estate maps, every model and the slate maps. Nothing the build
+  // writes names their source paths, so no plain copy is kept.
   await Promise.all(
-    STATIC_DIRS.map((dir) => cp(join(__dirname, dir), join(DIST_DIR, dir), { recursive: true })),
+    STATIC_DIRS.map((dir) =>
+      cp(join(__dirname, dir), join(DIST_DIR, dir), {
+        recursive: true,
+        filter: (source) => !isFingerprintedSource(relative(__dirname, source)),
+      }),
+    ),
   );
 
-  // Model revisions receive a new URL without invalidating the accepted classic assets.
+  // A model or map revision receives a new URL.
+  await mkdir(join(DIST_DIR, "images", "architecture"), { recursive: true });
   for (const { hashedName, bytes } of architecture.files) {
     await writeFile(join(DIST_DIR, "images", "architecture", hashedName), bytes);
   }
+  await mkdir(join(DIST_DIR, "images", "materials"), { recursive: true });
   for (const { hashedName, bytes } of materials.files) {
     await writeFile(join(DIST_DIR, "images", "materials", hashedName), bytes);
   }
 
-  // Keep the stable copies for older HTML while new pages receive a fresh URL
-  // whenever poster or navigation icon bytes change, independent of the browser's image cache.
+  // New pages receive a fresh URL whenever poster or paper bytes change,
+  // independent of the browser's image cache.
   const posterPaths = {};
-  for (const name of [...FINGERPRINTED_POSTERS, ...FINGERPRINTED_ICONS, ...FINGERPRINTED_PAPER]) {
+  for (const name of [...FINGERPRINTED_POSTERS, ...FINGERPRINTED_PAPER]) {
     const bytes = fingerprintedImages.get(name);
     const hashedName = name.replace(/\.webp$/, `.${sha8(bytes)}.webp`);
     await writeFile(join(DIST_DIR, "images", hashedName), bytes);

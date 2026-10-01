@@ -90,10 +90,6 @@ test("environment creates growth only after film activation and owns its lifecyc
   assert.ok(mesh?.visible);
   environment.resize({ composition: { sceneOffsetY: -7.5 } });
   assert.equal(mesh.getWorldPosition(new Vector3()).y, -7.5);
-  const initial = mesh.geometry.attributes.position.array.slice();
-  environment.update({ elapsedSeconds: 20, reducedMotion: false });
-  environment.update({ elapsedSeconds: 90, reducedMotion: true });
-  assert.deepEqual(mesh.geometry.attributes.position.array, initial);
   environment.setFilmTreatment(false);
   assert.equal(mesh.visible, false);
   environment.setFilmTreatment(true);
@@ -104,15 +100,13 @@ test("environment creates growth only after film activation and owns its lifecyc
   assert.equal(mesh.parent, null);
   assert.equal(environment.setFilmTreatment(true), false);
 });
-test("film suppresses legacy cloud cards and restores baseline sky compositing and visibility", () => {
+test("film suppresses borrowed cloud cards and restores baseline sky compositing and visibility", () => {
   const ground = new Mesh(new BoxGeometry(), new MeshStandardMaterial()),
     parent = new Group();
   const atmosphere = createSceneAtmosphere({ parent, profile });
-  const group = atmosphere.registerCloudGroup(new Group());
   const cloud = new Group(),
     hiddenCloud = new Group();
   hiddenCloud.visible = false;
-  group.add(cloud, hiddenCloud);
   const sky = {
     transparent: true,
     uniforms: { sunColor: { value: new Color(0x334455) }, uFilm: { value: 0 } },
@@ -123,10 +117,8 @@ test("film suppresses legacy cloud cards and restores baseline sky compositing a
   film.setActive(true);
   assert.equal(sky.uniforms.uFilm.value, 1);
   assert.equal(sky.transparent, false);
-  assert.equal(group.visible, false);
   atmosphere.setClouds(true);
   atmosphere.update();
-  assert.equal(group.visible, false);
   cloud.visible = true;
   film.finishFrame(null, new Vector3(), null);
   assert.equal(cloud.visible, false);
@@ -137,14 +129,9 @@ test("film suppresses legacy cloud cards and restores baseline sky compositing a
   film.setActive(false);
   assert.equal(sky.uniforms.uFilm.value, 0);
   assert.equal(sky.transparent, true);
-  assert.equal(group.visible, true);
   assert.equal(later.visible, true);
   assert.equal(hiddenCloud.visible, false);
   assert.equal(sky.uniforms.sunColor.value.getHex(), 0x334455);
-  film.setActive(true);
-  atmosphere.setClouds(false);
-  film.setActive(false);
-  assert.equal(group.visible, false, "manual cloud preference survives a film round trip");
   film.setActive(true);
   film.dispose();
   assert.equal(sky.transparent, true);

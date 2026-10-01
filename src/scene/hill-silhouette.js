@@ -156,7 +156,7 @@ const perRange = (values) =>
 // Film mountains: vertices ride on the camera (world = cameraPosition + position), as
 // the starfield does, so every shot and viewport gets a known backdrop. The ranges
 // (mountain-build.js) carry per vertex aTerrain (degrees below the column's crest,
-// range, a coarse vertex shade for the Blender export, massif height) and aForm (the
+// range, a coarse vertex shade, massif height) and aForm (the
 // face's turn along the ring, its lean to the viewer, convex/concave fold, and the
 // nearer ranges' skyline in degrees).
 // Each pixel is lit by the moon key: faces turn toward or away from it (a crisp,
@@ -328,8 +328,7 @@ function emptyRanges() {
 
 // The baseline keeps the South Downs ring; film swaps in the camera-centred ranges.
 // Their geometry is the lazy mountain-build.js chunk, requested only when the film
-// treatment is on at a visible quality (never on low; legacy: true never requests
-// it at all): it builds in short slices and lands at once where the change cannot
+// treatment is on at a visible quality (never on low): it builds in short slices and lands at once where the change cannot
 // show mid-shot (before the reveal, on a tour cut, or while the tour is not
 // running), otherwise fading in over the sky (0.45 s under the canvas's fade-in,
 // 1.8 s mid-shot; mountain-build.js entrance()). Until then, or if the chunk
@@ -344,7 +343,6 @@ export function createHillSilhouette({
   rendering = null,
   tour = null,
   invalidate = () => {},
-  legacy = false,
   onStatus = () => {},
   load = () => import("./mountain-build.js"),
   ...overrides
@@ -364,7 +362,7 @@ export function createHillSilhouette({
     pending = null,
     mountainShading = null;
   function request() {
-    if (pending || disposed || legacy || low || !active) return;
+    if (pending || disposed || low || !active) return;
     onStatus("loading");
     pending = load()
       .then(({ buildMountains }) => buildMountains({ rendering, tour, cancelled: () => disposed, mesh }))

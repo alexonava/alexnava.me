@@ -65,13 +65,11 @@ test("CSS asset URLs and bytes are portable across checkout line endings", async
       "paper-vignette-contact",
       "estate-map-desktop",
       "estate-map-portrait",
-      "nav-about",
-      "nav-about-active",
     ]) {
       await writeFile(path.join(fixture, "images", `${name}.webp`), paper);
     }
     for (const tier of ["high", "balanced"]) {
-      for (const role of ["stairs", "wall", "base", "crown", "tower", "tree", "lantern", "lichen-rock", "weathered-stone"]) {
+      for (const role of ["tower", "tree", "lantern", "lichen-rock", "weathered-stone"]) {
         await writeFile(path.join(fixture, "images", "architecture", `${role}-${tier}.glb`), paper);
       }
     }
@@ -105,13 +103,13 @@ test("CSS asset URLs and bytes are portable across checkout line endings", async
     assert.deepEqual(crlf, lf, "LF and CRLF checkouts must publish identical CSS bytes and URLs");
     assert.ok(!crlf.bytes.includes(13), "emitted CSS must contain only LF line endings");
     assert.ok(crlf.bytes.toString("utf8").includes(`/images/paper-grain.${hash(paper)}.webp`));
-    for (const name of ["paper-grain.webp", `paper-grain.${hash(paper)}.webp`]) {
-      assert.deepEqual(
-        await readFile(path.join(fixture, "dist", "images", name)),
-        paper,
-        "binary artwork, including CRLF bytes, must remain unchanged",
-      );
-    }
+    assert.deepEqual(
+      await readFile(path.join(fixture, "dist", "images", `paper-grain.${hash(paper)}.webp`)),
+      paper,
+      "binary artwork, including CRLF bytes, must remain unchanged",
+    );
+    // A fingerprinted source is published only under its hashed name.
+    await assert.rejects(readFile(path.join(fixture, "dist", "images", "paper-grain.webp")), { code: "ENOENT" });
 
     assert.ok(lf.bytes.length < Buffer.byteLength(lfSource), "the stylesheet is minified");
     assert.equal(

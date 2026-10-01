@@ -160,9 +160,9 @@
 
     return new Promise((resolve, reject) => {
       const script = document.createElement("script");
-      // The scene entry is an ES module: it imports its shared Three.js chunk
-      // and, for ?sceneDebug=1 only, the developer tools. A module script is
-      // deferred by nature; error also fires when an imported chunk fails.
+      // The scene entry is an ES module: it imports its shared Three.js chunk.
+      // A module script is deferred by nature; error also fires when an
+      // imported chunk fails.
       script.type = "module";
       script.src = src;
       script.dataset.dynamicSrc = src;
@@ -204,17 +204,31 @@
     });
   }
 
+  // The scene's startup tier, from the probe the capability gate already ran
+  // (quality.js is in this bundle), or null when the probe left the limits
+  // unknown: the scene then probes and decides itself.
+  function readStartupTier(capabilities) {
+    const scene = site.scene || {};
+    try {
+      const caps = scene.qualityCapsFromProbe?.(capabilities);
+      if (!caps || typeof scene.createSceneQualityState !== "function") return null;
+      return scene.createSceneQualityState({ caps }).initialTier || null;
+    } catch {
+      return null;
+    }
+  }
+
   // The scene used to request its models only after its first frame. Once the
   // live scene is chosen, request the startup tier's tower and tree beside the
   // bundle. architecture-assets.js takes a response whose URL matches once and
   // releases the rest.
   let modelPrefetchStarted = false;
-  function prefetchArchitectureModels(capabilities) {
+  function prefetchArchitectureModels(tier) {
     if (modelPrefetchStarted) return;
     // A hidden page draws no frame, so the scene would not take the responses,
     // and a background tab may never be viewed.
     if (document.hidden === true) {
-      deferPrefetchUntilVisible(capabilities);
+      deferPrefetchUntilVisible(tier);
       return;
     }
     modelPrefetchStarted = true;
@@ -224,13 +238,9 @@
         : null;
     if (!urls || typeof fetch !== "function" || typeof AbortController !== "function") return;
     try {
-      // Comparison URLs may select other tower models; they keep the scene's requests.
-      if (new URLSearchParams(window.location?.search || "").has("architecture")) return;
       const scene = (site.scene = site.scene || {});
       // Unknown limits would make the scene probe again; do not guess its tier.
-      const caps = scene.qualityCapsFromProbe?.(capabilities);
-      if (!caps || typeof scene.createSceneQualityState !== "function") return;
-      const tierUrls = urls[scene.createSceneQualityState({ caps }).initialTier];
+      const tierUrls = tier ? urls[tier] : null;
       if (!tierUrls) return;
       const prefetched = (scene.prefetched = new Map());
       for (const url of [tierUrls.tower, tierUrls.tree]) {
@@ -248,12 +258,12 @@
   // Shown while the bundle still loads, the page makes the early request then.
   // Once the scene has initialized, its first frame requests the models itself.
   let deferredPrefetch = null;
-  function deferPrefetchUntilVisible(capabilities) {
+  function deferPrefetchUntilVisible(tier) {
     if (deferredPrefetch || typeof document.addEventListener !== "function") return;
     deferredPrefetch = () => {
       if (document.hidden === true) return;
       cancelDeferredPrefetch();
-      prefetchArchitectureModels(capabilities);
+      prefetchArchitectureModels(tier);
     };
     document.addEventListener("visibilitychange", deferredPrefetch);
   }
@@ -297,10 +307,18 @@
       return false;
     }
 
+    // The low tier keeps the static poster (?quality=low included): the scene
+    // bundle is never requested.
+    const startupTier = controls?.overrideTier || readStartupTier(capabilities);
+    if (startupTier === "low") {
+      disableSceneHost();
+      return false;
+    }
+
     try {
       const sceneScript = loadScriptOnce(getSceneScriptUrl(), getSceneModulePreloads());
       // Issued after the bundle request, which keeps its head start.
-      prefetchArchitectureModels(capabilities);
+      prefetchArchitectureModels(startupTier);
       await sceneScript;
       cancelDeferredPrefetch();
       enableSceneHost();

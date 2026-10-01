@@ -311,7 +311,7 @@ test("scene loader skips the deferred bundle when reduced-data is requested", as
 test("explicit quality override still allows the scene bundle on reduced-data connections", async () => {
   const { context, host, scripts, getWebglProbeCount } = createContext({
     saveData: true,
-    search: "?quality=low",
+    search: "?quality=balanced",
   });
   await loadMainWithQuality(context);
 
@@ -399,7 +399,7 @@ test("capable phone-shaped viewports retain the live scene path", async () => {
 });
 
 test("explicit quality and debug controls force live software WebGL unless WebGL is unavailable", async () => {
-  for (const search of ["?quality=low", "?sceneDebug=1"]) {
+  for (const search of ["?quality=balanced", "?quality=high", "?sceneDebug=1"]) {
     const { context, host, scripts } = createContext({
       reducedMotion: true,
       saveData: true,
@@ -538,7 +538,41 @@ test("the live scene requests its startup tier's tower and tree at low priority 
   }
 });
 
-test("static poster paths, the low tier and comparison models make no early model request", async () => {
+test("the low tier keeps the poster and never requests the scene bundle", async () => {
+  for (const options of [
+    // An explicit low tier, with or without known texture limits.
+    { ...CAPABLE, search: "?quality=low" },
+    { search: "?quality=low", reducedMotion: true, softwareRenderer: "Microsoft Basic Render Driver" },
+    { ...CAPABLE, search: "?quality=low&sceneDebug=1" },
+    // Auto-detected low: weak texture limits.
+    { maxTextureSize: 2048, maxAnisotropy: 16 },
+    { maxTextureSize: 8192, maxAnisotropy: 2 },
+  ]) {
+    const harness = createContext(options);
+    await loadMainWithQuality(harness.context);
+
+    assert.equal(await harness.context.window.BabelSite.ensureSceneReady(), false, JSON.stringify(options));
+    assert.equal(harness.host.hidden, true, "the static poster stays");
+    assert.equal(harness.scripts.length, 0, "no scene script is requested");
+    assert.equal(harness.fetches.length, 0, "no model is requested");
+  }
+  // The scene itself declines the low tier before it builds a renderer, should
+  // main.js not have known the tier; main.js then hides the host.
+  const index = await readFile(new URL("../src/scene/index.js", import.meta.url), "utf8");
+  const declines = index.indexOf('if (qualityState.initialTier === "low") return false;');
+  assert.ok(declines > 0 && declines < index.indexOf("createSceneRendering({"));
+  const unknown = createContext({ maxTextureSize: 0, initResult: false });
+  await loadMainWithQuality(unknown.context);
+  assert.equal(await unknown.context.window.BabelSite.ensureSceneReady(), false);
+  assert.equal(unknown.host.hidden, true, "a declined initialization keeps the poster");
+  // Retired comparison URLs open the default film, with its early model requests.
+  const comparison = createContext({ ...CAPABLE, search: "?architecture=classic" });
+  await loadMainWithQuality(comparison.context);
+  assert.equal(await comparison.context.window.BabelSite.ensureSceneReady(), true);
+  assert.equal(comparison.fetches.length, 2);
+});
+
+test("static poster paths and the low tier make no early model request", async () => {
   for (const options of [
     { reducedMotion: true },
     { saveData: true },
@@ -546,8 +580,6 @@ test("static poster paths, the low tier and comparison models make no early mode
     { webgl: false },
     { search: "?quality=low" },
     { saveData: true, search: "?sceneDebug=1" },
-    { search: "?architecture=assembled" },
-    { search: "?architecture=classic" },
     { maxTextureSize: 0 },
   ]) {
     const harness = createContext({ ...CAPABLE, ...options });

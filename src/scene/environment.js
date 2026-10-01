@@ -1,16 +1,13 @@
 import { Group } from "three";
 import { createEstateGroundDetail } from "./estate-ground-detail.js";
 
+// The ground's root (the ground, hills, rocks, tower and tree hang under it)
+// and the film's ground detail.
 export function createSceneEnvironment({ groundHeight, parent, profile }) {
   const root = new Group();
   parent.add(root);
 
-  let crystalRecords = [];
   let disposed = false;
-  let clutterEnabled = true;
-  let groundPlantRecords = [];
-  let lowPower = Boolean(profile?.isLow);
-  let monolithGroup = null;
   let groundDetail = null,
     currentProfile = profile;
 
@@ -19,7 +16,6 @@ export function createSceneEnvironment({ groundHeight, parent, profile }) {
     root,
     applyQuality(nextProfile = {}) {
       if (disposed) return false;
-      lowPower = Boolean(nextProfile.isLow);
       currentProfile = nextProfile;
       groundDetail?.applyQuality(nextProfile);
       return true;
@@ -29,9 +25,6 @@ export function createSceneEnvironment({ groundHeight, parent, profile }) {
       disposed = true;
       root.visible = false;
       groundDetail?.dispose();
-      crystalRecords = [];
-      groundPlantRecords = [];
-      monolithGroup = null;
       return true;
     },
     resize({ composition } = {}) {
@@ -47,38 +40,6 @@ export function createSceneEnvironment({ groundHeight, parent, profile }) {
         groundDetail.applyQuality(currentProfile);
       }
       groundDetail?.setActive(active);
-      return true;
-    },
-    setClutterEnabled(enabled) {
-      clutterEnabled = Boolean(enabled);
-    },
-    setCrystalRecords(records) {
-      crystalRecords = Array.isArray(records) ? records : [];
-    },
-    setGroundPlantRecords(records) {
-      groundPlantRecords = Array.isArray(records) ? records : [];
-    },
-    setMonolithGroup(group) {
-      monolithGroup = group || null;
-    },
-    update({ elapsedSeconds = 0, reducedMotion = false } = {}) {
-      if (disposed) return false;
-      if (!clutterEnabled) return false;
-      crystalRecords.forEach((mesh, index) => {
-        if (!reducedMotion) mesh.rotation.y += 0.0035 + 0.00012 * index;
-        mesh.position.y =
-          groundHeight(mesh.position.x, mesh.position.z) +
-          3.55 +
-          0.06 * Math.sin(1.4 * elapsedSeconds + index);
-      });
-      monolithGroup?.children.forEach((mesh, index) => {
-        if (!reducedMotion) mesh.rotation.y += 0.002 + 0.0005 * index;
-      });
-      groundPlantRecords.forEach((record, index) => {
-        const phase = elapsedSeconds * (0.9 + (index % 7) * 0.05) + record.phase;
-        record.mesh.position.y = record.baseY + Math.sin(phase) * record.amp;
-        record.mesh.material.opacity = (lowPower ? 0.26 : 0.33) + 0.03 * Math.sin(0.7 * phase);
-      });
       return true;
     },
   };

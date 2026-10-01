@@ -91,12 +91,10 @@ export const ROCK_LIB = Object.freeze({
 });
 
 // Fetches rock-build.js once the scene has revealed, the film is on and the
-// tree channel has settled, on high and balanced only; low, legacy comparisons
-// and ?rocks=off never do. Nothing about the rocks delays the reveal. terrain()
+// tree channel has settled, on high and balanced only. Nothing about the rocks delays the reveal. terrain()
 // resolves to the film terrain's height once its root supports settle
 // (film-scene.js ready); the rocks are placed on it, or on groundHeight without.
 export function createRockScatter({
-  enabled = true,
   tier,
   onStatus = () => {},
   load = () => import("./rock-build.js"),
@@ -110,7 +108,7 @@ export function createRockScatter({
     disposed = false,
     rocks = null;
   function start() {
-    if (started || disposed || !enabled || !film || !settled || !revealed || !["high", "balanced"].includes(tier)) return;
+    if (started || disposed || !film || !settled || !revealed || !["high", "balanced"].includes(tier)) return;
     started = true;
     onStatus({ status: "loading", tier });
     // Seat the rocks on the film terrain (the tree's root plate) once it exists.

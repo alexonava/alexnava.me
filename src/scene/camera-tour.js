@@ -142,10 +142,10 @@ export function createCameraTour({
         total: tourViews.length,
       };
     },
-    update({ elapsedSeconds, reducedMotion = false, developer = false, panelOpen = false }) {
+    update({ elapsedSeconds, reducedMotion = false, panelOpen = false }) {
       if (disposed) return null;
       reduced = reducedMotion;
-      held = developer || panelOpen;
+      held = panelOpen;
       ready = camera.ready && camera.isAvailable(camera.current);
       const active = ready && !paused && !reduced && !held;
       cut = false;

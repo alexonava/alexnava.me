@@ -305,19 +305,27 @@ main:focus {
 
 .hero-minimal::before {
   position: absolute;
-  inset: -88px -180px -96px -96px;
+  inset: -140px -196px -167px -240px;
   z-index: -1;
   content: "";
   pointer-events: none;
+  /* A soft oval centred on the name that reaches transparent at every edge of
+     its box (closest-side, with a smooth (1 - t²)² falloff), so the backdrop
+     can never leave a straight edge across the sky on any side. */
   background: radial-gradient(
-    ellipse at 28% 56%,
+    closest-side,
     rgba(7, 10, 18, 0.58) 0%,
-    rgba(7, 10, 18, 0.3) 44%,
-    rgba(7, 10, 18, 0) 72%
+    rgba(7, 10, 18, 0.569) 10%,
+    rgba(7, 10, 18, 0.535) 20%,
+    rgba(7, 10, 18, 0.48) 30%,
+    rgba(7, 10, 18, 0.409) 40%,
+    rgba(7, 10, 18, 0.326) 50%,
+    rgba(7, 10, 18, 0.238) 60%,
+    rgba(7, 10, 18, 0.151) 70%,
+    rgba(7, 10, 18, 0.075) 80%,
+    rgba(7, 10, 18, 0.021) 90%,
+    rgba(7, 10, 18, 0) 100%
   );
-  /* Fade below the text before the element's bottom clips the radial halo. */
-  -webkit-mask-image: linear-gradient(#000 0 calc(100% - 96px), transparent 100%);
-  mask-image: linear-gradient(#000 0 calc(100% - 96px), transparent 100%);
 }
 
 .hero-intro {
@@ -383,16 +391,6 @@ main:focus {
   }
 }
 
-.bottom-bar .bottom-btn,
-.site-footer {
-  animation: hero-rise 820ms both;
-  animation-delay: 560ms;
-}
-
-.bottom-bar .bottom-btn:nth-child(2) {
-  animation-delay: 660ms;
-}
-
 .bottom-bar {
   position: fixed;
   right: 0;
@@ -428,8 +426,8 @@ main:focus {
     box-shadow 180ms ease;
 }
 
-/* A small, dim case that defers to the scene: no glow or indicator dot. The
-   padding keeps a 52px target around the 44px image. */
+/* The bottom bar's empty spacer (index.html): its box keeps the bar's height,
+   whose top edge the directed camera frames above (cinematic.js). */
 .bottom-btn--icon {
   position: relative;
   width: 52px;
@@ -442,69 +440,6 @@ main:focus {
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-}
-
-.bottom-btn--icon:hover,
-.bottom-btn--icon:focus-visible,
-.bottom-btn--icon[aria-expanded="true"] {
-  transform: translateY(-2px);
-  border-color: transparent;
-  box-shadow: none;
-}
-
-.btn-icon {
-  object-fit: contain;
-  width: 100%;
-  height: 100%;
-  display: block;
-  pointer-events: none;
-  transition: opacity 180ms ease;
-}
-
-/* Resting icons face forward; only the open panel's icon turns inward. */
-.btn-icon--active {
-  position: absolute;
-  inset: 4px;
-  width: calc(100% - 8px);
-  height: calc(100% - 8px);
-  opacity: 0;
-}
-
-.bottom-btn[aria-expanded="true"] .btn-icon {
-  opacity: 0;
-}
-
-.bottom-btn[aria-expanded="true"] .btn-icon--active {
-  opacity: 1;
-}
-
-.btn-icon-label {
-  color: var(--text-accent);
-  position: absolute;
-  left: 50%;
-  bottom: calc(100% + 8px);
-  white-space: nowrap;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  opacity: 1;
-  transform: translate(-50%, 0);
-  /* The visible word is part of its control's hit target. Absolute placement
-     leaves the .bottom-bar rectangle used for camera framing unchanged. */
-  pointer-events: auto;
-  transition:
-    opacity 220ms ease,
-    transform 220ms ease,
-    color 220ms ease;
-  text-shadow: var(--text-meta-shadow);
-}
-
-/* Like the footer links, the word brightens on hover and while About is open. */
-.bottom-btn--icon:hover .btn-icon-label,
-.bottom-btn--icon:focus-visible .btn-icon-label,
-.bottom-btn--icon[aria-expanded="true"] .btn-icon-label {
-  color: var(--text);
 }
 
 /* About sits at the left inset. Its 44px target
@@ -525,6 +460,8 @@ main:focus {
   letter-spacing: 0.08em;
   text-shadow: var(--text-meta-shadow);
   pointer-events: none;
+  animation: hero-rise 820ms both;
+  animation-delay: 560ms;
 }
 
 .site-footer__link {
@@ -929,22 +866,9 @@ body[data-panel-open]::after {
     height: 48px;
   }
 
-  .btn-icon-label {
-    bottom: calc(100% + 6px);
-    transform: translate(-50%, 0);
-    opacity: 1;
-  }
-
   .site-footer {
     right: max(16px, calc(env(safe-area-inset-right) + 8px));
     left: max(16px, calc(env(safe-area-inset-left) + 8px));
-  }
-}
-
-@media (hover: none), (pointer: coarse) {
-  .btn-icon-label {
-    transform: translate(-50%, 0);
-    opacity: 1;
   }
 }
 
@@ -988,8 +912,6 @@ body[data-panel-open]::after {
   .skip-link,
   .hero-minimal,
   .bottom-btn,
-  .btn-icon,
-  .btn-icon-label,
   .panel-overlay,
   .panel-overlay.open,
   .panel-overlay.open .panel-surface,
@@ -1006,14 +928,10 @@ body[data-panel-open]::after {
   .hero-intro,
   .scene-shell,
   .site-shell,
-  .bottom-bar .bottom-btn,
   .site-footer {
     animation: none;
   }
 
-  .bottom-btn--icon:hover,
-  .bottom-btn--icon:focus-visible,
-  .bottom-btn--icon[aria-expanded="true"],
   .panel-close:hover,
   .panel-close:focus-visible {
     transform: none;
@@ -1066,11 +984,6 @@ body[data-panel-open]::after {
     width: 44px;
     height: 44px;
     padding: 2px;
-  }
-
-  .btn-icon-label {
-    transform: translate(-50%, 0);
-    opacity: 1;
   }
 
   .panel-overlay {
@@ -1130,59 +1043,6 @@ body[data-panel-open]::after {
     right: max(var(--gutter), calc(env(safe-area-inset-right) + 8px));
     left: max(var(--gutter), calc(env(safe-area-inset-left) + 8px));
   }
-}
-
-/* When developer-mode is active, hide the showcase UI so only the scene and
-   the HUD are visible. The body class is toggled by src/scene/dev-mode.js on
-   enter/exit. !important guards against open-panel styles whose specificity
-   would otherwise win. */
-body.dev-mode-active > *:not(.scene-shell):not(.dev-mode-hud),
-body.dev-mode-active::after {
-  display: none !important;
-}
-
-/* Developer-mode HUD. Hidden by default; toggled via the `hidden` attribute
-   from src/scene/dev-mode.js when the user enters dev mode. Styled to fit
-   STYLE.md (calm, restrained — not loud debug colors). */
-.dev-mode-hud {
-  position: fixed;
-  bottom: 16px;
-  left: 16px;
-  z-index: 50;
-  display: grid;
-  gap: 4px;
-  padding: 12px 14px;
-  background: rgba(6, 9, 20, 0.78);
-  border: 1px solid var(--border-soft);
-  border-radius: 6px;
-  color: var(--text-meta);
-  font-family: var(--font-body);
-  font-size: 12px;
-  line-height: 1.6;
-  font-variant-numeric: tabular-nums;
-  pointer-events: none;
-  -webkit-user-select: none;
-  user-select: none;
-  -webkit-backdrop-filter: blur(4px);
-  backdrop-filter: blur(4px);
-}
-
-.dev-mode-hud[hidden] {
-  display: none;
-}
-
-.dev-mode-hud__row {
-  display: grid;
-  grid-template-columns: 64px 1fr;
-  gap: 12px;
-}
-
-.dev-mode-hud__row > span:first-child {
-  color: var(--text-muted-accent);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  font-size: 12px;
-  align-self: center;
 }
 
 /* Windows High Contrast / forced-colors: strip atmospheric layers and

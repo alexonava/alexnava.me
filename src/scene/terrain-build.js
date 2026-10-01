@@ -447,7 +447,7 @@ float slateSettleAt(float w, float depth) { return smoothstep(0.0, .25, (1.0 - w
 `;
 const SETTLE_AT = "slateKeep = slateKeepAt(vMudWorld.xz);\nslateSettle = slateSettleAt(vSlateRoot.w, slateDepth);\n";
 
-// mud-ground.js configureMudShading() applies this, through shadeSlateGround(),
+// mud-ground.js configureGroundShading() applies this, through shadeSlateGround(),
 // once settleRoots() has set that as the ground material's userData.slateRoot.
 // It reads the film terrain's slateRoot and slateShade attributes (a geometry
 // without them reads 0,0,0,1 and 0,0: no contact, no settled soil, no
@@ -1500,7 +1500,7 @@ function inSlices(steps, rendering = null, early = () => false, cancelled = () =
   });
 }
 
-// The film terrain (foothills) or the earth comparison's plain dunes. Given
+// The film terrain (foothills) or, without them, plain dunes. Given
 // the scene's rendering, the film terrain builds in slices (inSlices()) and
 // resolves only where the new ground cannot show mid-shot (unseen()); without
 // it (tests), the terrain builds at once. cancelled: the film scene is gone,

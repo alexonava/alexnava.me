@@ -2,12 +2,9 @@ import { LoadingManager } from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { measureScene, sceneNow } from "./perf-marks.js";
 
-const TOWER_ROLES = Object.freeze({
-  assembled: ["stairs", "wall", "base", "crown"],
-  complete: ["tower"],
-});
-// The optional lantern and scattered rocks load through the same manifest.
-const ROLES = [...TOWER_ROLES.assembled, "tower", "tree", "lantern", "lichen-rock", "weathered-stone"];
+// The tower, tree and optional lantern, and the film's scattered rocks
+// (rock-scatter.js), load through one manifest.
+const ROLES = ["tower", "tree", "lantern", "lichen-rock", "weathered-stone"];
 export const ARCHITECTURE_ASSET_BUDGETS = Object.freeze({
   high: 6 * 1024 * 1024,
   balanced: 3 * 1024 * 1024,
@@ -180,7 +177,6 @@ export function collectResources(asset, extraTextures = []) {
 
 export function createArchitectureAssetController({
   disabled = false,
-  towerModel = "assembled",
   includeLantern = false,
   loadAsset = loadArchitectureAsset,
   urls = ARCHITECTURE_ASSET_URLS,
@@ -192,9 +188,6 @@ export function createArchitectureAssetController({
   onRestoreLantern = () => {},
   onStatus = () => {},
 } = {}) {
-  if (!Object.hasOwn(TOWER_ROLES, towerModel)) {
-    throw new Error("Invalid architecture tower model");
-  }
   let disposed = false;
   let currentProfile = {};
   let currentAssetTier;
@@ -204,7 +197,7 @@ export function createArchitectureAssetController({
   const resourceReferences = new Map();
   const freedResources = new WeakSet();
   const channels = [
-    { kind: "tower", roles: TOWER_ROLES[towerModel], ready: onTowerReady, restore: onRestoreTower },
+    { kind: "tower", roles: ["tower"], ready: onTowerReady, restore: onRestoreTower },
     { kind: "tree", roles: ["tree"], ready: onTreeReady, restore: onRestoreTree },
     ...(includeLantern ? [{ kind: "lantern", roles: ["lantern"], ready: onLanternReady, restore: onRestoreLantern }] : []),
   ].map((channel) => ({ ...channel, run: null, leases: [], active: false, cleanup: null }));
@@ -359,7 +352,7 @@ export function createArchitectureAssetController({
       });
     }
     // The live selection has taken any early request it uses; the rest name
-    // another tier or tower model.
+    // another tier.
     if (live) releasePrefetchedResponses();
     return changed;
   }

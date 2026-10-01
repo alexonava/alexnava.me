@@ -8,15 +8,6 @@
 
   scene.clamp01 = clamp01;
 
-  scene.wrap01 = function (val) {
-    return ((val % 1) + 1) % 1;
-  };
-
-  scene.wrappedDistance = function (aa, bb) {
-    const diff = Math.abs(aa - bb);
-    return Math.min(diff, 1 - diff);
-  };
-
   scene.smoothstep01 = function (val) {
     const xx = clamp01(val);
     return xx * xx * (3 - 2 * xx);

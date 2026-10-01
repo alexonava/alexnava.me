@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { Box3, BoxGeometry, Group, Mesh, MeshStandardMaterial, Vector3, PointLight } from "three";
-import { DOOR_HEIGHT as D, mudSample, wantsMud, wantsPropScale } from "../src/scene/mud-ground.js";
+import { DOOR_HEIGHT as D } from "../src/scene/mud-ground.js";
 import { createPropScale } from "../src/scene/prop-scale.js";
 import { DIRECTED_SHOTS, measureShot, fitShot } from "../src/scene/directed-shots.js";
 import { TERRAIN_HORIZON } from "../src/scene/hill-silhouette.js";
@@ -18,66 +18,6 @@ function fixture() {
   };
   return { root, make };
 }
-test("mud selection preserves desert, procedural and architecture comparisons", () => {
-  assert.equal(wantsMud(""), true);
-  for (const q of [
-    "?ground=desert",
-    "?ground=procedural",
-    "?architecture=classic",
-    "?architecture=assembled",
-  ])
-    assert.equal(wantsMud(q), false);
-  assert.equal(wantsPropScale("?ground=desert"), true);
-  assert.equal(wantsPropScale("?scale=baseline"), false);
-});
-test("mud fields are periodic, deterministic and keep wetness within the damp-earth range", () => {
-  let wet = 0;
-  for (let y = 0; y < 64; y++)
-    for (let x = 0; x < 64; x++) {
-      const a = mudSample(x / 64, y / 64),
-        b = mudSample(x / 64 + 1, y / 64 - 1);
-      near(a.height, b.height);
-      assert.ok(a.roughness >= 0.55 && a.roughness <= 0.9);
-      if (a.roughness < 0.7) wet++;
-    }
-  assert.ok(wet > 0 && wet < 4096 * 0.2);
-  assert.deepEqual(mudSample(0.2, 0.3), mudSample(0.2, 0.3));
-});
-test("props respect doorway-relative bounds and terrain contact then restore exactly", () => {
-  const { root, make } = fixture();
-  const stone = make(5, 3, 4, 20),
-    rubble = make(4, 4, 4, 25),
-    plant = make(3, 6, 3, 30);
-  stone.rotation.z = 0.4;
-  const originals = [stone, rubble, plant].map((o) => ({
-    p: o.position.clone(),
-    s: o.scale.clone(),
-  }));
-  const c = createPropScale({
-    groundRoot: root,
-    groundHeight: () => 2,
-    stones: [stone],
-    rubble: [rubble],
-    plants: [plant],
-  });
-  c.setActive(true);
-  assert.ok(Math.max(...size(stone).toArray()) <= 0.1 * D + 1e-6);
-  assert.ok(Math.max(...size(rubble).toArray()) <= 0.25 * D + 1e-6);
-  assert.ok(size(plant).y <= 0.12 * D + 1e-6);
-  for (const o of [stone, rubble, plant]) near(new Box3().setFromObject(o).min.y, -5);
-  const scale = stone.scale.clone();
-  c.setActive(true);
-  assert.deepEqual(stone.scale, scale);
-  c.setActive(false);
-  [stone, rubble, plant].forEach((o, i) => {
-    assert.deepEqual(o.position, originals[i].p);
-    assert.deepEqual(o.scale, originals[i].s);
-  });
-  c.setActive(true);
-  assert.equal(c.dispose(), true);
-  assert.equal(c.dispose(), false);
-  assert.deepEqual(stone.scale, originals[0].s);
-});
 test("independently loaded tree and lantern resize and restore without changing borrowed geometry", () => {
   const { root, make } = fixture();
   const treeRoot = new Group();
@@ -158,65 +98,6 @@ test("decorative canopy bounds cannot change authored tree scale, footing or fit
   }
 });
 
-test("torch animation remains inside scaled parents and restoration removes wrappers", () => {
-  const { root, make } = fixture();
-  const stand = make(0.3, 2.5, 0.3, 12),
-    flame = make(1.6, 2.4, 1, 12);
-  flame.position.y = 3.9;
-  const light = new PointLight(0xffffff, 1, 18);
-  light.position.set(12, 3.8, 0);
-  root.add(light);
-  const original = stand.position.clone(),
-    count = root.children.length;
-  const c = createPropScale({
-    groundRoot: root,
-    groundHeight: () => 1.6,
-    torches: [
-      {
-        stand,
-        flameOuter: flame,
-        embers: [],
-        light,
-        baseX: 12,
-        baseZ: 0,
-        baseGroundY: 0.05,
-        baseFlameY: 3.9,
-      },
-    ],
-  });
-  c.setActive(true);
-  near(size(stand).y, 0.63 * D);
-  near(size(flame).y, 0.12 * D);
-  flame.position.y = 4;
-  root.updateMatrixWorld(true);
-  assert.ok(flame.getWorldPosition(new Vector3()).y > -2);
-  c.setActive(false);
-  assert.equal(root.children.length, count);
-  assert.equal(flame.parent, root);
-  near(light.distance, 18);
-  assert.deepEqual(stand.position, original);
-  c.dispose();
-});
-
-test("mud shading compiles only in mud mode and restores the baseline shader", async () => {
-  const { configureMudShading } = await import("../src/scene/mud-ground.js");
-  const material = new MeshStandardMaterial();
-  const original = {
-    vertexShader: "#include <begin_vertex>",
-    fragmentShader: "#include <roughnessmap_fragment>",
-  };
-  configureMudShading(material, true);
-  const shader = { ...original };
-  material.onBeforeCompile(shader);
-  assert.match(shader.vertexShader, /vMudWorld/);
-  assert.match(shader.fragmentShader, /roughnessFactor = mix/);
-  configureMudShading(material, false);
-  const baseline = { ...original };
-  material.onBeforeCompile(baseline);
-  assert.deepEqual(baseline, original);
-  material.dispose();
-});
-
 const FILM_CHUNKS = [
   "#include <map_fragment>",
   "#include <roughnessmap_fragment>",
@@ -225,14 +106,13 @@ const FILM_CHUNKS = [
   "#include <fog_fragment>",
 ].join("\n");
 
-test("each ground shading has its own program cache key; the slate's shading needs film and no grass", async () => {
-  const { configureMudShading, createSlateContacts, SLATE_WET, SLATE_TILING, SLATE_PUDDLES, SLATE_CONTACTS } =
+test("each ground shading has its own program cache key; the slate's shading needs film", async () => {
+  const { configureGroundShading, createSlateContacts, SLATE_WET, SLATE_TILING, SLATE_PUDDLES, SLATE_CONTACTS } =
     await import("../src/scene/mud-ground.js");
-  const grass = { grassColorMap: {}, grassMaskMap: {}, grassTile: 9 };
   const detail = { isTexture: true };
   const material = new MeshStandardMaterial();
   const compile = (...args) => {
-    configureMudShading(material, ...args);
+    configureGroundShading(material, ...args);
     const shader = {
       uniforms: {},
       vertexShader: "#include <begin_vertex>",
@@ -243,16 +123,10 @@ test("each ground shading has its own program cache key; the slate's shading nee
   };
   for (const [args, key, slate, authored] of [
     [[false], "ground-baseline", false, false],
-    [[false, false, false, null, { slate: true, detail }], "ground-baseline", false, false],
-    [[true, false], "mud-world-variation-v1", false, false],
-    [[true, true], "mud-quiet-earth-v2", false, false],
-    [[true, true, false, null, { slate: true }], "mud-quiet-earth-v2", false, false],
-    [[true, true, true], "moonlit-earth-v2", false, false],
-    [[true, true, true, grass], "moonlit-earth-grass-v1", false, false],
-    [[false, true, true, grass, { slate: true, detail }], "moonlit-earth-grass-v1", false, false],
+    [[false, { detail }], "ground-baseline", false, false],
     // The procedural surface while the maps load, or after a fallback.
-    [[false, true, true, null, { slate: true }], "moonlit-slate-v3-p", true, false],
-    [[false, true, true, null, { slate: true, detail }], "moonlit-slate-v3", true, true],
+    [[true], "moonlit-slate-v3-p", true, false],
+    [[true, { detail }], "moonlit-slate-v3", true, true],
   ]) {
     const compiled = compile(...args);
     assert.equal(compiled.key, key, JSON.stringify(args));
@@ -262,10 +136,15 @@ test("each ground shading has its own program cache key; the slate's shading nee
     assert.equal(compiled.fragment.includes("uniform sampler2D slateDetail;"), authored, key);
     assert.equal(compiled.fragment.includes("#include <map_fragment>"), !authored, key);
     // Film ground writes the ground depth layer for the tour's staggered dissolve.
-    assert.equal(compiled.fragment.includes("gl_FragColor.a = 0.6667;"), Boolean(args[2]), key);
+    assert.equal(compiled.fragment.includes("gl_FragColor.a = 0.6667;"), Boolean(args[0]), key);
   }
+  // Without film the ground keeps Three's own program.
+  configureGroundShading(material, false);
+  const baseline = { uniforms: {}, vertexShader: "#include <begin_vertex>", fragmentShader: FILM_CHUNKS };
+  material.onBeforeCompile(baseline);
+  assert.deepEqual(baseline, { uniforms: {}, vertexShader: "#include <begin_vertex>", fragmentShader: FILM_CHUNKS });
   const contacts = createSlateContacts();
-  const { fragment, uniforms } = compile(false, true, true, null, { slate: true, detail, contacts });
+  const { fragment, uniforms } = compile(true, { detail, contacts });
   const horizon = TERRAIN_HORIZON.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   assert.match(fragment, new RegExp(`gl_FragColor\\.rgb = mix\\(gl_FragColor\\.rgb, ${horizon}, earthHorizon\\);\\s*#endif\\s*gl_FragColor\\.a = 0\\.6667;`));
   // Delay distance haze so the phone foreground retains texture; the outer
@@ -317,52 +196,33 @@ test("each ground shading has its own program cache key; the slate's shading nee
   assert.equal(material.customProgramCacheKey(), key);
   material.dispose();
 });
-test("the film ground material follows the mode, so loading and fallback surfaces match", async () => {
-  const { filmGroundSurface, FILM_EARTH_SURFACE } = await import("../src/scene/mud-ground.js");
+test("the film ground material follows the film, so loading and fallback surfaces match", async () => {
+  const { filmGroundSurface } = await import("../src/scene/mud-ground.js");
   globalThis.window ??= { BabelSite: {} };
   await import("../src/scene/palette.js");
   const surface = globalThis.window.BabelSite.scene.GROUND_SURFACE_MATERIAL;
   assert.equal(surface.filmColor, 0x5c5048);
-  assert.equal(FILM_EARTH_SURFACE.color, 0x615447);
-  const slate = { color: surface.filmColor, roughness: 0.98, metalness: 0, slate: true };
-  const earthTone = { color: 0x615447, roughness: 0.93, metalness: 0, slate: false };
-  const mud = { color: 0xffffff, roughness: 1, metalness: 0, slate: false };
-  for (const [input, expected, label] of [
-    // The default film slate, with its maps or with the procedural loading/fallback surface.
-    [{ film: true, slate: true }, slate, "slate film"],
-    // ground=desert, ground=procedural and the ground=earth loading/fallback surface.
-    [{ film: true, slate: false }, earthTone, "earth-tone film comparisons"],
-    // ground=earth once its maps load: untinted mud maps.
-    [{ film: true, slate: false, muddy: true }, mud, "muddy earth"],
-    [{ film: true, slate: true, muddy: true }, mud, "mud never takes the slate"],
-    // Without film (before activation, legacy or comparison pages).
-    [{ film: false, slate: true }, { color: 0x5d6574, roughness: 0.98, metalness: 0.02, slate: false }, "non-film"],
-    [{ film: false, slate: false, muddy: true }, mud, "non-film mud"],
-  ])
-    assert.deepEqual(filmGroundSurface({ ...input, surface }), expected, label);
+  // The film slate, with its maps or with the procedural loading/fallback surface.
+  assert.deepEqual(filmGroundSurface({ film: true, surface }), { color: surface.filmColor, roughness: 0.98, metalness: 0 });
+  // Before the film activates.
+  assert.deepEqual(filmGroundSurface({ film: false, surface }), { color: 0x5d6574, roughness: 0.98, metalness: 0.02 });
 });
 
-test("both ground shading call sites take the slate flag from the mode-derived surface", async () => {
+test("the ground shading call site takes its tint and shading from the film state", async () => {
   const { readFile } = await import("node:fs/promises");
   const index = await readFile(new URL("../src/scene/index.js", import.meta.url), "utf8");
-  assert.match(index, /const slateGround = modes\.ground === "slate";/);
-  // onGrassChange
-  assert.match(
-    index,
-    /onGrassChange\(grassDetail\) \{[^}]*const \{ slate \} = filmGroundSurface\(\{ muddy: currentGroundMuddy, film: filmActive, slate: slateGround, surface: GROUND_SURFACE_MATERIAL \}\);\s*configureMudShading\(material, currentGroundMuddy, quietSetting, filmActive, currentGrass, \{ slate, detail: currentDetail, contacts: groundContacts \}\);/,
-  );
   // onDetailChange: tint, roughness and metalness all come from the same surface.
   assert.match(
     index,
-    /const surface = filmGroundSurface\(\{ muddy, film: filmActive, slate: slateGround, surface: GROUND_SURFACE_MATERIAL \}\);[^]*?configureMudShading\(material, muddy, quietSetting, filmActive, currentGrass, \{ slate: surface\.slate, detail: detailMap, contacts: groundContacts \}\);[^]*?material\.roughness = surface\.roughness;\s*material\.metalness = surface\.metalness;\s*material\.color\.setHex\(surface\.color\);/,
+    /const surface = filmGroundSurface\(\{ film: filmActive, surface: GROUND_SURFACE_MATERIAL \}\);[^]*?configureGroundShading\(material, filmActive, \{ detail: detailMap, contacts: groundContacts \}\);[^]*?material\.roughness = surface\.roughness;\s*material\.metalness = surface\.metalness;\s*material\.color\.setHex\(surface\.color\);/,
   );
-  assert.equal((index.match(/configureMudShading\(/g) || []).length, 2);
+  assert.equal((index.match(/configureGroundShading\(/g) || []).length, 1);
 });
 
 test("the wet hollows restate the terrain dune field exactly", async () => {
   const { readFile } = await import("node:fs/promises");
   const vm = await import("node:vm");
-  const { configureMudShading, terrainDune, TERRAIN_DUNE_TERMS } = await import("../src/scene/mud-ground.js");
+  const { configureGroundShading, terrainDune, TERRAIN_DUNE_TERMS } = await import("../src/scene/mud-ground.js");
   const window = { BabelSite: {} };
   vm.runInNewContext(await readFile(new URL("../src/scene/helpers.js", import.meta.url), "utf8"), { window, Math });
   const { groundHeight } = window.BabelSite.scene;
@@ -377,7 +237,7 @@ test("the wet hollows restate the terrain dune field exactly", async () => {
   assert.ok(samples > 2500);
   // The shader carries the same terms, in world x/z.
   const material = new MeshStandardMaterial();
-  configureMudShading(material, false, true, true, null, { slate: true });
+  configureGroundShading(material, true);
   const shader = { uniforms: {}, vertexShader: "#include <begin_vertex>", fragmentShader: FILM_CHUNKS };
   material.onBeforeCompile(shader);
   // Evaluated per vertex (the dune field spans 100+ units over 3-unit quads);

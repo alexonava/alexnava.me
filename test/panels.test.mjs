@@ -545,14 +545,10 @@ test("focus stays trapped within the active panel", async () => {
   assert.equal(document.activeElement, elements.contactLink);
 });
 
-test("coarse-pointer labels and scroll-safe panel rules exist in the stylesheet", async () => {
+test("scroll-safe panel rules exist in the stylesheet", async () => {
   const styles = await readFile(stylesPath, "utf8");
 
   assert.match(styles, /body\[data-panel-open="true"\]\s*\{[^}]*overflow:\s*hidden;/);
-  assert.match(
-    styles,
-    /@media \(hover: none\), \(pointer: coarse\)\s*\{[\s\S]*?\.btn-icon-label\s*\{[\s\S]*?transform:\s*translate\(-50%, 0\);[\s\S]*?opacity:\s*1;/,
-  );
   assert.match(styles, /\.panel-overlay\s*\{[^}]*overflow-y:\s*auto;/);
   assert.match(styles, /\.panel-close\s*\{[^}]*position:\s*sticky;/);
   assert.doesNotMatch(styles, /max-height:\s*calc\(100svh\s*-\s*132px\)/);

@@ -507,15 +507,11 @@ test("the ranges are requested only for a visible film, keep the stand-in on fai
     requests++;
     return Promise.resolve({ buildMountains: build });
   };
-  // Low quality and legacy comparisons never request the chunk.
+  // Low quality never requests the chunk.
   const low = createHillSilhouette({ groundHeight, load: load() });
   low.applyQuality({ tier: "low" });
   low.setFilmTreatment(true);
   assert.equal(low.ready, null);
-  const legacy = createHillSilhouette({ groundHeight, legacy: true, load: load() });
-  legacy.setFilmTreatment(true);
-  legacy.applyQuality({ tier: "high" });
-  assert.equal(legacy.ready, null);
   assert.equal(requests, 0);
   // A step up from low while the film is on requests it then; so does the film.
   low.applyQuality({ tier: "balanced" });
@@ -557,7 +553,7 @@ test("the ranges are requested only for a visible film, keep the stand-in on fai
   finish(late);
   await gone.ready;
   assert.equal(freed, 1);
-  for (const hill of [low, legacy, idle, failed]) hill.dispose();
+  for (const hill of [low, idle, failed]) hill.dispose();
   // hill-silhouette.js never imports the chunk statically, so it stays out of the entry.
   const source = await readFile(new URL("../src/scene/hill-silhouette.js", import.meta.url), "utf8");
   assert.doesNotMatch(source, /from\s+["']\.\/mountain-build\.js["']/);

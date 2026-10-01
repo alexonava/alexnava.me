@@ -29,9 +29,9 @@ test("WORLD constants are frozen and expose the documented orbit geometry", asyn
   assert.ok(Object.isFrozen(w.SUN_POSITION));
 
   assert.equal(w.FLOOR_Y, 0);
-  assert.ok(w.GROUND_OVERLAY_RADIUS > 0);
-  assert.ok(w.GROUND_OVERLAY_RADIUS < w.GROUND_RADIUS);
+  assert.ok(w.GROUND_RADIUS > 0);
   assert.ok(w.GROUND_RADIUS < w.SKY_DOME_RADIUS);
+  assert.equal(w.DEV_MODE, undefined, "the developer camera's constants are gone");
 
   assert.ok(w.CAMERA_NEAR > 0);
   assert.ok(w.CAMERA_NEAR < w.CAMERA_FAR);
@@ -54,7 +54,7 @@ test("WORLD constants are frozen and expose the documented orbit geometry", asyn
   );
 });
 
-test("palette tokens are parseable CSS colors and material bump scales are ordered", async () => {
+test("palette tokens are parseable CSS colors and the ground material stays in range", async () => {
   const scene = await loadScene([palettePath]);
 
   const hexRegex = /^#[0-9a-fA-F]{6}$/;
@@ -72,15 +72,9 @@ test("palette tokens are parseable CSS colors and material bump scales are order
     );
   }
 
-  for (const palette of [scene.GROUND_TEXTURE_PALETTE, scene.PLANT_PALETTE, scene.TOWER_TEXTURE_PALETTE]) {
-    for (const value of Object.values(palette)) expectColor(value);
-  }
+  for (const value of Object.values(scene.GROUND_TEXTURE_PALETTE)) expectColor(value);
 
-  for (const material of [scene.GROUND_SURFACE_MATERIAL, scene.TOWER_SURFACE_MATERIALS]) {
-    const bump = material.bumpScale ?? material.shellBumpScale;
-    assert.ok(bump.lowPower > 0);
-    assert.ok(bump.default > bump.lowPower, "default bump must exceed low-power bump");
-  }
+  assert.ok(scene.GROUND_SURFACE_MATERIAL.bumpScale > 0 && scene.GROUND_SURFACE_MATERIAL.bumpScale < 1);
 
   assert.ok(scene.GROUND_SURFACE_MATERIAL.roughness >= 0 && scene.GROUND_SURFACE_MATERIAL.roughness <= 1);
   assert.ok(scene.GROUND_SURFACE_MATERIAL.metalness >= 0 && scene.GROUND_SURFACE_MATERIAL.metalness <= 1);

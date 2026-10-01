@@ -114,8 +114,8 @@ export const MOUNTAINS = Object.freeze({
     [330, 6, 6, 3],
   ].map(Object.freeze)),
 });
-// The moon key (rendering's sun light, 32,28,14), for the coarse vertex shade
-// the Blender export reads; the film shader lights each pixel from aForm.
+// The moon key (rendering's sun light, 32,28,14), for the coarse vertex shade;
+// the film shader lights each pixel from aForm.
 const KEY = [32, 28, 14].map((v) => v / Math.hypot(32, 28, 14));
 // Columns per yield: each step takes a fraction of a millisecond on a desktop
 // and a few on a throttled phone, so a 12 ms slice fits several. The first
@@ -377,9 +377,9 @@ export function mountainRows(crest, smoothed = MOUNTAINS.smooth.map((r) => smoot
 // The whole build, in steps. Five ranges x six rows x one ring of columns;
 // columns wrap, so there is no seam column at azimuth 0, and triangles face the
 // centre. Vertex attributes:
-// aTerrain = (degrees below this column's crest, range, coarse moonlight 0..1
-//   for the Blender export, massif height: the snowline's reference, 0 on the
-//   near range, which stays bare). The layout is the Blender export's.
+// aTerrain = (degrees below this column's crest, range, coarse moonlight 0..1,
+//   massif height: the snowline's reference, 0 on the near range, which stays
+//   bare).
 // aForm = (face normal along the ring: minus the slope of the row's smoothed
 //   profile, clamped +-3; lean toward the viewer; fold, convex + and concave -,
 //   clamped +-1; the nearer ranges' skyline in degrees, -90 on the near range).
@@ -505,7 +505,7 @@ function run(steps) {
   }
 }
 
-// The whole geometry at once (tests, the Blender export's fixtures).
+// The whole geometry at once (tests).
 export function createMountainGeometry() {
   return run(geometrySteps());
 }

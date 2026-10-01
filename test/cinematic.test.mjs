@@ -7,14 +7,12 @@ import {
   PerspectiveCamera,
   Vector3,
   Fog,
-  Group,
 } from "three";
 import {
   chooseCinematicView,
   chooseCinematicAngle,
   cinematicSafeArea,
   createCinematicCamera,
-  createQuietScene,
   layoutRect,
 } from "../src/scene/cinematic.js";
 import { DIRECTED_SHOTS } from "../src/scene/directed-shots.js";
@@ -44,16 +42,14 @@ function setup(selected = "tower", width = 1440, height = 900, angle = 0) {
       controller.apply({ width, height, elapsedSeconds: time, ...extra }),
   };
 }
-test("every ordinary visit opens The watch while explicit comparison and subject URLs remain valid", () => {
+test("every ordinary visit opens The watch while explicit subject URLs remain valid", () => {
   const unexpectedRandom = () => {
     throw new Error("opening composition must not use RNG");
   };
-  for (const query of ["", "?quality=high", "?view=unknown", "?angle=3"])
+  for (const query of ["", "?quality=high", "?view=unknown", "?angle=3", "?view=orbit", "?architecture=classic", "?setting=previous"])
     assert.equal(chooseCinematicView(query, unexpectedRandom), "tower");
-  for (const view of ["tower", "tree", "orbit"])
+  for (const view of ["tower", "tree"])
     assert.equal(chooseCinematicView(`?view=${view}`, unexpectedRandom), view);
-  for (const query of ["?architecture=classic", "?architecture=assembled", "?setting=previous"])
-    assert.equal(chooseCinematicView(query, unexpectedRandom), "orbit");
 });
 
 test("camera fits all subject corners inside phone and desktop safe areas throughout the arc", () => {
@@ -119,37 +115,13 @@ test("tree waits, fails over to tower, preserves selection across loading and re
   assert.equal(f.camera.fov, 45);
   assert.equal(f.fog.near, 62);
 });
-test("developer camera has priority and repeated disposal is safe", () => {
+test("repeated disposal is safe", () => {
   const f = setup();
   f.apply();
-  f.camera.position.set(1, 2, 3);
-  assert.equal(f.apply(3, { developer: true }), false);
-  assert.deepEqual(f.camera.position.toArray(), [1, 2, 3]);
   assert.equal(f.controller.dispose(), true);
   assert.equal(f.controller.dispose(), false);
   assert.equal(f.apply(), false);
 });
-test("quiet presentation suppresses re-enabled objects and restores original visibility and animation", () => {
-  const a = new Group(),
-    b = new Group();
-  b.visible = false;
-  const states = [];
-  const q = createQuietScene([a, b, a], (value) => states.push(value));
-  q.setActive(true);
-  assert.equal(a.visible, false);
-  a.visible = true;
-  q.enforce();
-  assert.equal(a.visible, false);
-  q.setActive(false);
-  assert.equal(a.visible, true);
-  assert.equal(b.visible, false);
-  q.setActive(true);
-  q.dispose();
-  q.dispose();
-  assert.equal(a.visible, true);
-  assert.deepEqual(states, [false, true, false, true]);
-});
-
 test("valid angle overrides remain reproducible and missing or invalid angles select the first shot", () => {
   const unexpectedRandom = () => {
     throw new Error("opening angle must not use RNG");

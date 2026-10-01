@@ -17,7 +17,6 @@
     // --- Ground plane ---
     FLOOR_Y: 0,
     GROUND_RADIUS: 88,
-    GROUND_OVERLAY_RADIUS: 70,
 
     // --- Sky & atmosphere ---
     SKY_DOME_RADIUS: 130,
@@ -46,20 +45,5 @@
     SHADOW_CAMERA_HALF_EXTENT: 60,
     SHADOW_CAMERA_NEAR: 1,
     SHADOW_CAMERA_FAR: 120,
-
-    // --- Developer mode (first-person grounded character) ---
-    // Constants ported from the standing. project's character controller
-    // (apps/activity-client/src/scene/runtime.ts) and converted yards -> feet
-    // (x3) to match babel's world units.
-    DEV_MODE: Object.freeze({
-      RUN_SPEED: 21, // ft/s forward, was 7 yd/s in standing.
-      BACK_SPEED: 13.5, // ft/s, was 4.5 yd/s
-      STRAFE_SPEED: 21, // ft/s, was 7 yd/s
-      GRAVITY: 32, // ft/s^2, was 10.6 yd/s^2 — close to Earth (32.2)
-      JUMP_VY: 17, // ft/s initial, was 5.64 yd/s — apex ~4.5 ft
-      EYE_HEIGHT: 4.86, // ft from feet to eye, was 1.62 yd
-      MOUSE_SENSITIVITY: 0.005, // standing.-tuned drag-look rate
-      PITCH_LIMIT: 1.55, // rad, ~89 degrees
-    }),
   });
 })();

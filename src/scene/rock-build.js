@@ -1,7 +1,7 @@
 // The film's scattered rocks, loaded on demand (scripts/scene.rock-build.HASH.js)
 // once rock-scatter.js decides they will show: their placement, grounding,
-// contacts and meshes. Visitors on the low tier, in legacy comparisons or with
-// ?rocks=off never download it.
+// contacts and meshes. Visitors on the low tier (the static poster) never
+// download it.
 //
 // This module imports nothing: code shared with the entry would move into the
 // shared chunk (build.mjs refuses first-party code there), and even three

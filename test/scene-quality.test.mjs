@@ -219,13 +219,16 @@ test("quality profiles expose the postprocess tier matrix", async () => {
   assert.equal(high.lighting.directionalIntensity, 3.25);
   assert.equal(high.lighting.fillIntensity, 0.46);
   assert.equal(high.lighting.practicalIntensityScale, 1.08);
-  assert.equal(high.lighting.towerLightIntensityScale, 1);
   assert.equal(balanced.lighting.extraDirectional, true);
   assert.equal(balanced.lighting.practicalIntensityScale, 0.84);
-  assert.equal(balanced.lighting.towerLightIntensityScale, 0.58);
   assert.equal(low.lighting.extraDirectional, false);
   assert.equal(low.lighting.practicalIntensityScale, 0.58);
-  assert.equal(low.lighting.towerLightIntensityScale, 0);
+  // The procedural world's particle counts and canvases are gone.
+  for (const profile of [high, balanced, low]) {
+    assert.equal(profile.counts, undefined);
+    assert.deepEqual(Object.keys(profile.textures), ["groundSize"]);
+    assert.deepEqual(Object.keys(profile.geometry).sort(), ["circleSegments", "skyHeightSegments", "skyWidthSegments"]);
+  }
   assert.equal(high.postprocessSettings.contrast, 1.1);
   assert.equal(balanced.postprocessSettings.vignetteStrength, 0.1);
   assert.equal(low.postprocessSettings.grainStrength, 0);
@@ -519,16 +522,6 @@ test("resolveEffectiveDprCap caps every touch-primary device at 1.25", async () 
   );
 });
 
-test("portraitPhone composition profile trims active particle counts", async () => {
-  const scene = await loadQuality(createContext());
-  const portrait = scene.getSceneCompositionProfile({ width: 390, height: 844 });
-  const desktop = scene.getSceneCompositionProfile({ width: 1440, height: 900 });
-
-  assert.equal(typeof portrait.countScale, "number");
-  assert.ok(portrait.countScale < 1, "portrait phone trims counts below desktop");
-  assert.equal(desktop.countScale, 1);
-});
-
 test("getSceneCompositionProfile picks the right profile across device classes", async () => {
   const scene = await loadQuality(createContext());
 
@@ -553,17 +546,12 @@ test("getSceneCompositionProfile picks the right profile across device classes",
   assert.equal(scene.getSceneCompositionProfile({ width: 1920, height: 1080 }).name, "desktop");
 });
 
-test("landscapePhone and tabletPortrait profiles carry touch-friendly count trims", async () => {
+test("landscapePhone and tabletPortrait profiles carry touch-friendly framing", async () => {
   const scene = await loadQuality(createContext());
   const landscape = scene.getSceneCompositionProfile({ width: 844, height: 390 });
   const tablet = scene.getSceneCompositionProfile({ width: 810, height: 1080 });
 
-  assert.ok(
-    landscape.countScale < 1,
-    "landscape phone trims counts for rotated phone fragment load",
-  );
-  assert.ok(tablet.countScale < 1, "tablet portrait trims counts for thermal headroom");
-  assert.ok(tablet.countScale > landscape.countScale, "tablet keeps more detail than phone");
+  assert.equal(tablet.name, "tabletPortrait");
   assert.ok(
     landscape.camera.heightBase > 21,
     "short landscape framing raises the camera enough to keep the tower composed",

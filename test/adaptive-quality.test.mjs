@@ -5,8 +5,6 @@ import vm from "node:vm";
 import { Group } from "three";
 import { createArchitectureAssetController } from "../src/scene/architecture-assets.js";
 import { createEarthDetail } from "../src/scene/filmic-earth.js";
-import { createGrassDetail } from "../src/scene/grass-detail.js";
-import { createStoneDetailController } from "../src/scene/stone-detail.js";
 import { createSceneSubsystemRegistry } from "../src/scene/subsystem.js";
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
@@ -34,7 +32,6 @@ test("adaptive quality steps change cost settings without refetching models or t
   const registry = createSceneSubsystemRegistry();
   const architecture = registry.register(
     createArchitectureAssetController({
-      towerModel: "complete",
       loadAsset: load("model"),
       onTowerReady: () => () => {},
       onTreeReady: () => () => {},
@@ -42,32 +39,16 @@ test("adaptive quality steps change cost settings without refetching models or t
       onRestoreTree: () => restores.push("tree"),
     }),
   );
-  // Mirrors the ground textures subsystem: authored pair, film slate, and the
-  // earth comparison's earth and grass.
+  // Mirrors the ground textures subsystem: the film slate's maps.
   const initialProfile = qualityState.getProfile();
   const layers = { profile: initialProfile, anisotropy: 4, createCanvas: canvas, publish() {} };
-  const ground = createStoneDetailController({
-    profile: initialProfile,
-    kinds: ["color", "normal"],
-    loadImage: load("ground"),
-    apply() {},
-    reset: () => restores.push("ground"),
-  });
   const slate = createEarthDetail({ ...layers, preset: "slate", loadImage: load("slate"), restore: () => restores.push("slate") });
-  const earth = createEarthDetail({ ...layers, loadImage: load("earth"), restore: () => restores.push("earth") });
-  const grass = createGrassDetail({ ...layers, loadImage: load("grass"), restore: () => restores.push("grass") });
   registry.register({
     applyQuality(profile, context) {
-      ground.applyQuality(profile, context);
       slate.applyQuality(profile, context);
-      earth.applyQuality(profile, context);
-      grass.applyQuality(profile, context);
     },
     dispose() {
       slate.dispose();
-      earth.dispose();
-      grass.dispose();
-      ground.dispose();
     },
   });
 
@@ -84,8 +65,6 @@ test("adaptive quality steps change cost settings without refetching models or t
   applyProfile(initialProfile);
   assert.equal(pixelRatio, 1.5);
   slate.setActive(true);
-  earth.setActive(true);
-  grass.setActive(true);
   architecture.setQuality(profile, true, { assetTier });
   requests.forEach(({ kind, resolve }) =>
     resolve(kind === "model" ? { scene: new Group() } : { width: 1024, height: 1024, close() {} }),
@@ -93,8 +72,8 @@ test("adaptive quality steps change cost settings without refetching models or t
   await flush();
   await flush();
   const settled = requests.length;
-  // Models, ground pair, slate (color, normal, detail), earth triple, grass pair.
-  assert.equal(settled, 2 + 2 + 3 + 3 + 2);
+  // Models (tower, tree) and the slate (color, normal, detail).
+  assert.equal(settled, 2 + 3);
   restores.length = 0;
 
   // Mirrors updateSceneFrame after the reveal.
@@ -128,8 +107,7 @@ test("scene bootstrap pins the asset tier and samples quality only after reveal"
 
   assert.match(index, /const assetTier = qualityState\.initialTier \|\| fallbackProfile\.tier;/);
   assert.match(index, /architectureAssets\.setQuality\(state\.profile, true, \{ assetTier \}\);/);
-  assert.match(index, /state\.lowPower = assetTier === "low";/);
-  assert.doesNotMatch(index, /state\.lowPower = state\.profile\.isLow/);
+  assert.doesNotMatch(index, /lowPower/);
   assert.match(index, /const revealed = sceneReadyMarked && cinematic\.ready;/);
   assert.match(index, /revealed && !reducedMotion && !adaptiveSteps\.pending\s*\?\s*qualityState\.sampleRevealed\?\.\(/);
   assert.match(index, /if \(adaptiveProfile\) applyActiveQualityProfile\(adaptiveProfile, "adaptive"\);/);
@@ -165,7 +143,6 @@ test("scene bootstrap pins the asset tier and samples quality only after reveal"
     ["intersection resume", "if (sceneVisible) {"],
     ["context restore", "onContextRestored() {"],
     ["ground readiness", "onDetailStatus(status) {"],
-    ["grass readiness", "onGrassStatus(status) {"],
     ["model readiness", "onStatus(status) {"],
     ["resize", "function applySceneSize("],
     ["document resume", "const onDocumentVisibilityChange = () => {"],
@@ -177,6 +154,6 @@ test("scene bootstrap pins the asset tier and samples quality only after reveal"
   }
   assert.match(
     textures,
-    /applyQuality\(profile, context\) \{ detail\.applyQuality\(profile, context\); filmMaps\.applyQuality\(profile, context\); grass\.applyQuality\(profile, context\); \}/,
+    /applyQuality\(profile, context\) \{ filmMaps\.applyQuality\(profile, context\); \}/,
   );
 });

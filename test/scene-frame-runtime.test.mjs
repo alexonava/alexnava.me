@@ -425,7 +425,7 @@ test("still mode renders only invalidated frames and returns to animation", () =
   scheduler.dispose();
 });
 
-test("still mode yields to forced animation and composes with reduced motion", () => {
+test("still mode composes with reduced motion", () => {
   const frames = createFrameHarness();
   let updates = 0;
   const scheduler = createSceneFrameScheduler({
@@ -442,13 +442,13 @@ test("still mode yields to forced animation and composes with reduced motion", (
   scheduler.setStill(true);
   scheduler.setStill(false);
   assert.equal(frames.pending, 0, "reduced motion stays static either way");
-
-  scheduler.setStill(true);
-  scheduler.setForceAnimation(true);
+  assert.equal(updates, 1);
+  assert.equal("setForceAnimation" in scheduler, false, "nothing forces animation");
+  assert.equal("forceAnimation" in scheduler.getState(), false);
+  scheduler.invalidate();
   frames.step(16);
-  frames.step(32);
-  assert.equal(updates, 3, "the developer camera animates while still");
-  assert.equal(frames.pending, 1);
+  assert.equal(updates, 2, "an invalidated still frame draws once");
+  assert.equal(frames.pending, 0);
   scheduler.dispose();
 });
 
@@ -699,19 +699,11 @@ test("runtime resource disposal deduplicates scene assets and leaves render-targ
   assert.equal(calls.sceneCleared, 1);
 });
 
-test("scene wires each brazier to its own visibility record", async () => {
-  const source = await readFile(new URL("../src/scene/legacy-world.js", import.meta.url), "utf8");
-
-  assert.doesNotMatch(source, /const brazierSystem\s*=/);
-  assert.match(source, /name: `brazier-\$\{num460\}`/);
-  assert.match(source, /if \(!arg52\.visibilitySystem\.active\) return;/);
-});
-
 test("scene bootstrap idles before reveal, holds behind dialogs and fails to the poster", async () => {
   const source = await readFile(new URL("../src/scene/index.js", import.meta.url), "utf8");
 
   // The frame that sees readiness reveals the canvas and resumes animation.
-  assert.match(source, /const sceneShown = !sceneFailed && \(cinematic\.ready \|\|/);
+  assert.match(source, /const sceneShown = !sceneFailed && cinematic\.ready &&/);
   assert.match(source, /container\?\.classList\.toggle\("is-ready", sceneShown\);\s*[^]*?frameScheduler\?\.setStill\(!sceneShown\);/);
   // The dialog hold's behaviour is tested above; index.js only wires it.
   assert.match(
@@ -730,16 +722,21 @@ test("scene bootstrap idles before reveal, holds behind dialogs and fails to the
   const dispose = source.slice(source.indexOf("function disposeHomeSceneRuntime"));
   assert.match(dispose, /panelObserver\?\.disconnect\(\);\s*panelHold\.dispose\(\);/);
 
-  // The camera learns a fallback status before the legacy world can throw.
+  // A missing tower or tree fails to the poster: the camera learns the status
+  // first, the scene stops at once and the runtime is disposed on a later tick.
   const onStatus = source.slice(
     source.indexOf("onStatus(status) {"),
     source.indexOf("subsystemRegistry.register(architectureAssets);"),
   );
-  assert.ok(onStatus.indexOf("cinematic.setStatus(status);") < onStatus.indexOf("ensureLegacyWorld();"));
-  assert.match(onStatus, /try \{\s*ensureLegacyWorld\(\);\s*\} catch \(error\) \{\s*stopFailedScene\(/);
+  assert.ok(onStatus.indexOf("cinematic.setStatus(status);") < onStatus.indexOf("failToPoster("));
+  assert.match(onStatus, /status\.kind !== "lantern" && \(status\.status === "fallback" \|\|\s*\(status\.status === "procedural" && sceneReadyMarked\)\)\) \{\s*failToPoster\(/);
+  assert.match(
+    source,
+    /function failToPoster\(stage, error\) \{\s*if \(sceneFailed\) return;\s*stopFailedScene\(stage, error\);[\s\S]*?\(function disposeWhenIdle\(\) \{[\s\S]*?if \(shaderWarmup\.pending\) window\.setTimeout\(disposeWhenIdle, 50\);\s*else scene\.disposeHomeSceneRuntime\?\.\(\);/,
+  );
+  assert.doesNotMatch(source, /ensureLegacyWorld|legacyWorld|ensureProcedural/);
   assert.match(source, /webglContextAvailable && !sceneFailed;/);
 
-  // Static shadows apply only while no animated legacy world exists.
-  assert.match(source, /rendering\.setStaticShadows\(!legacyWorld\.current\);/);
-  assert.match(source, /bindLegacyWorld\(world\);\s*rendering\.setStaticShadows\(false\);/);
+  // The authored scene's shadows are static: the map redraws only on reported changes.
+  assert.match(source, /rendering\.setStaticShadows\(true\);/);
 });

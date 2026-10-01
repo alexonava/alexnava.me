@@ -253,9 +253,9 @@ test("disposing before flame preparation prevents any later material attachment 
 
 test("scene integration clears camera fits and warms shaders only when the optional lantern commits", async () => {
   const source = await readFile(new URL("../src/scene/index.js", import.meta.url), "utf8");
-  assert.match(source, /includeLantern: !modes\.legacy/);
+  assert.match(source, /includeLantern: true/);
   assert.match(source, /onLanternReady: \(asset\) => lanternMount\.stage\(asset\)/);
-  assert.match(source, /status\.kind !== "lantern" &&/, "an optional failure must not build legacy clutter");
+  assert.match(source, /status\.kind !== "lantern" &&/, "an optional failure must not stop the scene for the poster");
   assert.match(source, /lanternMount\.take\(\{ revealed: canvasShown, running: cameraTour\?\.running === true, cut: transition\.cut \}\)/);
   assert.match(source, /if \(committed\) warmShaders\("lantern"\)/);
 });

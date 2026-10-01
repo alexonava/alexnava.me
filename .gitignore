@@ -8,7 +8,6 @@ Desktop.ini
 # Environment / secrets
 .env
 .env.*
-!.env.example
 .dev.vars
 .dev.vars.*
 
@@ -38,7 +37,6 @@ npm-debug.log*
 .tmp-lighthouse-*/
 .tmp-preview-review/
 .playwright-cli/
-HANDOFF.md
 
 # Node / build
 node_modules/
@@ -48,8 +46,3 @@ dist/
 scripts/
 !.github/scripts/
 !.github/scripts/*.sh
-!.github/scripts/*.mjs
-vendor/
-
-.codex/coordination/*
-!.codex/coordination/project.yaml

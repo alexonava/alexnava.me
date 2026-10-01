@@ -41,7 +41,7 @@ test("scene rendering owns quality, sizing, rendering, and disposal lifecycle", 
     setSize: (...args) => calls.push(["rendererSize", ...args]),
   };
   const composer = {
-    addPass: () => calls.push(["outlineAdded"]),
+    addPass: () => calls.push(["passAdded"]),
     render: () => {
       if (contextLost) throw new TypeError("Shader log is null before contextlost dispatch");
       calls.push(["render"]);
@@ -57,12 +57,6 @@ test("scene rendering owns quality, sizing, rendering, and disposal lifecycle", 
     resize: (...args) => calls.push(["postprocessSize", ...args]),
     setQualityProfile: (profile) => calls.push(["quality", profile]),
   };
-  const outline = {
-    hiddenEdgeColor: { set() {} },
-    selectedObjects: ["selected"],
-    setSize: (...args) => calls.push(["outlineSize", ...args]),
-    visibleEdgeColor: { set() {} },
-  };
   let disposedOptions = null;
   const profile = createProfile();
   const rendering = createSceneRendering({
@@ -71,7 +65,6 @@ test("scene rendering owns quality, sizing, rendering, and disposal lifecycle", 
         assert.equal(node, renderer.domElement);
       },
     },
-    createOutlinePass: () => outline,
     createPipeline: () => pipeline,
     createRenderer: (options) => {
       rendererOptions = options;
@@ -109,11 +102,9 @@ test("scene rendering owns quality, sizing, rendering, and disposal lifecycle", 
     },
   });
 
-  assert.equal(rendering.outlinePass, null);
+  assert.equal("ensureOutlinePass" in rendering, false, "no developer outline pass");
   assert.equal(rendering.lights.fill.visible, true);
   assert.equal(rendering.lights.fill.intensity, 0.58);
-  assert.equal(rendering.ensureOutlinePass(), outline);
-  assert.equal(rendering.ensureOutlinePass(), outline);
   assert.equal(rendererOptions.antialias, false, "only the composer targets multisample");
   rendering.applyQuality(profile, { pixelRatio: 1.5 });
   assert.equal(rendererRatio, 1.5);
@@ -204,18 +195,12 @@ test("scene rendering owns quality, sizing, rendering, and disposal lifecycle", 
     ["postprocessSize", 900, 400],
     "grading texels are CSS pixels",
   );
-  assert.equal(
-    calls.some((entry) => entry[0] === "outlineSize"),
-    false,
-    "the composer sizes the outline pass in device pixels",
-  );
+  assert.equal(calls.some((entry) => entry[0] === "passAdded"), false, "rendering adds no pass of its own");
   assert.ok(calls.some((entry) => entry[0] === "render"));
   assert.deepEqual(rendering.dispose(), { geometries: 1 });
   assert.equal(rendering.dispose(), false);
   assert.equal(rendering.update(), false);
   assert.deepEqual(disposedOptions.renderTargets, [renderTarget]);
-  assert.equal(outline.enabled, false);
-  assert.deepEqual(outline.selectedObjects, []);
 });
 
 test("static shadows redraw the sun map only after reported changes", () => {
@@ -276,7 +261,7 @@ test("static shadows redraw the sun map only after reported changes", () => {
     return shadow.needsUpdate;
   };
 
-  assert.equal(shadow.autoUpdate, true, "legacy/animated scenes keep per-frame shadows");
+  assert.equal(shadow.autoUpdate, true, "per-frame shadows by default");
   rendering.setStaticShadows(true);
   assert.equal(shadow.autoUpdate, false);
   assert.equal(shadow.needsUpdate, true, "the first static frame draws the map");
@@ -298,68 +283,10 @@ test("static shadows redraw the sun map only after reported changes", () => {
   assert.equal(redraws(() => rendering.update()), false, "an ordinary frame keeps the map");
 
   rendering.setStaticShadows(false);
-  assert.equal(shadow.autoUpdate, true, "a legacy world restores per-frame redraws");
+  assert.equal(shadow.autoUpdate, true, "per-frame redraws can be restored");
   rendering.dispose();
   assert.equal(rendering.setStaticShadows(true), false);
   assert.equal(shadow.autoUpdate, true);
-});
-
-test("the outline pass exists only when the developer tools supply its factory", () => {
-  const added = [];
-  const rendering = createSceneRendering({
-    container: { appendChild() {} },
-    createPipeline: () => ({
-      composer: { addPass: (pass) => added.push(pass), render() {}, setPixelRatio() {}, setSize() {} },
-      setQualityProfile() {},
-    }),
-    createRenderer: () => ({ domElement: {}, shadowMap: {}, setClearColor() {} }),
-    disposeResources: () => ({}),
-    height: 600,
-    lighting: {
-      ambientColor: 0xffffff,
-      ambientIntensity: 0.22,
-      directionalColor: 0xffffff,
-      directionalIntensity: 2.9,
-      directionalPosition: { x: 21, y: 29, z: 23 },
-      fogColor: 0x222222,
-      fogFar: 150,
-      fogNear: 62,
-      hemisphereGroundColor: 0x111111,
-      hemisphereIntensity: 0.71,
-      hemisphereSkyColor: 0x888888,
-    },
-    profile: createProfile(),
-    threeExports: {},
-    width: 800,
-    world: {
-      CAMERA_FAR: 210,
-      CAMERA_FOV: 48,
-      CAMERA_NEAR: 0.5,
-      FILL_LIGHT_POSITION: [-20, 14, -18],
-      SHADOW_CAMERA_FAR: 120,
-      SHADOW_CAMERA_HALF_EXTENT: 34,
-      SHADOW_CAMERA_NEAR: 0.5,
-    },
-  });
-
-  // Visitors' rendering carries no OutlinePass constructor of its own.
-  assert.equal(rendering.ensureOutlinePass(), null);
-  assert.equal(rendering.outlinePass, null);
-  assert.deepEqual(added, []);
-
-  const outline = { hiddenEdgeColor: { set() {} }, visibleEdgeColor: { set() {} } };
-  const created = [];
-  const factory = (size, homeScene, camera) => {
-    created.push([size.x, size.y, homeScene, camera]);
-    return outline;
-  };
-  assert.equal(rendering.ensureOutlinePass(factory), outline);
-  assert.equal(rendering.ensureOutlinePass(factory), outline, "the pass is created once");
-  assert.deepEqual(created, [[800, 600, rendering.homeScene, rendering.camera]]);
-  assert.deepEqual(added, [outline]);
-  assert.equal(outline.enabled, false, "the pass waits for a developer-camera target");
-  rendering.dispose();
-  assert.equal(rendering.ensureOutlinePass(factory), null, "a disposed rendering adds no pass");
 });
 
 test("a lost context ends a tour crossfade before the scene hears of it", () => {
