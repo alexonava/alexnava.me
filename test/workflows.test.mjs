@@ -1,31 +1,85 @@
 // The GitHub Actions workflows: CI, deploys, audits and action pinning.
-
 import assert from "node:assert/strict";
 import test from "node:test";
 import { access, readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const testDir = path.dirname(fileURLToPath(import.meta.url));
-
-const projectRoot = path.resolve(testDir, "..");
+const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 async function readProjectFile(relativePath) {
   return readFile(path.join(projectRoot, relativePath), "utf8");
 }
 
+// One job of a workflow: from its id line to the next job's.
+function job(workflow, id) {
+  const start = workflow.indexOf(`\n  ${id}:\n`);
+  assert.ok(start >= 0, `job ${id}`);
+  const next = workflow.slice(start + 1).search(/\n  [\w-]+:\r?\n/);
+  return workflow.slice(start, next < 0 ? undefined : start + 1 + next);
+}
+
+test("CI builds once on pull requests and manual runs, and its audit and preview use that build", async () => {
+  const ci = await readProjectFile(".github/workflows/ci.yml");
+  assert.match(ci, /^name: CI$/m);
+  assert.match(ci, /^on:\r?\n  pull_request:\r?\n  workflow_dispatch:\r?\n\r?\npermissions:/m);
+  assert.match(ci, /^permissions:\r?\n  contents: read$/m);
+  assert.match(
+    ci,
+    /^concurrency:\r?\n  group: ci-\$\{\{ github\.event\.pull_request\.number \|\| github\.ref \}\}\r?\n  cancel-in-progress: true$/m,
+  );
+  const jobs = ci.slice(ci.indexOf("\njobs:"));
+  assert.deepEqual(
+    [...jobs.matchAll(/^  ([\w-]+):$/gm)].map((match) => match[1]),
+    ["build", "audit", "preview", "comment"],
+  );
+  // Check names are the job ids.
+  assert.doesNotMatch(jobs, /^    name:/m);
+
+  const build = job(ci, "build");
+  assert.match(build, /node-version-file: \.nvmrc/);
+  const steps = [
+    "run: npm ci",
+    "run: npm run audit:ci",
+    "run: npm run format:check",
+    "run: npm run verify",
+    "run: npm test",
+    "run: npm run build:dist",
+    "uses: actions/upload-artifact@",
+  ].map((step) => build.indexOf(step));
+  assert.ok(steps.every((at) => at >= 0));
+  assert.deepEqual(
+    steps,
+    [...steps].sort((a, b) => a - b),
+  );
+  assert.match(build, /name: Audit npm dependencies \(high and critical\)/);
+  assert.match(
+    build,
+    /name: site-dist\r?\n\s+path: dist\/\r?\n\s+include-hidden-files: true\r?\n\s+if-no-files-found: error\r?\n\s+retention-days: 3/,
+  );
+
+  // The audit takes the build's payload; it installs and builds nothing.
+  const audit = job(ci, "audit");
+  assert.match(audit, /needs: build/);
+  assert.match(audit, /uses: actions\/download-artifact@[\s\S]*?name: site-dist/);
+  assert.doesNotMatch(audit, /npm (?:ci|run|test)/);
+});
+
 test("Cloudflare preview credentials run separately from pull-request build code", async () => {
   const deploy = await readProjectFile(".github/workflows/deploy.yml");
-  const preview = await readProjectFile(".github/workflows/preview.yml");
+  const ci = await readProjectFile(".github/workflows/ci.yml");
+  const preview = job(ci, "preview");
 
   assert.doesNotMatch(deploy, /\n    env:\r?\n      CLOUDFLARE_API_TOKEN:/);
   assert.match(
     deploy,
     /- name: Deploy to Cloudflare Pages[\s\S]*?env:[\s\S]*?CLOUDFLARE_API_TOKEN:/,
   );
-  assert.match(preview, /\n  build:\r?\n[\s\S]*?npm run build:dist/);
-  assert.match(preview, /uses: actions\/upload-artifact@/);
-  assert.match(preview, /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/);
+  assert.match(preview, /needs: build/);
+  assert.match(
+    preview,
+    /if: github\.event_name == 'pull_request' && github\.event\.pull_request\.head\.repo\.full_name == github\.repository/,
+  );
   assert.match(preview, /uses: actions\/download-artifact@/);
   // The preview job installs the same wrangler the lockfile resolves.
   const lock = JSON.parse(await readProjectFile("package-lock.json"));
@@ -41,16 +95,14 @@ test("Cloudflare preview credentials run separately from pull-request build code
     /- name: Deploy preview to Cloudflare Pages[\s\S]*?env:[\s\S]*?CLOUDFLARE_API_TOKEN:/,
   );
   assert.doesNotMatch(preview, /npx wrangler/);
-
-  const credentialedJob = preview.slice(preview.indexOf("\n  preview:"));
-  assert.doesNotMatch(credentialedJob, /actions\/checkout@/);
-  assert.doesNotMatch(credentialedJob, /\brun:\s*npm ci\b/);
-  assert.doesNotMatch(credentialedJob, /npm run build:dist/);
+  assert.doesNotMatch(preview, /actions\/checkout@/);
+  assert.doesNotMatch(preview, /\brun:\s*npm ci\b/);
+  assert.doesNotMatch(preview, /npm run build:dist/);
 });
 
 test("deploy workflows expose environment metadata and use explicit missing-credential policies", async () => {
   const deploy = await readProjectFile(".github/workflows/deploy.yml");
-  const preview = await readProjectFile(".github/workflows/preview.yml");
+  const preview = job(await readProjectFile(".github/workflows/ci.yml"), "preview");
 
   assert.match(
     deploy,
@@ -67,7 +119,7 @@ test("deploy workflows expose environment metadata and use explicit missing-cred
 
 test("deploys smoke-check what they published: production through the shared script, previews inline", async () => {
   const deploy = await readProjectFile(".github/workflows/deploy.yml");
-  const preview = await readProjectFile(".github/workflows/preview.yml");
+  const preview = await readProjectFile(".github/workflows/ci.yml");
   const smoke = await readProjectFile(".github/scripts/smoke-pages.sh");
 
   // The script's own behaviour is tested in smoke-pages.test.mjs.
@@ -93,7 +145,7 @@ test("deploys smoke-check what they published: production through the shared scr
 
 test("dependency auditing gates every build and deploy workflow at high severity", async () => {
   const packageJson = JSON.parse(await readProjectFile("package.json"));
-  const workflowNames = ["ci.yml", "deploy.yml", "preview.yml", "lighthouse.yml"];
+  const workflowNames = ["ci.yml", "deploy.yml"];
 
   assert.equal(packageJson.scripts["audit:ci"], "npm audit --audit-level=high");
   for (const workflowName of workflowNames) {
@@ -104,11 +156,12 @@ test("dependency auditing gates every build and deploy workflow at high severity
 
 test("Lighthouse uses repository artifacts and hard performance-quality budgets", async () => {
   const lighthouse = JSON.parse(await readProjectFile("lighthouserc.json"));
-  const workflow = await readProjectFile(".github/workflows/lighthouse.yml");
+  const workflow = job(await readProjectFile(".github/workflows/ci.yml"), "audit");
   const { collect, assert: assertionConfig } = lighthouse.ci;
   const assertions = assertionConfig.assertions;
 
   assert.equal(collect.numberOfRuns, 3);
+  assert.equal(collect.staticDistDir, "./dist");
   assert.deepEqual(collect.url, ["http://localhost/"]);
   assert.equal(assertionConfig.aggregationMethod, "median");
   assert.deepEqual(assertions["categories:performance"], ["error", { minScore: 0.8 }]);
@@ -118,6 +171,7 @@ test("Lighthouse uses repository artifacts and hard performance-quality budgets"
   assert.deepEqual(assertions["largest-contentful-paint"], ["error", { maxNumericValue: 2500 }]);
   assert.deepEqual(assertions["cumulative-layout-shift"], ["error", { maxNumericValue: 0.1 }]);
   assert.deepEqual(assertions["total-blocking-time"], ["error", { maxNumericValue: 200 }]);
+  assert.match(workflow, /configPath: \.\/lighthouserc\.json/);
   assert.match(workflow, /uploadArtifacts:\s*true/);
   assert.match(workflow, /temporaryPublicStorage:\s*false/);
   assert.doesNotMatch(workflow, /pull-requests:\s*write/);
@@ -211,12 +265,35 @@ test("CodeQL default setup is not duplicated by a workflow", async () => {
 });
 
 test("production deploy is workflow-owned and explicitly publishes main", async () => {
-  const packageJson = JSON.parse(await readProjectFile("package.json"));
   const deploy = await readProjectFile(".github/workflows/deploy.yml");
 
   assert.match(deploy, /npx wrangler pages deploy dist --project-name=alexnava-me --branch=main/);
   assert.match(deploy, /if:\s*github\.ref == 'refs\/heads\/main'/);
   assert.match(deploy, /group:\s*pages-production\r?\n\s+cancel-in-progress:\s*false/);
+});
+
+test("deploy is the full gate on main: audit, format, verify, test and build before publishing", async () => {
+  const deploy = await readProjectFile(".github/workflows/deploy.yml");
+  assert.match(
+    deploy,
+    /^on:\r?\n  push:\r?\n    branches:\r?\n      - main\r?\n  workflow_dispatch:/m,
+  );
+  assert.match(deploy, /node-version-file: \.nvmrc/);
+  const steps = [
+    "run: npm ci",
+    "run: npm run audit:ci",
+    "run: npm run format:check",
+    "run: npm run verify",
+    "run: npm test",
+    "run: npm run build:dist",
+    "name: Deploy to Cloudflare Pages",
+  ].map((step) => deploy.indexOf(step));
+  assert.ok(steps.every((at) => at >= 0));
+  assert.deepEqual(
+    steps,
+    [...steps].sort((a, b) => a - b),
+  );
+  assert.match(deploy, /name: Audit npm dependencies \(high and critical\)/);
 });
 
 test("production deploy captures and verifies an automatic Pages rollback target", async () => {
