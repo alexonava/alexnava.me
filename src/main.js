@@ -12,7 +12,6 @@
       // Deep links drive the enhanced dialogs; the fallback keeps native anchors.
       if (ui.initSceneMenu() === true && typeof ui.initDeepLinks === "function") ui.initDeepLinks();
     } else if (typeof ui.initPanels === "function") ui.initPanels();
-    if (typeof ui.initSceneControls === "function") ui.initSceneControls();
   }
 
   function initScene() {

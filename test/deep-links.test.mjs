@@ -268,23 +268,12 @@ function bootMain(ui) {
   return calls;
 }
 
-test("main.js binds deep links only after the enhanced menu succeeds and always binds the pause control", () => {
+test("main.js binds deep links only after the enhanced menu succeeds", () => {
   assert.deepEqual(
-    bootMain({
-      initHeroChrome: undefined,
-      initSceneMenu: true,
-      initDeepLinks: true,
-      initSceneControls: true,
-    }),
-    ["initHeroChrome", "initSceneMenu", "initDeepLinks", "initSceneControls"],
+    bootMain({ initHeroChrome: undefined, initSceneMenu: true, initDeepLinks: true }),
+    ["initHeroChrome", "initSceneMenu", "initDeepLinks"],
   );
-  assert.deepEqual(
-    bootMain({ initSceneMenu: false, initDeepLinks: true, initSceneControls: true }),
-    ["initSceneMenu", "initSceneControls"],
-  );
-  assert.deepEqual(bootMain({ initPanels: true, initDeepLinks: true, initSceneControls: true }), [
-    "initPanels",
-    "initSceneControls",
-  ]);
+  assert.deepEqual(bootMain({ initSceneMenu: false, initDeepLinks: true }), ["initSceneMenu"]);
+  assert.deepEqual(bootMain({ initPanels: true, initDeepLinks: true }), ["initPanels"]);
   assert.deepEqual(bootMain({ initSceneMenu: true }), ["initSceneMenu"]);
 });
