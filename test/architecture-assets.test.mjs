@@ -765,3 +765,32 @@ test("unused early requests are released by a live low tier or teardown", async 
     });
   }
 });
+
+test("the loading line counts the loader's own request once and never re-wraps a taken early response", async () => {
+  const url = ARCHITECTURE_ASSET_URLS.high.tree;
+  const early = earlyRequest(Promise.resolve(new Response(glb(base))));
+  await withPrefetched([[url, early]], async ({ fetches }) => {
+    const tracked = [];
+    let copy = (response) => new Response(response.body, { status: response.status, headers: response.headers });
+    // ui/scene-loader.js returns a counted copy, which the loader then reads.
+    globalThis.BabelSite.sceneLoader = {
+      track(trackedUrl, response) {
+        tracked.push(trackedUrl);
+        return copy(response);
+      },
+    };
+    const signal = new AbortController().signal;
+    // main.js counted the early response as it arrived.
+    const first = await loadArchitectureAsset(url, { signal, tier: "high", role: "tree" });
+    assert.ok(first.scene.isObject3D);
+    assert.deepEqual(tracked, [], "a taken early response is not wrapped twice");
+    const second = await loadArchitectureAsset(url, { signal, tier: "high", role: "tree" });
+    assert.ok(second.scene.isObject3D);
+    assert.equal(fetches.length, 1);
+    assert.deepEqual(tracked, [url], "the loader's own request is counted exactly once");
+    // The loader reads the copy track() returned, not the original.
+    copy = () => new Response(Buffer.alloc(10));
+    await assert.rejects(loadArchitectureAsset(url, { signal, tier: "high", role: "tree" }), /payload bounds/);
+    assert.deepEqual(tracked, [url, url]);
+  });
+});

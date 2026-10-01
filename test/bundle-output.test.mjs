@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { cp, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { isFingerprintedSource } from "../build.mjs";
 
 const execFileP = promisify(execFile);
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -287,34 +288,48 @@ test("dist/images publishes fingerprinted sources only under their hashed names"
   }
 });
 
-test("published responsive posters use content hashes, without plain-name copies", async () => {
-  const html = await readFile(path.join(distDir, "index.html"), "utf8");
-  const expectedNames = [];
-  for (const [orientation, attribute] of [
-    ["landscape", "src"],
-    ["portrait", "srcset"],
-  ]) {
-    const stableName = `scene-poster-${orientation}.webp`;
-    const source = await readFile(path.join(projectRoot, "images", stableName));
-    const hash = createHash("sha256").update(source).digest("hex").slice(0, 8);
-    const hashedName = `scene-poster-${orientation}.${hash}.webp`;
-    expectedNames.push(hashedName);
-    assert.ok(html.includes(`${attribute}="/images/${hashedName}"`), "first paint references the current responsive poster hash");
-    assert.deepEqual(await readFile(path.join(distDir, "images", hashedName)), source);
-    await assert.rejects(readFile(path.join(distDir, "images", stableName)), { code: "ENOENT" });
+test("the title card publishes no picture: no poster image and no picture or img element", async () => {
+  assert.deepEqual((await readdir(path.join(distDir, "images"))).filter((name) => /scene-poster/.test(name)), []);
+  for (const page of ["index.html", "404.html"]) {
+    const html = await readFile(path.join(distDir, page), "utf8");
+    assert.doesNotMatch(html, /<picture|<img|scene-poster/, page);
   }
-  const emittedNames = (await readdir(path.join(distDir, "images"))).filter((name) =>
-    /^scene-poster-(landscape|portrait)\.[a-f0-9]{8}\.webp$/.test(name),
-  );
-  assert.deepEqual(emittedNames.sort(), expectedNames.sort());
-  assert.doesNotMatch(html, /\/images\/scene-poster-(landscape|portrait)\.webp/);
+  // The retired poster names are no longer build inputs.
+  assert.equal(isFingerprintedSource("images/scene-poster-landscape.webp"), false);
+  assert.equal(isFingerprintedSource("images/scene-poster-portrait.webp"), false);
+  assert.equal(isFingerprintedSource("images/paper-grain.webp"), true);
+  // The share card's backdrop stays in tools/, outside the payload.
+  await assert.rejects(readFile(path.join(distDir, "tools", "og-card-backdrop.webp")), { code: "ENOENT" });
+});
+
+test("the UI carries the loading line and its tower and tree byte sizes; the scene only reports to it", async () => {
+  const app = await readFile(await findHashedScript("app"), "utf8");
+  const scene = await readSceneStatic();
+  assert.match(app, /scene-loader__fill/);
+  assert.match(app, /sceneLoader/);
+  for (const tier of ["high", "balanced"]) {
+    for (const role of ["tower", "tree"]) {
+      const { size } = await stat(path.join(projectRoot, "images", "architecture", `${role}-${tier}.glb`));
+      assert.ok(app.includes(`${role}:${size}`), `the UI names ${role}-${tier}'s ${size} bytes`);
+      assert.ok(!scene.includes(`${role}:${size}`), `the scene carries no ${role}-${tier} size`);
+    }
+  }
+  for (const role of ["lantern", "lichen-rock", "weathered-stone"]) {
+    const { size } = await stat(path.join(projectRoot, "images", "architecture", `${role}-high.glb`));
+    assert.ok(!app.includes(String(size)), `the UI names no ${role} size`);
+  }
+  // The scene's model loader reports its own requests; the copy stays in the UI.
+  assert.match(scene, /sceneLoader/);
+  assert.doesNotMatch(scene, /Loading the estate|scene-loader__/);
+  const html = await readFile(path.join(distDir, "index.html"), "utf8");
+  assert.match(html, /<div class="scene-loader" id="scene-loader" aria-hidden="true" hidden>/);
 });
 
 test("the build refuses a shared scene chunk that would carry first-party modules", async () => {
   const fixture = await mkdtemp(path.join(scratchRoot, "shared-chunk-build-"));
   try {
     // The sanitized static payload, plus the source images (models, maps and
-    // posters) the build hashes, which dist carries only under hashed names.
+    // paper) the build hashes, which dist carries only under hashed names.
     await cp(distDir, fixture, { recursive: true });
     await cp(path.join(projectRoot, "images"), path.join(fixture, "images"), { recursive: true });
     await cp(path.join(projectRoot, "build.mjs"), path.join(fixture, "build.mjs"));
@@ -342,16 +357,15 @@ test("the build refuses a shared scene chunk that would carry first-party module
   }
 });
 
-test("changing only fixture poster bytes changes only that poster URL", async () => {
-  const scratchRoot = path.join(projectRoot, ".tmp-preview-review");
-  await mkdir(scratchRoot, { recursive: true });
-  const fixture = await mkdtemp(path.join(scratchRoot, "poster-build-"));
-  const sourcePath = path.join(projectRoot, "images", "scene-poster-landscape.webp");
+test("changing only a fixture tower model changes only its URL and size in the UI, and a rebuild is stable", async () => {
+  const fixture = await mkdtemp(path.join(scratchRoot, "model-size-build-"));
+  const sourcePath = path.join(projectRoot, "images", "architecture", "tower-high.glb");
   const sourceBefore = await readFile(sourcePath);
+  const sha8 = (bytes) => createHash("sha256").update(bytes).digest("hex").slice(0, 8);
   try {
-    // Reuse the sanitized static payload; only the actual build script, its
-    // unrewritten HTML/CSS inputs and the source images are copied from
-    // source. No user data or deps.
+    // Reuse the sanitized static payload; only the build script, its
+    // unrewritten HTML/CSS inputs, the source images and the two UI modules
+    // that read the model manifest are copied from source. No user data.
     await cp(distDir, fixture, { recursive: true });
     await cp(path.join(projectRoot, "images"), path.join(fixture, "images"), { recursive: true });
     for (const file of ["build.mjs", "index.html", "404.html", "styles.css", "LICENSE"]) {
@@ -359,29 +373,49 @@ test("changing only fixture poster bytes changes only that poster URL", async ()
     }
     await cp(path.join(projectRoot, "public"), path.join(fixture, "public"), { recursive: true });
     await cp(path.join(projectRoot, "tools"), path.join(fixture, "tools"), { recursive: true });
-    await mkdir(path.join(fixture, "src"));
-    await writeFile(path.join(fixture, "src", "app.js"), "void 0;");
-    await writeFile(path.join(fixture, "src", "scene-entry.js"), "void 0;");
-    async function posterUrls() {
-      await execFileP(process.execPath, ["build.mjs", "--dist", "--outdir", path.join(fixture, "dist")], { cwd: fixture });
-      const html = await readFile(path.join(fixture, "dist", "index.html"), "utf8");
-      return Object.fromEntries(
-        ["landscape", "portrait"].map((orientation) => [
-          orientation,
-          html.match(new RegExp(`/images/scene-poster-${orientation}\\.[a-f0-9]{8}\\.webp`))?.[0],
-        ]),
-      );
+    await mkdir(path.join(fixture, "src", "ui"), { recursive: true });
+    for (const file of ["main.js", "ui/scene-loader.js"]) {
+      await cp(path.join(projectRoot, "src", file), path.join(fixture, "src", file));
     }
-    const before = await posterUrls();
-    assert.ok(before.landscape && before.portrait);
-    const changed = Buffer.concat([sourceBefore, Buffer.from("fixture-only-poster-change")]);
-    await writeFile(path.join(fixture, "images", "scene-poster-landscape.webp"), changed);
-    const after = await posterUrls();
-    const changedHash = createHash("sha256").update(changed).digest("hex").slice(0, 8);
-    assert.equal(after.landscape, `/images/scene-poster-landscape.${changedHash}.webp`);
-    assert.notEqual(after.landscape, before.landscape);
-    assert.equal(after.portrait, before.portrait);
-    assert.deepEqual(await readFile(sourcePath), sourceBefore, "tracked poster must not change");
+    await writeFile(path.join(fixture, "src", "app.js"), 'import "./ui/scene-loader.js";\nimport "./main.js";\n');
+    await writeFile(path.join(fixture, "src", "scene-entry.js"), "void 0;");
+    async function buildApp() {
+      await execFileP(process.execPath, ["build.mjs", "--dist", "--outdir", path.join(fixture, "dist")], { cwd: fixture });
+      const names = (await readdir(path.join(fixture, "dist", "scripts"))).filter((name) => /^app\.[a-f0-9]{8}\.js$/.test(name));
+      assert.equal(names.length, 1);
+      return { name: names[0], text: await readFile(path.join(fixture, "dist", "scripts", names[0]), "utf8") };
+    }
+    // The UI's model manifest: each tier's tower and tree URLs and sizes.
+    const manifest = (text) => ({
+      urls: text.match(/\/images\/architecture\/[\w-]+\.[a-f0-9]{8}\.glb/g),
+      sizes: text.match(/\b(?:tower|tree):\d+\b/g),
+    });
+    const before = await buildApp();
+    const was = manifest(before.text);
+    const oldUrl = `/images/architecture/tower-high.${sha8(sourceBefore)}.glb`;
+    const oldSize = `tower:${sourceBefore.length}`;
+    assert.equal(was.urls.length, 4);
+    assert.equal(was.sizes.length, 4);
+    assert.equal(was.urls.filter((url) => url === oldUrl).length, 1, "the UI names the tower's URL once");
+    assert.equal(was.sizes.filter((size) => size === oldSize).length, 1, "and its size once");
+    const changed = Buffer.concat([sourceBefore, Buffer.from("fixture-only-model-change")]);
+    await writeFile(path.join(fixture, "images", "architecture", "tower-high.glb"), changed);
+    const after = await buildApp();
+    assert.notEqual(after.name, before.name);
+    // Minified names may shift with the hash's characters; the manifest
+    // changes in exactly the tower's URL and size.
+    const newUrl = `/images/architecture/tower-high.${sha8(changed)}.glb`;
+    assert.deepEqual(manifest(after.text), {
+      urls: was.urls.map((url) => (url === oldUrl ? newUrl : url)),
+      sizes: was.sizes.map((size) => (size === oldSize ? `tower:${changed.length}` : size)),
+    });
+    // An unchanged rebuild publishes the same UI, and a model the UI does not
+    // request early (the lantern) never changes it.
+    assert.equal((await buildApp()).name, after.name);
+    const lantern = path.join(fixture, "images", "architecture", "lantern-high.glb");
+    await writeFile(lantern, Buffer.concat([await readFile(lantern), Buffer.from("fixture")]));
+    assert.equal((await buildApp()).name, after.name);
+    assert.deepEqual(await readFile(sourcePath), sourceBefore, "the tracked model must not change");
   } finally {
     assert.equal(path.dirname(path.resolve(fixture)), scratchRoot);
     await rm(fixture, { recursive: true, force: true });

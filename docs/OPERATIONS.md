@@ -16,19 +16,19 @@ npm.cmd run build:dist
 
 `npm run audit:ci` fails on high or critical npm advisories. Lighthouse runs three times and asserts against the median: it hard-fails below performance 0.80, accessibility 1.00, best practices 0.95 or SEO 1.00, and above LCP 2500 ms, CLS 0.10 or TBT 200 ms. Reports are kept as GitHub Actions artifacts.
 
-CI Lighthouse runs on GPU-less GitHub-hosted runners, where the delivery policy below keeps the poster static. The CI check therefore audits the static poster delivery path, not the live scene. Hold the live scene to the same performance and TBT gates by measuring it locally on GPU hardware for each release: three uninstrumented default Lighthouse runs, median.
+CI Lighthouse runs on GPU-less GitHub-hosted runners, where the delivery policy below keeps the title card static. The CI check therefore audits the static title card delivery path, not the live scene (nor its loading line). Hold the live scene to the same performance and TBT gates by measuring it locally on GPU hardware for each release: three uninstrumented default Lighthouse runs, median.
 
 The bundle limits are 30 KiB for the UI and 820 KiB for the scene entry plus the chunks it imports statically; lazily imported chunks are outside that total. Model and texture payloads stay within 6 MiB on high and 3 MiB on balanced.
 
 ## Live scene delivery policy
 
-The responsive poster is eager and decorative, so it is a truthful first visual before JavaScript. Capable hardware, including real phones, loads the deferred Three.js scene. The poster stays static, and no scene script is downloaded, when reduced data or reduced motion is requested, WebGL is unavailable, the renderer is software-only (SwiftShader, llvmpipe, Microsoft Basic Render Driver), or the device resolves to the low quality tier. If an authored model fails to load, the scene fades back to the poster.
+The title card (the night sky drawn in CSS, the identity and About) is the first visual before JavaScript and requests no image. Capable hardware, including real phones, loads the deferred Three.js scene; meanwhile a loading line above the footer shows real progress and reads 100% at the reveal. The title card stays static, with no loading line, and no scene script is downloaded, when reduced data or reduced motion is requested, WebGL is unavailable, the renderer is software-only (SwiftShader, llvmpipe, Microsoft Basic Render Driver), or the device resolves to the low quality tier. If an authored model fails to load, the scene stops on the title card (a revealed canvas fades back to it) and the loading line retires.
 
 `?quality=balanced|high` forces the live path through the preference and software-renderer gates; it still stops when WebGL is unavailable. Do not add user-agent, Lighthouse or phone-viewport exceptions.
 
 The scene entry imports one shared chunk statically (Three.js core). Lazy chunks load only for the live film scene (high or balanced): rocks, lantern flame, terrain, light shafts (WebGL2 only) and mountains. All match the immutable `/scripts/scene.*.js` rule in `_headers`, and the pages still name exactly one app, one scene entry and one CSS asset.
 
-Whenever the posters change, regenerate `public/og.png` from `tools/og-card.html` (the recipe is in that file) and re-scrape it with LinkedIn Post Inspector after release.
+The share card's backdrop, `tools/og-card-backdrop.webp` (a 1600x900 still of the live scene, formerly the landscape poster), is not published. Whenever it changes, regenerate `public/og.png` from `tools/og-card.html` (the recipe is in that file) and re-scrape it with LinkedIn Post Inspector after release.
 
 ## GitHub environments and credentials
 

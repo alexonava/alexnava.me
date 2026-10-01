@@ -86,7 +86,10 @@ async function requestArchitectureAsset(url, signal) {
       // A failed early request falls back to the scene's own request.
     }
   }
-  return fetch(url, { signal });
+  // The title card's loading line (ui/scene-loader.js) counts this body too.
+  // An early response arrives already counted, so it is never wrapped twice.
+  const response = await fetch(url, { signal });
+  return globalThis.BabelSite?.sceneLoader?.track?.(url, response) ?? response;
 }
 
 export async function loadArchitectureAsset(url, { signal, tier, role = "asset" }) {

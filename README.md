@@ -1,6 +1,6 @@
 # alexnava.me
 
-Source for Alex Nava's website. The homepage opens on a cinematic tower and tree scene; About opens the illustrated estate menu and its Profile, Experience and Contact dialogs. Readable text and the static poster remain available when the scene cannot run.
+Source for Alex Nava's website. The homepage opens on a cinematic tower and tree scene; About opens the illustrated estate menu and its Profile, Experience and Contact dialogs. Readable text and the static title card remain available when the scene cannot run.
 
 ## Work locally
 

@@ -255,7 +255,7 @@ test("scene integration clears camera fits and warms shaders only when the optio
   const source = await readFile(new URL("../src/scene/index.js", import.meta.url), "utf8");
   assert.match(source, /includeLantern: true/);
   assert.match(source, /onLanternReady: \(asset\) => lanternMount\.stage\(asset\)/);
-  assert.match(source, /status\.kind !== "lantern" &&/, "an optional failure must not stop the scene for the poster");
+  assert.match(source, /status\.kind !== "lantern" &&/, "an optional failure must not stop the scene for the title card");
   assert.match(source, /lanternMount\.take\(\{ revealed: canvasShown, running: cameraTour\?\.running === true, cut: transition\.cut \}\)/);
   assert.match(source, /if \(committed\) warmShaders\("lantern"\)/);
 });

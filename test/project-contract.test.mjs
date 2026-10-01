@@ -178,12 +178,19 @@ test("robots.txt declines AI training but keeps search and citation crawlers wel
   // The decision is recorded next to the Cloudflare setting that enforces it.
 });
 
-test("scene posters are committed and the images folder is published through the build", async () => {
+test("the share card keeps its unpublished backdrop and the images folder is published through the build", async () => {
   const buildScript = await readProjectFile("build.mjs");
   const headers = await readProjectFile("public/_headers");
+  const card = await readProjectFile("tools/og-card.html");
 
-  await access(path.join(projectRoot, "images", "scene-poster-landscape.webp"));
-  await access(path.join(projectRoot, "images", "scene-poster-portrait.webp"));
+  // The retired poster survives only as the share card's backdrop, outside
+  // the published images.
+  await access(path.join(projectRoot, "tools", "og-card-backdrop.webp"));
+  assert.match(card, /url\("og-card-backdrop\.webp"\)/);
+  assert.doesNotMatch(card, /scene-poster|\.\.\/images\//);
+  const images = await readdir(path.join(projectRoot, "images"), { recursive: true });
+  assert.deepEqual(images.filter((name) => /scene-poster/.test(name)), []);
+  assert.doesNotMatch(buildScript, /scene-poster|POSTER/);
 
   assert.match(buildScript, /const STATIC_DIRS = \["fonts", "images"\];/);
   assert.match(
@@ -657,7 +664,7 @@ test("Pages header rules resolve one cache policy for stable and fingerprinted p
     assert.equal(cacheControl(hashed), hashedByBuild ? immutable : revalidated, hashed);
     assert.equal(headersFor(hashed).get("x-content-type-options"), "nosniff", hashed);
   }
-  assert.equal(fingerprintable, 24, "2 posters, 5 paper textures, 2 estate maps, 10 models and 5 slate maps");
+  assert.equal(fingerprintable, 22, "5 paper textures, 2 estate maps, 10 models and 5 slate maps");
 });
 
 test("hosting files publish security.txt, raster icons and a stable manifest id", async () => {

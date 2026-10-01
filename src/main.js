@@ -48,9 +48,12 @@
   // preference/capability paths is the reason this check happens in the UI
   // bundle.
 
+  // The title card stays. A loading line already shown (ui/scene-loader.js)
+  // retires below 100%.
   function disableSceneHost() {
     const host = document.getElementById("home-scene");
     if (host) host.hidden = true;
+    site.sceneLoader?.end?.("static");
   }
 
   function enableSceneHost() {
@@ -246,7 +249,11 @@
       for (const url of [tierUrls.tower, tierUrls.tree]) {
         if (!url) continue;
         const controller = new AbortController();
-        const response = fetch(url, { priority: "low", signal: controller.signal });
+        // The loading line counts the body as it arrives, before the scene
+        // takes it; the scene receives the copy it returns.
+        const response = fetch(url, { priority: "low", signal: controller.signal }).then(
+          (received) => site.sceneLoader?.track?.(url, received) ?? received,
+        );
         response.catch(() => {});
         prefetched.set(url, { response, abort: () => controller.abort() });
       }
@@ -307,19 +314,22 @@
       return false;
     }
 
-    // The low tier keeps the static poster (?quality=low included): the scene
-    // bundle is never requested.
+    // The low tier keeps the static title card (?quality=low included): the
+    // scene bundle is never requested.
     const startupTier = controls?.overrideTier || readStartupTier(capabilities);
     if (startupTier === "low") {
       disableSceneHost();
       return false;
     }
 
+    // Only the live path shows the title card's loading line.
+    site.sceneLoader?.begin?.({ tier: startupTier });
     try {
       const sceneScript = loadScriptOnce(getSceneScriptUrl(), getSceneModulePreloads());
       // Issued after the bundle request, which keeps its head start.
       prefetchArchitectureModels(startupTier);
       await sceneScript;
+      site.sceneLoader?.stage?.("bundle");
       cancelDeferredPrefetch();
       enableSceneHost();
       const initialized = initScene();
@@ -328,6 +338,7 @@
         disableSceneHost();
         return false;
       }
+      site.sceneLoader?.stage?.("init");
       clearStaticPreferenceRecovery();
       return true;
     } catch (error) {

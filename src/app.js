@@ -11,4 +11,5 @@ import "./ui/panels.js";
 import "./ui/scene-menu.js";
 import "./ui/scene-controls.js";
 import "./ui/deep-links.js";
+import "./ui/scene-loader.js";
 import "./main.js";

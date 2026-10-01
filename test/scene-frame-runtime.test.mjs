@@ -699,7 +699,7 @@ test("runtime resource disposal deduplicates scene assets and leaves render-targ
   assert.equal(calls.sceneCleared, 1);
 });
 
-test("scene bootstrap idles before reveal, holds behind dialogs and fails to the poster", async () => {
+test("scene bootstrap idles before reveal, holds behind dialogs and fails to the title card", async () => {
   const source = await readFile(new URL("../src/scene/index.js", import.meta.url), "utf8");
 
   // The frame that sees readiness reveals the canvas and resumes animation.
@@ -722,18 +722,29 @@ test("scene bootstrap idles before reveal, holds behind dialogs and fails to the
   const dispose = source.slice(source.indexOf("function disposeHomeSceneRuntime"));
   assert.match(dispose, /panelObserver\?\.disconnect\(\);\s*panelHold\.dispose\(\);/);
 
-  // A missing tower or tree fails to the poster: the camera learns the status
-  // first, the scene stops at once and the runtime is disposed on a later tick.
+  // A missing tower or tree fails to the title card: the camera learns the
+  // status first, the scene stops at once and the runtime is disposed on a
+  // later tick.
   const onStatus = source.slice(
     source.indexOf("onStatus(status) {"),
     source.indexOf("subsystemRegistry.register(architectureAssets);"),
   );
-  assert.ok(onStatus.indexOf("cinematic.setStatus(status);") < onStatus.indexOf("failToPoster("));
-  assert.match(onStatus, /status\.kind !== "lantern" && \(status\.status === "fallback" \|\|\s*\(status\.status === "procedural" && sceneReadyMarked\)\)\) \{\s*failToPoster\(/);
+  assert.ok(onStatus.indexOf("cinematic.setStatus(status);") < onStatus.indexOf("failToTitle("));
+  assert.match(onStatus, /status\.kind !== "lantern" && \(status\.status === "fallback" \|\|\s*\(status\.status === "procedural" && sceneReadyMarked\)\)\) \{\s*failToTitle\(/);
   assert.match(
     source,
-    /function failToPoster\(stage, error\) \{\s*if \(sceneFailed\) return;\s*stopFailedScene\(stage, error\);[\s\S]*?\(function disposeWhenIdle\(\) \{[\s\S]*?if \(shaderWarmup\.pending\) window\.setTimeout\(disposeWhenIdle, 50\);\s*else scene\.disposeHomeSceneRuntime\?\.\(\);/,
+    /function failToTitle\(stage, error\) \{\s*if \(sceneFailed\) return;\s*stopFailedScene\(stage, error\);[\s\S]*?\(function disposeWhenIdle\(\) \{[\s\S]*?if \(shaderWarmup\.pending\) window\.setTimeout\(disposeWhenIdle, 50\);\s*else scene\.disposeHomeSceneRuntime\?\.\(\);/,
   );
+  assert.doesNotMatch(source, /failToPoster/);
+  // A scene never shown also hides its host, which retires the loading line
+  // (ui/scene-loader.js); a shown canvas fades out to the title card instead.
+  const stop = source.slice(source.indexOf("function stopFailedScene"), source.indexOf("function failToTitle"));
+  assert.match(
+    stop,
+    /sceneFailed = true;\s*container\.classList\?\.remove\("is-ready"\);\s*if \(!canvasShown\) container\.hidden = true;/,
+  );
+  // canvasShown is declared before any status can reach stopFailedScene.
+  assert.ok(source.indexOf("let canvasShown = false;") < source.indexOf("createArchitectureAssetController({"));
   assert.doesNotMatch(source, /ensureLegacyWorld|legacyWorld|ensureProcedural/);
   assert.match(source, /webglContextAvailable && !sceneFailed;/);
 

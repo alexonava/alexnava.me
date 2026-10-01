@@ -834,7 +834,7 @@ function liftSampler(lifts, left, top, cols, rows, pitch, outside = 0) {
 
 const nextFrame = (task) => (globalThis.requestAnimationFrame ?? ((next) => setTimeout(next, 16)))(task);
 
-// Whether the canvas is fading in over the poster (styles.css, timed from the
+// Whether the canvas is fading in over the title card (styles.css, timed from the
 // reveal's babel:reveal mark), or, unless hidden is false, still hidden.
 function fading(rendering, hidden = true) {
   let fadeEnd = null;
@@ -850,7 +850,7 @@ function fading(rendering, hidden = true) {
   };
 }
 // Whether a change to the ground can land now without showing mid-shot: before
-// the reveal or during the canvas's fade-in over the poster, on a tour cut
+// the reveal or during the canvas's fade-in over the title card, on a tour cut
 // under the dissolve's kept frame, or on any frame while the tour is not
 // running. light-shafts.js switches its treatments by the same rule.
 function unseen(rendering, tour) {
@@ -858,7 +858,7 @@ function unseen(rendering, tour) {
   return () => !tour?.running || tour.transition.cut || early();
 }
 // Whether the canvas is still hidden or within `ms` of the reveal, early in
-// its fade-in, while it is still mostly transparent over the poster.
+// its fade-in, while it is still mostly transparent over the title card.
 function earlyFade(rendering, ms) {
   let revealed = null;
   return () => {

@@ -512,7 +512,7 @@ export function createMountainGeometry() {
 
 const nextFrame = (task) => (globalThis.requestAnimationFrame ?? ((next) => setTimeout(next, 16)))(task);
 
-// Whether the canvas is fading in over the poster (styles.css, timed from the
+// Whether the canvas is fading in over the title card (styles.css, timed from the
 // reveal's babel:reveal mark), or, unless hidden is false, still hidden. Like
 // terrain-build.js's (a copy keeps this chunk free of first-party imports),
 // except that it reads the fade's duration up front: styles.css sets it on the
@@ -534,7 +534,7 @@ function fading(rendering, hidden = true) {
 // the change cannot show mid-shot: before the reveal, on a tour cut under the
 // dissolve's kept frame, or on any frame while the tour is not running (the
 // rule terrain-build.js and light-shafts.js follow). Under the canvas's fade-in
-// over the poster, which is already partly opaque, over `fade`; and mid-shot,
+// over the title card, which is already partly opaque, over `fade`; and mid-shot,
 // where a slow phone missed both, over `late`, rather than leaving the horizon
 // bare until the next cut (up to a whole 9 s hold).
 export const MOUNTAIN_ENTRANCE = Object.freeze({ fade: 0.45, late: 1.8 });
@@ -640,7 +640,7 @@ function holdSlot(rendering, work) {
 
 // The film mountains in slices of a few milliseconds, never a long task (the
 // terrain's schedule, terrain-build.js): while the canvas fades in over the
-// poster, slices of up to 12 ms run back to back, so the ranges land inside
+// title card, slices of up to 12 ms run back to back, so the ranges land inside
 // the fade even on a throttled phone; otherwise they take idle time, less
 // where the idle wait timed out. An idle wait can starve behind the reveal's
 // own work and the terrain's rushed slices (at 4x CPU throttle the first slice

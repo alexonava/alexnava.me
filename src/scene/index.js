@@ -82,7 +82,7 @@ ColorManagement.enabled = false;
     let frameScheduler = null;
     let runtimeDisposed = false;
     let sceneReadyMarked = false;
-    // A failed authored model leaves the static poster and stops rendering.
+    // A failed authored model leaves the static title card and stops rendering.
     let sceneFailed = false;
     // Dialogs hold rendering once their dim overlay has faded in (~440ms).
     let panelHold = null;
@@ -111,7 +111,7 @@ ColorManagement.enabled = false;
       // The cached WebGL probe already read these limits; null probes again.
       caps: scene.qualityCapsFromProbe?.(site.shared?.getWebGLCapabilities?.()) ?? null,
     });
-    // The low tier keeps the static poster. main.js normally decides this
+    // The low tier keeps the static title card. main.js normally decides this
     // before the scene bundle loads; this covers an unknown probe there.
     if (qualityState.initialTier === "low") return false;
     const qualityControls = qualityState.controls || {
@@ -468,17 +468,20 @@ ColorManagement.enabled = false;
       import("./light-shafts.js").then(({ lightShafts }) => subsystemRegistry.disposed ||
         subsystemRegistry.register(lightShafts(rendering, cinematic, cameraTour, filmScene, environmentRoot, invalidateContent)), () => {});
     }
-    // A failed scene cannot be revealed or retried. Leave the static poster
-    // rather than a partial scene or a loop waiting on a status.
+    // A failed scene cannot be revealed or retried. Leave the static title card
+    // rather than a partial scene or a loop waiting on a status. A scene never
+    // shown also hides its host, which retires the title card's loading line
+    // (ui/scene-loader.js); a shown canvas fades out instead.
     function stopFailedScene(stage, error) {
       sceneFailed = true;
       container.classList?.remove("is-ready");
+      if (!canvasShown) container.hidden = true;
       if (qualityDebug) qualityDebug.failure = { stage, message: String(error?.message || error) };
     }
-    // An authored tower or tree that cannot load shows the poster: the scene
-    // stops at once and its runtime is disposed on a later tick, outside the
-    // asset controller's callback.
-    function failToPoster(stage, error) {
+    // An authored tower or tree that cannot load shows the title card: the
+    // scene stops at once and its runtime is disposed on a later tick, outside
+    // the asset controller's callback.
+    function failToTitle(stage, error) {
       if (sceneFailed) return;
       stopFailedScene(stage, error);
       // Three's compileAsync keeps polling its materials' programs, so dispose
@@ -600,10 +603,10 @@ ColorManagement.enabled = false;
           qualityDebug.architecture[status.kind] = status;
         }
         // Without its authored tower or tree the scene has nothing to show:
-        // the static poster stays. A missing lantern keeps the scene.
+        // the static title card stays. A missing lantern keeps the scene.
         if (!runtimeDisposed && status.kind !== "lantern" && (status.status === "fallback" ||
           (status.status === "procedural" && sceneReadyMarked))) {
-          failToPoster(`architecture:${status.kind}`, status.reason || status.status);
+          failToTitle(`architecture:${status.kind}`, status.reason || status.status);
         }
         invalidateContent();
       },

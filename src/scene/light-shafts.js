@@ -1,7 +1,7 @@
 // Cinematic light shafts. A lazily imported chunk (scene.light-shafts.HASH.js):
 // index.js requests it only for high and balanced film scenes on WebGL2, never
 // for low, WebGL1 (its shaders take derivatives and its back map has two
-// channels) or the static posters, and keeps no other
+// channels) or the static title card, and keeps no other
 // code for it.
 // Keep first-party imports out of this chunk: everything it needs arrives as
 // arguments, and its Three.js imports reuse the shared chunk.
@@ -1368,7 +1368,7 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
       if (want === shown) return;
       const part = want && parts[cinematic.current];
       // A treatment changes on a tour cut, under the dissolve's kept frame,
-      // before the reveal or during the canvas's fade-in over the poster
+      // before the reveal or during the canvas's fade-in over the title card
       // (styles.css), or on a still frame when the tour is not running. Mid
       // hold, only a light arriving late in its own shot (the star, on a fast
       // reveal) fades in, and only once its programs are linked, so nothing
