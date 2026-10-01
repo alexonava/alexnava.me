@@ -30,41 +30,16 @@
     sans-serif;
   --night-900: #0c1016;
   --night-800: #191d25;
-  --tower-stone-900: #231d1f;
-  --tower-stone-800: #342b2e;
-  --tower-stone-700: #4b403f;
-  --tower-stone-600: #665955;
-  --tower-stone-500: #84756d;
-  --tower-stone-400: #a59386;
-  --parchment-300: #e2d8cb;
   --parchment-200: #f2e8da;
-  --mist-500: #b8c1bd;
-  --mist-400: #d6ded8;
-  --line-pastel: #e6ece7;
-  /* Muted stone used for the hero anchor ("design."). It keeps the focal word
-     clear without turning accent color into a personality layer. */
-  --accent-muted: #c8d0ca;
-  /* One tier below the anchor. Ambient meta text (footer controls,
-     developer HUD labels) uses this so it whispers rather than
-     competing with the hero word. Warm off-white — reads as legible white
-     against the blue-black scene without clashing with the warm scene. */
+  /* Ambient meta text, such as the footer controls: a warm off-white one tier
+     below the main text, legible against the blue-black scene. */
   --text-muted-accent: #bfc1bf;
-  /* Prefix companion to the anchor. Used for "Calm by" so it reads as
-     legible white against the twilight scene while still letting "design."
-     be the clear focal word. One notch brighter than --text-muted-accent
-     so it holds hero-level presence. */
-  --calm-prefix: #ebe4d4;
   --text: #e5e4df;
   --text-primary: var(--text);
-  --text-meta: #b4b5b3;
   --text-accent: var(--text-muted-accent);
   --text-meta-shadow: 0 2px 8px rgba(7, 10, 14, 0.42);
-  --shadow-deep: 0 30px 84px rgba(0, 0, 0, 0.38);
   --border-soft: rgba(241, 229, 212, 0.16);
-  --ui-surface: #161719;
-  --ui-line: #696c6d;
   --ui-focus: #d0d1cc;
-  --ui-ease: cubic-bezier(0.22, 1, 0.36, 1);
   --cursor-line:
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='28' viewBox='0 0 9 28'%3E%3Cpath d='M4.5 2V26' stroke='%23e6ece7' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E")
       4 14,
@@ -1438,7 +1413,7 @@ body[data-panel-open]::after {
   }
 }
 
-/* Scene-first landing with the accepted estate behind About. */
+/* Scene-first landing with the estate behind About. */
 .scene-entry[hidden],
 [data-scene-fallback][hidden] {
   display: none;
