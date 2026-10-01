@@ -195,9 +195,11 @@ test("the gobo composes with the subject's hooks, keys its program and restores 
 // A small film scene: a 39-unit tower at the origin and a tree to the north-east,
 // the moon key light, and stand-ins for the collaborators index.js passes.
 function harness({ shot = "The watch", current = "tower", revealed = true, tour = null, search = "", eye = [70, 30, -40], parallel = true, compile = null } = {}) {
-  const debug = {};
+  // The subsystem's read-only state, read as `debug.shafts`.
+  let shafts = null;
+  const debug = { get shafts() { return shafts?.state; } };
   globalThis.window = {
-    BabelSite: { sceneDebug: debug },
+    BabelSite: {},
     location: { search },
     setTimeout: (task, ms) => setTimeout(task, ms),
   };
@@ -248,7 +250,7 @@ function harness({ shot = "The watch", current = "tower", revealed = true, tour 
   };
   const cinematic = { shot: { name: shot }, current };
   const film = { active: true, ready: Promise.resolve(() => 0) };
-  const shafts = lightShafts(rendering, cinematic, tour, film, root, () => counts.invalidations++);
+  shafts = lightShafts(rendering, cinematic, tour, film, root, () => counts.invalidations++);
   const state = { debug, root, tower, tree, camera, cinematic, film, counts, shafts, rendering, set revealed(value) { revealed = value; } };
   state.until = async (condition, frame = {}) => {
     for (let i = 0; i < 400 && !condition(); i++) {
@@ -400,7 +402,6 @@ test("dispose restores every hook and removes everything it added", async () => 
   assert.deepEqual([h.tower, h.tree].map(({ material }) => [material.onBeforeCompile, material.customProgramCacheKey]), hooks);
   assert.deepEqual(h.volumes(), []);
   assert.equal(h.debug.shafts, undefined);
-  assert.equal(h.debug.setShafts, undefined);
   assert.equal(h.shafts.dispose(), false);
   h.shafts.update({ deltaSeconds: 0 });
   assert.deepEqual(h.volumes(), [], "a disposed subsystem never rebuilds");
@@ -476,17 +477,16 @@ test("an import that resolves late, or after disposal, does nothing", async () =
   await new Promise((resolve) => setTimeout(resolve, 200));
   assert.deepEqual(h.volumes(), [], "a build cut short by disposal never lands");
   assert.equal(h.tower.material.customProgramCacheKey(), "complete-meshy-tower");
+  // A retired review parameter no longer hides them.
   const off = harness({ search: "?shafts=off" });
-  for (let i = 0; i < 20; i++) off.shafts.update({ deltaSeconds: 0.1 });
-  await new Promise((resolve) => setTimeout(resolve, 50));
-  assert.deepEqual(off.volumes(), [], "?shafts=off keeps the scene without them");
+  await off.until(() => off.debug.shafts?.shown === "tower-star");
   off.shafts.dispose();
-  // index.js: high and balanced film only, never low or legacy, and a late
+  // index.js: every live (high or balanced) film scene on WebGL2, and a late
   // or failed import leaves the scene as it is.
   const index = await readFile(new URL("../src/scene/index.js", import.meta.url), "utf8");
   assert.match(
     index,
-    /if \(filmEnabled && !modes\.legacy && assetTier != "low" && renderer\.capabilities\.isWebGL2\) \{\s+import\("\.\/light-shafts\.js"\)\.then\(\(\{ lightShafts \}\) => subsystemRegistry\.disposed \|\|\s+subsystemRegistry\.register\(lightShafts\(rendering, cinematic, cameraTour, filmScene, environmentRoot, invalidateContent\)\), \(\) => \{\}\);\s+\}/,
+    /if \(renderer\.capabilities\.isWebGL2\) \{\s+import\("\.\/light-shafts\.js"\)\.then\(\(\{ lightShafts \}\) => subsystemRegistry\.disposed \|\|\s+subsystemRegistry\.register\(lightShafts\(rendering, cinematic, cameraTour, filmScene, environmentRoot, invalidateContent\)\), \(\) => \{\}\);\s+\}/,
   );
   assert.equal(index.match(/import\("\.\/light-shafts\.js"\)/g).length, 1);
 });

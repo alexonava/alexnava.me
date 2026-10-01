@@ -196,8 +196,9 @@ const GLASS_BLEND = { side: 0, transparent: true, depthWrite: true, blending: 5,
 /** Own only shader hooks on the assembly's material clones, one glass clone per
  * hooked material, and the globe's draw group. The index is reordered in place
  * and restored on dispose; geometry, images, PBR maps and source assets keep
- * their owners. The low tier and legacy views keep the procedural stand-in and
- * never load this chunk; a failed load keeps the supplied static glow. */
+ * their owners. A scene whose lantern never loads keeps the tree's built-in
+ * stand-in and never loads this chunk; a failed load keeps the supplied static
+ * glow. */
 export function createLanternFlame({ root, camera }) {
   const time = { value: 0 }, eye = { value: new Vector3(0, 1, 6) }, flicker = { value: [1, 1, 0, 0] };
   const bloom = { value: 1 }, lamp = { value: new Vector3(0, NO_LIGHT, 0) }, probe = new Vector3();

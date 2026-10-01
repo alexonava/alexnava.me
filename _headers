@@ -104,8 +104,8 @@
   ! Cache-Control
   Cache-Control: public, max-age=31536000, immutable
 
-# Only the film slate's maps are fingerprinted; other material maps keep the
-# revalidated /images/* rule.
+# The film slate's maps are fingerprinted like the models; the build publishes
+# no plain-name copy of a fingerprinted image, model or map.
 /images/materials/slate-:map.:hash.webp
   ! Cache-Control
   Cache-Control: public, max-age=31536000, immutable

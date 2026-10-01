@@ -178,7 +178,7 @@ test("robots.txt declines AI training but keeps search and citation crawlers wel
   // The decision is recorded next to the Cloudflare setting that enforces it.
 });
 
-test("scene posters are committed, copied into dist, and use stable-asset caching", async () => {
+test("scene posters are committed and the images folder is published through the build", async () => {
   const buildScript = await readProjectFile("build.mjs");
   const headers = await readProjectFile("_headers");
 
@@ -547,8 +547,8 @@ test("static headers separate immutable fingerprints from revalidated stable ass
       ),
     );
   }
-  // Fingerprinted artwork and models sit beside their revalidated stable
-  // copies, so these rules detach the /images/* Cache-Control they also match.
+  // Fingerprinted artwork, models and maps also match /images/*, so these
+  // rules detach that rule's Cache-Control.
   for (const fingerprintedPath of [
     "/images/:name.:hash.webp",
     "/images/architecture/:name.:hash.glb",
@@ -617,7 +617,7 @@ test("Pages header rules resolve one cache policy for stable and fingerprinted p
     `/scripts/app.${hash}.js`,
     `/scripts/scene.${hash}.js`,
     `/scripts/scene.shared.${hash}.js`,
-    `/scripts/scene.developer-tools.${hash}.js`,
+    `/scripts/scene.light-shafts.${hash}.js`,
     `/scripts/scene.rock-build.${hash}.js`,
   ]) {
     assert.equal(cacheControl(pathname), immutable, pathname);
@@ -638,10 +638,9 @@ test("Pages header rules resolve one cache policy for stable and fingerprinted p
     assert.equal(headersFor(pathname).get("content-type"), "text/plain; charset=utf-8", pathname);
   }
 
-  // Every source image keeps a revalidated stable URL. The build publishes
-  // name.HASH.ext copies of top-level artwork, the architecture models and the
-  // film slate's maps; only those are immutable, while the other material maps
-  // are never hashed.
+  // The build publishes top-level artwork, the architecture models and the
+  // film slate's maps only as name.HASH.ext, which are immutable; any other
+  // image would keep a revalidated plain URL.
   let fingerprintable = 0;
   const images = path.join(projectRoot, "images");
   for (const entry of await readdir(images, { recursive: true, withFileTypes: true })) {
@@ -658,7 +657,7 @@ test("Pages header rules resolve one cache policy for stable and fingerprinted p
     assert.equal(cacheControl(hashed), hashedByBuild ? immutable : revalidated, hashed);
     assert.equal(headersFor(hashed).get("x-content-type-options"), "nosniff", hashed);
   }
-  assert.ok(fingerprintable >= 23, "posters, paper, estate maps, nav icons, 16 models and 5 slate maps");
+  assert.equal(fingerprintable, 24, "2 posters, 5 paper textures, 2 estate maps, 10 models and 5 slate maps");
 });
 
 test("hosting files publish security.txt, raster icons and a stable manifest id", async () => {

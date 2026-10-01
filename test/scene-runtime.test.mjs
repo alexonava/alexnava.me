@@ -98,8 +98,6 @@ test("quality controls keep capable auto-tier devices on high and expose current
   assert.equal(tier, "high");
   assert.equal(balanced.dprCap, 1.25);
   assert.equal(balanced.textures.groundSize, 768);
-  assert.equal(balanced.textures.overlaySize, 384);
-  assert.equal(balanced.textures.towerWidth, 768);
   assert.equal(balanced.shadows.mapSize, 0);
 });
 

@@ -16,29 +16,14 @@ import {
 } from "three";
 import {
   DIRECTED_SHOTS,
-  wantsFilmTreatment,
   measureShot,
   resolveDirectedShot,
 } from "../src/scene/directed-shots.js";
 import { createCinematicCamera, cinematicSafeArea } from "../src/scene/cinematic.js";
 import { createEarthDetail, EARTH, FILM_GROUND_PRESETS } from "../src/scene/filmic-earth.js";
-import { createGrassDetail } from "../src/scene/grass-detail.js";
 import { createFilmScene } from "../src/scene/film-scene.js";
 
 const close = (a, b) => assert.ok(Math.abs(a - b) < 1e-5, `${a} != ${b}`);
-test("film settings preserve every explicit architecture, earth-setting and orbit comparison", () => {
-  assert.ok(wantsFilmTreatment("?view=tree&angle=3"));
-  for (const q of [
-    "cinematography=baseline",
-    "architecture=classic",
-    "architecture=assembled",
-    "setting=previous",
-    "view=orbit",
-  ])
-    assert.equal(wantsFilmTreatment(`?${q}`), false);
-  for (const q of ["ground=procedural", "ground=desert", "ground=earth", "scale=baseline"])
-    assert.equal(wantsFilmTreatment(`?${q}`), true);
-});
 test("directed framing clips actual geometry and includes the entire lantern", () => {
   const root = new Group();
   const trunk = new Mesh(new BoxGeometry(5, 20, 5), new MeshStandardMaterial());
@@ -137,7 +122,7 @@ test("indexed terrain covers the full square and samples the correct world Z wit
     close(p.getZ(i), height(p.getX(i), -p.getY(i)));
     close(Math.hypot(n.getX(i), n.getY(i), n.getZ(i)), 1);
   }
-  assert.equal(EARTH.width / EARTH.tile, 384 / 6.3);
+  assert.deepEqual({ ...EARTH }, { width: 384, subdivisions: 128 });
   geometry.dispose();
 });
 test("film scene restores geometry, effects, lighting and sky before disposal and tolerates repeated teardown", async () => {
@@ -180,88 +165,12 @@ test("film scene restores geometry, effects, lighting and sky before disposal an
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 const canvas = () => ({ width: 0, height: 0, getContext: () => ({ drawImage() {} }) });
-test("earth makes no pre-gate downloads, binds three maps atomically, restores before disposal and closes stale images", async () => {
-  const pending = [],
-    published = [],
-    closed = [];
-  let bound = null;
-  const earth = createEarthDetail({
-    profile: { tier: "high" },
-    anisotropy: 4,
-    createCanvas: canvas,
-    publish: (m) => {
-      bound = m;
-      published.push(m);
-    },
-    restore: () => {
-      bound = null;
-    },
-    loadImage: (url, { signal }) =>
-      new Promise((resolve) => pending.push({ url, signal, resolve })),
-  });
-  assert.equal(pending.length, 0);
-  earth.setActive(true);
-  assert.equal(pending.length, 3);
-  earth.applyQuality({ tier: "balanced" });
-  assert.ok(pending[0].signal.aborted);
-  assert.equal(pending.length, 6);
-  pending.forEach((r, i) =>
-    r.resolve({
-      width: i < 3 ? 1024 : 512,
-      height: i < 3 ? 1024 : 512,
-      close: () => closed.push(i),
-    }),
-  );
-  await tick();
-  await tick();
-  assert.equal(published.length, 1);
-  assert.equal(closed.length, 6);
-  close(bound.colorMap.repeat.x, 384 / 6.3);
-  assert.equal(bound.normalScale, 0.7);
-  let disposals = 0;
-  for (const m of [bound.colorMap, bound.normalMap, bound.roughnessMap])
-    m.addEventListener("dispose", () => {
-      assert.equal(bound, null);
-      disposals++;
-    });
-  earth.setActive(false);
-  earth.dispose();
-  earth.dispose();
-  assert.equal(disposals, 3);
-});
-test("a failed earth companion map retains the procedural surface without paid or automatic retries", async () => {
-  let requests = 0,
-    published = 0,
-    closed = 0;
-  const earth = createEarthDetail({
-    profile: { tier: "high" },
-    anisotropy: 4,
-    createCanvas: canvas,
-    publish: () => published++,
-    restore: () => {},
-    loadImage: async (url) => {
-      requests++;
-      if (url.includes("normal")) throw Error("404");
-      return { width: 1024, height: 1024, close: () => closed++ };
-    },
-  });
-  earth.setActive(true);
-  await tick();
-  await tick();
-  earth.applyQuality({ tier: "high" });
-  assert.equal(requests, 3);
-  assert.equal(published, 0);
-  assert.equal(closed, 2);
-  earth.dispose();
-});
-
 test("the default film slate binds its seamless maps and shared detail map at the classic tile after the film gate", async () => {
   const pending = [],
     published = [],
     closed = [];
   let bound = null;
   const slate = createEarthDetail({
-    preset: "slate",
     profile: { tier: "high" },
     anisotropy: 4,
     createCanvas: canvas,
@@ -320,7 +229,6 @@ test("the default film slate binds its seamless maps and shared detail map at th
   assert.equal(bound.normalScale, 0.45);
   assert.equal(bound.roughnessMap, null);
   assert.equal(bound.bumpMap, null);
-  assert.equal(bound.muddy, false, "the slate never takes the mud treatment");
   assert.equal(bound.filmTiled, true, "index.js keeps the film tiling as published");
   let disposals = 0;
   for (const m of [bound.colorMap, bound.normalMap, bound.detailMap])
@@ -334,7 +242,7 @@ test("the default film slate binds its seamless maps and shared detail map at th
   assert.equal(slate.dispose(), false);
 });
 
-test("a failed slate map reports a fallback and keeps the earth preset's own tiling", async () => {
+test("a failed slate map reports a fallback, and the slate is the only preset", async () => {
   const statuses = [];
   let published = 0,
     closed = 0;
@@ -359,17 +267,13 @@ test("a failed slate map reports a fallback and keeps the earth preset's own til
   assert.equal(closed, 2, "the color and detail maps that did load are closed");
   assert.deepEqual(statuses.slice(-1), ["fallback"]);
   slate.dispose();
-  assert.equal(FILM_GROUND_PRESETS.earth.wrap, RepeatWrapping);
-  close(FILM_GROUND_PRESETS.earth.tile, EARTH.tile);
-  assert.throws(() => createEarthDetail({ preset: "mud", publish() {}, restore() {} }), /Unknown film ground preset/);
+  assert.deepEqual(Object.keys(FILM_GROUND_PRESETS), ["slate"]);
+  for (const preset of ["earth", "mud"])
+    assert.throws(() => createEarthDetail({ preset, publish() {}, restore() {} }), /Unknown film ground preset/);
 });
 
-test("earth and grass keep their loaded maps through adaptive profile changes with a pinned asset tier", async () => {
-  for (const [create, kinds] of [
-    [(options) => createEarthDetail({ ...options, preset: "slate" }), 3],
-    [createEarthDetail, 3],
-    [createGrassDetail, 2],
-  ]) {
+test("the slate keeps its loaded maps through adaptive profile changes with a pinned asset tier", async () => {
+  for (const [create, kinds] of [[createEarthDetail, 3]]) {
     const pending = [];
     let published = 0,
       restored = 0;

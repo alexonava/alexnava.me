@@ -5,8 +5,6 @@ import {
   DoubleSide,
   Float32BufferAttribute,
   Group,
-  InstancedMesh,
-  Matrix4,
   Mesh,
   MeshStandardMaterial,
   PointLight,
@@ -16,20 +14,9 @@ import {
 } from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { createTreeFoliage, smoothTreeNormals } from "./tree-foliage.js";
-import { createSpiralSupportGeometry } from "./spiral-support.js";
 import { ESTATE } from "./estate-layout.js";
 
 export const ARCHITECTURE = Object.freeze({
-  sectors: 16,
-  tiers: 8,
-  height: 34,
-  bottom: 1.5,
-  bottomRadius: 12.2,
-  topRadius: 8.8,
-  stairWidth: 3.6,
-  stairStart: 0.7,
-  stairEnd: 33.5,
-  flights: 8,
   treeHeight: 22,
 });
 
@@ -43,22 +30,6 @@ const MATERIAL_PROFILES = Object.freeze({
     roughnessFloor: 0.9,
     saturation: 0.94,
     highlights: 0.18,
-  },
-  wall: { color: 0xe4ded0, normalScale: 0.36, roughnessFloor: 0.86 },
-  stairs: {
-    color: 0xe2ddd1,
-    normalScale: 0.4,
-    roughnessFloor: 0.9,
-    saturation: 0.84,
-    highlights: 0.16,
-  },
-  base: { color: 0xd9d0be, normalScale: 0.38, roughnessFloor: 0.88 },
-  crown: {
-    color: 0xddd8cf,
-    normalScale: 0.32,
-    roughnessFloor: 0.92,
-    saturation: 0.78,
-    highlights: 0.28,
   },
   tree: {
     color: 0xffffff,
@@ -126,19 +97,12 @@ export function applyFilmGrade(material, active) {
   return true;
 }
 
-// The supplied tower is scaled independently of ARCHITECTURE.height, which
-// still governs the classic/assembled procedural tower comparisons.
+// The supplied tower is fitted to this height and radius cap.
 const COMPLETE_TOWER_HEIGHT = 39;
 const COMPLETE_TOWER_RADIUS_CAP = 20.4;
 
 const TREE_LANTERN_INTENSITY = 4.0;
 const TREE_FILL_INTENSITY = 2.4;
-const WALL_TONE_BASE = new Color(0xffffff);
-
-export function towerRadius(y) {
-  const ratio = Math.max(0, Math.min(1, (y - ARCHITECTURE.bottom) / ARCHITECTURE.height));
-  return ARCHITECTURE.bottomRadius + (ARCHITECTURE.topRadius - ARCHITECTURE.bottomRadius) * ratio;
-}
 
 export function sourceMesh(asset) {
   const meshes = [];
@@ -173,130 +137,6 @@ export function editableGeometry(source) {
     geometry.setAttribute(name, new Float32BufferAttribute(values, 3));
   }
   return geometry;
-}
-
-function normalizedGeometry(asset) {
-  const source = sourceMesh(asset);
-  const geometry = editableGeometry(source.geometry).applyMatrix4(source.matrixWorld);
-  // Baking the source transform first keeps orientation explicit in the asset pass.
-  geometry.computeBoundingBox();
-  const { min, max } = geometry.boundingBox;
-  const size = new Vector3().subVectors(max, min);
-  if (![size.x, size.y, size.z].every((value) => Number.isFinite(value) && value > 0)) {
-    geometry.dispose();
-    throw new Error("Architecture asset has empty bounds.");
-  }
-  geometry.translate(-(min.x + max.x) / 2, -min.y, -(min.z + max.z) / 2);
-  geometry.scale(1 / size.x, 1 / size.y, 1 / size.z);
-  // Normals/tangents from the flat asset cannot survive a curved deformation.
-  geometry.deleteAttribute("tangent");
-  return geometry;
-}
-
-function radiusSlope(y) {
-  return y > ARCHITECTURE.bottom && y < ARCHITECTURE.bottom + ARCHITECTURE.height
-    ? (ARCHITECTURE.topRadius - ARCHITECTURE.bottomRadius) / ARCHITECTURE.height
-    : 0;
-}
-
-function deform(geometry, transform) {
-  const position = geometry.attributes.position;
-  const normal = geometry.attributes.normal;
-  const point = new Vector3();
-  const direction = new Vector3();
-  for (let index = 0; index < position.count; index += 1) {
-    point.fromBufferAttribute(position, index);
-    if (normal) direction.fromBufferAttribute(normal, index);
-    transform(point, normal ? direction : null);
-    position.setXYZ(index, point.x, point.y, point.z);
-    if (normal) normal.setXYZ(index, direction.x, direction.y, direction.z);
-  }
-  position.needsUpdate = true;
-  // Transform authored normals with the inverse-transpose Jacobian instead of
-  // averaging faces: duplicated UV-seam vertices retain their shared normals.
-  if (normal) normal.needsUpdate = true;
-  else geometry.computeVertexNormals();
-  geometry.computeBoundingBox();
-  geometry.computeBoundingSphere();
-  return geometry;
-}
-
-function radialNormal(normal, angle, radial, vertical, tangent) {
-  normal
-    .set(
-      Math.cos(angle) * radial - Math.sin(angle) * tangent,
-      vertical,
-      Math.sin(angle) * radial + Math.cos(angle) * tangent,
-    )
-    .normalize();
-}
-
-export function bendWall(geometry, { bottom, height, arc, depth = 0.85 }) {
-  return deform(geometry, (point, normal) => {
-    // Local +Z remains the outer face. Negative angular X preserves handedness
-    // and triangle winding when flat X/Y/Z becomes tangent/up/radial.
-    const angle = -point.x * arc;
-    const y = bottom + point.y * height;
-    const radius = towerRadius(y) + point.z * depth - depth * 0.35;
-    if (normal) {
-      const radial = normal.z / depth;
-      radialNormal(
-        normal,
-        angle,
-        radial,
-        normal.y / height - radiusSlope(y) * radial,
-        -normal.x / (radius * arc),
-      );
-    }
-    point.set(Math.cos(angle) * radius, y, Math.sin(angle) * radius);
-  });
-}
-
-export function bendFlight(geometry, flight, collapseYaw, walking = {}) {
-  const rise = (ARCHITECTURE.stairEnd - ARCHITECTURE.stairStart) / ARCHITECTURE.flights;
-  const levels = walking.levels || [0, 1];
-  if (
-    levels.length < 2 ||
-    levels.some(
-      (level, index) => !Number.isFinite(level) || (index > 0 && level <= levels[index - 1]),
-    )
-  ) {
-    throw new Error("Invalid stair walking levels.");
-  }
-  return deform(geometry, (point, normal) => {
-    let step = 0;
-    while (step < levels.length - 2 && point.y > levels[step + 1]) step += 1;
-    const levelSpan = levels[step + 1] - levels[step];
-    const equalRiserHeight = (step + (point.y - levels[step]) / levelSpan) / (levels.length - 1);
-    const along = point.z + 0.5;
-    const angle = collapseYaw + ((flight + along) * Math.PI) / 4;
-    const y = ARCHITECTURE.stairStart + flight * rise + equalRiserHeight * rise;
-    // Radial attachment follows height along the run, not the wedge's underside.
-    const walkingY = ARCHITECTURE.stairStart + (flight + along) * rise;
-    const radius = towerRadius(walkingY) - 0.25 + (point.x + 0.5) * ARCHITECTURE.stairWidth;
-    if (normal) {
-      const radial = normal.x / ARCHITECTURE.stairWidth;
-      radialNormal(
-        normal,
-        angle,
-        radial,
-        (normal.y * (levels.length - 1) * levelSpan) / rise,
-        (normal.z - radiusSlope(walkingY) * rise * radial) / ((radius * Math.PI) / 4),
-      );
-    }
-    point.set(Math.cos(angle) * radius, y, Math.sin(angle) * radius);
-  });
-}
-
-function masonryTone(tier, sector) {
-  const courseShift = tier % 2 ? 0.035 : -0.015;
-  const sectorShift = ((sector * 37 + tier * 17) % 11) * 0.006 - 0.03;
-  const warmShift = ((sector + tier * 3) % 5) * 0.004;
-  return WALL_TONE_BASE.clone().setRGB(
-    0.97 + courseShift + sectorShift + warmShift,
-    0.955 + courseShift + sectorShift * 0.6 + warmShift * 0.7,
-    0.915 + courseShift * 0.55 + sectorShift * 0.45,
-  );
 }
 
 export function materialFor(asset, anisotropy, role) {
@@ -372,166 +212,6 @@ export function materialFor(asset, anisotropy, role) {
     return material;
   } catch (error) {
     material.dispose();
-    throw error;
-  }
-}
-
-export function createTowerArchitecture({
-  assets,
-  groundY = 0,
-  collapseYaw = 0.32 * Math.PI,
-  baseRecords = [],
-  anisotropy = 4,
-}) {
-  const root = new Group();
-  root.name = "supplied-meshy-tower";
-  root.position.y = groundY;
-  const geometries = new Set();
-  const materials = new Set();
-  const instanceMeshes = new Set();
-  let disposed = false;
-  const ownGeometry = (geometry) => {
-    geometries.add(geometry);
-    return geometry;
-  };
-  const ownMaterial = (asset, role) => {
-    const material = materialFor(asset, anisotropy, role);
-    materials.add(material);
-    return material;
-  };
-  const dispose = () => {
-    if (disposed) return false;
-    disposed = true;
-    root.removeFromParent();
-    instanceMeshes.forEach((mesh) => mesh.dispose());
-    instanceMeshes.clear();
-    geometries.forEach((geometry) => geometry.dispose());
-    materials.forEach((material) => material.dispose());
-    geometries.clear();
-    materials.clear();
-    return true;
-  };
-  try {
-    const wallMaterial = ownMaterial(assets.wall, "wall");
-    const sectorArc = (Math.PI * 2) / ARCHITECTURE.sectors;
-    let wallCount = 0;
-    for (let tier = 0; tier < ARCHITECTURE.tiers; tier += 1) {
-      const geometry = ownGeometry(normalizedGeometry(assets.wall));
-      bendWall(geometry, {
-        bottom: ARCHITECTURE.bottom + tier * 4.25,
-        height: 4.27,
-        arc: sectorArc * 1.008,
-      });
-      const sectors = [];
-      for (let sector = 0; sector < ARCHITECTURE.sectors; sector += 1) {
-        const angle = collapseYaw + (sector + (tier % 2 ? 0 : 0.5)) * sectorArc;
-        const separation = Math.abs(
-          Math.atan2(Math.sin(angle - collapseYaw), Math.cos(angle - collapseYaw)),
-        );
-        if (tier === 7 && separation < sectorArc * 1.6) continue;
-        sectors.push({ angle, sector });
-      }
-      const instances = new InstancedMesh(geometry, wallMaterial, sectors.length);
-      instanceMeshes.add(instances);
-      instances.name = `masonry-tier-${tier}`;
-      sectors.forEach(({ angle, sector }, index) => {
-        instances.setMatrixAt(index, new Matrix4().makeRotationY(-angle));
-        instances.setColorAt(index, masonryTone(tier, sector));
-      });
-      instances.instanceMatrix.needsUpdate = true;
-      instances.instanceColor.needsUpdate = true;
-      instances.computeBoundingBox();
-      instances.computeBoundingSphere();
-      instances.castShadow = instances.receiveShadow = true;
-      root.add(instances);
-      wallCount += sectors.length;
-    }
-    const crownGeometry = ownGeometry(normalizedGeometry(assets.crown));
-    bendWall(crownGeometry, {
-      bottom: 30.8,
-      height: 4.7,
-      arc: sectorArc * 3.08,
-      depth: 1.0,
-    });
-    const crown = new Mesh(crownGeometry, ownMaterial(assets.crown, "crown"));
-    crown.name = "bastion-breach";
-    crown.rotation.y = -collapseYaw;
-    crown.castShadow = crown.receiveShadow = true;
-    root.add(crown);
-
-    const stairMaterial = ownMaterial(assets.stairs, "stairs");
-    const baseGeometry = ownGeometry(normalizedGeometry(assets.base));
-    const baseMaterial = ownMaterial(assets.base, "base");
-    const flightGeometries = [];
-    let supportMetadata;
-    try {
-      for (let flight = 0; flight < ARCHITECTURE.flights; flight += 1) {
-        const geometry = normalizedGeometry(assets.stairs);
-        flightGeometries.push(geometry);
-        bendFlight(
-          geometry,
-          flight,
-          collapseYaw,
-          assets.stairs.userData?.walking || sourceMesh(assets.stairs).userData?.walking,
-        );
-      }
-      const merged = mergeGeometries(flightGeometries, false);
-      if (!merged) throw new Error("Stair flights cannot be merged.");
-      const stairs = new Mesh(ownGeometry(merged), stairMaterial);
-      stairs.name = "eight-solid-stair-flights";
-      stairs.castShadow = stairs.receiveShadow = true;
-      root.add(stairs);
-      const supportSources = [];
-      try {
-        const wallGeometry = normalizedGeometry(assets.wall);
-        supportSources.push(wallGeometry);
-        const stairsGeometry = normalizedGeometry(assets.stairs);
-        supportSources.push(stairsGeometry);
-        const support = createSpiralSupportGeometry({
-          wallGeometry,
-          stairsGeometry,
-          walking: assets.stairs.userData?.walking || sourceMesh(assets.stairs).userData?.walking,
-          architecture: ARCHITECTURE,
-          collapseYaw,
-        });
-        const masonry = new Mesh(ownGeometry(support.geometry), wallMaterial);
-        masonry.name = "spiral-masonry-support";
-        masonry.castShadow = masonry.receiveShadow = true;
-        root.add(masonry);
-        supportMetadata = support.metadata;
-      } finally {
-        supportSources.forEach((geometry) => geometry.dispose());
-      }
-    } finally {
-      flightGeometries.forEach((geometry) => geometry.dispose());
-    }
-
-    const instances = new InstancedMesh(baseGeometry, baseMaterial, baseRecords.length);
-    instanceMeshes.add(instances);
-    instances.name = "ruined-base-masonry";
-    baseRecords.forEach((record, index) => {
-      const angle = Math.atan2(record.position.z, record.position.x);
-      // Seat each block in the existing perimeter; keep its outer face inside r=18.7.
-      const matrix = new Matrix4().makeRotationY(Math.PI / 2 - angle);
-      matrix.scale(new Vector3(2.1, 1.7, 1.35));
-      matrix.setPosition(Math.cos(angle) * 17.9, 0.1, Math.sin(angle) * 17.9);
-      instances.setMatrixAt(index, matrix);
-    });
-    instances.instanceMatrix.needsUpdate = true;
-    instances.computeBoundingBox();
-    instances.computeBoundingSphere();
-    instances.castShadow = instances.receiveShadow = true;
-    if (baseRecords.length) root.add(instances);
-    root.userData.architecture = {
-      wallCount,
-      flights: 8,
-      stairSupports: supportMetadata,
-      baseCount: baseRecords.length,
-      sourceRoles: ["wall", "stairs", "crown", "base"],
-    };
-    return { root, dispose };
-  } catch (error) {
-    dispose();
     throw error;
   }
 }

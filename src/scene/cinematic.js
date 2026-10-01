@@ -1,9 +1,9 @@
-import { resolveSceneModes } from "./scene-modes.js";
+import { resolveSceneView } from "./scene-modes.js";
 import { Box3, Vector3 } from "three";
 import { DIRECTED_SHOTS, measureShot, fitShot, resolveDirectedShot } from "./directed-shots.js";
 
 export function chooseCinematicView(search = "") {
-  return resolveSceneModes(search).view;
+  return resolveSceneView(search);
 }
 // Alternate entrance-side views and lantern-side tree views, selected once.
 export const CINEMATIC_ANGLES = { tower: [-0.1, -0.55, 1.25], tree: [-1.95, -2.55, -1.35] };
@@ -190,7 +190,6 @@ export function createCinematicCamera({
     return fitted;
   }
   function resolved() {
-    if (selected === "orbit") return "orbit";
     if (status.tower === "fallback" || status.tower === "procedural") return "orbit";
     if (!tower || status.tower !== "ready") return null;
     if (selected === "tower") return "tower";
@@ -279,16 +278,15 @@ export function createCinematicCamera({
       height,
       elapsedSeconds = 0,
       reducedMotion = false,
-      developer = false,
       fallbackFov = 45,
       tourPhase = null,
     }) {
       if (disposed) return false;
       const view = resolved();
-      if (developer || !view || view === "orbit") {
+      if (!view || view === "orbit") {
         if (applied) {
           if (fog) Object.assign(fog, originalFog);
-          if (!developer) camera.fov = fallbackFov;
+          camera.fov = fallbackFov;
           camera.updateProjectionMatrix();
           applied = false;
         }
@@ -428,38 +426,6 @@ export function createCinematicCamera({
         camera.fov = 45;
         camera.updateProjectionMatrix();
       }
-      return true;
-    },
-  };
-}
-export function createQuietScene(objects, setAnimationEnabled = () => {}) {
-  let active = false,
-    disposed = false,
-    saved = [];
-  return {
-    get active() {
-      return active;
-    },
-    setActive(next) {
-      if (disposed || Boolean(next) === active) return;
-      active = Boolean(next);
-      if (active) {
-        saved = [...new Set(objects.filter(Boolean))].map((o) => [o, o.visible]);
-        setAnimationEnabled(false);
-        this.enforce();
-      } else {
-        saved.forEach(([o, v]) => (o.visible = v));
-        saved = [];
-        setAnimationEnabled(true);
-      }
-    },
-    enforce() {
-      if (active && !disposed) saved.forEach(([o]) => (o.visible = false));
-    },
-    dispose() {
-      if (disposed) return false;
-      this.setActive(false);
-      disposed = true;
       return true;
     },
   };

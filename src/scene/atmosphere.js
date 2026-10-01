@@ -21,17 +21,12 @@ export function createSceneAtmosphere({
   const root = new Group();
   parent.add(root);
 
-  const cloudGroups = [];
   const decorativeSystems = [];
-  let cloudAnchor = null,
-    skyMaterial = null;
+  let skyMaterial = null;
   let cloudsEnabled = true;
   let disposed = false;
-  let lowPower = Boolean(profile?.isLow);
   let skyTier = celestialTier(profile);
-  let pointField = null,
-    film = false,
-    pointSize = 1;
+  let film = false;
 
   function applySkyQuality() {
     const layers = skyMaterial?.uniforms.uNebulaLayers;
@@ -66,24 +61,8 @@ export function createSceneAtmosphere({
     });
   }
 
-  function setCloudGroupSceneVisibility(group, visible) {
-    if (!group) return;
-    group.userData = group.userData || {};
-    group.userData.sceneVisible = visible;
-    group.visible = cloudsEnabled && !film && visible;
-  }
-
-  function applyCloudVisibility() {
-    cloudGroups.forEach((group) => {
-      if (!group) return;
-      const sceneVisible = group.userData?.sceneVisible !== false;
-      group.visible = cloudsEnabled && !film && sceneVisible;
-    });
-  }
-
   function updateDecorativeVisibility() {
     const debugSystems = qualityDebug ? {} : null;
-    let cloudVisibilityDirty = false;
     visibilityTracker?.updateCameraState();
     decorativeSystems.forEach((system) => {
       if (system.enabled === false) {
@@ -110,14 +89,9 @@ export function createSceneAtmosphere({
         system.active = visibilityTracker.shouldUpdateBucket(system.bucket);
       }
       if (system.group) {
-        if (system.isCloudGroup) {
-          setCloudGroupSceneVisibility(system.group, system.active);
-          cloudVisibilityDirty = true;
-        } else {
-          system.group.visible = visibilityTracker
-            ? visibilityTracker.shouldRenderBucket(system.bucket)
-            : system.active;
-        }
+        system.group.visible = visibilityTracker
+          ? visibilityTracker.shouldRenderBucket(system.bucket)
+          : system.active;
       }
       if (typeof system.setVisible === "function") {
         const nextVisible = visibilityTracker
@@ -135,7 +109,6 @@ export function createSceneAtmosphere({
         };
       }
     });
-    if (cloudVisibilityDirty) applyCloudVisibility();
     if (debugSystems) qualityDebug.systems = debugSystems;
   }
 
@@ -144,7 +117,6 @@ export function createSceneAtmosphere({
     root,
     applyQuality(nextProfile = {}) {
       if (disposed) return false;
-      lowPower = Boolean(nextProfile.isLow);
       skyTier = celestialTier(nextProfile);
       applySkyQuality();
       return true;
@@ -153,19 +125,10 @@ export function createSceneAtmosphere({
       if (disposed) return false;
       disposed = true;
       root.visible = false;
-      cloudGroups.length = 0;
       decorativeSystems.length = 0;
-      cloudAnchor = null;
       if (skyMaterial?.uniforms.uNebulaLayers) skyMaterial.uniforms.uNebulaLayers.value = 0;
       skyMaterial = null;
-      pointField = null;
       return true;
-    },
-    registerCloudGroup(group, visible = true) {
-      if (!group || cloudGroups.includes(group)) return group;
-      cloudGroups.push(group);
-      setCloudGroupSceneVisibility(group, visible);
-      return group;
     },
     registerDecorativeSystem(config) {
       const system = {
@@ -176,14 +139,6 @@ export function createSceneAtmosphere({
       };
       decorativeSystems.push(system);
       return system;
-    },
-    resize({ composition } = {}) {
-      if (disposed || !composition || !cloudAnchor) return false;
-      cloudAnchor.position.y = composition.cloudAnchorY;
-      return true;
-    },
-    setCloudAnchor(group) {
-      cloudAnchor = group || null;
     },
     setSkyMaterial(material) {
       if (disposed) return false;
@@ -199,7 +154,6 @@ export function createSceneAtmosphere({
       if (disposed) return false;
       cloudsEnabled = Boolean(on);
       if (skyMaterial?.uniforms.uClouds) skyMaterial.uniforms.uClouds.value = cloudsEnabled ? 1 : 0;
-      applyCloudVisibility();
       onInvalidate?.();
       return cloudsEnabled;
     },
@@ -208,29 +162,16 @@ export function createSceneAtmosphere({
       film = Boolean(active);
       applySkyQuality();
       applyOverlayBlending();
-      applyCloudVisibility();
-      if (pointField) pointField.material.size = pointSize * (film ? 0.85 : 1);
       return true;
-    },
-    setPointField(points) {
-      pointField = points || null;
-      if (pointField) {
-        pointSize = pointField.material.size;
-        pointField.material.size = pointSize * (film ? 0.85 : 1);
-      }
     },
     toggleClouds() {
       return this.setClouds(!cloudsEnabled);
     },
-    update({ elapsedSeconds = 0, visibilityScale = 1, reducedMotion = false } = {}) {
+    update({ elapsedSeconds = 0, reducedMotion = false } = {}) {
       if (disposed) return false;
       updateDecorativeVisibility();
       if (!reducedMotion && skyMaterial?.uniforms.uTime)
         skyMaterial.uniforms.uTime.value = elapsedSeconds;
-      if (pointField) {
-        pointField.rotation.y = 0.02 * elapsedSeconds;
-        pointField.material.opacity = (lowPower ? 0.42 : 0.5) * visibilityScale * (film ? 0.8 : 1);
-      }
       return true;
     },
   };

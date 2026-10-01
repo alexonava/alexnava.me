@@ -6,13 +6,12 @@ import {
 import { createStoneDetailController, GROUND_DETAIL_SETTINGS, slateMaterialUrl } from "./stone-detail.js";
 import { SLATE_TILING } from "./mud-ground.js";
 
-export const EARTH = Object.freeze({ width: 384, subdivisions: 128, tile: 6.3, normalScale: 0.7 });
+export const EARTH = Object.freeze({ width: 384, subdivisions: 128 });
 
-// The film terrain's map sets. "slate" is the default: the seamless slate v2
-// tile, repeated every 22 units at the classic ground's normal strength, with
-// no roughness map, plus a 512 detail map shared by both tiers (mud-ground.js
-// samples it at its own scale). "earth" is the Poly Haven dirt comparison
-// (?ground=earth), which also carries grass.
+// The film terrain's map set, "slate": the seamless slate v2 tile, repeated
+// every 22 units at the classic ground's normal strength, with no roughness
+// map, plus a 512 detail map shared by both tiers (mud-ground.js samples it at
+// its own scale).
 export const FILM_GROUND_PRESETS = Object.freeze({
   slate: Object.freeze({
     kinds: Object.freeze(["color", "normal", "detail"]),
@@ -21,22 +20,12 @@ export const FILM_GROUND_PRESETS = Object.freeze({
     tile: SLATE_TILING.tile,
     wrap: RepeatWrapping,
     normalScale: GROUND_DETAIL_SETTINGS.normalScale,
-    muddy: false,
     material: "Cracked Desert Ground",
-  }),
-  earth: Object.freeze({
-    kinds: Object.freeze(["color", "normal", "roughness"]),
-    urlFor: (kind, size) => `/images/materials/earth-${kind}-${size}.webp`,
-    tile: EARTH.tile,
-    wrap: RepeatWrapping,
-    normalScale: EARTH.normalScale,
-    muddy: true,
-    material: "Poly Haven Dirt",
   }),
 });
 
 export function createEarthDetail({
-  preset: presetName = "earth",
+  preset: presetName = "slate",
   profile,
   disabled,
   anisotropy,
@@ -97,7 +86,6 @@ export function createEarthDetail({
           detailMap: maps.detail ?? null,
           bumpMap: null,
           normalScale: preset.normalScale,
-          muddy: preset.muddy,
           filmTiled: true,
         });
       } catch (error) {

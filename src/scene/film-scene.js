@@ -54,8 +54,7 @@ export function createFilmScene({
         // ground cannot show mid-shot (terrain-build.js); before the reveal it
         // takes idle time only, and it stops if the scene is disposed first. The tufts and the
         // slate's root shading then follow the tree's root supports, and ready
-        // resolves to the height the rocks sit on. The earth comparison has no
-        // supports.
+        // resolves to the height the rocks sit on.
         pending ||= loadTerrain().then(async ({ createEarthGeometry, settleRoots }) => {
           if (disposed || !(terrain = await createEarthGeometry(groundHeight, foothills, EARTH, rendering, tour, () => disposed))) return;
           // A terrain finished after disposal is freed, never kept.

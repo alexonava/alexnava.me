@@ -1,9 +1,4 @@
-import { resolveSceneModes } from "./scene-modes.js";
 import { Box3, Vector3 } from "three";
-
-export function wantsFilmTreatment(search = "") {
-  return resolveSceneModes(search).film;
-}
 
 // Heights and focal widths are proportions of the selected authored subject.
 // Detail shots intentionally crop incidental roof/canopy geometry; fitting the
@@ -49,12 +44,12 @@ export const DIRECTED_SHOTS = {
       portrait: { region: [0.62, 0.9], focus: { width: 0.22, depth: [0.06, 0.34] } },
     },
     {
-      // The comparison name and URL are retained; for the timber lookout it is a
+      // The name and URL are retained; for the timber lookout it is a
       // structure study of a corner leg and the X-braced lattice meeting it. From
       // azimuth 0 to 10 the camera faces the sun: on portrait phones it sits behind
       // the name, hidden only by the gallery floor. At -20 it is out of frame.
       name: "Masonry study",
-      tour: false, // Retain its comparison URL without including it in the tour.
+      tour: false, // Retain its URL without including it in the tour.
       region: [0.3, 0.6],
       fov: 32,
       azimuth: -20,

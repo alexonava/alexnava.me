@@ -284,11 +284,7 @@ test("first-paint hero, action cursors, microcopy, and short-landscape labels st
     /font-size:\s*(?:[0-9](?:\.[0-9]+)?|1[01](?:\.[0-9]+)?)px/,
     "user-facing microcopy must not fall below 12px",
   );
-  assert.match(
-    styles,
-    /@media \(orientation: landscape\) and \(max-height: 500px\)[\s\S]*?\.btn-icon-label\s*\{[^}]*opacity:\s*1;/,
-  );
-  assert.match(styles, /\.btn-icon-label\s*\{[^}]*opacity:\s*1;/);
+  assert.doesNotMatch(styles, /\.btn-icon/, "no rules for the retired icon buttons");
   // The one top-level sheet rule holds every paper's height at all widths.
   assert.match(cssRule(styles, ".panel-parchment__sheet"), /min-height:\s*370px;/);
   assert.doesNotMatch(
@@ -372,13 +368,6 @@ test("variable font faces supply real weights without the retired static face", 
   ]) {
     assert.match(styles, rule);
   }
-});
-
-test("the visible About label forwards clicks to its control", async () => {
-  const styles = await readStyles();
-  const label = styles.match(/\.btn-icon-label\s*\{[^}]*\}/)[0];
-  assert.match(label, /position:\s*absolute;/, "the label stays outside the bar's layout rectangle");
-  assert.match(label, /pointer-events:\s*auto;/);
 });
 
 test("forced colors and high-contrast modes keep system colors and the system cursor", async () => {
@@ -470,7 +459,7 @@ test("landmarks and heading levels describe the page structure", async () => {
   const html = await readIndexHtml();
   const styles = await readStyles();
   assert.match(html, /<footer class="site-footer">[\s\S]*?data-panel="about"[\s\S]*?<\/footer>/);
-  assert.match(styles, /body\.dev-mode-active > \*:not\(\.scene-shell\):not\(\.dev-mode-hud\)/);
+  assert.doesNotMatch(styles, /dev-mode/, "no developer HUD rules");
   const fallback = html.match(/<div class="scene-fallback-content"[\s\S]*?<\/main>/)[0];
   assert.deepEqual(
     [...fallback.matchAll(/<(h[1-6])>([^<]+)<\/h[1-6]>/g)].map((match) => `${match[1]} ${match[2]}`),
@@ -589,7 +578,6 @@ test("footer controls keep 44px targets without blocking the scene", async () =>
 
   const forced = styles.slice(styles.indexOf("/* Windows High Contrast"));
   assert.match(forced, /a,\s*\.site-footer__about\s*\{\s*color:\s*LinkText;/);
-  assert.match(styles, /body\.dev-mode-active > \*:not\(\.scene-shell\):not\(\.dev-mode-hud\),\s*body\.dev-mode-active::after\s*\{/);
 });
 
 test("category copy stays minimal and matches its Markdown equivalent", async () => {
@@ -701,9 +689,6 @@ test("dialog polish keeps readable ink, touch cues and paper-safe controls", asy
   for (const [, size] of styles.matchAll(/\.bottom-btn--icon\s*\{[^}]*?width:\s*(\d+)px;/g)) {
     assert.ok(Number(size) >= 44 && Number(size) <= 52, `About target ${size}px`);
   }
-  const label = cssRule(styles, ".btn-icon-label");
-  assert.match(label, /color:\s*var\(--text-accent\);/);
-  assert.match(label, /font-size:\s*13px;[^}]*letter-spacing:\s*0\.14em;/);
 });
 
 test("the 404 is a centered cotton-paper sheet with dark ink", async () => {

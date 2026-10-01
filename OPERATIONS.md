@@ -26,7 +26,7 @@ The responsive poster is eager and decorative, so it is a truthful first visual 
 
 `?quality=balanced|high` forces the live path through the preference and software-renderer gates; it still stops when WebGL is unavailable. Do not add user-agent, Lighthouse or phone-viewport exceptions.
 
-The scene entry imports two shared chunks statically (Three.js core and the Pass base). Lazy chunks load only for high or balanced film scenes: rocks, lantern flame, terrain, light shafts (WebGL2 only) and mountains. All match the immutable `/scripts/scene.*.js` rule in `_headers`, and the pages still name exactly one app, one scene entry and one CSS asset.
+The scene entry imports one shared chunk statically (Three.js core). Lazy chunks load only for the live film scene (high or balanced): rocks, lantern flame, terrain, light shafts (WebGL2 only) and mountains. All match the immutable `/scripts/scene.*.js` rule in `_headers`, and the pages still name exactly one app, one scene entry and one CSS asset.
 
 Whenever the posters change, regenerate `og.png` from `tools/og-card.html` (the recipe is in that file) and re-scrape it with LinkedIn Post Inspector after release.
 

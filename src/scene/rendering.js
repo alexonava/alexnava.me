@@ -9,7 +9,6 @@ import {
   PerspectiveCamera,
   Scene,
   SRGBColorSpace,
-  Vector2,
   WebGLRenderer,
 } from "three";
 import { createPostprocessPipeline } from "./postprocess.js";
@@ -53,9 +52,6 @@ export function createSceneRendering({
   threeExports,
   width,
   world,
-  // The developer camera supplies OutlinePass from its lazily imported chunk
-  // (developer-tools.js), so the visitor bundle never carries the pass.
-  createOutlinePass = null,
   createPipeline = createPostprocessPipeline,
   createRenderer = (options) => new WebGLRenderer(options),
   disposeResources = disposeSceneRuntimeResources,
@@ -90,11 +86,6 @@ export function createSceneRendering({
     onInvalidate,
   });
   const composer = postprocessPipeline.composer;
-  let currentHeight = height;
-  let currentWidth = width;
-  let currentPixelRatio = renderer.getPixelRatio?.() || 1;
-  let outlinePass = null;
-  const devicePixels = (value) => Math.floor(value * currentPixelRatio);
 
   const handleContextLost = (event) => {
     event?.preventDefault?.();
@@ -221,28 +212,8 @@ export function createSceneRendering({
       hemisphere: hemisphereLight,
       sun: sunLight,
     },
-    get outlinePass() {
-      return outlinePass;
-    },
     postprocessPipeline,
     renderer,
-    ensureOutlinePass(create = createOutlinePass) {
-      if (disposed) return null;
-      if (outlinePass) return outlinePass;
-      if (typeof create !== "function") return null;
-      outlinePass = create(
-        new Vector2(devicePixels(currentWidth), devicePixels(currentHeight)),
-        homeScene,
-        camera,
-      );
-      outlinePass.edgeStrength = 2;
-      outlinePass.edgeThickness = 1;
-      outlinePass.visibleEdgeColor.set(0xd9a46d);
-      outlinePass.hiddenEdgeColor.set(0x4b403f);
-      outlinePass.enabled = false;
-      composer.addPass(outlinePass);
-      return outlinePass;
-    },
     setFilmTreatment(active) {
       if (disposed) return false;
       filmLighting = Boolean(active);
@@ -392,7 +363,6 @@ export function createSceneRendering({
         sunLight.shadow.needsUpdate = true;
       }
       if (Number.isFinite(pixelRatio)) {
-        currentPixelRatio = pixelRatio;
         renderer.setPixelRatio(pixelRatio);
         // EffectComposer captured the renderer's construction-time ratio of 1;
         // its targets and passes now follow the canvas in device pixels.
@@ -406,10 +376,6 @@ export function createSceneRendering({
       disposed = true;
       renderer.domElement?.removeEventListener?.("webglcontextlost", handleContextLost);
       renderer.domElement?.removeEventListener?.("webglcontextrestored", handleContextRestored);
-      if (outlinePass) {
-        outlinePass.enabled = false;
-        outlinePass.selectedObjects = [];
-      }
       disposeResult = disposeResources({
         postprocessPipeline,
         renderer,
@@ -421,15 +387,12 @@ export function createSceneRendering({
     },
     resize({ cameraFov, height: nextHeight, width: nextWidth }) {
       if (disposed) return false;
-      currentHeight = nextHeight;
-      currentWidth = nextWidth;
       if (Number.isFinite(cameraFov)) camera.fov = cameraFov;
       camera.aspect = nextWidth / nextHeight;
       camera.updateProjectionMatrix();
       // The canvas keeps its CSS size (100% of the full-bleed scene container);
       // only the drawing buffer follows the measured size.
       renderer.setSize(nextWidth, nextHeight, false);
-      // The composer also sizes the outline pass, in device pixels.
       composer.setSize(nextWidth, nextHeight);
       // Grading samples its ink contour in CSS pixels.
       postprocessPipeline.resize?.(nextWidth, nextHeight);

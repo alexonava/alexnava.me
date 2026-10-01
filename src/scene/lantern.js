@@ -131,7 +131,7 @@ export function createLanternMount({ anisotropy = 4, camera, onChange = () => {}
       const lantern = tree.root.getObjectByName("tree-lantern"), light = tree.light;
       if (!lantern || light?.parent !== lantern) return false;
       // Detach the stand-in, rather than merely hide a parent: camera fitting
-      // and Blender export must see only the replacement's actual geometry.
+      // must see only the replacement's actual geometry.
       const children = lantern.children.filter((child) => child !== light);
       attached = { lantern, light, children, position: light.position.clone() };
       children.forEach((child) => child.removeFromParent());

@@ -115,7 +115,6 @@ export function createSceneFrameScheduler({
   let active = false;
   let dirty = true;
   let elapsedSeconds = 0;
-  let forceAnimation = false;
   let frameHandle = null;
   let frameTick = 0;
   let hasRendered = false;
@@ -128,7 +127,7 @@ export function createSceneFrameScheduler({
   let still = false;
 
   function isAnimated() {
-    return (!prefersReducedMotion && !still) || forceAnimation;
+    return !prefersReducedMotion && !still;
   }
 
   function schedule() {
@@ -248,7 +247,6 @@ export function createSceneFrameScheduler({
         active,
         dirty,
         elapsedSeconds,
-        forceAnimation,
         held: holds.size > 0,
         reducedMotion: prefersReducedMotion,
         scheduled: frameHandle !== null,
@@ -280,14 +278,6 @@ export function createSceneFrameScheduler({
       if (isAnimated() === wasAnimated) return;
       resetTiming();
       if (wasAnimated) return;
-      dirty = true;
-      schedule();
-    },
-    setForceAnimation(value) {
-      const next = Boolean(value);
-      if (forceAnimation === next) return;
-      forceAnimation = next;
-      resetTiming();
       dirty = true;
       schedule();
     },
@@ -375,9 +365,7 @@ export function createPanelHold({
  * before the reveal waits for it and keeps the first revealed frame; a later
  * pause draws one more frame, so a tour crossfade settles on its incoming
  * shot, then holds. As with createPanelHold(), redraw() releases the hold only
- * until frameRendered() reports the next drawn frame. suspend() lifts the hold
- * while the developer camera runs, keeping the pause, and draws one frame
- * before it returns.
+ * until frameRendered() reports the next drawn frame.
  * Releasing a held pause calls onRelease.
  */
 export function createVisitorHold({ onRelease = () => {}, scheduler }) {
@@ -386,7 +374,6 @@ export function createVisitorHold({ onRelease = () => {}, scheduler }) {
   let paused = false;
   let redrawing = false;
   let revealed = false;
-  let suspended = false;
 
   function setHeld(next) {
     if (held === next) return;
@@ -423,7 +410,7 @@ export function createVisitorHold({ onRelease = () => {}, scheduler }) {
     reveal() {
       if (disposed || revealed) return;
       revealed = true;
-      if (paused && !suspended) setHeld(true);
+      if (paused) setHeld(true);
     },
     redraw() {
       if (disposed || !held) return;
@@ -433,17 +420,7 @@ export function createVisitorHold({ onRelease = () => {}, scheduler }) {
     frameRendered() {
       if (!redrawing) return;
       redrawing = false;
-      if (paused && !suspended) setHeld(true);
-    },
-    suspend(value) {
-      const next = Boolean(value);
-      if (disposed || suspended === next) return;
-      suspended = next;
-      if (suspended) release();
-      else if (paused && revealed) {
-        redrawing = true;
-        scheduler.invalidate();
-      }
+      if (paused) setHeld(true);
     },
     dispose() {
       disposed = true;
