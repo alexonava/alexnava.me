@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { flat } from "./support/code.mjs";
 import { Box3, BoxGeometry, Group, Mesh, MeshStandardMaterial, Vector3, PointLight } from "three";
 import { DOOR_HEIGHT as D } from "../src/scene/mud-ground.js";
 import { createPropScale } from "../src/scene/prop-scale.js";
@@ -272,17 +271,6 @@ test("the film ground material follows the film, so loading and fallback surface
     roughness: 0.98,
     metalness: 0.02,
   });
-});
-
-test("the ground shading call site takes its tint and shading from the film state", async () => {
-  const { readFile } = await import("node:fs/promises");
-  const index = flat(await readFile(new URL("../src/scene/index.js", import.meta.url), "utf8"));
-  // onDetailChange: tint, roughness and metalness all come from the same surface.
-  assert.match(
-    index,
-    /const surface = filmGroundSurface\(\{ film: filmActive, surface: GROUND_SURFACE_MATERIAL \}\);[^]*?configureGroundShading\(material, filmActive, \{ detail: detailMap, contacts: groundContacts \}\);[^]*?material\.roughness = surface\.roughness;\s*material\.metalness = surface\.metalness;\s*material\.color\.setHex\(surface\.color\);/,
-  );
-  assert.equal((index.match(/configureGroundShading\(/g) || []).length, 1);
 });
 
 test("the wet hollows restate the terrain dune field exactly", async () => {

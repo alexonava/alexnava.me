@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { flat } from "./support/code.mjs";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import {
@@ -566,61 +565,4 @@ test("the film ground starts from a flat preview and paints in full in the next 
   // Only the film slate's maps remain: no stone, ground, earth or grass loaders.
   const textures = await source("scene/textures.js");
   assert.doesNotMatch(textures, /grass|earth-|materials\/ground|stone-|marble|mud/i);
-});
-
-test("scene bootstrap warms shaders before drawing and records start-up marks", async () => {
-  const index = flat(await source("scene/index.js"));
-  const entry = await source("scene-entry.js");
-
-  assert.match(
-    entry,
-    /^import \{ markSceneEvaluated \} from "\.\/scene\/perf-marks\.js";\r?\nimport "\.\/shared\/webgl-probe\.js";/m,
-  );
-  assert.match(entry, /import "\.\/scene\/index\.js";\s*markSceneEvaluated\(\);\s*$/);
-  assert.match(
-    index,
-    /caps: scene\.qualityCapsFromProbe\?\.\(site\.shared\?\.getWebGLCapabilities\?\.\(\)\) \?\? null/,
-  );
-
-  // Nothing draws before the reveal while a warm-up links, and the reveal waits for it.
-  assert.match(
-    index,
-    /const shaderWarmup = createShaderWarmup\(\{ compile: \(\) => rendering\.compileShaders\(\) \}\);/,
-  );
-  assert.match(index, /if \(canvasShown \|\| !shaderWarmup\.pending\) \{\s*rendering\.update\(\);/);
-  assert.match(
-    index,
-    /!sceneFailed && cinematic\.ready &&\s*\(canvasShown \|\| !shaderWarmup\.pending\);/,
-  );
-  assert.match(index, /warmShaders\("scene"\);\s*frameScheduler\.start\(\);/);
-  // A committed model replaces nothing visible, so it stays hidden until its programs link.
-  assert.match(index, /warmShaders\("tower", replacement\.root\);/);
-  assert.match(index, /warmShaders\("tree", replacement\.root\);/);
-
-  for (const name of ["init", "first-frame", "assembly:tower", "assembly:tree"]) {
-    assert.ok(index.includes(`measureScene("${name}"`), name);
-  }
-  assert.match(index, /measureScene\(`shaders:\$\{label\}`, start\);/);
-  // The rocks fetch and link only after the reveal.
-  assert.match(
-    index,
-    /if \(sceneShown && !canvasShown\) \{\s*markScene\("reveal"\);[^}]*rockScatter\.setRevealed\(\);\s*\}/,
-  );
-  // A ground program that changes before the reveal links through compileAsync,
-  // so the first draw never blocks on it.
-  assert.equal(
-    (index.match(/contacts: groundContacts \}\);\s*warmGround\?\.\(\);/g) || []).length,
-    1,
-  );
-  assert.match(index, /warmGround = \(\) => canvasShown \|\| warmShaders\("ground"\);/);
-  // The film terrain never holds the reveal: it builds in short slices and its
-  // root shading links on a detached stand-in once the canvas shows, both
-  // landing only where they cannot show mid-shot, so the film takes the tour
-  // (terrain-build.js), not the scene's warm-up.
-  assert.match(index, /createFilmScene\(\{[^}]*tour: cameraTour,/);
-  assert.doesNotMatch(index, /createFilmScene\(\{[^}]*warm[:,]/);
-
-  for (const path of ["shared/webgl-probe.js", "scene/quality.js", "scene/rendering.js"]) {
-    assert.doesNotMatch(await source(path), /high-performance/, path);
-  }
 });

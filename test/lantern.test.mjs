@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { parseGlb } from "./support/glb.mjs";
-import { flat } from "./support/code.mjs";
 import { readFile } from "node:fs/promises";
 import {
   Box3,
@@ -374,22 +373,6 @@ test("disposing before flame preparation prevents any later material attachment 
   assert.equal(configured, 0);
   assert.equal(prepared, 0);
   assert.equal(mount.take(), false);
-});
-
-test("scene integration clears camera fits and warms shaders only when the optional lantern commits", async () => {
-  const source = flat(await readFile(new URL("../src/scene/index.js", import.meta.url), "utf8"));
-  assert.match(source, /includeLantern: true/);
-  assert.match(source, /onLanternReady: \(asset\) => lanternMount\.stage\(asset\)/);
-  assert.match(
-    source,
-    /status\.kind !== "lantern" &&/,
-    "an optional failure must not stop the scene for the title card",
-  );
-  assert.match(
-    source,
-    /lanternMount\.take\(\{ revealed: canvasShown, running: cameraTour\?\.running === true, cut: transition\.cut \}\)/,
-  );
-  assert.match(source, /if \(committed\) warmShaders\("lantern"\)/);
 });
 
 test("both delivered lantern tiers embed authored PBR maps, masked emission and emitter metadata within budget", async () => {

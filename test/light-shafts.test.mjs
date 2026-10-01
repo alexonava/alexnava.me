@@ -1,7 +1,5 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { flat } from "./support/code.mjs";
-import { readFile } from "node:fs/promises";
 import {
   BoxGeometry,
   DirectionalLight,
@@ -738,30 +736,15 @@ test("an import that resolves late, or after disposal, does nothing", async () =
   const off = harness({ search: "?shafts=off" });
   await off.until(() => off.debug.shafts?.shown === "tower-star");
   off.shafts.dispose();
-  // index.js: every live (high or balanced) film scene on WebGL2, and a late
-  // or failed import leaves the scene as it is.
-  const index = flat(await readFile(new URL("../src/scene/index.js", import.meta.url), "utf8"));
-  assert.match(
-    index,
-    /if \(renderer\.capabilities\.isWebGL2\) \{\s*import\("\.\/light-shafts\.js"\)\.then\(\(\{ lightShafts \}\) => subsystemRegistry\.disposed \|\|\s*subsystemRegistry\.register\(lightShafts\(rendering, cinematic, cameraTour, filmScene, environmentRoot, invalidateContent\)\), \(\) => \{\}\);\s*\}/,
-  );
-  assert.equal(index.match(/import\("\.\/light-shafts\.js"\)/g).length, 1);
+  // index.js registers a late import's shafts only while the scene lives
+  // (scene-bootstrap.test.mjs).
 });
 
 test("WebGL1 never loads the shafts: their box and hooks use derivatives and a two-channel map", async () => {
   // three r160 falls back to a WebGL1 context where WebGL2 is missing. The
   // chunk's shaders take dFdx/fwidth (GL_OES_standard_derivatives there) and
-  // its back map is RG, so index.js requests it only on WebGL2; the scene
-  // renders on WebGL1 as it did before the shafts.
-  const index = await readFile(new URL("../src/scene/index.js", import.meta.url), "utf8");
-  const gate = index.indexOf("renderer.capabilities.isWebGL2) {"),
-    load = index.indexOf('import("./light-shafts.js")');
-  assert.ok(gate > 0 && load > gate && load - gate < 60, "the import sits behind the WebGL2 check");
-  assert.match(
-    index,
-    /const \{ camera, homeScene, renderer \} = rendering;/,
-    "the renderer in scope is the scene's",
-  );
+  // its back map is RG, so index.js requests it only on WebGL2
+  // (scene-bootstrap.test.mjs), where the scene renders without them.
   const material = new MeshStandardMaterial();
   goboHook(material, {}, 0).install();
   const shader = {

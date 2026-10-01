@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { flat } from "./support/code.mjs";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import { Group } from "three";
@@ -107,76 +106,4 @@ test("adaptive quality steps change cost settings without refetching models or t
   assert.ok(requests.every(({ signal }) => !signal.aborted));
   assert.deepEqual(restores, [], "live models and bound maps are never restored away");
   registry.dispose();
-});
-
-test("scene bootstrap pins the asset tier and samples quality only after reveal", async () => {
-  const index = flat(await readFile(new URL("../src/scene/index.js", import.meta.url), "utf8"));
-  const textures = flat(
-    await readFile(new URL("../src/scene/textures.js", import.meta.url), "utf8"),
-  );
-
-  assert.match(index, /const assetTier = qualityState\.initialTier;/);
-  assert.match(index, /architectureAssets\.setQuality\(state\.profile, true, \{ assetTier \}\);/);
-  assert.doesNotMatch(index, /lowPower/);
-  assert.match(index, /const revealed = sceneReadyMarked && cinematic\.ready;/);
-  assert.match(
-    index,
-    /revealed && !reducedMotion && !adaptiveSteps\.pending\s*\?\s*qualityState\.sampleRevealed\?\.\(/,
-  );
-  assert.match(
-    index,
-    /if \(adaptiveProfile\) applyActiveQualityProfile\(adaptiveProfile, "adaptive"\);/,
-  );
-  // A step links its programs when sampled and lands on a tour cut, where the
-  // crossfade's kept frame hides it; the one-off transition frames go unsampled.
-  assert.match(
-    index,
-    /const adaptiveSteps = createDeferredQualityStep\(\{ prepare: \(profile\) => rendering\.prepareQuality\(profile\) \}\);/,
-  );
-  assert.match(index, /if \(sampledProfile\) adaptiveSteps\.queue\(sampledProfile, nowMs\);/);
-  assert.match(
-    index,
-    /const adaptiveProfile = adaptiveSteps\.take\(\{ cut: transition\.cut, running: cameraTour\?\.running === true, nowMs \}\);/,
-  );
-  assert.match(index, /if \(transition\.capture\) qualityState\.skipSamples\?\.\(3\);/);
-  const frame = index.slice(index.indexOf("function updateSceneFrame("));
-  const order = [
-    "qualityState.sampleRevealed?.(",
-    "cameraTour?.update(",
-    "const transition = cameraTour?.transition ?? TOUR_IDLE;",
-    "adaptiveSteps.take(",
-    "applyActiveQualityProfile(adaptiveProfile",
-    "qualityState.skipSamples?.(3)",
-    "rendering.postprocessPipeline.setTransition?.(transition);",
-    "cinematic.apply(",
-    "rendering.update();",
-  ].map((anchor) => frame.indexOf(anchor));
-  assert.ok(
-    order.every((at) => at >= 0),
-    "each frame step is wired",
-  );
-  assert.deepEqual(
-    order,
-    [...order].sort((a, b) => a - b),
-    "tour, step, capture skip, crossfade, camera, draw",
-  );
-  assert.doesNotMatch(index, /setFade|cameraTour\?\.fade/);
-  // Each event that brings uploads or compiles restarts the sampling hold.
-  for (const [label, anchor] of [
-    ["intersection resume", "if (sceneVisible) {"],
-    ["context restore", "onContextRestored() {"],
-    ["ground readiness", "onDetailStatus(status) {"],
-    ["model readiness", "onStatus(status) {"],
-    ["resize", "function applySceneSize("],
-    ["document resume", "const onDocumentVisibilityChange = () => {"],
-    ["dialog release", "onRelease:"],
-  ]) {
-    const start = index.indexOf(anchor);
-    assert.ok(start >= 0, label);
-    assert.ok(index.slice(start, start + 160).includes("qualityState.holdSampling()"), label);
-  }
-  assert.match(
-    textures,
-    /applyQuality\(profile, context\) \{ filmMaps\.applyQuality\(profile, context\); \}/,
-  );
 });

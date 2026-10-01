@@ -537,13 +537,6 @@ test("invalid quality override does not bypass the data-saver gate", async () =>
   assert.equal(getWebglProbeCount(), 0, "malformed override must not bypass data-saver");
 });
 
-test("scene gate has no user-agent, Lighthouse, or phone-viewport escape hatch", async () => {
-  const source = await readFile(mainSourcePath, "utf8");
-
-  assert.doesNotMatch(source, /userAgent|Lighthouse|Chrome-Lighthouse/i);
-  assert.doesNotMatch(source, /shortSide|longSide|phoneViewport/);
-});
-
 test("the live scene requests its startup tier's tower and tree at low priority after its bundle", async () => {
   for (const [options, tier] of [
     [{}, "high"],
@@ -598,11 +591,8 @@ test("the low tier keeps the title card and never requests the scene bundle", as
     assert.equal(harness.scripts.length, 0, "no scene script is requested");
     assert.equal(harness.fetches.length, 0, "no model is requested");
   }
-  // The scene itself declines the low tier before it builds a renderer, should
+  // The scene itself declines the low tier (scene-bootstrap.test.mjs), should
   // main.js not have known the tier; main.js then hides the host.
-  const index = await readFile(new URL("../src/scene/index.js", import.meta.url), "utf8");
-  const declines = index.indexOf('if (qualityState.initialTier === "low") return false;');
-  assert.ok(declines > 0 && declines < index.indexOf("createSceneRendering({"));
   const unknown = createContext({ maxTextureSize: 0, initResult: false });
   await loadMainWithQuality(unknown.context);
   assert.equal(await unknown.context.window.BabelSite.ensureSceneReady(), false);

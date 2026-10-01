@@ -1,7 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { flat } from "./support/code.mjs";
 import {
   BoxGeometry,
   Fog,
@@ -211,34 +209,4 @@ test("large height changes, rotation, a moved hero and still framing refit at on
   lantern.apply(390, 666);
   assert.notEqual(lantern.controller.frame, kept, "a 21% drop refits");
   lantern.dispose();
-});
-
-test("scene bootstrap fits the next tour shot in idle slices and refits it when the view changes", async () => {
-  const index = flat(await readFile(new URL("../src/scene/index.js", import.meta.url), "utf8"));
-  // Each idle slice measures or fits once; Safari falls back to a timer.
-  assert.match(
-    index,
-    /typeof window\.requestIdleCallback === "function"\s*\? \(task\) => window\.requestIdleCallback\(task, \{ timeout: 1500 \}\)\s*: \(task\) => window\.setTimeout\(task, 50\);/,
-  );
-  // One chain at a time, on the latest request; a slot that lands on a
-  // capture or its crossfade waits for the next one.
-  assert.match(
-    index,
-    /const idle = !tourShot;\s*tourShot = \[subject, angle\];\s*if \(idle\) whenIdle\(function step\(\) \{\s*if \(runtimeDisposed\) return;/,
-  );
-  assert.match(
-    index,
-    /const \{ capture, progress \} = cameraTour\?\.transition \?\? TOUR_IDLE;\s*if \(capture \|\| progress < 1 \|\|\s*cinematic\.prepare\(\.\.\.tourShot, viewport\.width, viewport\.height\) === "pending"\) whenIdle\(step\);\s*else tourShot = null;/,
-  );
-  assert.match(index, /createCameraTour\(\{[^}]*prepare: prepareTourShot \}\)/);
-  // A resize, a font load that moves the hero, or a model change refits it.
-  assert.match(
-    index,
-    /function applySceneSize\([^]*?frameScheduler\?\.invalidate\(\);\s*cameraTour\?\.prepareNext\(\);\s*\}/,
-  );
-  assert.match(
-    index,
-    /const onFontsLoaded = \(\) => \{ cinematicArea = measureCinematicArea\([^)]*\); cameraTour\?\.prepareNext\(\);/,
-  );
-  assert.match(index, /cinematic\.setStatus\(status\);\s*cameraTour\?\.prepareNext\(\);/);
 });

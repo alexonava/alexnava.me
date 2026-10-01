@@ -1,7 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { flat } from "./support/code.mjs";
 import {
   createPanelHold,
   createRefreshEstimator,
@@ -710,69 +708,4 @@ test("runtime resource disposal deduplicates scene assets and leaves render-targ
   assert.equal(calls.contextLost, 1);
   assert.equal(calls.canvasRemoved, 1);
   assert.equal(calls.sceneCleared, 1);
-});
-
-test("scene bootstrap idles before reveal, holds behind dialogs and fails to the title card", async () => {
-  const source = flat(await readFile(new URL("../src/scene/index.js", import.meta.url), "utf8"));
-
-  // The frame that sees readiness reveals the canvas and resumes animation.
-  assert.match(source, /const sceneShown = !sceneFailed && cinematic\.ready &&/);
-  assert.match(
-    source,
-    /container\?\.classList\.toggle\("is-ready", sceneShown\);\s*[^]*?frameScheduler\?\.setStill\(!sceneShown\);/,
-  );
-  // The dialog hold's behaviour is tested above; index.js only wires it.
-  assert.match(
-    source,
-    /panelHold = createPanelHold\(\{\s*delayMs: 450,\s*isOpen: \(\) => document\.body\.hasAttribute\("data-panel-open"\),/,
-  );
-  assert.match(source, /attributeFilter: \["data-panel-open"\]/);
-  assert.match(source, /function applySceneSize\([^]*?panelHold\?\.redraw\(\);/);
-  assert.match(source, /rendering\.update\(\);[^]*?panelHold\?\.frameRendered\(\);/);
-  // Renders keep an even vsync cadence: desktops at or above 60 fps, touch
-  // screens at or below it; the 60 fps cap holds until a rate is adopted.
-  assert.match(
-    source,
-    /createSceneFrameScheduler\(\{\s*displayCadence: \{ baseRate: 60, round: qualityState\.touchPrimary \? "ceil" : "floor" \},[^]*?targetFrameRate: 60,?\s*\}\);/,
-  );
-  const dispose = source.slice(source.indexOf("function disposeHomeSceneRuntime"));
-  assert.match(dispose, /panelObserver\?\.disconnect\(\);\s*panelHold\.dispose\(\);/);
-
-  // A missing tower or tree fails to the title card: the camera learns the
-  // status first, the scene stops at once and the runtime is disposed on a
-  // later tick.
-  const onStatus = source.slice(
-    source.indexOf("onStatus(status) {"),
-    source.indexOf("subsystemRegistry.register(architectureAssets);"),
-  );
-  assert.ok(onStatus.indexOf("cinematic.setStatus(status);") < onStatus.indexOf("failToTitle("));
-  assert.match(
-    onStatus,
-    /status\.kind !== "lantern" && \(status\.status === "fallback" \|\|\s*\(status\.status === "procedural" && sceneReadyMarked\)\)\) \{\s*failToTitle\(/,
-  );
-  assert.match(
-    source,
-    /function failToTitle\(stage, error\) \{\s*if \(sceneFailed\) return;\s*stopFailedScene\(stage, error\);[\s\S]*?\(function disposeWhenIdle\(\) \{[\s\S]*?if \(shaderWarmup\.pending\) window\.setTimeout\(disposeWhenIdle, 50\);\s*else scene\.disposeHomeSceneRuntime\?\.\(\);/,
-  );
-  assert.doesNotMatch(source, /failToPoster/);
-  // A scene never shown also hides its host, which retires the loading line
-  // (ui/scene-loader.js); a shown canvas fades out to the title card instead.
-  const stop = source.slice(
-    source.indexOf("function stopFailedScene"),
-    source.indexOf("function failToTitle"),
-  );
-  assert.match(
-    stop,
-    /sceneFailed = true;\s*container\.classList\?\.remove\("is-ready"\);\s*if \(!canvasShown\) container\.hidden = true;/,
-  );
-  // canvasShown is declared before any status can reach stopFailedScene.
-  assert.ok(
-    source.indexOf("let canvasShown = false;") <
-      source.indexOf("createArchitectureAssetController({"),
-  );
-  assert.doesNotMatch(source, /ensureLegacyWorld|legacyWorld|ensureProcedural/);
-  assert.match(source, /webglContextAvailable && !sceneFailed;/);
-
-  // The authored scene's shadows are static: the map redraws only on reported changes.
-  assert.match(source, /rendering\.setStaticShadows\(true\);/);
 });

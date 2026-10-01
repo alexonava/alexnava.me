@@ -2096,13 +2096,7 @@ test("the terrain chunk is requested only when the film activates, once, and a f
     each.ground.geometry.dispose();
     each.ground.material.dispose();
   }
-  const index = await readFile(new URL("../src/scene/index.js", import.meta.url), "utf8");
-  assert.doesNotMatch(index, /filmScene\.prefetch/);
-  assert.equal(
-    index.match(/import\("\.\/terrain-build\.js"\)/g),
-    null,
-    "film-scene.js holds the chunk's only import",
-  );
+  // film-scene.js holds the chunk's only import (scene-bootstrap.test.mjs).
 });
 
 test("the film's ready resolves to the root-aware ground once the roots settle", async () => {

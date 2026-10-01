@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   createSceneSubsystemRegistry,
@@ -135,21 +134,4 @@ test("failed scene initialization disposes registered systems and rethrows the o
   );
   assert.deepEqual(calls, ["dispose"]);
   assert.equal(registry.disposed, true);
-});
-
-test("scene bootstrap registers rendering before initialization and propagates quality through the registry", async () => {
-  const source = await readFile(new URL("../src/scene/index.js", import.meta.url), "utf8");
-  const createIndex = source.indexOf("const rendering = createSceneRendering({");
-  const registerIndex = source.indexOf("subsystemRegistry.register(rendering);");
-  const initializeIndex = source.indexOf("runSceneInitialization(subsystemRegistry");
-
-  assert.ok(createIndex >= 0);
-  assert.ok(registerIndex > createIndex);
-  assert.ok(initializeIndex > registerIndex);
-  assert.match(
-    source,
-    /subsystemRegistry\.applyQuality\(state\.profile, \{ pixelRatio, assetTier \}\);/,
-  );
-  assert.doesNotMatch(source, /rendering\.applyQuality\(/);
-  assert.equal(source.match(/subsystemRegistry\.register\(rendering\);/g)?.length, 1);
 });

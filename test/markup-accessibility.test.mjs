@@ -644,18 +644,7 @@ test("modern iPhones open full-bleed: night to every edge, no bounce, matching b
   assert.match(html, /<meta name="theme-color" content="#0c1016"/);
   assert.equal(manifest.theme_color, "#0c1016");
   assert.equal(manifest.background_color, "#0c1016");
-  // The canvas keeps its CSS size; its buffer follows the full-bleed container.
-  const rendering = await readFile(new URL("../src/scene/rendering.js", import.meta.url), "utf8");
-  const scene = await readFile(new URL("../src/scene/index.js", import.meta.url), "utf8");
-  assert.match(rendering, /renderer\.setSize\(nextWidth, nextHeight, false\);/);
-  assert.doesNotMatch(rendering, /renderer\.setSize\([^)]*\b(?:height|Height)\)/);
-  assert.match(scene, /readSize\(\) \{\s*const rect = container\?\.getBoundingClientRect\?\.\(\);/);
-  assert.match(scene, /new ResizeObserver\(\(\) => resizeController\.resize\(\)\)/);
-  assert.match(scene, /containerResizeObserver\?\.observe\(container\);/);
-  assert.match(
-    scene,
-    /containerResizeObserver\?\.disconnect\(\);\s*resizeController\.dispose\(\);/,
-  );
+  // The canvas's buffer follows the full-bleed container (scene-bootstrap.test.mjs).
 });
 test("fixed chrome and dialogs clear left and right safe-area insets", async () => {
   const styles = await readStyles();
