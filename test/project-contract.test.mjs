@@ -254,7 +254,7 @@ test("Cloudflare preview credentials run separately from pull-request build code
   assert.match(preview, /actions\/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c/);
   assert.match(
     preview,
-    /npm install --global --ignore-scripts --no-audit --no-fund wrangler@4\.114\.0/,
+    /npm install --global --ignore-scripts --no-audit --no-fund wrangler@4.145.0/,
   );
   assert.match(
     preview,
