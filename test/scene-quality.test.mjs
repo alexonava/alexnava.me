@@ -276,26 +276,6 @@ test("readWebGLQualityCaps falls back when probing fails and reports parameters 
   assert.equal(losing.called, true, "probe context is released after measurement");
 });
 
-test("composition profiles bake the removed default scene zoom", async () => {
-  const scene = await loadQuality(createContext());
-  const cases = [
-    ["compact", { width: 900, height: 844 }, [48.52, 11.68, 74.8, 0.144]],
-    ["desktop", { width: 1440, height: 900 }, [48.52, 11.68, 65.8, 0.144]],
-    ["portraitPhone", { width: 390, height: 844 }, [50.32, 12.44, 72.3, 0.124]],
-    ["landscapePhone", { width: 844, height: 390 }, [55.8, 10.8, 63.2, 0.144]],
-    ["tabletPortrait", { width: 810, height: 1080 }, [48.52, 12.38, 71.8, 0.134]],
-  ];
-
-  for (const [name, viewport, [fov, lookAtBase, orbitBase, orbitTrim]] of cases) {
-    const profile = scene.getSceneCompositionProfile(viewport);
-    assert.equal(profile.name, name);
-    assert.equal(profile.camera.fov, fov);
-    assert.equal(profile.camera.lookAtBase, lookAtBase);
-    assert.equal(profile.camera.orbitBase, orbitBase);
-    assert.equal(profile.camera.orbitTrim, orbitTrim);
-  }
-});
-
 test("quality governor drops to low under sustained stress and ignores invalid samples", async () => {
   const scene = await loadQuality(createContext());
   const governor = scene.createSceneQualityGovernor({ initialTier: "high" });

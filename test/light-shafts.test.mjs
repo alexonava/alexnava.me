@@ -732,10 +732,6 @@ test("an import that resolves late, or after disposal, does nothing", async () =
   await new Promise((resolve) => setTimeout(resolve, 200));
   assert.deepEqual(h.volumes(), [], "a build cut short by disposal never lands");
   assert.equal(h.tower.material.customProgramCacheKey(), "complete-meshy-tower");
-  // A retired review parameter no longer hides them.
-  const off = harness({ search: "?shafts=off" });
-  await off.until(() => off.debug.shafts?.shown === "tower-star");
-  off.shafts.dispose();
   // index.js registers a late import's shafts only while the scene lives
   // (scene-bootstrap.test.mjs).
 });

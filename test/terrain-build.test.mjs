@@ -2078,7 +2078,6 @@ test("the terrain chunk is requested only when the film activates, once, and a f
       },
     });
   });
-  assert.equal(r.film.prefetch, undefined, "no early request");
   assert.equal(requests, 0);
   r.film.setActive(true);
   r.film.setActive(false);

@@ -15,26 +15,3 @@ test("the film opens on the tower unless the URL asks for the tree", () => {
   assert.equal(resolveSceneView("?view=tree"), "tree");
   assert.equal(resolveSceneView("?view=tree&angle=4&sceneDebug=1"), "tree");
 });
-
-test("retired comparison URLs open the default film instead of another scene", () => {
-  for (const query of [
-    "view=orbit",
-    "architecture=classic",
-    "architecture=assembled",
-    "setting=previous",
-    "cinematography=baseline",
-    "refinement=baseline",
-    "scale=baseline",
-    "ground=earth",
-    "ground=desert",
-    "brick=boxes",
-    "stone=procedural",
-    "construction=baseline",
-    "preview=marble",
-    "rocks=off",
-    "shafts=off",
-  ]) {
-    assert.equal(resolveSceneView(`?${query}`), "tower", query);
-  }
-  assert.equal(resolveSceneView("?architecture=classic&view=tree"), "tree");
-});

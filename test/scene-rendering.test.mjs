@@ -102,7 +102,6 @@ test("scene rendering owns quality, sizing, rendering, and disposal lifecycle", 
     },
   });
 
-  assert.equal("ensureOutlinePass" in rendering, false, "no developer outline pass");
   assert.equal(rendering.lights.fill.visible, true);
   assert.equal(rendering.lights.fill.intensity, 0.58);
   assert.equal(rendererOptions.antialias, false, "only the composer targets multisample");

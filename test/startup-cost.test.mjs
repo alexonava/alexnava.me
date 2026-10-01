@@ -562,7 +562,4 @@ test("the film ground starts from a flat preview and paints in full in the next 
   const full = createGround(createGroundTextures, { tier: "low", groundSize: 512 });
   assert.deepEqual(full.sizes(), [512, 512]);
   assert.equal(full.ground.ensureProcedural(), false);
-  // Only the film slate's maps remain: no stone, ground, earth or grass loaders.
-  const textures = await source("scene/textures.js");
-  assert.doesNotMatch(textures, /grass|earth-|materials\/ground|stone-|marble|mud/i);
 });

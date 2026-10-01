@@ -18,7 +18,6 @@ import { createTreeArchitecture } from "../src/scene/architecture.js";
 import { createPropScale } from "../src/scene/prop-scale.js";
 import { createCinematicCamera, cinematicSafeArea } from "../src/scene/cinematic.js";
 import { DIRECTED_SHOTS, measureShot } from "../src/scene/directed-shots.js";
-import { ARCHITECTURE_ASSET_BUDGETS } from "../src/scene/architecture-assets.js";
 
 const near = (actual, expected) =>
   assert.ok(Math.abs(actual - expected) < 1e-5, `${actual} != ${expected}`);
@@ -375,14 +374,13 @@ test("disposing before flame preparation prevents any later material attachment 
   assert.equal(mount.take(), false);
 });
 
-test("both delivered lantern tiers embed authored PBR maps, masked emission and emitter metadata within budget", async () => {
+test("both delivered lantern tiers embed authored PBR maps, masked emission and emitter metadata", async () => {
   for (const tier of ["high", "balanced"]) {
     const bytes = await readFile(
       new URL(`../images/architecture/lantern-${tier}.glb`, import.meta.url),
     );
     assert.equal(bytes.toString("ascii", 0, 4), "glTF");
     assert.equal(bytes.readUInt32LE(8), bytes.length);
-    assert.ok(bytes.length <= ARCHITECTURE_ASSET_BUDGETS[tier]);
     const { json } = parseGlb(bytes);
     const primitive = json.meshes[0].primitives[0],
       material = json.materials[primitive.material];

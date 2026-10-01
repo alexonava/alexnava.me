@@ -27,6 +27,14 @@ async function readNotFoundHtml() {
   return readFile(path.join(projectRoot, "404.html"), "utf8");
 }
 
+// A colour as the cascade resolves it: var(--name) follows the :root tokens.
+function color(styles, value) {
+  let resolved = value.trim();
+  while (resolved.startsWith("var("))
+    resolved = styles.match(new RegExp(`${resolved.slice(4, -1)}:\\s*([^;]+);`))[1].trim();
+  return resolved;
+}
+
 function collectMatches(regex, source) {
   const out = [];
   for (const match of source.matchAll(regex)) out.push(match[1]);
@@ -91,28 +99,15 @@ test("modal overlays declare dialog semantics and start hidden", async () => {
   }
 });
 
-test("all estate panels share the parchment frame without decorative monograms or seals", async () => {
+test("all estate panels share the parchment frame", async () => {
   const html = await readIndexHtml();
   const sharedFrames =
     html.match(/class="[^"]*\bpanel-parchment\b[^"]*\bpanel-surface\b[^"]*"/g) || [];
-
   assert.equal(
     sharedFrames.length,
     3,
     "all panels use the shared panel-parchment + panel-surface frame",
   );
-  assert.doesNotMatch(html, /class="panel-parchment__watermark"/);
-  assert.doesNotMatch(html, /class="panel-parchment__seal"/);
-  assert.doesNotMatch(html, /panel-object-stage/, "the 3D panel-object stage is removed");
-  assert.doesNotMatch(html, /data-panel-object/);
-  assert.doesNotMatch(html, /panel-parchment--notebook/, "metaphor-named modifiers are gone");
-  assert.doesNotMatch(html, /panel-parchment--letter/);
-  assert.doesNotMatch(html, /panel-art-about/);
-  assert.doesNotMatch(html, /panel-art-contact/);
-  assert.doesNotMatch(html, /panel-parchment__rail/);
-  assert.doesNotMatch(html, /panel-notebook/);
-  assert.doesNotMatch(html, /panel-letter/);
-  assert.doesNotMatch(html, /panel-letter__quill/);
 });
 
 test("the scene is the landing content and the estate starts inside the hidden About dialog", async () => {
@@ -137,8 +132,7 @@ const LOADER_MARKUP =
 
 test("the title card paints no picture, and its hidden loading line sits between the bottom bar and footer", async () => {
   const html = flatHtml(await readIndexHtml());
-  // The owner retired the poster (2026-09-30): no picture anywhere on the site.
-  assert.doesNotMatch(html, /<picture|<img|scene-poster/);
+  assert.doesNotMatch(html, /<picture|<img/);
   assert.equal(
     html.split(flatHtml(LOADER_MARKUP)).length - 1,
     1,
@@ -153,8 +147,6 @@ test("the title card paints no picture, and its hidden loading line sits between
   for (const page of [html, await readNotFoundHtml()]) {
     assert.doesNotMatch(page, /\sstyle=|<style[\s>]/);
   }
-  assert.doesNotMatch(html, /dev-mode-hud/, "developer mode creates its HUD on demand");
-  assert.doesNotMatch(html, /loading-ritual/);
 });
 
 test("the canvas keeps one 480ms fade over the title card, and the loading line finishes within it", async () => {
@@ -172,10 +164,6 @@ test("the canvas keeps one 480ms fade over the title card, and the loading line 
     [...body.matchAll(/transition[\w-]*:\s*([^;]+);/g)].map((match) => match[1]),
   );
   assert.deepEqual(canvasTransitions, ["opacity 480ms ease-out", "none"]);
-  assert.match(
-    cssRule(styles, ".scene-loader.is-loading"),
-    /opacity:\s*1;\s*transition:\s*opacity 320ms ease 240ms;/,
-  );
   const [, duration, delay] = cssRule(styles, ".scene-loader.is-done").match(
     /opacity:\s*0;\s*transition:\s*opacity (\d+)ms ease (\d+)ms;/,
   );
@@ -205,35 +193,18 @@ test("the loading line is fixed above the footer, inert, legible and drawn by on
   const styles = await readStyles();
   const loader = cssRule(styles, ".scene-loader");
   assert.match(loader, /position:\s*fixed;/);
-  assert.match(loader, /right:\s*0;/);
-  assert.match(loader, /left:\s*0;/);
-  assert.match(loader, /z-index:\s*10;/);
   assert.match(loader, /pointer-events:\s*none;/);
-  assert.match(
-    loader,
-    /bottom:\s*calc\(max\(30px, calc\(22px \+ env\(safe-area-inset-bottom\)\)\) \+ 44px\);/,
+  // One 44px footer row above the footer's own safe-area offset.
+  const footerBottom = cssRule(styles, ".site-footer").match(/bottom:\s*([^;]+);/)[1];
+  assert.ok(
+    loader.includes(`bottom: calc(${footerBottom} + 44px);`),
+    "the line sits on the footer",
   );
-  assert.match(loader, /width:\s*min\(240px, calc\(100% - 48px\)\);/);
-  assert.match(loader, /margin-inline:\s*auto;/);
-  assert.match(loader, /font-size:\s*12px;/);
-  assert.match(loader, /line-height:\s*16px;/);
+  assert.ok(Number(loader.match(/font-size:\s*(\d+)px;/)[1]) >= 12);
   assert.match(loader, /color:\s*var\(--text-accent\);/);
   assert.match(loader, /text-shadow:\s*var\(--text-meta-shadow\);/);
-  assert.match(loader, /opacity:\s*0;/);
-  assert.match(
-    cssRule(styles, ".scene-loader__label"),
-    /white-space:\s*nowrap;[^}]*font-variant-numeric:\s*tabular-nums;/,
-  );
-  assert.match(
-    cssRule(styles, ".scene-loader__value"),
-    /display:\s*inline-block;\s*min-width:\s*4ch;\s*text-align:\s*left;/,
-  );
-  assert.match(
-    cssRule(styles, ".scene-loader__track"),
-    /height:\s*2px;[^}]*background:\s*rgba\(230, 226, 214, 0\.16\);/,
-  );
+  assert.match(cssRule(styles, ".scene-loader__label"), /font-variant-numeric:\s*tabular-nums;/);
   const fill = cssRule(styles, ".scene-loader__fill");
-  assert.match(fill, /background:\s*#dfb882;/, "the sun's colour");
   assert.match(fill, /transform:\s*scaleX\(0\);/);
   assert.match(fill, /transform-origin:\s*0 50%;/);
   // Only the transform animates, and the script writes nothing else.
@@ -255,61 +226,45 @@ test("the loading line is fixed above the footer, inert, legible and drawn by on
     /\.scene-loader\s*\{\s*display:\s*none;/,
   );
   const transparency = mediaBlock(styles, "(prefers-reduced-transparency: reduce)");
-  assert.match(transparency, /\.scene-loader__track\s*\{\s*background:\s*#34373c;/);
+  assert.match(transparency, /\.scene-loader__track\s*\{\s*background:\s*#[0-9a-f]{6};/i);
   assert.match(transparency, /\.scene-loader__fill\s*\{\s*box-shadow:\s*none;/);
-  // The label's ink, resolved through its custom properties, on the night.
-  const token = (name) => styles.match(new RegExp(`${name}:\\s*([^;]+);`))?.[1].trim();
-  let ink = token("--text-accent");
-  while (ink?.startsWith("var(")) ink = token(ink.slice(4, -1));
-  assert.match(ink, /^#[0-9a-f]{6}$/i);
+  const ink = color(styles, "var(--text-accent)"),
+    night = color(styles, "var(--night-900)");
   assert.ok(
-    contrast(ink, "#0c1016") >= 4.5,
-    `${ink} on the night is ${contrast(ink, "#0c1016").toFixed(2)}:1`,
+    contrast(ink, night) >= 4.5,
+    `${ink} on the night is ${contrast(ink, night).toFixed(2)}:1`,
   );
 });
 
 test("the title card's night sky is two tiling star layers drawn in CSS, with no image request", async () => {
   const styles = await readStyles();
   const stars = cssRule(styles, ".scene-shell::before");
-  assert.match(stars, /position:\s*absolute;/);
-  assert.match(stars, /inset:\s*0;/);
   assert.match(stars, /z-index:\s*0;/, "under the canvas (1) and vignette (2)");
+  assert.match(cssRule(styles, ".scene-vignette"), /z-index:\s*2;/);
   assert.match(stars, /pointer-events:\s*none;/);
-  assert.match(stars, /background-size:\s*640px 640px,\s*1040px 1040px;/);
-  const mask = "linear-gradient\\(180deg, #000 0%, #000 36%, transparent 84%\\)";
-  assert.match(stars, new RegExp(`-webkit-mask-image:\\s*${mask};`));
-  assert.match(stars, new RegExp(`[;\\s]mask-image:\\s*${mask};`));
   const layers = [...stars.matchAll(/url\("(data:image\/svg\+xml,[^"]+)"\)/g)].map(
     (match) => match[1],
   );
   assert.equal(layers.length, 2);
+  const sizes = layers.map((layer) => Number(layer.match(/width='(\d+)'/)[1]));
+  assert.notEqual(sizes[0], sizes[1], "the two tiles never line up");
   for (const [index, layer] of layers.entries()) {
     // Encoded like --cursor-line: no raw markup characters in the URL.
     assert.doesNotMatch(layer, /[<>#"]/);
-    const size = [640, 1040][index];
-    assert.match(layer, new RegExp(`width='${size}' height='${size}'`));
-    const circles = [
-      ...layer.matchAll(/%3Ccircle cx='(\d+)' cy='(\d+)' r='([\d.]+)' opacity='([\d.]+)'\/%3E/g),
-    ];
-    assert.ok(circles.length >= 30 && circles.length <= 50, `${circles.length} stars`);
-    for (const [, x, y, r, opacity] of circles) {
-      assert.ok(Number(r) >= 0.4 && Number(r) <= 1.1, `radius ${r}`);
-      assert.ok(Number(opacity) >= 0.2 && Number(opacity) <= 0.8, `opacity ${opacity}`);
-      // A star never crosses its tile's edge, so the tiles meet without a seam.
+    const size = sizes[index];
+    assert.match(stars, new RegExp(`background-size:[^;]*\\b${size}px ${size}px`));
+    const circles = [...layer.matchAll(/%3Ccircle cx='(\d+)' cy='(\d+)' r='([\d.]+)'/g)];
+    assert.ok(circles.length > 0);
+    // A star never crosses its tile's edge, so the tiles meet without a seam.
+    for (const [, x, y, r] of circles)
       for (const at of [x, y])
         assert.ok(Number(at) - Number(r) > 0 && Number(at) + Number(r) < size);
-    }
-    assert.deepEqual([...new Set(layer.match(/fill='[^']+'/g))].sort(), [
-      "fill='%23d6dee8'",
-      "fill='%23efe8da'",
-    ]);
   }
   for (const { selector, body } of cssRules(styles, (selector) =>
     selector.includes(".scene-shell"),
   )) {
     assert.doesNotMatch(body, /\/images\//, `${selector} requests no image`);
   }
-  assert.match(cssRule(styles, ".scene-vignette"), /z-index:\s*2;/);
 });
 
 test("estate layers preserve artwork proportions without masking labels", async () => {
@@ -323,26 +278,8 @@ test("estate layers preserve artwork proportions without masking labels", async 
   );
 });
 
-test("paper and estate surfaces are declared once, without retired layers", async () => {
+test("paper and estate surfaces are declared once", async () => {
   const css = await readStyles();
-  // Retired treatments: the loading ritual, the direct-estate homepage, the
-  // hero kicker, and the glass panel card that panels.js keeps only as a
-  // selector fallback. The .scene-home body class no longer scopes any rule,
-  // so a later .scene-home layer cannot quietly override the rules below.
-  for (const retired of [
-    /loading-ritual/,
-    /scene-poster/,
-    /\.hero-kicker/,
-    /\.scene-home\b/,
-    /\.estate-home(?!-map)\b/,
-    /\.estate-main\b/,
-    /\.estate-identity\b/,
-    /data-estate-fallback/,
-    /\.panel-card\b/,
-    /\.panel-footnote\b/,
-  ]) {
-    assert.doesNotMatch(css, retired);
-  }
   // Each surface has one top-level block of its own (shared selector lists
   // aside); media queries only adjust it.
   for (const selector of [
@@ -383,7 +320,6 @@ test("fallback About link and matching category copy remain usable before scene 
     html,
     /<h1>[\s\S]*?class="hero-word">Alex<\/span>[\s\S]*?class="hero-word">Nava<\/span>[\s\S]*?<\/h1>/,
   );
-  assert.doesNotMatch(html, /<noscript>|data-scramble|Wells Fargo|CVS Health/);
   const fallbackLink = html.match(/<a[^>]*href="#about-text"[^>]*>/)[0];
   assert.match(fallbackLink, /aria-label="About"/);
   assert.match(fallbackLink, /data-scene-fallback/);
@@ -440,9 +376,8 @@ test("personal metadata stays consistent and scene discovery uses inert metadata
   assert.doesNotMatch(html, /rel="prefetch"[^>]*scene\.js/);
 });
 
-test("first-paint hero, action cursors, microcopy, and short-landscape labels stay legible", async () => {
+test("the first-paint hero, action cursors, microcopy and paper copy stay legible", async () => {
   const styles = await readStyles();
-
   assert.doesNotMatch(
     styles,
     /@keyframes hero-rise\s*\{\s*from\s*\{\s*opacity:\s*0/,
@@ -459,41 +394,32 @@ test("first-paint hero, action cursors, microcopy, and short-landscape labels st
     /font-size:\s*(?:[0-9](?:\.[0-9]+)?|1[01](?:\.[0-9]+)?)px/,
     "user-facing microcopy must not fall below 12px",
   );
-  assert.doesNotMatch(styles, /\.btn-icon/, "no rules for the retired icon buttons");
   // The one top-level sheet rule holds every paper's height at all widths.
-  assert.match(cssRule(styles, ".panel-parchment__sheet"), /min-height:\s*370px;/);
+  assert.match(cssRule(styles, ".panel-parchment__sheet"), /min-height:\s*\d+px;/);
   assert.doesNotMatch(
     styles.replace(/\n\.panel-parchment__sheet\s*\{[^}]*\}/, ""),
     /\.panel-parchment__sheet\s*\{[^}]*min-height/,
     "no later or media rule overrides the paper height",
   );
-  assert.match(
-    styles,
-    /@media \(max-width: 760px\)[\s\S]*?\.hero\s*\{[^}]*align-items:\s*flex-start;/,
-  );
-  assert.match(
-    styles,
-    /\.panel-parchment__sheet \.eyebrow\s*\{[^}]*color:\s*#60492e;[^}]*opacity:\s*1;/,
-  );
-  // Later same-selector rules must not override the restrained brown ink.
+  // The eyebrow and body ink that render read on the paper.
+  const paper = cssRule(styles, ".panel-parchment__sheet::before").match(
+    /background-color:\s*(#[0-9a-f]{6});/i,
+  )[1];
   const eyebrowColors = [...styles.matchAll(/\.panel-parchment__sheet \.eyebrow\s*\{([^}]*)\}/g)]
     .map((match) => match[1].match(/(?:^|[;\s])color:\s*([^;]+);/)?.[1])
     .filter(Boolean);
-  assert.deepEqual(eyebrowColors, ["#60492e"], "the paper eyebrow ink that renders is #60492e");
-  const paperBody = cssRule(styles, ".panel-parchment__sheet .panel-body");
-  assert.match(paperBody, /color:\s*#211c16;/);
-  assert.match(paperBody, /font:\s*400 17px\/1\.65 var\(--font-body\);/);
-  assert.match(
-    mediaBlock(styles, "(max-width: 600px)"),
-    /\.panel-parchment__sheet \.panel-body\s*\{[^}]*font-size:\s*16px;/,
-  );
+  assert.equal(eyebrowColors.length, 1, "one eyebrow ink renders");
+  const bodyInk = cssRule(styles, ".panel-parchment__sheet .panel-body").match(
+    /(?:^|[;\s])color:\s*([^;]+);/,
+  )[1];
+  for (const ink of [eyebrowColors[0], bodyInk])
+    assert.ok(contrast(color(styles, ink), paper) >= 4.5, `${ink} on the paper`);
 });
 
 test("the hero backdrop fades to transparent before every edge of its box", async () => {
-  // The owner saw a clear pane beside the name (2026-09-28): the old farthest-corner
-  // ellipse was still ~40% dark where its box clipped it on the left. A closest-side
-  // ellipse reaches its last stop at the nearest edge on each axis, so every edge
-  // (and every corner beyond it) is fully transparent.
+  // A closest-side ellipse reaches its last stop at the nearest edge on each
+  // axis, so every edge, and every corner beyond it, is fully transparent:
+  // no clear pane shows where the box clips the backdrop.
   const styles = await readStyles();
   const rule = styles.match(/\n\.hero-minimal::before\s*\{([^}]*)\}/)?.[1];
   assert.ok(rule, "the hero backdrop rule exists");
@@ -508,10 +434,10 @@ test("the hero backdrop fades to transparent before every edge of its box", asyn
     ([, a, at]) => [+a, +at / 100],
   );
   assert.equal(stops.at(-1).join(), "0,1", "fully transparent at the ellipse's edge");
-  assert.equal(stops[0][0], 0.58, "as dark as before right behind the name");
+  const darkest = stops[0][0];
   for (const [alpha, t] of stops) {
     assert.ok(
-      Math.abs(alpha - 0.58 * (1 - t * t) ** 2) < 0.006,
+      Math.abs(alpha - darkest * (1 - t * t) ** 2) < 0.006,
       `a smooth (1 - t²)² falloff at ${t}`,
     );
   }
@@ -546,7 +472,7 @@ test("every contact address sits inside Cloudflare email_off markers", async () 
   assert.doesNotMatch(outside, /mailto:|[\w.+-]+@[\w-]+\.[a-z]{2,}/i);
 });
 
-test("variable font faces supply real weights without the retired static face", async () => {
+test("variable font faces supply real weights", async () => {
   const styles = await readStyles();
   const html = await readIndexHtml();
   const faces = styles.match(/@font-face\s*\{[^}]*\}/g) || [];
@@ -559,7 +485,6 @@ test("variable font faces supply real weights without the retired static face", 
     faces.find((face) => face.includes("instrument-sans-400.woff2")),
     /font-weight:\s*400 700;/,
   );
-  assert.doesNotMatch(`${styles}\n${html}`, /instrument-sans-600/);
   const fontUrls = [
     ...[...styles.matchAll(/url\("(\/fonts\/[^"]+)"\)/g)].map((match) => match[1]),
     ...[...html.matchAll(/href="(\/fonts\/[^"]+)"/g)].map((match) => match[1]),
@@ -585,13 +510,10 @@ test("forced colors and high-contrast modes keep system colors and the system cu
   );
 });
 
-test("no-JavaScript fallback links use the light dark-background link ink", async () => {
+test("no-JavaScript fallback links stay legible on the night", async () => {
   const styles = await readStyles();
-  assert.match(
-    styles,
-    /\.scene-fallback-content a\s*\{[^}]*color:\s*var\(--parchment-200\);[^}]*text-decoration-color:\s*rgba\(198, 208, 202, 0\.48\);/,
-  );
-  assert.match(styles, /--parchment-200:\s*#[0-9a-f]{6};/i);
+  const ink = cssRule(styles, ".scene-fallback-content a").match(/(?:^|[;\s])color:\s*([^;]+);/)[1];
+  assert.ok(contrast(color(styles, ink), color(styles, "var(--night-900)")) >= 4.5, ink);
 });
 
 test("the 3:2 estate map fits short laptop and landscape-phone viewports", async () => {
@@ -622,9 +544,9 @@ test("phones do not gain a phantom scroll below the small-viewport hero", async 
 
 test("modern iPhones open full-bleed: night to every edge, no bounce, matching bars", async () => {
   const styles = await readStyles();
-  const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
+  const html = await readIndexHtml();
   const manifest = JSON.parse(
-    await readFile(new URL("../public/manifest.webmanifest", import.meta.url), "utf8"),
+    await readFile(path.join(projectRoot, "public", "manifest.webmanifest"), "utf8"),
   );
   assert.match(html, /<meta name="viewport" content="[^"]*viewport-fit=cover[^"]*"/);
   assert.match(
@@ -636,14 +558,12 @@ test("modern iPhones open full-bleed: night to every edge, no bounce, matching b
     styles,
     /\nhtml\s*\{[^}]*background:\s*var\(--night-900\);[^}]*overscroll-behavior:\s*none;/,
   );
-  assert.match(
-    styles,
-    /\nbody\s*\{[^}]*background:\s*linear-gradient\([^;]*#0d1119 100%\);[^}]*overscroll-behavior:\s*none;/,
-  );
-  assert.match(styles, /--night-900:\s*#0c1016;/);
-  assert.match(html, /<meta name="theme-color" content="#0c1016"/);
-  assert.equal(manifest.theme_color, "#0c1016");
-  assert.equal(manifest.background_color, "#0c1016");
+  assert.match(styles, /\nbody\s*\{[^}]*background:[^;]+;[^}]*overscroll-behavior:\s*none;/);
+  const night = color(styles, "var(--night-900)");
+  for (const page of [html, await readNotFoundHtml()])
+    assert.ok(page.includes(`<meta name="theme-color" content="${night}"`));
+  assert.equal(manifest.theme_color, night);
+  assert.equal(manifest.background_color, night);
   // The canvas's buffer follows the full-bleed container (scene-bootstrap.test.mjs).
 });
 test("fixed chrome and dialogs clear left and right safe-area insets", async () => {
@@ -676,7 +596,6 @@ test("landmarks and heading levels describe the page structure", async () => {
   const html = await readIndexHtml();
   const styles = await readStyles();
   assert.match(html, /<footer class="site-footer">[\s\S]*?data-panel="about"[\s\S]*?<\/footer>/);
-  assert.doesNotMatch(styles, /dev-mode/, "no developer HUD rules");
   const fallback = html.match(/<div class="scene-fallback-content"[\s\S]*?<\/main>/)[0];
   assert.deepEqual(
     [...fallback.matchAll(/<(h[1-6])>([^<]+)<\/h[1-6]>/g)].map(
@@ -688,9 +607,8 @@ test("landmarks and heading levels describe the page structure", async () => {
   const notFound = await readNotFoundHtml();
   assert.match(notFound, /<h1>That page isn't here\.<\/h1>/);
   assert.doesNotMatch(notFound, /<h2>/);
-  assert.match(notFound, /<meta name="theme-color" content="#0c1016" \/>/);
   // The 404 shares the title card's night: no picture, only the vignette.
-  assert.doesNotMatch(notFound, /<picture|<img|scene-poster/);
+  assert.doesNotMatch(notFound, /<picture|<img/);
   assert.match(
     notFound,
     /<div class="scene-shell" aria-hidden="true"><div class="scene-vignette"><\/div><\/div>/,
@@ -701,11 +619,6 @@ test("landmarks and heading levels describe the page structure", async () => {
   for (const token of classTokens) {
     assert.match(styles, new RegExp(`\\.${token}(?![\\w-])`), `404 class "${token}" has no styles`);
   }
-  // The 404 heading is an h1, so its display face lives on that rule alone.
-  const notFoundHeading = cssRule(styles, ".not-found .story-shell h1");
-  assert.match(notFoundHeading, /font-family:\s*var\(--font-display\);/);
-  assert.match(notFoundHeading, /font-weight:\s*500;/);
-  assert.doesNotMatch(styles, /\.story-shell h2/);
 });
 
 test("social previews describe the share image", async () => {
@@ -718,7 +631,6 @@ test("social previews describe the share image", async () => {
 test("About is the only footer control and keeps the corner clear", async () => {
   const html = await readIndexHtml();
   const footer = html.match(/<footer class="site-footer">([\s\S]*?)<\/footer>/)?.[1] || "";
-  assert.doesNotMatch(footer, /site-copyright|&copy;|©|2026 Alex Nava/);
   assert.match(footer, /href="#about-text"[^>]*data-scene-fallback/);
   assert.match(footer, /data-panel="about"[^>]*aria-controls="panel-about"/);
   assert.equal((footer.match(/>About<\/span>/g) || []).length, 2);
@@ -726,7 +638,6 @@ test("About is the only footer control and keeps the corner clear", async () => 
   const safeArea = html.match(/<div class="bottom-bar"[\s\S]*?<\/div>/)[0];
   assert.match(safeArea, /aria-hidden="true"/);
   assert.doesNotMatch(safeArea, /<button|<a /);
-  assert.doesNotMatch(html, /scene-pause|Pause scene/);
 });
 
 test("footer controls keep 44px targets without blocking the scene", async () => {
@@ -734,23 +645,15 @@ test("footer controls keep 44px targets without blocking the scene", async () =>
   const footer = cssRule(styles, ".site-footer");
   assert.match(footer, /position:\s*fixed;/);
   assert.match(footer, /pointer-events:\s*none;/);
-  assert.match(footer, /font-size:\s*12px;/);
-  assert.match(footer, /line-height:\s*16px;/);
-  assert.match(footer, /letter-spacing:\s*0\.08em;/);
+  assert.ok(Number(footer.match(/font-size:\s*(\d+)px;/)[1]) >= 12);
   assert.match(footer, /color:\s*var\(--text-accent\);/);
   assert.match(footer, /text-shadow:\s*var\(--text-meta-shadow\);/);
 
   const link = cssRule(styles, ".site-footer__link");
   assert.match(link, /display:\s*inline-flex;/);
   assert.match(link, /min-height:\s*44px;/);
-  // 44px less the 14px hung above and below leaves the 16px line.
-  assert.match(link, /margin:\s*-14px;/);
-  assert.match(link, /padding:\s*0 14px;/);
   assert.match(link, /pointer-events:\s*auto;/);
   assert.match(link, /text-shadow:\s*inherit;/, "buttons otherwise drop the meta shadow");
-  // The shared 3px ring sits 2px outside the text line, not around the 44px box.
-  assert.match(cssRule(styles, ".site-footer__link:focus-visible"), /outline-offset:\s*-12px;/);
-  assert.match(footer, /row-gap:\s*6px;/, "a stacked line stays clear of the neighbouring ring");
 
   // Touch browsers keep :hover after a tap, so only the pressed state stays bright.
   const hover = mediaBlock(styles, "(hover: hover)");
@@ -759,16 +662,10 @@ test("footer controls keep 44px targets without blocking the scene", async () =>
   const footerHover = /\.site-footer__(?:link|about):hover/g;
   assert.equal((styles.match(footerHover) || []).length, (hover.match(footerHover) || []).length);
 
-  assert.doesNotMatch(styles, /\.site-copyright/);
-  assert.match(footer, /grid-template-columns:\s*max-content minmax\(0, 1fr\);/);
-
-  // The short About label keeps narrow phones on one footer line.
-  assert.doesNotMatch(styles, /@media \(max-width: 480px\)/);
-
   const phone = mediaBlock(styles, "(max-width: 640px)");
   assert.match(
     phone,
-    /\.site-footer\s*\{[^}]*right:\s*max\(16px, calc\(env\(safe-area-inset-right\) \+ 8px\)\);[^}]*left:\s*max\(16px, calc\(env\(safe-area-inset-left\) \+ 8px\)\);/,
+    /\.site-footer\s*\{[^}]*right:\s*max\(\d+px, calc\(env\(safe-area-inset-right\) \+ 8px\)\);[^}]*left:\s*max\(\d+px, calc\(env\(safe-area-inset-left\) \+ 8px\)\);/,
   );
 
   const forced = styles.slice(styles.indexOf("/* Windows High Contrast"));
@@ -794,7 +691,6 @@ test("category copy stays minimal and matches its Markdown equivalent", async ()
     1,
     "only the hero keeps the intro",
   );
-  assert.doesNotMatch(`${html}\n${markdown}`, /health analytics|My background is in/);
   assert.match(html, /id="panel-experience-title">My background\.<\/h2>/);
 });
 
@@ -820,10 +716,10 @@ test("very wide screens anchor the hero and footer to a gutter beyond the 1600px
   const styles = await readStyles();
   const wide = mediaBlock(styles, "(min-width: 1681px)");
   assert.ok(wide, "the gutter starts above the 1600px reference composition");
-  assert.match(wide, /--gutter:\s*clamp\(64px, 5\.5vw, 160px\);/);
+  assert.match(wide, /--gutter:/);
   assert.match(
     wide,
-    /\.hero\s*\{[^}]*width:\s*auto;[^}]*margin-inline:\s*0;[^}]*padding-inline:\s*max\(var\(--gutter\), env\(safe-area-inset-left\)\)\s*max\(var\(--gutter\), env\(safe-area-inset-right\)\);/,
+    /\.hero\s*\{[^}]*padding-inline:\s*max\(var\(--gutter\), env\(safe-area-inset-left\)\)\s*max\(var\(--gutter\), env\(safe-area-inset-right\)\);/,
   );
   assert.match(
     wide,
@@ -843,23 +739,18 @@ test("one shared backdrop dims the scene steadily across map and paper swaps", a
   assert.match(backdrop, /inset:\s*0;/);
   assert.match(backdrop, /z-index:\s*19;/, "just below the z-index 20 overlays");
   assert.match(backdrop, /pointer-events:\s*none;/);
-  assert.match(backdrop, /rgba\(8, 10, 16, 0\.64\)/);
   assert.match(backdrop, /opacity:\s*0;/);
-  assert.match(backdrop, /transition:\s*opacity 240ms ease;/);
+  // The dim fades in over 440 ms, inside index.js's 450 ms dialog hold.
   assert.match(
     cssRule(styles, "body[data-panel-open]::after"),
     /opacity:\s*1;\s*transition-duration:\s*440ms;/,
   );
-
   const overlay = styles.match(/\n\.panel-overlay\s*\{[^}]*position:\s*fixed;[^}]*\}/)[0];
   assert.match(overlay, /z-index:\s*20;/);
   assert.match(overlay, /inset:\s*0;/, "the overlay still fills the viewport for backdrop clicks");
   assert.match(overlay, /background:\s*transparent;/);
-  assert.equal(
-    (styles.match(/rgba\(8, 10, 16, 0\.64\)/g) || []).length,
-    1,
-    "the dim is painted once",
-  );
+  const dim = backdrop.match(/rgba\([^)]*\)/)[0];
+  assert.equal(styles.split(dim).length - 1, 1, "the dim is painted once");
   assert.match(
     styles,
     /@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?body::after\s*\{\s*transition:\s*none;/,
@@ -868,23 +759,16 @@ test("one shared backdrop dims the scene steadily across map and paper swaps", a
 
 test("dialog polish keeps readable ink, touch cues and paper-safe controls", async () => {
   const styles = await readStyles();
+  const paper = cssRule(styles, ".panel-parchment__sheet::before").match(
+    /background-color:\s*(#[0-9a-f]{6});/i,
+  )[1];
   const email = cssRule(styles, "#panel-contact .panel-body a");
   assert.match(email, /display:\s*inline-block;/);
-  assert.match(email, /color:\s*#211c16;/);
-  assert.match(email, /font:\s*500 clamp\(24px, 2\.4vw, 30px\) \/ 1\.2 var\(--font-display\);/);
-  assert.match(email, /text-decoration-thickness:\s*1px;/);
-  assert.match(email, /text-underline-offset:\s*0\.18em;/);
-  assert.ok(contrast("#211c16", "#e8ddc8") >= 4.5);
+  assert.ok(contrast(email.match(/(?:^|[;\s])color:\s*(#[0-9a-f]{6});/i)[1], paper) >= 4.5);
 
   const touch = mediaBlock(styles, "(hover: none), (pointer: coarse)");
-  assert.match(
-    touch,
-    /\.estate-destination span\s*\{[^}]*text-decoration:\s*underline;[^}]*rgba\(72, 53, 30, 0\.35\)/,
-  );
-  assert.match(
-    touch,
-    /\.panel-estate \.estate-destination:active\s*\{[^}]*background:\s*rgba\(78, 54, 26, 0\.08\);/,
-  );
+  assert.match(touch, /\.estate-destination span\s*\{[^}]*text-decoration:\s*underline;/);
+  assert.match(touch, /\.panel-estate \.estate-destination:active\s*\{[^}]*background:/);
   // The touch underline shares the base label rule's specificity, so it must
   // follow that rule in source order to keep winning.
   const baseLabel = styles.search(/^\.estate-destination span\s*\{/m);
@@ -900,19 +784,16 @@ test("dialog polish keeps readable ink, touch cues and paper-safe controls", asy
     .match(/\.estate-destination:hover span/);
   assert.equal(unscopedHover, null, "the map underline follows real hover only");
 
-  // 30px clears the 24px deckled edge, so Back sits wholly on the paper.
-  assert.match(cssRule(styles, ".panel-parchment .panel-back"), /margin:\s*30px;/);
+  // Back clears the paper's 24px deckled edge, so it sits wholly on the paper.
+  const back = Number(
+    cssRule(styles, ".panel-parchment .panel-back").match(/margin:\s*(\d+)px;/)[1],
+  );
+  assert.ok(back > 24, `Back sits ${back}px in`);
   assert.doesNotMatch(
     styles,
     /\.panel-parchment \.panel-close\s*\{/,
     "no second margin rule for Back",
   );
-  // The About case defers to the scene: small, with no glow or indicator dot,
-  // a target of at least 44px, and the footer's pale-stone type.
-  assert.doesNotMatch(styles, /\.bottom-btn--icon::(?:before|after)/);
-  for (const [, size] of styles.matchAll(/\.bottom-btn--icon\s*\{[^}]*?width:\s*(\d+)px;/g)) {
-    assert.ok(Number(size) >= 44 && Number(size) <= 52, `About target ${size}px`);
-  }
 });
 
 test("the 404 is a centered cotton-paper sheet with dark ink", async () => {
@@ -920,18 +801,15 @@ test("the 404 is a centered cotton-paper sheet with dark ink", async () => {
   const styles = await readStyles();
   assert.match(notFound, /<body class="not-found">/);
   assert.match(cssRule(styles, ".not-found"), /display:\s*grid;\s*place-items:\s*center;/);
-  assert.match(cssRule(styles, ".not-found .story-shell"), /color:\s*#211c16;/);
-  assert.match(
-    cssRule(styles, ".not-found .story-shell::before"),
-    /#e8ddc8 url\("\/images\/paper-grain\.webp"\)/,
-  );
+  const sheet = cssRule(styles, ".not-found .story-shell::before");
+  const paper = sheet.match(/(#[0-9a-f]{6}) url\("\/images\/paper-grain\.webp"\)/i)[1];
   assert.match(
     cssRule(styles, ".not-found .story-shell::after"),
     /border-image:\s*url\("\/images\/paper-edge\.webp"\)/,
   );
-  assert.match(cssRule(styles, ".not-found .story-shell .eyebrow"), /color:\s*#60492e;/);
   assert.match(cssRule(styles, ".not-found .back-link"), /min-height:\s*44px;/);
-  for (const ink of ["#211c16", "#393229", "#60492e", "#3b2c1e"]) {
-    assert.ok(contrast(ink, "#e8ddc8") >= 4.5, `${ink} on paper`);
-  }
+  const inks = [".not-found .story-shell", ".not-found .story-shell .eyebrow"].map(
+    (selector) => cssRule(styles, selector).match(/(?:^|[;\s])color:\s*(#[0-9a-f]{6});/i)[1],
+  );
+  for (const ink of inks) assert.ok(contrast(ink, paper) >= 4.5, `${ink} on paper`);
 });

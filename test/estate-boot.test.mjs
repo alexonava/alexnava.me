@@ -4,8 +4,7 @@ import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 
 // The About estate menu boots through main.js, which waits for the parsed
-// document and then asks scene-menu.js to enhance it. (The retired
-// direct-estate entry, src/estate-main.js, used to own this timing.)
+// document and then asks scene-menu.js to enhance it.
 // scene-menu.test.mjs covers initSceneMenu on its own; these checks cover the
 // boot timing around it.
 const menuSource = await readFile(new URL("../src/ui/scene-menu.js", import.meta.url), "utf8");

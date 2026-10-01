@@ -168,3 +168,23 @@ test("CSS asset URLs and bytes are portable across checkout line endings", async
     await rm(fixture, { recursive: true, force: true });
   }
 });
+
+test("no tracked text file carries a U+FFFD replacement character", async () => {
+  // A lost encoding round trip leaves U+FFFD where a character was.
+  const { stdout } = await execFileP("git", ["ls-files", "-z"], { cwd: projectRoot });
+  const binary = /\.(?:woff2|glb|webp|png|ico|jpg)$/;
+  const replacement = Buffer.from("\uFFFD", "utf8");
+  let checked = 0;
+  for (const file of stdout.split("\0").filter((name) => name && !binary.test(name))) {
+    let bytes;
+    try {
+      bytes = await readFile(path.join(projectRoot, file));
+    } catch (error) {
+      if (error.code === "ENOENT") continue; // deleted in the working tree
+      throw error;
+    }
+    assert.equal(bytes.indexOf(replacement), -1, `${file} carries U+FFFD`);
+    checked++;
+  }
+  assert.ok(checked > 50, `${checked} text files checked`);
+});

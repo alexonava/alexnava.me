@@ -1,10 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  createStoneDetailController,
-  GROUND_DETAIL_SETTINGS,
-  slateMaterialUrl,
-} from "../src/scene/stone-detail.js";
+import { createStoneDetailController } from "../src/scene/stone-detail.js";
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 // A two-map fixture set; the controller itself names no maps.
@@ -171,9 +167,4 @@ test("disposing an in-flight layer prevents late canvas mutation and closes both
   assert.equal(h.applied.length, 0);
   assert.equal(h.resets.length, 0);
   assert.ok(images.every((image) => image.closed === 1));
-});
-
-test("ground detail settings stay restrained and unhashed slate URLs keep their source names", () => {
-  assert.ok(GROUND_DETAIL_SETTINGS.normalScale > 0 && GROUND_DETAIL_SETTINGS.normalScale <= 1);
-  assert.equal(slateMaterialUrl("color", 1024), "/images/materials/slate-color-1024.webp");
 });

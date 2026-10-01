@@ -31,7 +31,6 @@ test("WORLD constants are frozen and expose the documented orbit geometry", asyn
   assert.equal(w.FLOOR_Y, 0);
   assert.ok(w.GROUND_RADIUS > 0);
   assert.ok(w.GROUND_RADIUS < w.SKY_DOME_RADIUS);
-  assert.equal(w.DEV_MODE, undefined, "the developer camera's constants are gone");
 
   assert.ok(w.CAMERA_NEAR > 0);
   assert.ok(w.CAMERA_NEAR < w.CAMERA_FAR);

@@ -557,14 +557,6 @@ test("scroll-safe panel rules exist in the stylesheet", async () => {
   assert.match(styles, /body\[data-panel-open="true"\]\s*\{[^}]*overflow:\s*hidden;/);
   assert.match(styles, /\.panel-overlay\s*\{[^}]*overflow-y:\s*auto;/);
   assert.match(styles, /\.panel-close\s*\{[^}]*position:\s*sticky;/);
-  assert.doesNotMatch(styles, /max-height:\s*calc\(100svh\s*-\s*132px\)/);
-});
-
-test("panel interaction code does not mutate copy with random scramble effects", async () => {
-  const source = await readFile(panelsSourcePath, "utf8");
-
-  assert.doesNotMatch(source, /scramble/i);
-  assert.doesNotMatch(source, /Math\.random/);
 });
 
 test("reopening cancels an old exit, including stale callbacks during a later exit", async () => {

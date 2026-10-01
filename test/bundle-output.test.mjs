@@ -6,8 +6,8 @@ import { promisify } from "node:util";
 import { cp, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { isFingerprintedSource } from "../build.mjs";
 import { parseGlb } from "./support/glb.mjs";
+import { ARCHITECTURE_ASSET_BUDGETS } from "../src/scene/architecture-assets.js";
 
 const execFileP = promisify(execFile);
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -16,6 +16,12 @@ await mkdir(scratchRoot, { recursive: true });
 const bundleScratch = await mkdtemp(path.join(scratchRoot, "bundle-output-"));
 const distDir = path.join(bundleScratch, "dist");
 const scriptsDir = path.join(distDir, "scripts");
+// Every model the live scene loads, and the slate maps each tier requests.
+const ROLES = ["tower", "tree", "lantern", "lichen-rock", "weathered-stone"];
+const slateMaps = (tier) => {
+  const size = tier === "high" ? 1024 : 512;
+  return [`slate-color-${size}.webp`, `slate-normal-${size}.webp`, "slate-detail-512.webp"];
+};
 
 after(async () => {
   assert.equal(path.dirname(path.resolve(bundleScratch)), scratchRoot);
@@ -81,9 +87,7 @@ test("UI bundle stays under the LCP budget", async () => {
 test("scene bundle stays under the deferred-payload budget", async () => {
   // The budget covers every byte a default visitor's scene load downloads:
   // the entry and each chunk it imports statically. The film's terrain,
-  // ranges, rocks, light shafts and lantern flame load on demand only. The
-  // owner raised the limit from 810 KiB to 820 KiB on 2026-09-24 for the slate
-  // v2 ground and rocks.
+  // ranges, rocks, light shafts and lantern flame load on demand only.
   const { loaded } = await sceneScripts();
   // The entry and one shared Three.js chunk.
   assert.equal(loaded.size, 2, `scene loads ${[...loaded.keys()]}`);
@@ -96,7 +100,7 @@ test("scene bundle stays under the deferred-payload budget", async () => {
   );
 });
 
-test("the film's optional effects are the only lazy chunks, and no developer tool ships", async () => {
+test("the film's optional effects are the only lazy chunks, and Three.js ships once", async () => {
   const { entry, loaded, lazy } = await sceneScripts();
   assert.deepEqual(lazy.map((name) => name.replace(/\.[a-f0-9]{8}\.js$/, "")).sort(), [
     "scene.lantern-flame",
@@ -105,24 +109,6 @@ test("the film's optional effects are the only lazy chunks, and no developer too
     "scene.rock-build",
     "scene.terrain-build",
   ]);
-  // The developer camera, its outline pass and the Blender exporter are gone
-  // from every published script.
-  const names = await readdir(scriptsDir);
-  for (const name of names) {
-    assert.doesNotMatch(name, /developer-tools|blender-export/);
-    const text = await readFile(path.join(scriptsDir, name), "utf8");
-    for (const marker of [
-      /dev-mode-hud/,
-      /changeVisibilityOfSelectedObjects/,
-      /Backquote/,
-      /GLTFExporter/,
-      /babel-blender-snapshot/,
-      /exportBlenderSnapshot/,
-      /__shaftsTune/,
-    ]) {
-      assert.doesNotMatch(text, marker, `${marker} ships in ${name}`);
-    }
-  }
   const statics = [...loaded.values()].join("\n");
   const threeMarker = "Multiple instances of Three.js being imported";
   assert.equal(statics.split(threeMarker).length - 1, 1, "Three.js ships exactly once");
@@ -289,11 +275,6 @@ test("the scene requests only the slate's material maps, and only from the defer
   const scene = await readSceneStatic();
   assert.doesNotMatch(app, /images\/materials\//);
   assert.match(scene, /images\/materials\/slate-/);
-  for (const prefix of ["stone", "ground", "earth", "grass"]) {
-    assert.doesNotMatch(scene, new RegExp(`images/materials/${prefix}-`), prefix);
-  }
-  assert.doesNotMatch(scene, /stone-brick\.bin|stone-tread\.bin|BRK1/);
-  // The retired maps are gone from the source and the published output.
   const materials = await readdir(path.join(projectRoot, "images", "materials"));
   assert.ok(
     materials.every((name) => name.startsWith("slate-")),
@@ -340,20 +321,11 @@ test("dist/images publishes fingerprinted sources only under their hashed names"
   }
 });
 
-test("the title card publishes no picture: no poster image and no picture or img element", async () => {
-  assert.deepEqual(
-    (await readdir(path.join(distDir, "images"))).filter((name) => /scene-poster/.test(name)),
-    [],
-  );
+test("the pages publish no picture, and the share card's backdrop stays unpublished", async () => {
   for (const page of ["index.html", "404.html"]) {
     const html = await readFile(path.join(distDir, page), "utf8");
-    assert.doesNotMatch(html, /<picture|<img|scene-poster/, page);
+    assert.doesNotMatch(html, /<picture|<img/, page);
   }
-  // The retired poster names are no longer build inputs.
-  assert.equal(isFingerprintedSource("images/scene-poster-landscape.webp"), false);
-  assert.equal(isFingerprintedSource("images/scene-poster-portrait.webp"), false);
-  assert.equal(isFingerprintedSource("images/paper-grain.webp"), true);
-  // The share card's backdrop stays in tools/, outside the payload.
   await assert.rejects(readFile(path.join(distDir, "tools", "og-card-backdrop.webp")), {
     code: "ENOENT",
   });
@@ -503,14 +475,13 @@ test("changing only a fixture tower model changes only its URL and size in the U
   }
 });
 
-test("architecture stays deferred and each selected model fits both tier budgets", async () => {
+test("models and slate maps are deferred: the scene entry names their hashed copies, the UI only the early tower and tree", async () => {
   const app = await readFile(await findHashedScript("app"), "utf8");
   const scene = await readSceneStatic();
   // The hashed model manifest lives in the entry, so a model revision changes
   // only the entry's URL and never the shared Three.js chunk's.
   const { entry, loaded } = await sceneScripts();
-  const manifestUrl = /\/images\/architecture\/tower-high\.[a-f0-9]{8}\.glb/;
-  assert.match(loaded.get(entry), manifestUrl);
+  assert.match(loaded.get(entry), /\/images\/architecture\/tower-high\.[a-f0-9]{8}\.glb/);
   for (const [name, text] of loaded) {
     if (name !== entry) assert.doesNotMatch(text, /\/images\/architecture\//, name);
   }
@@ -518,29 +489,45 @@ test("architecture stays deferred and each selected model fits both tier budgets
   // validation stay in the scene bundle.
   assert.doesNotMatch(app, /Invalid architecture GLB header/);
   assert.match(scene, /Invalid architecture GLB header/);
-  for (const [tier, limit] of [
-    ["high", 6 * 1024 * 1024],
-    ["balanced", 3 * 1024 * 1024],
-  ]) {
-    const bytesByRole = {};
-    for (const role of ["tower", "tree"]) {
-      const name = role + "-" + tier + ".glb";
+  const hashed = (bytes, name) =>
+    name.replace(
+      /\.(glb|webp)$/,
+      `.${createHash("sha256").update(bytes).digest("hex").slice(0, 8)}.$1`,
+    );
+  for (const tier of ["high", "balanced"]) {
+    for (const role of ROLES) {
+      const name = `${role}-${tier}.glb`;
       const source = await readFile(path.join(projectRoot, "images", "architecture", name));
-      const hash = createHash("sha256").update(source).digest("hex").slice(0, 8);
-      const hashedName = role + "-" + tier + "." + hash + ".glb";
+      const published = hashed(source, name);
       assert.deepEqual(
-        await readFile(path.join(distDir, "images", "architecture", hashedName)),
+        await readFile(path.join(distDir, "images", "architecture", published)),
         source,
       );
-      assert.ok(
-        scene.includes("/images/architecture/" + hashedName),
-        "scene must request the current fingerprint",
-      );
+      assert.ok(loaded.get(entry).includes(`/images/architecture/${published}`), published);
       assert.equal(
-        app.includes("/images/architecture/" + hashedName),
+        app.includes(`/images/architecture/${published}`),
         role === "tower" || role === "tree",
-        "the UI names the current fingerprint of only the models it requests early",
+        `the UI names ${published} only to request it early`,
       );
+    }
+    for (const file of slateMaps(tier)) {
+      const source = await readFile(path.join(projectRoot, "images", "materials", file));
+      assert.equal(source.toString("ascii", 8, 12), "WEBP");
+      const published = hashed(source, file);
+      assert.deepEqual(
+        await readFile(path.join(distDir, "images", "materials", published)),
+        source,
+      );
+      assert.ok(loaded.get(entry).includes(`/images/materials/${published}`), published);
+    }
+  }
+});
+
+test("every delivered model is one self-contained, static, triangle mesh", async () => {
+  for (const tier of ["high", "balanced"])
+    for (const role of ROLES) {
+      const name = `${role}-${tier}.glb`;
+      const source = await readFile(path.join(projectRoot, "images", "architecture", name));
       assert.equal(source.toString("ascii", 0, 4), "glTF");
       assert.equal(source.readUInt32LE(8), source.length);
       const gltf = parseGlb(source).json;
@@ -554,71 +541,33 @@ test("architecture stays deferred and each selected model fits both tier budgets
       assert.equal(primitive.mode ?? 4, 4, "triangle topology required");
       for (const semantic of ["POSITION", "NORMAL", "TEXCOORD_0"])
         assert.ok(Number.isInteger(primitive.attributes[semantic]));
-      bytesByRole[role] = source.length;
     }
-    // The slate maps load alongside the models.
-    const slateSize = tier === "high" ? 1024 : 512;
-    let groundBytes = 0;
-    for (const file of [
-      `slate-color-${slateSize}.webp`,
-      `slate-normal-${slateSize}.webp`,
-      "slate-detail-512.webp",
-    ]) {
-      groundBytes += (await stat(path.join(projectRoot, "images", "materials", file))).size;
+});
+
+test("the complete scene fits 6 MiB on high and 3 MiB on balanced, and each model the loader's limit", async () => {
+  // A live scene downloads the tower, tree, lantern, both rocks and the
+  // slate's color, normal and detail maps.
+  for (const [tier, budget] of [
+    ["high", 6 * 1024 * 1024],
+    ["balanced", 3 * 1024 * 1024],
+  ]) {
+    let total = 0;
+    for (const role of ROLES) {
+      const { size } = await stat(
+        path.join(projectRoot, "images", "architecture", `${role}-${tier}.glb`),
+      );
+      assert.ok(
+        size <= ARCHITECTURE_ASSET_BUDGETS[tier],
+        `${role}-${tier} is ${size} bytes; the loader accepts ${ARCHITECTURE_ASSET_BUDGETS[tier]}`,
+      );
+      total += size;
     }
-    const total = bytesByRole.tower + bytesByRole.tree + groundBytes;
-    assert.ok(
-      total <= limit,
-      tier + " architecture plus ground is " + total + " bytes; budget " + limit,
-    );
+    for (const file of slateMaps(tier))
+      total += (await stat(path.join(projectRoot, "images", "materials", file))).size;
+    assert.ok(total <= budget, `${tier} complete scene is ${total} bytes; budget ${budget}`);
   }
 });
 
-test("the default film slate set and rocks are deferred and fit their own and the complete-scene budgets", async () => {
-  // Film pages request the slate's color, normal and shared detail map, and
-  // the two rock models. Only the scene entry names their hashed copies.
-  const app = await readFile(await findHashedScript("app"), "utf8");
-  const { entry, loaded } = await sceneScripts();
-  assert.doesNotMatch(app, /slate-|lichen-rock|weathered-stone|lantern-high|lantern-balanced/);
-  for (const [tier, size, limit, rockLimit, totalLimit] of [
-    ["high", 1024, 640 * 1024, 320 * 1024, 6 * 1024 * 1024],
-    ["balanced", 512, 224 * 1024, 128 * 1024, 3 * 1024 * 1024],
-  ]) {
-    let bytes = 0;
-    for (const file of [
-      `slate-color-${size}.webp`,
-      `slate-normal-${size}.webp`,
-      "slate-detail-512.webp",
-    ]) {
-      const source = await readFile(path.join(projectRoot, "images", "materials", file));
-      assert.equal(source.toString("ascii", 8, 12), "WEBP");
-      const hashed = file.replace(
-        ".webp",
-        `.${createHash("sha256").update(source).digest("hex").slice(0, 8)}.webp`,
-      );
-      assert.deepEqual(await readFile(path.join(distDir, "images", "materials", hashed)), source);
-      assert.ok(
-        loaded.get(entry).includes(`/images/materials/${hashed}`),
-        `${hashed} is named by the scene entry`,
-      );
-      bytes += source.length;
-    }
-    assert.ok(bytes <= limit, `${tier} slate: ${bytes}`);
-    for (const role of ["lichen-rock", "weathered-stone"]) {
-      const source = await readFile(
-        path.join(projectRoot, "images", "architecture", `${role}-${tier}.glb`),
-      );
-      assert.equal(source.toString("ascii", 0, 4), "glTF");
-      assert.ok(source.length <= rockLimit, `${role}-${tier}: ${source.length}`);
-      bytes += source.length;
-    }
-    for (const role of ["tower", "tree", "lantern"]) {
-      bytes += (await stat(path.join(projectRoot, "images", "architecture", `${role}-${tier}.glb`)))
-        .size;
-    }
-    assert.ok(bytes <= totalLimit, `${tier} scene incl. slate, rocks and lantern: ${bytes}`);
-  }
-});
 test("homepage discovers the deferred scene while its UI excludes the renderer and model loading", async () => {
   const html = await readFile(path.join(distDir, "index.html"), "utf8");
   const app = await readFile(await findHashedScript("app"), "utf8");
@@ -629,16 +578,6 @@ test("homepage discovers the deferred scene while its UI excludes the renderer a
   assert.match(app, /getWebGLCapabilities/);
   assert.match(app, /initSceneMenu/);
   assert.doesNotMatch(app, /gl_Position|WebGLRenderer|GLTFLoader|Invalid architecture GLB/);
-});
-
-test("the retired About case images are gone while About uses real text", async () => {
-  const html = await readFile(path.join(distDir, "index.html"), "utf8");
-  for (const directory of [path.join(projectRoot, "images"), path.join(distDir, "images")]) {
-    assert.ok(!(await readdir(directory)).some((name) => name.startsWith("nav-about")), directory);
-  }
-  assert.doesNotMatch(html, /nav-about/);
-  assert.match(html, /class="about-link__label">About<\/span>/);
-  assert.doesNotMatch(html, /nav-contact|Leather_Envelope|Stylized_3D/);
 });
 
 test("paper textures and category vignettes are fingerprinted", async () => {

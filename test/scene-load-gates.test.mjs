@@ -597,11 +597,6 @@ test("the low tier keeps the title card and never requests the scene bundle", as
   await loadMainWithQuality(unknown.context);
   assert.equal(await unknown.context.window.BabelSite.ensureSceneReady(), false);
   assert.equal(unknown.host.hidden, true, "a declined initialization keeps the title card");
-  // Retired comparison URLs open the default film, with its early model requests.
-  const comparison = createContext({ ...CAPABLE, search: "?architecture=classic" });
-  await loadMainWithQuality(comparison.context);
-  assert.equal(await comparison.context.window.BabelSite.ensureSceneReady(), true);
-  assert.equal(comparison.fetches.length, 2);
 });
 
 test("static title card paths and the low tier make no early model request", async () => {

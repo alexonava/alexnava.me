@@ -15,7 +15,7 @@ test("the scene opens About through the text button and keeps Contact inside the
   assert.doesNotMatch(entry, /<img|<canvas/);
   assert.match(html, /href="#about-text"[^>]*data-scene-fallback>[\s\S]*?about-link__label/);
   const primary = html.match(/<footer class="site-footer"[\s\S]*?<\/footer>/)[0];
-  assert.doesNotMatch(primary, /data-panel="contact"|nav-contact/);
+  assert.doesNotMatch(primary, /data-panel="contact"/);
   for (const name of ["profile", "experience", "contact"]) {
     assert.ok(html.includes(`aria-controls="panel-${name}"`));
   }

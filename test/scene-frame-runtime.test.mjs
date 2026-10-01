@@ -454,7 +454,6 @@ test("still mode composes with reduced motion", () => {
   scheduler.setStill(false);
   assert.equal(frames.pending, 0, "reduced motion stays static either way");
   assert.equal(updates, 1);
-  assert.equal("setForceAnimation" in scheduler, false, "nothing forces animation");
   assert.equal("forceAnimation" in scheduler.getState(), false);
   scheduler.invalidate();
   frames.step(16);

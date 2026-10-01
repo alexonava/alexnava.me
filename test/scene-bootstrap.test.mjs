@@ -77,8 +77,6 @@ test("models and maps keep the startup tier, and quality is sampled only after t
     /const adaptiveProfile = adaptiveSteps\.take\(\{ cut: transition\.cut, running: cameraTour\?\.running === true, nowMs \}\); if \(adaptiveProfile\) applyActiveQualityProfile\(adaptiveProfile, "adaptive"\);/,
   );
   assert.match(index, /if \(transition\.capture\) qualityState\.skipSamples\?\.\(3\);/);
-  assert.doesNotMatch(index, /lowPower/);
-  assert.doesNotMatch(index, /setFade|cameraTour\?\.fade/);
 });
 
 test("each event that brings uploads or compiles restarts the sampling hold", () => {
@@ -160,7 +158,6 @@ test("the visitor pause stops the tour and holds rendering; content changes stil
     between("function disposeHomeSceneRuntime"),
     /scene\.setVisitorPaused = \(\) => false; scene\.isVisitorPaused = \(\) => false;/,
   );
-  assert.doesNotMatch(index, /devMode|onActivityChange|setForceAnimation/);
 });
 
 test("the reveal waits for the shader warm-up, and nothing draws while one links before it", () => {
@@ -246,11 +243,6 @@ test("rendering registers before initialization, and quality reaches every syste
   assert.doesNotMatch(index, /rendering\.applyQuality\(/);
   for (const system of ["environmentSystem", "atmosphereSystem"])
     assert.match(index, new RegExp(`subsystemRegistry\\.register\\(${system}\\);`));
-  assert.doesNotMatch(
-    index,
-    /function updateDecorativeVisibility\(|const decorativeSystems = \[\]/,
-  );
-  assert.doesNotMatch(index, /arr19\.forEach\(|arr24\.forEach\(|arr26\.forEach\(|touchFrameStride/);
 });
 
 test("the scene entry marks its evaluation first, and the bootstrap reuses the probe's limits", () => {
@@ -309,5 +301,4 @@ test("the film terrain is film-scene.js's lazy chunk and never holds the reveal"
   assert.match(index, /createFilmScene\(\{[^}]*tour: cameraTour,/);
   assert.doesNotMatch(index, /createFilmScene\(\{[^}]*warm[:,]/);
   assert.equal(index.match(/import\("\.\/terrain-build\.js"\)/g), null);
-  assert.doesNotMatch(index, /filmScene\.prefetch/);
 });

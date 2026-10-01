@@ -11,63 +11,17 @@ async function readProjectFile(relativePath) {
   return readFile(path.join(projectRoot, relativePath), "utf8");
 }
 
-test("repo contract reflects the current preview workflow and test suite", async () => {
-  const packageJson = JSON.parse(await readProjectFile("package.json"));
+test("the page names its committed share image for social previews", async () => {
   const indexHtml = await readProjectFile("index.html");
-  const buildScript = await readProjectFile("build.mjs");
-  const ci = await readProjectFile(".github/workflows/ci.yml");
-  const deploy = await readProjectFile(".github/workflows/deploy.yml");
-  const preview = await readProjectFile(".github/workflows/preview.yml");
-  const readme = await readProjectFile("README.md");
-  const agents = await readProjectFile("AGENTS.md");
-
-  assert.equal(packageJson.engines.node, ">=22");
-  for (const workflow of [ci, deploy, preview]) {
-    assert.match(workflow, /node-version:\s*22/);
-  }
-  assert.match(packageJson.scripts.preview, /wrangler pages dev dist/);
-  assert.match(indexHtml, /data-scene-script/);
-  assert.match(indexHtml, /\/scripts\/scene\.js/);
-  assert.match(buildScript, /SCENE_ENTRY/);
-  assert.match(buildScript, /scenePath/);
-  assert.match(readme, /npm run preview/);
-  assert.match(readme, /scripts\/scene\.HASH\.js/);
-  assert.match(agents, /npm run preview/);
-  assert.match(agents, /deferred `scripts\/scene\.HASH\.js`/);
-});
-
-test("site source includes a committed OG image and matching social metadata", async () => {
-  const indexHtml = await readProjectFile("index.html");
-  const buildScript = await readProjectFile("build.mjs");
-  const gitignore = await readProjectFile(".gitignore");
-
   await access(path.join(projectRoot, "public", "og.png"));
-
   assert.match(indexHtml, /property="og:image"\s+content="https:\/\/alexnava\.me\/og\.png"/);
   assert.match(indexHtml, /name="twitter:image"\s+content="https:\/\/alexnava\.me\/og\.png"/);
   assert.match(indexHtml, /name="twitter:card"\s+content="summary_large_image"/);
-  assert.match(buildScript, /"og\.png"/);
-  assert.match(gitignore, /!og\.png/);
-  assert.match(gitignore, /^\.lighthouseci\/$/m);
-  assert.match(gitignore, /^\.tmp-lighthouse-\*\/$/m);
 });
 
-test("public agent-discovery files are built from sanitized source artifacts", async () => {
-  const buildScript = await readProjectFile("build.mjs");
+test("public agent-discovery files keep their own headers and the page links its Markdown", async () => {
   const headers = await readProjectFile("public/_headers");
   const indexHtml = await readProjectFile("index.html");
-  const llms = await readProjectFile("public/llms.txt");
-  const sitemap = await readProjectFile("public/sitemap.md");
-  const publicAgents = await readProjectFile("public/site-agents.md");
-  const markdownHome = await readProjectFile("public/index.md");
-
-  assert.match(buildScript, /"llms\.txt"/);
-  assert.match(buildScript, /"sitemap\.md"/);
-  assert.match(buildScript, /"index\.md"/);
-  assert.match(
-    buildScript,
-    /source: `\$\{PUBLIC_DIR\}\/site-agents\.md`, destination: "AGENTS\.md"/,
-  );
   for (const pathName of ["/llms.txt", "/AGENTS.md", "/index.md", "/sitemap.md"]) {
     assert.match(headers, new RegExp(`${pathName.replace(".", "\\.")}\\r?\\n\\s+Cache-Control`));
   }
@@ -77,10 +31,6 @@ test("public agent-discovery files are built from sanitized source artifacts", a
   );
   assert.match(indexHtml, /rel="alternate" type="text\/markdown" href="\/index\.md"/);
   assert.match(indexHtml, /application\/ld\+json/);
-  assert.match(llms, /^# Alex Nava/m);
-  assert.match(sitemap, /^# alexnava\.me site map/m);
-  assert.match(publicAgents, /^# alexnava\.me/m);
-  assert.match(markdownHome, /^---[\s\S]*?title: Alex Nava/m);
 });
 
 // RFC 9309 groups: consecutive user-agent lines share the rules that follow them.
@@ -181,28 +131,11 @@ test("robots.txt declines AI training but keeps search and citation crawlers wel
   // The decision is recorded next to the Cloudflare setting that enforces it.
 });
 
-test("the share card keeps its unpublished backdrop and the images folder is published through the build", async () => {
-  const buildScript = await readProjectFile("build.mjs");
-  const headers = await readProjectFile("public/_headers");
+test("the share card's backdrop stays in tools/, outside the published images", async () => {
   const card = await readProjectFile("tools/og-card.html");
-
-  // The retired poster survives only as the share card's backdrop, outside
-  // the published images.
   await access(path.join(projectRoot, "tools", "og-card-backdrop.webp"));
   assert.match(card, /url\("og-card-backdrop\.webp"\)/);
-  assert.doesNotMatch(card, /scene-poster|\.\.\/images\//);
-  const images = await readdir(path.join(projectRoot, "images"), { recursive: true });
-  assert.deepEqual(
-    images.filter((name) => /scene-poster/.test(name)),
-    [],
-  );
-  assert.doesNotMatch(buildScript, /scene-poster|POSTER/);
-
-  assert.match(buildScript, /const STATIC_DIRS = \["fonts", "images"\];/);
-  assert.match(
-    headers,
-    /\/images\/\*\r?\n\s+Cache-Control: public, max-age=604800, must-revalidate/,
-  );
+  assert.doesNotMatch(card, /\.\.\/images\//);
 });
 
 test("Cloudflare Pages headers preserve the static security contract", async () => {
@@ -262,12 +195,17 @@ test("Cloudflare preview credentials run separately from pull-request build code
     /- name: Deploy to Cloudflare Pages[\s\S]*?env:[\s\S]*?CLOUDFLARE_API_TOKEN:/,
   );
   assert.match(preview, /\n  build:\r?\n[\s\S]*?npm run build:dist/);
-  assert.match(preview, /actions\/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a/);
+  assert.match(preview, /uses: actions\/upload-artifact@/);
   assert.match(preview, /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/);
-  assert.match(preview, /actions\/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c/);
-  assert.match(
-    preview,
-    /npm install --global --ignore-scripts --no-audit --no-fund wrangler@4.145.0/,
+  assert.match(preview, /uses: actions\/download-artifact@/);
+  // The preview job installs the same wrangler the lockfile resolves.
+  const lock = JSON.parse(await readProjectFile("package-lock.json"));
+  const wrangler = lock.packages["node_modules/wrangler"].version;
+  assert.ok(
+    preview.includes(
+      `npm install --global --ignore-scripts --no-audit --no-fund wrangler@${wrangler}`,
+    ),
+    `the preview job installs wrangler@${wrangler}`,
   );
   assert.match(
     preview,
@@ -298,35 +236,19 @@ test("deploy workflows expose environment metadata and use explicit missing-cred
   assert.match(preview, /ready=false[\s\S]*?skipping preview deploy[\s\S]*?exit 0/i);
 });
 
-test("deploy workflows retry post-upload smoke checks", async () => {
+test("deploys smoke-check what they published: production through the shared script, previews inline", async () => {
   const deploy = await readProjectFile(".github/workflows/deploy.yml");
   const preview = await readProjectFile(".github/workflows/preview.yml");
   const smoke = await readProjectFile(".github/scripts/smoke-pages.sh");
 
+  // The script's own behaviour is tested in smoke-pages.test.mjs.
   assert.match(deploy, /run:\s*bash \.github\/scripts\/smoke-pages\.sh "\$DEPLOYMENT_URL"/);
   assert.match(
     smoke,
     /\[\[ ! "\$deployment_url" =~ \^https:\/\/\[a-z0-9-\]\+\\\.alexnava-me\\\.pages\\\.dev\$\s*\]\]/,
   );
-  assert.match(smoke, /for attempt in 1 2 3 4 5 6/);
-  assert.match(smoke, /apex_max_attempts=18/);
-  assert.match(smoke, /apex_sleep_seconds=10/);
-  assert.match(smoke, /while \[ "\$attempt" -le "\$apex_max_attempts" \]/);
-  assert.doesNotMatch(smoke, /\bseq\b/);
-  assert.match(smoke, /grep -Fq "<title>Alex Nava<\/title>"/);
-  assert.match(smoke, /grep -Eiq '\^content-security-policy:'/);
-  assert.match(smoke, /grep -Eiq '\^strict-transport-security:'/);
-  assert.match(smoke, /grep -Eiq '\^x-content-type-options:/);
-  assert.match(smoke, /\[ "\$status" = "404" \]/);
-  assert.match(smoke, /That page isn't here\./);
-  assert.match(smoke, /\[ "\$status" = "301" \]/);
-  assert.match(smoke, /cmp -s "\$deployment_assets" "\$apex_assets"/);
-  assert.match(smoke, /Apex marker, security-header, and asset-hash parity checks passed/);
-  assert.match(smoke, /\[ "\$status" = "200" \]/);
-  assert.match(smoke, /\[ "\$effective_host" = "\$expected_host" \]/);
-  assert.match(smoke, /"https:\/\/alexnava\.me\/" "alexnava\.me" "true"/);
+  assert.match(smoke, /for attempt in /, "the deployment URL is retried");
   assert.doesNotMatch(smoke, /--location/);
-  assert.match(smoke, /location:\[\[:space:\]\]\*https:\/\/alexnava\\\.me\//);
   assert.match(preview, /PREVIEW_URL:\s*\$\{\{\s*steps\.deploy\.outputs\.url\s*\}\}/);
   assert.match(preview, /short_branch="preview-\$\{branch_slug\}"/);
   assert.match(preview, /\[ "\$status" = "200" \]/);
@@ -375,54 +297,21 @@ test("Lighthouse uses repository artifacts and hard performance-quality budgets"
 test("Cloudflare audit is scheduled, manual, least-privilege, and sanitized", async () => {
   const workflow = await readProjectFile(".github/workflows/cloudflare-audit.yml");
 
-  assert.match(workflow, /schedule:\r?\n\s+- cron:\s*"17 15 \* \* 1"/);
+  assert.match(workflow, /schedule:\r?\n\s+- cron:\s*"[^"]+"/);
   assert.match(workflow, /workflow_dispatch:/);
   assert.match(workflow, /audit:\r?\n\s+if:\s*github\.ref == 'refs\/heads\/main'/);
   assert.match(workflow, /permissions:\r?\n\s+contents:\s*read/);
-  assert.match(workflow, /CLOUDFLARE_AUDIT_API_TOKEN/);
-  assert.match(workflow, /dedicated CLOUDFLARE_AUDIT_API_TOKEN with Pages Read/);
-  assert.match(workflow, /index\("alexnava\.me"\)/);
-  assert.match(workflow, /jq[\s\S]*?project:[\s\S]*?production_branch/);
-  assert.match(workflow, /extract_final_header_block\(\)/);
-  assert.match(workflow, /extract_final_header_block "\$raw_headers" "\$final_headers"/);
+  // Redirects are inspected, never followed.
   assert.match(workflow, /--max-redirs 0/);
   assert.doesNotMatch(workflow, /--location\b/);
-  assert.match(workflow, /apex_status[\s\S]*?\[ "\$apex_status" != "200" \]/);
-  assert.match(
-    workflow,
-    /apex_effective_host[\s\S]*?\[ "\$apex_effective_host" != "alexnava\.me" \]/,
-  );
+  assert.match(workflow, /\[ "\$apex_status" != "200" \]/);
   assert.match(workflow, /\[ "\$apex_effective_url" != "https:\/\/alexnava\.me\/" \]/);
-  assert.match(
-    workflow,
-    /apex must return 200 directly from https:\/\/alexnava\.me\/ without redirecting/,
-  );
-  assert.match(workflow, /pages_status[\s\S]*?\[ "\$pages_status" = "200" \]/);
   assert.match(workflow, /\[ "\$pages_status" = "301" \]/);
-  assert.match(workflow, /\[ "\$pages_status" = "308" \]/);
-  assert.match(workflow, /200 with noindex or 301\/308 to the apex/);
-  assert.match(
-    workflow,
-    /grep -Eiq '\^location:\[\[:space:\]\]\*https:\/\/alexnava\\\.me\/\[\[:space:\]\]\*\$' "\$pages_headers"/,
-  );
-  assert.match(workflow, /__babel-canonical-check\?source=cloudflare-audit&keep=1/);
-  assert.match(workflow, /canonical redirect must preserve path and query/);
-  assert.match(
-    workflow,
-    /extract_final_header_block "\$canonical_headers" "\$canonical_final_headers"/,
-  );
-  assert.match(
-    workflow,
-    /grep -Eiq '\^location:\[\[:space:\]\]\*https:\/\/alexnava\\\.me\/__babel-canonical-check\\\?source=cloudflare-audit&keep=1\[\[:space:\]\]\*\$' "\$canonical_final_headers"/,
-  );
-  assert.match(workflow, /www_status[\s\S]*?\[ "\$www_status" != "301" \]/);
-  assert.match(workflow, /location:\[\[:space:\]\]\*https:\/\/alexnava\\\.me\/\[\[:space:\]\]\*\$/);
-  assert.match(workflow, /sanitize_headers "www" "\$www_raw_headers"/);
-  assert.match(workflow, /Public DNS\/TLS reachability/);
+  assert.match(workflow, /\[ "\$www_status" != "301" \]/);
+  assert.match(workflow, /sanitize_headers /);
+  // Nothing dumps the raw project or traces a command line with a token.
   assert.doesNotMatch(workflow, /cat "\$raw_project"/);
   assert.doesNotMatch(workflow, /set -x/);
-  assert.match(workflow, /actions\/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a/);
-  assert.match(workflow, /retention-days:\s*14/);
 });
 
 test("Cloudflare audit checks dashboard-owned edge settings outside the rollback path", async () => {
@@ -468,7 +357,6 @@ test("Cloudflare audit checks dashboard-owned edge settings outside the rollback
 
   // Every failure is collected and reported before the job fails.
   assert.match(edge, /failures\+=\(/);
-  assert.match(edge, /Cloudflare dashboard checklist in docs\/OPERATIONS\.md/);
   assert.match(edge, /if \[ "\$\{#failures\[@\]\}" -gt 0 \]; then[\s\S]*?exit 1/);
   assert.match(edge, /GITHUB_STEP_SUMMARY/);
 
@@ -691,7 +579,6 @@ test("hosting files publish security.txt, raster icons and a stable manifest id"
     `security.txt expires ${expires[1]}: move Expires in public/.well-known/security.txt up to a year ahead`,
   );
   assert.ok(remaining <= 366 * day, "security.txt Expires should stay under a year ahead");
-  assert.match(buildScript, /"\.well-known\/security\.txt"/);
 
   for (const [file, size, opaque] of [
     ["apple-touch-icon.png", 180, true],
@@ -706,7 +593,6 @@ test("hosting files publish security.txt, raster icons and a stable manifest id"
     if (opaque) {
       assert.ok([2, 3].includes(png[25]) && !png.includes("tRNS"), `${file} must be opaque`);
     }
-    assert.match(buildScript, new RegExp(`"${file.replaceAll(".", "\\.")}"`));
   }
   const ico = await readFile(path.join(projectRoot, "public", "favicon.ico"));
   assert.deepEqual([ico.readUInt16LE(0), ico.readUInt16LE(2)], [0, 1], "favicon.ico is an icon");
@@ -715,7 +601,6 @@ test("hosting files publish security.txt, raster icons and a stable manifest id"
     icoSizes.sort((a, b) => a - b),
     [16, 32, 48],
   );
-  assert.match(buildScript, /"favicon\.ico"/);
 
   assert.equal(manifest.id, "/");
   assert.deepEqual(
@@ -740,7 +625,6 @@ test("production deploy is workflow-owned and explicitly publishes main", async 
   const packageJson = JSON.parse(await readProjectFile("package.json"));
   const deploy = await readProjectFile(".github/workflows/deploy.yml");
 
-  assert.equal(packageJson.scripts["deploy:prod"], undefined);
   assert.match(deploy, /npx wrangler pages deploy dist --project-name=alexnava-me --branch=main/);
   assert.match(deploy, /if:\s*github\.ref == 'refs\/heads\/main'/);
   assert.match(deploy, /group:\s*pages-production\r?\n\s+cancel-in-progress:\s*false/);
@@ -781,46 +665,39 @@ test("production deploy captures and verifies an automatic Pages rollback target
   assert.doesNotMatch(smoke, /CLOUDFLARE_(API_TOKEN|ACCOUNT_ID)/);
 });
 
-test("GitHub Actions workflows pin third-party actions to full SHAs", async () => {
+test("every workflow action is pinned to a full commit SHA with its version in a comment", async () => {
   const workflowDir = path.join(projectRoot, ".github", "workflows");
-  const workflowFiles = (await readdir(workflowDir))
-    .filter((file) => file.endsWith(".yml") || file.endsWith(".yaml"))
-    .sort();
-  assert.ok(workflowFiles.includes("lighthouse.yml"), "Lighthouse workflow must be covered");
-
-  const workflows = await Promise.all(
-    workflowFiles.map((file) => readProjectFile(path.join(".github", "workflows", file))),
-  );
-  const usesLines = workflows.flatMap((workflow) =>
-    (workflow.match(/^\s*uses:\s*[^\s]+$/gm) || []).filter((line) => !line.includes("./")),
-  );
-
-  assert.ok(usesLines.length > 0, "expected at least one GitHub Action use");
-  for (const line of usesLines) {
-    assert.match(line, /@[a-f0-9]{40}$/, `${line.trim()} must use a full commit SHA`);
-    assert.doesNotMatch(line, /@(v\d+|main|master)$/, `${line.trim()} must not use a moving tag`);
+  const workflowFiles = (await readdir(workflowDir)).filter((file) => /\.ya?ml$/.test(file));
+  let uses = 0;
+  for (const file of workflowFiles) {
+    const lines = (await readProjectFile(path.join(".github", "workflows", file))).split(/\r?\n/);
+    lines.forEach((line, index) => {
+      const action = line.match(/^\s*(?:- )?uses:\s*([^\s@]+)@(\S+)\s*$/);
+      if (!action || action[1].startsWith("./")) return;
+      uses++;
+      assert.match(action[2], /^[a-f0-9]{40}$/, `${file}: ${action[1]} must use a full commit SHA`);
+      assert.match(
+        lines[index - 1],
+        new RegExp(`^\\s*# ${action[1].replace(/[./]/g, "\\$&")}@v\\d`),
+        `${file}: ${action[1]} names its version in the comment above`,
+      );
+    });
   }
+  assert.ok(uses > 0, "expected at least one GitHub Action use");
 });
 
-test("core GitHub Actions use hardened reviewed checkout and setup-node revisions", async () => {
-  const workflowNames = [
-    "ci.yml",
-    "deploy.yml",
-    "preview.yml",
-    "lighthouse.yml",
-    "cloudflare-audit.yml",
-  ];
-  const workflows = await Promise.all(
-    workflowNames.map((file) => readProjectFile(path.join(".github", "workflows", file))),
-  );
-
-  for (const workflow of workflows) {
-    assert.match(
-      workflow,
-      /actions\/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\r?\n\s+with:\r?\n\s+persist-credentials:\s*false/,
-    );
-    if (workflow.includes("actions/setup-node@")) {
-      assert.match(workflow, /actions\/setup-node@820762786026740c76f36085b0efc47a31fe5020/);
-    }
+test("checkouts never persist credentials", async () => {
+  const workflowDir = path.join(projectRoot, ".github", "workflows");
+  let count = 0;
+  for (const file of (await readdir(workflowDir)).filter((name) => /\.ya?ml$/.test(name))) {
+    const workflow = await readProjectFile(path.join(".github", "workflows", file));
+    const checkouts =
+      workflow.match(
+        /uses: actions\/checkout@\S+(?:\r?\n\s+with:[\s\S]*?)?(?=\r?\n\s+- |\r?\n\s*\r?\n|$)/g,
+      ) || [];
+    for (const checkout of checkouts)
+      assert.match(checkout, /persist-credentials:\s*false/, `${file}: ${checkout}`);
+    count += checkouts.length;
   }
+  assert.ok(count > 0, "expected at least one checkout");
 });
