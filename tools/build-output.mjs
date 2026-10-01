@@ -59,7 +59,7 @@ export async function validateOutputDirectory(projectRoot, directory) {
     "src",
     "images",
     "fonts",
-    ".well-known",
+    "public",
     "tools",
     "test",
     "node_modules",

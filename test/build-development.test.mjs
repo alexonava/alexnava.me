@@ -265,11 +265,11 @@ test(
   },
 );
 
-test("real watcher responds to HTML, CSS, static files, fonts, nested images and source edits without watching its output", async (t) => {
+test("real watcher responds to HTML, CSS, public files, fonts, nested images and source edits without watching its output", async (t) => {
   const root = await fixture(t);
   const output = path.join(root, "dist");
   await mkdir(output);
-  for (const directory of ["src", "images/nested", "fonts"])
+  for (const directory of ["src", "images/nested", "fonts", "public"])
     await mkdir(path.join(root, directory), { recursive: true });
   await writeFile(
     path.join(root, "build.mjs"),
@@ -291,9 +291,9 @@ test("real watcher responds to HTML, CSS, static files, fonts, nested images and
     "index.html",
     "404.html",
     "styles.css",
-    "_headers",
-    "_redirects",
-    "site-agents.md",
+    "public/_headers",
+    "public/_redirects",
+    "public/site-agents.md",
     "fonts/new.woff2",
     "images/nested/new.webp",
     "src/new.js",

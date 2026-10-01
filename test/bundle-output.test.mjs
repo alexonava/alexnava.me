@@ -354,9 +354,10 @@ test("changing only fixture poster bytes changes only that poster URL", async ()
     // source. No user data or deps.
     await cp(distDir, fixture, { recursive: true });
     await cp(path.join(projectRoot, "images"), path.join(fixture, "images"), { recursive: true });
-    for (const file of ["build.mjs", "index.html", "404.html", "styles.css", "site-agents.md"]) {
+    for (const file of ["build.mjs", "index.html", "404.html", "styles.css", "LICENSE"]) {
       await cp(path.join(projectRoot, file), path.join(fixture, file));
     }
+    await cp(path.join(projectRoot, "public"), path.join(fixture, "public"), { recursive: true });
     await cp(path.join(projectRoot, "tools"), path.join(fixture, "tools"), { recursive: true });
     await mkdir(path.join(fixture, "src"));
     await writeFile(path.join(fixture, "src", "app.js"), "void 0;");
@@ -555,13 +556,13 @@ test("hosting icons and the nested security.txt are published intact", async () 
     "manifest.webmanifest",
     ".well-known/security.txt",
   ]) {
-    assert.deepEqual(await readFile(path.join(distDir, file)), await readFile(path.join(projectRoot, file)), file);
+    assert.deepEqual(await readFile(path.join(distDir, file)), await readFile(path.join(projectRoot, "public", file)), file);
   }
 });
 
 test("sitemap lastmod follows the page's dateModified rather than the build date", async () => {
   const sitemap = await readFile(path.join(distDir, "sitemap.xml"), "utf8");
-  const dateModified = (await readFile(path.join(projectRoot, "index.md"), "utf8")).match(
+  const dateModified = (await readFile(path.join(projectRoot, "public", "index.md"), "utf8")).match(
     /^dateModified: (\d{4}-\d{2}-\d{2})\r?$/m,
   )[1];
   assert.match(sitemap, new RegExp(`<lastmod>${dateModified}</lastmod>`));
