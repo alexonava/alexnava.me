@@ -403,11 +403,16 @@ test("hosting files publish security.txt, raster icons and a stable manifest id"
   }
   const ico = await readFile(path.join(projectRoot, "public", "favicon.ico"));
   assert.deepEqual([ico.readUInt16LE(0), ico.readUInt16LE(2)], [0, 1], "favicon.ico is an icon");
-  const icoSizes = Array.from({ length: ico.readUInt16LE(4) }, (_, i) => ico[6 + i * 16]);
+  const icoEntries = Array.from({ length: ico.readUInt16LE(4) }, (_, i) => 6 + i * 16);
   assert.deepEqual(
-    icoSizes.sort((a, b) => a - b),
-    [16, 32, 48],
+    icoEntries.map((at) => ico[at]).sort((a, b) => a - b),
+    [16, 32],
   );
+  for (const at of icoEntries)
+    assert.ok(
+      ico.readUInt32LE(at + 12) + ico.readUInt32LE(at + 8) <= ico.length,
+      "favicon.ico images lie inside the file",
+    );
 
   assert.equal(manifest.id, "/");
   assert.deepEqual(
