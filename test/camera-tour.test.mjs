@@ -30,7 +30,6 @@ function setup(interval = 5, { prepare } = {}) {
   tree.position.set(55.1, 0, 36.1);
   const controller = createCinematicCamera({
     camera,
-    film: true,
     selected: "tower",
     angle: 0,
     getSafeArea: () => ({ left: 450, top: 32, width: 940, height: 720 }),

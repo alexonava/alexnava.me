@@ -21,7 +21,7 @@ const ground = (x, z) =>
 
 // A tower and tree on the test terrain, with the fit's heavy steps counted:
 // measuring computes bounding boxes and the clearance loop samples the ground.
-function setup(width, height, { film = true } = {}) {
+function setup(width, height) {
   const camera = new PerspectiveCamera(38, width / height, 0.1, 450),
     fog = new Fog(0, 62, 150),
     material = new MeshStandardMaterial(),
@@ -49,7 +49,6 @@ function setup(width, height, { film = true } = {}) {
   const controller = createCinematicCamera({
     camera,
     fog,
-    film,
     selected: "tower",
     angle: 0,
     getSafeArea: (w, h) =>
@@ -142,9 +141,6 @@ test("prepare reports unavailable subjects, invalid angles and disposed controll
   f.controller.dispose();
   assert.equal(f.controller.prepare("tower", 3, 390, 844), "unavailable");
   f.dispose();
-  const orbit = setup(1440, 900, { film: false });
-  assert.equal(orbit.controller.prepare("tower", 0, 1440, 900), "unavailable");
-  orbit.dispose();
 });
 
 test("an address-bar resize keeps a tour shot's fit as a top-anchored crop until the next cut", () => {

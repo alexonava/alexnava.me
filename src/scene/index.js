@@ -256,7 +256,6 @@ ColorManagement.enabled = false;
         fog: homeScene.fog,
         selected: scene.cinematicSelection,
         angle: scene.cinematicAngle,
-        film: true,
         getSafeArea: (width, height) => cinematicArea || measureCinematicArea(width, height),
         getGroundY: (x, z) => groundHeight(x, z) + groundSurface.getWorldPosition(new Vector3()).y,
       });

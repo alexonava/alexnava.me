@@ -241,7 +241,6 @@ test("lantern swap refreshes cached camera measurements for desktop and portrait
     );
     const cinematic = createCinematicCamera({
       camera,
-      film: true,
       selected: "tree",
       angle: 1,
       getSafeArea: () => area,

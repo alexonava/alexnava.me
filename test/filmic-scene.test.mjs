@@ -56,7 +56,6 @@ test("all directed framing regions fit desktop and phone through both movement e
         const area = cinematicSafeArea(w, h, { right: 420, bottom: 220 }, { top: h - 105 });
         const controller = createCinematicCamera({
           camera,
-          film: true,
           selected: subject,
           angle,
           getSafeArea: () => area,
@@ -325,7 +324,6 @@ test("low shots retain terrain clearance throughout the bounded camera arc", () 
   const ground = (x, z) => 4 + 0.02 * x + 0.025 * z;
   const c = createCinematicCamera({
     camera,
-    film: true,
     selected: "tree",
     angle: 2,
     getGroundY: ground,
@@ -360,7 +358,6 @@ test("a foreground ridge cannot hide the roots in a low tree composition", () =>
   root.add(tree);
   const controller = createCinematicCamera({
     camera,
-    film: true,
     selected: "tree",
     angle: 1,
     getGroundY: ground,

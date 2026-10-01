@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { BoxGeometry, Mesh, MeshBasicMaterial, PerspectiveCamera, Vector3, Fog } from "three";
+import { BoxGeometry, Mesh, MeshBasicMaterial, PerspectiveCamera, Fog } from "three";
 import {
   chooseCinematicView,
   chooseCinematicAngle,
@@ -8,7 +8,6 @@ import {
   createCinematicCamera,
   layoutRect,
 } from "../src/scene/cinematic.js";
-import { DIRECTED_SHOTS } from "../src/scene/directed-shots.js";
 const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-6, `${a} != ${b}`);
 function setup(selected = "tower", width = 1440, height = 900, angle = 0) {
   const camera = new PerspectiveCamera(45, width / height, 0.1, 1000),
@@ -53,47 +52,6 @@ test("every ordinary visit opens The watch while explicit subject URLs remain va
     assert.equal(chooseCinematicView(`?view=${view}`, unexpectedRandom), view);
 });
 
-test("camera fits all subject corners inside phone and desktop safe areas throughout the arc", () => {
-  for (const [w, h] of [
-    [390, 844],
-    [1440, 900],
-    [844, 390],
-  ]) {
-    const f = setup("tower", w, h);
-    f.apply();
-    for (const t of [0, 12, 36, 48]) {
-      f.apply(t);
-      f.camera.updateMatrixWorld();
-      for (const x of [-10, 10])
-        for (const y of [0, 34])
-          for (const z of [-10, 10]) {
-            const v = new Vector3(x, y, z).project(f.camera),
-              px = ((v.x + 1) * w) / 2,
-              py = ((1 - v.y) * h) / 2;
-            assert.ok(px >= f.area.left && px <= f.area.left + f.area.width, `x ${px}`);
-            assert.ok(py >= f.area.top && py <= f.area.top + f.area.height, `y ${py}`);
-          }
-      assert.equal(f.camera.fov, 38);
-    }
-  }
-});
-test("motion starts centered and remains fixed distance/elevation with exact four degree extremes", () => {
-  const f = setup();
-  f.apply(2);
-  const center = f.camera.position.clone();
-  const yaw = () => Math.atan2(f.camera.position.z, f.camera.position.x);
-  const base = yaw(),
-    distance = f.camera.position.distanceTo(f.controller.target);
-  f.apply(14);
-  near(yaw() - base, (4 * Math.PI) / 180);
-  near(f.camera.position.y, center.y);
-  near(f.camera.position.distanceTo(f.controller.target), distance);
-  f.apply(38);
-  near(yaw() - base, (-4 * Math.PI) / 180);
-  f.apply(100, { reducedMotion: true });
-  near(f.camera.position.distanceTo(center), 0);
-  assert.equal(f.controller.selected, "tower");
-});
 test("tree waits, fails over to tower, preserves selection across loading and restores fallback", () => {
   const f = setup("tree");
   assert.equal(f.controller.ready, false);
@@ -188,29 +146,4 @@ test("hero layout rect ignores scroll and transforms so the safe area cannot dri
     cinematicSafeArea(1440, 900, rect, nav),
     cinematicSafeArea(1440, 900, { right: 374, bottom: 232 }, nav),
   );
-});
-
-test("all angle variants retain safe portrait framing at both arc limits", () => {
-  for (const subject of ["tower", "tree"])
-    for (const angle of DIRECTED_SHOTS[subject].keys()) {
-      const f = setup(subject, 390, 844, angle);
-      if (subject === "tree") {
-        f.controller.setSubject("tree", f.root);
-        f.controller.setStatus({ kind: "tree", status: "ready" });
-      }
-      f.apply(0);
-      for (const time of [0, 12, 36]) {
-        f.apply(time);
-        f.camera.updateMatrixWorld();
-        for (const x of [-10, 10])
-          for (const y of [0, 34])
-            for (const z of [-10, 10]) {
-              const v = new Vector3(x, y, z).project(f.camera),
-                px = ((v.x + 1) * 390) / 2,
-                py = ((1 - v.y) * 844) / 2;
-              assert.ok(px >= f.area.left && px <= f.area.left + f.area.width);
-              assert.ok(py >= f.area.top && py <= f.area.top + f.area.height);
-            }
-      }
-    }
 });

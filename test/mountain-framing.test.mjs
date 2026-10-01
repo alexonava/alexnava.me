@@ -176,7 +176,6 @@ test("the camera-centred ranges frame every tour shot: sun, roof lane, tree shot
         const camera = new PerspectiveCamera(38, width / height, 0.1, CAMERA_FAR);
         const controller = createCinematicCamera({
           camera,
-          film: true,
           selected: kind,
           angle,
           getSafeArea: () => cinematicSafeArea(width, height, hero, nav),

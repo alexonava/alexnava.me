@@ -145,7 +145,6 @@ for (const tier of ["high", "balanced"])
           );
           const controller = createCinematicCamera({
             camera,
-            film: true,
             selected: "tower",
             angle,
             getSafeArea: () => cinematicSafeArea(width, height, hero, nav),
@@ -234,7 +233,6 @@ for (const tier of ["high", "balanced"])
           );
           const controller = createCinematicCamera({
             camera,
-            film: true,
             selected: "tower",
             angle,
             getSafeArea: () => cinematicSafeArea(width, height, hero, nav),

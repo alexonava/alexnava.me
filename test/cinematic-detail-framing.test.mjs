@@ -136,7 +136,6 @@ for (const tier of ["high", "balanced"])
             const camera = new PerspectiveCamera(38, width / height, 0.1, 450);
             const controller = createCinematicCamera({
               camera,
-              film: true,
               selected: kind,
               angle,
               getSafeArea: () => area,
