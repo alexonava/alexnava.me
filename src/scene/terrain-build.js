@@ -1,6 +1,8 @@
 import { BufferAttribute, BufferGeometry, Mesh, Vector3 } from "three";
 
-// Kept outside the initial scene; constants arrive from the owner.
+// A lazy chunk: the film terrain with its foothills, the tree's root supports
+// and their shading, the puddles and their drips, the tufts and the litter.
+
 // Two low, broken ridges beyond the estate's entire occupied area: radius,
 // half-width and lift.
 const RIDGES = [
@@ -712,7 +714,7 @@ export const PUDDLE_MIRROR = Object.freeze({
   bark: Object.freeze([0.045, 0.048, 0.05]),
 });
 // The supplied lantern in its own units (lantern.js LANTERN_AUTHORING_HEIGHT
-// 2.48, drawn 1.98 tall): the light sits at its luminous centre, and the v3
+// 2.48, drawn 1.98 tall): the light sits at its luminous centre, and the
 // flame (lantern-flame.js FLAME and FLAME_BASE) stands on the wick at 0.49,
 // 0.30 tall and 0.047 wide, its fire in the FLAME colours at gain 1.6, with
 // lanternFire's light held in the glass: a halo [strength, half-width, centre
@@ -739,8 +741,7 @@ export const LANTERN_FLAME = Object.freeze({
   }),
 });
 // The flame's mirror image reads the size of the flame (its extent at 30% and
-// 50% of its own peak 0.9-1.0x the real flame's, same frame, 2026-09-28
-// captures): it is the flame's own light as the frame shows it, lanternFire's
+// 50% of its own peak 0.9-1.0x the real flame's in the same frame): it is the flame's own light as the frame shows it, lanternFire's
 // fire and glass light with the gain clipped at white as the grade clamps the
 // real flame, added after the knee. The grade inks the real flame's steep
 // outline, which the dim, soft image escapes, so the image's body is `width`

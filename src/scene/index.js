@@ -87,7 +87,7 @@ const ORBIT_SPEED = 0.06;
     let sceneFailed = false;
     // Dialogs hold rendering once their dim overlay has faded in (~440ms).
     let panelHold = null;
-    // A visitor's Pause scene holds rendering once the scene is revealed.
+    // A visitor pause (scene.setVisitorPaused) holds rendering once revealed.
     let visitorHold = null;
     // Behind a visitor pause, content changes (models, maps, shaders, fonts)
     // still draw one still frame; scroll and tour cuts do not.
@@ -120,7 +120,7 @@ const ORBIT_SPEED = 0.06;
     // (docs/SCENE-MODES.md). It has no controls of its own.
     const qualityDebug = qualityControls.debug ? (window.BabelSite.sceneDebug = {}) : null;
     // Downloaded models and terrain maps keep the startup tier. Adaptive steps
-    // change only per-frame cost (DPR, shadows, post, leaves).
+    // change only per-frame cost (DPR, shadows, post).
     const assetTier = qualityState.initialTier;
     function updateSceneDebug(extra = {}) {
       if (!qualityDebug) return;
@@ -841,8 +841,8 @@ const ORBIT_SPEED = 0.06;
         viewport.scroll = reducedMotion
           ? viewport.scrollTarget
           : viewport.scroll + 0.025 * (viewport.scrollTarget - viewport.scroll);
-        // Until a subject is ready the hidden canvas keeps the original orbit
-        // camera, which the directed shot replaces before the reveal.
+        // Until a subject is ready the hidden canvas keeps the orbit camera,
+        // which the directed shot replaces before the reveal.
         const orbitTravel = elapsedTime * (0.95 * ORBIT_SPEED),
           orbitWobble = 0.09 * Math.sin(3 * orbitTravel) + 0.05 * Math.sin(2 * orbitTravel),
           orbitAngle = ORBIT_START_ANGLE + orbitTravel - orbitWobble,
@@ -980,9 +980,9 @@ const ORBIT_SPEED = 0.06;
         attributeFilter: ["data-panel-open"],
       });
       panelHold.sync();
-      // The footer's Pause scene control stops the tour, drift and clouds and
-      // holds rendering. The UI may leave a stored choice in
-      // visitorPausedPreference before this bundle loads.
+      // scene.setVisitorPaused() stops the tour and the drift and holds
+      // rendering; a visitorPausedPreference set before this bundle loads
+      // applies at the start.
       visitorHold = createVisitorHold({
         onRelease: () => qualityState.holdSampling(),
         scheduler: frameScheduler,

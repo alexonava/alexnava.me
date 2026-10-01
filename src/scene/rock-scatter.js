@@ -11,7 +11,7 @@ import { ESTATE, estateLantern, estatePathDistance, estatePoint } from "./estate
 import { SLATE_CONTACTS } from "./mud-ground.js";
 import { createDeferredQualityStep } from "./runtime.js";
 
-// The film's scattered rocks: the owner's two Meshy stones, placed from a table
+// The film's scattered rocks: the two authored Meshy stones, placed from a table
 // of clusters relative to the estate anchors (estate-layout.js) plus seeded
 // pebbles. Nothing reads the tree or lantern geometry. The GLBs are unit height,
 // bottom at 0; footprint is their x by z extent per unit height.

@@ -310,9 +310,9 @@
     if (cpuLimited) return "balanced";
     if (phoneViewport) return "balanced";
 
-    // Touch-primary devices used to get blanket-capped at balanced because iOS
-    // hides deviceMemory. Phone-shaped viewports now stay balanced for battery
-    // and thermals; larger flagship-class touch devices can still reach high.
+    // iOS hides deviceMemory, so touch devices are judged by their viewport and
+    // limits: phone-shaped viewports stay balanced for battery and thermals,
+    // and larger flagship-class touch devices can reach high.
     const flagshipCaps =
       (caps.maxTextureSize || 0) >= 8192 &&
       (caps.maxAnisotropy || 1) >= 8 &&
@@ -353,8 +353,7 @@
   // Every composer target renders at this ratio, so fragment work grows with
   // its square: uncapped, a 3x phone would shade nine pixels per CSS pixel.
   // Apple hides deviceMemory, so phones can't be classified by memory; touch-
-  // primary devices stop at 1.25 on every tier instead, still sharper than the
-  // 1x targets they previously upscaled.
+  // primary devices stop at 1.25 on every tier instead.
   function resolveEffectiveDprCap(profile, { touchPrimary = false } = {}) {
     const baseCap = profile && typeof profile.dprCap === "number" ? profile.dprCap : 1;
     return touchPrimary ? Math.min(baseCap, 1.25) : baseCap;
@@ -517,8 +516,7 @@
       overrideTier: controls.overrideTier,
     });
     // A revealed scene never steps its visuals down to low. The governor's low
-    // step keeps the current profile and lowers only the pixel ratio to 1, the
-    // composer resolution every tier rendered at before device-pixel targets.
+    // step keeps the current profile and lowers only the pixel ratio to 1.
     let resolutionRelief = false;
     let sampleResumeAt = null;
     let skippedSamples = 0;

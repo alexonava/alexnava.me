@@ -302,7 +302,7 @@ export function createSolarBody({ parent, camera, position, profile = {} }) {
   corona.name = "solar-corona";
   corona.renderOrder = 102;
   root.add(corona);
-  // Prominences keep the 2.2 CSS-pixel width reviewed at DPR 1. Their offset
+  // Prominences keep a 2.2 CSS-pixel width, tuned at DPR 1. Their offset
   // is in NDC, so the CSS viewport sets it whatever the target's pixel ratio.
   const resolution = new Vector2(1, 1);
   const loopMaterial = new ShaderMaterial({

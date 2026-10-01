@@ -1,10 +1,9 @@
 import { DEPTH_LAYER } from "./depth-layers.js";
 import { TERRAIN_HORIZON } from "./hill-silhouette.js";
 import { ESTATE, estateLantern, estatePoint } from "./estate-layout.js";
-// The estate's human scale for props and trees: one doorway height.
-// It was measured on the earlier stone tower's arched door (sill 1.64 to arch
-// ~8.24). The timber lookout keeps the same scale: its cabin rises about 6.5
-// from gallery floor (29.9) to eave (36.4) above a railing about 3.9 high.
+// The estate's human scale for props and trees: one doorway height. The
+// timber lookout matches it: its cabin rises about 6.5 from gallery floor
+// (29.9) to eave (36.4) above a railing about 3.9 high.
 export const DOOR_HEIGHT = 6.6;
 
 // The terrain's dune field, helpers.js dune(): amplitude * wave(frequency *

@@ -11,8 +11,9 @@ return mix(c,vec3(.045,.065,.13),smoothstep(.24,.9,a));
 }
 vec3 filmBand(float a) { return vec3(.03,.036,.048)*exp(-pow((a-.03)*6.0,2.0)); }`;
 
-// Density lives on the existing fixed world-space sky shell, never camera-facing
-// cards. No extra render pass or image request; the baseline branch is retained.
+// Density lives on the fixed world-space sky shell, never camera-facing cards:
+// no extra render pass or image request. Outside film the shell keeps its
+// baseline branch.
 // Film sky: a lifted blue night with softly lit, world-fixed cloud banks drawn on the
 // shell (no cards, passes or images). Cloud value noise uses an inline sine-free hash so
 // every GPU draws the same sky; the shared sin() hash drew different layouts on NVIDIA and

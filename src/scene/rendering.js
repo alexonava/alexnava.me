@@ -154,8 +154,8 @@ export function createSceneRendering({
     hemisphereLight.groundColor.copy(baselineGroundColor);
     if (filmLighting) hemisphereLight.groundColor.setHex(0x37404a);
     ambientLight.intensity = baselineAmbientIntensity;
-    // Softer still than the earlier film pass: close, low shots showed the
-    // tree canopy's cast shadow as a hard-edged dark pool on the ground.
+    // Soft enough that close, low shots never show the tree canopy's cast
+    // shadow as a hard-edged dark pool on the ground.
     sunLight.shadow.radius = filmLighting ? 6.5 : baselineShadowRadius;
     // Lit, relief-mapped earth shows acne bands at grazing moonlight; bias more.
     sunLight.shadow.bias = filmLighting ? -0.0016 : baselineShadowBias;
@@ -220,14 +220,13 @@ export function createSceneRendering({
     },
     focusFilmShadow(target, radius) {
       if (disposed || !filmLighting) return;
-      // The floor used to track the shot's own tight subject radius (e.g. ~12
-      // for a close detail shot), but a shadow camera that small doesn't
-      // cover the visible ground in a wide, low, grazing-angle frame — the
-      // area outside its frustum defaults to lit/unlit at the frustum edge's
-      // clamped depth-texture value, rendering as a hard-edged dark wedge
-      // across the ground with no relation to any real occluder. A wide
-      // floor costs some shadow resolution on the near subject (already
-      // heavily softened by the film shadow radius) but removes that cutoff.
+      // The extent never drops to the shot's own tight subject radius (about
+      // 12 for a close detail shot): a shadow camera that small doesn't cover
+      // the visible ground in a wide, low, grazing-angle frame, and the area
+      // outside its frustum takes the frustum edge's clamped depth-texture
+      // value, a hard-edged dark wedge across the ground with no relation to
+      // any real occluder. The wide floor costs some shadow resolution on the
+      // near subject (already softened by the film shadow radius).
       const extent = Math.max(32, Math.min(48, radius + 8));
       const key = [...target.toArray(), extent].join(",");
       if (key === shadowKey) return;

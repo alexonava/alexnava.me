@@ -186,9 +186,9 @@
     }
   }
 
-  // The scene used to request its models only after its first frame. Once the
-  // live scene is chosen, request the startup tier's tower and tree beside the
-  // bundle. architecture-assets.js takes a response whose URL matches once and
+  // Once the live scene is chosen, request the startup tier's tower and tree
+  // beside the bundle rather than after the scene's first frame.
+  // architecture-assets.js takes a response whose URL matches once and
   // releases the rest.
   let modelPrefetchStarted = false;
   function prefetchArchitectureModels(tier) {

@@ -15,8 +15,8 @@ import {
 import { DEPTH_LAYER } from "./depth-layers.js";
 import { FILM_SKY_GLSL } from "./estate-sky.js";
 
-// South Downs elevation traverse, 48 samples (SRTM-derived public-domain data,
-// retrieved 2026-09-09). Reused at different phases for fixed, continuous ridges.
+// South Downs elevation traverse, 48 samples (SRTM-derived public-domain
+// data). Reused at different phases for fixed, continuous ridges.
 export const HILL_PROFILE = Object.freeze([
   0.091, 0.081, 0.081, 0.09, 0.092, 0.098, 0.12, 0.151, 0.219, 0.246, 0.269, 0.281, 0.311, 0.413,
   0.567, 0.72, 0.839, 0.927, 0.858, 0.716, 0.621, 0.529, 0.415, 0.338, 0.326, 0.249, 0.199, 0.183,
@@ -99,11 +99,11 @@ export function mountainBody(range, lit, { up = 0.6, elevation = 1, clear = 0.75
 export const HORIZON_HAZE = Object.freeze({ near: 150, far: 190 });
 // Linear-light slate shared by mountain feet and the finite terrain boundary.
 // The post chain writes it about 12/255 on screen, so the plain past the
-// foothills reads as distant slate rather than the near-black band (about
-// 9/255) of the former vec3(.035,.038,.046). It is tuned against balanced, the
-// phone default, whose lit slate is darker than high's: the plain stays near
-// 57% of the lit ground on high and 67-80% on balanced, so the terrain edge
-// still reads. Near luma .08 it reached the balanced slate at the frame edges.
+// foothills reads as distant slate, not a near-black band (about 9/255). It is
+// tuned against balanced, the phone default, whose lit slate is darker than
+// high's: the plain stays near 57% of the lit ground on high and 67-80% on
+// balanced, so the terrain edge still reads; near luma .08 it would match the
+// balanced slate at the frame edges.
 export const TERRAIN_HORIZON = "vec3(.062,.065,.073)";
 
 function sampleProfile(angle) {

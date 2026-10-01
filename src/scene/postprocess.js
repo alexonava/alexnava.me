@@ -286,7 +286,7 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
   const transparencyQuery = matchMedia?.("(prefers-reduced-transparency: reduce)");
 
   // The composer sizes passes in device pixels. Bloom keeps the CSS-pixel
-  // resolution it was reviewed at: its blur radius is counted in its own texels.
+  // resolution it is tuned for: its blur radius is counted in its own texels.
   const setBloomSize = bloomPass.setSize.bind(bloomPass);
   bloomPass.setSize = (width, height) => {
     const ratio = renderer.getPixelRatio?.() || 1;
@@ -449,7 +449,7 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
 
   // width and height are CSS pixels. The composer's targets follow device
   // pixels, but the ink contour keeps sampling one CSS pixel apart, the offset
-  // it was reviewed at. The kept frame is sampled by UV, so only a CSS size
+  // it is tuned for. The kept frame is sampled by UV, so only a CSS size
   // change, not a pixel ratio or quality step, ends a crossfade.
   function resize(width, height) {
     if (width !== cssWidth || height !== cssHeight) cancelTransition();

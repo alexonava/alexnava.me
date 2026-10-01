@@ -14,9 +14,8 @@ export function sceneNow() {
 // scene-entry.js imports this module first, so this is when the entry chunk
 // began evaluating. Under ES module rules the entry's static import, the
 // shared Three.js chunk (scene.shared.HASH.js), has already evaluated by then:
-// scene-eval excludes Three.js evaluation and is not comparable with records
-// from the former single-bundle build. main.js marks babel:scene-request when
-// it appends the scene script, for a span that covers both downloads and
+// scene-eval excludes Three.js evaluation. main.js marks babel:scene-request
+// when it appends the scene script, for a span that covers both downloads and
 // Three.js evaluation.
 const evaluationStart = sceneNow();
 

@@ -6,12 +6,12 @@
 // Keep first-party imports out of this chunk: everything it needs arrives as
 // arguments, and its Three.js imports reuse the shared chunk.
 //
-// The owner chose a hybrid (2026-09-25): warm star shafts only in The watch,
-// where the star is in frame behind the cabin; cool moonbeams along the real
-// moon key light on the other shots; nothing in the two lantern shots. Then
-// (2026-09-26) stronger, visible rays: warm ray streaks through the cabin and
-// lattice, slim moon shafts through the crown and past the cabin, larger
-// broken-moonlight patches on bark and timber, and no light on the sky.
+// The treatment by shot: warm star shafts only in The watch, where the star
+// is in frame behind the cabin; cool moonbeams along the real moon key light
+// on the other shots; nothing in the two lantern shots. The rays are visible:
+// warm ray streaks through the cabin and lattice, slim moon shafts through the
+// crown and past the cabin, larger broken-moonlight patches on bark and
+// timber, and no light on the sky.
 //
 // Technique: once per subject and light, the CPU rasterises the subject's own
 // triangles into a small light-space map in idle slices (no pass, no download):

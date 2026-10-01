@@ -467,8 +467,8 @@ export function createTreeArchitecture({ asset, groundHeight, anisotropy = 4, an
       normalAttribute.array.set(film ? softenedNormals : originalNormals);
       normalAttribute.needsUpdate = true;
       // The unshadowed fill sits in the crown about 10 units above the lantern.
-      // In film its reach drops from the prop-scaled 37.8 to 24, so it still
-      // models the bark and the lantern cap but no longer floods the clearing.
+      // In film its reach drops from the prop-scaled 37.8 to 24, so it models
+      // the bark and the lantern cap without flooding the clearing.
       if (film) {
         light.distance = 10.5;
         light.decay = 1.2;

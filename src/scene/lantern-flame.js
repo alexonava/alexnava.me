@@ -4,7 +4,7 @@ import { Vector3 } from "three";
 
 const frozen = (...values) => Object.freeze(values);
 
-// Flame v3 in local lantern units (LANTERN_AUTHORING_HEIGHT 2.48). The supplied
+// The flame, in local lantern units (LANTERN_AUTHORING_HEIGHT 2.48). The supplied
 // globe is a closed teardrop, y .455-1.14 inside r .33 of the wick axis; the
 // burner cup ends at .45. A small hurricane-lantern flame stands .30 tall (44%
 // of the globe) on the wick top, widest ±.047 about a third of the way up; the
