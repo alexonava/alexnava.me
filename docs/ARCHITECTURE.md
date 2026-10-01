@@ -151,14 +151,14 @@ Sizes in bytes. Models are GLBs with `KHR_mesh_quantization` and embedded WebP m
 | ------------------------- | --------: | -------: |
 | tower                     | 1,869,912 |  920,408 |
 | tree                      | 2,028,412 |  896,532 |
-| lantern                   | 1,067,876 |  872,188 |
+| lantern                   |   847,992 |  462,292 |
 | lichen-rock               |   287,212 |  113,000 |
 | weathered-stone           |   279,764 |  111,632 |
 | slate color (1024 / 512)  |   193,482 |   65,168 |
 | slate normal (1024 / 512) |   361,594 |  111,126 |
 | slate detail (512)        |    24,542 |   24,542 |
 
-The complete scene, everything above for one tier, is 6,112,794 bytes on high against a 6 MiB budget (6,291,456) and 3,114,596 on balanced against 3 MiB (3,145,728).
+The complete scene, everything above for one tier, is 5,892,910 bytes on high against a 6 MiB budget (6,291,456) and 2,704,700 on balanced against 3 MiB (3,145,728).
 
 The loader rejects any single model over its tier's budget. Script budgets: the UI bundle under 30 KiB, and the scene entry plus the chunks it imports statically under 820 KiB; lazy chunks are outside that total.
 

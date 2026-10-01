@@ -405,10 +405,17 @@ test("both delivered lantern tiers embed authored PBR maps, masked emission and 
         Number.isInteger(field.index),
         `${tier} must preserve all authored maps and the emission mask`,
       );
-      const image = json.images[json.textures[field.index].source];
+      // A WebP map is named by EXT_texture_webp (required, so it has no fallback source).
+      const texture = json.textures[field.index];
+      const image = json.images[texture.extensions?.EXT_texture_webp?.source ?? texture.source];
       assert.ok(Number.isInteger(image.bufferView));
       assert.equal(image.uri, undefined);
     }
+    // Delivered like the other models: WebP maps and quantized geometry.
+    assert.deepEqual([...json.extensionsRequired].sort(), [
+      "EXT_texture_webp",
+      "KHR_mesh_quantization",
+    ]);
     assert.ok(material.emissiveFactor.some((value) => value > 0));
     const emitter = json.scenes[json.scene ?? 0].extras.lantern.luminousCenter;
     assert.equal(emitter.length, 3);

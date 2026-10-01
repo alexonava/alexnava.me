@@ -54,7 +54,8 @@ published.
 The tree and lantern in `images/architecture/{tree,lantern}-{high,balanced}.glb`
 are Meshy models supplied by Alex Nava, optimized locally without new
 generation. Original files and preparation records are in the local artwork
-archive (`Assets/Architecture/tree-v2` and `Assets/Architecture/lantern`).
+archive (`Assets/Architecture/tree-v2` and `Assets/Architecture/lantern`; the lantern's
+WebP and quantized packaging is in `Assets/Architecture/lantern/v2`).
 
 ## Supplied Meshy rocks
 
