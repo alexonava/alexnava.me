@@ -10,6 +10,7 @@ import vm from "node:vm";
 // boot timing around it.
 const menuSource = await readFile(new URL("../src/ui/scene-menu.js", import.meta.url), "utf8");
 const mainSource = await readFile(new URL("../src/main.js", import.meta.url), "utf8");
+const qualitySource = await readFile(new URL("../src/scene/quality.js", import.meta.url), "utf8");
 
 function createFixture({ readyState = "complete", init = () => true } = {}) {
   const entry = { hidden: true };
@@ -50,6 +51,8 @@ function createFixture({ readyState = "complete", init = () => true } = {}) {
   const window = {
     BabelSite: {
       ui: {
+        initHeroChrome() {},
+        initDeepLinks() {},
         initPanels() {
           calls++;
           return init();
@@ -72,6 +75,7 @@ function createFixture({ readyState = "complete", init = () => true } = {}) {
     },
     boot() {
       const context = vm.createContext({ window, document, navigator: {}, URLSearchParams });
+      vm.runInContext(qualitySource, context, { filename: "src/scene/quality.js" });
       vm.runInContext(menuSource, context, { filename: "src/ui/scene-menu.js" });
       vm.runInContext(mainSource, context, { filename: "src/main.js" });
     },

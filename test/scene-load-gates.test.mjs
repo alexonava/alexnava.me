@@ -116,7 +116,8 @@ function createContext({
   let scriptAppendCount = 0;
   let webglProbeCount = 0;
   const window = {
-    BabelSite: {},
+    // The UI modules app.js boots before main.js; the menu stays native here.
+    BabelSite: { ui: { initHeroChrome() {}, initSceneMenu: () => false, initDeepLinks() {} } },
     WebGLRenderingContext: function WebGLRenderingContext() {},
     innerHeight: height,
     innerWidth: width,
