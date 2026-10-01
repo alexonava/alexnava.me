@@ -31,16 +31,6 @@ function whenLinked(programs, timeoutMs = SHADER_WARMUP_TIMEOUT_MS) {
   });
 }
 
-function setRendererOutputColorSpace(renderer, threeExports = {}) {
-  const srgbColorSpace = threeExports.SRGBColorSpace || SRGBColorSpace;
-  const srgbEncoding = threeExports.sRGBEncoding;
-  if (srgbColorSpace && "outputColorSpace" in renderer) {
-    renderer.outputColorSpace = srgbColorSpace;
-  } else if (srgbEncoding && "outputEncoding" in renderer) {
-    renderer.outputEncoding = srgbEncoding;
-  }
-}
-
 export function createSceneRendering({
   container,
   height,
@@ -49,7 +39,6 @@ export function createSceneRendering({
   onContextRestored,
   onInvalidate,
   profile,
-  threeExports,
   width,
   world,
   createPipeline = createPostprocessPipeline,
@@ -76,7 +65,7 @@ export function createSceneRendering({
     powerPreference: "default",
   });
   renderer.setClearColor(0, 0);
-  setRendererOutputColorSpace(renderer, threeExports);
+  renderer.outputColorSpace = SRGBColorSpace;
   renderer.toneMapping = NoToneMapping;
   renderer._useLegacyLights = true;
   renderer.shadowMap.type = PCFSoftShadowMap;
@@ -165,8 +154,8 @@ export function createSceneRendering({
     hemisphereLight.groundColor.copy(baselineGroundColor);
     if (filmLighting) hemisphereLight.groundColor.setHex(0x37404a);
     ambientLight.intensity = baselineAmbientIntensity;
-    // Softer still than the earlier film pass: close, low shots showed the
-    // tree canopy's cast shadow as a hard-edged dark pool on the ground.
+    // Soft enough that close, low shots never show the tree canopy's cast
+    // shadow as a hard-edged dark pool on the ground.
     sunLight.shadow.radius = filmLighting ? 6.5 : baselineShadowRadius;
     // Lit, relief-mapped earth shows acne bands at grazing moonlight; bias more.
     sunLight.shadow.bias = filmLighting ? -0.0016 : baselineShadowBias;
@@ -231,14 +220,13 @@ export function createSceneRendering({
     },
     focusFilmShadow(target, radius) {
       if (disposed || !filmLighting) return;
-      // The floor used to track the shot's own tight subject radius (e.g. ~12
-      // for a close detail shot), but a shadow camera that small doesn't
-      // cover the visible ground in a wide, low, grazing-angle frame — the
-      // area outside its frustum defaults to lit/unlit at the frustum edge's
-      // clamped depth-texture value, rendering as a hard-edged dark wedge
-      // across the ground with no relation to any real occluder. A wide
-      // floor costs some shadow resolution on the near subject (already
-      // heavily softened by the film shadow radius) but removes that cutoff.
+      // The extent never drops to the shot's own tight subject radius (about
+      // 12 for a close detail shot): a shadow camera that small doesn't cover
+      // the visible ground in a wide, low, grazing-angle frame, and the area
+      // outside its frustum takes the frustum edge's clamped depth-texture
+      // value, a hard-edged dark wedge across the ground with no relation to
+      // any real occluder. The wide floor costs some shadow resolution on the
+      // near subject (already softened by the film shadow radius).
       const extent = Math.max(32, Math.min(48, radius + 8));
       const key = [...target.toArray(), extent].join(",");
       if (key === shadowKey) return;
@@ -283,7 +271,8 @@ export function createSceneRendering({
       postprocessPipeline.compile?.();
       uploadTextures();
       if (typeof renderer.compileAsync !== "function") return Promise.resolve(false);
-      if (renderer.extensions?.has?.("KHR_parallel_shader_compile") !== true) return Promise.resolve(false);
+      if (renderer.extensions?.has?.("KHR_parallel_shader_compile") !== true)
+        return Promise.resolve(false);
       const previousTarget = renderer.getRenderTarget?.() ?? null;
       let pending;
       try {
@@ -297,7 +286,10 @@ export function createSceneRendering({
       return new Promise((resolve) => {
         const timer = setTimeout(() => resolve(false), timeoutMs);
         Promise.resolve(pending)
-          .then(() => true, () => false)
+          .then(
+            () => true,
+            () => false,
+          )
           .then((ready) => {
             clearTimeout(timer);
             resolve(ready);

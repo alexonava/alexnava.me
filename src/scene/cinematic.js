@@ -1,12 +1,10 @@
 import { resolveSceneView } from "./scene-modes.js";
-import { Box3, Vector3 } from "three";
+import { Vector3 } from "three";
 import { DIRECTED_SHOTS, measureShot, fitShot, resolveDirectedShot } from "./directed-shots.js";
 
 export function chooseCinematicView(search = "") {
   return resolveSceneView(search);
 }
-// Alternate entrance-side views and lantern-side tree views, selected once.
-export const CINEMATIC_ANGLES = { tower: [-0.1, -0.55, 1.25], tree: [-1.95, -2.55, -1.35] };
 export function chooseCinematicAngle(search = "", view = null) {
   const q = new URLSearchParams(search),
     explicit = Number(q.get("angle")),
@@ -84,7 +82,6 @@ export function createCinematicCamera({
   fog,
   selected,
   angle = 0,
-  film = false,
   getSafeArea,
   getGroundY,
 }) {
@@ -213,7 +210,6 @@ export function createCinematicCamera({
     },
     setPreviewShot(kind, nextAngle) {
       if (
-        !film ||
         !this.isAvailable(kind) ||
         !Number.isInteger(nextAngle) ||
         nextAngle < 0 ||
@@ -230,7 +226,7 @@ export function createCinematicCamera({
     // Never touches the camera, fog or the fit in use.
     prepare(kind, nextAngle, width, height) {
       const base = DIRECTED_SHOTS[kind]?.[nextAngle];
-      if (!film || !base || !this.isAvailable(kind)) return "unavailable";
+      if (!base || !this.isAvailable(kind)) return "unavailable";
       const root = kind === "tree" ? tree : tower,
         shot = resolveDirectedShot(base, width, height);
       root.updateWorldMatrix(true, false);
@@ -295,122 +291,66 @@ export function createCinematicCamera({
       started ??= elapsedSeconds;
       const root = view === "tree" ? tree : tower;
       root.updateWorldMatrix(true, true);
-      if (film) {
-        const shot = resolveDirectedShot(
-          DIRECTED_SHOTS[view][angle] || DIRECTED_SHOTS[view][0],
+      const shot = resolveDirectedShot(
+        DIRECTED_SHOTS[view][angle] || DIRECTED_SHOTS[view][0],
+        width,
+        height,
+      );
+      const measured = measurementFor(root, shot),
+        area = getSafeArea(width, height);
+      if (!keepsFit(lock, shot, measured, area, width, height, tourPhase !== null))
+        lock = {
+          shot,
+          measured,
+          fitted: fitFor(shot, measured, area, width, height),
           width,
           height,
-        );
-        const measured = measurementFor(root, shot),
-          area = getSafeArea(width, height);
-        if (!keepsFit(lock, shot, measured, area, width, height, tourPhase !== null))
-          lock = {
-            shot,
-            measured,
-            fitted: fitFor(shot, measured, area, width, height),
-            width,
-            height,
-            area,
-            areaKey: areaKeyFor(area, width, height),
-          };
-        const { fitted } = lock;
-        currentShot = shot;
-        target.copy(measured.target);
-        // Tour shots drift at a constant rate so the camera never settles before
-        // a cut; a 2.5% breath follows the 48-second arc without a tour. A tour
-        // shot's dolly-in reaches 4.5% at its cut; the fit keeps a 15% margin.
-        const phase = Math.min(1, Math.max(0, tourPhase ?? 0));
-        const arc = reducedMotion
-          ? 0
-          : tourPhase !== null
-            ? (phase - 0.5) * shot.arc
-            : Math.sin(((elapsedSeconds - started) * Math.PI * 2) / 48) * shot.arc;
-        const push = reducedMotion
-          ? 0
-          : tourPhase !== null
-            ? PUSH_IN * phase
-            : 0.025 * (0.5 - 0.5 * Math.cos(((elapsedSeconds - started) * Math.PI * 2) / 48));
-        const distance = fitted.distance * (1 - push);
-        const yaw = ((shot.azimuth + arc) * Math.PI) / 180;
-        camera.position.set(
-          target.x + Math.cos(yaw) * distance,
-          fitted.cameraY,
-          target.z + Math.sin(yaw) * distance,
-        );
-        camera.lookAt(target);
-        // A kept fit becomes a crop anchored to the top of the canvas: the pixel
-        // scale and the subject's distance from the top edge stay constant.
-        const centerX = lock.area.left + lock.area.width / 2,
-          centerY = lock.area.top + lock.area.height / 2;
-        camera.fov =
-          height === lock.height
-            ? shot.fov
-            : (360 / Math.PI) *
-              Math.atan((Math.tan((shot.fov * Math.PI) / 360) * height) / lock.height);
-        camera.aspect = width / height;
-        camera.updateProjectionMatrix();
-        camera.projectionMatrix.elements[8] = -((2 * centerX) / width - 1);
-        camera.projectionMatrix.elements[9] = -(1 - (2 * centerY) / height);
-        camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
-        if (fog) {
-          fog.near = Math.max(originalFog.near, fitted.distance * 0.88);
-          fog.far = Math.max(originalFog.far, fitted.distance + 85);
-        }
-        applied = true;
-        return true;
-      }
-      const subject = view === "tree" ? root.getObjectByName("meshy-tree") || root : root;
-      const box = new Box3().setFromObject(subject),
-        size = box.getSize(new Vector3());
-      box.getCenter(target);
-      const area = getSafeArea(width, height),
-        aspect = width / height,
-        tan = Math.tan((38 * Math.PI) / 360);
-      // Fit the box at both arc limits, including perspective depth. This avoids
-      // the unnecessary diagonal-width padding that made portrait shots distant.
-      const baseYaw = CINEMATIC_ANGLES[view][angle] ?? CINEMATIC_ANGLES[view][0];
-      const elevation = Math.atan(0.1),
-        c = Math.cos(elevation),
-        e = Math.sin(elevation);
-      let distance = 0;
-      for (const offset of [-4, 0, 4]) {
-        const angle = baseYaw + (offset * Math.PI) / 180;
-        const depth = (size.x * Math.abs(Math.cos(angle)) + size.z * Math.abs(Math.sin(angle))) / 2;
-        const wide = (size.x * Math.abs(Math.sin(angle)) + size.z * Math.abs(Math.cos(angle))) / 2;
-        const tall = (size.y / 2) * c + depth * e;
-        const nearDepth = depth * c + (size.y / 2) * e;
-        distance = Math.max(
-          distance,
-          (Math.max(
-            tall / (tan * (area.height / height) * 0.93),
-            wide / (tan * aspect * (area.width / width) * 0.93),
-          ) +
-            nearDepth) *
-            c,
-        );
-      }
-      if (fog) {
-        fog.near = Math.max(originalFog.near, distance * 0.9);
-        fog.far = Math.max(originalFog.far, distance + 90);
-      }
+          area,
+          areaKey: areaKeyFor(area, width, height),
+        };
+      const { fitted } = lock;
+      currentShot = shot;
+      target.copy(measured.target);
+      // Tour shots drift at a constant rate so the camera never settles before
+      // a cut; a 2.5% breath follows the 48-second arc without a tour. A tour
+      // shot's dolly-in reaches 4.5% at its cut; the fit keeps a 15% margin.
+      const phase = Math.min(1, Math.max(0, tourPhase ?? 0));
       const arc = reducedMotion
         ? 0
-        : (Math.sin(((elapsedSeconds - started) * Math.PI * 2) / 48) * 4 * Math.PI) / 180;
-      const yaw = baseYaw + arc;
+        : tourPhase !== null
+          ? (phase - 0.5) * shot.arc
+          : Math.sin(((elapsedSeconds - started) * Math.PI * 2) / 48) * shot.arc;
+      const push = reducedMotion
+        ? 0
+        : tourPhase !== null
+          ? PUSH_IN * phase
+          : 0.025 * (0.5 - 0.5 * Math.cos(((elapsedSeconds - started) * Math.PI * 2) / 48));
+      const distance = fitted.distance * (1 - push);
+      const yaw = ((shot.azimuth + arc) * Math.PI) / 180;
       camera.position.set(
         target.x + Math.cos(yaw) * distance,
-        target.y + distance * 0.1,
+        fitted.cameraY,
         target.z + Math.sin(yaw) * distance,
       );
       camera.lookAt(target);
-      camera.fov = 38;
-      camera.aspect = aspect;
+      // A kept fit becomes a crop anchored to the top of the canvas: the pixel
+      // scale and the subject's distance from the top edge stay constant.
+      const centerX = lock.area.left + lock.area.width / 2,
+        centerY = lock.area.top + lock.area.height / 2;
+      camera.fov =
+        height === lock.height
+          ? shot.fov
+          : (360 / Math.PI) *
+            Math.atan((Math.tan((shot.fov * Math.PI) / 360) * height) / lock.height);
+      camera.aspect = width / height;
       camera.updateProjectionMatrix();
-      const nx = (2 * (area.left + area.width / 2)) / width - 1,
-        ny = 1 - (2 * (area.top + area.height / 2)) / height;
-      camera.projectionMatrix.elements[8] = -nx;
-      camera.projectionMatrix.elements[9] = -ny;
+      camera.projectionMatrix.elements[8] = -((2 * centerX) / width - 1);
+      camera.projectionMatrix.elements[9] = -(1 - (2 * centerY) / height);
       camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
+      if (fog) {
+        fog.near = Math.max(originalFog.near, fitted.distance * 0.88);
+        fog.far = Math.max(originalFog.far, fitted.distance + 85);
+      }
       applied = true;
       return true;
     },

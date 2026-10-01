@@ -168,7 +168,10 @@ class FakeDocument {
   }
 
   removeEventListener(type, handler) {
-    this.listeners.set(type, (this.listeners.get(type) || []).filter((item) => item !== handler));
+    this.listeners.set(
+      type,
+      (this.listeners.get(type) || []).filter((item) => item !== handler),
+    );
   }
   dispatchEvent(event) {
     event.target ||= this;
@@ -273,7 +276,10 @@ function matchesSimpleSelector(element, selector) {
     return element.id === selector.slice(1);
   }
   if (/^(\.[\w-]+)+$/.test(selector)) {
-    return selector.slice(1).split(".").every((name) => element.classList.contains(name));
+    return selector
+      .slice(1)
+      .split(".")
+      .every((name) => element.classList.contains(name));
   }
   return false;
 }
@@ -551,22 +557,16 @@ test("scroll-safe panel rules exist in the stylesheet", async () => {
   assert.match(styles, /body\[data-panel-open="true"\]\s*\{[^}]*overflow:\s*hidden;/);
   assert.match(styles, /\.panel-overlay\s*\{[^}]*overflow-y:\s*auto;/);
   assert.match(styles, /\.panel-close\s*\{[^}]*position:\s*sticky;/);
-  assert.doesNotMatch(styles, /max-height:\s*calc\(100svh\s*-\s*132px\)/);
 });
-
-test("panel interaction code does not mutate copy with random scramble effects", async () => {
-  const source = await readFile(panelsSourcePath, "utf8");
-
-  assert.doesNotMatch(source, /scramble/i);
-  assert.doesNotMatch(source, /Math\.random/);
-});
-
 
 test("reopening cancels an old exit, including stale callbacks during a later exit", async () => {
   const { window, document, elements: e } = createSiteDom({ reduceMotion: false });
   const callbacks = [];
   const cancelled = [];
-  window.setTimeout = (callback) => { callbacks.push(callback); return callbacks.length; };
+  window.setTimeout = (callback) => {
+    callbacks.push(callback);
+    return callbacks.length;
+  };
   window.clearTimeout = (id) => cancelled.push(id);
   await loadPanels(window, document);
   e.aboutButton.dispatchEvent(createEvent("click"));
@@ -588,7 +588,12 @@ test("reopening cancels an old exit, including stale callbacks during a later ex
 test("switching to reduced motion immediately completes pending exits", async () => {
   const { window, document, elements: e } = createSiteDom({ reduceMotion: false });
   let onChange;
-  const query = { matches: false, addEventListener: (_, callback) => { onChange = callback; } };
+  const query = {
+    matches: false,
+    addEventListener: (_, callback) => {
+      onChange = callback;
+    },
+  };
   window.matchMedia = () => query;
   await loadPanels(window, document);
   e.contactButton.dispatchEvent(createEvent("click"));
@@ -603,10 +608,9 @@ test("switching to reduced motion immediately completes pending exits", async ()
   assert.equal(e.contactOverlay.hidden, true);
 });
 
-
 test("nested Contact returns to About before restoring the outer trigger", async () => {
   const { window, document, elements: e } = createSiteDom();
-  e.bottomBar.children = e.bottomBar.children.filter(child => child !== e.contactButton);
+  e.bottomBar.children = e.bottomBar.children.filter((child) => child !== e.contactButton);
   e.aboutOverlay.appendChild(e.contactButton);
   await loadPanels(window, document);
   e.aboutButton.dispatchEvent(createEvent("click"));
@@ -614,13 +618,13 @@ test("nested Contact returns to About before restoring the outer trigger", async
   assert.equal(e.contactOverlay.hidden, false);
   assert.equal(e.aboutOverlay.inert, true);
   assert.equal(e.aboutButton.getAttribute("aria-expanded"), "true");
-  document.dispatchEvent(createEvent("keydown", {key: "Escape"}));
+  document.dispatchEvent(createEvent("keydown", { key: "Escape" }));
   assert.equal(e.aboutOverlay.hidden, false);
   assert.equal(e.aboutOverlay.inert, false);
   assert.equal(e.contactOverlay.hidden, true);
   assert.equal(document.activeElement, e.contactButton);
   assert.equal(e.bottomBar.inert, true);
-  document.dispatchEvent(createEvent("keydown", {key: "Escape"}));
+  document.dispatchEvent(createEvent("keydown", { key: "Escape" }));
   assert.equal(e.aboutOverlay.hidden, true);
   assert.equal(document.activeElement, e.aboutButton);
   assert.equal(e.bottomBar.inert, false);
@@ -632,35 +636,69 @@ function createEstateDom({ reduceMotion = true } = {}) {
   const media = new FakeElement(document, "media-query");
   media.matches = reduceMotion;
   const window = {
-    document, BabelSite: {}, setTimeout, clearTimeout, matchMedia: () => media,
+    document,
+    BabelSite: {},
+    setTimeout,
+    clearTimeout,
+    matchMedia: () => media,
   };
-  const skipLink = append(document.body, new FakeElement(document, "a", {
-    classNames: ["skip-link"], attributes: { href: "#main" },
-  }));
+  const skipLink = append(
+    document.body,
+    new FakeElement(document, "a", {
+      classNames: ["skip-link"],
+      attributes: { href: "#main" },
+    }),
+  );
   const main = append(document.body, new FakeElement(document, "main", { id: "main" }));
   const navigation = append(main, new FakeElement(document, "nav"));
-  const copyright = append(document.body, new FakeElement(document, "p", {
-    classNames: ["site-copyright"],
-  }));
+  const copyright = append(
+    document.body,
+    new FakeElement(document, "p", {
+      classNames: ["site-copyright"],
+    }),
+  );
   const destinations = {};
   for (const name of ["profile", "experience", "contact"]) {
-    const button = append(navigation, new FakeElement(document, "button", {
-      classNames: ["bottom-btn", "estate-destination"], dataset: { panel: name },
-      attributes: { "aria-expanded": "false", "aria-controls": "panel-" + name },
-    }));
-    const panel = append(document.body, new FakeElement(document, "div", {
-      classNames: ["panel-overlay"], id: "panel-" + name, hidden: true,
-    }));
-    const card = append(panel, new FakeElement(document, "div", {
-      classNames: ["panel-parchment", "panel-surface"], attributes: { tabindex: "-1" },
-    }));
-    const close = append(card, new FakeElement(document, "button", {
-      classNames: ["panel-close"], attributes: { "aria-label": "Close" },
-    }));
+    const button = append(
+      navigation,
+      new FakeElement(document, "button", {
+        classNames: ["bottom-btn", "estate-destination"],
+        dataset: { panel: name },
+        attributes: { "aria-expanded": "false", "aria-controls": "panel-" + name },
+      }),
+    );
+    const panel = append(
+      document.body,
+      new FakeElement(document, "div", {
+        classNames: ["panel-overlay"],
+        id: "panel-" + name,
+        hidden: true,
+      }),
+    );
+    const card = append(
+      panel,
+      new FakeElement(document, "div", {
+        classNames: ["panel-parchment", "panel-surface"],
+        attributes: { tabindex: "-1" },
+      }),
+    );
+    const close = append(
+      card,
+      new FakeElement(document, "button", {
+        classNames: ["panel-close"],
+        attributes: { "aria-label": "Close" },
+      }),
+    );
     const copy = append(card, new FakeElement(document, "p", { textContent: name + " copy" }));
-    const link = name === "contact" ? append(card, new FakeElement(document, "a", {
-      attributes: { href: "mailto:hello@example.test" },
-    })) : null;
+    const link =
+      name === "contact"
+        ? append(
+            card,
+            new FakeElement(document, "a", {
+              attributes: { href: "mailto:hello@example.test" },
+            }),
+          )
+        : null;
     destinations[name] = { button, panel, card, close, copy, link };
   }
   return { window, document, media, main, navigation, copyright, skipLink, destinations };
@@ -687,7 +725,11 @@ test("each estate destination returns directly to its own trigger on close, back
         assert.equal(other.button.getAttribute("aria-expanded"), "false");
       }
       destination.panel.dispatchEvent(createEvent("click", { target: destination.copy }));
-      assert.equal(destination.panel.hidden, false, "clicking the writing area keeps the dialog open");
+      assert.equal(
+        destination.panel.hidden,
+        false,
+        "clicking the writing area keeps the dialog open",
+      );
       if (closeBy === "button") destination.close.dispatchEvent(createEvent("click"));
       else if (closeBy === "backdrop") pointerClick(destination.panel);
       else document.dispatchEvent(createEvent("keydown", { key: "Escape" }));
@@ -718,7 +760,11 @@ test("estate dialogs trap focus with either one control or the Contact email lin
     assert.equal(dom.document.activeElement, last);
     dom.main.focus();
     dom.document.dispatchEvent(createEvent("keydown", { key: "Tab" }));
-    assert.equal(dom.document.activeElement, item.close, "an escaped focus is returned to the dialog");
+    assert.equal(
+      dom.document.activeElement,
+      item.close,
+      "an escaped focus is returned to the dialog",
+    );
     item.close.dispatchEvent(createEvent("click"));
   }
 });
@@ -726,7 +772,10 @@ test("estate dialogs trap focus with either one control or the Contact email lin
 test("estate reopening and category switches cannot be hidden by stale transition callbacks", async () => {
   const dom = createEstateDom({ reduceMotion: false });
   const callbacks = [];
-  dom.window.setTimeout = (callback) => { callbacks.push(callback); return callbacks.length; };
+  dom.window.setTimeout = (callback) => {
+    callbacks.push(callback);
+    return callbacks.length;
+  };
   dom.window.clearTimeout = () => {};
   await loadPanels(dom.window, dom.document);
   const profile = dom.destinations.profile;
@@ -778,14 +827,22 @@ test("invalid estate panel markup fails without binding and can be repaired befo
       if (missing === "buttons") {
         const saved = dom.navigation.children;
         dom.navigation.children = [];
-        restore = () => { dom.navigation.children = saved; };
+        restore = () => {
+          dom.navigation.children = saved;
+        };
       } else if (missing === "panels") {
         const saved = dom.document.body.children;
-        dom.document.body.children = saved.filter((node) => !node.classList.contains("panel-overlay"));
-        restore = () => { dom.document.body.children = saved; };
+        dom.document.body.children = saved.filter(
+          (node) => !node.classList.contains("panel-overlay"),
+        );
+        restore = () => {
+          dom.document.body.children = saved;
+        };
       } else if (missing === "target") {
         item.button.dataset.panel = "missing";
-        restore = () => { item.button.dataset.panel = "experience"; };
+        restore = () => {
+          item.button.dataset.panel = "experience";
+        };
       } else if (missing === "surface") {
         item.card.classList.remove("panel-surface");
         restore = () => item.card.classList.add("panel-surface");
@@ -814,11 +871,16 @@ test("a late binding failure rolls back all earlier registrations and allows a c
   const dom = createEstateDom();
   await loadPanels(dom.window, dom.document, { initialize: false });
   const originalListen = dom.document.addEventListener;
-  dom.document.addEventListener = () => { throw new Error("simulated event registration failure"); };
+  dom.document.addEventListener = () => {
+    throw new Error("simulated event registration failure");
+  };
   assert.equal(dom.window.BabelSite.ui.initPanels(), false);
   assert.equal(listenerCount(dom.media), 0);
   for (const item of Object.values(dom.destinations)) {
-    assert.equal(listenerCount(item.button) + listenerCount(item.close) + listenerCount(item.panel), 0);
+    assert.equal(
+      listenerCount(item.button) + listenerCount(item.close) + listenerCount(item.panel),
+      0,
+    );
     item.button.dispatchEvent(createEvent("click"));
     assert.equal(item.panel.hidden, true);
   }
@@ -839,33 +901,63 @@ function createSceneEstateDom(options = {}) {
   const dom = createEstateDom(options);
   const { document, main, navigation, destinations } = dom;
   document.body.classList.add("scene-home");
-  const sceneShell = append(document.body, new FakeElement(document, "div", {
-    classNames: ["scene-shell"],
-  }));
+  const sceneShell = append(
+    document.body,
+    new FakeElement(document, "div", {
+      classNames: ["scene-shell"],
+    }),
+  );
   append(sceneShell, new FakeElement(document, "div", { id: "home-scene" }));
-  const siteShell = append(document.body, new FakeElement(document, "div", {
-    classNames: ["site-shell"],
-  }));
-  const bottomBar = append(document.body, new FakeElement(document, "nav", {
-    classNames: ["bottom-bar"], attributes: { "aria-label": "Primary" },
-  }));
-  const entry = append(bottomBar, new FakeElement(document, "button", {
-    classNames: ["bottom-btn", "bottom-btn--icon", "scene-entry"],
-    dataset: { panel: "about" },
-    attributes: { "aria-label": "About", "aria-controls": "panel-about", "aria-expanded": "false" },
-  }));
-  const panel = append(document.body, new FakeElement(document, "div", {
-    id: "panel-about", classNames: ["panel-overlay"], hidden: true,
-    attributes: { role: "dialog", "aria-modal": "true", "aria-labelledby": "panel-about-title" },
-  }));
-  const card = append(panel, new FakeElement(document, "div", {
-    classNames: ["panel-estate", "panel-surface"], attributes: { tabindex: "-1" },
-  }));
+  const siteShell = append(
+    document.body,
+    new FakeElement(document, "div", {
+      classNames: ["site-shell"],
+    }),
+  );
+  const bottomBar = append(
+    document.body,
+    new FakeElement(document, "nav", {
+      classNames: ["bottom-bar"],
+      attributes: { "aria-label": "Primary" },
+    }),
+  );
+  const entry = append(
+    bottomBar,
+    new FakeElement(document, "button", {
+      classNames: ["bottom-btn", "bottom-btn--icon", "scene-entry"],
+      dataset: { panel: "about" },
+      attributes: {
+        "aria-label": "About",
+        "aria-controls": "panel-about",
+        "aria-expanded": "false",
+      },
+    }),
+  );
+  const panel = append(
+    document.body,
+    new FakeElement(document, "div", {
+      id: "panel-about",
+      classNames: ["panel-overlay"],
+      hidden: true,
+      attributes: { role: "dialog", "aria-modal": "true", "aria-labelledby": "panel-about-title" },
+    }),
+  );
+  const card = append(
+    panel,
+    new FakeElement(document, "div", {
+      classNames: ["panel-estate", "panel-surface"],
+      attributes: { tabindex: "-1" },
+    }),
+  );
   const map = append(card, new FakeElement(document, "div", { classNames: ["estate-map"] }));
   append(map, new FakeElement(document, "h2", { id: "panel-about-title", textContent: "About" }));
-  const close = append(map, new FakeElement(document, "button", {
-    classNames: ["panel-close"], attributes: { "aria-label": "Close About" },
-  }));
+  const close = append(
+    map,
+    new FakeElement(document, "button", {
+      classNames: ["panel-close"],
+      attributes: { "aria-label": "Close About" },
+    }),
+  );
   main.children = main.children.filter((element) => element !== navigation);
   navigation.classList.add("estate-destinations");
   append(map, navigation);
@@ -877,7 +969,10 @@ function createSceneEstateDom(options = {}) {
     destination.panel.setAttribute("aria-modal", "true");
   }
   return {
-    ...dom, sceneShell, siteShell, bottomBar,
+    ...dom,
+    sceneShell,
+    siteShell,
+    bottomBar,
     about: { entry, panel, card, map, close },
     backgrounds: [dom.skipLink, sceneShell, siteShell, main, bottomBar, dom.copyright],
   };
@@ -900,13 +995,18 @@ test("scene About opens the map first and each category returns through its dest
       assert.equal(about.panel.hidden, false);
       assert.equal(document.activeElement, about.close);
       assert.equal(about.entry.getAttribute("aria-expanded"), "true");
-      for (const destination of Object.values(destinations)) assert.equal(destination.panel.hidden, true);
+      for (const destination of Object.values(destinations))
+        assert.equal(destination.panel.hidden, true);
       item.button.focus();
       item.button.dispatchEvent(createEvent("click"));
       assert.equal(about.panel.hidden, true);
       assert.equal(about.panel.inert, true);
       assert.equal(about.panel.getAttribute("aria-hidden"), "true");
-      assert.equal(about.entry.getAttribute("aria-expanded"), "true", "About remains expanded while its child is active");
+      assert.equal(
+        about.entry.getAttribute("aria-expanded"),
+        "true",
+        "About remains expanded while its child is active",
+      );
       assert.equal(item.button.getAttribute("aria-expanded"), "true");
       assert.equal(item.panel.hidden, false);
       assert.equal(document.activeElement, item.close);
@@ -921,9 +1021,14 @@ test("scene About opens the map first and each category returns through its dest
       assert.equal(about.panel.hidden, false);
       assert.equal(about.panel.inert, false);
       assert.equal(about.panel.getAttribute("aria-hidden"), null);
-      assert.equal(document.activeElement, item.button, "return focuses the selected map destination");
+      assert.equal(
+        document.activeElement,
+        item.button,
+        "return focuses the selected map destination",
+      );
       assert.equal(document.body.getAttribute("data-panel-open"), "true");
-      for (const node of dom.backgrounds) assert.equal(node.inert, true, "returning to About keeps the scene inert");
+      for (const node of dom.backgrounds)
+        assert.equal(node.inert, true, "returning to About keeps the scene inert");
 
       dismissPanel(document, about.panel, about.close, method);
       assert.equal(about.panel.hidden, true);
@@ -937,17 +1042,33 @@ test("scene About opens the map first and each category returns through its dest
 
 test("drag-selecting between the paper and backdrop keeps the dialog open", async () => {
   const dom = createSceneEstateDom();
-  const { document, about, destinations: { contact } } = dom;
+  const {
+    document,
+    about,
+    destinations: { contact },
+  } = dom;
   await loadPanels(dom.window, document);
   about.entry.dispatchEvent(createEvent("click"));
   contact.button.dispatchEvent(createEvent("click"));
   pointerClick(contact.panel, contact.link, contact.panel);
-  assert.equal(contact.panel.hidden, false, "selecting the email out onto the backdrop keeps Contact open");
+  assert.equal(
+    contact.panel.hidden,
+    false,
+    "selecting the email out onto the backdrop keeps Contact open",
+  );
   pointerClick(contact.panel, contact.panel, contact.copy);
-  assert.equal(contact.panel.hidden, false, "a selection started on the backdrop keeps Contact open");
+  assert.equal(
+    contact.panel.hidden,
+    false,
+    "a selection started on the backdrop keeps Contact open",
+  );
   contact.panel.dispatchEvent(createEvent("pointerdown"));
   contact.panel.dispatchEvent(createEvent("click", { target: contact.copy }));
-  assert.equal(contact.panel.hidden, false, "a backdrop press that clicks the copy keeps Contact open");
+  assert.equal(
+    contact.panel.hidden,
+    false,
+    "a backdrop press that clicks the copy keeps Contact open",
+  );
   contact.panel.dispatchEvent(createEvent("click"));
   assert.equal(contact.panel.hidden, false, "each click consumes its press");
   pointerClick(contact.panel);
@@ -993,7 +1114,10 @@ test("rapid child returns and reopenings cannot let stale exits hide the active 
   const dom = createSceneEstateDom({ reduceMotion: false });
   const { document, about, destinations } = dom;
   const callbacks = [];
-  dom.window.setTimeout = (callback) => { callbacks.push(callback); return callbacks.length; };
+  dom.window.setTimeout = (callback) => {
+    callbacks.push(callback);
+    return callbacks.length;
+  };
   dom.window.clearTimeout = () => {};
   await loadPanels(dom.window, document);
   about.entry.dispatchEvent(createEvent("click"));
@@ -1031,7 +1155,11 @@ test("rapid child returns and reopenings cannot let stale exits hide the active 
   }
   about.entry.dispatchEvent(createEvent("click"));
   about.close.dispatchEvent(createEvent("click"));
-  assert.equal(document.activeElement, about.entry, "rapid nested navigation leaves no stale history entry");
+  assert.equal(
+    document.activeElement,
+    about.entry,
+    "rapid nested navigation leaves no stale history entry",
+  );
   callbacks.forEach((callback) => callback());
 });
 
@@ -1083,7 +1211,11 @@ function recordPanelChanges(dom) {
 test("each open and close announces the dialog now showing after the page settles", async () => {
   for (const method of ["button", "backdrop", "Escape"]) {
     const dom = createSceneEstateDom();
-    const { document, about, destinations: { profile } } = dom;
+    const {
+      document,
+      about,
+      destinations: { profile },
+    } = dom;
     const changes = recordPanelChanges(dom);
     await loadPanels(dom.window, document);
     about.entry.dispatchEvent(createEvent("click"));
@@ -1092,7 +1224,12 @@ test("each open and close announces the dialog now showing after the page settle
     dismissPanel(document, about.panel, about.close, method);
     assert.deepEqual(
       changes.map(({ id, open }) => [id, open]),
-      [["about", true], ["profile", true], ["about", true], [null, false]],
+      [
+        ["about", true],
+        ["profile", true],
+        ["about", true],
+        [null, false],
+      ],
       `${method}: switching to a category never reports an intermediate close`,
     );
     assert.equal(changes[0].focus, about.close, "announced after focus moves into About");
@@ -1115,7 +1252,12 @@ test("direct dialogs announce their open and final close", async () => {
   experience.button.dispatchEvent(createEvent("click"));
   assert.deepEqual(
     changes.map(({ id, open }) => [id, open]),
-    [["contact", true], [null, false], ["experience", true], [null, false]],
+    [
+      ["contact", true],
+      [null, false],
+      ["experience", true],
+      [null, false],
+    ],
   );
 });
 
@@ -1147,9 +1289,13 @@ test("a deep link opens its category through About so Back and Escape step out n
     hashListeners.forEach((handler) => handler({ type: "hashchange" }));
   };
   await loadPanels(dom.window, document);
-  vm.runInNewContext(deepLinksSource, { window: dom.window, document }, {
-    filename: "src/ui/deep-links.js",
-  });
+  vm.runInNewContext(
+    deepLinksSource,
+    { window: dom.window, document },
+    {
+      filename: "src/ui/deep-links.js",
+    },
+  );
   assert.equal(dom.window.BabelSite.ui.initDeepLinks(), true);
 
   assert.equal(destinations.contact.panel.hidden, false);

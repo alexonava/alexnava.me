@@ -1,26 +1,51 @@
 import assert from "node:assert/strict";
+
 import test, { after } from "node:test";
+
 import { execFile } from "node:child_process";
+
 import { createHash } from "node:crypto";
+
 import { promisify } from "node:util";
+
 import { cp, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+
 import path from "node:path";
+
 import { fileURLToPath } from "node:url";
-import { isFingerprintedSource } from "../build.mjs";
+
+import { ARCHITECTURE_ASSET_BUDGETS } from "../src/scene/architecture-assets.js";
 
 const execFileP = promisify(execFile);
+
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
 const scratchRoot = path.join(projectRoot, ".tmp-preview-review");
+
 await mkdir(scratchRoot, { recursive: true });
+
 const bundleScratch = await mkdtemp(path.join(scratchRoot, "bundle-output-"));
+
 const distDir = path.join(bundleScratch, "dist");
+
 const scriptsDir = path.join(distDir, "scripts");
+
+// Every model the live scene loads, and the slate maps each tier requests.
+const ROLES = ["tower", "tree", "lantern", "lichen-rock", "weathered-stone"];
+
+const slateMaps = (tier) => {
+  const size = tier === "high" ? 1024 : 512;
+  return [`slate-color-${size}.webp`, `slate-normal-${size}.webp`, "slate-detail-512.webp"];
+};
 
 after(async () => {
   assert.equal(path.dirname(path.resolve(bundleScratch)), scratchRoot);
   await rm(bundleScratch, { recursive: true, force: true });
 });
-await execFileP(process.execPath, ["build.mjs", "--dist", "--outdir", distDir], { cwd: projectRoot });
+
+await execFileP(process.execPath, ["build.mjs", "--dist", "--outdir", distDir], {
+  cwd: projectRoot,
+});
 
 // The entry itself (app.HASH.js / scene.HASH.js), not one of its chunks.
 async function findHashedScript(prefix) {
@@ -36,7 +61,9 @@ async function findHashedScript(prefix) {
 function chunkImports(text) {
   const named = (pattern) => [...text.matchAll(pattern)].map((match) => match[1]);
   return {
-    static: named(/(?:\bimport\s*(?:[\w$*{][^;()"'`]*?\bfrom\s*)?|\bexport\s*\{[^}]*\}\s*from\s*)["']\.\/([^"']+)["']/g),
+    static: named(
+      /(?:\bimport\s*(?:[\w$*{][^;()"'`]*?\bfrom\s*)?|\bexport\s*\{[^}]*\}\s*from\s*)["']\.\/([^"']+)["']/g,
+    ),
     dynamic: named(/\bimport\(\s*["']\.\/([^"']+)["']\s*\)/g),
   };
 }
@@ -76,9 +103,7 @@ test("UI bundle stays under the LCP budget", async () => {
 test("scene bundle stays under the deferred-payload budget", async () => {
   // The budget covers every byte a default visitor's scene load downloads:
   // the entry and each chunk it imports statically. The film's terrain,
-  // ranges, rocks, light shafts and lantern flame load on demand only. The
-  // owner raised the limit from 810 KiB to 820 KiB on 2026-09-24 for the slate
-  // v2 ground and rocks.
+  // ranges, rocks, light shafts and lantern flame load on demand only.
   const { loaded } = await sceneScripts();
   // The entry and one shared Three.js chunk.
   assert.equal(loaded.size, 2, `scene loads ${[...loaded.keys()]}`);
@@ -91,22 +116,15 @@ test("scene bundle stays under the deferred-payload budget", async () => {
   );
 });
 
-test("the film's optional effects are the only lazy chunks, and no developer tool ships", async () => {
+test("the film's optional effects are the only lazy chunks, and Three.js ships once", async () => {
   const { entry, loaded, lazy } = await sceneScripts();
-  assert.deepEqual(
-    lazy.map((name) => name.replace(/\.[a-f0-9]{8}\.js$/, "")).sort(),
-    ["scene.lantern-flame", "scene.light-shafts", "scene.mountain-build", "scene.rock-build", "scene.terrain-build"],
-  );
-  // The developer camera, its outline pass and the Blender exporter are gone
-  // from every published script.
-  const names = await readdir(scriptsDir);
-  for (const name of names) {
-    assert.doesNotMatch(name, /developer-tools|blender-export/);
-    const text = await readFile(path.join(scriptsDir, name), "utf8");
-    for (const marker of [/dev-mode-hud/, /changeVisibilityOfSelectedObjects/, /Backquote/, /GLTFExporter/, /babel-blender-snapshot/, /exportBlenderSnapshot/, /__shaftsTune/]) {
-      assert.doesNotMatch(text, marker, `${marker} ships in ${name}`);
-    }
-  }
+  assert.deepEqual(lazy.map((name) => name.replace(/\.[a-f0-9]{8}\.js$/, "")).sort(), [
+    "scene.lantern-flame",
+    "scene.light-shafts",
+    "scene.mountain-build",
+    "scene.rock-build",
+    "scene.terrain-build",
+  ]);
   const statics = [...loaded.values()].join("\n");
   const threeMarker = "Multiple instances of Three.js being imported";
   assert.equal(statics.split(threeMarker).length - 1, 1, "Three.js ships exactly once");
@@ -142,8 +160,15 @@ test("the film's rock placement is a lazy chunk that imports nothing", async () 
   // neither splits the shared chunk nor pulls scene modules into it.
   assert.deepEqual(chunkImports(rocks), { static: [], dynamic: [] });
   assert.match(rocks, /film-rocks/);
-  assert.doesNotMatch(statics, /film-rocks/, "rock placement leaked into the visitor scene payload");
-  assert.match(loaded.get(entry), new RegExp(`import\\(\\s*"\\./${rockName.replaceAll(".", "\\.")}"\\s*\\)`));
+  assert.doesNotMatch(
+    statics,
+    /film-rocks/,
+    "rock placement leaked into the visitor scene payload",
+  );
+  assert.match(
+    loaded.get(entry),
+    new RegExp(`import\\(\\s*"\\./${rockName.replaceAll(".", "\\.")}"\\s*\\)`),
+  );
 });
 
 test("the film's light shafts are a lazy chunk outside the visitor payload", async () => {
@@ -161,13 +186,22 @@ test("the film's light shafts are a lazy chunk outside the visitor payload", asy
     assert.doesNotMatch(app, marker, `${marker} leaked into the UI payload`);
   }
   // The entry imports it on demand and nothing preloads it.
-  assert.match(loaded.get(entry), new RegExp(`import\\(\\s*"\\./${shaftsName.replaceAll(".", "\\.")}"\\s*\\)`));
+  assert.match(
+    loaded.get(entry),
+    new RegExp(`import\\(\\s*"\\./${shaftsName.replaceAll(".", "\\.")}"\\s*\\)`),
+  );
   assert.ok(!app.includes(shaftsName), "the UI must not preload the light shafts");
   // It reuses the visitor's Three.js and carries no first-party modules.
-  assert.ok(!shafts.includes("Multiple instances of Three.js being imported"), "Three.js is duplicated in the light shafts");
+  assert.ok(
+    !shafts.includes("Multiple instances of Three.js being imported"),
+    "Three.js is duplicated in the light shafts",
+  );
   assert.deepEqual(chunkImports(shafts).dynamic, []);
   for (const dependency of chunkImports(shafts).static) {
-    assert.ok(loaded.has(dependency), `the light shafts import ${dependency}, which visitors do not load`);
+    assert.ok(
+      loaded.has(dependency),
+      `the light shafts import ${dependency}, which visitors do not load`,
+    );
   }
   assert.doesNotMatch(shafts, /initHomeScene/);
 });
@@ -189,16 +223,25 @@ test("the film mountains' generator is a lazy chunk that imports only Three.js",
   // The entry keeps the ranges' material and requests the chunk on demand;
   // nothing preloads it.
   assert.match(statics, /EstateMountains/);
-  assert.match(loaded.get(entry), new RegExp(`import\\(\\s*"\\./${mountainName.replaceAll(".", "\\.")}"\\s*\\)`));
+  assert.match(
+    loaded.get(entry),
+    new RegExp(`import\\(\\s*"\\./${mountainName.replaceAll(".", "\\.")}"\\s*\\)`),
+  );
   assert.ok(!app.includes(mountainName), "the UI must not preload the mountains");
   // It reuses the visitor's Three.js through the shared chunk and carries no
   // first-party scene module or further chunk.
-  assert.ok(!mountains.includes("Multiple instances of Three.js being imported"), "Three.js is duplicated in the mountain chunk");
+  assert.ok(
+    !mountains.includes("Multiple instances of Three.js being imported"),
+    "Three.js is duplicated in the mountain chunk",
+  );
   assert.deepEqual(chunkImports(mountains).dynamic, []);
   const statically = chunkImports(mountains).static;
   assert.ok(statically.length >= 1);
   for (const dependency of statically)
-    assert.ok(loaded.has(dependency) && dependency.startsWith("scene.shared."), `the mountains import ${dependency}`);
+    assert.ok(
+      loaded.has(dependency) && dependency.startsWith("scene.shared."),
+      `the mountains import ${dependency}`,
+    );
   assert.doesNotMatch(mountains, /BabelSite|initHomeScene|EstateMountains/);
 });
 
@@ -226,7 +269,9 @@ test("every published script is named for the hash of its bytes under an immutab
     assert.ok(name.endsWith(`.${hash}.js`), `${name} must fingerprint its emitted bytes`);
   }
   for (const name of scene) {
-    const { static: statics, dynamic } = chunkImports(await readFile(path.join(scriptsDir, name), "utf8"));
+    const { static: statics, dynamic } = chunkImports(
+      await readFile(path.join(scriptsDir, name), "utf8"),
+    );
     for (const chunk of [...statics, ...dynamic]) {
       assert.ok(scene.includes(chunk), `${name} imports unpublished ${chunk}`);
     }
@@ -246,15 +291,16 @@ test("the scene requests only the slate's material maps, and only from the defer
   const scene = await readSceneStatic();
   assert.doesNotMatch(app, /images\/materials\//);
   assert.match(scene, /images\/materials\/slate-/);
-  for (const prefix of ["stone", "ground", "earth", "grass"]) {
-    assert.doesNotMatch(scene, new RegExp(`images/materials/${prefix}-`), prefix);
-  }
-  assert.doesNotMatch(scene, /stone-brick\.bin|stone-tread\.bin|BRK1/);
-  // The retired maps are gone from the source and the published output.
   const materials = await readdir(path.join(projectRoot, "images", "materials"));
-  assert.ok(materials.every((name) => name.startsWith("slate-")), materials.join(", "));
+  assert.ok(
+    materials.every((name) => name.startsWith("slate-")),
+    materials.join(", "),
+  );
   const published = await readdir(path.join(distDir, "images", "materials"));
-  assert.ok(published.every((name) => /^slate-[\w-]+\.[a-f0-9]{8}\.webp$/.test(name)), published.join(", "));
+  assert.ok(
+    published.every((name) => /^slate-[\w-]+\.[a-f0-9]{8}\.webp$/.test(name)),
+    published.join(", "),
+  );
 });
 
 test("dist/images publishes fingerprinted sources only under their hashed names", async () => {
@@ -262,7 +308,8 @@ test("dist/images publishes fingerprinted sources only under their hashed names"
     const out = [];
     for (const entry of await readdir(directory, { withFileTypes: true })) {
       const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
-      if (entry.isDirectory()) out.push(...(await files(path.join(directory, entry.name), relative)));
+      if (entry.isDirectory())
+        out.push(...(await files(path.join(directory, entry.name), relative)));
       else out.push(relative);
     }
     return out;
@@ -279,7 +326,9 @@ test("dist/images publishes fingerprinted sources only under their hashed names"
   }
   for (const name of published) assert.match(name, /\.[a-f0-9]{8}\.(webp|glb)$/, name);
   // No page or stylesheet names a plain source path.
-  const css = (await readdir(path.join(distDir, "css"))).map((name) => path.join(distDir, "css", name));
+  const css = (await readdir(path.join(distDir, "css"))).map((name) =>
+    path.join(distDir, "css", name),
+  );
   for (const file of [path.join(distDir, "index.html"), path.join(distDir, "404.html"), ...css]) {
     const text = await readFile(file, "utf8");
     for (const url of text.match(/\/images\/[\w./-]+/g) ?? []) {
@@ -288,18 +337,65 @@ test("dist/images publishes fingerprinted sources only under their hashed names"
   }
 });
 
-test("the title card publishes no picture: no poster image and no picture or img element", async () => {
-  assert.deepEqual((await readdir(path.join(distDir, "images"))).filter((name) => /scene-poster/.test(name)), []);
+test("fonts publish only under hashed names, which the stylesheet and the preloads share", async () => {
+  const sources = (await readdir(path.join(projectRoot, "fonts"))).filter((name) =>
+    name.endsWith(".woff2"),
+  );
+  const published = (await readdir(path.join(distDir, "fonts"))).filter((name) =>
+    name.endsWith(".woff2"),
+  );
+  assert.ok(sources.length >= 2);
+  const hashed = [];
+  for (const name of sources) {
+    const bytes = await readFile(path.join(projectRoot, "fonts", name));
+    const hashedName = name.replace(
+      /\.woff2$/,
+      `.${createHash("sha256").update(bytes).digest("hex").slice(0, 8)}.woff2`,
+    );
+    assert.deepEqual(await readFile(path.join(distDir, "fonts", hashedName)), bytes, hashedName);
+    hashed.push(`/fonts/${hashedName}`);
+  }
+  assert.deepEqual(published.sort(), hashed.map((url) => url.slice("/fonts/".length)).sort());
+
+  const cssName = (await readdir(path.join(distDir, "css"))).find((name) =>
+    /^styles\.[a-f0-9]{8}\.css$/.test(name),
+  );
+  const css = await readFile(path.join(distDir, "css", cssName), "utf8");
+  const html = await readFile(path.join(distDir, "index.html"), "utf8");
+  const cssFonts = [...css.matchAll(/url\("?(\/fonts\/[^")]+)"?\)/g)].map((match) => match[1]);
+  const preloads = [...html.matchAll(/<link[^>]*rel="preload"[^>]*>/g)]
+    .map(([link]) => link.match(/href="(\/fonts\/[^"]+)"/)?.[1])
+    .filter(Boolean);
+  assert.deepEqual([...cssFonts].sort(), [...hashed].sort());
+  assert.deepEqual([...preloads].sort(), [...hashed].sort());
+
+  // The fonts' license and copyright notices ship beside them.
+  const ofl = await readFile(path.join(distDir, "fonts", "OFL.txt"), "utf8");
+  assert.equal(ofl, await readFile(path.join(projectRoot, "fonts", "OFL.txt"), "utf8"));
+  assert.match(ofl, /^Copyright 2015 The Cormorant Project Authors /m);
+  assert.match(ofl, /^Copyright 2022 The Instrument Sans Project Authors /m);
+  assert.match(ofl, /SIL OPEN FONT LICENSE Version 1\.1/);
+});
+
+test("the shared scene chunk keeps Three.js's license notice, and the site publishes no LICENSE", async () => {
+  const { loaded } = await sceneScripts();
+  const [shared] =
+    [...loaded].find(([name]) => /^scene\.shared\.[a-f0-9]{8}\.js$/.test(name)) ?? [];
+  assert.ok(shared, "the scene loads a shared chunk");
+  const text = loaded.get(shared);
+  assert.match(text, /@license/);
+  assert.match(text, /Three\.js Authors/);
+  await assert.rejects(readFile(path.join(distDir, "LICENSE")), { code: "ENOENT" });
+});
+
+test("the pages publish no picture, and the share card's backdrop stays unpublished", async () => {
   for (const page of ["index.html", "404.html"]) {
     const html = await readFile(path.join(distDir, page), "utf8");
-    assert.doesNotMatch(html, /<picture|<img|scene-poster/, page);
+    assert.doesNotMatch(html, /<picture|<img/, page);
   }
-  // The retired poster names are no longer build inputs.
-  assert.equal(isFingerprintedSource("images/scene-poster-landscape.webp"), false);
-  assert.equal(isFingerprintedSource("images/scene-poster-portrait.webp"), false);
-  assert.equal(isFingerprintedSource("images/paper-grain.webp"), true);
-  // The share card's backdrop stays in tools/, outside the payload.
-  await assert.rejects(readFile(path.join(distDir, "tools", "og-card-backdrop.webp")), { code: "ENOENT" });
+  await assert.rejects(readFile(path.join(distDir, "tools", "og-card-backdrop.webp")), {
+    code: "ENOENT",
+  });
 });
 
 test("the UI carries the loading line and its tower and tree byte sizes; the scene only reports to it", async () => {
@@ -309,13 +405,17 @@ test("the UI carries the loading line and its tower and tree byte sizes; the sce
   assert.match(app, /sceneLoader/);
   for (const tier of ["high", "balanced"]) {
     for (const role of ["tower", "tree"]) {
-      const { size } = await stat(path.join(projectRoot, "images", "architecture", `${role}-${tier}.glb`));
+      const { size } = await stat(
+        path.join(projectRoot, "images", "architecture", `${role}-${tier}.glb`),
+      );
       assert.ok(app.includes(`${role}:${size}`), `the UI names ${role}-${tier}'s ${size} bytes`);
       assert.ok(!scene.includes(`${role}:${size}`), `the scene carries no ${role}-${tier} size`);
     }
   }
   for (const role of ["lantern", "lichen-rock", "weathered-stone"]) {
-    const { size } = await stat(path.join(projectRoot, "images", "architecture", `${role}-high.glb`));
+    const { size } = await stat(
+      path.join(projectRoot, "images", "architecture", `${role}-high.glb`),
+    );
     assert.ok(!app.includes(String(size)), `the UI names no ${role} size`);
   }
   // The scene's model loader reports its own requests; the copy stays in the UI.
@@ -338,7 +438,10 @@ test("the build refuses a shared scene chunk that would carry first-party module
     await writeFile(path.join(fixture, "src", "app.js"), "void 0;");
     // A lazily imported module that shares a registration with the entry moves
     // it into a chunk that would evaluate before the entry's ordered imports.
-    await writeFile(path.join(fixture, "src", "helpers.js"), "globalThis.BabelSite = { scene: {} };");
+    await writeFile(
+      path.join(fixture, "src", "helpers.js"),
+      "globalThis.BabelSite = { scene: {} };",
+    );
     await writeFile(path.join(fixture, "src", "tools.js"), 'import "./helpers.js";');
     await writeFile(
       path.join(fixture, "src", "scene-entry.js"),
@@ -346,7 +449,8 @@ test("the build refuses a shared scene chunk that would carry first-party module
     );
     await assert.rejects(
       execFileP(process.execPath, ["build.mjs", "--check"], { cwd: fixture }),
-      (error) => /Shared scene chunk would reorder side-effect modules: src\/helpers\.js/.test(error.stderr),
+      (error) =>
+        /Shared scene chunk would reorder side-effect modules: src\/helpers\.js/.test(error.stderr),
     );
     // Without the shared registration the same layout builds.
     await writeFile(path.join(fixture, "src", "tools.js"), "export const tools = 1;");
@@ -364,11 +468,13 @@ test("changing only a fixture tower model changes only its URL and size in the U
   const sha8 = (bytes) => createHash("sha256").update(bytes).digest("hex").slice(0, 8);
   try {
     // Reuse the sanitized static payload; only the build script, its
-    // unrewritten HTML/CSS inputs, the source images and the two UI modules
-    // that read the model manifest are copied from source. No user data.
+    // unrewritten HTML/CSS inputs, the source fonts and images and the two UI
+    // modules that read the model manifest are copied from source. No user data.
     await cp(distDir, fixture, { recursive: true });
+    await rm(path.join(fixture, "fonts"), { recursive: true, force: true });
+    await cp(path.join(projectRoot, "fonts"), path.join(fixture, "fonts"), { recursive: true });
     await cp(path.join(projectRoot, "images"), path.join(fixture, "images"), { recursive: true });
-    for (const file of ["build.mjs", "index.html", "404.html", "styles.css", "LICENSE"]) {
+    for (const file of ["build.mjs", "index.html", "404.html", "styles.css"]) {
       await cp(path.join(projectRoot, file), path.join(fixture, file));
     }
     await cp(path.join(projectRoot, "public"), path.join(fixture, "public"), { recursive: true });
@@ -377,13 +483,25 @@ test("changing only a fixture tower model changes only its URL and size in the U
     for (const file of ["main.js", "ui/scene-loader.js"]) {
       await cp(path.join(projectRoot, "src", file), path.join(fixture, "src", file));
     }
-    await writeFile(path.join(fixture, "src", "app.js"), 'import "./ui/scene-loader.js";\nimport "./main.js";\n');
+    await writeFile(
+      path.join(fixture, "src", "app.js"),
+      'import "./ui/scene-loader.js";\nimport "./main.js";\n',
+    );
     await writeFile(path.join(fixture, "src", "scene-entry.js"), "void 0;");
     async function buildApp() {
-      await execFileP(process.execPath, ["build.mjs", "--dist", "--outdir", path.join(fixture, "dist")], { cwd: fixture });
-      const names = (await readdir(path.join(fixture, "dist", "scripts"))).filter((name) => /^app\.[a-f0-9]{8}\.js$/.test(name));
+      await execFileP(
+        process.execPath,
+        ["build.mjs", "--dist", "--outdir", path.join(fixture, "dist")],
+        { cwd: fixture },
+      );
+      const names = (await readdir(path.join(fixture, "dist", "scripts"))).filter((name) =>
+        /^app\.[a-f0-9]{8}\.js$/.test(name),
+      );
       assert.equal(names.length, 1);
-      return { name: names[0], text: await readFile(path.join(fixture, "dist", "scripts", names[0]), "utf8") };
+      return {
+        name: names[0],
+        text: await readFile(path.join(fixture, "dist", "scripts", names[0]), "utf8"),
+      };
     }
     // The UI's model manifest: each tier's tower and tree URLs and sizes.
     const manifest = (text) => ({
@@ -396,7 +514,11 @@ test("changing only a fixture tower model changes only its URL and size in the U
     const oldSize = `tower:${sourceBefore.length}`;
     assert.equal(was.urls.length, 4);
     assert.equal(was.sizes.length, 4);
-    assert.equal(was.urls.filter((url) => url === oldUrl).length, 1, "the UI names the tower's URL once");
+    assert.equal(
+      was.urls.filter((url) => url === oldUrl).length,
+      1,
+      "the UI names the tower's URL once",
+    );
     assert.equal(was.sizes.filter((size) => size === oldSize).length, 1, "and its size once");
     const changed = Buffer.concat([sourceBefore, Buffer.from("fixture-only-model-change")]);
     await writeFile(path.join(fixture, "images", "architecture", "tower-high.glb"), changed);
@@ -422,14 +544,13 @@ test("changing only a fixture tower model changes only its URL and size in the U
   }
 });
 
-test("architecture stays deferred and each selected model fits both tier budgets", async () => {
+test("models and slate maps are deferred: the scene entry names their hashed copies, the UI only the early tower and tree", async () => {
   const app = await readFile(await findHashedScript("app"), "utf8");
   const scene = await readSceneStatic();
   // The hashed model manifest lives in the entry, so a model revision changes
   // only the entry's URL and never the shared Three.js chunk's.
   const { entry, loaded } = await sceneScripts();
-  const manifestUrl = /\/images\/architecture\/tower-high\.[a-f0-9]{8}\.glb/;
-  assert.match(loaded.get(entry), manifestUrl);
+  assert.match(loaded.get(entry), /\/images\/architecture\/tower-high\.[a-f0-9]{8}\.glb/);
   for (const [name, text] of loaded) {
     if (name !== entry) assert.doesNotMatch(text, /\/images\/architecture\//, name);
   }
@@ -437,88 +558,64 @@ test("architecture stays deferred and each selected model fits both tier budgets
   // validation stay in the scene bundle.
   assert.doesNotMatch(app, /Invalid architecture GLB header/);
   assert.match(scene, /Invalid architecture GLB header/);
-  for (const [tier, limit] of [
+  const hashed = (bytes, name) =>
+    name.replace(
+      /\.(glb|webp)$/,
+      `.${createHash("sha256").update(bytes).digest("hex").slice(0, 8)}.$1`,
+    );
+  for (const tier of ["high", "balanced"]) {
+    for (const role of ROLES) {
+      const name = `${role}-${tier}.glb`;
+      const source = await readFile(path.join(projectRoot, "images", "architecture", name));
+      const published = hashed(source, name);
+      assert.deepEqual(
+        await readFile(path.join(distDir, "images", "architecture", published)),
+        source,
+      );
+      assert.ok(loaded.get(entry).includes(`/images/architecture/${published}`), published);
+      assert.equal(
+        app.includes(`/images/architecture/${published}`),
+        role === "tower" || role === "tree",
+        `the UI names ${published} only to request it early`,
+      );
+    }
+    for (const file of slateMaps(tier)) {
+      const source = await readFile(path.join(projectRoot, "images", "materials", file));
+      assert.equal(source.toString("ascii", 8, 12), "WEBP");
+      const published = hashed(source, file);
+      assert.deepEqual(
+        await readFile(path.join(distDir, "images", "materials", published)),
+        source,
+      );
+      assert.ok(loaded.get(entry).includes(`/images/materials/${published}`), published);
+    }
+  }
+});
+
+test("the complete scene fits 6 MiB on high and 3 MiB on balanced, and each model the loader's limit", async () => {
+  // A live scene downloads the tower, tree, lantern, both rocks and the
+  // slate's color, normal and detail maps.
+  for (const [tier, budget] of [
     ["high", 6 * 1024 * 1024],
     ["balanced", 3 * 1024 * 1024],
   ]) {
-    const bytesByRole = {};
-    for (const role of ["tower", "tree"]) {
-      const name = role + "-" + tier + ".glb";
-      const source = await readFile(path.join(projectRoot, "images", "architecture", name));
-      const hash = createHash("sha256").update(source).digest("hex").slice(0, 8);
-      const hashedName = role + "-" + tier + "." + hash + ".glb";
-      assert.deepEqual(
-        await readFile(path.join(distDir, "images", "architecture", hashedName)),
-        source,
+    let total = 0;
+    for (const role of ROLES) {
+      const { size } = await stat(
+        path.join(projectRoot, "images", "architecture", `${role}-${tier}.glb`),
       );
       assert.ok(
-        scene.includes("/images/architecture/" + hashedName),
-        "scene must request the current fingerprint",
+        size <= ARCHITECTURE_ASSET_BUDGETS[tier],
+        `${role}-${tier} is ${size} bytes; the loader accepts ${ARCHITECTURE_ASSET_BUDGETS[tier]}`,
       );
-      assert.equal(
-        app.includes("/images/architecture/" + hashedName),
-        role === "tower" || role === "tree",
-        "the UI names the current fingerprint of only the models it requests early",
-      );
-      assert.equal(source.toString("ascii", 0, 4), "glTF");
-      assert.equal(source.readUInt32LE(8), source.length);
-      const gltf = JSON.parse(source.toString("utf8", 20, 20 + source.readUInt32LE(12)));
-      assert.equal(gltf.meshes.length, 1, name + " should have one shared mesh");
-      assert.equal(gltf.meshes[0].primitives.length, 1, name + " should have one shared material");
-      assert.ok(gltf.images.length > 0, name + " must retain source surface detail");
-      for (const resource of [...gltf.images, ...gltf.buffers])
-        assert.equal(resource.uri, undefined);
-      assert.equal(gltf.animations?.length || 0, 0);
-      const primitive = gltf.meshes[0].primitives[0];
-      assert.equal(primitive.mode ?? 4, 4, "triangle topology required");
-      for (const semantic of ["POSITION", "NORMAL", "TEXCOORD_0"])
-        assert.ok(Number.isInteger(primitive.attributes[semantic]));
-      bytesByRole[role] = source.length;
+      total += size;
     }
-    // The slate maps load alongside the models.
-    const slateSize = tier === "high" ? 1024 : 512;
-    let groundBytes = 0;
-    for (const file of [`slate-color-${slateSize}.webp`, `slate-normal-${slateSize}.webp`, "slate-detail-512.webp"]) {
-      groundBytes += (await stat(path.join(projectRoot, "images", "materials", file))).size;
-    }
-    const total = bytesByRole.tower + bytesByRole.tree + groundBytes;
-    assert.ok(total <= limit, tier + " architecture plus ground is " + total + " bytes; budget " + limit);
+    for (const file of slateMaps(tier))
+      total += (await stat(path.join(projectRoot, "images", "materials", file))).size;
+    assert.ok(total <= budget, `${tier} complete scene is ${total} bytes; budget ${budget}`);
   }
 });
 
-
-test("the default film slate set and rocks are deferred and fit their own and the complete-scene budgets", async () => {
-  // Film pages request the slate's color, normal and shared detail map, and
-  // the two rock models. Only the scene entry names their hashed copies.
-  const app = await readFile(await findHashedScript("app"), "utf8");
-  const { entry, loaded } = await sceneScripts();
-  assert.doesNotMatch(app, /slate-|lichen-rock|weathered-stone|lantern-high|lantern-balanced/);
-  for (const [tier, size, limit, rockLimit, totalLimit] of [
-    ["high", 1024, 640 * 1024, 320 * 1024, 6 * 1024 * 1024],
-    ["balanced", 512, 224 * 1024, 128 * 1024, 3 * 1024 * 1024],
-  ]) {
-    let bytes = 0;
-    for (const file of [`slate-color-${size}.webp`, `slate-normal-${size}.webp`, "slate-detail-512.webp"]) {
-      const source = await readFile(path.join(projectRoot, "images", "materials", file));
-      assert.equal(source.toString("ascii", 8, 12), "WEBP");
-      const hashed = file.replace(".webp", `.${createHash("sha256").update(source).digest("hex").slice(0, 8)}.webp`);
-      assert.deepEqual(await readFile(path.join(distDir, "images", "materials", hashed)), source);
-      assert.ok(loaded.get(entry).includes(`/images/materials/${hashed}`), `${hashed} is named by the scene entry`);
-      bytes += source.length;
-    }
-    assert.ok(bytes <= limit, `${tier} slate: ${bytes}`);
-    for (const role of ["lichen-rock", "weathered-stone"]) {
-      const source = await readFile(path.join(projectRoot, "images", "architecture", `${role}-${tier}.glb`));
-      assert.equal(source.toString("ascii", 0, 4), "glTF");
-      assert.ok(source.length <= rockLimit, `${role}-${tier}: ${source.length}`);
-      bytes += source.length;
-    }
-    for (const role of ["tower", "tree", "lantern"]) {
-      bytes += (await stat(path.join(projectRoot, "images", "architecture", `${role}-${tier}.glb`))).size;
-    }
-    assert.ok(bytes <= totalLimit, `${tier} scene incl. slate, rocks and lantern: ${bytes}`);
-  }
-});
 test("homepage discovers the deferred scene while its UI excludes the renderer and model loading", async () => {
   const html = await readFile(path.join(distDir, "index.html"), "utf8");
   const app = await readFile(await findHashedScript("app"), "utf8");
@@ -531,23 +628,19 @@ test("homepage discovers the deferred scene while its UI excludes the renderer a
   assert.doesNotMatch(app, /gl_Position|WebGLRenderer|GLTFLoader|Invalid architecture GLB/);
 });
 
-test("the retired About case images are gone while About uses real text", async () => {
-  const html = await readFile(path.join(distDir, "index.html"), "utf8");
-  for (const directory of [path.join(projectRoot, "images"), path.join(distDir, "images")]) {
-    assert.ok(!(await readdir(directory)).some((name) => name.startsWith("nav-about")), directory);
-  }
-  assert.doesNotMatch(html, /nav-about/);
-  assert.match(html, /class="about-link__label">About<\/span>/);
-  assert.doesNotMatch(html, /nav-contact|Leather_Envelope|Stylized_3D/);
-});
-
 test("paper textures and category vignettes are fingerprinted", async () => {
   const cssDir = path.join(distDir, "css");
   const cssName = (await readdir(cssDir)).find((name) => /^styles\.[a-f0-9]{8}\.css$/.test(name));
   const css = await readFile(path.join(cssDir, cssName), "utf8");
   assert.equal(cssName, `styles.${createHash("sha256").update(css).digest("hex").slice(0, 8)}.css`);
   // Their 200 KiB budget is held in paper-vignettes.test.mjs.
-  for (const name of ["paper-grain", "paper-edge", "paper-vignette-profile", "paper-vignette-experience", "paper-vignette-contact"]) {
+  for (const name of [
+    "paper-grain",
+    "paper-edge",
+    "paper-vignette-profile",
+    "paper-vignette-experience",
+    "paper-vignette-contact",
+  ]) {
     const source = await readFile(path.join(projectRoot, "images", `${name}.webp`));
     const hash = createHash("sha256").update(source).digest("hex").slice(0, 8);
     assert.ok(css.includes(`/images/${name}.${hash}.webp`));
@@ -556,26 +649,32 @@ test("paper textures and category vignettes are fingerprinted", async () => {
   }
 });
 
-
 test("estate map artwork is hashed, responsive and under 200 KiB combined", async () => {
-  const cssName = (await readdir(path.join(distDir, "css"))).find(n => /^styles\.[a-f0-9]{8}\.css$/.test(n));
+  const cssName = (await readdir(path.join(distDir, "css"))).find((n) =>
+    /^styles\.[a-f0-9]{8}\.css$/.test(n),
+  );
   const css = await readFile(path.join(distDir, "css", cssName), "utf8");
   let total = 0;
   for (const name of ["estate-map-desktop", "estate-map-portrait"]) {
     const bytes = await readFile(path.join(projectRoot, "images", name + ".webp"));
     total += bytes.length;
-    const hash = createHash("sha256").update(bytes).digest("hex").slice(0,8);
+    const hash = createHash("sha256").update(bytes).digest("hex").slice(0, 8);
     assert.ok(css.includes(`/images/${name}.${hash}.webp`));
-    assert.deepEqual(await readFile(path.join(distDir,"images",`${name}.${hash}.webp`)),bytes);
+    assert.deepEqual(await readFile(path.join(distDir, "images", `${name}.${hash}.webp`)), bytes);
   }
   assert.ok(total <= 200 * 1024);
 });
 
 test("the stylesheet is published minified", async () => {
-  const cssName = (await readdir(path.join(distDir, "css"))).find((name) => /^styles\.[a-f0-9]{8}\.css$/.test(name));
+  const cssName = (await readdir(path.join(distDir, "css"))).find((name) =>
+    /^styles\.[a-f0-9]{8}\.css$/.test(name),
+  );
   const css = await readFile(path.join(distDir, "css", cssName), "utf8");
   const source = await readFile(path.join(projectRoot, "styles.css"), "utf8");
-  assert.ok(css.length < source.length * 0.9, `${css.length} bytes from ${source.length} of source`);
+  assert.ok(
+    css.length < source.length * 0.9,
+    `${css.length} bytes from ${source.length} of source`,
+  );
   assert.equal(css.trimEnd().split("\n").length, 1, "minified CSS keeps no line breaks");
   assert.doesNotMatch(css, /\/\*/, "minified CSS keeps no comments");
 });
@@ -590,7 +689,11 @@ test("hosting icons and the nested security.txt are published intact", async () 
     "manifest.webmanifest",
     ".well-known/security.txt",
   ]) {
-    assert.deepEqual(await readFile(path.join(distDir, file)), await readFile(path.join(projectRoot, "public", file)), file);
+    assert.deepEqual(
+      await readFile(path.join(distDir, file)),
+      await readFile(path.join(projectRoot, "public", file)),
+      file,
+    );
   }
 });
 

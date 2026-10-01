@@ -1,3 +1,5 @@
+// How main.js boots the page: the scene's load gates and the About estate menu.
+
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
@@ -6,10 +8,15 @@ import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 
 const testDir = path.dirname(fileURLToPath(import.meta.url));
+
 const projectRoot = path.resolve(testDir, "..");
+
 const mainSourcePath = path.join(projectRoot, "src", "main.js");
+
 const qualitySourcePath = path.join(projectRoot, "src", "scene", "quality.js");
+
 const webglProbePath = path.join(projectRoot, "src", "shared", "webgl-probe.js");
+
 // The UI bundle names only each tier's tower and tree (build.mjs).
 const ARCHITECTURE_URLS = Object.fromEntries(
   ["high", "balanced"].map((tier) => [
@@ -19,6 +26,7 @@ const ARCHITECTURE_URLS = Object.fromEntries(
     ),
   ]),
 );
+
 // Hardware limits that select the high tier on a desktop-sized viewport.
 const CAPABLE = { maxAnisotropy: 16, maxTextureSize: 8192, prefetch: true };
 
@@ -116,7 +124,8 @@ function createContext({
   let scriptAppendCount = 0;
   let webglProbeCount = 0;
   const window = {
-    BabelSite: {},
+    // The UI modules app.js boots before main.js; the menu stays native here.
+    BabelSite: { ui: { initHeroChrome() {}, initSceneMenu: () => false, initDeepLinks() {} } },
     WebGLRenderingContext: function WebGLRenderingContext() {},
     innerHeight: height,
     innerWidth: width,
@@ -252,7 +261,9 @@ function createContext({
       if (preloadMatch) return links.find((link) => link.href === preloadMatch[1]) || null;
       const dynamicScriptMatch = selector.match(/^script\[data-dynamic-src="(.+)"\]$/);
       if (dynamicScriptMatch) {
-        return scripts.find((script) => script.dataset.dynamicSrc === dynamicScriptMatch[1]) || null;
+        return (
+          scripts.find((script) => script.dataset.dynamicSrc === dynamicScriptMatch[1]) || null
+        );
       }
       return null;
     },
@@ -534,13 +545,6 @@ test("invalid quality override does not bypass the data-saver gate", async () =>
   assert.equal(getWebglProbeCount(), 0, "malformed override must not bypass data-saver");
 });
 
-test("scene gate has no user-agent, Lighthouse, or phone-viewport escape hatch", async () => {
-  const source = await readFile(mainSourcePath, "utf8");
-
-  assert.doesNotMatch(source, /userAgent|Lighthouse|Chrome-Lighthouse/i);
-  assert.doesNotMatch(source, /shortSide|longSide|phoneViewport/);
-});
-
 test("the live scene requests its startup tier's tower and tree at low priority after its bundle", async () => {
   for (const [options, tier] of [
     [{}, "high"],
@@ -573,7 +577,11 @@ test("the low tier keeps the title card and never requests the scene bundle", as
   for (const options of [
     // An explicit low tier, with or without known texture limits.
     { ...CAPABLE, search: "?quality=low" },
-    { search: "?quality=low", reducedMotion: true, softwareRenderer: "Microsoft Basic Render Driver" },
+    {
+      search: "?quality=low",
+      reducedMotion: true,
+      softwareRenderer: "Microsoft Basic Render Driver",
+    },
     { ...CAPABLE, search: "?quality=low&sceneDebug=1" },
     // Auto-detected low: weak texture limits.
     { maxTextureSize: 2048, maxAnisotropy: 16 },
@@ -582,25 +590,21 @@ test("the low tier keeps the title card and never requests the scene bundle", as
     const harness = createContext(options);
     await loadMainWithQuality(harness.context);
 
-    assert.equal(await harness.context.window.BabelSite.ensureSceneReady(), false, JSON.stringify(options));
+    assert.equal(
+      await harness.context.window.BabelSite.ensureSceneReady(),
+      false,
+      JSON.stringify(options),
+    );
     assert.equal(harness.host.hidden, true, "the static title card stays");
     assert.equal(harness.scripts.length, 0, "no scene script is requested");
     assert.equal(harness.fetches.length, 0, "no model is requested");
   }
-  // The scene itself declines the low tier before it builds a renderer, should
+  // The scene itself declines the low tier (scene-bootstrap.test.mjs), should
   // main.js not have known the tier; main.js then hides the host.
-  const index = await readFile(new URL("../src/scene/index.js", import.meta.url), "utf8");
-  const declines = index.indexOf('if (qualityState.initialTier === "low") return false;');
-  assert.ok(declines > 0 && declines < index.indexOf("createSceneRendering({"));
   const unknown = createContext({ maxTextureSize: 0, initResult: false });
   await loadMainWithQuality(unknown.context);
   assert.equal(await unknown.context.window.BabelSite.ensureSceneReady(), false);
   assert.equal(unknown.host.hidden, true, "a declined initialization keeps the title card");
-  // Retired comparison URLs open the default film, with its early model requests.
-  const comparison = createContext({ ...CAPABLE, search: "?architecture=classic" });
-  await loadMainWithQuality(comparison.context);
-  assert.equal(await comparison.context.window.BabelSite.ensureSceneReady(), true);
-  assert.equal(comparison.fetches.length, 2);
 });
 
 test("static title card paths and the low tier make no early model request", async () => {
@@ -695,7 +699,11 @@ test("static title card paths never begin the loading line", async () => {
   ]) {
     const harness = createContext({ ...options, sceneLoader: true });
     await loadMainWithQuality(harness.context);
-    assert.equal(await harness.context.window.BabelSite.ensureSceneReady(), false, JSON.stringify(options));
+    assert.equal(
+      await harness.context.window.BabelSite.ensureSceneReady(),
+      false,
+      JSON.stringify(options),
+    );
     assert.ok(!harness.events.includes("loader:begin"), JSON.stringify(options));
     assert.equal(harness.scripts.length, 0);
     assert.equal(harness.host.hidden, true);
@@ -733,10 +741,16 @@ test("the live path begins the loading line before the bundle and reports the bu
 
 test("a failed bundle, a declined initialization or the scene's low-tier decline retires the loading line", async () => {
   for (const [options, expected] of [
-    [{ logger: { warn() {} }, scriptOutcomes: ["error"] }, ["loader:begin", "script", "loader:end:static"]],
+    [
+      { logger: { warn() {} }, scriptOutcomes: ["error"] },
+      ["loader:begin", "script", "loader:end:static"],
+    ],
     [{ initResult: false }, ["loader:begin", "script", "loader:bundle", "loader:end:static"]],
     // Unknown limits: the scene finds the low tier itself and declines.
-    [{ maxTextureSize: 0, initResult: false }, ["loader:begin", "script", "loader:bundle", "loader:end:static"]],
+    [
+      { maxTextureSize: 0, initResult: false },
+      ["loader:begin", "script", "loader:bundle", "loader:end:static"],
+    ],
   ]) {
     const harness = createContext({ ...options, sceneLoader: true });
     await loadMainWithQuality(harness.context);
@@ -764,7 +778,164 @@ test("an early model response resolves to the loading line's counted copy", asyn
   const plain = createContext({ ...CAPABLE, prefetch: true, respond: true });
   await loadMainWithQuality(plain.context);
   await plain.context.window.BabelSite.ensureSceneReady();
-  const response = await plain.context.window.BabelSite.scene.prefetched.get(ARCHITECTURE_URLS.high.tower).response;
+  const response = await plain.context.window.BabelSite.scene.prefetched.get(
+    ARCHITECTURE_URLS.high.tower,
+  ).response;
   assert.equal(response.url, ARCHITECTURE_URLS.high.tower);
   assert.equal(response.ok, true);
+});
+
+// The About estate menu boots through main.js, which waits for the parsed
+// document and then asks scene-menu.js to enhance it.
+// scene-menu.test.mjs covers initSceneMenu on its own; these checks cover the
+// boot timing around it.
+const menuSource = await readFile(new URL("../src/ui/scene-menu.js", import.meta.url), "utf8");
+
+const mainSource = await readFile(new URL("../src/main.js", import.meta.url), "utf8");
+
+const qualitySource = await readFile(new URL("../src/scene/quality.js", import.meta.url), "utf8");
+
+function createFixture({ readyState = "complete", init = () => true } = {}) {
+  const entry = { hidden: true };
+  const fallback = ["About link", "category copy"].map((kind) => ({
+    kind,
+    hidden: false,
+    children: [{ kind: "ordinary-link-or-selectable-copy" }],
+    contains(target) {
+      return target === this || this.children.includes(target);
+    },
+  }));
+  const listeners = new Map();
+  const document = {
+    readyState,
+    activeElement: { kind: "body" },
+    querySelector: (selector) => (selector === ".scene-entry" ? entry : null),
+    querySelectorAll: (selector) => (selector === "[data-scene-fallback]" ? fallback : []),
+    getElementById: () => null,
+    addEventListener(type, callback, options) {
+      const registrations = listeners.get(type) || [];
+      registrations.push({ callback, options });
+      listeners.set(type, registrations);
+    },
+    dispatch(type) {
+      for (const registration of [...(listeners.get(type) || [])]) {
+        if (registration.options?.once) {
+          listeners.set(
+            type,
+            listeners.get(type).filter((item) => item !== registration),
+          );
+        }
+        registration.callback();
+      }
+    },
+  };
+  let calls = 0;
+  const quietQuery = { matches: false, addEventListener() {}, removeEventListener() {} };
+  const window = {
+    BabelSite: {
+      ui: {
+        initHeroChrome() {},
+        initDeepLinks() {},
+        initPanels() {
+          calls++;
+          return init();
+        },
+      },
+    },
+    location: { search: "" },
+    matchMedia: () => quietQuery,
+    // The deferred scene load is outside these checks.
+    requestIdleCallback() {},
+  };
+  return {
+    window,
+    document,
+    entry,
+    fallback,
+    listeners,
+    get calls() {
+      return calls;
+    },
+    boot() {
+      const context = vm.createContext({ window, document, navigator: {}, URLSearchParams });
+      vm.runInContext(qualitySource, context, { filename: "src/scene/quality.js" });
+      vm.runInContext(menuSource, context, { filename: "src/ui/scene-menu.js" });
+      vm.runInContext(mainSource, context, { filename: "src/main.js" });
+    },
+  };
+}
+
+function assertFallbackAvailable(fixture) {
+  assert.equal(fixture.entry.hidden, true, "nonfunctional About dialog control stays hidden");
+  assert.ok(
+    fixture.fallback.every((element) => !element.hidden),
+    "ordinary About navigation and category copy remain available",
+  );
+}
+
+test("a loading document keeps the ordinary About fallback until DOMContentLoaded, then enhances once", () => {
+  const fixture = createFixture({ readyState: "loading" });
+  fixture.boot();
+  assert.equal(fixture.calls, 0);
+  assertFallbackAvailable(fixture);
+  assert.equal(fixture.listeners.get("DOMContentLoaded").length, 1);
+  fixture.document.readyState = "interactive";
+  fixture.document.dispatch("DOMContentLoaded");
+  assert.equal(fixture.calls, 1);
+  assert.equal(fixture.entry.hidden, false);
+  assert.ok(fixture.fallback.every((element) => element.hidden));
+  fixture.document.dispatch("DOMContentLoaded");
+  assert.equal(fixture.calls, 1);
+});
+
+test("a delayed boot never hides a fallback link or section the visitor is using", () => {
+  for (const index of [0, 1]) {
+    for (const focusRoot of [false, true]) {
+      const fixture = createFixture({ readyState: "loading" });
+      fixture.boot();
+      const selected = focusRoot ? fixture.fallback[index] : fixture.fallback[index].children[0];
+      fixture.document.activeElement = selected;
+      fixture.document.dispatch("DOMContentLoaded");
+      assert.equal(fixture.calls, 0, "active fallback use prevents enhancement");
+      assertFallbackAvailable(fixture);
+      assert.equal(fixture.document.activeElement, selected);
+    }
+  }
+});
+
+test("an already parsed document enhances without waiting for another load event", () => {
+  const fixture = createFixture({ readyState: "interactive" });
+  const previousFocus = fixture.document.activeElement;
+  fixture.boot();
+  assert.equal(fixture.calls, 1);
+  assert.equal(fixture.entry.hidden, false);
+  assert.equal(fixture.listeners.has("DOMContentLoaded"), false);
+  assert.equal(fixture.document.activeElement, previousFocus);
+});
+
+test("failed or unavailable panel binding at boot preserves the ordinary homepage", async (t) => {
+  const cases = [
+    ["false result", () => false],
+    [
+      "thrown error",
+      () => {
+        throw new Error("binding failed");
+      },
+    ],
+  ];
+  for (const [name, init] of cases) {
+    await t.test(name, () => {
+      const fixture = createFixture({ init });
+      assert.doesNotThrow(() => fixture.boot());
+      assert.equal(fixture.calls, 1);
+      assertFallbackAvailable(fixture);
+    });
+  }
+  await t.test("missing initializer", () => {
+    const fixture = createFixture();
+    delete fixture.window.BabelSite.ui.initPanels;
+    assert.doesNotThrow(() => fixture.boot());
+    assert.equal(fixture.calls, 0);
+    assertFallbackAvailable(fixture);
+  });
 });

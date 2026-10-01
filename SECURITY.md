@@ -11,7 +11,7 @@ Do not open a public issue for an undisclosed vulnerability.
 
 ## Non-sensitive problems
 
-Use [GitHub Issues](https://github.com/alexonava/babel/issues) for non-sensitive bugs, broken links, configuration problems, and hardening ideas that do not expose users or infrastructure.
+Use [GitHub Issues](https://github.com/alexonava/alexnava.me/issues) for non-sensitive bugs, broken links, configuration problems, and hardening ideas that do not expose users or infrastructure.
 
 ## Disclosure expectations
 

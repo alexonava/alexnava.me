@@ -13,7 +13,7 @@ import {
   Vector3,
 } from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { createTreeFoliage, smoothTreeNormals } from "./tree-foliage.js";
+import { smoothTreeNormals } from "./tree-normals.js";
 import { ESTATE } from "./estate-layout.js";
 
 export const ARCHITECTURE = Object.freeze({
@@ -172,10 +172,13 @@ export function materialFor(asset, anisotropy, role) {
       babelFilm: { value: 0 },
     };
     material.userData.babelGrade = { role, uniforms };
-    material.customProgramCacheKey = () => `babel-estate-material-v5-${role}-${roughnessFloor}-${roughnessCeiling}-${directRoughness}`;
+    material.customProgramCacheKey = () =>
+      `babel-estate-material-v5-${role}-${roughnessFloor}-${roughnessCeiling}-${directRoughness}`;
     material.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, uniforms);
-      shader.vertexShader = shader.vertexShader.replace("#include <common>", "#include <common>\nvarying vec3 babelLocal;").replace("#include <begin_vertex>", "#include <begin_vertex>\nbabelLocal = position;");
+      shader.vertexShader = shader.vertexShader
+        .replace("#include <common>", "#include <common>\nvarying vec3 babelLocal;")
+        .replace("#include <begin_vertex>", "#include <begin_vertex>\nbabelLocal = position;");
       shader.fragmentShader = shader.fragmentShader
         .replace(
           "#include <common>",
@@ -188,10 +191,7 @@ export function materialFor(asset, anisotropy, role) {
           uniform float babelFilm;
           varying vec3 babelLocal;`,
         )
-        .replace(
-          "#include <roughnessmap_fragment>",
-          roughnessFragment,
-        )
+        .replace("#include <roughnessmap_fragment>", roughnessFragment)
         .replace(
           "#include <map_fragment>",
           `#include <map_fragment>
@@ -265,7 +265,10 @@ export function createCompleteTowerArchitecture({
         throw new Error("Complete tower positions must be finite.");
       radius = Math.max(radius, Math.hypot(x, z));
     }
-    const scale = Math.min(COMPLETE_TOWER_HEIGHT / dimensions.y, COMPLETE_TOWER_RADIUS_CAP / radius);
+    const scale = Math.min(
+      COMPLETE_TOWER_HEIGHT / dimensions.y,
+      COMPLETE_TOWER_RADIUS_CAP / radius,
+    );
     geometry.scale(scale, scale, scale);
     geometry.computeBoundingBox();
     geometry.computeBoundingSphere();
@@ -315,12 +318,11 @@ export function createTreeArchitecture({ asset, groundHeight, anisotropy = 4, an
     materials.add(material);
     return material;
   };
-  let disposed = false, foliage = null;
+  let disposed = false;
   const dispose = () => {
     if (disposed) return false;
     disposed = true;
     root.removeFromParent();
-    foliage?.dispose();
     geometries.forEach((geometry) => geometry.dispose());
     materials.forEach((material) => material.dispose());
     geometries.clear();
@@ -344,11 +346,9 @@ export function createTreeArchitecture({ asset, groundHeight, anisotropy = 4, an
     tree.name = "meshy-tree";
     tree.castShadow = tree.receiveShadow = true;
     root.add(tree);
-    // Bare authored trees keep their branch silhouette; older leafy assets
-    // retain the existing derived canopy accents.
-    if (asset.scene.userData?.tree?.foliage !== false) foliage = createTreeFoliage(geometry, tree);
     const normalAttribute = geometry.attributes.normal;
-    const originalNormals = normalAttribute.array.slice(), softenedNormals = smoothTreeNormals(geometry).array;
+    const originalNormals = normalAttribute.array.slice(),
+      softenedNormals = smoothTreeNormals(geometry).array;
     const lantern = new Group();
     lantern.name = "tree-lantern";
     const direction = new Vector3(ESTATE.tower.x - treeX, 0, ESTATE.tower.z - treeZ).normalize();
@@ -430,7 +430,7 @@ export function createTreeArchitecture({ asset, groundHeight, anisotropy = 4, an
     );
     const glow = new Mesh(glowGeometry, glowMaterial);
     glow.name = "lantern-flame";
-    glow.scale.set(.82, 2.0, .82);
+    glow.scale.set(0.82, 2.0, 0.82);
     glow.position.y = 1.665;
     lantern.add(glow);
     const light = new PointLight(0xffbe72, TREE_LANTERN_INTENSITY, 23, 1.45);
@@ -444,28 +444,36 @@ export function createTreeArchitecture({ asset, groundHeight, anisotropy = 4, an
     fillLight.position.set(-3.8, ARCHITECTURE.treeHeight * 0.42, -2.5);
     fillLight.castShadow = false;
     root.add(fillLight);
-    let film = false, currentProfile = {}, savedDistance = light.distance, savedDecay = light.decay, savedFillDistance = fillLight.distance;
-    let lanternBaseIntensity = TREE_LANTERN_INTENSITY, lanternFlicker = 1;
-    const originalFillColor = fillLight.color.clone(), originalEmission = material.emissiveIntensity;
+    let film = false,
+      currentProfile = {},
+      savedDistance = light.distance,
+      savedDecay = light.decay,
+      savedFillDistance = fillLight.distance;
+    let lanternBaseIntensity = TREE_LANTERN_INTENSITY,
+      lanternFlicker = 1;
+    const originalFillColor = fillLight.color.clone(),
+      originalEmission = material.emissiveIntensity;
     function applyTreeLighting() {
       const intensityScale = currentProfile.lighting?.practicalIntensityScale ?? 1;
       lanternBaseIntensity = (film ? 4.8 : TREE_LANTERN_INTENSITY) * intensityScale;
       light.intensity = lanternBaseIntensity * lanternFlicker;
-      fillLight.intensity = TREE_FILL_INTENSITY * (film ? .95 : 1) * intensityScale;
+      fillLight.intensity = TREE_FILL_INTENSITY * (film ? 0.95 : 1) * intensityScale;
       fillLight.color.copy(originalFillColor);
       if (film) fillLight.color.setHex(0xc2d2ec);
       glowMaterial.emissiveIntensity = film ? 1.35 : 2;
       glassMaterial.emissiveIntensity = film ? 0.018 : 0.3;
-      material.emissiveIntensity = film ? .04 : originalEmission;
+      material.emissiveIntensity = film ? 0.04 : originalEmission;
       applyFilmGrade(material, film);
       normalAttribute.array.set(film ? softenedNormals : originalNormals);
       normalAttribute.needsUpdate = true;
-      foliage?.setActive(film);
-      foliage?.applyQuality(currentProfile);
       // The unshadowed fill sits in the crown about 10 units above the lantern.
-      // In film its reach drops from the prop-scaled 37.8 to 24, so it still
-      // models the bark and the lantern cap but no longer floods the clearing.
-      if (film) { light.distance = 10.5; light.decay = 1.2; fillLight.distance = 24; }
+      // In film its reach drops from the prop-scaled 37.8 to 24, so it models
+      // the bark and the lantern cap without flooding the clearing.
+      if (film) {
+        light.distance = 10.5;
+        light.decay = 1.2;
+        fillLight.distance = 24;
+      }
     }
     return {
       root,
@@ -475,18 +483,28 @@ export function createTreeArchitecture({ asset, groundHeight, anisotropy = 4, an
       // whole tree treatment here would upload its normals every frame.
       setLanternFlicker(value = 1) {
         if (disposed) return;
-        lanternFlicker = Math.max(.88, Math.min(1.12, Number.isFinite(value) ? value : 1));
+        lanternFlicker = Math.max(0.88, Math.min(1.12, Number.isFinite(value) ? value : 1));
         light.intensity = lanternBaseIntensity * lanternFlicker;
       },
       setFilmTreatment(active) {
-        const next = Boolean(active); if (disposed || next === film) return;
-        if (next) { savedDistance = light.distance; savedDecay = light.decay; savedFillDistance = fillLight.distance; }
+        const next = Boolean(active);
+        if (disposed || next === film) return;
+        if (next) {
+          savedDistance = light.distance;
+          savedDecay = light.decay;
+          savedFillDistance = fillLight.distance;
+        }
         film = next;
-        if (!film) { light.distance = savedDistance; light.decay = savedDecay; fillLight.distance = savedFillDistance; }
+        if (!film) {
+          light.distance = savedDistance;
+          light.decay = savedDecay;
+          fillLight.distance = savedFillDistance;
+        }
         applyTreeLighting();
       },
       applyQuality(profile = {}) {
-        currentProfile = profile; applyTreeLighting();
+        currentProfile = profile;
+        applyTreeLighting();
       },
       dispose,
     };

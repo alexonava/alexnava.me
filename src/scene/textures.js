@@ -280,7 +280,7 @@ import { measureScene, sceneNow } from "./perf-marks.js";
     }
     paintGround(!["high", "balanced"].includes(profile.tier));
 
-    const aniso = chooseAnisotropy(profile.anisotropy.min, profile.anisotropy.max);
+    const aniso = chooseAnisotropy(profile.anisotropy.max);
     const textures = {
       colorMap: makeTexture(THREE, colorCanvas, (tex) => {
         tex.wrapS = THREE.MirroredRepeatWrapping;
@@ -311,18 +311,24 @@ import { measureScene, sceneNow } from "./perf-marks.js";
       invalidate();
       return true;
     }
-    let paintTimer = detailed ? null : setTimeout(() => {
-      paintTimer = null;
-      ensureProcedural();
-    }, 0);
+    let paintTimer = detailed
+      ? null
+      : setTimeout(() => {
+          paintTimer = null;
+          ensureProcedural();
+        }, 0);
 
     // The slate maps replace the procedural pair only after they decode; the
     // procedural canvases stay alive so a reset or fallback can rebind them.
     function publishGround() {
       onDetailChange({ ...textures, normalMap: null, roughnessMap: null, normalScale: 0 });
     }
-    const filmMaps = createEarthDetail({ profile, disabled: false, anisotropy: aniso,
-      publish: onDetailChange, restore: publishGround,
+    const filmMaps = createEarthDetail({
+      profile,
+      disabled: false,
+      anisotropy: aniso,
+      publish: onDetailChange,
+      restore: publishGround,
       report(status) {
         if (status.status === "fallback") ensureProcedural();
         onDetailStatus({ ...status, material: FILM_GROUND_PRESETS.slate.material });
@@ -331,9 +337,14 @@ import { measureScene, sceneNow } from "./perf-marks.js";
     return {
       ...textures,
       ensureProcedural,
-      setFilmActive(active) { publishGround(); filmMaps.setActive(active); },
+      setFilmActive(active) {
+        publishGround();
+        filmMaps.setActive(active);
+      },
       lifecycleOrder: 21,
-      applyQuality(profile, context) { filmMaps.applyQuality(profile, context); },
+      applyQuality(profile, context) {
+        filmMaps.applyQuality(profile, context);
+      },
       dispose() {
         clearTimeout(paintTimer);
         paintTimer = null;

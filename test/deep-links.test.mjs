@@ -5,6 +5,7 @@ import vm from "node:vm";
 
 const source = await readFile(new URL("../src/ui/deep-links.js", import.meta.url), "utf8");
 const mainSource = await readFile(new URL("../src/main.js", import.meta.url), "utf8");
+const qualitySource = await readFile(new URL("../src/scene/quality.js", import.meta.url), "utf8");
 const CATEGORIES = ["profile", "experience", "contact"];
 
 class FakeCustomEvent {
@@ -260,31 +261,19 @@ function bootMain(ui) {
     requestIdleCallback() {},
   };
   const document = { readyState: "complete", addEventListener() {} };
-  vm.runInNewContext(
-    mainSource,
-    { window, document, navigator: {}, URLSearchParams },
-    { filename: "src/main.js" },
-  );
+  const context = vm.createContext({ window, document, navigator: {}, URLSearchParams });
+  vm.runInContext(qualitySource, context, { filename: "src/scene/quality.js" });
+  vm.runInContext(mainSource, context, { filename: "src/main.js" });
   return calls;
 }
 
-test("main.js binds deep links only after the enhanced menu succeeds and always binds the pause control", () => {
+test("main.js binds deep links only after the enhanced menu succeeds", () => {
   assert.deepEqual(
-    bootMain({
-      initHeroChrome: undefined,
-      initSceneMenu: true,
-      initDeepLinks: true,
-      initSceneControls: true,
-    }),
-    ["initHeroChrome", "initSceneMenu", "initDeepLinks", "initSceneControls"],
+    bootMain({ initHeroChrome: undefined, initSceneMenu: true, initDeepLinks: true }),
+    ["initHeroChrome", "initSceneMenu", "initDeepLinks"],
   );
   assert.deepEqual(
-    bootMain({ initSceneMenu: false, initDeepLinks: true, initSceneControls: true }),
-    ["initSceneMenu", "initSceneControls"],
+    bootMain({ initHeroChrome: undefined, initSceneMenu: false, initDeepLinks: true }),
+    ["initHeroChrome", "initSceneMenu"],
   );
-  assert.deepEqual(bootMain({ initPanels: true, initDeepLinks: true, initSceneControls: true }), [
-    "initPanels",
-    "initSceneControls",
-  ]);
-  assert.deepEqual(bootMain({ initSceneMenu: true }), ["initSceneMenu"]);
 });

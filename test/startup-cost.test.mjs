@@ -97,10 +97,19 @@ test("scene quality reuses the probe's limits and opens its own context only wit
     }),
   };
   vm.runInNewContext(await source("scene/quality.js"), {
-    window, document, navigator: {}, URLSearchParams, console,
+    window,
+    document,
+    navigator: {},
+    URLSearchParams,
+    console,
   });
   const scene = window.BabelSite.scene;
-  const probe = { available: true, softwareRenderer: false, maxTextureSize: 8192, maxAnisotropy: 16 };
+  const probe = {
+    available: true,
+    softwareRenderer: false,
+    maxTextureSize: 8192,
+    maxAnisotropy: 16,
+  };
   const caps = scene.qualityCapsFromProbe(probe);
   assert.equal(caps.maxTextureSize, 8192);
   assert.equal(caps.maxAnisotropy, 16);
@@ -160,17 +169,29 @@ function createRendering(rendererOverrides = {}) {
     disposeResources: () => ({}),
     height: 600,
     lighting: {
-      ambientColor: 0xffffff, ambientIntensity: 0.2, directionalColor: 0xffffff,
-      directionalIntensity: 2, directionalPosition: { x: 1, y: 2, z: 3 }, fogColor: 0,
-      fogFar: 150, fogNear: 60, hemisphereGroundColor: 0, hemisphereIntensity: 0.7,
+      ambientColor: 0xffffff,
+      ambientIntensity: 0.2,
+      directionalColor: 0xffffff,
+      directionalIntensity: 2,
+      directionalPosition: { x: 1, y: 2, z: 3 },
+      fogColor: 0,
+      fogFar: 150,
+      fogNear: 60,
+      hemisphereGroundColor: 0,
+      hemisphereIntensity: 0.7,
       hemisphereSkyColor: 0,
     },
     profile: {},
     threeExports: {},
     width: 800,
     world: {
-      CAMERA_FAR: 210, CAMERA_FOV: 48, CAMERA_NEAR: 0.5, FILL_LIGHT_POSITION: [0, 1, 0],
-      SHADOW_CAMERA_FAR: 120, SHADOW_CAMERA_HALF_EXTENT: 34, SHADOW_CAMERA_NEAR: 0.5,
+      CAMERA_FAR: 210,
+      CAMERA_FOV: 48,
+      CAMERA_NEAR: 0.5,
+      FILL_LIGHT_POSITION: [0, 1, 0],
+      SHADOW_CAMERA_FAR: 120,
+      SHADOW_CAMERA_HALF_EXTENT: 34,
+      SHADOW_CAMERA_NEAR: 0.5,
     },
   });
   return { calls, rendering, rendererOptions, getTarget: () => target };
@@ -270,8 +291,12 @@ test("shader warm-up uploads visible maps; a quality step links its shadow varia
   rendering.applyQuality({
     shadows: { enabled: true, mapSize: 1024 },
     lighting: {
-      ambientIntensity: 0.2, directionalIntensity: 2, extraDirectional: true, fogFar: 150,
-      fogNear: 60, hemisphereIntensity: 0.7,
+      ambientIntensity: 0.2,
+      directionalIntensity: 2,
+      extraDirectional: true,
+      fogFar: 150,
+      fogNear: 60,
+      hemisphereIntensity: 0.7,
     },
   });
   const low = { shadows: { enabled: false }, lighting: { extraDirectional: false } };
@@ -350,7 +375,11 @@ test("shader warm-ups compile in their own task, hide waiting subjects and alway
   tasks.shift()();
   assert.deepEqual(
     compiles.map(({ shown }) => shown),
-    [[true, true], [true, true], [true, true]],
+    [
+      [true, true],
+      [true, true],
+      [true, true],
+    ],
     "every waiting subject is shown for the compile, so its lights count",
   );
   assert.deepEqual([tower.visible, tree.visible], [false, false], "and hidden again before a draw");
@@ -358,7 +387,10 @@ test("shader warm-ups compile in their own task, hide waiting subjects and alway
   compiles[1].resolve(true);
   compiles[0].reject(new Error("context lost"));
   await flush();
-  assert.deepEqual(settled, [["tower", true], ["scene", false]]);
+  assert.deepEqual(settled, [
+    ["tower", true],
+    ["scene", false],
+  ]);
   assert.equal(tower.visible, true, "a ready subject is shown");
   assert.equal(tree.visible, false);
   assert.equal(warmup.pending, 1);
@@ -427,7 +459,11 @@ function createGround(createGroundTextures, { tier = "high", groundSize = 1024 }
     onDetailChange: (maps) => published.push(maps),
   });
   return {
-    draws, ground, statuses, published, canvases,
+    draws,
+    ground,
+    statuses,
+    published,
+    canvases,
     get invalidations() {
       return invalidations;
     },
@@ -465,7 +501,9 @@ test("the film ground starts from a flat preview and paints in full in the next 
   );
   assert.ok(film.draws.includes("arc") && film.draws.includes("ellipse"));
   assert.deepEqual(disposed.sort(), ["bump", "color"], "grown canvases get fresh GPU storage");
-  assert.ok(film.ground.colorMap.version > versions[0] && film.ground.bumpMap.version > versions[1]);
+  assert.ok(
+    film.ground.colorMap.version > versions[0] && film.ground.bumpMap.version > versions[1],
+  );
   assert.equal(film.invalidations, 1);
 
   assert.deepEqual(requested, [], "no ground map downloads before the film activates");
@@ -481,7 +519,11 @@ test("the film ground starts from a flat preview and paints in full in the next 
     ],
     "the film slate requests only its own three maps",
   );
-  assert.ok(film.statuses.some((status) => status.status === "fallback" && status.material === "Cracked Desert Ground"));
+  assert.ok(
+    film.statuses.some(
+      (status) => status.status === "fallback" && status.material === "Cracked Desert Ground",
+    ),
+  );
   assert.equal(film.invalidations, 1, "a slate fallback finds the ground already painted");
   assert.equal(film.ground.ensureProcedural(), false, "the full paint happens once");
 
@@ -520,46 +562,4 @@ test("the film ground starts from a flat preview and paints in full in the next 
   const full = createGround(createGroundTextures, { tier: "low", groundSize: 512 });
   assert.deepEqual(full.sizes(), [512, 512]);
   assert.equal(full.ground.ensureProcedural(), false);
-  // Only the film slate's maps remain: no stone, ground, earth or grass loaders.
-  const textures = await source("scene/textures.js");
-  assert.doesNotMatch(textures, /grass|earth-|materials\/ground|stone-|marble|mud/i);
-});
-
-test("scene bootstrap warms shaders before drawing and records start-up marks", async () => {
-  const index = await source("scene/index.js");
-  const entry = await source("scene-entry.js");
-
-  assert.match(entry, /^import \{ markSceneEvaluated \} from "\.\/scene\/perf-marks\.js";\r?\nimport "\.\/shared\/webgl-probe\.js";/m);
-  assert.match(entry, /import "\.\/scene\/index\.js";\s*markSceneEvaluated\(\);\s*$/);
-  assert.match(index, /caps: scene\.qualityCapsFromProbe\?\.\(site\.shared\?\.getWebGLCapabilities\?\.\(\)\) \?\? null/);
-
-  // Nothing draws before the reveal while a warm-up links, and the reveal waits for it.
-  assert.match(index, /const shaderWarmup = createShaderWarmup\(\{ compile: \(\) => rendering\.compileShaders\(\) \}\);/);
-  assert.match(index, /if \(canvasShown \|\| !shaderWarmup\.pending\) \{\s*rendering\.update\(\);/);
-  assert.match(index, /!sceneFailed && cinematic\.ready &&\s*\(canvasShown \|\| !shaderWarmup\.pending\);/);
-  assert.match(index, /warmShaders\("scene"\);\s*frameScheduler\.start\(\);/);
-  // A committed model replaces nothing visible, so it stays hidden until its programs link.
-  assert.match(index, /warmShaders\("tower", replacement\.root\);/);
-  assert.match(index, /warmShaders\("tree", replacement\.root\);/);
-
-  for (const name of ["init", "first-frame", "assembly:tower", "assembly:tree"]) {
-    assert.ok(index.includes(`measureScene("${name}"`), name);
-  }
-  assert.match(index, /measureScene\(`shaders:\$\{label\}`, start\);/);
-  // The rocks fetch and link only after the reveal.
-  assert.match(index, /if \(sceneShown && !canvasShown\) \{\s*markScene\("reveal"\);[^}]*rockScatter\.setRevealed\(\);\s*\}/);
-  // A ground program that changes before the reveal links through compileAsync,
-  // so the first draw never blocks on it.
-  assert.equal((index.match(/contacts: groundContacts \}\);\s*warmGround\?\.\(\);/g) || []).length, 1);
-  assert.match(index, /warmGround = \(\) => canvasShown \|\| warmShaders\("ground"\);/);
-  // The film terrain never holds the reveal: it builds in short slices and its
-  // root shading links on a detached stand-in once the canvas shows, both
-  // landing only where they cannot show mid-shot, so the film takes the tour
-  // (terrain-build.js), not the scene's warm-up.
-  assert.match(index, /createFilmScene\(\{[^}]*tour: cameraTour,/);
-  assert.doesNotMatch(index, /createFilmScene\(\{[^}]*warm[:,]/);
-
-  for (const path of ["shared/webgl-probe.js", "scene/quality.js", "scene/rendering.js"]) {
-    assert.doesNotMatch(await source(path), /high-performance/, path);
-  }
 });

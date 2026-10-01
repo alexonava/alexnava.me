@@ -105,7 +105,7 @@ export const DIRECTED_SHOTS = {
     },
     {
       name: "Close-up",
-      // The replacement's twisted fork sits higher than the old leafy trunk.
+      // The twisted tree's fork sits high on the trunk.
       region: [0.38, 0.56],
       fov: 30,
       azimuth: -155,
@@ -153,8 +153,8 @@ export function measureShot(root, shot) {
     root.getObjectByName("meshy-tree") ||
     root;
   const box = new Box3();
-  // Derived leaf accents are children of the authored tree so they inherit its
-  // scale. They must not enlarge either the focal bounds or the clipped fit.
+  // Decoration parented to a subject inherits its scale; flagged
+  // excludeFromShot, it never enlarges the focal bounds or the clipped fit.
   subject.traverse((mesh) => {
     if (!mesh.isMesh || !mesh.visible || mesh.userData.excludeFromShot) return;
     mesh.geometry.computeBoundingBox();

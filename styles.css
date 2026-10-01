@@ -5,7 +5,7 @@
   font-style: normal;
   font-weight: 300 700;
   font-display: swap;
-  src: url("/fonts/cormorant-garamond-500.woff2") format("woff2");
+  src: url("/fonts/cormorant-garamond-variable.woff2") format("woff2");
   unicode-range:
     U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2122,
     U+2212, U+2215;
@@ -16,7 +16,7 @@
   font-style: normal;
   font-weight: 400 700;
   font-display: swap;
-  src: url("/fonts/instrument-sans-400.woff2") format("woff2");
+  src: url("/fonts/instrument-sans-variable.woff2") format("woff2");
   unicode-range:
     U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2122,
     U+2212, U+2215;
@@ -30,41 +30,16 @@
     sans-serif;
   --night-900: #0c1016;
   --night-800: #191d25;
-  --tower-stone-900: #231d1f;
-  --tower-stone-800: #342b2e;
-  --tower-stone-700: #4b403f;
-  --tower-stone-600: #665955;
-  --tower-stone-500: #84756d;
-  --tower-stone-400: #a59386;
-  --parchment-300: #e2d8cb;
   --parchment-200: #f2e8da;
-  --mist-500: #b8c1bd;
-  --mist-400: #d6ded8;
-  --line-pastel: #e6ece7;
-  /* Muted stone used for the hero anchor ("design."). It keeps the focal word
-     clear without turning accent color into a personality layer. */
-  --accent-muted: #c8d0ca;
-  /* One tier below the anchor. Ambient meta text (footer controls,
-     developer HUD labels) uses this so it whispers rather than
-     competing with the hero word. Warm off-white — reads as legible white
-     against the blue-black scene without clashing with the warm scene. */
+  /* Ambient meta text, such as the footer controls: a warm off-white one tier
+     below the main text, legible against the blue-black scene. */
   --text-muted-accent: #bfc1bf;
-  /* Prefix companion to the anchor. Used for "Calm by" so it reads as
-     legible white against the twilight scene while still letting "design."
-     be the clear focal word. One notch brighter than --text-muted-accent
-     so it holds hero-level presence. */
-  --calm-prefix: #ebe4d4;
   --text: #e5e4df;
   --text-primary: var(--text);
-  --text-meta: #b4b5b3;
   --text-accent: var(--text-muted-accent);
   --text-meta-shadow: 0 2px 8px rgba(7, 10, 14, 0.42);
-  --shadow-deep: 0 30px 84px rgba(0, 0, 0, 0.38);
   --border-soft: rgba(241, 229, 212, 0.16);
-  --ui-surface: #161719;
-  --ui-line: #696c6d;
   --ui-focus: #d0d1cc;
-  --ui-ease: cubic-bezier(0.22, 1, 0.36, 1);
   --cursor-line:
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='28' viewBox='0 0 9 28'%3E%3Cpath d='M4.5 2V26' stroke='%23e6ece7' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E")
       4 14,
@@ -187,8 +162,16 @@ main:focus {
   z-index: 0;
   overflow: hidden;
   background:
-    radial-gradient(ellipse 60% 45% at 78% 16%, rgba(124, 142, 190, 0.13) 0%, rgba(124, 142, 190, 0) 100%),
-    radial-gradient(ellipse 80% 50% at 40% 8%, rgba(92, 104, 150, 0.08) 0%, rgba(92, 104, 150, 0) 100%),
+    radial-gradient(
+      ellipse 60% 45% at 78% 16%,
+      rgba(124, 142, 190, 0.13) 0%,
+      rgba(124, 142, 190, 0) 100%
+    ),
+    radial-gradient(
+      ellipse 80% 50% at 40% 8%,
+      rgba(92, 104, 150, 0.08) 0%,
+      rgba(92, 104, 150, 0) 100%
+    ),
     linear-gradient(180deg, rgba(9, 13, 24, 0.12) 0%, rgba(12, 14, 28, 0.49) 100%);
 }
 
@@ -403,7 +386,8 @@ main:focus {
   display: flex;
   justify-content: flex-end;
   gap: 24px;
-  padding: 0 max(20px, calc(env(safe-area-inset-right) + 8px)) max(30px, calc(22px + env(safe-area-inset-bottom)));
+  padding: 0 max(20px, calc(env(safe-area-inset-right) + 8px))
+    max(30px, calc(22px + env(safe-area-inset-bottom)));
   pointer-events: none;
 }
 
@@ -485,7 +469,9 @@ main:focus {
   transition: color 180ms ease;
 }
 
-.site-footer__about[aria-expanded="true"] { color: var(--text); }
+.site-footer__about[aria-expanded="true"] {
+  color: var(--text);
+}
 
 /* The shared ring hugs the 16px line, 2px clear of the text, so a stacked
    footer line never falls inside it. */
@@ -904,8 +890,7 @@ body[data-panel-open]::after {
   color: #3b2c1e;
   font-size: 21px;
   line-height: 1;
-  box-shadow:
-    inset 0 1px 0 rgba(249, 247, 237, 0.14);
+  box-shadow: inset 0 1px 0 rgba(249, 247, 237, 0.14);
   transform: none;
   transition:
     transform 160ms ease,
@@ -1210,7 +1195,6 @@ body[data-panel-open]::after {
   }
 }
 
-
 /* Labels and hit areas share the artwork's proportional coordinate system.
    The 3:2 map is also capped by the overlay's usable height (its vertical
    padding subtracted) so short laptops and landscape phones see all of it. */
@@ -1224,89 +1208,231 @@ body[data-panel-open]::after {
     width: min(
       100%,
       960px,
-      calc((100svh - max(8px, env(safe-area-inset-top)) - max(10px, env(safe-area-inset-bottom))) * 1.5)
+      calc(
+        (100svh - max(8px, env(safe-area-inset-top)) - max(10px, env(safe-area-inset-bottom))) * 1.5
+      )
     );
   }
 }
-.estate-home-map { position: relative; }
+.estate-home-map {
+  position: relative;
+}
 .estate-map {
-  grid-area: 1 / 1; position: relative; width: 100%; aspect-ratio: 3 / 2;
-  isolation: isolate; color: #30271c;
+  grid-area: 1 / 1;
+  position: relative;
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  isolation: isolate;
+  color: #30271c;
 }
 /* A little directional light on the estate artwork; its alpha and coordinates stay intact. */
 .estate-home-map .estate-map::before {
-  content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
   background: url("/images/estate-map-desktop.webp") center / 100% 100% no-repeat;
-  filter: brightness(1.015) drop-shadow(5px 20px 24px rgba(1, 3, 7, .42)) drop-shadow(0 3px 4px rgba(1, 3, 7, .2));
+  filter: brightness(1.015) drop-shadow(5px 20px 24px rgba(1, 3, 7, 0.42))
+    drop-shadow(0 3px 4px rgba(1, 3, 7, 0.2));
 }
 .estate-home-map .estate-map::after {
-  content: ""; position: absolute; inset: 2%; z-index: -2; background: #e6d3af;
+  content: "";
+  position: absolute;
+  inset: 2%;
+  z-index: -2;
+  background: #e6d3af;
 }
 .estate-title {
-  position: absolute; top: 5%; left: 35%; width: 30%; margin: 0; color: #3a2e21;
-  text-align: center; font: 600 clamp(22px, 3vw, 34px)/1.1 var(--font-display);
-  font-synthesis-weight: none; letter-spacing: .055em;
+  position: absolute;
+  top: 5%;
+  left: 35%;
+  width: 30%;
+  margin: 0;
+  color: #3a2e21;
+  text-align: center;
+  font: 600 clamp(22px, 3vw, 34px)/1.1 var(--font-display);
+  font-synthesis-weight: none;
+  letter-spacing: 0.055em;
 }
-.estate-destinations { position: absolute; inset: 0; }
+.estate-destinations {
+  position: absolute;
+  inset: 0;
+}
 .estate-destination {
-  position: absolute; width: 24%; min-width: 44px; min-height: 44px;
-  height: 48%; margin: 0; padding: 0; background: transparent; border: 0;
-  border-radius: 8px; color: #30271c; transform: none;
+  position: absolute;
+  width: 24%;
+  min-width: 44px;
+  min-height: 44px;
+  height: 48%;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  color: #30271c;
+  transform: none;
 }
-.estate-profile { left: 11%; top: 12%; }
-.estate-experience { left: 40%; top: 40%; height: 38%; }
-.estate-contact { left: 68%; top: 27%; height: 31%; }
+.estate-profile {
+  left: 11%;
+  top: 12%;
+}
+.estate-experience {
+  left: 40%;
+  top: 40%;
+  height: 38%;
+}
+.estate-contact {
+  left: 68%;
+  top: 27%;
+  height: 31%;
+}
 .estate-destination span {
-  position: absolute; bottom: 0; left: 50%; transform: translateX(-50%);
-  padding: 4px 9px; border-radius: 50%; white-space: nowrap; color: #342a1f;
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 9px;
+  border-radius: 50%;
+  white-space: nowrap;
+  color: #342a1f;
   font: 600 clamp(18px, 2.5vw, 29px)/1.25 var(--font-display);
-  font-synthesis-weight: none; text-shadow: 0 1px rgba(255, 249, 231, .38);
+  font-synthesis-weight: none;
+  text-shadow: 0 1px rgba(255, 249, 231, 0.38);
 }
-.estate-destination:hover, .estate-destination:focus-visible { transform: none; background: rgba(78,54,26,.035); }
+.estate-destination:hover,
+.estate-destination:focus-visible {
+  transform: none;
+  background: rgba(78, 54, 26, 0.035);
+}
 /* Without hover, map labels keep a resting underline and taps tint. This sits
    after the base label rule, which shares its specificity. */
 @media (hover: none), (pointer: coarse) {
-  .estate-destination span { text-decoration: underline; text-decoration-color: rgba(72, 53, 30, 0.35); text-underline-offset: 5px; }
-  .panel-estate .estate-destination:active { background: rgba(78, 54, 26, 0.08); }
+  .estate-destination span {
+    text-decoration: underline;
+    text-decoration-color: rgba(72, 53, 30, 0.35);
+    text-underline-offset: 5px;
+  }
+  .panel-estate .estate-destination:active {
+    background: rgba(78, 54, 26, 0.08);
+  }
 }
 /* Touch browsers keep :hover after a tap; the underline follows real hover only. */
 @media (hover: hover) {
-  .estate-destination:hover span { text-decoration: underline; text-decoration-color: rgba(72, 53, 30, .55); text-underline-offset: 5px; }
+  .estate-destination:hover span {
+    text-decoration: underline;
+    text-decoration-color: rgba(72, 53, 30, 0.55);
+    text-underline-offset: 5px;
+  }
 }
-.estate-destination:focus-visible { outline: 2px solid #59452b; outline-offset: 3px; }
+.estate-destination:focus-visible {
+  outline: 2px solid #59452b;
+  outline-offset: 3px;
+}
 .panel-estate .panel-close {
-  position: absolute; top: 16px; right: 16px; z-index: 2; margin: 0;
-  border-color: rgba(81, 61, 35, .22); background: rgba(242, 230, 203, .58);
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 2;
+  margin: 0;
+  border-color: rgba(81, 61, 35, 0.22);
+  background: rgba(242, 230, 203, 0.58);
 }
-.panel-estate .panel-close:focus-visible { outline: 2px solid #59452b; outline-offset: 3px; }
+.panel-estate .panel-close:focus-visible {
+  outline: 2px solid #59452b;
+  outline-offset: 3px;
+}
 @media (max-width: 600px) {
-  .panel-estate { width: min(100%, 440px); }
-  .estate-map { aspect-ratio: 2 / 3; }
-  .estate-home-map .estate-map::before { background-image: url("/images/estate-map-portrait.webp"); }
-  .estate-title { font-size: 24px; }
-  .estate-destination { width: 38%; height: 30%; }
-  .estate-profile { left: 12%; top: 10%; }
-  .estate-experience { left: 50%; top: 38%; height: 24%; }
-  .estate-contact { left: 12%; top: 62%; height: 23%; }
-  .estate-destination span { font-size: 19px; }
+  .panel-estate {
+    width: min(100%, 440px);
+  }
+  .estate-map {
+    aspect-ratio: 2 / 3;
+  }
+  .estate-home-map .estate-map::before {
+    background-image: url("/images/estate-map-portrait.webp");
+  }
+  .estate-title {
+    font-size: 24px;
+  }
+  .estate-destination {
+    width: 38%;
+    height: 30%;
+  }
+  .estate-profile {
+    left: 12%;
+    top: 10%;
+  }
+  .estate-experience {
+    left: 50%;
+    top: 38%;
+    height: 24%;
+  }
+  .estate-contact {
+    left: 12%;
+    top: 62%;
+    height: 23%;
+  }
+  .estate-destination span {
+    font-size: 19px;
+  }
 }
 @media (forced-colors: active) {
-  .estate-map { color: CanvasText; border: 1px solid CanvasText; }
-  .estate-home-map .estate-map::before { display: none; }
-  .estate-home-map .estate-map::after { background: Canvas; }
-  .estate-title { color: CanvasText; }
-  .estate-destination { background: Canvas; color: ButtonText; border: 1px solid ButtonText; }
-  .estate-destination span { color: CanvasText; text-shadow: none; }
-  .estate-destination:focus-visible { outline-color: Highlight; }
-  .panel-estate .panel-close { color: ButtonText; background: ButtonFace; border-color: ButtonText; }
-  .panel-estate .panel-close:focus-visible { outline-color: Highlight; }
+  .estate-map {
+    color: CanvasText;
+    border: 1px solid CanvasText;
+  }
+  .estate-home-map .estate-map::before {
+    display: none;
+  }
+  .estate-home-map .estate-map::after {
+    background: Canvas;
+  }
+  .estate-title {
+    color: CanvasText;
+  }
+  .estate-destination {
+    background: Canvas;
+    color: ButtonText;
+    border: 1px solid ButtonText;
+  }
+  .estate-destination span {
+    color: CanvasText;
+    text-shadow: none;
+  }
+  .estate-destination:focus-visible {
+    outline-color: Highlight;
+  }
+  .panel-estate .panel-close {
+    color: ButtonText;
+    background: ButtonFace;
+    border-color: ButtonText;
+  }
+  .panel-estate .panel-close:focus-visible {
+    outline-color: Highlight;
+  }
 }
 
-/* Scene-first landing with the accepted estate behind About. */
-.scene-entry[hidden], [data-scene-fallback][hidden] { display: none; }
-.scene-fallback-content { max-width: 720px; margin: 0 auto; padding: 48px 24px 160px; }
-.scene-fallback-content a { color: var(--parchment-200); text-decoration-color: rgba(198, 208, 202, 0.48); }
-.estate-text-nav, .estate-text-section { margin: 24px auto; max-width: 640px; line-height: 1.6; }
+/* Scene-first landing with the estate behind About. */
+.scene-entry[hidden],
+[data-scene-fallback][hidden] {
+  display: none;
+}
+.scene-fallback-content {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 48px 24px 160px;
+}
+.scene-fallback-content a {
+  color: var(--parchment-200);
+  text-decoration-color: rgba(198, 208, 202, 0.48);
+}
+.estate-text-nav,
+.estate-text-section {
+  margin: 24px auto;
+  max-width: 640px;
+  line-height: 1.6;
+}
 
 /* The 404 is one cotton-paper sheet, built like the category dialogs. */
 .not-found {

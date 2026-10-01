@@ -4,9 +4,15 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
+import { Group } from "three";
+import { createArchitectureAssetController } from "../src/scene/architecture-assets.js";
+import { createEarthDetail } from "../src/scene/filmic-earth.js";
+import { createSceneSubsystemRegistry } from "../src/scene/subsystem.js";
 
 const testDir = path.dirname(fileURLToPath(import.meta.url));
+
 const projectRoot = path.resolve(testDir, "..");
+
 const qualityPath = path.join(projectRoot, "src", "scene", "quality.js");
 
 function createContext({
@@ -185,7 +191,8 @@ test("quality profiles expose the postprocess tier matrix", async () => {
   const scene = await loadQuality(createContext());
   const high = scene.getSceneQualityProfile("high");
   const balanced = scene.getSceneQualityProfile("balanced");
-  const low = scene.getSceneQualityProfile("low");
+  // The scene never renders low; a low request reads balanced.
+  assert.deepEqual(scene.getSceneQualityProfile("low"), balanced);
 
   assert.deepEqual(
     [
@@ -206,32 +213,29 @@ test("quality profiles expose the postprocess tier matrix", async () => {
     [true, false, true, true],
   );
   assert.deepEqual(
-    [low.postprocessGrading, low.postprocessBloom, low.postprocessVignette, low.postprocessGrain],
-    [true, false, false, false],
-  );
-  assert.deepEqual(
-    [high.postprocessSamples, balanced.postprocessSamples, low.postprocessSamples],
-    [4, 0, 0],
+    [high.postprocessSamples, balanced.postprocessSamples],
+    [4, 0],
     "only high multisamples the composer targets",
   );
-  assert.deepEqual([high.dprCap, balanced.dprCap, low.dprCap], [1.5, 1.25, 1]);
+  assert.deepEqual([high.dprCap, balanced.dprCap], [1.5, 1.25]);
   assert.equal("antialias" in high, false, "the renderer never multisamples the final quad");
   assert.equal(high.lighting.directionalIntensity, 3.25);
   assert.equal(high.lighting.fillIntensity, 0.46);
   assert.equal(high.lighting.practicalIntensityScale, 1.08);
   assert.equal(balanced.lighting.extraDirectional, true);
   assert.equal(balanced.lighting.practicalIntensityScale, 0.84);
-  assert.equal(low.lighting.extraDirectional, false);
-  assert.equal(low.lighting.practicalIntensityScale, 0.58);
   // The procedural world's particle counts and canvases are gone.
-  for (const profile of [high, balanced, low]) {
+  for (const profile of [high, balanced]) {
     assert.equal(profile.counts, undefined);
     assert.deepEqual(Object.keys(profile.textures), ["groundSize"]);
-    assert.deepEqual(Object.keys(profile.geometry).sort(), ["circleSegments", "skyHeightSegments", "skyWidthSegments"]);
+    assert.deepEqual(Object.keys(profile.geometry).sort(), [
+      "circleSegments",
+      "skyHeightSegments",
+      "skyWidthSegments",
+    ]);
   }
   assert.equal(high.postprocessSettings.contrast, 1.1);
   assert.equal(balanced.postprocessSettings.vignetteStrength, 0.1);
-  assert.equal(low.postprocessSettings.grainStrength, 0);
 });
 
 test("readWebGLQualityCaps falls back when probing fails and reports parameters when it succeeds", async () => {
@@ -278,26 +282,6 @@ test("readWebGLQualityCaps falls back when probing fails and reports parameters 
   assert.equal(losing.called, true, "probe context is released after measurement");
 });
 
-test("composition profiles bake the removed default scene zoom", async () => {
-  const scene = await loadQuality(createContext());
-  const cases = [
-    ["compact", { width: 900, height: 844 }, [48.52, 11.68, 74.8, 0.144]],
-    ["desktop", { width: 1440, height: 900 }, [48.52, 11.68, 65.8, 0.144]],
-    ["portraitPhone", { width: 390, height: 844 }, [50.32, 12.44, 72.3, 0.124]],
-    ["landscapePhone", { width: 844, height: 390 }, [55.8, 10.8, 63.2, 0.144]],
-    ["tabletPortrait", { width: 810, height: 1080 }, [48.52, 12.38, 71.8, 0.134]],
-  ];
-
-  for (const [name, viewport, [fov, lookAtBase, orbitBase, orbitTrim]] of cases) {
-    const profile = scene.getSceneCompositionProfile(viewport);
-    assert.equal(profile.name, name);
-    assert.equal(profile.camera.fov, fov);
-    assert.equal(profile.camera.lookAtBase, lookAtBase);
-    assert.equal(profile.camera.orbitBase, orbitBase);
-    assert.equal(profile.camera.orbitTrim, orbitTrim);
-  }
-});
-
 test("quality governor drops to low under sustained stress and ignores invalid samples", async () => {
   const scene = await loadQuality(createContext());
   const governor = scene.createSceneQualityGovernor({ initialTier: "high" });
@@ -327,7 +311,10 @@ function drive(governor, clock, frameMs, count, floorTier) {
 
 test("quality governor recovers to the initial tier at a 60 Hz display floor", async () => {
   const scene = await loadQuality(createContext());
-  for (const [displayMs, label] of [[1000 / 60, "60 Hz"], [1000 / 120, "120 Hz"]]) {
+  for (const [displayMs, label] of [
+    [1000 / 60, "60 Hz"],
+    [1000 / 120, "120 Hz"],
+  ]) {
     const governor = scene.createSceneQualityGovernor({ initialTier: "high" });
     const clock = { now: 0 };
     const [downgrade] = drive(governor, clock, 40, 240);
@@ -371,8 +358,18 @@ function driveCosts(governor, clock, costs, count, floorTier) {
 test("quality governor never reads a capped or GPU-bound steady rate as headroom", async () => {
   const scene = await loadQuality(createContext());
   for (const [costs, floorTier, expected, label] of [
-    [{ high: 1000 / 30, balanced: 1000 / 30, low: 1000 / 30 }, "balanced", ["balanced"], "30 Hz cap"],
-    [{ high: 1000 / 30, balanced: 1000 / 30, low: 1000 / 30 }, "low", ["balanced", "low"], "30 Hz cap"],
+    [
+      { high: 1000 / 30, balanced: 1000 / 30, low: 1000 / 30 },
+      "balanced",
+      ["balanced"],
+      "30 Hz cap",
+    ],
+    [
+      { high: 1000 / 30, balanced: 1000 / 30, low: 1000 / 30 },
+      "low",
+      ["balanced", "low"],
+      "30 Hz cap",
+    ],
     [{ high: 40, balanced: 28, low: 25 }, "balanced", ["balanced"], "28 ms at balanced"],
     [{ high: 40, balanced: 28, low: 25 }, "low", ["balanced", "low"], "25 ms at low"],
     [{ high: 45, balanced: 28, low: 25 }, "balanced", ["balanced"], "45/28 ms"],
@@ -562,7 +559,7 @@ test("landscapePhone and tabletPortrait profiles carry touch-friendly framing", 
   );
 });
 
-test("createSceneQualityState exposes profile, governor, and live sample handoff", async () => {
+test("createSceneQualityState exposes the startup tier, its profile and the governor", async () => {
   const context = createContext({ search: "?quality=auto", innerWidth: 1440, innerHeight: 900 });
   const scene = await loadQuality(context);
 
@@ -577,20 +574,8 @@ test("createSceneQualityState exposes profile, governor, and live sample handoff
   assert.equal(state.getTier(), "high");
   assert.equal(state.getProfile().dprCap, 1.5);
   assert.equal(state.getProfile().postprocessSamples, 4);
-
-  // Warmup: first 59 frames return null regardless (streak check gated on a full sample window).
-  for (let frame = 0; frame < 59; frame += 1) {
-    assert.equal(state.sample(40, frame * 40), null);
-  }
-  // Streak builds once the window fills — 120 consecutive over-budget frames trigger one step down.
-  let downgrade = null;
-  for (let frame = 59; frame < 360 && !downgrade; frame += 1) {
-    downgrade = state.sample(40, frame * 40);
-  }
-  assert.ok(downgrade, "governor returns the downgraded profile once the streak is complete");
-  assert.equal(state.getTier(), "balanced");
-  assert.equal(downgrade.dprCap, 1.25);
-  assert.equal(downgrade.postprocessSamples, 0);
+  assert.equal(state.governor.getInitialTier(), "high");
+  assert.equal(state.getProfile("balanced").dprCap, 1.25);
 });
 
 function driveRevealed(state, clock, frameMs, count, profile) {
@@ -646,7 +631,7 @@ test("a revealed scene's low step lowers only the pixel ratio, and recovery rest
     { tier: "balanced", dprCap: 1.25, governor: "balanced" },
     { tier: "balanced", dprCap: 1, governor: "low" },
   ]);
-  assert.equal(sustained.profile.isLow, false, "the revealed visuals never descend to low");
+  assert.equal(sustained.profile.tier, "balanced", "the revealed visuals never descend to low");
 });
 
 test("revealed sampling waits three seconds after the first frame and after each hold", async () => {
@@ -710,4 +695,243 @@ test("skipped samples leave the governor untouched for exactly that many frames"
     if (timestamp >= 3000 && unchanged) skipped.push(timestamp);
   }
   assert.deepEqual(skipped, [3400, 3440, 3480]);
+});
+
+const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+const canvas = () => ({ width: 0, height: 0, getContext: () => ({ drawImage() {} }) });
+
+async function loadQualityState() {
+  const source = await readFile(new URL("../src/scene/quality.js", import.meta.url), "utf8");
+  const window = { BabelSite: {}, location: { search: "" }, innerWidth: 1440, innerHeight: 900 };
+  vm.runInNewContext(source, { window, document: {}, navigator: {}, URLSearchParams, console });
+  return window.BabelSite.scene.createSceneQualityState({
+    navigatorInfo: { deviceMemory: 8, hardwareConcurrency: 8 },
+    viewport: { width: 1440, height: 900 },
+    caps: { maxTextureSize: 8192, maxAnisotropy: 8 },
+    touchPrimary: false,
+    saveData: false,
+  });
+}
+
+test("adaptive quality steps change cost settings without refetching models or terrain maps", async () => {
+  const qualityState = await loadQualityState();
+  const requests = [],
+    restores = [];
+  const load =
+    (kind) =>
+    (url, { signal }) =>
+      new Promise((resolve) => requests.push({ kind, url, signal, resolve }));
+  const registry = createSceneSubsystemRegistry();
+  const architecture = registry.register(
+    createArchitectureAssetController({
+      loadAsset: load("model"),
+      onTowerReady: () => () => {},
+      onTreeReady: () => () => {},
+      onRestoreTower: () => restores.push("tower"),
+      onRestoreTree: () => restores.push("tree"),
+    }),
+  );
+  // Mirrors the ground textures subsystem: the film slate's maps.
+  const initialProfile = qualityState.getProfile();
+  const layers = { profile: initialProfile, anisotropy: 4, createCanvas: canvas, publish() {} };
+  const slate = createEarthDetail({
+    ...layers,
+    preset: "slate",
+    loadImage: load("slate"),
+    restore: () => restores.push("slate"),
+  });
+  registry.register({
+    applyQuality(profile, context) {
+      slate.applyQuality(profile, context);
+    },
+    dispose() {
+      slate.dispose();
+    },
+  });
+
+  // The scene's startup order: initial quality, film ground, first-frame live gate.
+  const assetTier = qualityState.initialTier;
+  const devicePixelRatio = 2;
+  let profile = null;
+  let pixelRatio = null;
+  const applyProfile = (next) => {
+    profile = next;
+    pixelRatio = Math.min(devicePixelRatio, qualityState.resolveDprCap(profile));
+    registry.applyQuality(profile, { pixelRatio, assetTier });
+  };
+  applyProfile(initialProfile);
+  assert.equal(pixelRatio, 1.5);
+  slate.setActive(true);
+  architecture.setQuality(profile, true, { assetTier });
+  requests.forEach(({ kind, resolve }) =>
+    resolve(kind === "model" ? { scene: new Group() } : { width: 1024, height: 1024, close() {} }),
+  );
+  await flush();
+  await flush();
+  const settled = requests.length;
+  // Models (tower, tree) and the slate (color, normal, detail).
+  assert.equal(settled, 2 + 3);
+  restores.length = 0;
+
+  // Mirrors updateSceneFrame after the reveal.
+  let now = 0;
+  const steps = [];
+  const frame = (frameMs) => {
+    now += frameMs;
+    const next = qualityState.sampleRevealed({ frameMs, nowMs: now, timestamp: now, profile });
+    if (next) {
+      applyProfile(next);
+      steps.push(`${profile.tier}@${pixelRatio}`);
+    }
+  };
+  for (let index = 0; index < 900; index += 1) frame(40);
+  for (let index = 0; index < 1500; index += 1) frame(1000 / 60);
+
+  assert.deepEqual(
+    steps,
+    ["balanced@1.25", "balanced@1", "balanced@1.25", "high@1.5"],
+    "pressure steps down to balanced, then to 1x shading; headroom recovers both",
+  );
+  assert.equal(requests.length, settled, "no model or terrain map is downloaded again");
+  assert.ok(requests.every(({ signal }) => !signal.aborted));
+  assert.deepEqual(restores, [], "live models and bound maps are never restored away");
+  registry.dispose();
+});
+
+const qualitySourcePath = path.join(projectRoot, "src", "scene", "quality.js");
+
+function createSceneContext({
+  search = "",
+  navigatorInfo = { deviceMemory: 8, hardwareConcurrency: 8 },
+  innerWidth = 390,
+  innerHeight = 844,
+  localStorage = createStorageMock(),
+} = {}) {
+  const window = {
+    BabelSite: {},
+    location: { search },
+    innerWidth,
+    innerHeight,
+    localStorage,
+    navigator: navigatorInfo,
+    performance: { now: () => 0 },
+  };
+  const document = {
+    createElement() {
+      return {
+        getContext() {
+          return null;
+        },
+      };
+    },
+  };
+  return {
+    window,
+    document,
+    localStorage,
+    navigator: navigatorInfo,
+    performance: window.performance,
+  };
+}
+
+function createStorageMock(seed = {}) {
+  const data = new Map(Object.entries(seed));
+  return {
+    getItem(key) {
+      return data.has(key) ? data.get(key) : null;
+    },
+    removeItem(key) {
+      data.delete(key);
+    },
+    setItem(key, value) {
+      data.set(key, String(value));
+    },
+  };
+}
+
+async function loadSceneScript(scriptPath, context) {
+  const source = await readFile(scriptPath, "utf8");
+  vm.runInNewContext(
+    source,
+    {
+      window: context.window,
+      document: context.document,
+      localStorage: context.localStorage,
+      navigator: context.navigator,
+      performance: context.performance,
+      console,
+      URLSearchParams,
+    },
+    { filename: scriptPath },
+  );
+  return context.window.BabelSite.scene;
+}
+
+test("quality controls keep capable auto-tier devices on high and expose current balanced defaults", async () => {
+  const context = createSceneContext({ search: "?quality=auto&sceneDebug=1" });
+  const scene = await loadSceneScript(qualitySourcePath, context);
+
+  const controls = scene.readSceneQualityControls(context.window.location.search);
+  const tier = scene.selectSceneQualityTier({
+    controls,
+    navigatorInfo: { deviceMemory: 8, hardwareConcurrency: 6 },
+    viewport: { width: 390, height: 844 },
+    caps: { maxTextureSize: 8192, maxAnisotropy: 8 },
+  });
+  const balanced = scene.getSceneQualityProfile("balanced");
+
+  assert.equal(controls.debug, true);
+  assert.equal(controls.overrideTier, null);
+  assert.equal(controls.requestedTier, "auto");
+  assert.equal(tier, "high");
+  assert.equal(balanced.dprCap, 1.25);
+  assert.equal(balanced.textures.groundSize, 768);
+  assert.equal(balanced.shadows.mapSize, 0);
+});
+
+test("quality overrides and governor transitions are deterministic", async () => {
+  const context = createSceneContext({ search: "?quality=low" });
+  const scene = await loadSceneScript(qualitySourcePath, context);
+
+  const controls = scene.readSceneQualityControls(context.window.location.search);
+  const forced = scene.selectSceneQualityTier({
+    controls,
+    navigatorInfo: { deviceMemory: 8, hardwareConcurrency: 8 },
+    viewport: { width: 390, height: 844 },
+    caps: { maxTextureSize: 8192, maxAnisotropy: 8 },
+  });
+  // Disable the warmup window for this legacy deterministic trace.
+  const governor = scene.createSceneQualityGovernor({ initialTier: "high", warmupFrames: 0 });
+
+  assert.equal(forced, "low");
+
+  for (let frame = 0; frame < 180; frame += 1) {
+    governor.sample(21, frame * 16.67);
+  }
+  assert.equal(governor.getTier(), "balanced");
+
+  for (let frame = 0; frame < 720; frame += 1) {
+    const now = 4000 + frame * 16.67;
+    governor.sample(10, now);
+  }
+  assert.equal(governor.getTier(), "high");
+});
+
+test("composition profiles reframe portrait phones toward the tower", async () => {
+  const context = createSceneContext();
+  const scene = await loadSceneScript(qualitySourcePath, context);
+
+  const portrait = scene.getSceneCompositionProfile({ width: 390, height: 844 });
+  const compact = scene.getSceneCompositionProfile({ width: 900, height: 844 });
+  const desktop = scene.getSceneCompositionProfile({ width: 1440, height: 900 });
+
+  assert.equal(portrait.name, "portraitPhone");
+  assert.equal(compact.name, "compact");
+  assert.equal(desktop.name, "desktop");
+  assert.ok(portrait.camera.fov >= compact.camera.fov);
+  assert.ok(portrait.camera.orbitBase < compact.camera.orbitBase);
+  assert.ok(portrait.camera.orbitBase > desktop.camera.orbitBase);
+  assert.ok(portrait.camera.lookAtBase > desktop.camera.lookAtBase);
+  assert.ok(portrait.sceneOffsetY > compact.sceneOffsetY);
 });

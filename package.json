@@ -1,8 +1,18 @@
 {
-  "name": "babel-site",
-  "version": "0.1.0",
+  "name": "alexnava.me",
+  "version": "1.0.0",
   "private": true,
-  "description": "Static source for alexnava.me. Built with esbuild into a generated dist/ payload for Cloudflare Pages.",
+  "description": "Source for alexnava.me, a static site with a deferred Three.js night scene.",
+  "license": "MIT",
+  "author": "Alex Nava (https://alexnava.me/)",
+  "homepage": "https://alexnava.me/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alexonava/alexnava.me.git"
+  },
+  "bugs": {
+    "url": "https://github.com/alexonava/alexnava.me/issues"
+  },
   "type": "module",
   "engines": {
     "node": ">=22"
@@ -14,18 +24,16 @@
     "preview": "npm run build:dist && wrangler pages dev dist --port 4173",
     "dev": "node tools/dev.mjs",
     "verify": "node build.mjs --check",
-    "test": "node --test",
+    "test": "node --test \"test/*.test.mjs\"",
     "watch": "node build.mjs --watch",
     "deploy:preview": "npm run build:dist && wrangler pages deploy dist --project-name=alexnava-me --branch=preview",
-    "format": "prettier --write \"src/**/*.js\" \"*.html\" \"*.css\" \"*.md\""
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "devDependencies": {
     "esbuild": "^0.28.2",
-    "prettier": "^3.9.9",
+    "prettier": "3.9.9",
     "three": "0.160.1",
     "wrangler": "^4.145.0"
-  },
-  "overrides": {
-    "sharp": "0.35.4"
   }
 }

@@ -1,9 +1,9 @@
+import { CanvasTexture, RepeatWrapping, SRGBColorSpace } from "three";
 import {
-  CanvasTexture,
-  RepeatWrapping,
-  SRGBColorSpace,
-} from "three";
-import { createStoneDetailController, GROUND_DETAIL_SETTINGS, slateMaterialUrl } from "./stone-detail.js";
+  createStoneDetailController,
+  GROUND_DETAIL_SETTINGS,
+  slateMaterialUrl,
+} from "./stone-detail.js";
 import { SLATE_TILING } from "./mud-ground.js";
 
 export const EARTH = Object.freeze({ width: 384, subdivisions: 128 });

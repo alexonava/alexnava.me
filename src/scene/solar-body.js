@@ -21,7 +21,7 @@ export const SOLAR_QUALITY = Object.freeze({
   low: Object.freeze({ detail: 1, loops: 0 }),
 });
 export function celestialTier(profile = {}) {
-  return SOLAR_QUALITY[profile.tier] ? profile.tier : profile.isLow ? "low" : "high";
+  return SOLAR_QUALITY[profile.tier] ? profile.tier : "high";
 }
 export function createCelestialClock() {
   let previous = null,
@@ -213,11 +213,7 @@ export function makeLoopGeometry(radius = SOLAR_RADIUS, seed = 7143) {
     // Loops run along the meridian: an east-west arch at the side limbs lies
     // in the view ray's plane and projects edge-on as a flat radial "handle",
     // while a meridional one is seen side-on there, rising from the limb.
-    const tangent = new Vector3(
-      -Math.sin(azimuth),
-      0.15 * (random() - 0.5),
-      Math.cos(azimuth),
-    )
+    const tangent = new Vector3(-Math.sin(azimuth), 0.15 * (random() - 0.5), Math.cos(azimuth))
       .cross(n)
       .normalize();
     const span = 0.16 + random() * 0.26,
@@ -306,7 +302,7 @@ export function createSolarBody({ parent, camera, position, profile = {} }) {
   corona.name = "solar-corona";
   corona.renderOrder = 102;
   root.add(corona);
-  // Prominences keep the 2.2 CSS-pixel width reviewed at DPR 1. Their offset
+  // Prominences keep a 2.2 CSS-pixel width, tuned at DPR 1. Their offset
   // is in NDC, so the CSS viewport sets it whatever the target's pixel ratio.
   const resolution = new Vector2(1, 1);
   const loopMaterial = new ShaderMaterial({

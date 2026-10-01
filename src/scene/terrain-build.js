@@ -1,9 +1,14 @@
-import { BufferAttribute, BufferGeometry, Mesh, PlaneGeometry, Vector3 } from "three";
+import { BufferAttribute, BufferGeometry, Mesh, Vector3 } from "three";
 
-// Kept outside the initial scene; constants arrive from the owner.
+// A lazy chunk: the film terrain with its foothills, the tree's root supports
+// and their shading, the puddles and their drips, the tufts and the litter.
+
 // Two low, broken ridges beyond the estate's entire occupied area: radius,
 // half-width and lift.
-const RIDGES = [[123, 30, 4], [151, 27, 8]];
+const RIDGES = [
+  [123, 30, 4],
+  [151, 27, 8],
+];
 export function foothillHeight(x, z) {
   const r = Math.hypot(x, z);
   // Nothing inside the estate, and nothing past the outer ridge's reach.
@@ -61,14 +66,53 @@ export const ROOT_BERMS = [
 // and contact strength (1 where the root meets the soil, lower under arches and
 // under the aerial spur).
 export const ROOT_LINES = [
-  [[3.4, -3.2, 1, 0.25], [3.1, -5.5, 0.8, 0.4], [2.5, -7.6, 0.5, 0.8], [1.5, -9.1, 0.35, 1]],
-  [[5.4, -2.8, 1, 0.25], [6.6, -5, 0.6, 0.3], [7.9, -6, 0.4, 0.3]],
-  [[6, -1.6, 1.2, 0.3], [8.5, -1.7, 1, 0.5], [10.5, -1.4, 0.9, 0.85], [12.1, -1.1, 0.4, 1]],
-  [[1.5, -1, 0.8, 0.5], [-0.5, -1.3, 0.5, 0.6], [-2.5, -1.3, 0.35, 0.9], [-4, -1.4, 0.25, 1]],
-  [[5.8, 2.5, 0.8, 0.5], [6.8, 4.2, 0.6, 0.9], [7.4, 6.2, 0.5, 1], [7.4, 6.9, 0.4, 1]],
-  [[6.5, 2.5, 1, 0.6], [8, 3.3, 1, 0.9], [9, 4, 0.5, 1]],
-  [[2.2, 3.5, 0.6, 0.5], [1, 5.5, 0.6, 0.9], [-0.5, 6.8, 0.5, 0.8], [-2.2, 7.2, 0.9, 1], [-3.8, 7.5, 0.4, 1]],
-  [[2.4, -3, 1, 0.4], [1, -4, 0.5, 0.6], [-0.2, -4.6, 0.4, 0.9], [-1.1, -5.35, 0.4, 1]],
+  [
+    [3.4, -3.2, 1, 0.25],
+    [3.1, -5.5, 0.8, 0.4],
+    [2.5, -7.6, 0.5, 0.8],
+    [1.5, -9.1, 0.35, 1],
+  ],
+  [
+    [5.4, -2.8, 1, 0.25],
+    [6.6, -5, 0.6, 0.3],
+    [7.9, -6, 0.4, 0.3],
+  ],
+  [
+    [6, -1.6, 1.2, 0.3],
+    [8.5, -1.7, 1, 0.5],
+    [10.5, -1.4, 0.9, 0.85],
+    [12.1, -1.1, 0.4, 1],
+  ],
+  [
+    [1.5, -1, 0.8, 0.5],
+    [-0.5, -1.3, 0.5, 0.6],
+    [-2.5, -1.3, 0.35, 0.9],
+    [-4, -1.4, 0.25, 1],
+  ],
+  [
+    [5.8, 2.5, 0.8, 0.5],
+    [6.8, 4.2, 0.6, 0.9],
+    [7.4, 6.2, 0.5, 1],
+    [7.4, 6.9, 0.4, 1],
+  ],
+  [
+    [6.5, 2.5, 1, 0.6],
+    [8, 3.3, 1, 0.9],
+    [9, 4, 0.5, 1],
+  ],
+  [
+    [2.2, 3.5, 0.6, 0.5],
+    [1, 5.5, 0.6, 0.9],
+    [-0.5, 6.8, 0.5, 0.8],
+    [-2.2, 7.2, 0.9, 1],
+    [-3.8, 7.5, 0.4, 1],
+  ],
+  [
+    [2.4, -3, 1, 0.4],
+    [1, -4, 0.5, 0.6],
+    [-0.2, -4.6, 0.4, 0.9],
+    [-1.1, -5.35, 0.4, 1],
+  ],
 ];
 // Contact shading reach beyond a root's half-width, the settled root plate
 // around the trunk (full within, none beyond), the berm height at which soil is
@@ -84,10 +128,15 @@ export const ROOT_LATTICE = Object.freeze({ x: 46.5, z: 24, pitch: 0.75, cols: 3
 // (diagonal b-d, as liftSampler()), 0 beyond it: the analytic surface and the
 // rendered one agree.
 function latticeAt(values, x, z) {
-  const { pitch, cols, rows } = ROOT_LATTICE, u = (x - ROOT_LATTICE.x) / pitch, v = (z - ROOT_LATTICE.z) / pitch;
-  const col = Math.floor(u), row = Math.floor(v);
+  const { pitch, cols, rows } = ROOT_LATTICE,
+    u = (x - ROOT_LATTICE.x) / pitch,
+    v = (z - ROOT_LATTICE.z) / pitch;
+  const col = Math.floor(u),
+    row = Math.floor(v);
   if (!(col >= 0 && row >= 0 && col < cols - 1 && row < rows - 1)) return 0;
-  const fx = u - col, fz = v - row, at = (i, j) => values[(row + j) * cols + col + i];
+  const fx = u - col,
+    fz = v - row,
+    at = (i, j) => values[(row + j) * cols + col + i];
   return fx + fz <= 1
     ? at(0, 0) + (at(1, 0) - at(0, 0)) * fx + (at(0, 1) - at(0, 0)) * fz
     : at(1, 1) + (at(0, 1) - at(1, 1)) * (1 - fx) + (at(1, 0) - at(1, 1)) * (1 - fz);
@@ -98,13 +147,23 @@ function latticeAt(values, x, z) {
 // them): world centre, radius, stretch along a world angle. Restated so this
 // chunk imports only three; the terrain regression holds them equal.
 const LANTERN_LENGTH = Math.hypot(TREE_FOOTING.x, TREE_FOOTING.z);
-export const LANTERN_FOOT = Object.freeze({ x: TREE_FOOTING.x * (1 - 5 / LANTERN_LENGTH), z: TREE_FOOTING.z * (1 - 5 / LANTERN_LENGTH) });
-const zoneAt = ({ x, z }, deg, dist, radius, stretch = 1, along = 0) => Object.freeze({
-  x: x + Math.cos(deg * Math.PI / 180) * dist, z: z + Math.sin(deg * Math.PI / 180) * dist, radius, stretch,
-  c: Math.cos(along * Math.PI / 180), s: Math.sin(along * Math.PI / 180),
+export const LANTERN_FOOT = Object.freeze({
+  x: TREE_FOOTING.x * (1 - 5 / LANTERN_LENGTH),
+  z: TREE_FOOTING.z * (1 - 5 / LANTERN_LENGTH),
 });
+const zoneAt = ({ x, z }, deg, dist, radius, stretch = 1, along = 0) =>
+  Object.freeze({
+    x: x + Math.cos((deg * Math.PI) / 180) * dist,
+    z: z + Math.sin((deg * Math.PI) / 180) * dist,
+    radius,
+    stretch,
+    c: Math.cos((along * Math.PI) / 180),
+    s: Math.sin((along * Math.PI) / 180),
+  });
 export const PUDDLE_ZONES = Object.freeze([
-  zoneAt(LANTERN_FOOT, -115, 3, 2.8, 1.4, 33), zoneAt(TREE_FOOTING, 185, 8, 2.2), zoneAt(TREE_FOOTING, 75, 9, 2.5),
+  zoneAt(LANTERN_FOOT, -115, 3, 2.8, 1.4, 33),
+  zoneAt(TREE_FOOTING, 185, 8, 2.2),
+  zoneAt(TREE_FOOTING, 75, 9, 2.5),
 ]);
 // A zone's distance from its centre in its own stretched frame (units).
 export const zoneDistance = ({ x: cx, z: cz, stretch, c, s }, x, z) =>
@@ -123,6 +182,7 @@ export const KEY_LIGHT = Object.freeze([32, 28, 14].map((v, _, all) => v / Math.
 // the supported ground under a slope of 1.15. Lattice column, row and lift;
 // the rest of the lattice stays open ground. No lattice triangle that reaches
 // the lantern clearing, the front puddle or a drip-line puddle takes any.
+// prettier-ignore
 export const ROOT_RESTS = Object.freeze([
   [14,4,0.063], [15,4,0.381], [16,4,0.04], [15,5,0.155], [16,5,0.557], [17,5,0.033], [15,6,0.106], [16,6,0.477],
   [17,6,0.166], [16,7,0.056], [12,10,0.319], [12,11,0.479], [12,12,0.049], [24,13,0.093], [25,13,0.374], [26,13,0.103],
@@ -149,6 +209,7 @@ export const rootBankLift = (x, z) => latticeAt(BANKS, x, z);
 // The shader reads sky and key as the slateShade attribute; rootShade() takes
 // the cut. None reaches the lantern clearing or the puddles.
 export const SHADE_ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_";
+// prettier-ignore
 export const ROOT_SHADE = Object.freeze({
   sky: [
     "000000000000000000000000000000000",
@@ -253,14 +314,21 @@ export const ROOT_SHADE = Object.freeze({
     "000000000000000000000000000000000",
   ].join(""),
 });
-const shadeTable = (text) => Float32Array.from({ length: ROOT_LATTICE.cols * ROOT_LATTICE.rows }, (_, i) => Math.max(0, SHADE_ALPHABET.indexOf(text[i] ?? "0")) / 63);
-const SKY = shadeTable(ROOT_SHADE.sky), KEY = shadeTable(ROOT_SHADE.key), CUT = shadeTable(ROOT_SHADE.cut);
+const shadeTable = (text) =>
+  Float32Array.from(
+    { length: ROOT_LATTICE.cols * ROOT_LATTICE.rows },
+    (_, i) => Math.max(0, SHADE_ALPHABET.indexOf(text[i] ?? "0")) / 63,
+  );
+const SKY = shadeTable(ROOT_SHADE.sky),
+  KEY = shadeTable(ROOT_SHADE.key),
+  CUT = shadeTable(ROOT_SHADE.cut);
 // [sky, key] occlusion at a world x/z, as the slateShade attribute holds it.
 export const rootOcclusion = (x, z) => [latticeAt(SKY, x, z), latticeAt(KEY, x, z)];
 
 // Where a root lies within [-0.2, 1.3] of the soil, on a 0.25 grid from the
 // lattice's first vertex (base64 bits, row by row): the tufts there collapse
 // and no litter lands.
+// prettier-ignore
 export const ROOT_COVER = Object.freeze({ cols: 97, rows: 94, bits: [
     "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
     "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
@@ -285,7 +353,8 @@ export const ROOT_COVER = Object.freeze({ cols: 97, rows: 94, bits: [
 ].join("") });
 const COVER = Uint8Array.from(globalThis.atob?.(ROOT_COVER.bits) ?? "", (ch) => ch.charCodeAt(0));
 export function rootCovered(x, z) {
-  const col = Math.round((x - ROOT_LATTICE.x) / 0.25), row = Math.round((z - ROOT_LATTICE.z) / 0.25);
+  const col = Math.round((x - ROOT_LATTICE.x) / 0.25),
+    row = Math.round((z - ROOT_LATTICE.z) / 0.25);
   if (!(col >= 0 && row >= 0 && col < ROOT_COVER.cols && row < ROOT_COVER.rows)) return false;
   const bit = row * ROOT_COVER.cols + col;
   return Boolean(COVER[bit >> 3] & (1 << (bit & 7)));
@@ -294,46 +363,71 @@ export function rootCovered(x, z) {
 // How far the plate raises a point relative to the tree, whose base height is
 // base, toward the footing at floor.
 function plateLift(dx, dz, base, floor) {
-  const [flat, blend, drop, arc, soft] = ROOT_BENCH, tx = dx - TRUNK[0], tz = dz - TRUNK[1];
-  const facing = Math.abs(Math.atan2(tz, tx)) * 180 / Math.PI;
-  return Math.max(0, floor - drop - base) * (1 - ease(flat, blend, Math.hypot(tx, tz))) * (1 - ease(arc, arc + soft, facing));
+  const [flat, blend, drop, arc, soft] = ROOT_BENCH,
+    tx = dx - TRUNK[0],
+    tz = dz - TRUNK[1];
+  const facing = (Math.abs(Math.atan2(tz, tx)) * 180) / Math.PI;
+  return (
+    Math.max(0, floor - drop - base) *
+    (1 - ease(flat, blend, Math.hypot(tx, tz))) *
+    (1 - ease(arc, arc + soft, facing))
+  );
 }
 
 // [base, plate, berm, bank] at x/z: the plate fill, then the most any berm
 // adds above it, then the soil bank. A berm tops out at its soil level and
 // never stands higher above the plate than it does at its root end, so it
 // follows the ground down beyond the tip.
-const BERM_HEADINGS = ROOT_BERMS.map(([, , deg]) => [Math.cos(deg * Math.PI / 180), Math.sin(deg * Math.PI / 180)]);
+const BERM_HEADINGS = ROOT_BERMS.map(([, , deg]) => [
+  Math.cos((deg * Math.PI) / 180),
+  Math.sin((deg * Math.PI) / 180),
+]);
 function supportLifts(x, z, baseHeight, banks = true) {
-  const dx = x - TREE_FOOTING.x, dz = z - TREE_FOOTING.z;
-  const base = baseHeight(x, z), floor = baseHeight(TREE_FOOTING.x, TREE_FOOTING.z);
+  const dx = x - TREE_FOOTING.x,
+    dz = z - TREE_FOOTING.z;
+  const base = baseHeight(x, z),
+    floor = baseHeight(TREE_FOOTING.x, TREE_FOOTING.z);
   const plate = plateLift(dx, dz, base, floor);
   let berm = 0;
   for (let k = 0; k < ROOT_BERMS.length; k++) {
-    const [tx, tz, , level, hold, reach, half] = ROOT_BERMS[k], [c, s] = BERM_HEADINGS[k];
-    const u = (dx - tx) * c + (dz - tz) * s, v = (dz - tz) * c - (dx - tx) * s;
+    const [tx, tz, , level, hold, reach, half] = ROOT_BERMS[k],
+      [c, s] = BERM_HEADINGS[k];
+    const u = (dx - tx) * c + (dz - tz) * s,
+      v = (dz - tz) * c - (dx - tx) * s;
     const along = u > 0 ? 1 - ease(0, reach, u) : 1 - ease(hold, hold + 1.2, -u);
     const across = 1 - ease(0.3, half, Math.abs(v));
     if (along <= 0 || across <= 0) continue;
     const tipBase = baseHeight(TREE_FOOTING.x + tx, TREE_FOOTING.z + tz);
     const tip = floor + level - tipBase - plateLift(tx, tz, tipBase, floor);
-    berm = Math.max(berm, Math.max(0, Math.min(floor + level - base - plate, tip)) * along * across);
+    berm = Math.max(
+      berm,
+      Math.max(0, Math.min(floor + level - base - plate, tip)) * along * across,
+    );
   }
   return [base, plate, berm, banks ? rootBankLift(x, z) : 0];
 }
 
 // Match ESTATE's lamp and SLATE_PUDDLES' existing front ellipse. Preserve
 // its entire footprint plus a .75-unit margin; don't shape a bowl around it.
-const PUDDLE = [3 * Math.cos(-115 * Math.PI / 180), 3 * Math.sin(-115 * Math.PI / 180), Math.cos(33 * Math.PI / 180), Math.sin(33 * Math.PI / 180)];
+const PUDDLE = [
+  3 * Math.cos((-115 * Math.PI) / 180),
+  3 * Math.sin((-115 * Math.PI) / 180),
+  Math.cos((33 * Math.PI) / 180),
+  Math.sin((33 * Math.PI) / 180),
+];
 // The supported ground at x/z; banks false leaves out the soil banks (what
 // tools/bake-root-shade.mjs measures them against).
 export function rootSupportHeight(x, z, baseHeight, banks = true) {
   const [base, plate, berm, bank] = supportLifts(x, z, baseHeight, banks);
   const lift = plate + berm;
   if (!lift) return base + bank;
-  const dx = x - TREE_FOOTING.x, dz = z - TREE_FOOTING.z;
-  const lx = dx + 5 * TREE_FOOTING.x / LANTERN_LENGTH, lz = dz + 5 * TREE_FOOTING.z / LANTERN_LENGTH;
-  const [ox, oz, c, s] = PUDDLE, px = lx - ox, pz = lz - oz;
+  const dx = x - TREE_FOOTING.x,
+    dz = z - TREE_FOOTING.z;
+  const lx = dx + (5 * TREE_FOOTING.x) / LANTERN_LENGTH,
+    lz = dz + (5 * TREE_FOOTING.z) / LANTERN_LENGTH;
+  const [ox, oz, c, s] = PUDDLE,
+    px = lx - ox,
+    pz = lz - oz;
   const puddleDistance = Math.hypot((c * px + s * pz) / 1.4, -s * px + c * pz);
   return base + lift * ease(1.4, 1.9, Math.hypot(lx, lz)) * ease(3.55, 4.1, puddleDistance) + bank;
 }
@@ -353,21 +447,41 @@ export function rootBermExcess(x, z, baseHeight) {
 // The contact strength loses ROOT_SHADE's cut where a centreline strays over
 // open soil.
 export function rootShade(dx, dz, lift) {
-  let best = Infinity, vx = 3, vz = 0, strength = 0, band = 0;
+  let best = Infinity,
+    vx = 3,
+    vz = 0,
+    strength = 0,
+    band = 0;
   for (const line of ROOT_LINES)
     for (let i = 0; i < line.length - 1; i++) {
-      const [ax, az, ah, as] = line[i], [bx, bz, bh, bs] = line[i + 1];
-      const ex = bx - ax, ez = bz - az;
+      const [ax, az, ah, as] = line[i],
+        [bx, bz, bh, bs] = line[i + 1];
+      const ex = bx - ax,
+        ez = bz - az;
       const t = Math.min(1, Math.max(0, ((dx - ax) * ex + (dz - az) * ez) / (ex * ex + ez * ez)));
-      const nx = ax + ex * t - dx, nz = az + ez * t - dz, d = Math.hypot(nx, nz);
-      const half = ah + (bh - ah) * t, contact = as + (bs - as) * t, reach = half + SHADE.reach;
+      const nx = ax + ex * t - dx,
+        nz = az + ez * t - dz,
+        d = Math.hypot(nx, nz);
+      const half = ah + (bh - ah) * t,
+        contact = as + (bs - as) * t,
+        reach = half + SHADE.reach;
       band = Math.max(band, contact * (1 - ease(half + 0.2, half + SHADE.band, d)));
-      if (d / reach < best) { best = d / reach; vx = nx / reach; vz = nz / reach; strength = contact; }
+      if (d / reach < best) {
+        best = d / reach;
+        vx = nx / reach;
+        vz = nz / reach;
+        strength = contact;
+      }
     }
   const scale = best > 3 ? 3 / best : 1;
   const plate = 1 - ease(SHADE.plate[0], SHADE.plate[1], Math.hypot(dx - TRUNK[0], dz - TRUNK[1]));
   const soil = Math.max(ease(0, SHADE.soilLift, lift), plate, band);
-  return [vx * scale, vz * scale, best > 3 ? 0 : strength * (1 - latticeAt(CUT, TREE_FOOTING.x + dx, TREE_FOOTING.z + dz)), 1 - soil];
+  return [
+    vx * scale,
+    vz * scale,
+    best > 3 ? 0 : strength * (1 - latticeAt(CUT, TREE_FOOTING.x + dx, TREE_FOOTING.z + dz)),
+    1 - soil,
+  ];
 }
 
 /// The slate's root shading (shadeSlateRoots()). In the lantern clearing the
@@ -385,12 +499,37 @@ export function rootShade(dx, dz, lift) {
 // - damp: soil in the creases and the deepest cavity is darker and a little
 //   glossier; the open plate stays dry.
 export const SLATE_SOIL = Object.freeze({
-  albedo: 0.5, flatten: 0.5, contact: 0.35,
-  settle: Object.freeze({ gain: 1.1, crack: 1.4, bias: 0.45, dry: 0.7, mix: 0.5, flatten: 0.45, depth: 0.6, tone: 0.92 }),
+  albedo: 0.5,
+  flatten: 0.5,
+  contact: 0.35,
+  settle: Object.freeze({
+    gain: 1.1,
+    crack: 1.4,
+    bias: 0.45,
+    dry: 0.7,
+    mix: 0.5,
+    flatten: 0.45,
+    depth: 0.6,
+    tone: 0.92,
+  }),
   grain: Object.freeze({ amount: 0.35, frequency: 9, near: Object.freeze([3, 10]) }),
   crease: 6,
-  occlusion: Object.freeze({ indirect: 0.95, fill: 0.92, lantern: 0.2, key: 0.85, creaseSky: 0.9, creaseKey: 0.55, crack: 0.6 }),
-  damp: Object.freeze({ crease: Object.freeze([0.1, 0.45]), cavity: 0.7, albedo: 0.16, roughness: 0.55, wet: 0.6 }),
+  occlusion: Object.freeze({
+    indirect: 0.95,
+    fill: 0.92,
+    lantern: 0.2,
+    key: 0.85,
+    creaseSky: 0.9,
+    creaseKey: 0.55,
+    crack: 0.6,
+  }),
+  damp: Object.freeze({
+    crease: Object.freeze([0.1, 0.45]),
+    cavity: 0.7,
+    albedo: 0.16,
+    roughness: 0.55,
+    wet: 0.6,
+  }),
   keep: Object.freeze([1.9, 2.4]),
 });
 const glsl = (value) => (Number.isInteger(value) ? value.toFixed(1) : String(+value.toFixed(4)));
@@ -404,13 +543,21 @@ function insertAt(source, anchor, text) {
   const pattern = (part) => part.replace(/[.*+?^${}()[\]\\]/g, "\\$&").replace(/ +/g, "\\s*");
   const [before, after = ""] = anchor.split("|");
   const match = new RegExp(`(${pattern(before)})(${pattern(after)})`).exec(source);
-  return match && source.slice(0, match.index) + match[1] + text + match[2] + source.slice(match.index + match[0].length);
+  return (
+    match &&
+    source.slice(0, match.index) +
+      match[1] +
+      text +
+      match[2] +
+      source.slice(match.index + match[0].length)
+  );
 }
 // Applies a whole edit list, or nothing: false, leaving the shader unchanged,
 // if any anchor is missing.
 function applyEdits(shader, edits, prefix = {}) {
   const edited = { vertexShader: shader.vertexShader, fragmentShader: shader.fragmentShader };
-  for (const [stage, anchor, text] of edits) if (!(edited[stage] = insertAt(edited[stage], anchor, text))) return false;
+  for (const [stage, anchor, text] of edits)
+    if (!(edited[stage] = insertAt(edited[stage], anchor, text))) return false;
   shader.vertexShader = (prefix.vertexShader ?? "") + edited.vertexShader;
   shader.fragmentShader = (prefix.fragmentShader ?? "") + edited.fragmentShader;
   return true;
@@ -445,7 +592,8 @@ float slateSky = 0.0, slateKeyOcc = 0.0, slateSettle = 0.0, slateDepth = 0.5, sl
 float slateKeepAt(vec2 p) { return 1.0 - smoothstep(${glsl(SLATE_SOIL.keep[0])}, ${glsl(SLATE_SOIL.keep[1])}, length(p - ${LANTERN_GLSL})); }
 float slateSettleAt(float w, float depth) { return smoothstep(0.0, .25, (1.0 - w)*${glsl(SETTLE.gain)} - (depth - .5)*${glsl(SETTLE.crack)} - ${glsl(SETTLE.bias)})*smoothstep(0.0, .2, 1.0 - w); }
 `;
-const SETTLE_AT = "slateKeep = slateKeepAt(vMudWorld.xz);\nslateSettle = slateSettleAt(vSlateRoot.w, slateDepth);\n";
+const SETTLE_AT =
+  "slateKeep = slateKeepAt(vMudWorld.xz);\nslateSettle = slateSettleAt(vSlateRoot.w, slateDepth);\n";
 
 // mud-ground.js configureGroundShading() applies this, through shadeSlateGround(),
 // once settleRoots() has set that as the ground material's userData.slateRoot.
@@ -456,14 +604,25 @@ const SETTLE_AT = "slateKeep = slateKeepAt(vMudWorld.xz);\nslateSettle = slateSe
 export function shadeSlateRoots(shader) {
   const authored = /vec3\s+slateMean/.test(shader.fragmentShader);
   const edits = [
-    ["vertexShader", "#include <begin_vertex>|", "\nvSlateRoot = slateRoot;\nvSlateShade = slateShade;"],
+    [
+      "vertexShader",
+      "#include <begin_vertex>|",
+      "\nvSlateRoot = slateRoot;\nvSlateShade = slateShade;",
+    ],
     ["fragmentShader", "#include <lights_physical_pars_fragment>|", ROOT_LIGHTS],
     // Settled soil is dry (the procedural -p surface has no map depth or tile blend).
-    ["fragmentShader", "|float slateWet =", (authored ? "" : "slateDepth = slateH;\n" + SETTLE_AT) +
-      `slateDry = max(slateDry, mix(${glsl(SETTLE.dry)}*slateSettle, 1.0-vSlateRoot.w, slateKeep));\n`],
+    [
+      "fragmentShader",
+      "|float slateWet =",
+      (authored ? "" : "slateDepth = slateH;\n" + SETTLE_AT) +
+        `slateDry = max(slateDry, mix(${glsl(SETTLE.dry)}*slateSettle, 1.0-vSlateRoot.w, slateKeep));\n`,
+    ],
     // The origin-centred tree contact (slot 0) gives way to the root lines, but in the clearing.
     ["fragmentShader", "slateContacts[i].w|", "*(i > 0 ? 1.0 : slateKeep)"],
-    ["fragmentShader", "diffuseColor.rgb *= 1.0 - slateAo*slateContactGain;|", `
+    [
+      "fragmentShader",
+      "diffuseColor.rgb *= 1.0 - slateAo*slateContactGain;|",
+      `
 if (vSlateShade.x + vSlateShade.y + vSlateRoot.z > 0.0) {
   float slateU = length(vSlateRoot.xy), slateGuard = (1.0-slateKeep)*(1.0-slatePuddle);
   diffuseColor.rgb *= 1.0 - ${glsl(SLATE_SOIL.contact)}*vSlateRoot.z*(1.0-smoothstep(.3, 1.0, slateU))*slateContactGain*slateKeep;
@@ -476,27 +635,47 @@ if (vSlateShade.x + vSlateShade.y + vSlateRoot.z > 0.0) {
   diffuseColor.rgb *= 1.0 - ${glsl(DAMP.albedo)}*slateDamp;
   roughnessFactor = mix(roughnessFactor, ${glsl(DAMP.roughness)}, slateDamp);
   slateWet = max(slateWet, ${glsl(DAMP.wet)}*slateDamp);
-}`],
+}`,
+    ],
     // The occluded sky: less reflection, less sky light.
-    ["fragmentShader", "reflectedLight.indirectSpecular *= .18;|", "\nreflectedLight.indirectSpecular *= 1.0-slateSky;"],
-    ["fragmentShader", "|#include <aomap_fragment>", `reflectedLight.indirectDiffuse *= 1.0-${glsl(OCCLUSION.indirect)}*slateSky;\n`],
+    [
+      "fragmentShader",
+      "reflectedLight.indirectSpecular *= .18;|",
+      "\nreflectedLight.indirectSpecular *= 1.0-slateSky;",
+    ],
+    [
+      "fragmentShader",
+      "|#include <aomap_fragment>",
+      `reflectedLight.indirectDiffuse *= 1.0-${glsl(OCCLUSION.indirect)}*slateSky;\n`,
+    ],
   ];
   // The authored maps' tile blend and close relief.
   if (authored)
     edits.push(
-      ["fragmentShader", "|diffuseColor *= sampledDiffuseColor;",
+      [
+        "fragmentShader",
+        "|diffuseColor *= sampledDiffuseColor;",
         `slateDepth = mix(slateH, smoothstep(.04, .3, dot(sampledDiffuseColor.rgb, vec3(.2126,.7152,.0722))), ${glsl(SETTLE.depth)});
 ${SETTLE_AT}float slateGrain = .5, slateNearG = 1.0-smoothstep(${glsl(GRAIN.near[0])}, ${glsl(GRAIN.near[1])}, length(vViewPosition));
 if (slateSettle*slateNearG > 0.0) slateGrain = slateNoise(vMudWorld.xz*${glsl(GRAIN.frequency)})*.6+slateNoise(vMudWorld.xz*${glsl(GRAIN.frequency * 2.3)}+7.1)*.4;
 vec3 slateSoilTone = mix(slateMean*${glsl(SETTLE.tone)}*(.8+.4*slateH)*(1.0+(slateGrain-.5)*${glsl(GRAIN.amount)}*slateNearG), slateMean*(.8+.4*slateH), slateKeep);
 sampledDiffuseColor.rgb = mix(sampledDiffuseColor.rgb, slateSoilTone, mix(${glsl(SETTLE.mix)}*slateSettle, ${glsl(SLATE_SOIL.albedo)}*(1.-vSlateRoot.w), slateKeep));
-`],
-      ["fragmentShader", "*slatePuddle)|, mix(slateNA.z", `*(1.-mix(${glsl(SETTLE.flatten)}*slateSettle, ${glsl(SLATE_SOIL.flatten)}*(1.-vSlateRoot.w), slateKeep))`],
+`,
+      ],
+      [
+        "fragmentShader",
+        "*slatePuddle)|, mix(slateNA.z",
+        `*(1.-mix(${glsl(SETTLE.flatten)}*slateSettle, ${glsl(SLATE_SOIL.flatten)}*(1.-vSlateRoot.w), slateKeep))`,
+      ],
     );
-  if (!applyEdits(shader, edits, {
-    vertexShader: "attribute vec4 slateRoot;\nattribute vec2 slateShade;\nvarying vec4 vSlateRoot;\nvarying vec2 vSlateShade;\n",
-    fragmentShader: ROOT_FRAGMENT,
-  })) return false;
+  if (
+    !applyEdits(shader, edits, {
+      vertexShader:
+        "attribute vec4 slateRoot;\nattribute vec2 slateShade;\nvarying vec4 vSlateRoot;\nvarying vec2 vSlateShade;\n",
+      fragmentShader: ROOT_FRAGMENT,
+    })
+  )
+    return false;
   shader.uniforms.slateKeyView = KEY_VIEW;
   return true;
 }
@@ -535,7 +714,7 @@ export const PUDDLE_MIRROR = Object.freeze({
   bark: Object.freeze([0.045, 0.048, 0.05]),
 });
 // The supplied lantern in its own units (lantern.js LANTERN_AUTHORING_HEIGHT
-// 2.48, drawn 1.98 tall): the light sits at its luminous centre, and the v3
+// 2.48, drawn 1.98 tall): the light sits at its luminous centre, and the
 // flame (lantern-flame.js FLAME and FLAME_BASE) stands on the wick at 0.49,
 // 0.30 tall and 0.047 wide, its fire in the FLAME colours at gain 1.6, with
 // lanternFire's light held in the glass: a halo [strength, half-width, centre
@@ -543,13 +722,26 @@ export const PUDDLE_MIRROR = Object.freeze({
 // glare in the pale one (its no-bloom strength).
 export const LANTERN_IMAGE = Object.freeze({ scale: 1.98 / 2.48, glow: 0.7146 });
 export const LANTERN_FLAME = Object.freeze({
-  base: 0.49, height: 0.3, halfWidth: 0.047, gain: 1.6,
-  color: Object.freeze({ blue: Object.freeze([0.07, 0.16, 0.62]), core: Object.freeze([1.35, 1.12, 0.62]), body: Object.freeze([1.12, 0.8, 0.25]), tip: Object.freeze([1, 0.24, 0.035]) }),
-  glass: Object.freeze({ halo: Object.freeze([0.05, 0.075, 0.4, 0.62]), fill: 0.015, glare: Object.freeze([0.05, 0.11, 0.45, 0.8]), warm: Object.freeze([1, 0.48, 0.14]), pale: Object.freeze([1, 0.62, 0.28]) }),
+  base: 0.49,
+  height: 0.3,
+  halfWidth: 0.047,
+  gain: 1.6,
+  color: Object.freeze({
+    blue: Object.freeze([0.07, 0.16, 0.62]),
+    core: Object.freeze([1.35, 1.12, 0.62]),
+    body: Object.freeze([1.12, 0.8, 0.25]),
+    tip: Object.freeze([1, 0.24, 0.035]),
+  }),
+  glass: Object.freeze({
+    halo: Object.freeze([0.05, 0.075, 0.4, 0.62]),
+    fill: 0.015,
+    glare: Object.freeze([0.05, 0.11, 0.45, 0.8]),
+    warm: Object.freeze([1, 0.48, 0.14]),
+    pale: Object.freeze([1, 0.62, 0.28]),
+  }),
 });
 // The flame's mirror image reads the size of the flame (its extent at 30% and
-// 50% of its own peak 0.9-1.0x the real flame's, same frame, 2026-09-28
-// captures): it is the flame's own light as the frame shows it, lanternFire's
+// 50% of its own peak 0.9-1.0x the real flame's in the same frame): it is the flame's own light as the frame shows it, lanternFire's
 // fire and glass light with the gain clipped at white as the grade clamps the
 // real flame, added after the knee. The grade inks the real flame's steep
 // outline, which the dim, soft image escapes, so the image's body is `width`
@@ -567,9 +759,18 @@ export const MIRROR_FLAME = Object.freeze({ width: 0.945, inset: 0.7, span: 0.65
 // clock starts in a calm gap between two cells, so no half-run ring shows
 // when the water appears.
 export const DRIP_RIPPLES = Object.freeze({
-  cell: 6.5, jitter: 2.5, speed: 0.35, life: 2.6, gap: 0.32,
-  slope: Object.freeze([0.02, 0.012]), wavelength: Object.freeze([0.24, 0.08]), decay: 1.2, maxTilt: 0.018,
-  start: 7.2, aim: Object.freeze([0.08, 0.45]), inside: 0.7,
+  cell: 6.5,
+  jitter: 2.5,
+  speed: 0.35,
+  life: 2.6,
+  gap: 0.32,
+  slope: Object.freeze([0.02, 0.012]),
+  wavelength: Object.freeze([0.24, 0.08]),
+  decay: 1.2,
+  maxTilt: 0.018,
+  start: 7.2,
+  aim: Object.freeze([0.08, 0.45]),
+  inside: 0.7,
 });
 // The drips' seeded values: an integer hash of the cell and a salt, the same on every engine.
 function dripHash(n, salt) {
@@ -583,9 +784,14 @@ function dripHash(n, salt) {
 export function dripAt(t, aim = () => null) {
   const { cell, jitter, life } = DRIP_RIPPLES;
   for (let k = 0; k < 2; k++) {
-    const n = Math.floor(t / cell) - k, age = t - ((n + 0.5) * cell + (dripHash(n, 1) - 0.5) * jitter);
+    const n = Math.floor(t / cell) - k,
+      age = t - ((n + 0.5) * cell + (dripHash(n, 1) - 0.5) * jitter);
     if (age < 0 || age > life) continue;
-    const zone = dripHash(n, 2), turn = dripHash(n, 3) * 2 * Math.PI, spread = dripHash(n, 4), c = Math.cos(turn), s = Math.sin(turn);
+    const zone = dripHash(n, 2),
+      turn = dripHash(n, 3) * 2 * Math.PI,
+      spread = dripHash(n, 4),
+      c = Math.cos(turn),
+      s = Math.sin(turn);
     const [front, west, north] = PUDDLE_ZONES;
     if (zone < 0.6) {
       const at = aim(n);
@@ -593,11 +799,17 @@ export function dripAt(t, aim = () => null) {
         const r = DRIP_RIPPLES.aim[0] + (DRIP_RIPPLES.aim[1] - DRIP_RIPPLES.aim[0]) * spread;
         return [at[0] + c * r, at[1] + s * r, age, n];
       }
-      const ox = c * Math.sqrt(spread) * 0.45 * front.stretch * front.radius, oz = s * Math.sqrt(spread) * 0.45 * front.radius;
+      const ox = c * Math.sqrt(spread) * 0.45 * front.stretch * front.radius,
+        oz = s * Math.sqrt(spread) * 0.45 * front.radius;
       return [front.x + ox * front.c - oz * front.s, front.z + ox * front.s + oz * front.c, age, n];
     }
     const { x, z, radius } = zone < 0.8 ? west : north;
-    return [x + c * Math.sqrt(spread) * 0.45 * radius, z + s * Math.sqrt(spread) * 0.45 * radius, age, n];
+    return [
+      x + c * Math.sqrt(spread) * 0.45 * radius,
+      z + s * Math.sqrt(spread) * 0.45 * radius,
+      age,
+      n,
+    ];
   }
   return null;
 }
@@ -625,9 +837,18 @@ vec2 slateRipples(vec2 p, float fp) {
 }
 `;
 // The flame's colours and glass light; its core's luminance, and the core's once the gain is clipped at white.
-const MF = MIRROR_FLAME, C = LANTERN_FLAME.color, G = LANTERN_FLAME.glass, luminance = ([r, g, b]) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
-const FLAME_PEAK = luminance(C.core), FLAME_WHITE = luminance(C.core.map((v) => Math.min(1, v * LANTERN_FLAME.gain)));
-const M = PUDDLE_MIRROR, F = LANTERN_FLAME, TRUNK_GLSL = glslVec(+(TREE_FOOTING.x + TRUNK[0]).toFixed(2), +(TREE_FOOTING.z + TRUNK[1]).toFixed(2));
+const MF = MIRROR_FLAME,
+  C = LANTERN_FLAME.color,
+  G = LANTERN_FLAME.glass,
+  luminance = ([r, g, b]) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+const FLAME_PEAK = luminance(C.core),
+  FLAME_WHITE = luminance(C.core.map((v) => Math.min(1, v * LANTERN_FLAME.gain)));
+const M = PUDDLE_MIRROR,
+  F = LANTERN_FLAME,
+  TRUNK_GLSL = glslVec(
+    +(TREE_FOOTING.x + TRUNK[0]).toFixed(2),
+    +(TREE_FOOTING.z + TRUNK[1]).toFixed(2),
+  );
 const MIRROR = `#ifdef USE_FOG
 float slateWater = slatePuddle*slateZoneW;
 if (slateWater > 0.0) {
@@ -727,7 +948,9 @@ if (slateWater > 0.0) {
 `;
 // The mirror's own drip clock (settleRoots() advances it), the live drip and
 // the flame's draught (settleRoots() sets both per draw of the ground).
-const RIPPLE_TIME = { value: DRIP_RIPPLES.start }, DRIP = { value: [0, 0, 0, 0] }, FLAME_DRAUGHT = { value: [0, 0, 0, 0] };
+const RIPPLE_TIME = { value: DRIP_RIPPLES.start },
+  DRIP = { value: [0, 0, 0, 0] },
+  FLAME_DRAUGHT = { value: [0, 0, 0, 0] };
 
 // The puddles' own edit list: all or nothing, independent of the root list
 // (shadeSlateGround() applies it first; either may fail alone). Returns false,
@@ -742,16 +965,36 @@ export function shadeSlatePuddles(shader) {
     // positive; beyond them nothing changes): a soft shore at least a couple
     // of pixels wide, a damp margin that follows the cracks, and the thin
     // film's coat.
-    ["fragmentShader", "|float slateLanternPuddle =", `float slateShore = fwidth(slateLevel), slatePx = length(fwidth(normalize(vViewPosition))), slateZoneW = smoothstep(0.0, .04, slateLevel+slateH);
+    [
+      "fragmentShader",
+      "|float slateLanternPuddle =",
+      `float slateShore = fwidth(slateLevel), slatePx = length(fwidth(normalize(vViewPosition))), slateZoneW = smoothstep(0.0, .04, slateLevel+slateH);
 slatePuddle = mix(slatePuddle, smoothstep(${glsl(M.shore[0])}-slateShore, ${glsl(M.shore[1])}+slateShore, slateLevel)*(1.0-slateDry), slateZoneW);
 float slateMargin = smoothstep(${glsl(M.margin[0])}-slateShore, ${glsl(M.margin[1])}, slateLevel)*(1.0-slateDry)*(1.0-slatePuddle)*slateZoneW, slateCoat = mix(1.0, smoothstep(0.0, ${glsl(M.coat)}, slateLevel), slateZoneW);
-`],
-    ["fragmentShader", "slateWet = max(slateWet, slatePuddle);|", "\nslateWet = max(slateWet, slateMargin);"],
+`,
+    ],
+    [
+      "fragmentShader",
+      "slateWet = max(slateWet, slatePuddle);|",
+      "\nslateWet = max(slateWet, slateMargin);",
+    ],
     // The thin film at the shore keeps wet-soil roughness; the water smooths as it deepens.
-    ["fragmentShader", "|roughnessFactor = mix(mix(roughnessFactor,", "float slateBody = slatePuddle, slateBodyL = slateLanternPuddle;\nslatePuddle *= slateCoat;\nslateLanternPuddle *= slateCoat;\n"],
+    [
+      "fragmentShader",
+      "|roughnessFactor = mix(mix(roughnessFactor,",
+      "float slateBody = slatePuddle, slateBodyL = slateLanternPuddle;\nslatePuddle *= slateCoat;\nslateLanternPuddle *= slateCoat;\n",
+    ],
     // Wet soil under clear water, not black: the pinned darkening from shallow to deep.
-    ["fragmentShader", "|diffuseColor.rgb *= (1.0 -", `slatePuddle = slateBody*mix(1.0, mix(${glsl(M.darken[0])}, ${glsl(M.darken[1])}, smoothstep(0.0, .3, slateLevel)), slateZoneW);\n`],
-    ["fragmentShader", "|float slateAo =", `slatePuddle = slateBody;\nslateLanternPuddle = slateBodyL;\ndiffuseColor.rgb *= 1.0-${glsl(M.marginAlbedo)}*slateMargin;\n`],
+    [
+      "fragmentShader",
+      "|diffuseColor.rgb *= (1.0 -",
+      `slatePuddle = slateBody*mix(1.0, mix(${glsl(M.darken[0])}, ${glsl(M.darken[1])}, smoothstep(0.0, .3, slateLevel)), slateZoneW);\n`,
+    ],
+    [
+      "fragmentShader",
+      "|float slateAo =",
+      `slatePuddle = slateBody;\nslateLanternPuddle = slateBodyL;\ndiffuseColor.rgb *= 1.0-${glsl(M.marginAlbedo)}*slateMargin;\n`,
+    ],
     // In the water, the grazing sky sheen and the wet sheen give way to the mirror.
     ["fragmentShader", "((.02+.98*slateFresnel)*|", "(1.0-slateZoneW)*"],
     ["fragmentShader", "slateSheen*(slateWet|*slateFresnel", "*(1.0-slatePuddle*slateZoneW)"],
@@ -781,7 +1024,8 @@ export function dripClock(uniform = RIPPLE_TIME, held = () => false) {
   return {
     uniform,
     tick(now) {
-      if (last !== null && !held() && now - last < 250) uniform.value += Math.min(0.1, Math.max(0, (now - last) / 1000));
+      if (last !== null && !held() && now - last < 250)
+        uniform.value += Math.min(0.1, Math.max(0, (now - last) / 1000));
       last = now;
       return uniform.value;
     },
@@ -794,7 +1038,8 @@ export function dripClock(uniform = RIPPLE_TIME, held = () => false) {
 // Where an eye at `eye` (world) sees the lantern's light `light` mirrored in
 // the water (the level plane the mirror reflects from), as [x, z], or null.
 export function mirrorPoint(eye, light) {
-  const water = light.y - LAMP_FOOT + PUDDLE_MIRROR.water, image = 2 * water - light.y;
+  const water = light.y - LAMP_FOOT + PUDDLE_MIRROR.water,
+    image = 2 * water - light.y;
   if (!(eye.y > water + 0.05)) return null;
   const t = (eye.y - water) / (eye.y - image);
   return [eye.x + (light.x - eye.x) * t, eye.z + (light.z - eye.z) * t];
@@ -803,13 +1048,18 @@ export function mirrorPoint(eye, light) {
 // (scene.isVisitorPaused()) and an open panel (<body data-panel-open>).
 function motionHeld() {
   const reduced = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)");
-  return () => Boolean(reduced?.matches || globalThis.BabelSite?.scene?.isVisitorPaused?.() ||
-    globalThis.document?.body?.hasAttribute?.("data-panel-open"));
+  return () =>
+    Boolean(
+      reduced?.matches ||
+      globalThis.BabelSite?.scene?.isVisitorPaused?.() ||
+      globalThis.document?.body?.hasAttribute?.("data-panel-open"),
+    );
 }
 
 // Each film terrain's root lift at a world x/z, interpolated over the rendered
 // root grid (0 beyond it), and its rendered height there (NaN beyond it).
-const LIFTS = new WeakMap(), SURFACES = new WeakMap();
+const LIFTS = new WeakMap(),
+  SURFACES = new WeakMap();
 export function terrainLift(geometry) {
   return LIFTS.get(geometry) ?? (() => 0);
 }
@@ -823,16 +1073,22 @@ export function terrainHeight(geometry) {
 // row), none of the build's working arrays.
 function liftSampler(lifts, left, top, cols, rows, pitch, outside = 0) {
   return (x, z) => {
-    const u = (x - left) / pitch, v = (z - top) / pitch, col = Math.floor(u), row = Math.floor(v);
+    const u = (x - left) / pitch,
+      v = (z - top) / pitch,
+      col = Math.floor(u),
+      row = Math.floor(v);
     if (!(col >= 0 && row >= 0 && col < cols && row < rows)) return outside;
-    const fx = u - col, fz = v - row, at = (i, j) => lifts[(row + j) * (cols + 1) + col + i];
+    const fx = u - col,
+      fz = v - row,
+      at = (i, j) => lifts[(row + j) * (cols + 1) + col + i];
     return fx + fz <= 1
       ? at(0, 0) + (at(1, 0) - at(0, 0)) * fx + (at(0, 1) - at(0, 0)) * fz
       : at(1, 1) + (at(0, 1) - at(1, 1)) * (1 - fx) + (at(1, 0) - at(1, 1)) * (1 - fz);
   };
 }
 
-const nextFrame = (task) => (globalThis.requestAnimationFrame ?? ((next) => setTimeout(next, 16)))(task);
+const nextFrame = (task) =>
+  (globalThis.requestAnimationFrame ?? ((next) => setTimeout(next, 16)))(task);
 
 // Whether the canvas is fading in over the title card (styles.css, timed from the
 // reveal's babel:reveal mark), or, unless hidden is false, still hidden.
@@ -843,7 +1099,8 @@ function fading(rendering, hidden = true) {
     if (!container?.classList?.contains("is-ready")) return hidden;
     if (fadeEnd === null) {
       const duration = globalThis.getComputedStyle?.(container)?.transitionDuration ?? "0s";
-      fadeEnd = (performance.getEntriesByName?.("babel:reveal", "mark").at(-1)?.startTime ?? -Infinity) +
+      fadeEnd =
+        (performance.getEntriesByName?.("babel:reveal", "mark").at(-1)?.startTime ?? -Infinity) +
         (parseFloat(duration) * (/ms/.test(duration) ? 1 : 1000) || 0);
     }
     return performance.now() < fadeEnd;
@@ -864,7 +1121,8 @@ function earlyFade(rendering, ms) {
   return () => {
     const container = rendering?.renderer?.domElement?.parentNode;
     if (!container?.classList?.contains("is-ready")) return true;
-    revealed ??= performance.getEntriesByName?.("babel:reveal", "mark").at(-1)?.startTime ?? -Infinity;
+    revealed ??=
+      performance.getEntriesByName?.("babel:reveal", "mark").at(-1)?.startTime ?? -Infinity;
     return performance.now() < revealed + ms;
   };
 }
@@ -879,11 +1137,14 @@ export const SHADING_EARLY = 150;
 // the plate, berms and banks, and those in the tree's shade darken.
 export const TUFTS = Object.freeze({ cull: 0.6, shade: 0.75 });
 function settleTufts(growth, liftAt) {
-  const p = growth.geometry.attributes.position, color = growth.geometry.attributes.color;
+  const p = growth.geometry.attributes.position,
+    color = growth.geometry.attributes.color;
   let culled = 0;
   // Four vertices per blade; the first two straddle the tuft's centre.
   for (let i = 0; i + 3 < p.count; i += 4) {
-    const x = (p.getX(i) + p.getX(i + 1)) / 2, z = (p.getZ(i) + p.getZ(i + 1)) / 2, lift = liftAt(x, z);
+    const x = (p.getX(i) + p.getX(i + 1)) / 2,
+      z = (p.getZ(i) + p.getZ(i + 1)) / 2,
+      lift = liftAt(x, z);
     const [sky] = rootOcclusion(x, z);
     if (rootCovered(x, z) || sky > TUFTS.cull) {
       const y = (p.getY(i) + p.getY(i + 1)) / 2 + lift - 0.05;
@@ -893,7 +1154,13 @@ function settleTufts(growth, liftAt) {
     }
     if (lift) for (let k = i; k < i + 4; k++) p.setY(k, p.getY(k) + lift);
     if (color && sky > 0.02)
-      for (let k = i; k < i + 4; k++) color.setXYZ(k, color.getX(k) * (1 - TUFTS.shade * sky), color.getY(k) * (1 - TUFTS.shade * sky), color.getZ(k) * (1 - TUFTS.shade * sky));
+      for (let k = i; k < i + 4; k++)
+        color.setXYZ(
+          k,
+          color.getX(k) * (1 - TUFTS.shade * sky),
+          color.getY(k) * (1 - TUFTS.shade * sky),
+          color.getZ(k) * (1 - TUFTS.shade * sky),
+        );
   }
   p.needsUpdate = true;
   if (color) color.needsUpdate = true;
@@ -908,10 +1175,24 @@ function settleTufts(growth, liftAt) {
 // ground's albedo (the slate tile's mean, about 0.23 of the ground colour), so
 // it reads dark. One draw with the tufts' material.
 export const LITTER = Object.freeze({
-  count: 50, twigs: 8, seed: 40127, pebbleShare: 0.62, beside: Object.freeze([0.05, 0.75]), near: Object.freeze([0.12, 0.85]),
-  sky: Object.freeze([0.12, 0.9]), lantern: 2.2, puddle: 0.5, spacing: 0.22, shade: 0.5, albedo: 0.23,
-  pebble: Object.freeze([0.035, 0.1]), flake: Object.freeze([0.1, 0.28]), twig: Object.freeze([0.45, 1.05]), twigWidth: Object.freeze([0.055, 0.075]),
-  minWidth: 0.04, tone: Object.freeze({ pebble: Object.freeze([0.3, 0.5]), flake: 0.28, twig: 0.34 }),
+  count: 50,
+  twigs: 8,
+  seed: 40127,
+  pebbleShare: 0.62,
+  beside: Object.freeze([0.05, 0.75]),
+  near: Object.freeze([0.12, 0.85]),
+  sky: Object.freeze([0.12, 0.9]),
+  lantern: 2.2,
+  puddle: 0.5,
+  spacing: 0.22,
+  shade: 0.5,
+  albedo: 0.23,
+  pebble: Object.freeze([0.035, 0.1]),
+  flake: Object.freeze([0.1, 0.28]),
+  twig: Object.freeze([0.45, 1.05]),
+  twigWidth: Object.freeze([0.055, 0.075]),
+  minWidth: 0.04,
+  tone: Object.freeze({ pebble: Object.freeze([0.3, 0.5]), flake: 0.28, twig: 0.34 }),
 });
 // Distance from x/z to the nearest root-covered cell, up to limit (Infinity beyond).
 function coverDistance(x, z, limit) {
@@ -927,9 +1208,16 @@ function coverDistance(x, z, limit) {
 export function scatterLitter(surface, groundColor) {
   let seed = LITTER.seed;
   const random = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296;
-  const L = LITTER, positions = [], colors = [], placed = [];
+  const L = LITTER,
+    positions = [],
+    colors = [],
+    placed = [];
   const base = [groundColor.r, groundColor.g, groundColor.b].map((value) => value * L.albedo);
-  const tone = (k, warm) => [base[0] * k * (1 + 0.1 * warm), base[1] * k, base[2] * k * (1 - 0.15 * warm)];
+  const tone = (k, warm) => [
+    base[0] * k * (1 + 0.1 * warm),
+    base[1] * k,
+    base[2] * k * (1 - 0.15 * warm),
+  ];
   const triangle = (a, b, c, color) => {
     positions.push(...a, ...b, ...c);
     colors.push(...color, ...color, ...color);
@@ -942,13 +1230,26 @@ export function scatterLitter(surface, groundColor) {
   let twigs = 0;
   for (let attempt = 0; placed.length < L.count && attempt < 20000; attempt++) {
     // A point beside a root line where it meets the soil, stepped off one side.
-    const line = ROOT_LINES[Math.floor(random() * ROOT_LINES.length)], s = Math.floor(random() * (line.length - 1));
-    const [ax, az, ah, as] = line[s], [bx, bz, bh, bs] = line[s + 1], t = random();
+    const line = ROOT_LINES[Math.floor(random() * ROOT_LINES.length)],
+      s = Math.floor(random() * (line.length - 1));
+    const [ax, az, ah, as] = line[s],
+      [bx, bz, bh, bs] = line[s + 1],
+      t = random();
     if (as + (bs - as) * t < 0.45) continue;
-    const hx = bx - ax, hz = bz - az, hl = Math.hypot(hx, hz), side = random() < 0.5 ? -1 : 1;
+    const hx = bx - ax,
+      hz = bz - az,
+      hl = Math.hypot(hx, hz),
+      side = random() < 0.5 ? -1 : 1;
     const off = ah + (bh - ah) * t + L.beside[0] + random() * (L.beside[1] - L.beside[0]);
-    const x = TREE_FOOTING.x + ax + hx * t - hz / hl * off * side, z = TREE_FOOTING.z + az + hz * t + hx / hl * off * side;
-    if (x < left + 1 || z < top + 1 || x > left + (cols - 1) * pitch - 1 || z > top + (rows - 1) * pitch - 1) continue;
+    const x = TREE_FOOTING.x + ax + hx * t - (hz / hl) * off * side,
+      z = TREE_FOOTING.z + az + hz * t + (hx / hl) * off * side;
+    if (
+      x < left + 1 ||
+      z < top + 1 ||
+      x > left + (cols - 1) * pitch - 1 ||
+      z > top + (rows - 1) * pitch - 1
+    )
+      continue;
     if (Math.hypot(x - LANTERN_FOOT.x, z - LANTERN_FOOT.z) < L.lantern) continue;
     if (PUDDLE_ZONES.some((zone) => zoneDistance(zone, x, z) < zone.radius + L.puddle)) continue;
     // Beside a real root, never under one.
@@ -959,60 +1260,131 @@ export function scatterLitter(surface, groundColor) {
     if (placed.some(([px, pz]) => Math.hypot(px - x, pz - z) < L.spacing)) continue;
     const y = surface(x, z);
     if (!Number.isFinite(y)) continue;
-    const kind = twigs < L.twigs && random() < 0.16 ? "twig" : random() < L.pebbleShare ? "pebble" : "flake";
-    const yaw = random() * Math.PI * 2, cy = Math.cos(yaw), sy = Math.sin(yaw), dim = 1 - L.shade * sky;
+    const kind =
+      twigs < L.twigs && random() < 0.16 ? "twig" : random() < L.pebbleShare ? "pebble" : "flake";
+    const yaw = random() * Math.PI * 2,
+      cy = Math.cos(yaw),
+      sy = Math.sin(yaw),
+      dim = 1 - L.shade * sky;
     if (kind === "pebble") {
-      const a = L.pebble[0] + random() * (L.pebble[1] - L.pebble[0]), b = a * (0.65 + 0.35 * random()), h = a * (0.35 + 0.25 * random());
-      const corners = [[a, 0, 0], [-a, 0, 0], [0, 0, b], [0, 0, -b], [0, h, 0], [0, -h * 0.4, 0]].map(([px, py, pz]) => {
-        const tx = px * cy - pz * sy, tz = px * sy + pz * cy;
+      const a = L.pebble[0] + random() * (L.pebble[1] - L.pebble[0]),
+        b = a * (0.65 + 0.35 * random()),
+        h = a * (0.35 + 0.25 * random());
+      const corners = [
+        [a, 0, 0],
+        [-a, 0, 0],
+        [0, 0, b],
+        [0, 0, -b],
+        [0, h, 0],
+        [0, -h * 0.4, 0],
+      ].map(([px, py, pz]) => {
+        const tx = px * cy - pz * sy,
+          tz = px * sy + pz * cy;
         return [x + tx, Math.max(ground(x + tx, z + tz, y), y) + py + h * 0.12, z + tz];
       });
-      const color = tone((L.tone.pebble[0] + random() * (L.tone.pebble[1] - L.tone.pebble[0])) * dim, random() * 0.6);
-      for (const [i, j, k] of [[4, 0, 2], [4, 2, 1], [4, 1, 3], [4, 3, 0], [5, 2, 0], [5, 1, 2], [5, 3, 1], [5, 0, 3]])
-        triangle(corners[i], corners[j], corners[k], color.map((value) => value * (i === 4 ? 1 : 0.8)));
+      const color = tone(
+        (L.tone.pebble[0] + random() * (L.tone.pebble[1] - L.tone.pebble[0])) * dim,
+        random() * 0.6,
+      );
+      for (const [i, j, k] of [
+        [4, 0, 2],
+        [4, 2, 1],
+        [4, 1, 3],
+        [4, 3, 0],
+        [5, 2, 0],
+        [5, 1, 2],
+        [5, 3, 1],
+        [5, 0, 3],
+      ])
+        triangle(
+          corners[i],
+          corners[j],
+          corners[k],
+          color.map((value) => value * (i === 4 ? 1 : 0.8)),
+        );
     } else if (kind === "flake") {
-      const length = L.flake[0] + random() * (L.flake[1] - L.flake[0]), width = length * (0.35 + 0.25 * random()), curl = 0.012 + random() * 0.03;
+      const length = L.flake[0] + random() * (L.flake[1] - L.flake[0]),
+        width = length * (0.35 + 0.25 * random()),
+        curl = 0.012 + random() * 0.03;
       const point = (u, w, lift) => {
-        const tx = u * cy - w * sy, tz = u * sy + w * cy;
+        const tx = u * cy - w * sy,
+          tz = u * sy + w * cy;
         return [x + tx, ground(x + tx, z + tz, y) + 0.012 + lift, z + tz];
       };
-      const q = [point(-length / 2, -width / 2, 0), point(-length / 2, 0, curl), point(-length / 2, width / 2, 0),
-        point(length / 2, -width / 2, 0), point(length / 2, 0, curl), point(length / 2, width / 2, 0)];
+      const q = [
+        point(-length / 2, -width / 2, 0),
+        point(-length / 2, 0, curl),
+        point(-length / 2, width / 2, 0),
+        point(length / 2, -width / 2, 0),
+        point(length / 2, 0, curl),
+        point(length / 2, width / 2, 0),
+      ];
       const color = tone(L.tone.flake * (0.8 + 0.4 * random()) * dim, 1);
-      triangle(q[0], q[3], q[1], color); triangle(q[1], q[3], q[4], color);
-      triangle(q[1], q[4], q[2], color); triangle(q[2], q[4], q[5], color);
+      triangle(q[0], q[3], q[1], color);
+      triangle(q[1], q[3], q[4], color);
+      triangle(q[1], q[4], q[2], color);
+      triangle(q[2], q[4], q[5], color);
     } else {
       // Roughly along the root, kinked every second segment, some with a short fork.
       const length = L.twig[0] + random() * (L.twig[1] - L.twig[0]);
-      const width = L.twigWidth[0] + random() * (L.twigWidth[1] - L.twigWidth[0]), turn = 0.6 * (random() - 0.5);
-      const hx2 = hx / hl * Math.cos(turn) - hz / hl * Math.sin(turn), hz2 = hx / hl * Math.sin(turn) + hz / hl * Math.cos(turn);
+      const width = L.twigWidth[0] + random() * (L.twigWidth[1] - L.twigWidth[0]),
+        turn = 0.6 * (random() - 0.5);
+      const hx2 = (hx / hl) * Math.cos(turn) - (hz / hl) * Math.sin(turn),
+        hz2 = (hx / hl) * Math.sin(turn) + (hz / hl) * Math.cos(turn);
       const color = tone(L.tone.twig * (0.85 + 0.3 * random()) * dim, 0.6);
       const stick = (sx, sz, dx0, dz0, span, wa, wb, segments, kink) => {
         const rings = [];
-        let px = sx, pz = sz, dx = dx0, dz = dz0;
+        let px = sx,
+          pz = sz,
+          dx = dx0,
+          dz = dz0;
         for (let k = 0; k <= segments; k++) {
           if (k && k % 2 === 0) {
-            const bend = kink * (random() - 0.5), c = Math.cos(bend), s2 = Math.sin(bend);
+            const bend = kink * (random() - 0.5),
+              c = Math.cos(bend),
+              s2 = Math.sin(bend);
             [dx, dz] = [dx * c - dz * s2, dx * s2 + dz * c];
           }
-          const w = Math.max(L.minWidth, wa + (wb - wa) * (k / segments)), gy = ground(px, pz, y) + w * 0.4;
-          rings.push([[px - dz * w / 2, gy - w * 0.3, pz + dx * w / 2], [px + dz * w / 2, gy - w * 0.3, pz - dx * w / 2], [px, gy + w * 0.5, pz]]);
-          px += dx * span / segments;
-          pz += dz * span / segments;
+          const w = Math.max(L.minWidth, wa + (wb - wa) * (k / segments)),
+            gy = ground(px, pz, y) + w * 0.4;
+          rings.push([
+            [px - (dz * w) / 2, gy - w * 0.3, pz + (dx * w) / 2],
+            [px + (dz * w) / 2, gy - w * 0.3, pz - (dx * w) / 2],
+            [px, gy + w * 0.5, pz],
+          ]);
+          px += (dx * span) / segments;
+          pz += (dz * span) / segments;
         }
         for (let k = 0; k < segments; k++)
           for (let e = 0; e < 3; e++) {
-            const p0 = rings[k][e], p1 = rings[k][(e + 1) % 3], p2 = rings[k + 1][e], p3 = rings[k + 1][(e + 1) % 3];
+            const p0 = rings[k][e],
+              p1 = rings[k][(e + 1) % 3],
+              p2 = rings[k + 1][e],
+              p3 = rings[k + 1][(e + 1) % 3];
             triangle(p0, p2, p1, color);
             triangle(p1, p2, p3, color);
           }
       };
-      const sx = x - hx2 * length / 2, sz = z - hz2 * length / 2;
+      const sx = x - (hx2 * length) / 2,
+        sz = z - (hz2 * length) / 2;
       stick(sx, sz, hx2, hz2, length, width, width * 0.6, 6, 0.7);
       if (random() < 0.5) {
-        const at = 0.35 + 0.3 * random(), fork = random() < 0.5 ? 1 : -1, angle = 0.5 + 0.3 * random();
-        const fx = hx2 * Math.cos(angle) - fork * hz2 * Math.sin(angle), fz = fork * hx2 * Math.sin(angle) + hz2 * Math.cos(angle);
-        stick(sx + hx2 * length * at, sz + hz2 * length * at, fx, fz, length * 0.3, width * 0.7, width * 0.6, 2, 0.4);
+        const at = 0.35 + 0.3 * random(),
+          fork = random() < 0.5 ? 1 : -1,
+          angle = 0.5 + 0.3 * random();
+        const fx = hx2 * Math.cos(angle) - fork * hz2 * Math.sin(angle),
+          fz = fork * hx2 * Math.sin(angle) + hz2 * Math.cos(angle);
+        stick(
+          sx + hx2 * length * at,
+          sz + hz2 * length * at,
+          fx,
+          fz,
+          length * 0.3,
+          width * 0.7,
+          width * 0.6,
+          2,
+          0.4,
+        );
       }
       twigs++;
     }
@@ -1041,14 +1413,25 @@ export function scatterLitter(surface, groundColor) {
 // links need (light-shafts.js). From the switch on,
 // each draw of the ground brings the moon key's view direction up to date and
 // advances the drips' clock. Disposing the terrain withdraws all of it.
-export function settleRoots(terrain, ground, rendering, groundHeight, invalidate = () => {}, tour = null) {
-  const liftAt = terrainLift(terrain), material = ground.material;
+export function settleRoots(
+  terrain,
+  ground,
+  rendering,
+  groundHeight,
+  invalidate = () => {},
+  tour = null,
+) {
+  const liftAt = terrainLift(terrain),
+    material = ground.material;
   const height = (x, z) => groundHeight(x, z) + liftAt(x, z);
   const growth = ground.parent?.getObjectByName("estate-ground-growth");
   let litter = null;
   if (growth?.geometry.attributes.position) {
     settleTufts(growth, liftAt);
-    litter = new Mesh(scatterLitter(terrainHeight(terrain), material.color ?? { r: 0.36, g: 0.31, b: 0.28 }), growth.material);
+    litter = new Mesh(
+      scatterLitter(terrainHeight(terrain), material.color ?? { r: 0.36, g: 0.31, b: 0.28 }),
+      growth.material,
+    );
     litter.name = "estate-root-litter";
     litter.receiveShadow = true;
     litter.castShadow = false;
@@ -1056,21 +1439,42 @@ export function settleRoots(terrain, ground, rendering, groundHeight, invalidate
     litter.updateMatrix();
     growth.add(litter);
   }
-  const renderer = rendering.renderer, scene = rendering.homeScene, early = earlyFade(rendering, SHADING_EARLY);
+  const renderer = rendering.renderer,
+    scene = rendering.homeScene,
+    early = earlyFade(rendering, SHADING_EARLY);
   const allowed = () => !tour?.running || tour.transition.cut || (parallel && early());
-  const clock = dripClock(RIPPLE_TIME, motionHeld()), keyWorld = new Vector3(), keyTarget = new Vector3();
-  const lampAt = new Vector3(), eye = new Vector3(), lean = new Vector3(), origin = new Vector3();
-  let live = true, probe = null, linking = false, linked = "", clocked = false, lamp = null, sought = -Infinity, aimed = null, aim = null, parallel = false;
+  const clock = dripClock(RIPPLE_TIME, motionHeld()),
+    keyWorld = new Vector3(),
+    keyTarget = new Vector3();
+  const lampAt = new Vector3(),
+    eye = new Vector3(),
+    lean = new Vector3(),
+    origin = new Vector3();
+  let live = true,
+    probe = null,
+    linking = false,
+    linked = "",
+    clocked = false,
+    lamp = null,
+    sought = -Infinity,
+    aimed = null,
+    aim = null,
+    parallel = false;
   // The lantern's light (found by its place, as the mirror finds it among the
   // point lights; looked for at most once a second while missing).
   function lantern() {
-    const near = (light) => light.parent && Math.hypot(light.getWorldPosition(lampAt).x - LANTERN_FOOT.x, lampAt.z - LANTERN_FOOT.z) < 0.3;
+    const near = (light) =>
+      light.parent &&
+      Math.hypot(light.getWorldPosition(lampAt).x - LANTERN_FOOT.x, lampAt.z - LANTERN_FOOT.z) <
+        0.3;
     if (lamp && near(lamp)) return lamp;
     lamp = null;
     const now = performance.now();
     if (now - sought < 1000) return null;
     sought = now;
-    scene?.traverse((object) => { if (!lamp && object.isPointLight && near(object)) lamp = object; });
+    scene?.traverse((object) => {
+      if (!lamp && object.isPointLight && near(object)) lamp = object;
+    });
     if (lamp) lamp.getWorldPosition(lampAt);
     return lamp;
   }
@@ -1080,14 +1484,23 @@ export function settleRoots(terrain, ground, rendering, groundHeight, invalidate
   // light; without it the mirror shows no flame.
   function beforeRender(_renderer, _scene, camera) {
     const sun = rendering.lights?.sun;
-    if (sun?.target) keyWorld.setFromMatrixPosition(sun.matrixWorld).sub(keyTarget.setFromMatrixPosition(sun.target.matrixWorld));
+    if (sun?.target)
+      keyWorld
+        .setFromMatrixPosition(sun.matrixWorld)
+        .sub(keyTarget.setFromMatrixPosition(sun.target.matrixWorld));
     else keyWorld.set(...KEY_LIGHT);
     KEY_VIEW.value.copy(keyWorld).transformDirection(camera.matrixWorldInverse);
-    const light = lantern(), flame = light?.parent.children.find((child) => child.userData?.lanternFlicker);
-    const flicker = flame?.userData.lanternFlicker.value, draught = FLAME_DRAUGHT.value;
+    const light = lantern(),
+      flame = light?.parent.children.find((child) => child.userData?.lanternFlicker);
+    const flicker = flame?.userData.lanternFlicker.value,
+      draught = FLAME_DRAUGHT.value;
     if (flicker) {
       origin.setFromMatrixPosition(flame.matrixWorld);
-      lean.set(flicker[2], 0, flicker[3]).applyMatrix4(flame.matrixWorld).sub(origin).divideScalar(LANTERN_IMAGE.scale);
+      lean
+        .set(flicker[2], 0, flicker[3])
+        .applyMatrix4(flame.matrixWorld)
+        .sub(origin)
+        .divideScalar(LANTERN_IMAGE.scale);
       draught[0] = flicker[1];
       draught[2] = lean.x;
       draught[3] = lean.z;
@@ -1142,20 +1555,31 @@ export function settleRoots(terrain, ground, rendering, groundHeight, invalidate
     return state;
   };
   function link() {
-    const state = programState(), key = shadedKey();
+    const state = programState(),
+      key = shadedKey();
     release();
     // Only a slate that takes the shading has a new program, and only where
     // programs link in parallel; otherwise the switch's draw links it.
-    parallel = typeof key === "string" && key.endsWith("+root") && typeof renderer?.compileAsync === "function" &&
-      renderer.extensions?.has?.("KHR_parallel_shader_compile") === true && !renderer.getContext?.()?.isContextLost?.();
+    parallel =
+      typeof key === "string" &&
+      key.endsWith("+root") &&
+      typeof renderer?.compileAsync === "function" &&
+      renderer.extensions?.has?.("KHR_parallel_shader_compile") === true &&
+      !renderer.getContext?.()?.isContextLost?.();
     if (!parallel) {
       linked = state;
       return;
     }
-    const stand = new Mesh(terrain, Object.assign(material.clone(), {
-      customProgramCacheKey: () => key,
-      onBeforeCompile(shader, target) { material.onBeforeCompile(shader, target); shadeSlateGround(shader); },
-    }));
+    const stand = new Mesh(
+      terrain,
+      Object.assign(material.clone(), {
+        customProgramCacheKey: () => key,
+        onBeforeCompile(shader, target) {
+          material.onBeforeCompile(shader, target);
+          shadeSlateGround(shader);
+        },
+      }),
+    );
     // Against a composer target, whose program keys the scene pass uses
     // (rendering.compileShaders()), with the scene's lights and fog.
     const previous = renderer.getRenderTarget?.() ?? null;
@@ -1172,7 +1596,10 @@ export function settleRoots(terrain, ground, rendering, groundHeight, invalidate
     probe = stand;
     linking = true;
     // A link still pending after two seconds is left to the switch's draw.
-    Promise.race([stand.userData.settled, new Promise((resolve) => setTimeout(resolve, 2000))]).then(() => {
+    Promise.race([
+      stand.userData.settled,
+      new Promise((resolve) => setTimeout(resolve, 2000)),
+    ]).then(() => {
       if (probe !== stand) return;
       linking = false;
       linked = state;
@@ -1190,10 +1617,11 @@ export function settleRoots(terrain, ground, rendering, groundHeight, invalidate
       ground.userData.slateDrips = clock;
     }
     // Hold the stand-in's program until the ground has drawn with it.
-    if (probe) ground.onAfterRender = function () {
-      delete this.onAfterRender;
-      release();
-    };
+    if (probe)
+      ground.onAfterRender = function () {
+        delete this.onAfterRender;
+        release();
+      };
     invalidate();
   }
   (function check() {
@@ -1210,11 +1638,12 @@ export function settleRoots(terrain, ground, rendering, groundHeight, invalidate
 }
 
 function terrainAxis(width, subdivisions, center) {
-  const axis = [], step = width / subdivisions;
+  const axis = [],
+    step = width / subdivisions;
   for (let i = 0; i < subdivisions; i++) {
     const start = -width / 2 + i * step;
     const pieces = Math.abs(start + step / 2 - center) < 15 ? 4 : 1;
-    for (let j = 0; j < pieces; j++) axis.push(start + step * j / pieces);
+    for (let j = 0; j < pieces; j++) axis.push(start + (step * j) / pieces);
   }
   axis.push(width / 2);
   return axis;
@@ -1223,10 +1652,22 @@ function terrainAxis(width, subdivisions, center) {
 // Beyond this distance from the tree no support reaches: past the root plate's
 // blend about the trunk, every berm's extent about its root end and the
 // triangles about every banked lattice vertex.
-const SUPPORT_REACH = Math.max(Math.hypot(...TRUNK) + ROOT_BENCH[1],
-  ...ROOT_BERMS.map(([tx, tz, , , hold, reach, half]) => Math.hypot(tx, tz) + Math.hypot(Math.max(reach, hold + 1.2), half)),
-  ...ROOT_RESTS.map(([col, row]) => Math.hypot(ROOT_LATTICE.x + col * ROOT_LATTICE.pitch - TREE_FOOTING.x,
-    ROOT_LATTICE.z + row * ROOT_LATTICE.pitch - TREE_FOOTING.z) + ROOT_LATTICE.pitch * Math.SQRT2)) + 0.5;
+const SUPPORT_REACH =
+  Math.max(
+    Math.hypot(...TRUNK) + ROOT_BENCH[1],
+    ...ROOT_BERMS.map(
+      ([tx, tz, , , hold, reach, half]) =>
+        Math.hypot(tx, tz) + Math.hypot(Math.max(reach, hold + 1.2), half),
+    ),
+    ...ROOT_RESTS.map(
+      ([col, row]) =>
+        Math.hypot(
+          ROOT_LATTICE.x + col * ROOT_LATTICE.pitch - TREE_FOOTING.x,
+          ROOT_LATTICE.z + row * ROOT_LATTICE.pitch - TREE_FOOTING.z,
+        ) +
+        ROOT_LATTICE.pitch * Math.SQRT2,
+    ),
+  ) + 0.5;
 const OPEN_SOIL = [3, 0, 0, 1];
 
 // The film terrain's surface before the root supports (the dunes blended out
@@ -1242,19 +1683,27 @@ function* coarseSurface(baseHeight, EARTH) {
   // and normals, at the float precision the coarse grid stores. Re-sampling
   // the analytic dunes on a finer grid would itself change the puddle's slopes
   // and reflections even with zero support lift.
-  const n = EARTH.subdivisions, side = n + 1, cell = EARTH.width / n, half = EARTH.width / 2;
-  const step = EARTH.width / EARTH.subdivisions / 2, normal = new Vector3();
-  const heights = new Float32Array(side * side), normals = new Float32Array(side * side * 3);
+  const n = EARTH.subdivisions,
+    side = n + 1,
+    cell = EARTH.width / n,
+    half = EARTH.width / 2;
+  const step = EARTH.width / EARTH.subdivisions / 2,
+    normal = new Vector3();
+  const heights = new Float32Array(side * side),
+    normals = new Float32Array(side * side * 3);
   // Neighbouring vertices share their finite-difference taps (a vertex's
   // right tap is the next one's left, its upper tap the next row's lower);
   // each is evaluated once when the two sample points are the same.
   const above = new Float64Array(side);
   let previousZ = NaN;
   for (let row = 0; row < side; row++) {
-    const z = Math.fround(row * cell - half), shared = previousZ + step === z - step;
-    let previousX = NaN, right = 0;
+    const z = Math.fround(row * cell - half),
+      shared = previousZ + step === z - step;
+    let previousX = NaN,
+      right = 0;
     for (let col = 0; col < side; col++) {
-      const i = row * side + col, x = Math.fround(col * cell - half);
+      const i = row * side + col,
+        x = Math.fround(col * cell - half);
       heights[i] = groundHeight(x, z);
       const left = previousX + step === x - step ? right : groundHeight(x - step, z);
       right = groundHeight(x + step, z);
@@ -1275,11 +1724,19 @@ function* coarseSurface(baseHeight, EARTH) {
   function sample(x, z, target) {
     const u = Math.min(n, Math.max(0, (x + EARTH.width / 2) / (2 * step)));
     const v = Math.min(n, Math.max(0, (z + EARTH.width / 2) / (2 * step)));
-    const col = Math.min(Math.floor(u), n - 1), row = Math.min(Math.floor(v), n - 1);
-    const fx = u - col, fz = v - row, a = row * (n + 1) + col;
-    const b = a + n + 1, d = a + 1, lower = fx + fz <= 1;
-    const i0 = lower ? a : b, i1 = lower ? b : b + 1, w0 = lower ? 1 - fx - fz : 1 - fx;
-    const w1 = lower ? fz : fx + fz - 1, w2 = lower ? fx : 1 - fz;
+    const col = Math.min(Math.floor(u), n - 1),
+      row = Math.min(Math.floor(v), n - 1);
+    const fx = u - col,
+      fz = v - row,
+      a = row * (n + 1) + col;
+    const b = a + n + 1,
+      d = a + 1,
+      lower = fx + fz <= 1;
+    const i0 = lower ? a : b,
+      i1 = lower ? b : b + 1,
+      w0 = lower ? 1 - fx - fz : 1 - fx;
+    const w1 = lower ? fz : fx + fz - 1,
+      w2 = lower ? fx : 1 - fz;
     let height = 0;
     height += heights[i0] * w0;
     height += heights[i1] * w1;
@@ -1311,45 +1768,62 @@ export function terrainSurface(groundHeight, EARTH = { width: 384, subdivisions:
   }
 }
 
-// The film terrain, a few vertices at a time: the coarse dune grid exactly as
-// the plain terrain stores it, then a grid refined around the roots and raised
-// onto their supports, then its triangles. Returns the geometry.
+// The film terrain, a few vertices at a time: the coarse dune grid, then a
+// grid refined around the roots and raised onto their supports, then its
+// triangles. Returns the geometry.
 function* earthSteps(groundHeight, EARTH) {
   const sample = yield* coarseSurface(groundHeight, EARTH);
-  const n = EARTH.subdivisions, step = EARTH.width / EARTH.subdivisions / 2, normal = new Vector3();
+  const n = EARTH.subdivisions,
+    step = EARTH.width / EARTH.subdivisions / 2,
+    normal = new Vector3();
   const lift = (x, z) => rootSupportHeight(x, z, sample) - sample(x, z);
   // Sub-unit samples around the roots share the existing ground draw. Only
   // this local rectangle is refined; the rest keeps its original triangles.
   const xs = terrainAxis(EARTH.width, EARTH.subdivisions, TREE_FOOTING.x + 3);
   const zs = terrainAxis(EARTH.width, EARTH.subdivisions, TREE_FOOTING.z);
   // The fine grid: its first column and row, and how many cells of pitch.
-  const pitch = step / 2, fineX = xs.indexOf(xs.find((x, i) => xs[i + 1] - x < step));
+  const pitch = step / 2,
+    fineX = xs.indexOf(xs.find((x, i) => xs[i + 1] - x < step));
   const fineZ = zs.indexOf(zs.find((z, i) => zs[i + 1] - z < step));
-  let cols = 0, rows = 0;
+  let cols = 0,
+    rows = 0;
   while (xs[fineX + cols + 1] - xs[fineX + cols] === pitch) cols++;
   while (zs[fineZ + rows + 1] - zs[fineZ + rows] === pitch) rows++;
-  const coarseX = Array.from({ length: n + 1 }, (_, i) => xs.indexOf(-EARTH.width / 2 + i * step * 2));
-  const coarseZ = Array.from({ length: n + 1 }, (_, i) => zs.indexOf(-EARTH.width / 2 + i * step * 2));
+  const coarseX = Array.from({ length: n + 1 }, (_, i) =>
+    xs.indexOf(-EARTH.width / 2 + i * step * 2),
+  );
+  const coarseZ = Array.from({ length: n + 1 }, (_, i) =>
+    zs.indexOf(-EARTH.width / 2 + i * step * 2),
+  );
   const refined = (i, j) => coarseX[i + 1] - coarseX[i] > 1 && coarseZ[j + 1] - coarseZ[j] > 1;
   // Size every array once: a coarse triangle beside a refined neighbour is a
   // fan about one added centre point.
   const grid = xs.length * zs.length;
-  let fans = 0, size = 0;
-  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
-    if (i === 0 && j % 8 === 7) yield;
-    const w = coarseX[i + 1] - coarseX[i], h = coarseZ[j + 1] - coarseZ[j];
-    if (refined(i, j)) {
-      size += w * h * 6;
-      continue;
+  let fans = 0,
+    size = 0;
+  for (let j = 0; j < n; j++)
+    for (let i = 0; i < n; i++) {
+      if (i === 0 && j % 8 === 7) yield;
+      const w = coarseX[i + 1] - coarseX[i],
+        h = coarseZ[j + 1] - coarseZ[j];
+      if (refined(i, j)) {
+        size += w * h * 6;
+        continue;
+      }
+      for (const corners of [
+        3 + (refined(i - 1, j) ? h - 1 : 0) + (refined(i, j - 1) ? w - 1 : 0),
+        3 + (refined(i, j + 1) ? w - 1 : 0) + (refined(i + 1, j) ? h - 1 : 0),
+      ]) {
+        size += corners > 3 ? corners * 3 : 3;
+        if (corners > 3) fans++;
+      }
     }
-    for (const corners of [3 + (refined(i - 1, j) ? h - 1 : 0) + (refined(i, j - 1) ? w - 1 : 0),
-      3 + (refined(i, j + 1) ? w - 1 : 0) + (refined(i + 1, j) ? h - 1 : 0)]) {
-      size += corners > 3 ? corners * 3 : 3;
-      if (corners > 3) fans++;
-    }
-  }
-  const count = grid + fans, positions = new Float32Array(count * 3), normalArray = new Float32Array(count * 3);
-  const uvs = new Float32Array(count * 2), lifts = new Float32Array((cols + 1) * (rows + 1)), surface = new Float32Array(lifts.length);
+  const count = grid + fans,
+    positions = new Float32Array(count * 3),
+    normalArray = new Float32Array(count * 3);
+  const uvs = new Float32Array(count * 2),
+    lifts = new Float32Array((cols + 1) * (rows + 1)),
+    surface = new Float32Array(lifts.length);
   const indices = count > 65535 ? new Uint32Array(size) : new Uint16Array(size);
   // The root shading (rootShade()) at full float precision: byte or 16-bit
   // packing moves the grade's cel bands on single pixels of settled soil.
@@ -1364,14 +1838,18 @@ function* earthSteps(groundHeight, EARTH) {
     normalArray[i * 3] = normal.x;
     normalArray[i * 3 + 1] = normal.y;
     normalArray[i * 3 + 2] = normal.z;
-    uvs[i * 2] = x / EARTH.width + .5;
-    uvs[i * 2 + 1] = .5 - z / EARTH.width;
+    uvs[i * 2] = x / EARTH.width + 0.5;
+    uvs[i * 2 + 1] = 0.5 - z / EARTH.width;
   };
   // Ground mesh is rotated -PI/2: local +Y becomes world -Z. Add only the
   // support's slope to the preserved baseline shading normal.
   for (let i = 0; i < grid; i++) {
-    const col = i % xs.length, row = Math.floor(i / xs.length), x = xs[col], z = zs[row];
-    const dx = x - TREE_FOOTING.x, dz = z - TREE_FOOTING.z;
+    const col = i % xs.length,
+      row = Math.floor(i / xs.length),
+      x = xs[col],
+      z = zs[row];
+    const dx = x - TREE_FOOTING.x,
+      dz = z - TREE_FOOTING.z;
     const raised = Math.hypot(dx, dz) < SUPPORT_REACH ? lift(x, z) : 0;
     const y = sample(x, z, normal) + raised;
     if (col >= fineX && col <= fineX + cols && row >= fineZ && row <= fineZ + rows) {
@@ -1392,7 +1870,8 @@ function* earthSteps(groundHeight, EARTH) {
     if (near) occlusion.set(rootOcclusion(x, z), i * 2);
     if (i % 8 === 7) yield;
   }
-  let cursor = 0, center = grid;
+  let cursor = 0,
+    center = grid;
   const vertex = (i, j) => j * xs.length + i;
   const triangle = (corners, polygon, x, z) => {
     if (polygon.length === 3) {
@@ -1413,20 +1892,31 @@ function* earthSteps(groundHeight, EARTH) {
   };
   for (let j = 0; j < n; j++) {
     for (let i = 0; i < n; i++) {
-      const x0 = coarseX[i], x1 = coarseX[i + 1], z0 = coarseZ[j], z1 = coarseZ[j + 1];
+      const x0 = coarseX[i],
+        x1 = coarseX[i + 1],
+        z0 = coarseZ[j],
+        z1 = coarseZ[j + 1];
       if (refined(i, j)) {
-        for (let row = z0; row < z1; row++) for (let col = x0; col < x1; col++) {
-          const a = vertex(col, row), b = vertex(col, row + 1), c = vertex(col + 1, row + 1), d = vertex(col + 1, row);
-          indices[cursor++] = a;
-          indices[cursor++] = b;
-          indices[cursor++] = d;
-          indices[cursor++] = b;
-          indices[cursor++] = c;
-          indices[cursor++] = d;
-        }
+        for (let row = z0; row < z1; row++)
+          for (let col = x0; col < x1; col++) {
+            const a = vertex(col, row),
+              b = vertex(col, row + 1),
+              c = vertex(col + 1, row + 1),
+              d = vertex(col + 1, row);
+            indices[cursor++] = a;
+            indices[cursor++] = b;
+            indices[cursor++] = d;
+            indices[cursor++] = b;
+            indices[cursor++] = c;
+            indices[cursor++] = d;
+          }
       } else {
-        const a = vertex(x0, z0), b = vertex(x0, z1), c = vertex(x1, z1), d = vertex(x1, z0);
-        const first = [a], second = [b];
+        const a = vertex(x0, z0),
+          b = vertex(x0, z1),
+          c = vertex(x1, z1),
+          d = vertex(x1, z0);
+        const first = [a],
+          second = [b];
         if (refined(i - 1, j)) for (let row = z0 + 1; row < z1; row++) first.push(vertex(x0, row));
         first.push(b, d);
         if (refined(i, j - 1)) for (let col = x1 - 1; col > x0; col--) first.push(vertex(col, z0));
@@ -1434,8 +1924,8 @@ function* earthSteps(groundHeight, EARTH) {
         second.push(c);
         if (refined(i + 1, j)) for (let row = z1 - 1; row > z0; row--) second.push(vertex(x1, row));
         second.push(d);
-        triangle([a, b, d], first, xs[x0] + step * 2 / 3, zs[z0] + step * 2 / 3);
-        triangle([b, c, d], second, xs[x0] + step * 4 / 3, zs[z0] + step * 4 / 3);
+        triangle([a, b, d], first, xs[x0] + (step * 2) / 3, zs[z0] + (step * 2) / 3);
+        triangle([b, c, d], second, xs[x0] + (step * 4) / 3, zs[z0] + (step * 4) / 3);
       }
     }
     yield;
@@ -1467,11 +1957,14 @@ function* earthSteps(groundHeight, EARTH) {
 // fade in mid-hold. A cancelled build (the film scene disposed) stops and
 // resolves to nothing.
 function inSlices(steps, rendering = null, early = () => false, cancelled = () => false) {
-  const idle = typeof globalThis.requestIdleCallback === "function"
-    ? (task) => globalThis.requestIdleCallback(task, { timeout: 100 })
-    : (task) => setTimeout(task, 0);
+  const idle =
+    typeof globalThis.requestIdleCallback === "function"
+      ? (task) => globalThis.requestIdleCallback(task, { timeout: 100 })
+      : (task) => setTimeout(task, 0);
   let done;
-  const slicing = new Promise((resolve) => { done = resolve; });
+  const slicing = new Promise((resolve) => {
+    done = resolve;
+  });
   if (rendering) rendering.terrainSlicing = slicing;
   return new Promise((resolve, reject) => {
     const finish = (settle, value) => {
@@ -1483,7 +1976,15 @@ function inSlices(steps, rendering = null, early = () => false, cancelled = () =
     const slice = (deadline) => {
       if (cancelled()) return finish(resolve, null);
       const rush = early();
-      const until = performance.now() + (rush ? 12 : !deadline ? 5 : deadline.didTimeout ? 2 : Math.max(2, Math.min(8, deadline.timeRemaining())));
+      const until =
+        performance.now() +
+        (rush
+          ? 12
+          : !deadline
+            ? 5
+            : deadline.didTimeout
+              ? 2
+              : Math.max(2, Math.min(8, deadline.timeRemaining())));
       try {
         for (;;) {
           const next = steps.next();
@@ -1500,42 +2001,35 @@ function inSlices(steps, rendering = null, early = () => false, cancelled = () =
   });
 }
 
-// The film terrain (foothills) or, without them, plain dunes. Given
-// the scene's rendering, the film terrain builds in slices (inSlices()) and
-// resolves only where the new ground cannot show mid-shot (unseen()); without
-// it (tests), the terrain builds at once. cancelled: the film scene is gone,
-// so the build stops, or the finished geometry is freed, and it resolves to
-// nothing.
-export function createEarthGeometry(groundHeight, foothills = false, EARTH = { width: 384, subdivisions: 128 }, rendering = null, tour = null, cancelled = () => false) {
-  if (foothills) {
-    const steps = earthSteps(groundHeight, EARTH);
-    if (!rendering) {
-      for (;;) {
-        const next = steps.next();
-        if (next.done) return next.value;
-      }
+// The film terrain. Given the scene's rendering, it builds in slices
+// (inSlices()) and resolves only where the new ground cannot show mid-shot
+// (unseen()); without it (tests), it builds at once. cancelled: the film scene
+// is gone, so the build stops, or the finished geometry is freed, and it
+// resolves to nothing.
+export function createEarthGeometry(
+  groundHeight,
+  EARTH = { width: 384, subdivisions: 128 },
+  rendering = null,
+  tour = null,
+  cancelled = () => false,
+) {
+  const steps = earthSteps(groundHeight, EARTH);
+  if (!rendering) {
+    for (;;) {
+      const next = steps.next();
+      if (next.done) return next.value;
     }
-    const allowed = unseen(rendering, tour);
-    return inSlices(steps, rendering, fading(rendering, false), cancelled).then((geometry) => new Promise((resolve) => {
-      (function check() {
-        if (!geometry || cancelled()) return resolve(geometry?.dispose());
-        if (!allowed()) return nextFrame(check);
-        rendering.invalidateShadows?.();
-        resolve(geometry);
-      })();
-    }));
   }
-  const baseline = new PlaneGeometry(EARTH.width, EARTH.width, EARTH.subdivisions, EARTH.subdivisions);
-  const bp = baseline.attributes.position, bn = baseline.attributes.normal;
-  const normal = new Vector3(), step = EARTH.width / EARTH.subdivisions / 2;
-  for (let i = 0; i < bp.count; i++) {
-    const x = bp.getX(i), z = -bp.getY(i);
-    bp.setZ(i, groundHeight(x, z));
-    const dx = (groundHeight(x + step, z) - groundHeight(x - step, z)) / (2 * step);
-    const dz = (groundHeight(x, z + step) - groundHeight(x, z - step)) / (2 * step);
-    normal.set(-dx, dz, 1).normalize(); bn.setXYZ(i, normal.x, normal.y, normal.z);
-  }
-  baseline.computeBoundingBox(); baseline.computeBoundingSphere();
-  rendering?.invalidateShadows?.();
-  return baseline;
+  const allowed = unseen(rendering, tour);
+  return inSlices(steps, rendering, fading(rendering, false), cancelled).then(
+    (geometry) =>
+      new Promise((resolve) => {
+        (function check() {
+          if (!geometry || cancelled()) return resolve(geometry?.dispose());
+          if (!allowed()) return nextFrame(check);
+          rendering.invalidateShadows?.();
+          resolve(geometry);
+        })();
+      }),
+  );
 }

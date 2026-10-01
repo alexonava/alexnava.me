@@ -18,7 +18,6 @@
       },
       name: "compact",
       sceneOffsetY: -7.5,
-      towerScale: 1,
     },
     desktop: {
       camera: {
@@ -34,7 +33,6 @@
       },
       name: "desktop",
       sceneOffsetY: -7.5,
-      towerScale: 1,
     },
     portraitPhone: {
       camera: {
@@ -50,7 +48,6 @@
       },
       name: "portraitPhone",
       sceneOffsetY: -6.8,
-      towerScale: 1,
     },
     // Phone rotated to landscape (~844x390). Viewport is very short, so the
     // camera pulls up and the look-at target lowers to keep the tower in the
@@ -69,7 +66,6 @@
       },
       name: "landscapePhone",
       sceneOffsetY: -7.2,
-      towerScale: 1,
     },
     // Tablet in portrait (iPad-class, ~810x1080). Wider than a phone but still
     // touch-primary; framing sits between portraitPhone and compact.
@@ -87,7 +83,6 @@
       },
       name: "tabletPortrait",
       sceneOffsetY: -7.2,
-      towerScale: 1,
     },
   };
   // dprCap bounds the canvas and every composer target, so fragment cost grows
@@ -176,47 +171,6 @@
         practicalIntensityScale: 0.84,
       },
     },
-    low: {
-      // Low keeps the 1x composer resolution it has always rendered at.
-      dprCap: 1,
-      anisotropy: { min: 1, max: 4 },
-      textures: {
-        groundSize: 512,
-      },
-      geometry: {
-        skyWidthSegments: 16,
-        skyHeightSegments: 10,
-        circleSegments: 56,
-      },
-      shadows: {
-        enabled: false,
-        mapSize: 0,
-      },
-      postprocessGrading: true,
-      postprocessBloom: false,
-      postprocessVignette: false,
-      postprocessGrain: false,
-      postprocessSamples: 0,
-      postprocessSettings: {
-        bloomStrength: 0,
-        celMix: 0.2,
-        contrast: 1.05,
-        grainStrength: 0,
-        highlightWarmMix: 0.14,
-        shadowCoolMix: 0.22,
-        vignetteStrength: 0,
-      },
-      lighting: {
-        fogNear: 60,
-        fogFar: 144,
-        ambientIntensity: 0.24,
-        hemisphereIntensity: 0.7,
-        directionalIntensity: 2.45,
-        fillIntensity: 0,
-        extraDirectional: false,
-        practicalIntensityScale: 0.58,
-      },
-    },
   };
 
   function normalizeTier(value, fallback = null) {
@@ -226,11 +180,14 @@
     return TIER_ORDER.includes(normalized) ? normalized : fallback;
   }
 
+  // The scene never renders the low tier: main.js and the scene keep the
+  // static title card there, and a revealed scene's low step only lowers the
+  // pixel ratio (createSceneQualityState). A low request reads balanced.
   function cloneProfile(tier) {
-    const profile = SCENE_QUALITY_PROFILES[tier] || SCENE_QUALITY_PROFILES.high;
+    const name = tier === "low" ? "balanced" : tier;
+    const profile = SCENE_QUALITY_PROFILES[name] || SCENE_QUALITY_PROFILES.high;
     return {
-      tier,
-      isLow: tier === "low",
+      tier: name,
       dprCap: profile.dprCap,
       anisotropy: { ...profile.anisotropy },
       textures: { ...profile.textures },
@@ -252,7 +209,6 @@
       camera: { ...profile.camera },
       name: profile.name,
       sceneOffsetY: profile.sceneOffsetY,
-      towerScale: profile.towerScale,
     };
   }
 
@@ -354,9 +310,9 @@
     if (cpuLimited) return "balanced";
     if (phoneViewport) return "balanced";
 
-    // Touch-primary devices used to get blanket-capped at balanced because iOS
-    // hides deviceMemory. Phone-shaped viewports now stay balanced for battery
-    // and thermals; larger flagship-class touch devices can still reach high.
+    // iOS hides deviceMemory, so touch devices are judged by their viewport and
+    // limits: phone-shaped viewports stay balanced for battery and thermals,
+    // and larger flagship-class touch devices can reach high.
     const flagshipCaps =
       (caps.maxTextureSize || 0) >= 8192 &&
       (caps.maxAnisotropy || 1) >= 8 &&
@@ -397,8 +353,7 @@
   // Every composer target renders at this ratio, so fragment work grows with
   // its square: uncapped, a 3x phone would shade nine pixels per CSS pixel.
   // Apple hides deviceMemory, so phones can't be classified by memory; touch-
-  // primary devices stop at 1.25 on every tier instead, still sharper than the
-  // 1x targets they previously upscaled.
+  // primary devices stop at 1.25 on every tier instead.
   function resolveEffectiveDprCap(profile, { touchPrimary = false } = {}) {
     const baseCap = profile && typeof profile.dprCap === "number" ? profile.dprCap : 1;
     return touchPrimary ? Math.min(baseCap, 1.25) : baseCap;
@@ -561,8 +516,7 @@
       overrideTier: controls.overrideTier,
     });
     // A revealed scene never steps its visuals down to low. The governor's low
-    // step keeps the current profile and lowers only the pixel ratio to 1, the
-    // composer resolution every tier rendered at before device-pixel targets.
+    // step keeps the current profile and lowers only the pixel ratio to 1.
     let resolutionRelief = false;
     let sampleResumeAt = null;
     let skippedSamples = 0;
@@ -584,10 +538,6 @@
       resolveDprCap(profile) {
         const cap = resolveEffectiveDprCap(profile, { touchPrimary });
         return resolutionRelief ? Math.min(cap, 1) : cap;
-      },
-      sample(frameTimeMs, nowMs, floorTier) {
-        const nextTier = governor.sample(frameTimeMs, nowMs, floorTier);
-        return nextTier ? cloneProfile(nextTier) : null;
       },
       // Skips samples for SAMPLE_HOLD_MS from the next sampled frame.
       holdSampling() {
@@ -611,7 +561,7 @@
         }
         const nextTier = governor.sample(frameMs, nowMs, "low");
         if (!nextTier) return null;
-        resolutionRelief = nextTier === "low" && profile?.tier !== "low";
+        resolutionRelief = nextTier === "low";
         return resolutionRelief ? profile : cloneProfile(nextTier);
       },
     };

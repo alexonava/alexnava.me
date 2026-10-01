@@ -5,14 +5,12 @@
   let staticRecoveryAttempted = false;
   const staticRecoveryCleanups = [];
 
+  // The UI modules app.js imports before this one.
   function initUi() {
-    const ui = site.ui || {};
-    if (typeof ui.initHeroChrome === "function") ui.initHeroChrome();
-    if (typeof ui.initSceneMenu === "function") {
-      // Deep links drive the enhanced dialogs; the fallback keeps native anchors.
-      if (ui.initSceneMenu() === true && typeof ui.initDeepLinks === "function") ui.initDeepLinks();
-    } else if (typeof ui.initPanels === "function") ui.initPanels();
-    if (typeof ui.initSceneControls === "function") ui.initSceneControls();
+    const { ui } = site;
+    ui.initHeroChrome();
+    // Deep links drive the enhanced dialogs; the fallback keeps native anchors.
+    if (ui.initSceneMenu() === true) ui.initDeepLinks();
   }
 
   function initScene() {
@@ -61,41 +59,13 @@
     if (host) host.hidden = false;
   }
 
+  // scene/quality.js is in this bundle, ahead of this module.
   function readSceneQualityControls() {
-    const scene = site.scene || {};
-    if (typeof scene.readSceneQualityControls === "function") {
-      return scene.readSceneQualityControls(window.location?.search || "");
-    }
-
-    try {
-      const params = new URLSearchParams(window.location?.search || "");
-      const quality = (params.get("quality") || "").toLowerCase();
-      const VALID_TIERS = ["low", "balanced", "high"];
-      return {
-        debug: params.get("sceneDebug") === "1" || params.get("sceneDebug") === "true",
-        overrideTier: VALID_TIERS.includes(quality) ? quality : null,
-      };
-    } catch {
-      return { debug: false, overrideTier: null };
-    }
+    return site.scene.readSceneQualityControls(window.location?.search || "");
   }
 
   function detectsReducedData() {
-    const scene = site.scene || {};
-    if (typeof scene.detectSaveData === "function") {
-      return scene.detectSaveData({
-        navigatorInfo: typeof navigator !== "undefined" ? navigator : {},
-      });
-    }
-
-    const connection = typeof navigator !== "undefined" ? navigator.connection : null;
-    if (connection?.saveData === true) return true;
-
-    try {
-      return window.matchMedia("(prefers-reduced-data: reduce)").matches === true;
-    } catch {
-      return false;
-    }
+    return site.scene.detectSaveData();
   }
 
   function detectsReducedMotion() {
@@ -117,16 +87,11 @@
     staticRecoveryInstalled = false;
   }
 
+  // navigator.connection exists only in Chromium browsers.
   function addChangeListener(target, handler) {
-    if (typeof target?.addEventListener === "function") {
-      target.addEventListener("change", handler);
-      return () => target.removeEventListener?.("change", handler);
-    }
-    if (typeof target?.addListener === "function") {
-      target.addListener(handler);
-      return () => target.removeListener?.(handler);
-    }
-    return null;
+    if (!target) return null;
+    target.addEventListener("change", handler);
+    return () => target.removeEventListener("change", handler);
   }
 
   function installStaticPreferenceRecovery() {
@@ -221,9 +186,9 @@
     }
   }
 
-  // The scene used to request its models only after its first frame. Once the
-  // live scene is chosen, request the startup tier's tower and tree beside the
-  // bundle. architecture-assets.js takes a response whose URL matches once and
+  // Once the live scene is chosen, request the startup tier's tower and tree
+  // beside the bundle rather than after the scene's first frame.
+  // architecture-assets.js takes a response whose URL matches once and
   // releases the rest.
   let modelPrefetchStarted = false;
   function prefetchArchitectureModels(tier) {

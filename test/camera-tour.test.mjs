@@ -4,6 +4,7 @@ import { BoxGeometry, Group, Mesh, MeshBasicMaterial, PerspectiveCamera } from "
 import { createCinematicCamera, PUSH_IN } from "../src/scene/cinematic.js";
 import * as tourModule from "../src/scene/camera-tour.js";
 import { DIRECTED_SHOTS } from "../src/scene/directed-shots.js";
+import { createPostprocessPipeline } from "../src/scene/postprocess.js";
 
 const {
   createCameraTour,
@@ -14,6 +15,7 @@ const {
   TOUR_PER_SHOT,
   TOUR_TRANSITION,
 } = tourModule;
+
 const close = (a, b, eps = 1e-9) => assert.ok(Math.abs(a - b) < eps, `${a} != ${b}`);
 
 function setup(interval = 5, { prepare } = {}) {
@@ -30,7 +32,6 @@ function setup(interval = 5, { prepare } = {}) {
   tree.position.set(55.1, 0, 36.1);
   const controller = createCinematicCamera({
     camera,
-    film: true,
     selected: "tower",
     angle: 0,
     getSafeArea: () => ({ left: 450, top: 32, width: 940, height: 720 }),
@@ -79,10 +80,13 @@ function setup(interval = 5, { prepare } = {}) {
     },
   };
 }
+
 const idle = (f) => assert.deepEqual(f.transition, { ...TOUR_IDLE });
+
 const tourShots = Object.values(DIRECTED_SHOTS)
   .flat()
   .filter((shot) => shot.tour !== false);
+
 const tourHolds = tourShots.map((shot) => shot.hold),
   tourNames = tourShots.map((shot) => shot.name);
 
@@ -148,7 +152,10 @@ test("the seven tour views skip Masonry study and wrap with small drift and cach
 
 test("each tour shot holds for its own time, capture to capture, with no wildcard", () => {
   assert.deepEqual(tourHolds, [9, 7, 7, 9, 6, 6, 6]);
-  assert.equal(tourHolds.reduce((sum, hold) => sum + hold, 0), 50);
+  assert.equal(
+    tourHolds.reduce((sum, hold) => sum + hold, 0),
+    50,
+  );
   assert.equal(DIRECTED_SHOTS.tower[2].hold, undefined, "Masonry study uses the fallback");
   assert.equal(TOUR_HOLD_FALLBACK, 7);
   assert.equal(TOUR_TRANSITION.dissolve, 1);
@@ -476,4 +483,153 @@ test("a retained Masonry comparison advances to Gallery detail without renumberi
   assert.equal(f.tour.state.index, 4);
   idle(f);
   f.dispose();
+});
+
+const closeTo = (a, b, eps = 1e-3) => assert.ok(Math.abs(a - b) < eps, `${a} != ${b}`);
+
+function tourSetup(interval = 5) {
+  const camera = new PerspectiveCamera(),
+    tower = new Group(),
+    tree = new Group();
+  const material = new MeshBasicMaterial(),
+    geometry = new BoxGeometry(10, 20, 10);
+  for (const root of [tower, tree]) {
+    const mesh = new Mesh(geometry, material);
+    mesh.position.y = 10;
+    root.add(mesh);
+  }
+  tree.position.set(55.1, 0, 36.1);
+  const controller = createCinematicCamera({
+    camera,
+    selected: "tower",
+    angle: 0,
+    getSafeArea: () => ({ left: 450, top: 32, width: 940, height: 720 }),
+  });
+  for (const [kind, root] of [
+    ["tower", tower],
+    ["tree", tree],
+  ]) {
+    controller.setSubject(kind, root);
+    controller.setStatus({ kind, status: "ready" });
+  }
+  const tour = createCameraTour({ camera: controller, interval });
+  const render = (time, flags = {}) => {
+    const phase = tour.update({ elapsedSeconds: time, ...flags });
+    controller.apply({
+      width: 1440,
+      height: 900,
+      elapsedSeconds: time,
+      tourPhase: phase,
+      ...flags,
+    });
+    return phase;
+  };
+  return { camera, controller, tour, render };
+}
+
+// Grading alone, so the final pass draws only for a crossfade.
+const GRADING_ONLY = {
+  postprocessGrading: true,
+  postprocessVignette: false,
+  postprocessGrain: false,
+};
+
+const rendererMock = () => ({
+  autoClear: true,
+  autoClearColor: true,
+  autoClearDepth: true,
+  autoClearStencil: true,
+  clear() {},
+  getPixelRatio: () => 1,
+  getRenderTarget: () => null,
+  getSize(target) {
+    target.width = 800;
+    target.height = 600;
+    return target;
+  },
+  render() {},
+  setRenderTarget() {},
+});
+
+test("tour shots open without black and dissolve the kept outgoing frame into each cut", () => {
+  const f = tourSetup(5);
+  const pipeline = createPostprocessPipeline(
+    rendererMock(),
+    { isScene: true },
+    f.camera,
+    GRADING_ONLY,
+    {
+      matchMedia: () => ({ matches: false }),
+    },
+  );
+  const pass = pipeline.passes.vignetteGrain;
+  // Mirrors index.js: the tour, then the pipeline, then the camera and the draw.
+  const frame = (time, flags = {}) => {
+    const phase = f.tour.update({ elapsedSeconds: time, ...flags });
+    pipeline.setTransition(f.tour.transition);
+    f.controller.apply({
+      width: 1440,
+      height: 900,
+      elapsedSeconds: time,
+      tourPhase: phase,
+      ...flags,
+    });
+    pipeline.composer.render(0);
+  };
+  frame(0);
+  assert.deepEqual({ ...f.tour.transition }, { ...TOUR_IDLE }, "the opening shot shows at once");
+  assert.equal(pass.enabled, false);
+  assert.equal(pass.uniforms.uProgress.value, 1);
+  assert.equal(pass.uniforms.uLayered.value, 0, "outside film the dissolve is not staggered");
+  frame(4.95);
+  assert.equal(pass.enabled, false);
+
+  frame(5);
+  assert.equal(f.tour.transition.capture, true);
+  assert.equal(f.controller.shot.name, "The watch", "the capture keeps the outgoing shot");
+  assert.equal(pass.enabled, true, "grading alone adds the final pass for the crossfade");
+  assert.equal(pass.uniforms.uProgress.value, 1);
+  assert.ok(pass.uniforms.tPrev.value, "grading's output is kept");
+  // The kept frame pushes in about the safe-area centre, in UV from the bottom.
+  closeTo(pass.uniforms.uPrevOrigin.value.x, (450 + 940 / 2) / 1440, 1e-6);
+  closeTo(pass.uniforms.uPrevOrigin.value.y, 1 - (32 + 720 / 2) / 900, 1e-6);
+  pipeline.setQualityProfile(GRADING_ONLY);
+  assert.equal(pass.enabled, true, "a quality step keeps the crossfade");
+
+  frame(5.05);
+  const { cut, progress, zoom } = f.tour.transition;
+  assert.equal(f.controller.shot.name, "Threshold");
+  assert.equal(cut, true);
+  closeTo(progress, 0.05, 1e-6);
+  // Linear here; the final pass eases it, per depth layer in film.
+  closeTo(pass.uniforms.uProgress.value, progress, 1e-9);
+  closeTo(pass.uniforms.uPrevScale.value, 1 / (1 + zoom * progress), 1e-9);
+  assert.equal(pass.uniforms.uLayered.value, 0);
+  frame(5.5);
+  closeTo(pass.uniforms.uProgress.value, 0.5, 1e-6);
+  frame(6.1);
+  assert.deepEqual({ ...f.tour.transition }, { ...TOUR_IDLE });
+  assert.equal(pass.uniforms.uProgress.value, 1);
+  assert.equal(pass.enabled, false, "grading alone drops the final pass after the dissolve");
+
+  // A pause mid-dissolve settles on the incoming shot; resuming does not replay it.
+  frame(10);
+  assert.equal(f.tour.transition.capture, true);
+  frame(10.3);
+  assert.equal(f.controller.shot.name, "Gallery detail");
+  assert.ok(pass.uniforms.uProgress.value < 1);
+  f.tour.toggle();
+  frame(10.4);
+  assert.equal(pass.uniforms.uProgress.value, 1);
+  assert.equal(pass.enabled, false);
+  f.tour.toggle();
+  frame(10.5);
+  assert.equal(pass.uniforms.uProgress.value, 1);
+  frame(10.6, { reducedMotion: true });
+  assert.deepEqual({ ...f.tour.transition }, { ...TOUR_IDLE });
+  assert.equal("uFade" in pass.uniforms, false, "no dip to black remains");
+  f.tour.dispose();
+  assert.deepEqual({ ...f.tour.transition }, { ...TOUR_IDLE });
+  pipeline.dispose();
+  f.controller.dispose();
 });

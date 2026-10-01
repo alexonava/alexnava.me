@@ -1,7 +1,9 @@
+// build.mjs and its tools: staged output, watching, portability and shader compaction.
+
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createServer } from "node:net";
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile, cp } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { publishBuild, validateOutputDirectory } from "../tools/build-output.mjs";
@@ -9,9 +11,16 @@ import { createRebuildQueue, isBuildInput, startWatching } from "../tools/watch.
 import { assertPortAvailable, parseDevOptions } from "../tools/dev.mjs";
 import { spawnOwned } from "../tools/owned-process.mjs";
 import { BUILD_INPUT_FILES, BUILD_INPUT_DIRS, contentDateModified } from "../build.mjs";
+import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
+import { promisify } from "node:util";
+import { transform } from "esbuild";
+import { compactShaderSource } from "../tools/shader-compact.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
 const scratchRoot = path.join(projectRoot, ".tmp-preview-review");
+
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function fixture(t) {
@@ -42,7 +51,9 @@ test("staged builds retain the last good payload after errors and keep prior has
   const output = path.join(root, "output");
   const prepare = (hash, text) => async (directory) => {
     await mkdir(path.join(directory, "scripts"));
+    await mkdir(path.join(directory, "fonts"));
     await writeFile(path.join(directory, "scripts", `app.${hash}.js`), text);
+    await writeFile(path.join(directory, "fonts", `sans.${hash}.woff2`), text);
     await writeFile(
       path.join(directory, "index.html"),
       `<script src="/scripts/app.${hash}.js"></script>`,
@@ -74,6 +85,7 @@ test("staged builds retain the last good payload after errors and keep prior has
     prepare: prepare("22222222", "second"),
   });
   assert.equal(await readFile(path.join(output, "scripts", "app.11111111.js"), "utf8"), "first");
+  assert.equal(await readFile(path.join(output, "fonts", "sans.11111111.woff2"), "utf8"), "first");
   assert.match(await readFile(path.join(output, "index.html"), "utf8"), /app\.22222222\.js/);
   assert.equal(await readFile(path.join(output, "robots.txt"), "utf8"), "second");
   await publishBuild({
@@ -82,6 +94,7 @@ test("staged builds retain the last good payload after errors and keep prior has
     prepare: prepare("33333333", "third"),
   });
   assert.deepEqual(await readdir(path.join(output, "scripts")), ["app.33333333.js"]);
+  assert.deepEqual(await readdir(path.join(output, "fonts")), ["sans.33333333.woff2"]);
 });
 
 test("watch builds retain an open page's split scene chunks until a full build", async (t) => {
@@ -372,3 +385,258 @@ test(
     assert.doesNotThrow(() => process.kill(unrelated.child.pid, 0));
   },
 );
+
+const execFileP = promisify(execFile);
+
+const hash = (bytes) => createHash("sha256").update(bytes).digest("hex").slice(0, 8);
+
+// Exercise the actual builder in an isolated checkout-shaped fixture. Tiny
+// binary assets and stub entries avoid copying the archived scene payload or
+// racing bundle-output.test.mjs for the real dist/ directory.
+test("CSS asset URLs and bytes are portable across checkout line endings", async () => {
+  const scratchRoot = path.join(projectRoot, ".tmp-preview-review");
+  await mkdir(scratchRoot, { recursive: true });
+  const fixture = await mkdtemp(path.join(scratchRoot, "portable-css-"));
+  const sourceCss = await readFile(path.join(projectRoot, "styles.css"));
+  const paper = Buffer.from([82, 73, 70, 70, 13, 10, 0, 255, 87, 69, 66, 80]);
+  try {
+    await cp(path.join(projectRoot, "build.mjs"), path.join(fixture, "build.mjs"));
+    await cp(path.join(projectRoot, "tools"), path.join(fixture, "tools"), { recursive: true });
+    for (const dir of [
+      "src",
+      "fonts",
+      "images/architecture",
+      "images/materials",
+      "public/.well-known",
+    ]) {
+      await mkdir(path.join(fixture, dir), { recursive: true });
+    }
+    for (const file of [
+      ...[
+        "favicon.svg",
+        "favicon.ico",
+        "icon.svg",
+        "icon-maskable.svg",
+        "apple-touch-icon.png",
+        "icon-192.png",
+        "icon-512.png",
+        "icon-maskable-512.png",
+        "manifest.webmanifest",
+        "og.png",
+        "robots.txt",
+        "llms.txt",
+        "sitemap.md",
+        "index.md",
+        "_headers",
+        "_redirects",
+        ".well-known/security.txt",
+        "site-agents.md",
+      ].map((name) => `public/${name}`),
+    ]) {
+      await writeFile(path.join(fixture, file), "fixture\n");
+    }
+    for (const file of ["app.js", "scene-entry.js"]) {
+      await writeFile(path.join(fixture, "src", file), "void 0;\n");
+    }
+    for (const file of ["index.html", "404.html"]) {
+      await writeFile(path.join(fixture, file), '<link rel="stylesheet" href="/styles.css">');
+    }
+    for (const name of [
+      "paper-grain",
+      "paper-edge",
+      "paper-vignette-profile",
+      "paper-vignette-experience",
+      "paper-vignette-contact",
+      "estate-map-desktop",
+      "estate-map-portrait",
+    ]) {
+      await writeFile(path.join(fixture, "images", `${name}.webp`), paper);
+    }
+    for (const tier of ["high", "balanced"]) {
+      for (const role of ["tower", "tree", "lantern", "lichen-rock", "weathered-stone"]) {
+        await writeFile(path.join(fixture, "images", "architecture", `${role}-${tier}.glb`), paper);
+      }
+    }
+    for (const map of ["color-1024", "normal-1024", "color-512", "normal-512", "detail-512"]) {
+      await writeFile(path.join(fixture, "images", "materials", `slate-${map}.webp`), paper);
+    }
+    // The stylesheet's fonts, under their source names.
+    for (const name of (await readdir(path.join(projectRoot, "fonts"))).filter((file) =>
+      file.endsWith(".woff2"),
+    )) {
+      await writeFile(path.join(fixture, "fonts", name), paper);
+    }
+
+    async function buildCss(css) {
+      await writeFile(path.join(fixture, "styles.css"), css);
+      await execFileP(
+        process.execPath,
+        ["build.mjs", "--dist", "--outdir", path.join(fixture, "dist")],
+        { cwd: fixture },
+      );
+      const cssDir = path.join(fixture, "dist", "css");
+      const names = await readdir(cssDir);
+      assert.equal(names.length, 1);
+      const name = names[0];
+      const bytes = await readFile(path.join(cssDir, name));
+      assert.equal(name, `styles.${hash(bytes)}.css`, "URL must fingerprint emitted bytes");
+      for (const page of ["index.html", "404.html"]) {
+        const html = await readFile(path.join(fixture, "dist", page), "utf8");
+        assert.ok(html.includes(`/css/${name}`), `${page} must use the emitted stylesheet URL`);
+      }
+      return { name, bytes };
+    }
+
+    const lfSource = sourceCss.toString("utf8").replace(/\r\n?/g, "\n");
+    const lf = await buildCss(lfSource);
+    const crlf = await buildCss(lfSource.replace(/\n/g, "\r\n"));
+    assert.deepEqual(crlf, lf, "LF and CRLF checkouts must publish identical CSS bytes and URLs");
+    assert.ok(!crlf.bytes.includes(13), "emitted CSS must contain only LF line endings");
+    assert.ok(crlf.bytes.toString("utf8").includes(`/images/paper-grain.${hash(paper)}.webp`));
+    assert.deepEqual(
+      await readFile(path.join(fixture, "dist", "images", `paper-grain.${hash(paper)}.webp`)),
+      paper,
+      "binary artwork, including CRLF bytes, must remain unchanged",
+    );
+    // A fingerprinted source is published only under its hashed name.
+    await assert.rejects(readFile(path.join(fixture, "dist", "images", "paper-grain.webp")), {
+      code: "ENOENT",
+    });
+
+    assert.ok(lf.bytes.length < Buffer.byteLength(lfSource), "the stylesheet is minified");
+    assert.equal(
+      await readFile(path.join(fixture, "dist", ".well-known", "security.txt"), "utf8"),
+      "fixture\n",
+      "nested static files are copied into their own directory",
+    );
+
+    const edited = await buildCss(`${lfSource}\n.portability-fixture { color: #123456; }\n`);
+    assert.notEqual(edited.name, lf.name, "a real CSS change must still invalidate its URL");
+    assert.ok(edited.bytes.toString("utf8").includes(".portability-fixture{color:#123456}"));
+    const publishedHtml = await readFile(path.join(fixture, "dist", "index.html"));
+    // A page naming a font the build does not hash fails the build.
+    await writeFile(
+      path.join(fixture, "index.html"),
+      '<link rel="preload" href="/fonts/missing.woff2" as="font">',
+    );
+    await assert.rejects(
+      execFileP(process.execPath, ["build.mjs", "--dist", "--outdir", path.join(fixture, "dist")], {
+        cwd: fixture,
+      }),
+      (error) =>
+        /index\.html names an un-hashed asset after the rewrite: \/fonts\/missing\.woff2/.test(
+          error.stderr,
+        ),
+    );
+    await writeFile(path.join(fixture, "index.html"), '<link rel="stylesheet" href="/styles.css">');
+    await writeFile(path.join(fixture, "src", "app.js"), "export const broken = ;");
+    await assert.rejects(
+      execFileP(process.execPath, ["build.mjs", "--dist", "--outdir", path.join(fixture, "dist")], {
+        cwd: fixture,
+      }),
+    );
+    assert.deepEqual(
+      await readFile(path.join(fixture, "dist", "index.html")),
+      publishedHtml,
+      "a syntax error must leave the last successful page available",
+    );
+    assert.deepEqual(
+      await readFile(path.join(fixture, "dist", "css", edited.name)),
+      edited.bytes,
+      "a syntax error must leave the last successful assets available",
+    );
+    await writeFile(path.join(fixture, "src", "app.js"), "void 0;");
+    await rm(path.join(fixture, "public", "favicon.svg"));
+    await assert.rejects(
+      execFileP(process.execPath, ["build.mjs", "--dist", "--outdir", path.join(fixture, "dist")], {
+        cwd: fixture,
+      }),
+    );
+    assert.deepEqual(
+      await readFile(path.join(fixture, "dist", "index.html")),
+      publishedHtml,
+      "a missing copied input must also preserve the last successful page",
+    );
+    assert.deepEqual(
+      await readFile(path.join(projectRoot, "styles.css")),
+      sourceCss,
+      "the tracked stylesheet must not be modified by this regression test",
+    );
+  } finally {
+    assert.equal(path.dirname(path.resolve(fixture)), scratchRoot);
+    await rm(fixture, { recursive: true, force: true });
+  }
+});
+
+test("no tracked text file carries a U+FFFD replacement character", async () => {
+  // A lost encoding round trip leaves U+FFFD where a character was.
+  const { stdout } = await execFileP("git", ["ls-files", "-z"], { cwd: projectRoot });
+  const binary = /\.(?:woff2|glb|webp|png|ico|jpg)$/;
+  const replacement = Buffer.from("\uFFFD", "utf8");
+  let checked = 0;
+  for (const file of stdout.split("\0").filter((name) => name && !binary.test(name))) {
+    let bytes;
+    try {
+      bytes = await readFile(path.join(projectRoot, file));
+    } catch (error) {
+      if (error.code === "ENOENT") continue; // deleted in the working tree
+      throw error;
+    }
+    assert.equal(bytes.indexOf(replacement), -1, `${file} carries U+FFFD`);
+    checked++;
+  }
+  assert.ok(checked > 50, `${checked} text files checked`);
+});
+
+test("shader compaction strips GLSL indentation, comments and spaces but keeps directives and expressions", () => {
+  const source = [
+    "const a = `",
+    "  #ifdef USE_MAP",
+    "    float x = a * b; // a comment",
+    "",
+    "    vec2 y = vec2( 1.0, x );",
+    "    float z = a - -b;",
+    "  #endif",
+    "  float w = ${value} * 2.0;",
+    "  gl_FragColor.a = ${alpha};`;",
+    "const b = `  plain   text ${x}  `;",
+    "const re = /`[^`]*`/g, half = 1 / 2 / 3;",
+    'const s = "`  float not = 1;  `";',
+  ].join("\n");
+  const out = compactShaderSource(source);
+  assert.equal(
+    out,
+    [
+      "const a = `",
+      "#ifdef USE_MAP",
+      "float x=a*b;vec2 y=vec2(1.0,x);float z=a- -b;",
+      "#endif",
+      // Spaces at a ${} edge stay: the expression may end in anything.
+      "float w= ${value} *2.0;",
+      "gl_FragColor.a= ${alpha};`;",
+      "const b = `  plain   text ${x}  `;",
+      "const re = /`[^`]*`/g, half = 1 / 2 / 3;",
+      'const s = "`  float not = 1;  `";',
+    ].join("\n"),
+  );
+  assert.equal(compactShaderSource(out), out, "idempotent");
+  // A regex after a comment (three's /*@__PURE__*/ style) is still a regex.
+  assert.equal(compactShaderSource("x = /*c*/ /`/.source;"), "x = /*c*/ /`/.source;");
+  assert.throws(() => compactShaderSource("const a = `float x;"), /unterminated template literal/);
+});
+
+test("every scene module compacts to JavaScript that still parses and minifies no larger", async () => {
+  const dir = new URL("../src/scene/", import.meta.url);
+  let before = 0,
+    after = 0;
+  for (const name of (await readdir(dir)).filter((file) => file.endsWith(".js"))) {
+    const source = await readFile(new URL(name, dir), "utf8");
+    const compact = compactShaderSource(source);
+    const a = (await transform(source, { minify: true, format: "esm" })).code;
+    const b = (await transform(compact, { minify: true, format: "esm" })).code;
+    assert.ok(b.length <= a.length, name);
+    before += a.length;
+    after += b.length;
+  }
+  assert.ok(before - after > 2000, `saved ${before - after} bytes`);
+});

@@ -9,7 +9,13 @@
 // class arrives in `lib` (rock-scatter.js ROCK_LIB).
 
 // Reach of each directed shot's view wedge from its subject; other tower shots 45.
-const SHOT_REACH = { "The watch": 160, Portrait: 95, "Root and lantern": 40, "Close-up": 30, "Lantern study": 15 };
+const SHOT_REACH = {
+  "The watch": 160,
+  Portrait: 95,
+  "Root and lantern": 40,
+  "Close-up": 30,
+  "Lantern study": 15,
+};
 
 // Clear of the tower, tree, lantern and path, and outside every directed
 // shot's wedge between its camera and its subject: azimuth +-(arc/2 + 10).
@@ -18,7 +24,11 @@ export function rockClear(lib, x, z, radius, { lanternStone = false } = {}) {
     lantern = lib.estateLantern(),
     { tower, tree } = ESTATE;
   if (Math.hypot(x - tower.x, z - tower.z) <= tower.clear + radius) return false;
-  if (Math.hypot(x - tree.x, z - tree.z) <= (lanternStone ? ESTATE.lantern.offset : tree.clear + radius)) return false;
+  if (
+    Math.hypot(x - tree.x, z - tree.z) <=
+    (lanternStone ? ESTATE.lantern.offset : tree.clear + radius)
+  )
+    return false;
   if (Math.hypot(x - lantern.x, z - lantern.z) <= ESTATE.lantern.clear + radius) return false;
   if (lib.estatePathDistance(x, z) <= ESTATE.path.clear + 0.5 + radius) return false;
   for (const [kind, shots] of Object.entries(DIRECTED_SHOTS))
@@ -27,7 +37,7 @@ export function rockClear(lib, x, z, radius, { lanternStone = false } = {}) {
         dx = x - center.x,
         dz = z - center.z,
         distance = Math.hypot(dx, dz),
-        turn = Math.abs(((Math.atan2(dz, dx) * 180) / Math.PI - shot.azimuth + 540) % 360 - 180);
+        turn = Math.abs((((Math.atan2(dz, dx) * 180) / Math.PI - shot.azimuth + 540) % 360) - 180);
       if (distance < (SHOT_REACH[shot.name] ?? 45) && turn < shot.arc / 2 + 10) return false;
     }
   return true;
@@ -55,7 +65,15 @@ export function rockFootprints(lib, seed = 91357) {
     });
   };
   for (const [id, anchor, deg, dist, type, height] of ROCK_CLUSTERS)
-    rocks.push(vary({ id, type, height, ...lib.estatePoint(anchor, deg, dist), lanternStone: anchor === "lantern" }));
+    rocks.push(
+      vary({
+        id,
+        type,
+        height,
+        ...lib.estatePoint(anchor, deg, dist),
+        lanternStone: anchor === "lantern",
+      }),
+    );
   for (const rock of rocks.filter((item) => item.height >= PEBBLE_UNDER)) {
     for (let attempt = 0; attempt < 16; attempt++) {
       const angle = random() * Math.PI * 2,
@@ -70,7 +88,10 @@ export function rockFootprints(lib, seed = 91357) {
       });
       if (
         rockClear(lib, pebble.x, pebble.z, pebble.radius) &&
-        rocks.every((other) => Math.hypot(pebble.x - other.x, pebble.z - other.z) > pebble.radius + other.radius)
+        rocks.every(
+          (other) =>
+            Math.hypot(pebble.x - other.x, pebble.z - other.z) > pebble.radius + other.radius,
+        )
       ) {
         rocks.push(pebble);
         break;
@@ -96,7 +117,12 @@ export function createRockLayout(lib, { groundHeight, seed = 91357 }) {
       hz = 0.5 * fz * rock.height;
     spin.setFromAxisAngle(up, rock.yaw);
     let low = groundHeight(rock.x, rock.z);
-    for (const [px, pz] of [[hx, 0], [-hx, 0], [0, hz], [0, -hz]]) {
+    for (const [px, pz] of [
+      [hx, 0],
+      [-hx, 0],
+      [0, hz],
+      [0, -hz],
+    ]) {
       point.set(px, 0, pz).applyQuaternion(spin);
       low = Math.min(low, groundHeight(rock.x + point.x, rock.z + point.z));
     }
@@ -109,11 +135,16 @@ export function createRockLayout(lib, { groundHeight, seed = 91357 }) {
       )
       .normalize()
       .lerp(up, 0.4);
-    if (rock.pebble) normal.add(point.set(Math.sin(rock.yaw * 3), 0, Math.cos(rock.yaw * 5)).multiplyScalar(0.07));
+    if (rock.pebble)
+      normal.add(point.set(Math.sin(rock.yaw * 3), 0, Math.cos(rock.yaw * 5)).multiplyScalar(0.07));
     tilt.setFromUnitVectors(up, normal.normalize()).multiply(spin);
     const scale = new Vector3(rock.stretch, rock.lift, 1).multiplyScalar(rock.height),
       y = low - rock.sink * scale.y;
-    return { ...rock, y, matrix: new Matrix4().compose(new Vector3(rock.x, y, rock.z), tilt, scale) };
+    return {
+      ...rock,
+      y,
+      matrix: new Matrix4().compose(new Vector3(rock.x, y, rock.z), tilt, scale),
+    };
   });
 }
 
@@ -121,7 +152,9 @@ export function createRockLayout(lib, { groundHeight, seed = 91357 }) {
 // slateContacts): every rock at least 0.3 tall. mud-ground.js gates these on
 // slateRockContact, which index.js sets when the rocks appear.
 export function writeRockContacts(contacts, rocks) {
-  const entries = rocks.filter((rock) => rock.height >= 0.3).map((rock) => [rock.x, rock.z, rock.half * 1.35, 0.28]);
+  const entries = rocks
+    .filter((rock) => rock.height >= 0.3)
+    .map((rock) => [rock.x, rock.z, rock.half * 1.35, 0.28]);
   contacts.set(entries.slice(0, contacts.length / 4 - 2).flat(), 8);
   return contacts;
 }
@@ -181,10 +214,17 @@ export function createRocks(
       color = new Color();
     Object.keys(lib.ROCK_TYPES).forEach((type, index) => {
       const rocks = layout.filter((rock) => rock.type === type),
-        material = lib.stampDepthLayer(lib.materialFor(assets[index], anisotropy, "rock"), lib.DEPTH_LAYER.ground);
+        material = lib.stampDepthLayer(
+          lib.materialFor(assets[index], anisotropy, "rock"),
+          lib.DEPTH_LAYER.ground,
+        );
       materials.push(material);
       lib.applyFilmGrade(material, true);
-      const mesh = new InstancedMesh(lib.sourceMesh(assets[index]).geometry, material, rocks.length);
+      const mesh = new InstancedMesh(
+        lib.sourceMesh(assets[index]).geometry,
+        material,
+        rocks.length,
+      );
       mesh.name = `film-rocks-${type}`;
       rocks.forEach((rock, i) => {
         mesh.setMatrixAt(i, rock.matrix);
@@ -204,14 +244,17 @@ export function createRocks(
     resources.splice(0).forEach(free);
   }
   Promise.allSettled(
-    Object.values(lib.ROCK_TYPES).map(({ role }) => loadAsset(urls[tier]?.[role], { signal: abort.signal, tier, role })),
+    Object.values(lib.ROCK_TYPES).map(({ role }) =>
+      loadAsset(urls[tier]?.[role], { signal: abort.signal, tier, role }),
+    ),
   ).then((results) => {
     const assets = results.map((result) => (result.status === "fulfilled" ? result.value : null)),
       loaded = assets.filter(Boolean).map((asset) => lib.collectResources(asset));
     if (disposed) return loaded.forEach(free);
     resources.push(...loaded);
     try {
-      if (assets.some((asset) => !asset?.scene?.isObject3D)) throw new Error("Rock asset unavailable");
+      if (assets.some((asset) => !asset?.scene?.isObject3D))
+        throw new Error("Rock asset unavailable");
       build(assets);
     } catch {
       release();

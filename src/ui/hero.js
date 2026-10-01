@@ -59,10 +59,6 @@
       { passive: true },
     );
     window.addEventListener("scroll", onScroll, { passive: true });
-    if (reduce && typeof reduce.addEventListener === "function") {
-      reduce.addEventListener("change", onScroll);
-    } else if (reduce && typeof reduce.addListener === "function") {
-      reduce.addListener(onScroll);
-    }
+    reduce?.addEventListener("change", onScroll);
   };
 })();

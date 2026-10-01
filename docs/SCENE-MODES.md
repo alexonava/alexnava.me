@@ -1,52 +1,88 @@
-# Scene modes and camera review
+# Scene modes
 
-The normal experience opens on **The watch** (tower, angle 1), with the tour: each shot holds 6 to 9 seconds, about 50 seconds a loop, and dissolves into the next over 1 second, staggered by depth: the sky changes first, then the mountains, the ground and the tower or tree, with no dip to black. The seven tour shots comprise three tower views and four tree views. Masonry study is excluded from the tour; its explicit URL remains available. These controls are defined by source, not by the numeric orbit guidance in older notes.
+URL parameters, shots, pauses and the status objects used for review and captures. They select what the live scene shows; none of them bypasses a release gate.
 
-## Directed views
+## Parameters
 
-Append a query to the local preview, for example:
+Append them to the local preview, for example `http://127.0.0.1:4173/?view=tower&angle=1&tour=0`.
 
-    http://127.0.0.1:4173/?view=tower&angle=1&tour=0
+| Parameter    | Values                                      | Effect                                           |
+| ------------ | ------------------------------------------- | ------------------------------------------------ |
+| `view`       | `tower` (default), `tree`                   | Opening subject                                  |
+| `angle`      | `1` to `4`                                  | Shot within the view                             |
+| `tour`       | absent, `3`, `5`, `20`, `0`                 | Per-shot holds, a fixed hold in seconds, or none |
+| `quality`    | `auto` (default), `high`, `balanced`, `low` | Startup tier                                     |
+| `sceneDebug` | `1` or `true`                               | Publishes `BabelSite.sceneDebug`                 |
 
-| URL selection | Shot |
-| --- | --- |
-| view=tower&angle=1 | The watch |
-| view=tower&angle=2 | Threshold (the ladder arriving at the gallery) |
-| view=tower&angle=3 | Masonry study (URL only; excluded from tour; the name is kept for a lattice structure study) |
-| view=tower&angle=4 | Gallery detail (gallery floor to eave) |
-| view=tree&angle=1 | Portrait |
-| view=tree&angle=2 | Lantern study |
-| view=tree&angle=3 | Close-up |
-| view=tree&angle=4 | Root and lantern |
+- Any other `view` opens the tower, and a missing or invalid `angle` the first shot. A `tour` value other than 3, 5 or 20 holds the opening shot. At `tour=3` the dissolve takes 0.9 s.
+- `quality=high|balanced` and `sceneDebug` load the live scene past the reduced-motion, reduced-data and software-renderer gates, never without WebGL; `sceneDebug` keeps the detected tier. `quality=low` keeps the title card.
 
-Explicit view/angle selects the opening composition; add tour=0 to hold it. Without a tour parameter each shot keeps its own hold (`hold` in directed-shots.js): The watch and Portrait 9 seconds, Threshold and Gallery detail 7, the other tree shots 6. tour=3, 5 and 20 are fixed review cadences for every shot; the dissolve takes 1 second, or 0.9 at tour=3. The tour has no shot label or control strip. Panels, reduced motion, and a visitor pause suspend automatic cycling; missing subjects are skipped.
+## Shots
 
-The supplied lantern loads independently of the tower and tree. Its arrival updates Lantern study and Root and lantern from the new geometry while preserving the lantern's ground position and existing light. Until it loads, or if it fails, the tree keeps its built-in lantern. The internal flame module loads during preparation; if that module fails, the supplied lantern still appears with its static glow. A prepared replacement commits before reveal or at a tour cut, with a still-frame commit when the tour is paused. No visitor control is added.
+| URL                  | Shot             | Hold | In the tour  |
+| -------------------- | ---------------- | ---- | ------------ |
+| `view=tower&angle=1` | The watch        | 9 s  | yes, first   |
+| `view=tower&angle=2` | Threshold        | 7 s  | yes          |
+| `view=tower&angle=3` | Masonry study    | 7 s  | no, URL only |
+| `view=tower&angle=4` | Gallery detail   | 7 s  | yes          |
+| `view=tree&angle=1`  | Portrait         | 9 s  | yes          |
+| `view=tree&angle=2`  | Lantern study    | 6 s  | yes          |
+| `view=tree&angle=3`  | Close-up         | 6 s  | yes          |
+| `view=tree&angle=4`  | Root and lantern | 6 s  | yes          |
 
-A small flame stands on the wick inside the lantern's clear glass globe, with a blue base, a yellow-white core and an orange tip, while the metal stays dark. One draught sways the flame and moves the existing light within 12% of its current lighting base. The lantern's puddle is still, clear water that mirrors the lantern and its flame (at the flame's own height and lean), the trunk and the sky, more dimly than the flame itself, and rare drips send soft rings across the puddles that make the reflection wobble. The flame, the light's flicker and the drips all freeze during visitor or panel pauses and reduced motion. Around the roots, soil banks, baked occlusion, damp contacts and sparse dark litter seat the tree (the owner's realism pass, 2026-09-27). The film horizon has five moonlit mountain ranges, lit by the moon key, with gullies, snow tongues and valley mist between the layers, and fog confined to their feet so the silhouettes remain separate. Their geometry is a lazy chunk requested when the film activates; it lands at once before the reveal, on a tour cut or while the tour is not running, and otherwise fades in over the sky (briefly under the reveal's fade-in, over 1.8 s mid-shot on a slow phone); until it lands, or if it fails, no ranges show.
+The tour runs in table order, about 50 s a loop. Each shot drifts and pushes in, then dissolves into the next over 1 s (or 30% of a shorter hold), staggered by depth. A missing subject's shots are skipped. Shot intent and holds live in [directed-shots.js](../src/scene/directed-shots.js), fitting and drift in [cinematic.js](../src/scene/cinematic.js), pacing in [camera-tour.js](../src/scene/camera-tour.js) and the dissolve in [postprocess.js](../src/scene/postprocess.js).
 
-Light shafts follow the owner's hybrid, with visible rays (2026-09-26): warm star rays in The watch only, a stylised screen-space ray pattern fanning from the star through the cabin and down the lattice toward the eye, lit by the light the tower's gaps let through and shown only where the eye looks through the tower (sparser on phones, so the lattice keeps rays rather than a veil); cool moonbeams along the moon key light in Threshold, Gallery detail, Masonry study, Portrait and Close-up, as slim shafts through the crown (Portrait: fading in past its front, irregularly spaced and partly shaped by its gaps) or past the cabin (Gallery detail) and broken moonlight in patches on the bark and timber; none in Lantern study or Root and lantern. The air light keeps off the sky (the star's entirely, the moon's beyond the subject's silhouette) and off the mountains and far foothills beside the subject, and eases off behind the name and intro. They change with the shot on a tour cut (or while the scene first fades in), never mid-hold, except that a light still building when its shot opens, or one whose programs must link again after a quality step on its cut, fades in over a second; in a dissolve they arrive with the subject; they sway only slowly and within a small bound, freeze with pauses and reduced motion, and load only on WebGL2.
+## Tour and pauses
 
-The tower's film material grade uses a 0.14 lift for dark atlas detail before lighting, retaining real cast shadows, dark recesses and ground contact. The tree grade, existing lights and exposure keep their existing settings.
+- An open dialog holds the tour at once; 450 ms later, after the dim overlay has faded in, rendering stops until the last dialog closes.
+- A hidden tab or an off-screen canvas renders nothing. Reduced motion holds camera motion when the live scene runs at all (only with `quality` or `sceneDebug`).
+- `BabelSite.scene.setVisitorPaused(true)` holds the tour on its current shot, ends a dissolve in progress on its incoming shot, stops drift and cloud motion, and then stops rendering. `setVisitorPaused(false)` continues the same shot without a time jump. `BabelSite.scene.isVisitorPaused()` reads the state.
+- A script may set `BabelSite.scene.visitorPausedPreference = true` before the scene loads; the pause applies at the reveal and keeps the first revealed frame.
+- While paused or held, a resize, context restore or content change (model, map, shader, font) draws one still frame; scroll does not.
 
-## Visitor pause
+## sceneDebug
 
-The owner retired the footer's Pause scene button on 2026-09-24; About sits alone at the left of the footer, and the scene always plays unless reduced motion, a hidden tab or an open dialog pauses it. For scripted review, `BabelSite.scene.setVisitorPaused()` still pauses the scene and `isVisitorPaused()` reads the state back. A pause holds the tour on its current shot, ends a dissolve in progress on its incoming shot, stops drift and clouds, and then stops rendering. A resize, context restore, or model, map, shader or font change draws one still frame; scroll does not. Resuming continues the same shot from that clear frame without a time jump; an interrupted dissolve is not replayed. A script may pre-set `scene.visitorPausedPreference` before the scene loads; it applies once the scene is revealed, so the first revealed frame stays on screen. The UI no longer stores a choice: it clears any legacy `babel:scene-paused` value and sets the preference to false. Without a quality or sceneDebug override, reduced-motion and reduced-data visitors, like other static title card paths, never load the scene.
+With `sceneDebug=1`, `window.BabelSite.sceneDebug` is a plain, read-only status object. It adds no controls and loads no extra code.
 
-The camera fits authored focal volumes into the responsive composition area. Portrait overrides, and The watch's landscape-phone variant, are intentional. Edit [directed-shots.js](../src/scene/directed-shots.js) for shot intent and holds, [cinematic.js](../src/scene/cinematic.js) for fitting and drift, [camera-tour.js](../src/scene/camera-tour.js) for timing, and [postprocess.js](../src/scene/postprocess.js) for the depth-staggered dissolve, whose layer codes are set in [depth-layers.js](../src/scene/depth-layers.js).
+| Field                                     | Meaning                                                                                    |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `tier`, `initialTier`, `assetTier`        | Current profile tier, startup tier, and the tier models and maps were loaded for           |
+| `requestedTier`, `overrideTier`           | From `quality`                                                                             |
+| `governorTier`, `reason`                  | Governor tier (`low`: pixel ratio only) and last change                                    |
+| `pixelRatio`, `caps`                      | Pixel ratio; the probe's limits                                                            |
+| `composition`, `compositionReason`        | Composition profile and why it was chosen                                                  |
+| `architecture.tower`, `.tree`, `.lantern` | Each with `status`: `loading`, `ready` or `fallback`                                       |
+| `lanternCommitted`                        | `true` once the supplied lantern is in the scene                                           |
+| `ground`, `groundTreatment`               | Slate map status (`status` field); `slate` or `baseline`                                   |
+| `rocks`, `mountains`                      | Rock status (`status` field); `loading`, `ready` or `fallback`                             |
+| `shaders`                                 | Warm-up per label (`scene`, `ground`, `tower`, `tree`, `lantern`): `ready` or `unwarmed`   |
+| `cinematic`                               | `shot`, `selected`, `angle` (1-based), `current`, `film` and `tour` (state and transition) |
+| `programs`, `renderFps`                   | Linked program count; frames drawn per second                                              |
+| `failure`                                 | `{ stage, message }` when the scene stopped for the title card                             |
 
-Close-up uses a 0.83 fitting margin on desktop and phone, gently pulling the camera back about 7–9% from its prior 0.91 margin while retaining the same branch study, 30-degree lens, target, azimuth and motion. Its portrait focal width stays narrower; the roots and lantern remain below the full viewport. Other directed shots keep their existing parameters.
+## sceneLoader.state
 
-## Quality tiers and fallback
+On the live path, with or without `sceneDebug`, `window.BabelSite.sceneLoader.state` describes the loading line.
 
-The live scene runs on the high and balanced tiers only, and always as this directed film: the authored tower, tree and lantern, the cracked slate ground with its scattered rocks, the mountain ranges and, on WebGL2, the light shafts. The low tier keeps the static title card: main.js reads the startup tier from the WebGL probe it already ran and never requests the scene bundle, and the scene itself declines to start if it still finds the low tier. If the authored tower or tree cannot load, the scene stops, its runtime is disposed and the title card stays; there is no procedural world to fall back to. A missing lantern keeps the scene with the tree's built-in lantern.
+| Field      | Meaning                                              |
+| ---------- | ---------------------------------------------------- |
+| `status`   | `idle`, `loading`, `revealed`, `static` or `stalled` |
+| `progress` | 0 to 1; at most 0.96 before the reveal               |
+| `tier`     | Startup tier                                         |
+| `roles`    | `["tower"]`, or `["tower", "tree"]` with `view=tree` |
+| `bytes`    | Per role: `received`, `expected`, `done`             |
+| `stages`   | `bundle` and `init`, each `true` once reached        |
+| `built`    | Per role: `glb-parse`, `assembly`, `shaders`         |
 
-[scene-modes.js](../src/scene/scene-modes.js) resolves the opening view (`view=tower`, the default, or `view=tree`). The earlier comparison parameters (`view=orbit`, `architecture`, `setting`, `cinematography`, `refinement`, `scale`, `ground`, `brick`, `stone`, `construction`, `preview`, `rocks=off`, `shafts=off`) are retired and ignored: they open the default film.
+## Capture recipe
 
-## Accessibility and diagnostics
+Open `?quality=high|balanced&view=…&angle=…&tour=0&sceneDebug=1` and wait until all of these hold:
 
-Without overrides, reduced motion/data, unavailable WebGL, software rendering and the low tier retain the static title card path, with no loading line. An explicit quality=balanced or quality=high requests the live path at that tier when WebGL is available, and sceneDebug=1 requests it at the detected tier; quality=low shows the title card. They are not a way to bypass release gates. A live reduced-motion review holds camera motion.
+- `#home-scene` has the `is-ready` class;
+- `sceneDebug.cinematic.shot` names the shot;
+- `sceneDebug.architecture.tower.status`, `.tree.status` and `.lantern.status` are `ready`, and `sceneDebug.lanternCommitted` is `true`;
+- `sceneDebug.ground.status` is not `loading`;
+- `sceneDebug.shaders.lantern` is `ready` or `unwarmed`;
+- `sceneDebug.rocks.status` is `ready` or `fallback`.
 
-With sceneDebug=1 the scene publishes a plain status object, `window.BabelSite.sceneDebug`, for captures and checks. It has no controls and loads no extra code: `tier`, `initialTier`, `assetTier`, `pixelRatio` and `composition`; `architecture.tower`, `architecture.tree` and `architecture.lantern` (each with a `status`: loading, ready or fallback) and `lanternCommitted`; `ground` (the slate maps) and `groundTreatment`; `rocks`; `mountains`; `shaders` (warm-up per label: scene, ground, tower, tree, lantern); `cinematic` (`shot`, `selected`, `angle`, `current`, `film` and the tour state); `programs` (linked programs) and `renderFps`; and `failure` when the scene stopped for the title card. On the live path, with or without sceneDebug, `window.BabelSite.sceneLoader.state` reports the title card's loading line: `status` (idle, loading, revealed, static or stalled), `progress` (0 to 1; 0.96 at most before the reveal), `tier`, `roles` (the tower, and the tree for `view=tree`), `bytes` per role (`received`, `expected`, `done`), `stages` (`bundle`, `init`) and `built` per role (`glb-parse`, `assembly`, `shaders`). A deterministic capture passes `?quality=high|balanced&view=…&angle=…&tour=0&sceneDebug=1` and waits on these fields.
-
-See [OPERATIONS.md](OPERATIONS.md) for the exact delivery and release policy.
+Then advance a fixed number of frames before capturing. The flame, drips and cloud drift run on scene time, so a deterministic capture drives the frame clock itself.

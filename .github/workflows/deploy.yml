@@ -32,14 +32,17 @@ jobs:
         # actions/setup-node@v7.0.0
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: npm
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Audit production dependency graph
+      - name: Audit npm dependencies (high and critical)
         run: npm run audit:ci
+
+      - name: Check formatting
+        run: npm run format:check
 
       - name: Verify source entry points
         run: npm run verify
@@ -53,27 +56,16 @@ jobs:
       - name: Check production deploy credentials
         shell: bash
         env:
-          CLOUDFLARE_PAGES_API_TOKEN: ${{ secrets.CLOUDFLARE_PAGES_API_TOKEN }}
-          CLOUDFLARE_API_TOKEN_LEGACY: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID_VARIABLE: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_ACCOUNT_ID_LEGACY: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -euo pipefail
-          export CLOUDFLARE_API_TOKEN="${CLOUDFLARE_PAGES_API_TOKEN:-$CLOUDFLARE_API_TOKEN_LEGACY}"
-          export CLOUDFLARE_ACCOUNT_ID="${CLOUDFLARE_ACCOUNT_ID_VARIABLE:-$CLOUDFLARE_ACCOUNT_ID_LEGACY}"
-
           if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
-            echo "::error::Production deploy requires a valid Cloudflare Pages token and account ID. Configure the production environment values or retain the documented legacy fallback during migration."
+            echo "::error::Production deploy requires the CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID repository secrets."
             exit 1
           fi
-          if [ -z "$CLOUDFLARE_PAGES_API_TOKEN" ]; then
-            echo "::warning::Using legacy CLOUDFLARE_API_TOKEN; migrate it to the production environment as CLOUDFLARE_PAGES_API_TOKEN."
-          fi
-          if [ -z "$CLOUDFLARE_ACCOUNT_ID_VARIABLE" ]; then
-            echo "::warning::Using legacy CLOUDFLARE_ACCOUNT_ID secret; migrate it to a production environment variable."
-          fi
           if ! npx wrangler pages project list >/dev/null 2>&1; then
-            echo "::error::Cloudflare deploy credentials are set but invalid. Check the production CLOUDFLARE_PAGES_API_TOKEN secret and CLOUDFLARE_ACCOUNT_ID variable."
+            echo "::error::The CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID repository secrets are set but invalid."
             exit 1
           fi
 
@@ -81,8 +73,8 @@ jobs:
         id: previous
         shell: bash
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_PAGES_API_TOKEN || secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -euo pipefail
           project_response="$RUNNER_TEMP/cloudflare-project-before-deploy.json"
@@ -125,8 +117,8 @@ jobs:
         id: deploy
         shell: bash
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_PAGES_API_TOKEN || secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -euo pipefail
           output="$(npx wrangler pages deploy dist --project-name=alexnava-me --branch=main 2>&1)"
@@ -149,8 +141,8 @@ jobs:
         id: rollback
         shell: bash
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_PAGES_API_TOKEN || secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           PREVIOUS_DEPLOYMENT_ID: ${{ steps.previous.outputs.deployment_id }}
         run: |
           set -euo pipefail

@@ -49,10 +49,10 @@ export function createPropScale({ groundRoot, groundHeight }) {
       l = root.getObjectByName("tree-lantern");
     if (t) {
       save(t, treeUndo);
-      // Leaf accents inherit this transform, but their distribution must not
-      // change the authored tree's size, footing or subsequent camera fit.
+      // Measured by its own geometry, so nothing parented to the tree changes
+      // its size, footing or camera fit.
       const size = bounds(t, true).getSize(new Vector3());
-      // Larger canopy: the tree now reads as a mature tree beside the tower.
+      // 4.2 doorways tall, the tree reads as a mature tree beside the tower.
       t.scale.multiplyScalar((4.2 * D) / size.y);
       ground(t, true);
     }

@@ -50,7 +50,12 @@ function validateEmbeddedGlb(buffer, maxBytes) {
   if (json.skins?.length || json.animations?.length) {
     throw new Error("Architecture assets must be static");
   }
-  const supported = new Set(["EXT_texture_webp", "KHR_texture_transform", "KHR_mesh_quantization", "KHR_materials_emissive_strength"]);
+  const supported = new Set([
+    "EXT_texture_webp",
+    "KHR_texture_transform",
+    "KHR_mesh_quantization",
+    "KHR_materials_emissive_strength",
+  ]);
   if ((json.extensionsRequired || []).some((extension) => !supported.has(extension))) {
     throw new Error("Architecture GLB requires an unsupported extension");
   }
@@ -202,7 +207,9 @@ export function createArchitectureAssetController({
   const channels = [
     { kind: "tower", roles: ["tower"], ready: onTowerReady, restore: onRestoreTower },
     { kind: "tree", roles: ["tree"], ready: onTreeReady, restore: onRestoreTree },
-    ...(includeLantern ? [{ kind: "lantern", roles: ["lantern"], ready: onLanternReady, restore: onRestoreLantern }] : []),
+    ...(includeLantern
+      ? [{ kind: "lantern", roles: ["lantern"], ready: onLanternReady, restore: onRestoreLantern }]
+      : []),
   ].map((channel) => ({ ...channel, run: null, leases: [], active: false, cleanup: null }));
 
   function safely(callback) {
@@ -315,7 +322,9 @@ export function createArchitectureAssetController({
         // stage them. Returned cleanup restores any attachment and owns only
         // derived geometry/material clones; staged assets retain their lease.
         // A throwing callback must roll back its own partial allocations.
-        const cleanup = channel.ready(channel.kind === "tower" ? assets : assets[channel.kind], { tier });
+        const cleanup = channel.ready(channel.kind === "tower" ? assets : assets[channel.kind], {
+          tier,
+        });
         if (cleanup !== undefined && typeof cleanup !== "function") {
           throw new Error(
             "Architecture ready callback must return a cleanup function or undefined",

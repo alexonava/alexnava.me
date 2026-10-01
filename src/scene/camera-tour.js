@@ -1,7 +1,7 @@
 import { DIRECTED_SHOTS } from "./directed-shots.js";
 import { PUSH_IN } from "./cinematic.js";
 
-// Visitors get each shot's own hold; 3, 5 and 20 remain fixed review cadences.
+// Visitors get each shot's own hold; ?tour=3, 5 and 20 are fixed cadences for review.
 export const TOUR_PER_SHOT = "shot";
 export const DEFAULT_TOUR_INTERVAL = TOUR_PER_SHOT;
 const TOUR_INTERVALS = Object.freeze([3, 5, 20]);

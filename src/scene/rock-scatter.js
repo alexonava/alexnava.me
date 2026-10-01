@@ -1,5 +1,9 @@
 import { Color, Group, InstancedMesh, Matrix4, Quaternion, Vector3 } from "three";
-import { ARCHITECTURE_ASSET_URLS, collectResources, loadArchitectureAsset } from "./architecture-assets.js";
+import {
+  ARCHITECTURE_ASSET_URLS,
+  collectResources,
+  loadArchitectureAsset,
+} from "./architecture-assets.js";
 import { applyFilmGrade, materialFor, sourceMesh } from "./architecture.js";
 import { DEPTH_LAYER, stampDepthLayer } from "./depth-layers.js";
 import { DIRECTED_SHOTS } from "./directed-shots.js";
@@ -7,7 +11,7 @@ import { ESTATE, estateLantern, estatePathDistance, estatePoint } from "./estate
 import { SLATE_CONTACTS } from "./mud-ground.js";
 import { createDeferredQualityStep } from "./runtime.js";
 
-// The film's scattered rocks: the owner's two Meshy stones, placed from a table
+// The film's scattered rocks: the two authored Meshy stones, placed from a table
 // of clusters relative to the estate anchors (estate-layout.js) plus seeded
 // pebbles. Nothing reads the tree or lantern geometry. The GLBs are unit height,
 // bottom at 0; footprint is their x by z extent per unit height.
@@ -50,7 +54,10 @@ export function rockKeepouts() {
   return ROCK_CLUSTERS.map(([, anchor, deg, dist, type, height]) => {
     const [fx, fz] = ROCK_TYPES[type].footprint,
       radius = 0.5 * Math.hypot(fx * 1.25, fz) * height;
-    return { ...estatePoint(anchor, deg, dist), radius: height >= PEBBLE_UNDER ? 2.6 * radius + 0.3 : radius };
+    return {
+      ...estatePoint(anchor, deg, dist),
+      radius: height >= PEBBLE_UNDER ? 2.6 * radius + 0.3 : radius,
+    };
   });
 }
 
@@ -59,7 +66,16 @@ export function rockKeepouts() {
 export function estateContacts() {
   const lantern = estateLantern(),
     values = new Float32Array(SLATE_CONTACTS * 4);
-  values.set([ESTATE.tree.x, ESTATE.tree.z, ESTATE.tree.root, 0.22, lantern.x, lantern.z, 0.9, 0.3]);
+  values.set([
+    ESTATE.tree.x,
+    ESTATE.tree.z,
+    ESTATE.tree.root,
+    0.22,
+    lantern.x,
+    lantern.z,
+    0.9,
+    0.3,
+  ]);
   return values;
 }
 
@@ -108,7 +124,15 @@ export function createRockScatter({
     disposed = false,
     rocks = null;
   function start() {
-    if (started || disposed || !film || !settled || !revealed || !["high", "balanced"].includes(tier)) return;
+    if (
+      started ||
+      disposed ||
+      !film ||
+      !settled ||
+      !revealed ||
+      !["high", "balanced"].includes(tier)
+    )
+      return;
     started = true;
     onStatus({ status: "loading", tier });
     // Seat the rocks on the film terrain (the tree's root plate) once it exists.
