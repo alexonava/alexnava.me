@@ -32,11 +32,7 @@ The share card's backdrop, `tools/og-card-backdrop.webp` (a 1600x900 still of th
 
 ## GitHub environments and credentials
 
-The deploy workflows declare separate `preview` and `production` GitHub environments.
-
-- Store `CLOUDFLARE_PAGES_API_TOKEN` as an environment secret in each, limited to this account with `Account → Cloudflare Pages → Edit`.
-- Store the non-secret `CLOUDFLARE_ACCOUNT_ID` once as a repository Actions variable shared by both environments.
-- During migration, workflows fall back to the repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. Remove the legacy token fallback only after preview and production each validate with their environment secret.
+Cloudflare credentials are two repository secrets: `CLOUDFLARE_API_TOKEN` (limited to this account with `Account → Cloudflare Pages → Edit`) and `CLOUDFLARE_ACCOUNT_ID`. Each step that talks to Cloudflare sets exactly those two in its own `env`; no job or workflow exposes them. The `preview` and `production` GitHub environments only gate the jobs that use them.
 
 `preview` requires approval from `alexonava`; `production` accepts only `main`. A production run fails when credentials are absent or invalid. Fork pull requests build the preview artifact but skip the credentialed job. Missing preview credentials produce a notice and skip deployment; invalid configured credentials still fail.
 

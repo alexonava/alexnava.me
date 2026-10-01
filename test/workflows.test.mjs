@@ -115,6 +115,36 @@ test("deploy workflows expose environment metadata and use explicit missing-cred
   assert.match(deploy, /Production deploy requires[\s\S]*?exit 1/);
   assert.doesNotMatch(deploy, /skipping deploy/i);
   assert.match(preview, /ready=false[\s\S]*?skipping preview deploy[\s\S]*?exit 0/i);
+  // Configured but invalid credentials fail production and previews alike.
+  for (const workflow of [deploy, preview])
+    assert.match(
+      workflow,
+      /if ! (?:npx )?wrangler pages project list[^\n]*\n[^\n]*::error::[^\n]*\n\s+exit 1/,
+    );
+});
+
+test("Cloudflare credentials are two repository secrets, set only on the steps that use them", async () => {
+  const workflowDir = path.join(projectRoot, ".github", "workflows");
+  let steps = 0;
+  for (const file of (await readdir(workflowDir)).filter((name) => /\.ya?ml$/.test(name))) {
+    const workflow = await readProjectFile(path.join(".github", "workflows", file));
+    assert.doesNotMatch(workflow, /\$\{\{\s*vars\./, `${file} reads no Actions variables`);
+    for (const [, name] of workflow.matchAll(/secrets\.(\w+)/g))
+      assert.ok(
+        ["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"].includes(name),
+        `${file}: ${name}`,
+      );
+    // Workflow and job env blocks carry no secret; each step's env names both.
+    for (const env of workflow.matchAll(/^( *)env:\r?\n((?:\1  .*\r?\n)+)/gm)) {
+      const [, indent, body] = env;
+      if (!body.includes("secrets.")) continue;
+      assert.equal(indent.length, 8, `${file}: secrets only in a step's env`);
+      assert.match(body, /CLOUDFLARE_API_TOKEN: \$\{\{ secrets\.CLOUDFLARE_API_TOKEN \}\}/);
+      assert.match(body, /CLOUDFLARE_ACCOUNT_ID: \$\{\{ secrets\.CLOUDFLARE_ACCOUNT_ID \}\}/);
+      steps++;
+    }
+  }
+  assert.ok(steps >= 8, `${steps} credentialed steps`);
 });
 
 test("deploys smoke-check what they published: production through the shared script, previews inline", async () => {
