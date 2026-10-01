@@ -123,6 +123,7 @@ export const KEY_LIGHT = Object.freeze([32, 28, 14].map((v, _, all) => v / Math.
 // the supported ground under a slope of 1.15. Lattice column, row and lift;
 // the rest of the lattice stays open ground. No lattice triangle that reaches
 // the lantern clearing, the front puddle or a drip-line puddle takes any.
+// prettier-ignore
 export const ROOT_RESTS = Object.freeze([
   [14,4,0.063], [15,4,0.381], [16,4,0.04], [15,5,0.155], [16,5,0.557], [17,5,0.033], [15,6,0.106], [16,6,0.477],
   [17,6,0.166], [16,7,0.056], [12,10,0.319], [12,11,0.479], [12,12,0.049], [24,13,0.093], [25,13,0.374], [26,13,0.103],
@@ -149,6 +150,7 @@ export const rootBankLift = (x, z) => latticeAt(BANKS, x, z);
 // The shader reads sky and key as the slateShade attribute; rootShade() takes
 // the cut. None reaches the lantern clearing or the puddles.
 export const SHADE_ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_";
+// prettier-ignore
 export const ROOT_SHADE = Object.freeze({
   sky: [
     "000000000000000000000000000000000",
@@ -261,6 +263,7 @@ export const rootOcclusion = (x, z) => [latticeAt(SKY, x, z), latticeAt(KEY, x, 
 // Where a root lies within [-0.2, 1.3] of the soil, on a 0.25 grid from the
 // lattice's first vertex (base64 bits, row by row): the tufts there collapse
 // and no litter lands.
+// prettier-ignore
 export const ROOT_COVER = Object.freeze({ cols: 97, rows: 94, bits: [
     "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
     "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",

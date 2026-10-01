@@ -108,7 +108,7 @@ test("all estate panels share the parchment frame without decorative monograms o
 });
 
 test("the scene is the landing content and the estate starts inside the hidden About dialog", async () => {
-  const html = await readIndexHtml();
+  const html = flatHtml(await readIndexHtml());
   assert.match(html, /<body class="scene-home">/);
   assert.match(html, /<main[^>]*id="main"[^>]*tabindex="-1"/);
   assert.match(html, /<div class="scene-shell" aria-hidden="true">/);
@@ -125,11 +125,11 @@ const LOADER_MARKUP =
   '<div class="scene-loader" id="scene-loader" aria-hidden="true" hidden><p class="scene-loader__label">Loading the estate &middot; <span class="scene-loader__value">0%</span></p><div class="scene-loader__track"><div class="scene-loader__fill"></div></div></div>';
 
 test("the title card paints no picture, and its hidden loading line sits between the bottom bar and footer", async () => {
-  const html = await readIndexHtml();
+  const html = flatHtml(await readIndexHtml());
   // The owner retired the poster (2026-09-30): no picture anywhere on the site.
   assert.doesNotMatch(html, /<picture|<img|scene-poster/);
-  assert.equal(html.split(LOADER_MARKUP).length - 1, 1, "the loading line's exact markup, once");
-  const at = html.indexOf(LOADER_MARKUP);
+  assert.equal(html.split(flatHtml(LOADER_MARKUP)).length - 1, 1, "the loading line's exact markup, once");
+  const at = html.indexOf(flatHtml(LOADER_MARKUP));
   assert.ok(html.indexOf('<div class="bottom-bar"') < at, "after the bottom bar");
   assert.ok(at < html.indexOf('<footer class="site-footer">'), "before the footer");
   const main = html.match(/<main[\s\S]*?<\/main>/)[0];
@@ -252,7 +252,7 @@ test("the title card's night sky is two tiling star layers drawn in CSS, with no
 });
 
 test("estate layers preserve artwork proportions without masking labels", async () => {
-  const css = await readStyles();
+  const css = flatCss(await readStyles());
   assert.match(css, /aspect-ratio: 3 \/ 2/);
   assert.match(css, /aspect-ratio: 2 \/ 3/);
   assert.match(css, /\.estate-home-map \.estate-map::before/);
@@ -314,7 +314,7 @@ test("external links that open in a new tab declare rel=noopener", async () => {
 });
 
 test("fallback About link and matching category copy remain usable before scene menu initialization", async () => {
-  const html = await readIndexHtml();
+  const html = flatHtml(await readIndexHtml());
   assert.match(html, /<h1>[\s\S]*?class="hero-word">Alex<\/span>[\s\S]*?class="hero-word">Nava<\/span>[\s\S]*?<\/h1>/);
   assert.doesNotMatch(html, /<noscript>|data-scramble|Wells Fargo|CVS Health/);
   const fallbackLink = html.match(/<a[^>]*href="#about-text"[^>]*>/)[0];
@@ -445,7 +445,7 @@ test("main clips the hero backdrop's horizontal overflow so phones keep a device
 });
 
 test("every contact address sits inside Cloudflare email_off markers", async () => {
-  const html = await readIndexHtml();
+  const html = flatHtml(await readIndexHtml());
   const wrapped =
     html.match(/<!--email_off--><a [^>]*href="mailto:[^"]+"[^>]*>[^<]+<\/a><!--\/email_off-->/g) || [];
   assert.equal(
@@ -500,7 +500,7 @@ test("no-JavaScript fallback links use the light dark-background link ink", asyn
 });
 
 test("the 3:2 estate map fits short laptop and landscape-phone viewports", async () => {
-  const styles = await readStyles();
+  const styles = flatCss(await readStyles());
   assert.match(
     styles,
     /\.panel-overlay\s*\{[^}]*padding:\s*max\(24px, env\(safe-area-inset-top\)\)[^;]*max\(24px, env\(safe-area-inset-bottom\)\)/,
@@ -595,7 +595,7 @@ test("landmarks and heading levels describe the page structure", async () => {
 });
 
 test("social previews describe the share image", async () => {
-  const html = await readIndexHtml();
+  const html = flatHtml(await readIndexHtml());
   const alt = "Alex Nava — a timber lookout tower under a moonlit sky";
   assert.ok(html.includes(`<meta property="og:image:alt" content="${alt}" />`));
   assert.ok(html.includes(`<meta name="twitter:image:alt" content="${alt}" />`));
@@ -646,7 +646,7 @@ function contrast(foreground, background) {
 test("About is the only footer control and keeps the corner clear", async () => {
   const html = await readIndexHtml();
   const footer = html.match(/<footer class="site-footer">([\s\S]*?)<\/footer>/)?.[1] || "";
-  assert.doesNotMatch(footer, /site-copyright|&copy;|�|2026 Alex Nava/);
+  assert.doesNotMatch(footer, /site-copyright|&copy;|©|2026 Alex Nava/);
   assert.match(footer, /href="#about-text"[^>]*data-scene-fallback/);
   assert.match(footer, /data-panel="about"[^>]*aria-controls="panel-about"/);
   assert.equal((footer.match(/>About<\/span>/g) || []).length, 2);
@@ -701,7 +701,7 @@ test("footer controls keep 44px targets without blocking the scene", async () =>
 });
 
 test("category copy stays minimal and matches its Markdown equivalent", async () => {
-  const html = await readIndexHtml();
+  const html = flatHtml(await readIndexHtml());
   const markdown = await readFile(path.join(projectRoot, "public", "index.md"), "utf8");
   const profile = "This is my personal corner of the web.";
   const experience = "Analytics, reporting, remediation, and controls, across banking and health.";
@@ -825,3 +825,13 @@ test("the 404 is a centered cotton-paper sheet with dark ink", async () => {
     assert.ok(contrast(ink, "#e8ddc8") >= 4.5, `${ink} on paper`);
   }
 });
+
+// Formatting-neutral text, so a check reads the same before and after
+// Prettier: whitespace runs become one space, with none just inside
+// parentheses or brackets; markup also drops it beside tags' angle brackets.
+function flatCss(text) {
+  return text.replace(/\s+/g, " ").replace(/([([]) | ([)\]])/g, "$1$2");
+}
+function flatHtml(text) {
+  return flatCss(text).replace(/ ?([<>]) ?/g, "$1");
+}

@@ -483,10 +483,10 @@ test("an import that resolves late, or after disposal, does nothing", async () =
   off.shafts.dispose();
   // index.js: every live (high or balanced) film scene on WebGL2, and a late
   // or failed import leaves the scene as it is.
-  const index = await readFile(new URL("../src/scene/index.js", import.meta.url), "utf8");
+  const index = flat(await readFile(new URL("../src/scene/index.js", import.meta.url), "utf8"));
   assert.match(
     index,
-    /if \(renderer\.capabilities\.isWebGL2\) \{\s+import\("\.\/light-shafts\.js"\)\.then\(\(\{ lightShafts \}\) => subsystemRegistry\.disposed \|\|\s+subsystemRegistry\.register\(lightShafts\(rendering, cinematic, cameraTour, filmScene, environmentRoot, invalidateContent\)\), \(\) => \{\}\);\s+\}/,
+    /if \(renderer\.capabilities\.isWebGL2\) \{\s*import\("\.\/light-shafts\.js"\)\.then\(\(\{ lightShafts \}\) => subsystemRegistry\.disposed \|\|\s*subsystemRegistry\.register\(lightShafts\(rendering, cinematic, cameraTour, filmScene, environmentRoot, invalidateContent\)\), \(\) => \{\}\);\s*\}/,
   );
   assert.equal(index.match(/import\("\.\/light-shafts\.js"\)/g).length, 1);
 });
@@ -843,3 +843,14 @@ test("the blue-noise tile ranks every texel once and keeps neighbours apart", ()
   assert.ok(sum / 2048 > 0.38, `neighbours differ more than white noise's 1/3 (${(sum / 2048).toFixed(3)})`);
   assert.deepEqual([texture.wrapS, texture.wrapT, texture.magFilter, texture.minFilter], [1000, 1000, 1003, 1003], "tiled, one texel per pixel");
 });
+
+// Formatting-neutral source: comment lines go, whitespace runs become one
+// space with none just inside brackets, and trailing commas go, so a check
+// reads the same before and after Prettier.
+function flat(code) {
+  return code
+    .replace(/^[ \t]*\/\/.*$/gm, "")
+    .replace(/\s+/g, " ")
+    .replace(/,(\s*[)\]}])/g, "$1")
+    .replace(/([([]) | ([)\]])/g, "$1$2");
+}

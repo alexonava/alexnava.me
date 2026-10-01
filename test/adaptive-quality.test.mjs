@@ -102,8 +102,8 @@ test("adaptive quality steps change cost settings without refetching models or t
 });
 
 test("scene bootstrap pins the asset tier and samples quality only after reveal", async () => {
-  const index = await readFile(new URL("../src/scene/index.js", import.meta.url), "utf8");
-  const textures = await readFile(new URL("../src/scene/textures.js", import.meta.url), "utf8");
+  const index = flat(await readFile(new URL("../src/scene/index.js", import.meta.url), "utf8"));
+  const textures = flat(await readFile(new URL("../src/scene/textures.js", import.meta.url), "utf8"));
 
   assert.match(index, /const assetTier = qualityState\.initialTier \|\| fallbackProfile\.tier;/);
   assert.match(index, /architectureAssets\.setQuality\(state\.profile, true, \{ assetTier \}\);/);
@@ -157,3 +157,14 @@ test("scene bootstrap pins the asset tier and samples quality only after reveal"
     /applyQuality\(profile, context\) \{ filmMaps\.applyQuality\(profile, context\); \}/,
   );
 });
+
+// Formatting-neutral source: comment lines go, whitespace runs become one
+// space with none just inside brackets, and trailing commas go, so a check
+// reads the same before and after Prettier.
+function flat(code) {
+  return code
+    .replace(/^[ \t]*\/\/.*$/gm, "")
+    .replace(/\s+/g, " ")
+    .replace(/,(\s*[)\]}])/g, "$1")
+    .replace(/([([]) | ([)\]])/g, "$1$2");
+}

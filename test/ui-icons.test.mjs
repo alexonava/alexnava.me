@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 
 const root = new URL("../", import.meta.url);
 test("the scene opens About through the text button and keeps Contact inside the estate", async () => {
-  const html = await readFile(new URL("index.html", root), "utf8");
+  const html = flatHtml(await readFile(new URL("index.html", root), "utf8"));
   const entry = html.match(/<button[^>]*class="[^"]*scene-entry"[\s\S]*?<\/button>/)[0];
   assert.match(entry, /data-panel="about"/);
   assert.match(entry, /aria-controls="panel-about"/);
@@ -31,3 +31,10 @@ test("estate destinations are labeled HTML buttons in keyboard order without flo
     assert.ok(map.includes(`<span>${name[0].toUpperCase() + name.slice(1)}</span>`));
   }
 });
+
+// Formatting-neutral markup, so a check reads the same before and after
+// Prettier: whitespace runs become one space, and none sits beside a tag's
+// angle brackets.
+function flatHtml(text) {
+  return text.replace(/\s+/g, " ").replace(/ ?([<>]) ?/g, "$1");
+}

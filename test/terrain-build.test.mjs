@@ -1265,7 +1265,7 @@ test("the puddle mirror's restated constants follow their sources", async () => 
   const { glass, ...profile } = LANTERN_FLAME;
   assert.deepEqual(profile, { base: flame.FLAME.base, height: flame.FLAME.height, halfWidth: flame.FLAME.halfWidth, gain: flame.FLAME.gain, color: flame.FLAME.color });
   const flameSource = readFileSync(new URL("../src/scene/lantern-flame.js", import.meta.url), "utf8");
-  const [halo, fill, glare] = flameSource.match(/const GLASS = \{ halo: ([\d.]+), fill: ([\d.]+), rim: [\d.]+, glare: ([\d.]+),/).slice(1).map(Number);
+  const [halo, fill, glare] = flameSource.match(/const GLASS = \{\s*halo: ([\d.]+),\s*fill: ([\d.]+),\s*rim: [\d.]+,\s*glare: ([\d.]+),/).slice(1).map(Number);
   const spot = (name, strength) => flameSource.match(new RegExp(`vec2 ${name} = vec2\\(q\\.x / ([\\d.]+), \\(q\\.y - FLAME_BASE - ([\\d.]+) \\* h\\) / \\(([\\d.]+) \\* h\\)\\);\\s*(?:vec3 glass =|glass \\+=) vec3\\(([\\d., ]+)\\) \\* (?:\\()?\\$\\{n\\(GLASS\\.${strength}\\)\\}`)).slice(1).map((v, i) => (i === 3 ? v.split(",").map(Number) : Number(v)));
   const [haloShape, glareShape] = [spot("g", "halo"), spot("b", "glare")];
   assert.deepEqual({ ...glass }, {

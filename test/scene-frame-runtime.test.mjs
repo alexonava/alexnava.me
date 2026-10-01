@@ -700,7 +700,7 @@ test("runtime resource disposal deduplicates scene assets and leaves render-targ
 });
 
 test("scene bootstrap idles before reveal, holds behind dialogs and fails to the title card", async () => {
-  const source = await readFile(new URL("../src/scene/index.js", import.meta.url), "utf8");
+  const source = flat(await readFile(new URL("../src/scene/index.js", import.meta.url), "utf8"));
 
   // The frame that sees readiness reveals the canvas and resumes animation.
   assert.match(source, /const sceneShown = !sceneFailed && cinematic\.ready &&/);
@@ -717,7 +717,7 @@ test("scene bootstrap idles before reveal, holds behind dialogs and fails to the
   // screens at or below it; the 60 fps cap holds until a rate is adopted.
   assert.match(
     source,
-    /createSceneFrameScheduler\(\{\s*(?:\/\/[^\n]*\n[ \t]*)*displayCadence: \{ baseRate: 60, round: qualityState\.touchPrimary \? "ceil" : "floor" \},[^]*?targetFrameRate: 60,\s*\}\);/,
+    /createSceneFrameScheduler\(\{\s*displayCadence: \{ baseRate: 60, round: qualityState\.touchPrimary \? "ceil" : "floor" \},[^]*?targetFrameRate: 60,?\s*\}\);/,
   );
   const dispose = source.slice(source.indexOf("function disposeHomeSceneRuntime"));
   assert.match(dispose, /panelObserver\?\.disconnect\(\);\s*panelHold\.dispose\(\);/);
@@ -751,3 +751,14 @@ test("scene bootstrap idles before reveal, holds behind dialogs and fails to the
   // The authored scene's shadows are static: the map redraws only on reported changes.
   assert.match(source, /rendering\.setStaticShadows\(true\);/);
 });
+
+// Formatting-neutral source: comment lines go, whitespace runs become one
+// space with none just inside brackets, and trailing commas go, so a check
+// reads the same before and after Prettier.
+function flat(code) {
+  return code
+    .replace(/^[ \t]*\/\/.*$/gm, "")
+    .replace(/\s+/g, " ")
+    .replace(/,(\s*[)\]}])/g, "$1")
+    .replace(/([([]) | ([)\]])/g, "$1$2");
+}

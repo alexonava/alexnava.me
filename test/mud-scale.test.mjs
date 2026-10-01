@@ -210,7 +210,7 @@ test("the film ground material follows the film, so loading and fallback surface
 
 test("the ground shading call site takes its tint and shading from the film state", async () => {
   const { readFile } = await import("node:fs/promises");
-  const index = await readFile(new URL("../src/scene/index.js", import.meta.url), "utf8");
+  const index = flat(await readFile(new URL("../src/scene/index.js", import.meta.url), "utf8"));
   // onDetailChange: tint, roughness and metalness all come from the same surface.
   assert.match(
     index,
@@ -255,3 +255,14 @@ test("the wet hollows restate the terrain dune field exactly", async () => {
   }
   material.dispose();
 });
+
+// Formatting-neutral source: comment lines go, whitespace runs become one
+// space with none just inside brackets, and trailing commas go, so a check
+// reads the same before and after Prettier.
+function flat(code) {
+  return code
+    .replace(/^[ \t]*\/\/.*$/gm, "")
+    .replace(/\s+/g, " ")
+    .replace(/,(\s*[)\]}])/g, "$1")
+    .replace(/([([]) | ([)\]])/g, "$1$2");
+}

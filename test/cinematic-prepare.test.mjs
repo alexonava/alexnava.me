@@ -209,7 +209,7 @@ test("large height changes, rotation, a moved hero and still framing refit at on
 });
 
 test("scene bootstrap fits the next tour shot in idle slices and refits it when the view changes", async () => {
-  const index = await readFile(new URL("../src/scene/index.js", import.meta.url), "utf8");
+  const index = flat(await readFile(new URL("../src/scene/index.js", import.meta.url), "utf8"));
   // Each idle slice measures or fits once; Safari falls back to a timer.
   assert.match(
     index,
@@ -229,5 +229,16 @@ test("scene bootstrap fits the next tour shot in idle slices and refits it when 
   // A resize, a font load that moves the hero, or a model change refits it.
   assert.match(index, /function applySceneSize\([^]*?frameScheduler\?\.invalidate\(\);\s*cameraTour\?\.prepareNext\(\);\s*\}/);
   assert.match(index, /const onFontsLoaded = \(\) => \{ cinematicArea = measureCinematicArea\([^)]*\); cameraTour\?\.prepareNext\(\);/);
-  assert.match(index, /cinematic\.setStatus\(status\);\s*(?:\/\/[^\n]*\n[ \t]*)*cameraTour\?\.prepareNext\(\);/);
+  assert.match(index, /cinematic\.setStatus\(status\);\s*cameraTour\?\.prepareNext\(\);/);
 });
+
+// Formatting-neutral source: comment lines go, whitespace runs become one
+// space with none just inside brackets, and trailing commas go, so a check
+// reads the same before and after Prettier.
+function flat(code) {
+  return code
+    .replace(/^[ \t]*\/\/.*$/gm, "")
+    .replace(/\s+/g, " ")
+    .replace(/,(\s*[)\]}])/g, "$1")
+    .replace(/([([]) | ([)\]])/g, "$1$2");
+}

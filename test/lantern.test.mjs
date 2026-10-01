@@ -252,7 +252,7 @@ test("disposing before flame preparation prevents any later material attachment 
 });
 
 test("scene integration clears camera fits and warms shaders only when the optional lantern commits", async () => {
-  const source = await readFile(new URL("../src/scene/index.js", import.meta.url), "utf8");
+  const source = flat(await readFile(new URL("../src/scene/index.js", import.meta.url), "utf8"));
   assert.match(source, /includeLantern: true/);
   assert.match(source, /onLanternReady: \(asset\) => lanternMount\.stage\(asset\)/);
   assert.match(source, /status\.kind !== "lantern" &&/, "an optional failure must not stop the scene for the title card");
@@ -283,3 +283,14 @@ test("both delivered lantern tiers embed authored PBR maps, masked emission and 
     assert.equal(json.animations?.length || 0, 0);
   }
 });
+
+// Formatting-neutral source: comment lines go, whitespace runs become one
+// space with none just inside brackets, and trailing commas go, so a check
+// reads the same before and after Prettier.
+function flat(code) {
+  return code
+    .replace(/^[ \t]*\/\/.*$/gm, "")
+    .replace(/\s+/g, " ")
+    .replace(/,(\s*[)\]}])/g, "$1")
+    .replace(/([([]) | ([)\]])/g, "$1$2");
+}

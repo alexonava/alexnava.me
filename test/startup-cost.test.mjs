@@ -526,7 +526,7 @@ test("the film ground starts from a flat preview and paints in full in the next 
 });
 
 test("scene bootstrap warms shaders before drawing and records start-up marks", async () => {
-  const index = await source("scene/index.js");
+  const index = flat(await source("scene/index.js"));
   const entry = await source("scene-entry.js");
 
   assert.match(entry, /^import \{ markSceneEvaluated \} from "\.\/scene\/perf-marks\.js";\r?\nimport "\.\/shared\/webgl-probe\.js";/m);
@@ -563,3 +563,14 @@ test("scene bootstrap warms shaders before drawing and records start-up marks", 
     assert.doesNotMatch(await source(path), /high-performance/, path);
   }
 });
+
+// Formatting-neutral source: comment lines go, whitespace runs become one
+// space with none just inside brackets, and trailing commas go, so a check
+// reads the same before and after Prettier.
+function flat(code) {
+  return code
+    .replace(/^[ \t]*\/\/.*$/gm, "")
+    .replace(/\s+/g, " ")
+    .replace(/,(\s*[)\]}])/g, "$1")
+    .replace(/([([]) | ([)\]])/g, "$1$2");
+}
