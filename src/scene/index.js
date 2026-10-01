@@ -20,13 +20,10 @@ import {
   CanvasTexture,
   CircleGeometry,
   ColorManagement,
-  Frustum,
   Group,
-  Matrix4,
   Mesh,
   MeshStandardMaterial,
   MirroredRepeatWrapping,
-  Sphere,
   SphereGeometry,
   SRGBColorSpace,
   Vector3,
@@ -48,16 +45,12 @@ import {
 } from "./runtime.js";
 import { createSceneSubsystemRegistry, runSceneInitialization } from "./subsystem.js";
 import { createSceneTower } from "./tower.js";
-// Narrow compatibility injection for the procedural ground textures and the
-// visibility tracker. Scene domains import their Three.js dependencies directly.
+// Narrow compatibility injection for the procedural ground textures. Scene
+// domains import their Three.js dependencies directly.
 const THREE = {
   CanvasTexture,
   MirroredRepeatWrapping,
   SRGBColorSpace,
-  Frustum,
-  Matrix4,
-  Sphere,
-  Vector3,
 };
 
 // r128-parity color / light pipeline. ColorManagement.enabled=true (the r152+
@@ -302,16 +295,6 @@ ColorManagement.enabled = false;
         const fullAnisotropy = Math.min(maximum, profileRange.max ?? maximum);
         return Math.max(1, Math.min(renderer.capabilities.getMaxAnisotropy(), fullAnisotropy));
       }
-      const visibilityTracker =
-        typeof scene.createSceneVisibilityTracker === "function"
-          ? scene.createSceneVisibilityTracker({
-              THREE,
-              camera: camera,
-              getVisibleDistance() {
-                return Math.min(camera.far, homeScene.fog?.far ?? camera.far);
-              },
-            })
-          : null;
       function applyActiveQualityProfile(profile, reason = "runtime") {
         state.profile = profile || fallbackProfile;
         const effectiveCap =
@@ -343,11 +326,8 @@ ColorManagement.enabled = false;
         },
         parent: homeScene,
         profile: state.profile,
-        qualityDebug,
-        visibilityTracker,
       });
       subsystemRegistry.register(atmosphereSystem);
-      const registerDecorativeSystem = atmosphereSystem.registerDecorativeSystem;
       scene.setClouds = (on) => atmosphereSystem.setClouds(on);
       scene.toggleClouds = () => atmosphereSystem.toggleClouds();
       applyActiveQualityProfile(
@@ -369,15 +349,6 @@ ColorManagement.enabled = false;
         profile: state.profile,
       });
       subsystemRegistry.register(solarBody);
-      registerDecorativeSystem({
-        getCenter(target) {
-          return solarBody.root.getWorldPosition(target);
-        },
-        group: solarBody.root,
-        importance: "core",
-        name: "sun",
-        radius: 5.5,
-      });
       const starfield = createStarfield({
         parent: atmosphereSystem.root,
         camera,

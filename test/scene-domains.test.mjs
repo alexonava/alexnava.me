@@ -43,66 +43,36 @@ test("tower owns its composition scale", () => {
   assert.equal(parent.children.includes(tower.root), true);
 });
 
-test("atmosphere owns cloud controls and visibility classification", () => {
+test("atmosphere owns the sky clock, cloud controls and its disposal", () => {
   const parent = new Group();
   const calls = [];
-  const qualityDebug = {};
   const atmosphere = createSceneAtmosphere({
     onInvalidate() {
       calls.push("invalidate");
     },
     parent,
     profile: highProfile,
-    qualityDebug,
-    visibilityTracker: {
-      classifySphere() {
-        return "midAtmosphere";
-      },
-      shouldRenderBucket() {
-        return true;
-      },
-      shouldUpdateBucket() {
-        return true;
-      },
-      updateCameraState() {
-        calls.push("camera");
-      },
-    },
   });
-  const group = new Group();
   const sky = {
     uniforms: { uClouds: { value: 1 }, uTime: { value: 0 }, uNebulaLayers: { value: 0 } },
   };
   atmosphere.setSkyMaterial(sky);
-  const visibilitySystem = atmosphere.registerDecorativeSystem({
-    getCenter(target) {
-      return target.set(0, 0, 0);
-    },
-    group,
-    importance: "midAtmosphere",
-    name: "testSystem",
-    radius: 4,
-  });
 
   atmosphere.update({ elapsedSeconds: 10 });
   assert.equal(sky.uniforms.uTime.value, 10);
-  assert.equal(visibilitySystem.active, true);
-  assert.equal(group.visible, true);
-  assert.equal(qualityDebug.systems.testSystem.bucket, "midAtmosphere");
-  assert.ok(calls.includes("camera"));
+  atmosphere.update({ elapsedSeconds: 20, reducedMotion: true });
+  assert.equal(sky.uniforms.uTime.value, 10, "reduced motion holds the sky");
 
   assert.equal(atmosphere.setClouds(false), false);
   assert.equal(sky.uniforms.uClouds.value, 0);
   assert.equal(atmosphere.toggleClouds(), true);
   assert.equal(sky.uniforms.uClouds.value, 1);
-  assert.deepEqual(
-    calls.filter((value) => value === "invalidate"),
-    ["invalidate", "invalidate"],
-  );
+  assert.deepEqual(calls, ["invalidate", "invalidate"]);
 
   atmosphere.dispose();
   assert.equal(atmosphere.root.visible, false);
   assert.equal(parent.children.includes(atmosphere.root), true);
+  assert.equal(atmosphere.update({ elapsedSeconds: 30 }), false);
 });
 
 test("scene bootstrap wires real domain systems and no longer owns their lifecycle loops", async () => {

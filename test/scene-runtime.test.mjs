@@ -4,13 +4,11 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
-import * as THREE from "three";
 import { createDeferredQualityStep } from "../src/scene/runtime.js";
 
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(testDir, "..");
 const qualitySourcePath = path.join(projectRoot, "src", "scene", "quality.js");
-const visibilitySourcePath = path.join(projectRoot, "src", "scene", "visibility.js");
 
 function createSceneContext({
   search = "",
@@ -219,40 +217,4 @@ test("a deferred quality step lands on the first tour cut after its programs are
   });
   throwing.queue(balanced, 0);
   assert.equal(throwing.take({ cut: true, running: true, nowMs: 1 }), balanced);
-});
-
-test("visibility classification prefers front-facing systems and culls backside decor", async () => {
-  const context = createSceneContext();
-  const scene = await loadSceneScript(visibilitySourcePath, context);
-  const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
-  camera.position.set(0, 0, 10);
-  camera.lookAt(0, 0, 0);
-  camera.updateProjectionMatrix();
-  camera.updateMatrixWorld();
-
-  const tracker = scene.createSceneVisibilityTracker({ THREE, camera });
-  tracker.updateCameraState();
-
-  const frontBucket = tracker.classifySphere({
-    center: new THREE.Vector3(0, 0, 0),
-    radius: 2,
-    importance: "nearAtmosphere",
-  });
-  const rearBucket = tracker.classifySphere({
-    center: new THREE.Vector3(0, 0, 30),
-    radius: 2,
-    importance: "backsideDecor",
-  });
-  const stickyBucket = tracker.classifySphere({
-    center: new THREE.Vector3(6, 0, 13),
-    radius: 8,
-    importance: "midAtmosphere",
-    previousBucket: "midAtmosphere",
-  });
-
-  assert.equal(frontBucket, "nearAtmosphere");
-  assert.equal(rearBucket, "backsideDecor");
-  assert.equal(stickyBucket, "midAtmosphere");
-  assert.equal(tracker.shouldUpdateBucket("backsideDecor"), false);
-  assert.equal(tracker.shouldUpdateBucket("midAtmosphere"), true);
 });

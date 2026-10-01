@@ -6,22 +6,14 @@ import {
   OneFactor,
   OneMinusSrcAlphaFactor,
   SrcAlphaFactor,
-  Vector3,
   ZeroFactor,
 } from "three";
 import { celestialTier } from "./solar-body.js";
 
-export function createSceneAtmosphere({
-  onInvalidate,
-  parent,
-  profile,
-  qualityDebug,
-  visibilityTracker,
-}) {
+export function createSceneAtmosphere({ onInvalidate, parent, profile }) {
   const root = new Group();
   parent.add(root);
 
-  const decorativeSystems = [];
   let skyMaterial = null;
   let cloudsEnabled = true;
   let disposed = false;
@@ -61,57 +53,6 @@ export function createSceneAtmosphere({
     });
   }
 
-  function updateDecorativeVisibility() {
-    const debugSystems = qualityDebug ? {} : null;
-    visibilityTracker?.updateCameraState();
-    decorativeSystems.forEach((system) => {
-      if (system.enabled === false) {
-        system.active = false;
-        if (system.renderVisible !== false) {
-          system.renderVisible = false;
-          system.setVisible?.(false);
-        }
-        if (system.group) system.group.visible = false;
-        if (debugSystems) debugSystems[system.name] = { active: false, bucket: "disabled" };
-        return;
-      }
-      if (!visibilityTracker || system.importance === "core") {
-        system.active = true;
-        system.bucket = system.importance === "core" ? "core" : system.bucket;
-      } else {
-        const center = system.getCenter(system._center || (system._center = new Vector3()));
-        system.bucket = visibilityTracker.classifySphere({
-          center,
-          importance: system.importance,
-          previousBucket: system.bucket,
-          radius: system.radius || 0,
-        });
-        system.active = visibilityTracker.shouldUpdateBucket(system.bucket);
-      }
-      if (system.group) {
-        system.group.visible = visibilityTracker
-          ? visibilityTracker.shouldRenderBucket(system.bucket)
-          : system.active;
-      }
-      if (typeof system.setVisible === "function") {
-        const nextVisible = visibilityTracker
-          ? visibilityTracker.shouldRenderBucket(system.bucket)
-          : system.active;
-        if (nextVisible !== system.renderVisible) {
-          system.renderVisible = nextVisible;
-          system.setVisible(nextVisible);
-        }
-      }
-      if (debugSystems) {
-        debugSystems[system.name] = {
-          active: system.active,
-          bucket: system.bucket,
-        };
-      }
-    });
-    if (debugSystems) qualityDebug.systems = debugSystems;
-  }
-
   return {
     lifecycleOrder: 30,
     root,
@@ -125,20 +66,9 @@ export function createSceneAtmosphere({
       if (disposed) return false;
       disposed = true;
       root.visible = false;
-      decorativeSystems.length = 0;
       if (skyMaterial?.uniforms.uNebulaLayers) skyMaterial.uniforms.uNebulaLayers.value = 0;
       skyMaterial = null;
       return true;
-    },
-    registerDecorativeSystem(config) {
-      const system = {
-        active: true,
-        bucket: config.importance === "core" ? "core" : "midAtmosphere",
-        renderVisible: true,
-        ...config,
-      };
-      decorativeSystems.push(system);
-      return system;
     },
     setSkyMaterial(material) {
       if (disposed) return false;
@@ -169,7 +99,6 @@ export function createSceneAtmosphere({
     },
     update({ elapsedSeconds = 0, reducedMotion = false } = {}) {
       if (disposed) return false;
-      updateDecorativeVisibility();
       if (!reducedMotion && skyMaterial?.uniforms.uTime)
         skyMaterial.uniforms.uTime.value = elapsedSeconds;
       return true;
