@@ -1,4 +1,3 @@
-import { createEarthGeometry } from "../src/scene/terrain-build.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -16,7 +15,7 @@ import {
 } from "three";
 import { DIRECTED_SHOTS, measureShot, resolveDirectedShot } from "../src/scene/directed-shots.js";
 import { createCinematicCamera, cinematicSafeArea } from "../src/scene/cinematic.js";
-import { createEarthDetail, EARTH, FILM_GROUND_PRESETS } from "../src/scene/filmic-earth.js";
+import { createEarthDetail, FILM_GROUND_PRESETS } from "../src/scene/filmic-earth.js";
 import { createFilmScene } from "../src/scene/film-scene.js";
 
 const close = (a, b) => assert.ok(Math.abs(a - b) < 1e-5, `${a} != ${b}`);
@@ -100,36 +99,14 @@ test("all directed framing regions fit desktop and phone through both movement e
         });
       }
 });
-test("indexed terrain covers the full square and samples the correct world Z with finite unit normals", () => {
-  const height = (x, z) =>
-    1.8 * Math.sin(0.055 * x) +
-    1.35 * Math.cos(0.052 * z) +
-    0.9 * Math.sin(0.031 * (x + z)) +
-    0.55 * Math.cos(0.018 * (x - z));
-  const geometry = createEarthGeometry(height),
-    p = geometry.attributes.position,
-    n = geometry.attributes.normal;
-  assert.equal(p.count, 129 * 129);
-  assert.equal(geometry.index.count, 128 * 128 * 6);
-  assert.equal(geometry.boundingBox.max.x, 192);
-  assert.equal(geometry.boundingBox.min.y, -192);
-  for (let i = 0; i < p.count; i++) {
-    close(p.getZ(i), height(p.getX(i), -p.getY(i)));
-    close(Math.hypot(n.getX(i), n.getY(i), n.getZ(i)), 1);
-  }
-  assert.deepEqual({ ...EARTH }, { width: 384, subdivisions: 128 });
-  geometry.dispose();
-});
-test("film scene restores geometry, effects, lighting and sky before disposal and tolerates repeated teardown", async () => {
+test("film scene restores geometry, lighting and sky before disposal and tolerates repeated teardown", async () => {
   const ground = new Mesh(new BoxGeometry(), new MeshStandardMaterial()),
-    original = ground.geometry,
-    effect = new Group();
+    original = ground.geometry;
   const states = [],
     skyMaterial = { uniforms: { sunColor: { value: new Color(0xffaa00) } } };
   const controller = createFilmScene({
     ground,
     groundHeight: () => 0,
-    effects: [effect],
     skyMaterial,
     rendering: { setFilmTreatment: (a) => states.push(a) },
     atmosphere: { setFilmTreatment() {} },
@@ -139,14 +116,12 @@ test("film scene restores geometry, effects, lighting and sky before disposal an
   await controller.ready;
   const terrain = ground.geometry;
   assert.notEqual(terrain, original);
-  assert.equal(effect.visible, false);
   let disposed = 0;
   terrain.addEventListener("dispose", () => {
     disposed++;
     assert.equal(ground.geometry, original);
   });
   controller.setActive(false);
-  assert.equal(effect.visible, true);
   assert.equal(skyMaterial.uniforms.sunColor.value.getHex(), 0xffaa00);
   controller.setActive(true);
   assert.equal(ground.geometry, terrain);

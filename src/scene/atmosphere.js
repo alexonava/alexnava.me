@@ -10,12 +10,11 @@ import {
 } from "three";
 import { celestialTier } from "./solar-body.js";
 
-export function createSceneAtmosphere({ onInvalidate, parent, profile }) {
+export function createSceneAtmosphere({ parent, profile }) {
   const root = new Group();
   parent.add(root);
 
   let skyMaterial = null;
-  let cloudsEnabled = true;
   let disposed = false;
   let skyTier = celestialTier(profile);
   let film = false;
@@ -76,16 +75,8 @@ export function createSceneAtmosphere({ onInvalidate, parent, profile }) {
         skyMaterial.uniforms.uNebulaLayers.value = 0;
       }
       skyMaterial = material;
-      if (skyMaterial?.uniforms.uClouds) skyMaterial.uniforms.uClouds.value = cloudsEnabled ? 1 : 0;
       applySkyQuality();
       return true;
-    },
-    setClouds(on) {
-      if (disposed) return false;
-      cloudsEnabled = Boolean(on);
-      if (skyMaterial?.uniforms.uClouds) skyMaterial.uniforms.uClouds.value = cloudsEnabled ? 1 : 0;
-      onInvalidate?.();
-      return cloudsEnabled;
     },
     setFilmTreatment(active) {
       if (disposed) return false;
@@ -93,9 +84,6 @@ export function createSceneAtmosphere({ onInvalidate, parent, profile }) {
       applySkyQuality();
       applyOverlayBlending();
       return true;
-    },
-    toggleClouds() {
-      return this.setClouds(!cloudsEnabled);
     },
     update({ elapsedSeconds = 0, reducedMotion = false } = {}) {
       if (disposed) return false;

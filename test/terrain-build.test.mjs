@@ -76,11 +76,12 @@ import { TERRAIN_HORIZON } from "../src/scene/hill-silhouette.js";
 import { LANTERN_AUTHORING_HEIGHT } from "../src/scene/lantern.js";
 import { createEstateGroundDetail } from "../src/scene/estate-ground-detail.js";
 import { createFilmScene } from "../src/scene/film-scene.js";
+import { plainDunes } from "./support/terrain.mjs";
 
 test("root supports preserve coarse terrain vertices, map scale and bounded mesh cost", () => {
   const base = (x, z) => Math.sin(x * 0.055) + Math.cos(z * 0.052);
-  const original = createEarthGeometry(base),
-    hills = createEarthGeometry(base, true);
+  const original = plainDunes(base),
+    hills = createEarthGeometry(base);
   const b = hills.attributes.position;
   for (let i = 0; i < b.count; i++) {
     const x = b.getX(i),
@@ -111,7 +112,7 @@ test("root supports preserve coarse terrain vertices, map scale and bounded mesh
     "only the root rectangle and its stitched boundary are refined",
   );
   assert.equal(hills.groups.length, 0, "one ground material and draw");
-  const repeat = createEarthGeometry(base, true);
+  const repeat = createEarthGeometry(base);
   assert.deepEqual(repeat.attributes.position.array, b.array);
   repeat.dispose();
   original.dispose();
@@ -119,7 +120,7 @@ test("root supports preserve coarse terrain vertices, map scale and bounded mesh
 });
 
 test("local refinement joins the coarse mesh without holes, T-junctions or overlapping triangles", () => {
-  const geometry = createEarthGeometry(groundBase(), true),
+  const geometry = createEarthGeometry(groundBase()),
     p = geometry.attributes.position;
   const indices = geometry.index.array,
     edges = new Map();
@@ -193,8 +194,8 @@ test("triangulated lantern clearing and full puddle blend retain baseline height
     along: 33,
   });
   const base = groundBase(),
-    original = createEarthGeometry(base),
-    restored = createEarthGeometry(base, true);
+    original = plainDunes(base),
+    restored = createEarthGeometry(base);
   // Vertex normals are normalized in the real material's vertex shader.
   // Include that step before interpolating them across the rendered triangles.
   restored.normalizeNormals();
@@ -255,7 +256,7 @@ function authoredRootVertices(tier) {
 for (const tier of ["high", "balanced"])
   test(`${tier} actual root ends contact discreet soil without burying them`, () => {
     const base = groundBase(),
-      terrain = surface(createEarthGeometry(base, true));
+      terrain = surface(createEarthGeometry(base));
     const floor = base(TREE_FOOTING.x, TREE_FOOTING.z),
       vertices = authoredRootVertices(tier);
     for (const [x, z] of [
@@ -288,7 +289,7 @@ for (const tier of ["high", "balanced"])
 for (const tier of ["high", "balanced"])
   test(`${tier} south-east root spur stays an open aerial root above the level plate`, () => {
     const base = groundBase(),
-      terrain = surface(createEarthGeometry(base, true));
+      terrain = surface(createEarthGeometry(base));
     const floor = base(TREE_FOOTING.x, TREE_FOOTING.z),
       vertices = authoredRootVertices(tier);
     // From where it leaves the trunk's flare to its tip, relative to the tree.
@@ -409,7 +410,7 @@ test("root supports: a level plate east of the trunk, low berms under the root e
   assert.ok(benchArea > 60 && benchArea <= 200, `plate area is ${benchArea}`);
   assert.ok(benchVolume <= 150, `plate volume is ${benchVolume}`);
   assert.ok(slope <= 1.2, `terrain slope reaches ${slope} in the lift`);
-  const geometry = createEarthGeometry(base, true),
+  const geometry = createEarthGeometry(base),
     rendered = steepestLift(geometry);
   geometry.dispose();
   assert.ok(rendered <= 1.25, `rendered terrain slope reaches ${rendered} in the lift`);
@@ -446,7 +447,7 @@ test("root supports: a level plate east of the trunk, low berms under the root e
 
 test("root contact shading is neutral away from the roots and settles the root plate", () => {
   const base = groundBase(),
-    geometry = createEarthGeometry(base, true),
+    geometry = createEarthGeometry(base),
     shade = geometry.attributes.slateRoot;
   assert.equal(shade.itemSize, 4);
   assert.equal(shade.count, geometry.attributes.position.count);
@@ -470,8 +471,8 @@ test("root contact shading is neutral away from the roots and settles the root p
   }
   assert.ok(near > 20);
   // The rendered lift: the terrain above its lift-free surface, at vertices and between them.
-  const flat = surface(createEarthGeometry(base)),
-    raised = surface(createEarthGeometry(base, true));
+  const flat = surface(plainDunes(base)),
+    raised = surface(createEarthGeometry(base));
   let lifted = 0;
   for (let x = TREE_FOOTING.x - 8; x < TREE_FOOTING.x + 14.5; x += 0.61)
     for (let z = TREE_FOOTING.z - 12; z < TREE_FOOTING.z + 12; z += 0.53) {
@@ -813,7 +814,7 @@ test("the ground shading also finds its anchors in the published, compacted chun
 // compileAsync (held until finish()) and a container that takes "is-ready".
 function linkRig({ revealed = false, parallel = true } = {}) {
   const base = groundBase(),
-    terrain = createEarthGeometry(base, true),
+    terrain = createEarthGeometry(base),
     root = new Group(),
     material = new MeshStandardMaterial();
   configureGroundShading(material, true, { detail: { isTexture: true } });
@@ -1175,7 +1176,7 @@ test("the film terrain builds in idle slices and arrives only where it cannot sh
       },
       invalidateShadows: () => shadows++,
     };
-    createEarthGeometry(base, true, undefined, rendering, tour).then((geometry) => {
+    createEarthGeometry(base, undefined, rendering, tour).then((geometry) => {
       arrived = geometry;
     });
     do await clock.step();
@@ -1189,7 +1190,7 @@ test("the film terrain builds in idle slices and arrives only where it cannot sh
     assert.ok(arrived, "arrives on the cut");
     assert.equal(shadows, 1);
     // Exactly the terrain built at once.
-    const direct = createEarthGeometry(base, true);
+    const direct = createEarthGeometry(base);
     for (const name of ["position", "normal", "uv", "slateRoot"])
       assert.deepEqual(arrived.attributes[name].array, direct.attributes[name].array, name);
     assert.deepEqual(arrived.index.array, direct.index.array);
@@ -1199,17 +1200,12 @@ test("the film terrain builds in idle slices and arrives only where it cannot sh
       [0, 0],
     ])
       assert.equal(terrainLift(arrived)(x, z), terrainLift(direct)(x, z));
-    // Before the reveal it arrives as soon as it is built; so does the earth
-    // comparison's plain ground.
+    // Before the reveal it arrives as soon as it is built (in idle slices
+    // then: terrainSlicing, below).
     names.clear();
     tour.transition.cut = false;
-    // (in idle slices then: terrainSlicing, below).
-    const early = await createEarthGeometry(base, true, undefined, rendering, tour);
+    const early = await createEarthGeometry(base, undefined, rendering, tour);
     assert.ok(early, "arrives at once while the canvas is hidden");
-    assert.equal(
-      createEarthGeometry(base, false, undefined, rendering, tour).attributes.slateRoot,
-      undefined,
-    );
     for (const geometry of [arrived, direct, early]) geometry.dispose();
   } finally {
     clock.restore();
@@ -1241,7 +1237,7 @@ test("while the terrain slices it holds the shafts off, idles while the canvas i
     // Hidden canvas (the chunk arrives well before a warm load's reveal): the
     // build takes idle time only, so the reveal's own work goes first, and
     // holds the shafts' promise until it is built.
-    const hidden = createEarthGeometry(base, true, undefined, rendering, tour);
+    const hidden = createEarthGeometry(base, undefined, rendering, tour);
     const slicing = rendering.terrainSlicing;
     assert.ok(slicing instanceof Promise, "light-shafts.js sees the build");
     let released = false;
@@ -1259,14 +1255,14 @@ test("while the terrain slices it holds the shafts off, idles while the canvas i
     performance.mark("babel:reveal");
     globalThis.getComputedStyle = () => ({ transitionDuration: "60s" });
     idles = 0;
-    const fading = await createEarthGeometry(base, true, undefined, rendering, tour);
+    const fading = await createEarthGeometry(base, undefined, rendering, tour);
     assert.ok(fading?.attributes.slateRoot, "it lands at once under the fade");
     assert.equal(idles, 1, "only its first slice waited for idle time");
     fading.dispose();
     // Shown and past the fade: idle slices of 2 ms where the wait timed out.
     globalThis.getComputedStyle = () => ({ transitionDuration: "0s" });
     idles = 0;
-    const settled = createEarthGeometry(base, true, undefined, rendering, tour);
+    const settled = createEarthGeometry(base, undefined, rendering, tour);
     tour.transition.cut = true; // so it lands as soon as it is built
     const later = await settled;
     assert.ok(idles > 3, `${idles} idle slices after the fade`);
@@ -1276,7 +1272,6 @@ test("while the terrain slices it holds the shafts off, idles while the canvas i
     let gone = false;
     const cancelled = await createEarthGeometry(
       base,
-      true,
       undefined,
       rendering,
       tour,
@@ -1302,7 +1297,7 @@ test("a terrain finished after the film scene is disposed is freed, never kept",
   const r = rig(() =>
     Promise.resolve({
       createEarthGeometry(...args) {
-        stop = args[5];
+        stop = args[4];
         return new Promise((resolve) => {
           finish = resolve;
         });
@@ -1325,7 +1320,7 @@ test("a terrain finished after the film scene is disposed is freed, never kept",
 
 test("the root shading keeps full float precision beside a 16-bit index", () => {
   const base = groundBase(),
-    geometry = createEarthGeometry(base, true),
+    geometry = createEarthGeometry(base),
     shade = geometry.attributes.slateRoot;
   const occlusion = geometry.attributes.slateShade;
   // Bytes or shorts move the grade's cel bands on single pixels of settled
@@ -1561,7 +1556,7 @@ for (const tier of ["high", "balanced"])
 
 test("sparse dark litter lies beside the roots, clear of the lantern, the puddles and the roots themselves", () => {
   const base = groundBase(),
-    terrain = createEarthGeometry(base, true),
+    terrain = createEarthGeometry(base),
     surface = terrainHeight(terrain);
   const color = new Color(0x5c5048),
     litter = scatterLitter(surface, color),
@@ -2119,7 +2114,7 @@ test("the terrain chunk is requested only when the film activates, once, and a f
   );
 });
 
-test("the film's ready resolves to the root-aware ground once the roots settle; the earth comparison has none", async () => {
+test("the film's ready resolves to the root-aware ground once the roots settle", async () => {
   const r = rig(() => import("../src/scene/terrain-build.js"));
   r.film.setActive(true);
   const height = await r.film.ready;
@@ -2144,22 +2139,6 @@ test("the film's ready resolves to the root-aware ground once the roots settle; 
   assert.notEqual(r.ground.geometry, geometry);
   r.ground.geometry.dispose();
   r.ground.material.dispose();
-  const ground = new Mesh(new BoxGeometry(), new MeshStandardMaterial());
-  const earth = createFilmScene({
-    ground,
-    groundHeight: () => 0,
-    foothills: false,
-    loadTerrain: () => import("../src/scene/terrain-build.js"),
-    skyMaterial: { uniforms: { sunColor: { value: new Color() } } },
-    rendering: { setFilmTreatment() {} },
-    atmosphere: { setFilmTreatment() {} },
-  });
-  earth.setActive(true);
-  assert.equal(await earth.ready, undefined);
-  assert.equal(ground.material.userData.slateRoot, undefined);
-  earth.dispose();
-  ground.geometry.dispose();
-  ground.material.dispose();
 });
 
 test("failed or disposed optional terrain retains the borrowed fallback without late allocation", async () => {

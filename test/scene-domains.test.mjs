@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { Group } from "three";
-import { createSceneAtmosphere } from "../src/scene/atmosphere.js";
 import { createSceneEnvironment } from "../src/scene/environment.js";
 import { createSceneTower } from "../src/scene/tower.js";
 
@@ -41,38 +40,6 @@ test("tower owns its composition scale", () => {
   assert.equal(tower.root.visible, false);
   assert.equal(tower.resize({ composition: { towerScale: 1 } }), false);
   assert.equal(parent.children.includes(tower.root), true);
-});
-
-test("atmosphere owns the sky clock, cloud controls and its disposal", () => {
-  const parent = new Group();
-  const calls = [];
-  const atmosphere = createSceneAtmosphere({
-    onInvalidate() {
-      calls.push("invalidate");
-    },
-    parent,
-    profile: highProfile,
-  });
-  const sky = {
-    uniforms: { uClouds: { value: 1 }, uTime: { value: 0 }, uNebulaLayers: { value: 0 } },
-  };
-  atmosphere.setSkyMaterial(sky);
-
-  atmosphere.update({ elapsedSeconds: 10 });
-  assert.equal(sky.uniforms.uTime.value, 10);
-  atmosphere.update({ elapsedSeconds: 20, reducedMotion: true });
-  assert.equal(sky.uniforms.uTime.value, 10, "reduced motion holds the sky");
-
-  assert.equal(atmosphere.setClouds(false), false);
-  assert.equal(sky.uniforms.uClouds.value, 0);
-  assert.equal(atmosphere.toggleClouds(), true);
-  assert.equal(sky.uniforms.uClouds.value, 1);
-  assert.deepEqual(calls, ["invalidate", "invalidate"]);
-
-  atmosphere.dispose();
-  assert.equal(atmosphere.root.visible, false);
-  assert.equal(parent.children.includes(atmosphere.root), true);
-  assert.equal(atmosphere.update({ elapsedSeconds: 30 }), false);
 });
 
 test("scene bootstrap wires real domain systems and no longer owns their lifecycle loops", async () => {

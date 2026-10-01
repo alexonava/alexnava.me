@@ -321,15 +321,10 @@ ColorManagement.enabled = false;
       const sceneRoot = new Group();
       homeScene.add(sceneRoot);
       const atmosphereSystem = createSceneAtmosphere({
-        onInvalidate() {
-          invalidateContent();
-        },
         parent: homeScene,
         profile: state.profile,
       });
       subsystemRegistry.register(atmosphereSystem);
-      scene.setClouds = (on) => atmosphereSystem.setClouds(on);
-      scene.toggleClouds = () => atmosphereSystem.toggleClouds();
       applyActiveQualityProfile(
         typeof qualityState.getProfile === "function" ? qualityState.getProfile() : fallbackProfile,
         "initial",
@@ -1059,8 +1054,6 @@ ColorManagement.enabled = false;
         subsystemRegistry.dispose();
         const disposedResources = rendering.disposeResult;
         frameScheduler = null;
-        scene.setClouds = () => false;
-        scene.toggleClouds = () => false;
         scene.setVisitorPaused = () => false;
         scene.isVisitorPaused = () => false;
         scene.disposeHomeSceneRuntime = () => false;

@@ -14,7 +14,7 @@
     "preview": "npm run build:dist && wrangler pages dev dist --port 4173",
     "dev": "node tools/dev.mjs",
     "verify": "node build.mjs --check",
-    "test": "node --test",
+    "test": "node --test \"test/*.test.mjs\"",
     "watch": "node build.mjs --watch",
     "deploy:preview": "npm run build:dist && wrangler pages deploy dist --project-name=alexnava-me --branch=preview",
     "format": "prettier --write .",

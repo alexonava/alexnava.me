@@ -17,12 +17,11 @@ function skyMaterial() {
   });
 }
 
-test("nebula quality and film state reach late-bound sky and stars independently of clouds", () => {
+test("nebula quality and film state reach late-bound sky and stars", () => {
   const parent = new Group();
   const atmosphere = createSceneAtmosphere({ parent, profile: { tier: "high" } });
   atmosphere.applyQuality({ tier: "balanced" });
   atmosphere.setFilmTreatment(true);
-  atmosphere.setClouds(false);
   const sky = skyMaterial();
   assert.equal(sky.uniforms.uNebulaLayers.value, 0);
   atmosphere.setSkyMaterial(sky);
@@ -34,7 +33,7 @@ test("nebula quality and film state reach late-bound sky and stars independently
   const starUniform = stars.root.material.uniforms.uNebulaLayers;
   assert.equal(starUniform, sky.uniforms.uNebulaLayers);
   assert.equal(starUniform.value, 2);
-  assert.equal(sky.uniforms.uClouds.value, 0);
+  assert.equal(sky.uniforms.uClouds.value, 1, "the clouds stay on");
   for (const [tier, layers] of [
     ["low", 0],
     ["high", 3],
@@ -47,7 +46,6 @@ test("nebula quality and film state reach late-bound sky and stars independently
     assert.equal(stars.root.geometry.drawRange.count, STAR_COUNTS[tier]);
     assert.equal(stars.root.material.uniforms.uCelestialTier.value, tier === "low" ? 0 : 1);
   }
-  atmosphere.toggleClouds();
   assert.equal(starUniform.value, 3);
   atmosphere.setFilmTreatment(false);
   assert.equal(starUniform.value, 0, "asset fallback and legacy treatment restore the old sky");

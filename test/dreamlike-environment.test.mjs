@@ -100,37 +100,23 @@ test("environment creates growth only after film activation and owns its lifecyc
   assert.equal(mesh.parent, null);
   assert.equal(environment.setFilmTreatment(true), false);
 });
-test("film suppresses borrowed cloud cards and restores baseline sky compositing and visibility", () => {
+test("film makes the sky opaque and restores its baseline compositing", () => {
   const ground = new Mesh(new BoxGeometry(), new MeshStandardMaterial()),
     parent = new Group();
   const atmosphere = createSceneAtmosphere({ parent, profile });
-  const cloud = new Group(),
-    hiddenCloud = new Group();
-  hiddenCloud.visible = false;
   const sky = {
     transparent: true,
     uniforms: { sunColor: { value: new Color(0x334455) }, uFilm: { value: 0 } },
   };
   const rendering = { setFilmTreatment() {}, focusFilmShadow() {}, postprocessPipeline: {} };
   const film = createFilmScene({ ground, groundHeight, atmosphere, rendering, skyMaterial: sky });
-  film.setClouds([cloud, hiddenCloud]);
   film.setActive(true);
   assert.equal(sky.uniforms.uFilm.value, 1);
   assert.equal(sky.transparent, false);
-  atmosphere.setClouds(true);
-  atmosphere.update();
-  cloud.visible = true;
   film.finishFrame(null, new Vector3(), null);
-  assert.equal(cloud.visible, false);
-  const later = new Group();
-  film.setClouds([later]);
-  assert.equal(cloud.visible, true);
-  assert.equal(later.visible, false);
   film.setActive(false);
   assert.equal(sky.uniforms.uFilm.value, 0);
   assert.equal(sky.transparent, true);
-  assert.equal(later.visible, true);
-  assert.equal(hiddenCloud.visible, false);
   assert.equal(sky.uniforms.sunColor.value.getHex(), 0x334455);
   film.setActive(true);
   film.dispose();
@@ -215,24 +201,6 @@ test("film clouds keep defined low-sky silhouettes while low quality retains its
     );
   }
   material.dispose();
-});
-
-test("cloud controls apply to the sky veil and preserve their state across film and late binding", () => {
-  const atmosphere = createSceneAtmosphere({ parent: new Group(), profile });
-  const sky = { uniforms: { uClouds: { value: 1 } } };
-  atmosphere.setClouds(false);
-  atmosphere.setSkyMaterial(sky);
-  assert.equal(sky.uniforms.uClouds.value, 0);
-  atmosphere.setFilmTreatment(true);
-  assert.equal(sky.uniforms.uClouds.value, 0);
-  atmosphere.toggleClouds();
-  assert.equal(sky.uniforms.uClouds.value, 1);
-  atmosphere.setFilmTreatment(false);
-  assert.equal(sky.uniforms.uClouds.value, 1);
-  atmosphere.dispose();
-  assert.equal(atmosphere.setSkyMaterial(sky), false);
-  assert.equal(atmosphere.setClouds(false), false);
-  assert.equal(sky.uniforms.uClouds.value, 1);
 });
 
 test("sky drift follows the scheduler clock, freezes for reduced motion and stops on disposal", () => {

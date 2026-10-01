@@ -1,4 +1,4 @@
-import { BufferAttribute, BufferGeometry, Mesh, PlaneGeometry, Vector3 } from "three";
+import { BufferAttribute, BufferGeometry, Mesh, Vector3 } from "three";
 
 // Kept outside the initial scene; constants arrive from the owner.
 // Two low, broken ridges beyond the estate's entire occupied area: radius,
@@ -1767,9 +1767,9 @@ export function terrainSurface(groundHeight, EARTH = { width: 384, subdivisions:
   }
 }
 
-// The film terrain, a few vertices at a time: the coarse dune grid exactly as
-// the plain terrain stores it, then a grid refined around the roots and raised
-// onto their supports, then its triangles. Returns the geometry.
+// The film terrain, a few vertices at a time: the coarse dune grid, then a
+// grid refined around the roots and raised onto their supports, then its
+// triangles. Returns the geometry.
 function* earthSteps(groundHeight, EARTH) {
   const sample = yield* coarseSurface(groundHeight, EARTH);
   const n = EARTH.subdivisions,
@@ -2000,62 +2000,35 @@ function inSlices(steps, rendering = null, early = () => false, cancelled = () =
   });
 }
 
-// The film terrain (foothills) or, without them, plain dunes. Given
-// the scene's rendering, the film terrain builds in slices (inSlices()) and
-// resolves only where the new ground cannot show mid-shot (unseen()); without
-// it (tests), the terrain builds at once. cancelled: the film scene is gone,
-// so the build stops, or the finished geometry is freed, and it resolves to
-// nothing.
+// The film terrain. Given the scene's rendering, it builds in slices
+// (inSlices()) and resolves only where the new ground cannot show mid-shot
+// (unseen()); without it (tests), it builds at once. cancelled: the film scene
+// is gone, so the build stops, or the finished geometry is freed, and it
+// resolves to nothing.
 export function createEarthGeometry(
   groundHeight,
-  foothills = false,
   EARTH = { width: 384, subdivisions: 128 },
   rendering = null,
   tour = null,
   cancelled = () => false,
 ) {
-  if (foothills) {
-    const steps = earthSteps(groundHeight, EARTH);
-    if (!rendering) {
-      for (;;) {
-        const next = steps.next();
-        if (next.done) return next.value;
-      }
+  const steps = earthSteps(groundHeight, EARTH);
+  if (!rendering) {
+    for (;;) {
+      const next = steps.next();
+      if (next.done) return next.value;
     }
-    const allowed = unseen(rendering, tour);
-    return inSlices(steps, rendering, fading(rendering, false), cancelled).then(
-      (geometry) =>
-        new Promise((resolve) => {
-          (function check() {
-            if (!geometry || cancelled()) return resolve(geometry?.dispose());
-            if (!allowed()) return nextFrame(check);
-            rendering.invalidateShadows?.();
-            resolve(geometry);
-          })();
-        }),
-    );
   }
-  const baseline = new PlaneGeometry(
-    EARTH.width,
-    EARTH.width,
-    EARTH.subdivisions,
-    EARTH.subdivisions,
+  const allowed = unseen(rendering, tour);
+  return inSlices(steps, rendering, fading(rendering, false), cancelled).then(
+    (geometry) =>
+      new Promise((resolve) => {
+        (function check() {
+          if (!geometry || cancelled()) return resolve(geometry?.dispose());
+          if (!allowed()) return nextFrame(check);
+          rendering.invalidateShadows?.();
+          resolve(geometry);
+        })();
+      }),
   );
-  const bp = baseline.attributes.position,
-    bn = baseline.attributes.normal;
-  const normal = new Vector3(),
-    step = EARTH.width / EARTH.subdivisions / 2;
-  for (let i = 0; i < bp.count; i++) {
-    const x = bp.getX(i),
-      z = -bp.getY(i);
-    bp.setZ(i, groundHeight(x, z));
-    const dx = (groundHeight(x + step, z) - groundHeight(x - step, z)) / (2 * step);
-    const dz = (groundHeight(x, z + step) - groundHeight(x, z - step)) / (2 * step);
-    normal.set(-dx, dz, 1).normalize();
-    bn.setXYZ(i, normal.x, normal.y, normal.z);
-  }
-  baseline.computeBoundingBox();
-  baseline.computeBoundingSphere();
-  rendering?.invalidateShadows?.();
-  return baseline;
 }
