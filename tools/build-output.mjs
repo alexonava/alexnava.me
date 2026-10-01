@@ -124,7 +124,7 @@ export async function publishBuild({
     const keep = new Set(current);
     if (retainAssets) {
       for (const file of previous)
-        if (/\.[a-f0-9]{8}\.(?:js|css|webp|glb)$/.test(file)) keep.add(file);
+        if (/\.[a-f0-9]{8}\.(?:js|css|webp|glb|woff2)$/.test(file)) keep.add(file);
     }
     const stale = previous.filter((file) => !keep.has(file));
     // Complete backups before the first visible write. Never touch an output

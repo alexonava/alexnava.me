@@ -1,5 +1,5 @@
 import { build, transform } from "esbuild";
-import { copyFile, cp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { copyFile, cp, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -71,6 +71,7 @@ export function isFingerprintedSource(file) {
   const path = file.split(sep).join("/");
   return (
     FINGERPRINTED_PAPER.some((name) => path === `images/${name}`) ||
+    /^fonts\/[^/]+\.woff2$/.test(path) ||
     /^images\/architecture\/[^/]+\.glb$/.test(path) ||
     /^images\/materials\/slate-[^/]+\.webp$/.test(path)
   );
@@ -143,6 +144,22 @@ async function architectureAssetManifest() {
     }
   }
   return { urls, sizes, files };
+}
+
+// Every fonts/*.woff2 publishes as fonts/NAME.HASH.woff2: { urls, files },
+// where urls maps each source URL to its hashed URL for the stylesheet's
+// url()s and the pages' preloads.
+async function fontAssetManifest() {
+  const urls = {};
+  const files = [];
+  const names = (await readdir(join(__dirname, "fonts"))).filter((name) => name.endsWith(".woff2"));
+  for (const name of names.sort()) {
+    const bytes = await readFile(join(__dirname, "fonts", name));
+    const hashedName = name.replace(/\.woff2$/, `.${sha8(bytes)}.woff2`);
+    urls[`/fonts/${name}`] = `/fonts/${hashedName}`;
+    files.push({ hashedName, bytes });
+  }
+  return { urls, files };
 }
 
 // The film slate's maps (images/materials/slate-*.webp) are hashed too:
@@ -298,18 +315,21 @@ export function contentDateModified(markdown) {
   return frontMatter.match(/^dateModified:\s*["']?(\d{4}-\d{2}-\d{2})["']?\s*$/m)?.[1];
 }
 
+// A font URL without a content hash: the build publishes none.
+const UNHASHED_FONT = /\/fonts\/[\w-]+\.woff2/;
+
 // Points a page at the published, content-hashed assets. The sources name
-// the plain paths; an un-hashed stylesheet or script path, or a ?v= query,
-// left after the rewrite would request a file the build never publishes.
-function rewriteHtml(name, src, { appPath, cssPath, scenePath, imagePaths }) {
+// the plain paths; an un-hashed stylesheet, script or font path, or a ?v=
+// query, left after the rewrite would request a file the build never publishes.
+function rewriteHtml(name, src, { appPath, cssPath, scenePath, imagePaths, fontPaths }) {
   let html = src
     .replaceAll("/styles.css", cssPath)
     .replaceAll("/scripts/app.js", appPath)
     .replaceAll("/scripts/scene.js", scenePath);
-  for (const [sourcePath, hashedPath] of Object.entries(imagePaths)) {
+  for (const [sourcePath, hashedPath] of Object.entries({ ...imagePaths, ...fontPaths })) {
     html = html.replaceAll(sourcePath, hashedPath);
   }
-  const stale = html.match(/\/styles\.css|\/scripts\/[\w-]+\.js|\?v=/);
+  const stale = html.match(/\/styles\.css|\/scripts\/[\w-]+\.js|\?v=/) ?? html.match(UNHASHED_FONT);
   if (stale) throw new Error(`${name} names an un-hashed asset after the rewrite: ${stale[0]}`);
   return html;
 }
@@ -321,6 +341,7 @@ async function writePayload(DIST_DIR) {
   await mkdir(DIST_CSS_DIR, { recursive: true });
   const architecture = await architectureAssetManifest();
   const materials = await materialAssetManifest();
+  const fonts = await fontAssetManifest();
   const fingerprintedImages = new Map();
   for (const name of FINGERPRINTED_PAPER) {
     fingerprintedImages.set(name, await readFile(join(__dirname, "images", name)));
@@ -351,6 +372,11 @@ async function writePayload(DIST_DIR) {
       `/images/${name.replace(/\.webp$/, `.${sha8(bytes)}.webp`)}`,
     );
   }
+  for (const [sourcePath, hashedPath] of Object.entries(fonts.urls)) {
+    cssSrc = cssSrc.replaceAll(sourcePath, hashedPath);
+  }
+  const staleFont = cssSrc.match(UNHASHED_FONT);
+  if (staleFont) throw new Error(`styles.css names an un-hashed font: ${staleFont[0]}`);
   // Minify after rewriting, then hash the published bytes. Without a browser
   // target esbuild lowers no syntax, and url() paths pass through unresolved.
   const { code: css } = await transform(cssSrc, {
@@ -370,9 +396,9 @@ async function writePayload(DIST_DIR) {
       await copyFile(join(__dirname, source), join(DIST_DIR, destination));
     }),
   );
-  // Fingerprinted sources publish only under their hashed names: the paper and
-  // estate maps, every model and the slate maps. Nothing the build writes names
-  // their source paths, so no plain copy is kept.
+  // Fingerprinted sources publish only under their hashed names: the fonts,
+  // the paper and estate maps, every model and the slate maps. Nothing the
+  // build writes names their source paths, so no plain copy is kept.
   await Promise.all(
     STATIC_DIRS.map((dir) =>
       cp(join(__dirname, dir), join(DIST_DIR, dir), {
@@ -382,7 +408,11 @@ async function writePayload(DIST_DIR) {
     ),
   );
 
-  // A model or map revision receives a new URL.
+  // A font, model or map revision receives a new URL.
+  await mkdir(join(DIST_DIR, "fonts"), { recursive: true });
+  for (const { hashedName, bytes } of fonts.files) {
+    await writeFile(join(DIST_DIR, "fonts", hashedName), bytes);
+  }
   await mkdir(join(DIST_DIR, "images", "architecture"), { recursive: true });
   for (const { hashedName, bytes } of architecture.files) {
     await writeFile(join(DIST_DIR, "images", "architecture", hashedName), bytes);
@@ -409,6 +439,7 @@ async function writePayload(DIST_DIR) {
       cssPath: cssHashedUrl,
       scenePath: scriptPaths.scene,
       imagePaths,
+      fontPaths: fonts.urls,
     });
     await writeFile(join(DIST_DIR, name), rewritten);
   }

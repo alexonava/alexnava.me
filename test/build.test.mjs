@@ -51,7 +51,9 @@ test("staged builds retain the last good payload after errors and keep prior has
   const output = path.join(root, "output");
   const prepare = (hash, text) => async (directory) => {
     await mkdir(path.join(directory, "scripts"));
+    await mkdir(path.join(directory, "fonts"));
     await writeFile(path.join(directory, "scripts", `app.${hash}.js`), text);
+    await writeFile(path.join(directory, "fonts", `sans.${hash}.woff2`), text);
     await writeFile(
       path.join(directory, "index.html"),
       `<script src="/scripts/app.${hash}.js"></script>`,
@@ -83,6 +85,7 @@ test("staged builds retain the last good payload after errors and keep prior has
     prepare: prepare("22222222", "second"),
   });
   assert.equal(await readFile(path.join(output, "scripts", "app.11111111.js"), "utf8"), "first");
+  assert.equal(await readFile(path.join(output, "fonts", "sans.11111111.woff2"), "utf8"), "first");
   assert.match(await readFile(path.join(output, "index.html"), "utf8"), /app\.22222222\.js/);
   assert.equal(await readFile(path.join(output, "robots.txt"), "utf8"), "second");
   await publishBuild({
@@ -91,6 +94,7 @@ test("staged builds retain the last good payload after errors and keep prior has
     prepare: prepare("33333333", "third"),
   });
   assert.deepEqual(await readdir(path.join(output, "scripts")), ["app.33333333.js"]);
+  assert.deepEqual(await readdir(path.join(output, "fonts")), ["sans.33333333.woff2"]);
 });
 
 test("watch builds retain an open page's split scene chunks until a full build", async (t) => {
@@ -457,6 +461,12 @@ test("CSS asset URLs and bytes are portable across checkout line endings", async
     for (const map of ["color-1024", "normal-1024", "color-512", "normal-512", "detail-512"]) {
       await writeFile(path.join(fixture, "images", "materials", `slate-${map}.webp`), paper);
     }
+    // The stylesheet's fonts, under their source names.
+    for (const name of (await readdir(path.join(projectRoot, "fonts"))).filter((file) =>
+      file.endsWith(".woff2"),
+    )) {
+      await writeFile(path.join(fixture, "fonts", name), paper);
+    }
 
     async function buildCss(css) {
       await writeFile(path.join(fixture, "styles.css"), css);
@@ -505,6 +515,21 @@ test("CSS asset URLs and bytes are portable across checkout line endings", async
     assert.notEqual(edited.name, lf.name, "a real CSS change must still invalidate its URL");
     assert.ok(edited.bytes.toString("utf8").includes(".portability-fixture{color:#123456}"));
     const publishedHtml = await readFile(path.join(fixture, "dist", "index.html"));
+    // A page naming a font the build does not hash fails the build.
+    await writeFile(
+      path.join(fixture, "index.html"),
+      '<link rel="preload" href="/fonts/missing.woff2" as="font">',
+    );
+    await assert.rejects(
+      execFileP(process.execPath, ["build.mjs", "--dist", "--outdir", path.join(fixture, "dist")], {
+        cwd: fixture,
+      }),
+      (error) =>
+        /index\.html names an un-hashed asset after the rewrite: \/fonts\/missing\.woff2/.test(
+          error.stderr,
+        ),
+    );
+    await writeFile(path.join(fixture, "index.html"), '<link rel="stylesheet" href="/styles.css">');
     await writeFile(path.join(fixture, "src", "app.js"), "export const broken = ;");
     await assert.rejects(
       execFileP(process.execPath, ["build.mjs", "--dist", "--outdir", path.join(fixture, "dist")], {

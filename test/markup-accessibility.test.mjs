@@ -480,11 +480,11 @@ test("variable font faces supply real weights", async () => {
   const faces = styles.match(/@font-face\s*\{[^}]*\}/g) || [];
   assert.equal(faces.length, 2);
   assert.match(
-    faces.find((face) => face.includes("cormorant-garamond-500.woff2")),
+    faces.find((face) => face.includes("cormorant-garamond-variable.woff2")),
     /font-weight:\s*300 700;/,
   );
   assert.match(
-    faces.find((face) => face.includes("instrument-sans-400.woff2")),
+    faces.find((face) => face.includes("instrument-sans-variable.woff2")),
     /font-weight:\s*400 700;/,
   );
   const fontUrls = [

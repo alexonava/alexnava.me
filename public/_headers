@@ -91,6 +91,11 @@
 /fonts/*
   Cache-Control: public, max-age=604800, must-revalidate
 
+# The build publishes fonts only as name.HASH.woff2.
+/fonts/:name.:hash.woff2
+  ! Cache-Control
+  Cache-Control: public, max-age=31536000, immutable
+
 /images/*
   Cache-Control: public, max-age=604800, must-revalidate
 

@@ -60,7 +60,7 @@ If any post-upload smoke check fails, the workflow posts to Cloudflare's officia
 
 ## Response headers
 
-`public/_headers` is the tracked baseline. HTML revalidates immediately. Fonts, icons and stable-named files revalidate after seven days. Content-hashed CSS, JavaScript, images and GLBs are immutable for one year. Do not add absolute-host patterns to `_headers`: Pages applies them by path, so a `pages.dev`-only `X-Robots-Tag` can leak onto the apex.
+`public/_headers` is the tracked baseline. HTML revalidates immediately. Icons and other stable-named files revalidate after seven days. Content-hashed CSS, JavaScript, fonts, images and GLBs are immutable for one year. Do not add absolute-host patterns to `_headers`: Pages applies them by path, so a `pages.dev`-only `X-Robots-Tag` can leak onto the apex.
 
 `/.well-known/security.txt` expires 2027-09-23. The contract test fails 30 days earlier, so renew the `Expires` line in `public/.well-known/security.txt` before 2027-08-24.
 

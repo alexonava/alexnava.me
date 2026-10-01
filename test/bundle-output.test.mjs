@@ -337,6 +337,39 @@ test("dist/images publishes fingerprinted sources only under their hashed names"
   }
 });
 
+test("fonts publish only under hashed names, which the stylesheet and the preloads share", async () => {
+  const sources = (await readdir(path.join(projectRoot, "fonts"))).filter((name) =>
+    name.endsWith(".woff2"),
+  );
+  const published = (await readdir(path.join(distDir, "fonts"))).filter((name) =>
+    name.endsWith(".woff2"),
+  );
+  assert.ok(sources.length >= 2);
+  const hashed = [];
+  for (const name of sources) {
+    const bytes = await readFile(path.join(projectRoot, "fonts", name));
+    const hashedName = name.replace(
+      /\.woff2$/,
+      `.${createHash("sha256").update(bytes).digest("hex").slice(0, 8)}.woff2`,
+    );
+    assert.deepEqual(await readFile(path.join(distDir, "fonts", hashedName)), bytes, hashedName);
+    hashed.push(`/fonts/${hashedName}`);
+  }
+  assert.deepEqual(published.sort(), hashed.map((url) => url.slice("/fonts/".length)).sort());
+
+  const cssName = (await readdir(path.join(distDir, "css"))).find((name) =>
+    /^styles\.[a-f0-9]{8}\.css$/.test(name),
+  );
+  const css = await readFile(path.join(distDir, "css", cssName), "utf8");
+  const html = await readFile(path.join(distDir, "index.html"), "utf8");
+  const cssFonts = [...css.matchAll(/url\("?(\/fonts\/[^")]+)"?\)/g)].map((match) => match[1]);
+  const preloads = [...html.matchAll(/<link[^>]*rel="preload"[^>]*>/g)]
+    .map(([link]) => link.match(/href="(\/fonts\/[^"]+)"/)?.[1])
+    .filter(Boolean);
+  assert.deepEqual([...cssFonts].sort(), [...hashed].sort());
+  assert.deepEqual([...preloads].sort(), [...hashed].sort());
+});
+
 test("the pages publish no picture, and the share card's backdrop stays unpublished", async () => {
   for (const page of ["index.html", "404.html"]) {
     const html = await readFile(path.join(distDir, page), "utf8");
@@ -417,9 +450,11 @@ test("changing only a fixture tower model changes only its URL and size in the U
   const sha8 = (bytes) => createHash("sha256").update(bytes).digest("hex").slice(0, 8);
   try {
     // Reuse the sanitized static payload; only the build script, its
-    // unrewritten HTML/CSS inputs, the source images and the two UI modules
-    // that read the model manifest are copied from source. No user data.
+    // unrewritten HTML/CSS inputs, the source fonts and images and the two UI
+    // modules that read the model manifest are copied from source. No user data.
     await cp(distDir, fixture, { recursive: true });
+    await rm(path.join(fixture, "fonts"), { recursive: true, force: true });
+    await cp(path.join(projectRoot, "fonts"), path.join(fixture, "fonts"), { recursive: true });
     await cp(path.join(projectRoot, "images"), path.join(fixture, "images"), { recursive: true });
     for (const file of ["build.mjs", "index.html", "404.html", "styles.css", "LICENSE"]) {
       await cp(path.join(projectRoot, file), path.join(fixture, file));

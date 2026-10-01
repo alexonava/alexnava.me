@@ -252,9 +252,10 @@ test("static headers separate immutable fingerprints from revalidated stable ass
       ),
     );
   }
-  // Fingerprinted artwork, models and maps also match /images/*, so these
-  // rules detach that rule's Cache-Control.
+  // Fingerprinted fonts, artwork, models and maps also match /fonts/* or
+  // /images/*, so these rules detach that rule's Cache-Control.
   for (const fingerprintedPath of [
+    "/fonts/:name.:hash.woff2",
     "/images/:name.:hash.webp",
     "/images/architecture/:name.:hash.glb",
     "/images/materials/slate-:map.:hash.webp",
@@ -335,9 +336,18 @@ test("Pages header rules resolve one cache policy for stable and fingerprinted p
     "/icon-maskable-512.png",
     "/.well-known/security.txt",
     "/LICENSE",
-    "/fonts/instrument-sans-400.woff2",
+    "/fonts/OFL.txt",
   ]) {
     assert.equal(cacheControl(pathname), revalidated, pathname);
+  }
+  // The build publishes each font only as name.HASH.woff2.
+  const fonts = (await readdir(path.join(projectRoot, "fonts"))).filter((name) =>
+    name.endsWith(".woff2"),
+  );
+  assert.ok(fonts.length >= 2);
+  for (const name of fonts) {
+    const hashed = `/fonts/${name.replace(/\.woff2$/, `.${hash}.woff2`)}`;
+    assert.equal(cacheControl(hashed), immutable, hashed);
   }
   for (const pathname of ["/LICENSE", "/.well-known/security.txt", "/llms.txt"]) {
     assert.equal(headersFor(pathname).get("content-type"), "text/plain; charset=utf-8", pathname);
