@@ -318,6 +318,26 @@ test("first-paint hero, action cursors, microcopy, and short-landscape labels st
   );
 });
 
+test("the hero backdrop fades to transparent before every edge of its box", async () => {
+  // The owner saw a clear pane beside the name (2026-09-28): the old farthest-corner
+  // ellipse was still ~40% dark where its box clipped it on the left. A closest-side
+  // ellipse reaches its last stop at the nearest edge on each axis, so every edge
+  // (and every corner beyond it) is fully transparent.
+  const styles = await readStyles();
+  const rule = styles.match(/\n\.hero-minimal::before\s*\{([^}]*)\}/)?.[1];
+  assert.ok(rule, "the hero backdrop rule exists");
+  const gradient = rule.match(/radial-gradient\(([\s\S]*?)\);/)?.[1];
+  assert.ok(gradient, "the backdrop is a radial gradient");
+  assert.match(gradient, /^\s*closest-side\s*,/, "sized to the box's nearest sides, so it ends inside the box");
+  const stops = [...gradient.matchAll(/rgba\(7, 10, 18, ([\d.]+)\) ([\d.]+)%/g)].map(([, a, at]) => [+a, +at / 100]);
+  assert.equal(stops.at(-1).join(), "0,1", "fully transparent at the ellipse's edge");
+  assert.equal(stops[0][0], 0.58, "as dark as before right behind the name");
+  for (const [alpha, t] of stops) {
+    assert.ok(Math.abs(alpha - 0.58 * (1 - t * t) ** 2) < 0.006, `a smooth (1 - t²)² falloff at ${t}`);
+  }
+  assert.doesNotMatch(rule, /mask-image/, "no mask edge of its own");
+});
+
 test("every contact address sits inside Cloudflare email_off markers", async () => {
   const html = await readIndexHtml();
   const wrapped =
@@ -517,7 +537,7 @@ function contrast(foreground, background) {
 test("About is the only footer control and keeps the corner clear", async () => {
   const html = await readIndexHtml();
   const footer = html.match(/<footer class="site-footer">([\s\S]*?)<\/footer>/)?.[1] || "";
-  assert.doesNotMatch(footer, /site-copyright|&copy;|�|2026 Alex Nava/);
+  assert.doesNotMatch(footer, /site-copyright|&copy;|�|2026 Alex Nava/);
   assert.match(footer, /href="#about-text"[^>]*data-scene-fallback/);
   assert.match(footer, /data-panel="about"[^>]*aria-controls="panel-about"/);
   assert.equal((footer.match(/>About<\/span>/g) || []).length, 2);

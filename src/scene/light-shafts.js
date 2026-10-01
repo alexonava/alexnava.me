@@ -253,8 +253,10 @@ export function shaftDrift(time, [amplitude, period], out = { x: 0, y: 0 }) {
 // on the crown),
 // caps it softly (shaftCeil), for the star at the streaks' peak (the dark
 // between streaks keeps its share, so a bright ray never becomes a veil), and scales it down
-// behind the name and intro (shaftText, the text's feathered box in screen
-// units): by 90%, or fully where the phone's text protection is on. shaftQuad
+// behind the name and intro (shaftText, the text's box on screen, fading out
+// round it over a fifth of the screen's smaller side, so neither the rays nor
+// the haze stop at a straight edge): by 90%, or fully where the phone's text
+// protection is on. shaftQuad
 // averages the air over its 2 x 2 pixel quad (derivatives, taken outside any
 // branch), skipping a neighbour across a depth step, so the blue-noise start
 // leaves less stipple.
@@ -286,7 +288,7 @@ float t=b*smoothstep(-soft,soft+rise,past)*(1.-smoothstep(shaftReach.x,shaftReac
 if(ground<1.)t*=max(ground,1.-smoothstep(shaftReach.z,shaftReach.z+shaftReach.w,u.z-shaftDepth(shaftTex(shaftBack,u.xy,0.).r)));
 return t;
 }
-float shaftBehindText(vec2 v){vec2 f=max(max(shaftText.xy-v,v-shaftText.zw),0.);return 1.-smoothstep(0.,.08,max(f.x,f.y));}
+float shaftBehindText(vec2 v){vec2 f=max(max(shaftText.xy-v,v-shaftText.zw),0.)*vec2(shaftSource.z,1.)/min(shaftSource.z,1.);return 1.-smoothstep(0.,.2,length(f));}
 float shaftHash(float i,float p){return fract(sin(mod(i,p)*78.233+p*.37)*43758.5453);}
 float shaftRay(vec2 v,out float r){
 vec2 d=(v-shaftSource.xy)*vec2(shaftSource.z,1.);

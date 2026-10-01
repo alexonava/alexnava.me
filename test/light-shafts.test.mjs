@@ -786,6 +786,11 @@ test("the rays streak about the light's own place on screen and ease off behind 
   // and a bright ray never turns into a veil.
   has("float w=mix(r,1.+shaftSource.w,shaftPeak),a=shaftGain*w*pow(", "the star's cap is taken at the streaks' peak");
   has("a/(1.+a/shaftCeil)*mix(1.,r/w,shaftPeak)*hull*(1.-shaftBehindText(v)*mix(.9,1.,shaftTextProtection))", "a soft cap, then (the star) the streaks, and 90% less behind the text");
+  // Round the text's box the air fades back in over a fifth of the screen's
+  // smaller side, measured in square units (the aspect undone), so neither
+  // the rays nor their haze stop at a straight edge beside the name: the
+  // 8% box feather read as a clear pane on the owner's desktop (2026-09-28).
+  has("float shaftBehindText(vec2 v){vec2 f=max(max(shaftText.xy-v,v-shaftText.zw),0.)*vec2(shaftSource.z,1.)/min(shaftSource.z,1.);return 1.-smoothstep(0.,.2,length(f));}", "a round, wide, smooth fade about the text's box");
   assert.deepEqual([SHAFTS.star.peak, SHAFTS.moon.peak], [1, 0], "the moon's sparse shafts keep the streaked air under the cap, broad and full");
   has("if(r==0.)r=shaftRay(v,s);", "streaked about the source, only where light was gathered");
   has("a+=shaftJitter*(2.*mix(shaftHash(qi,.25*x),shaftHash(qi+1.,.25*x),qf*qf*(3.-2.*qf))-1.);", "their spacing wanders");
