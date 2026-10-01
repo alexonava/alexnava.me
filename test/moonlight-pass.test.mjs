@@ -51,7 +51,13 @@ function tourSetup(interval = 5) {
   const tour = createCameraTour({ camera: controller, interval });
   const render = (time, flags = {}) => {
     const phase = tour.update({ elapsedSeconds: time, ...flags });
-    controller.apply({ width: 1440, height: 900, elapsedSeconds: time, tourPhase: phase, ...flags });
+    controller.apply({
+      width: 1440,
+      height: 900,
+      elapsedSeconds: time,
+      tourPhase: phase,
+      ...flags,
+    });
     return phase;
   };
   return { camera, controller, tour, render };
@@ -85,7 +91,13 @@ test("tour shots open without black and dissolve the kept outgoing frame into ea
   const frame = (time, flags = {}) => {
     const phase = f.tour.update({ elapsedSeconds: time, ...flags });
     pipeline.setTransition(f.tour.transition);
-    f.controller.apply({ width: 1440, height: 900, elapsedSeconds: time, tourPhase: phase, ...flags });
+    f.controller.apply({
+      width: 1440,
+      height: 900,
+      elapsedSeconds: time,
+      tourPhase: phase,
+      ...flags,
+    });
     pipeline.composer.render(0);
   };
   frame(0);
@@ -224,7 +236,11 @@ test("supplied tower and tree switch between source and moonlight grades without
   close(u.babelShadowTint.value.r, 0.19);
   assert.equal(u.babelLift.value, 0);
   assert.equal(applyFilmGrade(new MeshStandardMaterial(), true), false);
-  const shader = { uniforms: {}, vertexShader: "#include <common>\n#include <begin_vertex>", fragmentShader: "#include <common>\n#include <map_fragment>\n#include <roughnessmap_fragment>" };
+  const shader = {
+    uniforms: {},
+    vertexShader: "#include <common>\n#include <begin_vertex>",
+    fragmentShader: "#include <common>\n#include <map_fragment>\n#include <roughnessmap_fragment>",
+  };
   material.onBeforeCompile(shader);
   assert.equal(shader.uniforms.babelTint, u.babelTint);
   assert.equal(shader.uniforms.babelShadowTint, u.babelShadowTint);
@@ -234,7 +250,8 @@ test("supplied tower and tree switch between source and moonlight grades without
   assert.equal(u.babelLift.value, 0);
 
   const tree = createTreeArchitecture({ asset: asset(), groundHeight: () => 0 });
-  const treeUniforms = tree.root.getObjectByName("meshy-tree").material.userData.babelGrade.uniforms;
+  const treeUniforms =
+    tree.root.getObjectByName("meshy-tree").material.userData.babelGrade.uniforms;
   tree.setFilmTreatment(true);
   close(treeUniforms.babelSaturation.value, 0.8);
   tree.setFilmTreatment(false);
@@ -245,7 +262,10 @@ test("supplied tower and tree switch between source and moonlight grades without
 test("the lantern is an iron post lantern with glass, candle and flame, authored 2.48 units tall and fully owned", () => {
   const tree = createTreeArchitecture({ asset: asset(), groundHeight: () => 0 });
   const lantern = tree.root.getObjectByName("tree-lantern");
-  const names = lantern.children.filter((o) => o.isMesh).map((o) => o.name).sort();
+  const names = lantern.children
+    .filter((o) => o.isMesh)
+    .map((o) => o.name)
+    .sort();
   assert.deepEqual(names, [
     "lantern-candle",
     "lantern-flame",

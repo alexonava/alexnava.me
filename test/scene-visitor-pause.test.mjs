@@ -385,18 +385,36 @@ test("scene bootstrap exposes the visitor pause and wires its hold", async () =>
   assert.match(source, /scene\.isVisitorPaused = \(\) => visitorHold\.paused;/);
   assert.match(source, /scene\.setVisitorPaused\(scene\.visitorPausedPreference === true\);/);
   // The frame that shows the canvas reveals; later frames report a redraw.
-  assert.match(source, /frameScheduler\?\.setStill\(!sceneShown\);\s*[^]*?if \(sceneShown\) visitorHold\?\.reveal\(\);/);
+  assert.match(
+    source,
+    /frameScheduler\?\.setStill\(!sceneShown\);\s*[^]*?if \(sceneShown\) visitorHold\?\.reveal\(\);/,
+  );
   assert.match(source, /panelHold\?\.frameRendered\(\);\s*visitorHold\?\.frameRendered\(\);/);
-  assert.match(source, /function applySceneSize\([^]*?panelHold\?\.redraw\(\);\s*visitorHold\?\.redraw\(\);/);
+  assert.match(
+    source,
+    /function applySceneSize\([^]*?panelHold\?\.redraw\(\);\s*visitorHold\?\.redraw\(\);/,
+  );
   assert.match(source, /onContextRestored\(\) \{[^}]*?visitorHold\?\.redraw\(\);/);
   assert.doesNotMatch(source, /devMode|onActivityChange|setForceAnimation/);
   // Content changes draw a still frame behind the pause; scroll does not.
-  assert.match(source, /function invalidateContent\(\) \{\s*visitorHold\?\.redraw\(\);\s*frameScheduler\?\.invalidate\(\);/);
+  assert.match(
+    source,
+    /function invalidateContent\(\) \{\s*visitorHold\?\.redraw\(\);\s*frameScheduler\?\.invalidate\(\);/,
+  );
   assert.match(source, /rendering\.invalidateShadows\(\);\s*invalidateContent\(\);\s*\}\);/);
-  const scroll = source.slice(source.indexOf("const onWindowScroll"), source.indexOf("window.addEventListener(\"resize\""));
+  const scroll = source.slice(
+    source.indexOf("const onWindowScroll"),
+    source.indexOf('window.addEventListener("resize"'),
+  );
   assert.doesNotMatch(scroll, /invalidateContent|redraw/);
   // Disposal releases the hold and retires the API.
   const dispose = source.slice(source.indexOf("function disposeHomeSceneRuntime"));
-  assert.match(dispose, /panelHold\.dispose\(\);\s*visitorHold\.dispose\(\);[^]*?frameScheduler\.dispose\(\);/);
-  assert.match(dispose, /scene\.setVisitorPaused = \(\) => false;\s*scene\.isVisitorPaused = \(\) => false;/);
+  assert.match(
+    dispose,
+    /panelHold\.dispose\(\);\s*visitorHold\.dispose\(\);[^]*?frameScheduler\.dispose\(\);/,
+  );
+  assert.match(
+    dispose,
+    /scene\.setVisitorPaused = \(\) => false;\s*scene\.isVisitorPaused = \(\) => false;/,
+  );
 });

@@ -195,7 +195,11 @@ test("scene rendering owns quality, sizing, rendering, and disposal lifecycle", 
     ["postprocessSize", 900, 400],
     "grading texels are CSS pixels",
   );
-  assert.equal(calls.some((entry) => entry[0] === "passAdded"), false, "rendering adds no pass of its own");
+  assert.equal(
+    calls.some((entry) => entry[0] === "passAdded"),
+    false,
+    "rendering adds no pass of its own",
+  );
   assert.ok(calls.some((entry) => entry[0] === "render"));
   assert.deepEqual(rendering.dispose(), { geometries: 1 });
   assert.equal(rendering.dispose(), false);
@@ -266,21 +270,49 @@ test("static shadows redraw the sun map only after reported changes", () => {
   assert.equal(shadow.autoUpdate, false);
   assert.equal(shadow.needsUpdate, true, "the first static frame draws the map");
 
-  assert.equal(redraws(() => rendering.applyQuality(profile)), true);
-  assert.equal(redraws(() => rendering.resize({ height: 400, width: 900 })), true);
-  assert.equal(redraws(() => rendering.setFilmTreatment(true)), true);
+  assert.equal(
+    redraws(() => rendering.applyQuality(profile)),
+    true,
+  );
+  assert.equal(
+    redraws(() => rendering.resize({ height: 400, width: 900 })),
+    true,
+  );
+  assert.equal(
+    redraws(() => rendering.setFilmTreatment(true)),
+    true,
+  );
   const focus = rendering.lights.sun.target.position.clone().set(55, 8, 36);
-  assert.equal(redraws(() => rendering.focusFilmShadow(focus, 12)), true);
+  assert.equal(
+    redraws(() => rendering.focusFilmShadow(focus, 12)),
+    true,
+  );
   assert.equal(
     redraws(() => rendering.focusFilmShadow(focus.clone(), 12)),
     false,
     "an unchanged shot focus keeps the drawn map",
   );
-  assert.equal(redraws(() => rendering.focusFilmShadow(focus.clone().setX(0), 12)), true);
-  assert.equal(redraws(() => rendering.setGroundedLighting(true)), true);
-  assert.equal(redraws(() => rendering.invalidateShadows()), true);
-  assert.equal(redraws(() => listeners.webglcontextrestored?.({})), true);
-  assert.equal(redraws(() => rendering.update()), false, "an ordinary frame keeps the map");
+  assert.equal(
+    redraws(() => rendering.focusFilmShadow(focus.clone().setX(0), 12)),
+    true,
+  );
+  assert.equal(
+    redraws(() => rendering.setGroundedLighting(true)),
+    true,
+  );
+  assert.equal(
+    redraws(() => rendering.invalidateShadows()),
+    true,
+  );
+  assert.equal(
+    redraws(() => listeners.webglcontextrestored?.({})),
+    true,
+  );
+  assert.equal(
+    redraws(() => rendering.update()),
+    false,
+    "an ordinary frame keeps the map",
+  );
 
   rendering.setStaticShadows(false);
   assert.equal(shadow.autoUpdate, true, "per-frame redraws can be restored");

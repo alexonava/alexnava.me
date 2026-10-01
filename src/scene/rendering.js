@@ -283,7 +283,8 @@ export function createSceneRendering({
       postprocessPipeline.compile?.();
       uploadTextures();
       if (typeof renderer.compileAsync !== "function") return Promise.resolve(false);
-      if (renderer.extensions?.has?.("KHR_parallel_shader_compile") !== true) return Promise.resolve(false);
+      if (renderer.extensions?.has?.("KHR_parallel_shader_compile") !== true)
+        return Promise.resolve(false);
       const previousTarget = renderer.getRenderTarget?.() ?? null;
       let pending;
       try {
@@ -297,7 +298,10 @@ export function createSceneRendering({
       return new Promise((resolve) => {
         const timer = setTimeout(() => resolve(false), timeoutMs);
         Promise.resolve(pending)
-          .then(() => true, () => false)
+          .then(
+            () => true,
+            () => false,
+          )
           .then((ready) => {
             clearTimeout(timer);
             resolve(ready);

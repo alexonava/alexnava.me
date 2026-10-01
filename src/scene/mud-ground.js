@@ -88,7 +88,14 @@ export const SLATE_TILING = Object.freeze({
 // sky built from the fog and zenith colours (no environment map).
 export const SLATE_PUDDLES = Object.freeze({
   zones: Object.freeze([
-    Object.freeze({ anchor: "lantern", deg: -115, dist: 3.0, radius: 2.8, stretch: 1.4, along: 33 }),
+    Object.freeze({
+      anchor: "lantern",
+      deg: -115,
+      dist: 3.0,
+      radius: 2.8,
+      stretch: 1.4,
+      along: 33,
+    }),
     Object.freeze({ anchor: "tree", deg: 185, dist: 8.0, radius: 2.2 }),
     Object.freeze({ anchor: "tree", deg: 75, dist: 9.0, radius: 2.5 }),
   ]),
@@ -96,7 +103,7 @@ export const SLATE_PUDDLES = Object.freeze({
   darken: 0.5,
   flatten: 0.85,
   specular: 4,
-  lantern: Object.freeze({ roughness: 0.20, specular: 0.8 }),
+  lantern: Object.freeze({ roughness: 0.2, specular: 0.8 }),
   sky: 2,
   zenith: Object.freeze([0.07, 0.085, 0.13]),
   lanternPathRelease: Object.freeze([4.0, 7.0]), // the path is wet only this near the lantern
@@ -122,18 +129,24 @@ export function createSlateContacts(values = new Float32Array(SLATE_CONTACTS * 4
 const glslVec = (values) => `vec${values.length}(${values.map(glslNumber).join(",")})`;
 const glslPoint = ({ x, z }) => glslVec([+x.toFixed(2), +z.toFixed(2)]);
 const TREE_GLSL = glslPoint(ESTATE.tree);
-const PATH_LENGTH = glslNumber(+Math.hypot(ESTATE.tree.x - ESTATE.tower.x, ESTATE.tree.z - ESTATE.tower.z).toFixed(2));
+const PATH_LENGTH = glslNumber(
+  +Math.hypot(ESTATE.tree.x - ESTATE.tower.x, ESTATE.tree.z - ESTATE.tower.z).toFixed(2),
+);
 const SECOND = SLATE_TILING.second,
   DETAIL = SLATE_TILING.detail;
 // Each zone: 1 inside half its radius, 0 at its radius.
-const PUDDLE_ZONES_GLSL = SLATE_PUDDLES.zones
-  .map(({ anchor, deg, dist, radius, stretch = 1, along = 0 }) => {
+const PUDDLE_ZONES_GLSL = SLATE_PUDDLES.zones.map(
+  ({ anchor, deg, dist, radius, stretch = 1, along = 0 }) => {
     const offset = `(vMudWorld.xz-${glslPoint(estatePoint(anchor, deg, dist))})`,
       c = +Math.cos((along * Math.PI) / 180).toFixed(4),
       s = +Math.sin((along * Math.PI) / 180).toFixed(4);
-    const local = stretch === 1 ? offset : `mat2(${[c, -s, s, c].map(glslNumber)})*${offset}/vec2(${glslNumber(stretch)},1.)`;
+    const local =
+      stretch === 1
+        ? offset
+        : `mat2(${[c, -s, s, c].map(glslNumber)})*${offset}/vec2(${glslNumber(stretch)},1.)`;
     return `1.-smoothstep(.5,1.,length(${local})/${glslNumber(radius)})`;
-  });
+  },
+);
 const PUDDLE_GLSL = PUDDLE_ZONES_GLSL.reduce((all, zone) => `max(${all},${zone})`);
 
 // The ground's material follows the film treatment rather than the published
@@ -141,7 +154,8 @@ const PUDDLE_GLSL = PUDDLE_ZONES_GLSL.reduce((all, zone) => `max(${all},${zone})
 // loaded ground: under film it takes the slate tint, before the film starts the
 // classic ground's. `surface` is palette.js GROUND_SURFACE_MATERIAL.
 export function filmGroundSurface({ film = false, surface }) {
-  if (!film) return { color: surface.color, roughness: surface.roughness, metalness: surface.metalness };
+  if (!film)
+    return { color: surface.color, roughness: surface.roughness, metalness: surface.metalness };
   return { color: surface.filmColor, roughness: surface.roughness, metalness: 0 };
 }
 
@@ -151,7 +165,11 @@ export function filmGroundSurface({ film = false, surface }) {
 // while maps load, or after a fallback) the `-p` program skips both.
 // `contacts` is the shared createSlateContacts() uniform set. Without film the
 // ground keeps Three's own program.
-export function configureGroundShading(material, film = false, { detail = null, contacts = null } = {}) {
+export function configureGroundShading(
+  material,
+  film = false,
+  { detail = null, contacts = null } = {},
+) {
   const useWet = Boolean(film);
   const authored = Boolean(useWet && detail);
   const uniforms = contacts ?? createSlateContacts();

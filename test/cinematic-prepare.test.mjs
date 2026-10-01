@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { BoxGeometry, Fog, Group, Mesh, MeshStandardMaterial, PerspectiveCamera, Vector3 } from "three";
+import {
+  BoxGeometry,
+  Fog,
+  Group,
+  Mesh,
+  MeshStandardMaterial,
+  PerspectiveCamera,
+  Vector3,
+} from "three";
 import { cinematicSafeArea, createCinematicCamera } from "../src/scene/cinematic.js";
 
 const ground = (x, z) =>
@@ -227,8 +235,14 @@ test("scene bootstrap fits the next tour shot in idle slices and refits it when 
   );
   assert.match(index, /createCameraTour\(\{[^}]*prepare: prepareTourShot \}\)/);
   // A resize, a font load that moves the hero, or a model change refits it.
-  assert.match(index, /function applySceneSize\([^]*?frameScheduler\?\.invalidate\(\);\s*cameraTour\?\.prepareNext\(\);\s*\}/);
-  assert.match(index, /const onFontsLoaded = \(\) => \{ cinematicArea = measureCinematicArea\([^)]*\); cameraTour\?\.prepareNext\(\);/);
+  assert.match(
+    index,
+    /function applySceneSize\([^]*?frameScheduler\?\.invalidate\(\);\s*cameraTour\?\.prepareNext\(\);\s*\}/,
+  );
+  assert.match(
+    index,
+    /const onFontsLoaded = \(\) => \{ cinematicArea = measureCinematicArea\([^)]*\); cameraTour\?\.prepareNext\(\);/,
+  );
   assert.match(index, /cinematic\.setStatus\(status\);\s*cameraTour\?\.prepareNext\(\);/);
 });
 

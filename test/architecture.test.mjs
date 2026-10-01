@@ -57,16 +57,23 @@ test("tree retains its anchor and height with a quality-scaled non-shadow lanter
   replacement.applyQuality({ lighting: { practicalIntensityScale: 0.5 } });
   assert.equal(replacement.light.intensity, 2);
   assert.equal(replacement.fillLight.intensity, 1.2);
-  replacement.light.distance=39; // A previously applied prop-scale range.
-  replacement.fillLight.distance=37.8;
-  replacement.setFilmTreatment(true);replacement.applyQuality({lighting:{practicalIntensityScale:1}});
-  assert.equal(replacement.light.intensity,4.8);assert.equal(replacement.light.distance,10.5);
-  assert.equal(replacement.fillLight.intensity,2.4*.95);assert.equal(replacement.fillLight.color.getHex(),0xc2d2ec);assert.equal(tree.material.emissiveIntensity,.04);
+  replacement.light.distance = 39; // A previously applied prop-scale range.
+  replacement.fillLight.distance = 37.8;
+  replacement.setFilmTreatment(true);
+  replacement.applyQuality({ lighting: { practicalIntensityScale: 1 } });
+  assert.equal(replacement.light.intensity, 4.8);
+  assert.equal(replacement.light.distance, 10.5);
+  assert.equal(replacement.fillLight.intensity, 2.4 * 0.95);
+  assert.equal(replacement.fillLight.color.getHex(), 0xc2d2ec);
+  assert.equal(tree.material.emissiveIntensity, 0.04);
   // The unshadowed crown fill stops short of the lantern clearing in film.
-  assert.equal(replacement.fillLight.distance,24);
-  replacement.setFilmTreatment(false);assert.equal(replacement.light.distance,39);assert.equal(tree.material.emissiveIntensity,.22);
-  assert.equal(replacement.fillLight.distance,37.8);
-  replacement.applyQuality({lighting:{practicalIntensityScale:.5}});assert.equal(replacement.light.distance,39);
+  assert.equal(replacement.fillLight.distance, 24);
+  replacement.setFilmTreatment(false);
+  assert.equal(replacement.light.distance, 39);
+  assert.equal(tree.material.emissiveIntensity, 0.22);
+  assert.equal(replacement.fillLight.distance, 37.8);
+  replacement.applyQuality({ lighting: { practicalIntensityScale: 0.5 } });
+  assert.equal(replacement.light.distance, 39);
   assert.equal(replacement.dispose(), true);
   assert.equal(replacement.dispose(), false);
 });

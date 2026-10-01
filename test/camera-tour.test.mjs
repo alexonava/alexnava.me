@@ -148,7 +148,10 @@ test("the seven tour views skip Masonry study and wrap with small drift and cach
 
 test("each tour shot holds for its own time, capture to capture, with no wildcard", () => {
   assert.deepEqual(tourHolds, [9, 7, 7, 9, 6, 6, 6]);
-  assert.equal(tourHolds.reduce((sum, hold) => sum + hold, 0), 50);
+  assert.equal(
+    tourHolds.reduce((sum, hold) => sum + hold, 0),
+    50,
+  );
   assert.equal(DIRECTED_SHOTS.tower[2].hold, undefined, "Masonry study uses the fallback");
   assert.equal(TOUR_HOLD_FALLBACK, 7);
   assert.equal(TOUR_TRANSITION.dissolve, 1);

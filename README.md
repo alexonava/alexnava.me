@@ -10,14 +10,14 @@ Use Node.js 22 or newer and restore dependencies with `npm ci`.
 
 Open [localhost:4173](http://127.0.0.1:4173/). Development mode builds the site, watches its inputs and serves it through Wrangler; refresh after a rebuild. Use `npm run dev -- --port 4180` for a second preview.
 
-| Command | Purpose |
-| --- | --- |
-| npm run dev | Watch inputs and serve the local preview |
-| npm run preview | Build once and serve through Wrangler |
-| npm run build:dist | Generate the publish payload in dist |
-| npm run verify | Compile-check source without writing output |
-| npm test | Run the regression suite |
-| npm run audit:ci | Check dependency advisories |
+| Command            | Purpose                                     |
+| ------------------ | ------------------------------------------- |
+| npm run dev        | Watch inputs and serve the local preview    |
+| npm run preview    | Build once and serve through Wrangler       |
+| npm run build:dist | Generate the publish payload in dist        |
+| npm run verify     | Compile-check source without writing output |
+| npm test           | Run the regression suite                    |
+| npm run audit:ci   | Check dependency advisories                 |
 
 Edit JavaScript in src, markup in index.html, styles in styles.css, runtime artwork in images, and the hosting, icon and discovery files (headers, redirects, robots.txt, llms.txt, manifest, icons) in public. Never hand-edit dist. The build emits content-hashed scripts/app.HASH.js, the deferred scripts/scene.HASH.js (an ES module that imports its hashed scripts/scene.*.js chunks), css/styles.HASH.css and fingerprinted runtime images.
 

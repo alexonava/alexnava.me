@@ -126,7 +126,10 @@ test("60 FPS target preserves every frame on a 60 Hz display", () => {
 
 test("render divisors keep desktops at or above 60 fps and touch screens at or below it", () => {
   const rates = [60, 75, 90, 120, 144, 165, 240];
-  assert.deepEqual(rates.map((hz) => renderDivisor(hz)), [1, 1, 1, 2, 2, 2, 4]);
+  assert.deepEqual(
+    rates.map((hz) => renderDivisor(hz)),
+    [1, 1, 1, 2, 2, 2, 4],
+  );
   assert.deepEqual(
     [30, ...rates].map((hz) => renderDivisor(hz, { round: "ceil" })),
     [1, 1, 2, 2, 2, 3, 3, 4],
@@ -209,7 +212,10 @@ test("a display cadence renders every nth vsync, evenly, at common refresh rates
     at: (frame) => frame * vsync + (((frame * 7) % 5) - 2) * 0.05,
   });
   const { intervals } = lastSecond(jittered, 2000);
-  assert.ok(intervals.every((interval) => Math.abs(interval - 2 * vsync) < 0.5), "72 fps, even");
+  assert.ok(
+    intervals.every((interval) => Math.abs(interval - 2 * vsync) < 0.5),
+    "72 fps, even",
+  );
 });
 
 test("a display cadence starts at the base rate, follows a monitor switch and never bursts", () => {
@@ -237,7 +243,10 @@ test("a display cadence starts at the base rate, follows a monitor switch and ne
     skip: (frame) => frame % 37 === 0 && frame > 60,
   });
   const { intervals } = lastSecond(missed, 2000);
-  assert.ok(intervals.every((interval) => interval > 2 * fast - 1e-6), "no back-to-back renders");
+  assert.ok(
+    intervals.every((interval) => interval > 2 * fast - 1e-6),
+    "no back-to-back renders",
+  );
   assert.ok(intervals.some((interval) => interval > 2 * fast + 1e-6));
 });
 
@@ -280,7 +289,10 @@ test("on a cadence the governor's sample reads a met cadence as 60 fps and count
   const quick = 1000 / 144;
   const run144 = (skip) =>
     runCadence({ round: "floor", frames: 288, at: (frame) => frame * quick, skip });
-  const { updates: met } = lastSecond(run144(() => false), 2000);
+  const { updates: met } = lastSecond(
+    run144(() => false),
+    2000,
+  );
   assert.ok(met.length >= 70);
   assert.ok(met.every(({ sampleDeltaSeconds }) => Math.abs(sampleDeltaSeconds - 1 / 60) < 1e-9));
   const missed = Math.round(met.at(-10).timestamp / quick) + 2;
@@ -704,7 +716,10 @@ test("scene bootstrap idles before reveal, holds behind dialogs and fails to the
 
   // The frame that sees readiness reveals the canvas and resumes animation.
   assert.match(source, /const sceneShown = !sceneFailed && cinematic\.ready &&/);
-  assert.match(source, /container\?\.classList\.toggle\("is-ready", sceneShown\);\s*[^]*?frameScheduler\?\.setStill\(!sceneShown\);/);
+  assert.match(
+    source,
+    /container\?\.classList\.toggle\("is-ready", sceneShown\);\s*[^]*?frameScheduler\?\.setStill\(!sceneShown\);/,
+  );
   // The dialog hold's behaviour is tested above; index.js only wires it.
   assert.match(
     source,
@@ -730,7 +745,10 @@ test("scene bootstrap idles before reveal, holds behind dialogs and fails to the
     source.indexOf("subsystemRegistry.register(architectureAssets);"),
   );
   assert.ok(onStatus.indexOf("cinematic.setStatus(status);") < onStatus.indexOf("failToTitle("));
-  assert.match(onStatus, /status\.kind !== "lantern" && \(status\.status === "fallback" \|\|\s*\(status\.status === "procedural" && sceneReadyMarked\)\)\) \{\s*failToTitle\(/);
+  assert.match(
+    onStatus,
+    /status\.kind !== "lantern" && \(status\.status === "fallback" \|\|\s*\(status\.status === "procedural" && sceneReadyMarked\)\)\) \{\s*failToTitle\(/,
+  );
   assert.match(
     source,
     /function failToTitle\(stage, error\) \{\s*if \(sceneFailed\) return;\s*stopFailedScene\(stage, error\);[\s\S]*?\(function disposeWhenIdle\(\) \{[\s\S]*?if \(shaderWarmup\.pending\) window\.setTimeout\(disposeWhenIdle, 50\);\s*else scene\.disposeHomeSceneRuntime\?\.\(\);/,
@@ -738,13 +756,19 @@ test("scene bootstrap idles before reveal, holds behind dialogs and fails to the
   assert.doesNotMatch(source, /failToPoster/);
   // A scene never shown also hides its host, which retires the loading line
   // (ui/scene-loader.js); a shown canvas fades out to the title card instead.
-  const stop = source.slice(source.indexOf("function stopFailedScene"), source.indexOf("function failToTitle"));
+  const stop = source.slice(
+    source.indexOf("function stopFailedScene"),
+    source.indexOf("function failToTitle"),
+  );
   assert.match(
     stop,
     /sceneFailed = true;\s*container\.classList\?\.remove\("is-ready"\);\s*if \(!canvasShown\) container\.hidden = true;/,
   );
   // canvasShown is declared before any status can reach stopFailedScene.
-  assert.ok(source.indexOf("let canvasShown = false;") < source.indexOf("createArchitectureAssetController({"));
+  assert.ok(
+    source.indexOf("let canvasShown = false;") <
+      source.indexOf("createArchitectureAssetController({"),
+  );
   assert.doesNotMatch(source, /ensureLegacyWorld|legacyWorld|ensureProcedural/);
   assert.match(source, /webglContextAvailable && !sceneFailed;/);
 

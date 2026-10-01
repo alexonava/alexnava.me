@@ -14,11 +14,7 @@ import {
   SRGBColorSpace,
   Vector3,
 } from "three";
-import {
-  DIRECTED_SHOTS,
-  measureShot,
-  resolveDirectedShot,
-} from "../src/scene/directed-shots.js";
+import { DIRECTED_SHOTS, measureShot, resolveDirectedShot } from "../src/scene/directed-shots.js";
 import { createCinematicCamera, cinematicSafeArea } from "../src/scene/cinematic.js";
 import { createEarthDetail, EARTH, FILM_GROUND_PRESETS } from "../src/scene/filmic-earth.js";
 import { createFilmScene } from "../src/scene/film-scene.js";
@@ -269,7 +265,10 @@ test("a failed slate map reports a fallback, and the slate is the only preset", 
   slate.dispose();
   assert.deepEqual(Object.keys(FILM_GROUND_PRESETS), ["slate"]);
   for (const preset of ["earth", "mud"])
-    assert.throws(() => createEarthDetail({ preset, publish() {}, restore() {} }), /Unknown film ground preset/);
+    assert.throws(
+      () => createEarthDetail({ preset, publish() {}, restore() {} }),
+      /Unknown film ground preset/,
+    );
 });
 
 test("the slate keeps its loaded maps through adaptive profile changes with a pinned asset tier", async () => {
@@ -308,7 +307,11 @@ test("the slate keeps its loaded maps through adaptive profile changes with a pi
     layer.applyQuality({ tier: "balanced" }, { pixelRatio: 1, assetTier: "high" });
     layer.setActive(true);
     assert.equal(pending.length, 2 * kinds);
-    assert.ok(pending.slice(kinds).every(({ url }) => url.endsWith("-1024.webp") || url.endsWith("detail-512.webp")));
+    assert.ok(
+      pending
+        .slice(kinds)
+        .every(({ url }) => url.endsWith("-1024.webp") || url.endsWith("detail-512.webp")),
+    );
     layer.dispose();
   }
 });

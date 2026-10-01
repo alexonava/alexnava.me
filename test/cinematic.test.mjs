@@ -1,13 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  BoxGeometry,
-  Mesh,
-  MeshBasicMaterial,
-  PerspectiveCamera,
-  Vector3,
-  Fog,
-} from "three";
+import { BoxGeometry, Mesh, MeshBasicMaterial, PerspectiveCamera, Vector3, Fog } from "three";
 import {
   chooseCinematicView,
   chooseCinematicAngle,
@@ -46,7 +39,15 @@ test("every ordinary visit opens The watch while explicit subject URLs remain va
   const unexpectedRandom = () => {
     throw new Error("opening composition must not use RNG");
   };
-  for (const query of ["", "?quality=high", "?view=unknown", "?angle=3", "?view=orbit", "?architecture=classic", "?setting=previous"])
+  for (const query of [
+    "",
+    "?quality=high",
+    "?view=unknown",
+    "?angle=3",
+    "?view=orbit",
+    "?architecture=classic",
+    "?setting=previous",
+  ])
     assert.equal(chooseCinematicView(query, unexpectedRandom), "tower");
   for (const view of ["tower", "tree"])
     assert.equal(chooseCinematicView(`?view=${view}`, unexpectedRandom), view);
@@ -166,12 +167,27 @@ test("hero layout rect ignores scroll and transforms so the safe area cannot dri
     },
   };
   const rect = layoutRect(hero);
-  assert.deepEqual(rect, { left: 16, top: 72, right: 374, bottom: 232, width: 358, height: 160, x: 16, y: 72 });
+  assert.deepEqual(rect, {
+    left: 16,
+    top: 72,
+    right: 374,
+    bottom: 232,
+    width: 358,
+    height: 160,
+    x: 16,
+    y: 72,
+  });
   assert.equal(layoutRect(null), undefined);
   // Matches the untransformed, unscrolled viewport rect the safe area expects.
   const nav = { top: 734 };
-  assert.deepEqual(cinematicSafeArea(390, 844, rect, nav), cinematicSafeArea(390, 844, { right: 374, bottom: 232 }, nav));
-  assert.deepEqual(cinematicSafeArea(1440, 900, rect, nav), cinematicSafeArea(1440, 900, { right: 374, bottom: 232 }, nav));
+  assert.deepEqual(
+    cinematicSafeArea(390, 844, rect, nav),
+    cinematicSafeArea(390, 844, { right: 374, bottom: 232 }, nav),
+  );
+  assert.deepEqual(
+    cinematicSafeArea(1440, 900, rect, nav),
+    cinematicSafeArea(1440, 900, { right: 374, bottom: 232 }, nav),
+  );
 });
 
 test("all angle variants retain safe portrait framing at both arc limits", () => {

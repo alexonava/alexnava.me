@@ -5,7 +5,12 @@ import vm from "node:vm";
 import { transform } from "esbuild";
 import { BoxGeometry, Group, Mesh, MeshStandardMaterial } from "three";
 import { compactShaderSource } from "../tools/shader-compact.mjs";
-import { ESTATE, estateLantern, estatePathDistance, estatePoint } from "../src/scene/estate-layout.js";
+import {
+  ESTATE,
+  estateLantern,
+  estatePathDistance,
+  estatePoint,
+} from "../src/scene/estate-layout.js";
 import {
   createRockScatter,
   estateContacts,
@@ -14,7 +19,13 @@ import {
   ROCK_LIB,
   rockKeepouts,
 } from "../src/scene/rock-scatter.js";
-import { createRocks, createRockLayout, rockClear, rockFootprints, writeRockContacts } from "../src/scene/rock-build.js";
+import {
+  createRocks,
+  createRockLayout,
+  rockClear,
+  rockFootprints,
+  writeRockContacts,
+} from "../src/scene/rock-build.js";
 import { SLATE_CONTACTS } from "../src/scene/mud-ground.js";
 
 const flat = () => 0;
@@ -86,10 +97,24 @@ test("helpers.js restates the estate anchors and terraces from estate-layout.js"
   for (const { x, z, flat: flatRadius } of [ESTATE.tower, ESTATE.tree])
     assert.ok(Math.abs(groundHeight(x, z) - groundHeight(x + flatRadius * 0.9, z)) < 1e-9);
   const lantern = estateLantern();
-  assert.ok(Math.abs(Math.hypot(lantern.x - ESTATE.tree.x, lantern.z - ESTATE.tree.z) - ESTATE.lantern.offset) < 1e-9);
-  assert.ok(estatePathDistance(lantern.x, lantern.z) < 1.5, "the lantern stands beside the approach");
-  const architecture = await readFile(new URL("../src/scene/architecture.js", import.meta.url), "utf8");
-  assert.match(architecture, /ESTATE\.lantern\.offset/, "the tree builder places the lantern from ESTATE");
+  assert.ok(
+    Math.abs(
+      Math.hypot(lantern.x - ESTATE.tree.x, lantern.z - ESTATE.tree.z) - ESTATE.lantern.offset,
+    ) < 1e-9,
+  );
+  assert.ok(
+    estatePathDistance(lantern.x, lantern.z) < 1.5,
+    "the lantern stands beside the approach",
+  );
+  const architecture = await readFile(
+    new URL("../src/scene/architecture.js", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    architecture,
+    /ESTATE\.lantern\.offset/,
+    "the tree builder places the lantern from ESTATE",
+  );
 });
 
 test("rock placement is seeded, clear of the estate and every directed shot, and adds one pebble per tall rock", () => {
@@ -105,19 +130,35 @@ test("rock placement is seeded, clear of the estate and every directed shot, and
     // tower and tree (the lantern stones are placed at the lantern's foot).
     if (rock.pebble) assert.ok(rockClear(ROCK_LIB, rock.x, rock.z, rock.radius), rock.id);
     else if (!rock.lanternStone) {
-      assert.ok(Math.hypot(rock.x - ESTATE.tower.x, rock.z - ESTATE.tower.z) > ESTATE.tower.clear + rock.radius, rock.id);
-      assert.ok(Math.hypot(rock.x - ESTATE.tree.x, rock.z - ESTATE.tree.z) > ESTATE.tree.clear + rock.radius, rock.id);
+      assert.ok(
+        Math.hypot(rock.x - ESTATE.tower.x, rock.z - ESTATE.tower.z) >
+          ESTATE.tower.clear + rock.radius,
+        rock.id,
+      );
+      assert.ok(
+        Math.hypot(rock.x - ESTATE.tree.x, rock.z - ESTATE.tree.z) >
+          ESTATE.tree.clear + rock.radius,
+        rock.id,
+      );
       assert.ok(estatePathDistance(rock.x, rock.z) > ESTATE.path.clear + rock.radius, rock.id);
     }
     for (const other of a) {
-      if (other !== rock) assert.ok(Math.hypot(rock.x - other.x, rock.z - other.z) > 0.5 * (rock.radius + other.radius), `${rock.id}/${other.id}`);
+      if (other !== rock)
+        assert.ok(
+          Math.hypot(rock.x - other.x, rock.z - other.z) > 0.5 * (rock.radius + other.radius),
+          `${rock.id}/${other.id}`,
+        );
     }
   }
   // The growth keep-outs cover every rock and pebble the placement makes.
   const keepouts = rockKeepouts();
   for (const rock of a)
     assert.ok(
-      keepouts.some((zone) => Math.hypot(rock.x - zone.x, rock.z - zone.z) + (rock.pebble ? 0 : rock.radius) <= zone.radius + 1e-9),
+      keepouts.some(
+        (zone) =>
+          Math.hypot(rock.x - zone.x, rock.z - zone.z) + (rock.pebble ? 0 : rock.radius) <=
+          zone.radius + 1e-9,
+      ),
       rock.id,
     );
   // A point between a directed shot's camera and its subject is refused.
@@ -137,8 +178,14 @@ test("rocks sit on the terrain and fill the ground's contact slots after the tre
   }
   const contacts = estateContacts();
   assert.equal(contacts.length, SLATE_CONTACTS * 4);
-  assert.deepEqual([...contacts.slice(0, 2)], [Math.fround(ESTATE.tree.x), Math.fround(ESTATE.tree.z)]);
-  assert.ok(contacts.slice(8).every((value) => value === 0), "rock slots stay empty until the rocks load");
+  assert.deepEqual(
+    [...contacts.slice(0, 2)],
+    [Math.fround(ESTATE.tree.x), Math.fround(ESTATE.tree.z)],
+  );
+  assert.ok(
+    contacts.slice(8).every((value) => value === 0),
+    "rock slots stay empty until the rocks load",
+  );
   writeRockContacts(contacts, layout);
   const filled = layout.filter((rock) => rock.height >= 0.3).length;
   assert.ok(contacts[8 + 4 * (Math.min(filled, SLATE_CONTACTS - 2) - 1) + 3] > 0);
@@ -198,14 +245,24 @@ test("the rock scatter waits for the reveal, film, tree and tier, loads its chun
   assert.equal(root.visible, false);
   assert.ok(contacts[8 + 3] > 0, "rock contacts are written before they show");
   // The link is queued, then the instances land on a tour cut.
-  assert.equal(rocks.take({ cut: false, running: true, nowMs: 0 }), false, "queued, not yet linked");
+  assert.equal(
+    rocks.take({ cut: false, running: true, nowMs: 0 }),
+    false,
+    "queued, not yet linked",
+  );
   await tick();
-  assert.equal(rocks.take({ cut: false, running: true, nowMs: 16 }), false, "linked, waiting for a cut");
+  assert.equal(
+    rocks.take({ cut: false, running: true, nowMs: 16 }),
+    false,
+    "linked, waiting for a cut",
+  );
   assert.equal(root.visible, false);
   assert.equal(rocks.take({ cut: true, running: true, nowMs: 32 }), true);
   assert.equal(rocks.committed, true);
   assert.equal(root.visible, true);
-  assert.ok(root.children.every((mesh) => mesh.count === mesh.instanceMatrix.count && mesh.count > 0));
+  assert.ok(
+    root.children.every((mesh) => mesh.count === mesh.instanceMatrix.count && mesh.count > 0),
+  );
   assert.deepEqual(statuses, ["loading", "ready"]);
   rocks.setFilmActive(false);
   assert.equal(root.visible, false);
@@ -216,14 +273,21 @@ test("the rock scatter waits for the reveal, film, tree and tier, loads its chun
 
 test("the rock scatter waits for the film terrain and seats the rocks on its root-aware height", async () => {
   const fake = { setFilmActive() {}, take: () => false, dispose() {} };
-  for (const [terrainHeight, expected] of [[(x, z) => x + z, "terrain"], [undefined, "analytic"]]) {
-    let seen = null, release;
+  for (const [terrainHeight, expected] of [
+    [(x, z) => x + z, "terrain"],
+    [undefined, "analytic"],
+  ]) {
+    let seen = null,
+      release;
     const rocks = createRockScatter({
       tier: "high",
       parent: new Group(),
       groundHeight: flat,
       load: async () => ({ createRocks: (lib, options) => ((seen = options.groundHeight), fake) }),
-      terrain: () => new Promise((resolve) => { release = resolve; }),
+      terrain: () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
     });
     rocks.setFilmActive(true);
     rocks.setTreeStatus("ready");

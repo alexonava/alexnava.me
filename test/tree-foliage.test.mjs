@@ -52,12 +52,16 @@ test("derived canopy is repeatable, follows the tree transform, scales by qualit
 });
 
 function canopyPatches(rightSize, rightSegments) {
-  const positions = [], indices = [];
-  for (const [x, size, segments] of [[-12, 8, 1], [4, rightSize, rightSegments]]) {
+  const positions = [],
+    indices = [];
+  for (const [x, size, segments] of [
+    [-12, 8, 1],
+    [4, rightSize, rightSegments],
+  ]) {
     const start = positions.length / 3;
     for (let y = 0; y <= segments; y++)
       for (let column = 0; column <= segments; column++)
-        positions.push(x + column * size / segments, 12 + y * size / segments, 0);
+        positions.push(x + (column * size) / segments, 12 + (y * size) / segments, 0);
     for (let y = 0; y < segments; y++)
       for (let column = 0; column < segments; column++) {
         const a = start + y * (segments + 1) + column,
@@ -77,7 +81,10 @@ function canopyPatches(rightSize, rightSegments) {
 }
 
 test("leaf density follows area rather than triangle count on indexed and unindexed canopies", () => {
-  for (const [rightSize, rightSegments, expectedLeftFraction] of [[8, 8, 0.5], [4, 1, 0.8]]) {
+  for (const [rightSize, rightSegments, expectedLeftFraction] of [
+    [8, 8, 0.5],
+    [4, 1, 0.8],
+  ]) {
     const indexed = canopyPatches(rightSize, rightSegments),
       unindexed = indexed.toNonIndexed(),
       results = [];
@@ -88,8 +95,10 @@ test("leaf density follows area rather than triangle count on indexed and uninde
       let left = 0;
       for (let i = 0; i < foliage.mesh.count; i++)
         if (foliage.mesh.instanceMatrix.array[i * 16 + 12] < 0) left++;
-      assert.ok(Math.abs(left / foliage.mesh.count - expectedLeftFraction) < 0.035,
-        `${left} leaves on left patch; expected fraction ${expectedLeftFraction}`);
+      assert.ok(
+        Math.abs(left / foliage.mesh.count - expectedLeftFraction) < 0.035,
+        `${left} leaves on left patch; expected fraction ${expectedLeftFraction}`,
+      );
       assert.ok(foliage.mesh.instanceMatrix.array.every(Number.isFinite));
       assert.deepEqual(source.attributes.position.array, before);
       results.push(foliage.mesh.instanceMatrix.array.slice());

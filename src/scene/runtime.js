@@ -456,16 +456,23 @@ export function createShaderWarmup({
         waiting.add(subject);
       }
       schedule(() => {
-        waiting.forEach((object) => { object.visible = true; });
+        waiting.forEach((object) => {
+          object.visible = true;
+        });
         let compiled;
         try {
           compiled = compile();
         } catch {
           compiled = false;
         }
-        waiting.forEach((object) => { object.visible = false; });
+        waiting.forEach((object) => {
+          object.visible = false;
+        });
         Promise.resolve(compiled)
-          .then((ready) => ready === true, () => false)
+          .then(
+            (ready) => ready === true,
+            () => false,
+          )
           .then((ready) => {
             pending -= 1;
             if (subject) {

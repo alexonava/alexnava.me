@@ -161,8 +161,25 @@ export const SHAFTS = Object.freeze({
     hull: [1, 1, 0, 0],
     layer: 1.5,
     peak: 1,
-    tower: Object.freeze({ aim: 0.45, ext: 26, res: 192, sharp: 1, close: 8, erode: 2, inner: 4, core: 1.4, fall: [-0.55, 0.3] }),
-    gobo: Object.freeze({ color: [1, 0.62, 0.34], gain: 1.2, wrap: 0.3, rim: 3, bias: 1.2, clip: [0.5, 0.12] }),
+    tower: Object.freeze({
+      aim: 0.45,
+      ext: 26,
+      res: 192,
+      sharp: 1,
+      close: 8,
+      erode: 2,
+      inner: 4,
+      core: 1.4,
+      fall: [-0.55, 0.3],
+    }),
+    gobo: Object.freeze({
+      color: [1, 0.62, 0.34],
+      gain: 1.2,
+      wrap: 0.3,
+      rim: 3,
+      bias: 1.2,
+      clip: [0.5, 0.12],
+    }),
   }),
   // Cool moonbeams through a break in the cloud, parallel to the moon's real
   // cast shadows: slim shafts through the gaps of the crown or past the
@@ -200,24 +217,64 @@ export const SHAFTS = Object.freeze({
     // Over the sky its air is weighted down where the eye's ray misses the
     // cabin's own outline, so no cloud band above the roof steps a cel band.
     tower: Object.freeze({
-      gap: [0.7, 12, 12, 0.35], lit: [0.5, 1.2, 0.2], ext: 22, res: 160, sharp: 1, close: 6, erode: -6, core: 1.2,
-      air: Object.freeze({ gain: 0.1, over: 0, sky: [4, 8], reach: [22, 12], hull: [0, 0.4, 1, 0] }),
+      gap: [0.7, 12, 12, 0.35],
+      lit: [0.5, 1.2, 0.2],
+      ext: 22,
+      res: 160,
+      sharp: 1,
+      close: 6,
+      erode: -6,
+      core: 1.2,
+      air: Object.freeze({
+        gain: 0.1,
+        over: 0,
+        sky: [4, 8],
+        reach: [22, 12],
+        hull: [0, 0.4, 1, 0],
+      }),
     }),
     // Slim shafts through the crown that fade in past its front, take part
     // of their structure from its own gaps and, over the sky, keep to the
     // view rays through the crown (a soft edge), so none starts in open sky.
     tree: Object.freeze({
-      gap: [0.62, 14, 12, 0.3], ext: 24, res: 192, sharp: 1, close: 10, erode: -3, core: 1.2,
-      air: Object.freeze({ gain: 0.06, sky: [2, 6], jitter: 0.35, rise: 8, tie: 0.8, hull: [0, 1, 0, 3] }),
+      gap: [0.62, 14, 12, 0.3],
+      ext: 24,
+      res: 192,
+      sharp: 1,
+      close: 10,
+      erode: -3,
+      core: 1.2,
+      air: Object.freeze({
+        gain: 0.06,
+        sky: [2, 6],
+        jitter: 0.35,
+        rise: 8,
+        tie: 0.8,
+        hull: [0, 1, 0, 3],
+      }),
       // Broken cloud light across the bark: large, soft breaks with darker
       // gaps, wrapping round the limbs toward the eye (the crown's own light
       // map shades them, not the key light's shadow), so the moss and limbs
       // take moonlight in patches without glowing.
       breaks: [0.16, 0.45, 0.18, 0.12],
-      gobo: Object.freeze({ gain: 2.6, wrap: 1.4, rim: 2, bias: 3, clip: [0.3, 0.12], shadow: false }),
+      gobo: Object.freeze({
+        gain: 2.6,
+        wrap: 1.4,
+        rim: 2,
+        bias: 3,
+        clip: [0.3, 0.12],
+        shadow: false,
+      }),
     }),
     breaks: [0.14, 0.45, 0.16, 0.12],
-    gobo: Object.freeze({ color: [0.8, 0.88, 1], gain: 1.8, wrap: 0.5, rim: 1.5, bias: 1.2, clip: [0.42, 0.12] }),
+    gobo: Object.freeze({
+      color: [0.8, 0.88, 1],
+      gain: 1.8,
+      wrap: 0.5,
+      rim: 1.5,
+      bias: 1.2,
+      clip: [0.42, 0.12],
+    }),
   }),
 });
 
@@ -425,15 +482,25 @@ function noise2(seed) {
     return s - Math.floor(s);
   };
   const n = (x, y) => {
-    const i = Math.floor(x), j = Math.floor(y), u = x - i, v = y - j;
-    const fx = u * u * (3 - 2 * u), fy = v * v * (3 - 2 * v);
-    const a = h(i, j), b = h(i + 1, j), c = h(i, j + 1), d = h(i + 1, j + 1);
+    const i = Math.floor(x),
+      j = Math.floor(y),
+      u = x - i,
+      v = y - j;
+    const fx = u * u * (3 - 2 * u),
+      fy = v * v * (3 - 2 * v);
+    const a = h(i, j),
+      b = h(i + 1, j),
+      c = h(i, j + 1),
+      d = h(i + 1, j + 1);
     return a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy;
   };
-  return (x, y) => 0.55 * n(x, y) + 0.3 * n(x * 2.07 + 11, y * 2.03 + 7) + 0.15 * n(x * 4.1 + 3, y * 3.9 + 19);
+  return (x, y) =>
+    0.55 * n(x, y) + 0.3 * n(x * 2.07 + 11, y * 2.03 + 7) + 0.15 * n(x * 4.1 + 3, y * 3.9 + 19);
 }
 export function lightBasis(a) {
-  const u = new Vector3().crossVectors(a, Math.abs(a.y) > 0.95 ? new Vector3(1, 0, 0) : new Vector3(0, 1, 0)).normalize();
+  const u = new Vector3()
+    .crossVectors(a, Math.abs(a.y) > 0.95 ? new Vector3(1, 0, 0) : new Vector3(0, 1, 0))
+    .normalize();
   return { u, v: new Vector3().crossVectors(u, a).normalize() };
 }
 
@@ -442,23 +509,31 @@ export function lightBasis(a) {
 // as possible, so the few steps leave fine even grain rather than a lattice or
 // clumps. A generator, sliced like the maps; the same seed gives the same tile.
 export function* blueNoise(size = 32, sigma = 1.5, seed = 7) {
-  const N = size * size, lut = new Float32Array(N), energy = new Float32Array(N), on = new Uint8Array(N), rank = new Uint16Array(N);
+  const N = size * size,
+    lut = new Float32Array(N),
+    energy = new Float32Array(N),
+    on = new Uint8Array(N),
+    rank = new Uint16Array(N);
   for (let y = 0; y < size; y++)
     for (let x = 0; x < size; x++) {
-      const dx = Math.min(x, size - x), dy = Math.min(y, size - y);
+      const dx = Math.min(x, size - x),
+        dy = Math.min(y, size - y);
       lut[y * size + x] = Math.exp(-(dx * dx + dy * dy) / (2 * sigma * sigma));
     }
   const toggle = (i, sign) => {
     on[i] = sign > 0 ? 1 : 0;
-    const ix = i % size, iy = (i - ix) / size;
+    const ix = i % size,
+      iy = (i - ix) / size;
     for (let y = 0; y < size; y++) {
       const row = ((y - iy + size) % size) * size;
-      for (let x = 0; x < size; x++) energy[y * size + x] += sign * lut[row + ((x - ix + size) % size)];
+      for (let x = 0; x < size; x++)
+        energy[y * size + x] += sign * lut[row + ((x - ix + size) % size)];
     }
   };
   // The tightest cluster (a set texel with the most energy) or the largest void.
   const extreme = (set) => {
-    let best = -1, value = set ? -Infinity : Infinity;
+    let best = -1,
+      value = set ? -Infinity : Infinity;
     for (let i = 0; i < N; i++) {
       if (on[i] !== set || (set ? energy[i] <= value : energy[i] >= value)) continue;
       value = energy[i];
@@ -484,7 +559,8 @@ export function* blueNoise(size = 32, sigma = 1.5, seed = 7) {
     toggle(hole, 1);
     if (hole === cluster) break;
   }
-  const seedOn = on.slice(), seedEnergy = energy.slice();
+  const seedOn = on.slice(),
+    seedEnergy = energy.slice();
   for (let r = ones - 1; r >= 0; r--) {
     if (r % 32 === 0) yield;
     const i = extreme(1);
@@ -515,13 +591,16 @@ export function* blueNoise(size = 32, sigma = 1.5, seed = 7) {
 // by the work done (rows times the filter width).
 function* blur(src, res, radius, mode = "blur") {
   let from = src;
-  const min = mode === "min", max = mode === "max", rows = Math.max(1, Math.floor(8192 / (res * (2 * radius + 1))));
+  const min = mode === "min",
+    max = mode === "max",
+    rows = Math.max(1, Math.floor(8192 / (res * (2 * radius + 1))));
   for (const across of [true, false]) {
     const to = new Float32Array(res * res);
     for (let y = 0; y < res; y++) {
       if (y % rows === 0) yield;
       for (let x = 0; x < res; x++) {
-        let sum = min ? Infinity : max ? -Infinity : 0, weight = 0;
+        let sum = min ? Infinity : max ? -Infinity : 0,
+          weight = 0;
         for (let k = -radius; k <= radius; k++) {
           const xx = across ? Math.min(res - 1, Math.max(0, x + k)) : x,
             yy = across ? y : Math.min(res - 1, Math.max(0, y + k)),
@@ -561,16 +640,41 @@ function* blur(src, res, radius, mode = "blur") {
 // The silhouette is closed over close texels (gaps narrower than twice that fill: a dilation,
 // then an erosion by close + erode, so its edge lies inside the outline) and
 // feathered by a texel; without close it is the whole map.
-export function* rasterizeLightMap({ positions, index = null, point = null, origin, a, half, res, t0, t1, mask, beams = null, sharp = 1, close = 0, erode = 1, inner = 0 }) {
-  const { u, v } = lightBasis(a), N = res * res, count = positions.length / 3;
-  const depth = new Float32Array(N).fill(Infinity), last = new Float32Array(N).fill(-Infinity), frac = new Float32Array(N);
-  const X = new Float32Array(count), Y = new Float32Array(count), Z = new Float32Array(count);
+export function* rasterizeLightMap({
+  positions,
+  index = null,
+  point = null,
+  origin,
+  a,
+  half,
+  res,
+  t0,
+  t1,
+  mask,
+  beams = null,
+  sharp = 1,
+  close = 0,
+  erode = 1,
+  inner = 0,
+}) {
+  const { u, v } = lightBasis(a),
+    N = res * res,
+    count = positions.length / 3;
+  const depth = new Float32Array(N).fill(Infinity),
+    last = new Float32Array(N).fill(-Infinity),
+    frac = new Float32Array(N);
+  const X = new Float32Array(count),
+    Y = new Float32Array(count),
+    Z = new Float32Array(count);
   for (let i = 0; i < count; i++) {
     if (i % 1500 === 0) yield;
-    const dx = positions[i * 3] - origin.x, dy = positions[i * 3 + 1] - origin.y, dz = positions[i * 3 + 2] - origin.z;
-    const z = dx * a.x + dy * a.y + dz * a.z, s = point ? 1 / z : 1;
-    X[i] = ((dx * u.x + dy * u.y + dz * u.z) * s / half + 1) * 0.5 * res;
-    Y[i] = ((dx * v.x + dy * v.y + dz * v.z) * s / half + 1) * 0.5 * res;
+    const dx = positions[i * 3] - origin.x,
+      dy = positions[i * 3 + 1] - origin.y,
+      dz = positions[i * 3 + 2] - origin.z;
+    const z = dx * a.x + dy * a.y + dz * a.z,
+      s = point ? 1 / z : 1;
+    X[i] = (((dx * u.x + dy * u.y + dz * u.z) * s) / half + 1) * 0.5 * res;
+    Y[i] = (((dx * v.x + dy * v.y + dz * v.z) * s) / half + 1) * 0.5 * res;
     Z[i] = z;
   }
   const n = index ? index.length : count;
@@ -580,15 +684,25 @@ export function* rasterizeLightMap({ positions, index = null, point = null, orig
       work = 0;
       yield;
     }
-    const i0 = index ? index[k] : k, i1 = index ? index[k + 1] : k + 1, i2 = index ? index[k + 2] : k + 2;
-    const x0 = X[i0], y0 = Y[i0], x1 = X[i1], y1 = Y[i1], x2 = X[i2], y2 = Y[i2];
-    const ax = Math.max(0, Math.floor(Math.min(x0, x1, x2))), bx = Math.min(res - 1, Math.floor(Math.max(x0, x1, x2)));
-    const ay = Math.max(0, Math.floor(Math.min(y0, y1, y2))), by = Math.min(res - 1, Math.floor(Math.max(y0, y1, y2)));
+    const i0 = index ? index[k] : k,
+      i1 = index ? index[k + 1] : k + 1,
+      i2 = index ? index[k + 2] : k + 2;
+    const x0 = X[i0],
+      y0 = Y[i0],
+      x1 = X[i1],
+      y1 = Y[i1],
+      x2 = X[i2],
+      y2 = Y[i2];
+    const ax = Math.max(0, Math.floor(Math.min(x0, x1, x2))),
+      bx = Math.min(res - 1, Math.floor(Math.max(x0, x1, x2)));
+    const ay = Math.max(0, Math.floor(Math.min(y0, y1, y2))),
+      by = Math.min(res - 1, Math.floor(Math.max(y0, y1, y2)));
     if (ax > bx || ay > by) continue;
     if (bx - ax <= 1 && by - ay <= 1) {
       // A sub-texel triangle adds fractional coverage by its area; a closed
       // surface projects twice (front and back), which the 0.5 below undoes.
-      const c = Math.min(res - 1, Math.max(0, Math.floor((y0 + y1 + y2) / 3))) * res +
+      const c =
+        Math.min(res - 1, Math.max(0, Math.floor((y0 + y1 + y2) / 3))) * res +
         Math.min(res - 1, Math.max(0, Math.floor((x0 + x1 + x2) / 3)));
       frac[c] += Math.abs((x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0)) * 0.5;
       depth[c] = Math.min(depth[c], Z[i0], Z[i1], Z[i2]);
@@ -600,7 +714,8 @@ export function* rasterizeLightMap({ positions, index = null, point = null, orig
     work += (bx - ax + 1) * (by - ay + 1);
     for (let y = ay; y <= by; y++) {
       for (let x = ax; x <= bx; x++) {
-        const px = x + 0.5, py = y + 0.5;
+        const px = x + 0.5,
+          py = y + 0.5;
         const b0 = ((y1 - y2) * (px - x2) + (x2 - x1) * (py - y2)) / den,
           b1 = ((y2 - y0) * (px - x2) + (x0 - x2) * (py - y2)) / den;
         if (b0 < -0.02 || b1 < -0.02 || b0 + b1 > 1.02) continue;
@@ -615,7 +730,9 @@ export function* rasterizeLightMap({ positions, index = null, point = null, orig
   const cover = frac.map((f) => Math.min(1, f * 0.5));
   const lightly = yield* blur(cover, res, sharp);
   const hit = yield* blur(depth, res, Math.max(1, sharp), "min");
-  let envelope = null, front = hit, back = yield* blur(last, res, Math.max(1, sharp), "max");
+  let envelope = null,
+    front = hit,
+    back = yield* blur(last, res, Math.max(1, sharp), "max");
   const tight = back;
   if (close > 0) {
     // Thin twigs cover a texel in part: any real coverage counts.
@@ -625,23 +742,36 @@ export function* rasterizeLightMap({ positions, index = null, point = null, orig
     front = yield* blur(depth, res, close, "min");
     back = yield* blur(last, res, close, "max");
   }
-  const inside = envelope && inner > 0 ? yield* blur(yield* blur(envelope, res, inner, "min"), res, 2) : null;
-  const data = new Uint8Array(N * 4), backs = new Uint8Array(N * 2);
-  const encode = (z) => (z === Infinity ? 255 : Math.max(0, Math.min(254, Math.round(((z - t0) / (t1 - t0)) * 254))));
-  let near = Infinity, far = -Infinity, deepest = -Infinity;
+  const inside =
+    envelope && inner > 0 ? yield* blur(yield* blur(envelope, res, inner, "min"), res, 2) : null;
+  const data = new Uint8Array(N * 4),
+    backs = new Uint8Array(N * 2);
+  const encode = (z) =>
+    z === Infinity ? 255 : Math.max(0, Math.min(254, Math.round(((z - t0) / (t1 - t0)) * 254)));
+  let near = Infinity,
+    far = -Infinity,
+    deepest = -Infinity;
   for (let c = 0; c < N; c++) {
     if (c % 128 === 0) yield;
-    const x = c % res, y = (c - x) / res;
+    const x = c % res,
+      y = (c - x) / res;
     // No front or back outside the closed silhouette: the softer levels of B,
     // read further from the subject, cannot carry light past its outline.
     const outside = envelope && envelope[c] < 0.5;
     data[c * 4] = encode(hit[c]);
     backs[c * 2] = outside || back[c] === -Infinity ? 255 : encode(back[c]);
     const own = outside || tight[c] === -Infinity ? 255 : encode(tight[c]);
-    backs[c * 2 + 1] = inside && backs[c * 2] < 255 ? Math.round(own + (backs[c * 2] - own) * inside[c]) : own;
-    const X = ((x + 0.5) / res * 2 - 1) * half, Y = ((y + 0.5) / res * 2 - 1) * half;
+    backs[c * 2 + 1] =
+      inside && backs[c * 2] < 255 ? Math.round(own + (backs[c * 2] - own) * inside[c]) : own;
+    const X = (((x + 0.5) / res) * 2 - 1) * half,
+      Y = (((y + 0.5) / res) * 2 - 1) * half;
     data[c * 4 + 1] = Math.round(255 * Math.max(0, Math.min(1, mask(X, Y))));
-    data[c * 4 + 2] = Math.round(255 * (1 - lightly[c]) * (envelope ? envelope[c] : 1) * (beams ? Math.max(0, Math.min(1, beams(X, Y))) : 1));
+    data[c * 4 + 2] = Math.round(
+      255 *
+        (1 - lightly[c]) *
+        (envelope ? envelope[c] : 1) *
+        (beams ? Math.max(0, Math.min(1, beams(X, Y))) : 1),
+    );
     data[c * 4 + 3] = outside ? 255 : encode(front[c]);
     if (data[c * 4 + 3] < 255 && data[c * 4 + 2] > 0) {
       near = Math.min(near, front[c]);
@@ -660,8 +790,14 @@ export function* rasterizeLightMap({ positions, index = null, point = null, orig
     for (let c = 0; c < N; c++) {
       if (c % 4096 === 0) yield;
       if (spread[c * 2] < 255) continue;
-      const x = c % res, at = (k) => spread[k * 2];
-      next[c * 2] = Math.min(x > 0 ? at(c - 1) : 255, x < res - 1 ? at(c + 1) : 255, c >= res ? at(c - res) : 255, c < N - res ? at(c + res) : 255);
+      const x = c % res,
+        at = (k) => spread[k * 2];
+      next[c * 2] = Math.min(
+        x > 0 ? at(c - 1) : 255,
+        x < res - 1 ? at(c + 1) : 255,
+        c >= res ? at(c - res) : 255,
+        c < N - res ? at(c + res) : 255,
+      );
     }
     spread = next;
   }
@@ -678,13 +814,30 @@ export function* rasterizeLightMap({ positions, index = null, point = null, orig
   // depths: the nearest and farthest fronts and the deepest back where light
   // comes through (the air's own range starts at the nearest front and ends a
   // reach past the farthest, or, over the sky, a falloff past the deepest back).
-  return { texture, backTexture, u, v, depths: near <= far ? [near, far, Math.max(far, deepest)] : [0, 0, 0], coverage: cover.reduce((sum, value) => sum + value, 0) / N };
+  return {
+    texture,
+    backTexture,
+    u,
+    v,
+    depths: near <= far ? [near, far, Math.max(far, deepest)] : [0, 0, 0],
+    coverage: cover.reduce((sum, value) => sum + value, 0) / N,
+  };
 }
 
 function boxGeometry() {
-  const geometry = new BufferGeometry(), p = [], ix = [];
+  const geometry = new BufferGeometry(),
+    p = [],
+    ix = [];
   for (let i = 0; i < 8; i++) p.push(i & 1 ? 0.5 : -0.5, i & 2 ? 0.5 : -0.5, i & 4 ? 0.5 : -0.5);
-  for (const [a, b, c, d] of [[0, 2, 3, 1], [4, 5, 7, 6], [0, 1, 5, 4], [2, 6, 7, 3], [0, 4, 6, 2], [1, 3, 7, 5]]) ix.push(a, b, c, a, c, d);
+  for (const [a, b, c, d] of [
+    [0, 2, 3, 1],
+    [4, 5, 7, 6],
+    [0, 1, 5, 4],
+    [2, 6, 7, 3],
+    [0, 4, 6, 2],
+    [1, 3, 7, 5],
+  ])
+    ix.push(a, b, c, a, c, d);
   geometry.setAttribute("position", new BufferAttribute(new Float32Array(p), 3));
   geometry.setIndex(ix);
   geometry.computeBoundingSphere();
@@ -695,16 +848,29 @@ function boxGeometry() {
 // restores them. shadow: the moon's slot among shadow-casting directional
 // lights, found by reference (-1 without one); it only selects its shadow map.
 export function goboHook(material, uniforms, shadow) {
-  const before = material.onBeforeCompile, key = material.customProgramCacheKey;
+  const before = material.onBeforeCompile,
+    key = material.customProgramCacheKey;
   const hooked = function (shader, renderer) {
     before?.call(this, shader, renderer);
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader
-      .replace("#include <common>", "#include <common>\nvarying vec3 vShaftWorld;varying vec4 vShaftClip;")
-      .replace("#include <project_vertex>", "#include <project_vertex>\nvShaftWorld=(modelMatrix*vec4(transformed,1.)).xyz;vShaftClip=gl_Position;");
+      .replace(
+        "#include <common>",
+        "#include <common>\nvarying vec3 vShaftWorld;varying vec4 vShaftClip;",
+      )
+      .replace(
+        "#include <project_vertex>",
+        "#include <project_vertex>\nvShaftWorld=(modelMatrix*vec4(transformed,1.)).xyz;vShaftClip=gl_Position;",
+      );
     shader.fragmentShader = shader.fragmentShader
-      .replace("#include <common>", `#include <common>\n#define SHAFT_SHADOW ${shadow}\nvarying vec3 vShaftWorld;varying vec4 vShaftClip;uniform float shaftGoboGain;uniform vec3 shaftGoboColor;uniform vec2 shaftGoboWrap;uniform vec2 shaftGoboClip;uniform float shaftGoboShadow;uniform vec3 shaftSurface;${SHAFT_GLSL}`)
-      .replace("#include <lights_fragment_begin>", `#include <lights_fragment_begin>\n${GOBO_LIGHT}`)
+      .replace(
+        "#include <common>",
+        `#include <common>\n#define SHAFT_SHADOW ${shadow}\nvarying vec3 vShaftWorld;varying vec4 vShaftClip;uniform float shaftGoboGain;uniform vec3 shaftGoboColor;uniform vec2 shaftGoboWrap;uniform vec2 shaftGoboClip;uniform float shaftGoboShadow;uniform vec3 shaftSurface;${SHAFT_GLSL}`,
+      )
+      .replace(
+        "#include <lights_fragment_begin>",
+        `#include <lights_fragment_begin>\n${GOBO_LIGHT}`,
+      )
       .replace("#include <fog_fragment>", `#include <fog_fragment>\n${GOBO_AIR}`);
   };
   const cacheKey = function () {
@@ -724,7 +890,10 @@ export function goboHook(material, uniforms, shadow) {
   };
 }
 
-const SUBJECTS = [["tower", "complete-meshy-tower"], ["tree", "meshy-tree"]];
+const SUBJECTS = [
+  ["tower", "complete-meshy-tower"],
+  ["tree", "meshy-tree"],
+];
 // A light that lands mid-hold fades in over this long rather than popping.
 const RAMP_MS = 1000;
 
@@ -736,12 +905,15 @@ const RAMP_MS = 1000;
 // program first) and rebuilds it. Everything lives in the environment root's
 // frame, which a composition change moves as a whole (shaftShift).
 export function lightShafts(rendering, cinematic, tour, film, root, invalidate = () => {}) {
-  const scene = rendering.homeScene, camera = rendering.camera, moonLight = rendering.lights?.sun;
+  const scene = rendering.homeScene,
+    camera = rendering.camera,
+    moonLight = rendering.lights?.sun;
   const finalPass = rendering.postprocessPipeline?.passes?.vignetteGrain?.uniforms ?? {};
   const config = SHAFTS;
-  const idle = typeof window.requestIdleCallback === "function"
-    ? (task) => window.requestIdleCallback(task, { timeout: 120 })
-    : (task) => window.setTimeout(task, 16);
+  const idle =
+    typeof window.requestIdleCallback === "function"
+      ? (task) => window.requestIdleCallback(task, { timeout: 120 })
+      : (task) => window.setTimeout(task, 16);
   // One uniform object each, shared by every box and subject program. The
   // march length follows the treatment on screen and the quality tier (high
   // draws shadows; balanced does not).
@@ -757,9 +929,11 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
     shaftJitter: { value: 0 },
     shaftTextProtection: finalPass.uTextProtection ?? { value: 0 },
   };
-  const box = boxGeometry(), maps = new Map();
+  const box = boxGeometry(),
+    maps = new Map();
   const parts = {}; // subject -> { mesh, material, sets, hook, uniforms, probe, installed, ready, linked, done }
-  const eye = new Vector3(), source = new Vector3();
+  const eye = new Vector3(),
+    source = new Vector3();
   let lit = []; // [part, set] pairs of the treatment on screen
   let disposed = false,
     running = null,
@@ -791,7 +965,8 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
   // reference when a subject links: Three sorts casters first, in scene
   // order. Its shadow map is sampled only while it casts (high).
   function shadowIndex() {
-    let index = -1, count = 0;
+    let index = -1,
+      count = 0;
     scene.traverseVisible((object) => {
       if (index >= 0 || !object.isDirectionalLight) return;
       if (object === moonLight) index = count;
@@ -803,22 +978,33 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
   function* localPositions(mesh) {
     mesh.updateWorldMatrix(true, false);
     const matrix = root.matrixWorld.clone().invert().multiply(mesh.matrixWorld),
-      source = mesh.geometry.attributes.position, out = new Float32Array(source.count * 3), p = new Vector3();
+      source = mesh.geometry.attributes.position,
+      out = new Float32Array(source.count * 3),
+      p = new Vector3();
     for (let i = 0; i < source.count; i++) {
       if (i % 2000 === 0) yield;
-      p.fromBufferAttribute(source, i).applyMatrix4(matrix).toArray(out, i * 3);
+      p.fromBufferAttribute(source, i)
+        .applyMatrix4(matrix)
+        .toArray(out, i * 3);
     }
     return out;
   }
   function* bounds(positions) {
-    const min = new Vector3(Infinity, Infinity, Infinity), max = min.clone().negate(), p = new Vector3();
+    const min = new Vector3(Infinity, Infinity, Infinity),
+      max = min.clone().negate(),
+      p = new Vector3();
     for (let i = 0; i < positions.length; i += 3) {
       if (i % 6000 === 0) yield;
       p.fromArray(positions, i);
       min.min(p);
       max.max(p);
     }
-    return { min, max, center: min.clone().add(max).multiplyScalar(0.5), size: max.clone().sub(min) };
+    return {
+      min,
+      max,
+      center: min.clone().add(max).multiplyScalar(0.5),
+      size: max.clone().sub(min),
+    };
   }
   // The terrain under a box: the film terrain's own height (its root supports
   // included), or the analytic ground without it.
@@ -826,7 +1012,8 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
     let top = -Infinity;
     for (let i = 0; i <= 10; i++)
       for (let j = 0; j <= 10; j++) {
-        const x = min.x + ((max.x - min.x) * i) / 10, z = min.z + ((max.z - min.z) * j) / 10;
+        const x = min.x + ((max.x - min.x) * i) / 10,
+          z = min.z + ((max.z - min.z) * j) / 10;
         top = Math.max(top, height(x * heading.x - z * heading.z, x * heading.z + z * heading.x));
       }
     return top;
@@ -834,13 +1021,20 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
 
   function* buildSet(kind, subject, mesh, height) {
     // A subject's own air (gain, over, reach, sky) overrides the treatment's.
-    const cfg = config[kind][subject], T = { ...config[kind], ...cfg.air };
-    const positions = yield* localPositions(mesh), b = yield* bounds(positions);
+    const cfg = config[kind][subject],
+      T = { ...config[kind], ...cfg.air };
+    const positions = yield* localPositions(mesh),
+      b = yield* bounds(positions);
     const index = mesh.geometry.index?.array ?? null;
     const star = kind === "star";
     const nz = noise2(subject.length * 7 + (star ? 3 : 21));
-    const radius = b.size.length() * 0.5, reach = T.reach[0] + T.reach[1];
-    let look, core, mask, key, beams = null;
+    const radius = b.size.length() * 0.5,
+      reach = T.reach[0] + T.reach[1];
+    let look,
+      core,
+      mask,
+      key,
+      beams = null;
     if (star) {
       // The world star, in the root's frame; its map is a perspective from it,
       // aimed into the tower so it holds the cabin and the whole lattice.
@@ -848,7 +1042,9 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
       const origin = new Vector3(...sun).sub(new Vector3().setFromMatrixPosition(root.matrixWorld));
       const aim = b.center.clone();
       aim.y = b.min.y + b.size.y * cfg.aim;
-      const a = aim.clone().sub(origin).normalize(), dist = aim.distanceTo(origin), half = cfg.ext / dist;
+      const a = aim.clone().sub(origin).normalize(),
+        dist = aim.distanceTo(origin),
+        half = cfg.ext / dist;
       core = [aim, cfg.ext * cfg.core];
       look = { origin, a, half, t0: dist - radius - 1, t1: dist + radius + 1, point: origin };
       // A soft round window over the whole tower, gently uneven, that reaches
@@ -856,18 +1052,26 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
       // the cabin and the upper lattice (the map's y is up), softer toward the
       // lattice's foot.
       const [fall, floor] = cfg.fall;
-      mask = (x, y) => (1 - smooth(0.78, 0.97, Math.hypot(x, y) / half)) * (0.72 + 0.28 * nz((x / half) * 2.5 + 3, (y / half) * 2.5 + 1)) *
+      mask = (x, y) =>
+        (1 - smooth(0.78, 0.97, Math.hypot(x, y) / half)) *
+        (0.72 + 0.28 * nz((x / half) * 2.5 + 3, (y / half) * 2.5 + 1)) *
         (floor + (1 - floor) * smooth(fall, fall + 0.65, y / half));
       beams = mask;
       key = `${mesh.geometry.uuid}|star|${origin.toArray().map((x) => x.toFixed(1))}|${[cfg.aim, cfg.ext, cfg.res, cfg.sharp, cfg.close, cfg.erode, cfg.inner, cfg.fall]}`;
     } else {
       const a = new Vector3().subVectors(moonLight.target.position, moonLight.position).normalize();
-      const { u, v } = lightBasis(a), [h, rx, ry, gapCore] = cfg.gap;
-      const at = new Vector3(b.center.x, b.min.y + b.size.y * h, b.center.z).sub(b.center), gx = at.dot(u), gy = at.dot(v);
+      const { u, v } = lightBasis(a),
+        [h, rx, ry, gapCore] = cfg.gap;
+      const at = new Vector3(b.center.x, b.min.y + b.size.y * h, b.center.z).sub(b.center),
+        gx = at.dot(u),
+        gy = at.dot(v);
       const [bf, bt, bw, bfloor] = cfg.breaks ?? T.breaks;
       // Every texel the air takes light through lies inside the gap's ellipse
       // (its edge noise included), so the lit core holds it.
-      core = [b.center.clone().addScaledVector(u, gx).addScaledVector(v, gy), Math.max(rx, ry) * cfg.core];
+      core = [
+        b.center.clone().addScaledVector(u, gx).addScaledVector(v, gy),
+        Math.max(rx, ry) * cfg.core,
+      ];
       look = { origin: b.center, a, half: cfg.ext, t0: -radius - 1, t1: radius + 1, point: null };
       // Broken cloud light over the whole subject, in large soft patches (the
       // window: the light on the bark and timber, reaching zero inside the
@@ -877,16 +1081,39 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
       // neighbourhood (the cabin, not the whole lattice), from full inside
       // inner to floor beyond outer (gap units).
       const [inner, outer, lowest] = cfg.lit ?? [0, 1, 1];
-      mask = (X, Y) => (1 - smooth(0.8, 0.97, Math.hypot(X, Y) / cfg.ext)) *
+      mask = (X, Y) =>
+        (1 - smooth(0.8, 0.97, Math.hypot(X, Y) / cfg.ext)) *
         (bfloor + (1 - bfloor) * smooth(bt - bw, bt + bw, nz(X * bf + 31, Y * bf + 17))) *
-        (lowest + (1 - lowest) * (1 - smooth(inner, outer, Math.hypot((X - gx) / rx, (Y - gy) / ry))));
-      beams = (X, Y) => 1 - smooth(gapCore, 1, Math.hypot((X - gx) / rx, (Y - gy) / ry) + 0.3 * (nz(X * 0.3 + 5, Y * 0.3) - 0.5));
+        (lowest +
+          (1 - lowest) * (1 - smooth(inner, outer, Math.hypot((X - gx) / rx, (Y - gy) / ry))));
+      beams = (X, Y) =>
+        1 -
+        smooth(
+          gapCore,
+          1,
+          Math.hypot((X - gx) / rx, (Y - gy) / ry) + 0.3 * (nz(X * 0.3 + 5, Y * 0.3) - 0.5),
+        );
       key = `${mesh.geometry.uuid}|moon|${a.toArray().map((x) => x.toFixed(3))}|${[cfg.gap, cfg.lit, cfg.ext, cfg.res, cfg.sharp, cfg.close, cfg.erode, bf, bt, bw, bfloor]}`;
     }
-    const map = maps.get(key) ?? (yield* rasterizeLightMap({
-      positions, index, point: look.point, origin: look.origin, a: look.a, half: look.half, res: cfg.res, t0: look.t0, t1: look.t1,
-      sharp: cfg.sharp, close: cfg.close, erode: cfg.erode, inner: cfg.inner, mask, beams,
-    }));
+    const map =
+      maps.get(key) ??
+      (yield* rasterizeLightMap({
+        positions,
+        index,
+        point: look.point,
+        origin: look.origin,
+        a: look.a,
+        half: look.half,
+        res: cfg.res,
+        t0: look.t0,
+        t1: look.t1,
+        sharp: cfg.sharp,
+        close: cfg.close,
+        erode: cfg.erode,
+        inner: cfg.inner,
+        mask,
+        beams,
+      }));
     maps.set(key, map);
     // The box turns about the vertical to follow the light, keeping its floor
     // level: the subject and where its light runs on past it, as far as the
@@ -894,17 +1121,30 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
     // across). The air is lit only past the subject's front, so nothing
     // up-light of the subject needs a box.
     const heading = new Vector3(look.a.x, 0, look.a.z).normalize();
-    const lo = new Vector3(Infinity, Infinity, Infinity), hi = lo.clone().negate();
+    const lo = new Vector3(Infinity, Infinity, Infinity),
+      hi = lo.clone().negate();
     const include = (p) => {
-      const q = new Vector3(p.x * heading.x + p.z * heading.z, p.y, p.z * heading.x - p.x * heading.z);
+      const q = new Vector3(
+        p.x * heading.x + p.z * heading.z,
+        p.y,
+        p.z * heading.x - p.x * heading.z,
+      );
       lo.min(q);
       hi.max(q);
     };
     for (let i = 0; i < 8; i++) {
-      const c = new Vector3(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z);
+      const c = new Vector3(
+        i & 1 ? b.max.x : b.min.x,
+        i & 2 ? b.max.y : b.min.y,
+        i & 4 ? b.max.z : b.min.z,
+      );
       const dir = star ? c.clone().sub(look.origin).normalize() : look.a;
       include(c);
-      include(c.clone().addScaledVector(dir, dir.y < 0 ? Math.min(reach, (c.y - b.min.y) / -dir.y) : reach));
+      include(
+        c
+          .clone()
+          .addScaledVector(dir, dir.y < 0 ? Math.min(reach, (c.y - b.min.y) / -dir.y) : reach),
+      );
     }
     lo.subScalar(1);
     hi.addScalar(1);
@@ -913,9 +1153,14 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
     lo.y = Math.max(lo.y, floor);
     hi.y = b.max.y + 1;
     if (hi.y - lo.y < 2) return null;
-    const volume = new Mesh(box, null), mid = lo.clone().add(hi).multiplyScalar(0.5);
+    const volume = new Mesh(box, null),
+      mid = lo.clone().add(hi).multiplyScalar(0.5);
     volume.name = `light-shafts-${kind}-${subject}`;
-    volume.position.set(mid.x * heading.x - mid.z * heading.z, mid.y, mid.x * heading.z + mid.z * heading.x);
+    volume.position.set(
+      mid.x * heading.x - mid.z * heading.z,
+      mid.y,
+      mid.x * heading.z + mid.z * heading.x,
+    );
     volume.rotation.y = Math.atan2(-heading.z, heading.x);
     volume.scale.copy(hi).sub(lo);
     volume.updateMatrix();
@@ -929,7 +1174,12 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
       shaftU: map.u,
       shaftV: map.v,
       shaftA: look.a,
-      shaftSpan: { x: 0.5 / look.half, y: 0.5 / look.half, z: look.t0, w: ((look.t1 - look.t0) * 255) / 254 },
+      shaftSpan: {
+        x: 0.5 / look.half,
+        y: 0.5 / look.half,
+        z: look.t0,
+        w: ((look.t1 - look.t0) * 255) / 254,
+      },
       shaftRes: cfg.res,
       shaftPoint: star ? 1 : 0,
       shaftToBox: volume.matrix.clone().invert(),
@@ -944,7 +1194,11 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
       shaftReach: { x: T.reach[0], y: T.reach[1], z: T.sky[0], w: T.sky[1] },
       shaftGround: { x: T.ground[0], y: T.ground[1] },
       shaftCeil: T.ceil,
-      shaftDepths: new Vector3(map.depths[0] - T.front - 2, map.depths[1] + T.front, map.depths[2] + T.front),
+      shaftDepths: new Vector3(
+        map.depths[0] - T.front - 2,
+        map.depths[1] + T.front,
+        map.depths[2] + T.front,
+      ),
       shaftSurface: new Vector3(1, { ...T.gobo, ...cfg.gobo }.bias, 0),
       shaftShape: { x: T.rise, y: T.hull[0], z: T.hull[1], w: T.tie },
       shaftHullMode: { x: T.hull[2], y: T.hull[3] ?? 0 },
@@ -955,7 +1209,10 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
       name: "LightShafts",
       vertexShader: VERTEX,
       fragmentShader: VOLUME,
-      uniforms: { ...Object.fromEntries(Object.entries(values).map(([name, value]) => [name, { value }])), ...shared },
+      uniforms: {
+        ...Object.fromEntries(Object.entries(values).map(([name, value]) => [name, { value }])),
+        ...shared,
+      },
       side: BACK_SIDE,
       transparent: true,
       depthWrite: false,
@@ -971,7 +1228,22 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
       polygonOffsetUnits: -4,
     });
     const gobo = { ...T.gobo, ...cfg.gobo };
-    return { key: `${subject}-${kind}`, kind, subject, volume, values, lo, hi, gobo, gain: T.gain, over: T.over, jitter: T.jitter || 0, center: b.center, height: b.size.y, coverage: map.coverage };
+    return {
+      key: `${subject}-${kind}`,
+      kind,
+      subject,
+      volume,
+      values,
+      lo,
+      hi,
+      gobo,
+      gain: T.gain,
+      over: T.over,
+      jitter: T.jitter || 0,
+      center: b.center,
+      height: b.size.y,
+      coverage: map.coverage,
+    };
   }
 
   // Removes one subject's light, restoring its own program first (it stays in
@@ -1015,11 +1287,15 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
   };
   function pump() {
     if (disposed || running) return;
-    if (!shared.shaftNoise.value && !noiseJob) noiseJob = { subject: "noise", sets: [], job: blueNoise() };
-    const part = !shared.shaftNoise.value ? noiseJob : ["tower", "tree"].map((subject) => parts[subject]).find((each) => each && !each.done);
+    if (!shared.shaftNoise.value && !noiseJob)
+      noiseJob = { subject: "noise", sets: [], job: blueNoise() };
+    const part = !shared.shaftNoise.value
+      ? noiseJob
+      : ["tower", "tree"].map((subject) => parts[subject]).find((each) => each && !each.done);
     if (!part) return;
     running = part;
-    const noise = part === noiseJob, job = noise ? part.job : buildPart(part);
+    const noise = part === noiseJob,
+      job = noise ? part.job : buildPart(part);
     let resolved;
     const step = (deadline) => {
       if (disposed || (!noise && parts[part.subject] !== part)) {
@@ -1036,8 +1312,11 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
         return;
       }
       // A slice whose idle wait timed out takes less: nothing else is idle.
-      const begun = performance.now(), until = begun + (!deadline ? 5 : deadline.didTimeout ? 2 : Math.min(5, deadline.timeRemaining()));
-      let wait = null, finished = false;
+      const begun = performance.now(),
+        until =
+          begun + (!deadline ? 5 : deadline.didTimeout ? 2 : Math.min(5, deadline.timeRemaining()));
+      let wait = null,
+        finished = false;
       try {
         for (;;) {
           const { done, value } = job.next(resolved);
@@ -1064,7 +1343,14 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
           part.done = part.failed = true;
         }
       }
-      if (wait) wait.then((result) => { resolved = result; idle(step); }, () => idle(step));
+      if (wait)
+        wait.then(
+          (result) => {
+            resolved = result;
+            idle(step);
+          },
+          () => idle(step),
+        );
       else if (!finished) idle(step);
       else {
         running = null;
@@ -1124,7 +1410,9 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
   function lightKey() {
     const counts = {};
     scene.traverseVisible((object) => {
-      if (object.isLight) counts[object.type + (object.castShadow ? "+" : "")] = (counts[object.type + (object.castShadow ? "+" : "")] ?? 0) + 1;
+      if (object.isLight)
+        counts[object.type + (object.castShadow ? "+" : "")] =
+          (counts[object.type + (object.castShadow ? "+" : "")] ?? 0) + 1;
     });
     return `${Object.entries(counts).sort().join(";")}|${Boolean(rendering.renderer?.shadowMap?.enabled)}`;
   }
@@ -1154,32 +1442,50 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
   // when Three stops polling them.
   function linkPrograms(part, objects) {
     const renderer = rendering.renderer;
-    if (typeof renderer?.compileAsync !== "function" || renderer.extensions?.has?.("KHR_parallel_shader_compile") !== true ||
-      renderer.getContext?.()?.isContextLost?.()) return Promise.resolve(false);
+    if (
+      typeof renderer?.compileAsync !== "function" ||
+      renderer.extensions?.has?.("KHR_parallel_shader_compile") !== true ||
+      renderer.getContext?.()?.isContextLost?.()
+    )
+      return Promise.resolve(false);
     const previous = renderer.getRenderTarget?.() ?? null;
     let pending;
     try {
       renderer.setRenderTarget?.(rendering.composer?.readBuffer ?? null);
-      pending = Promise.all(objects.map((object) => renderer.compileAsync(object, camera, scene))).then(() => true, () => false);
+      pending = Promise.all(
+        objects.map((object) => renderer.compileAsync(object, camera, scene)),
+      ).then(
+        () => true,
+        () => false,
+      );
     } catch {
       return Promise.resolve(false);
     } finally {
       renderer.setRenderTarget?.(previous);
     }
     part.linking = Promise.all([part.linking, pending]);
-    return Promise.race([pending, new Promise((resolve) => window.setTimeout(() => resolve(false), 2000))]);
+    return Promise.race([
+      pending,
+      new Promise((resolve) => window.setTimeout(() => resolve(false), 2000)),
+    ]);
   }
 
   // The treatment the shot on screen calls for, and whether the eye sits in
   // its box: then its light would fill the lens, so only the gobo stays.
   function wanted() {
-    const kind = shaftTreatment(cinematic.shot?.name), part = parts[cinematic.current];
+    const kind = shaftTreatment(cinematic.shot?.name),
+      part = parts[cinematic.current];
     const set = kind && part?.ready ? part.sets.find((s) => s.kind === kind) : null;
     if (!set) return "";
     // In box units, with a unit of margin.
     eye.copy(camera.position).sub(shared.shaftShift.value).applyMatrix4(set.values.shaftToBox);
-    const sx = set.hi.x - set.lo.x, sy = set.hi.y - set.lo.y, sz = set.hi.z - set.lo.z;
-    const inside = Math.abs(eye.x) < 0.5 + 1 / sx && Math.abs(eye.y) < 0.5 + 1 / sy && Math.abs(eye.z) < 0.5 + 1 / sz;
+    const sx = set.hi.x - set.lo.x,
+      sy = set.hi.y - set.lo.y,
+      sz = set.hi.z - set.lo.z;
+    const inside =
+      Math.abs(eye.x) < 0.5 + 1 / sx &&
+      Math.abs(eye.y) < 0.5 + 1 / sy &&
+      Math.abs(eye.z) < 0.5 + 1 / sz;
     return inside ? `${set.key}:inside` : set.key;
   }
   // Shows a treatment: fully (from = 1), or fading in from nothing over RAMP_MS.
@@ -1191,7 +1497,8 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
     const [key] = state.split(":");
     for (const part of Object.values(parts)) {
       const set = part.sets.find((s) => s.key === key);
-      for (const each of part.sets) each.volume.visible = each === set && !state.endsWith(":inside");
+      for (const each of part.sets)
+        each.volume.visible = each === set && !state.endsWith(":inside");
       if (!part.hook) continue;
       if (set) lit.push([part, set]);
       // A subject switches to its hooked program at its first commit, so
@@ -1221,21 +1528,38 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
   // desktop's; it is held through the shot's push-in so the pattern never jumps.
   const onScreen = (point) => point.add(shared.shaftShift.value).project(camera);
   function rays(set, fresh = false) {
-    const T = config[set.kind], period = T.rays[1], jitter = set.jitter;
-    const [contrast, e0, e1] = !high && T.sparse ? T.sparse : [T.rays[0], T.rays[2], T.rays[3]], value = shared.shaftSource.value;
+    const T = config[set.kind],
+      period = T.rays[1],
+      jitter = set.jitter;
+    const [contrast, e0, e1] = !high && T.sparse ? T.sparse : [T.rays[0], T.rays[2], T.rays[3]],
+      value = shared.shaftSource.value;
     camera.updateMatrixWorld();
     if (set.kind === "star") onScreen(source.copy(set.values.shaftOrigin));
     else source.copy(camera.position).addScaledVector(set.values.shaftA, -1e4).project(camera);
-    Object.assign(value, { x: source.x * 0.5 + 0.5, y: source.y * 0.5 + 0.5, z: camera.aspect || 1, w: contrast });
+    Object.assign(value, {
+      x: source.x * 0.5 + 0.5,
+      y: source.y * 0.5 + 0.5,
+      z: camera.aspect || 1,
+      w: contrast,
+    });
     if (fresh) {
-      const c = onScreen(eye.copy(set.center)), cx = (c.x * 0.5 + 0.5 - value.x) * value.z, cy = c.y * 0.5 + 0.5 - value.y;
-      const top = onScreen(eye.copy(set.center).setY(set.center.y + set.height * 0.5)).y, bottom = onScreen(eye.copy(set.center).setY(set.center.y - set.height * 0.5)).y;
+      const c = onScreen(eye.copy(set.center)),
+        cx = (c.x * 0.5 + 0.5 - value.x) * value.z,
+        cy = c.y * 0.5 + 0.5 - value.y;
+      const top = onScreen(eye.copy(set.center).setY(set.center.y + set.height * 0.5)).y,
+        bottom = onScreen(eye.copy(set.center).setY(set.center.y - set.height * 0.5)).y;
       const tall = Math.min(1, Math.max(0.1, Math.abs(top - bottom) * 0.5));
       // The sway moves the streaks by at most half of one about the source.
       // With jitter, their spacing wanders over groups of four, so the count
       // is a multiple of four (no seam where the angle wraps).
-      const count = (2 * Math.PI * Math.hypot(cx, cy)) / (period * tall), group = jitter ? 4 : 1;
-      Object.assign(shared.shaftStreak.value, { x: Math.min(4096, Math.max(8, Math.round(count / group) * group)), y: e0, z: e1, w: 0.5 / config[set.kind].drift[0] });
+      const count = (2 * Math.PI * Math.hypot(cx, cy)) / (period * tall),
+        group = jitter ? 4 : 1;
+      Object.assign(shared.shaftStreak.value, {
+        x: Math.min(4096, Math.max(8, Math.round(count / group) * group)),
+        y: e0,
+        z: e1,
+        w: 0.5 / config[set.kind].drift[0],
+      });
       shared.shaftJitter.value = jitter;
     } else if (shared.shaftStreak.value.y !== e0 || shared.shaftStreak.value.z !== e1) {
       // A quality step keeps the count (no jump mid-shot) and takes the tier's streaks.
@@ -1245,8 +1569,13 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
   // The name and intro's box on the canvas (0-1, y up), which the march
   // feathers: the air scales down behind the text wherever the layout puts it.
   function measureText() {
-    const doc = window.document, canvas = rendering.renderer?.domElement?.getBoundingClientRect?.(), text = shared.shaftText.value;
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    const doc = window.document,
+      canvas = rendering.renderer?.domElement?.getBoundingClientRect?.(),
+      text = shared.shaftText.value;
+    let x0 = Infinity,
+      y0 = Infinity,
+      x1 = -Infinity,
+      y1 = -Infinity;
     for (const selector of [".hero h1", ".hero-intro"]) {
       const r = doc?.querySelector?.(selector)?.getBoundingClientRect?.();
       if (!r?.width || !r.height) continue;
@@ -1255,10 +1584,13 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
       y0 = Math.min(y0, r.top);
       y1 = Math.max(y1, r.bottom);
     }
-    if (!canvas?.width || !canvas.height || x0 > x1) return Object.assign(text, { x: 2, y: 2, z: -1, w: -1 });
+    if (!canvas?.width || !canvas.height || x0 > x1)
+      return Object.assign(text, { x: 2, y: 2, z: -1, w: -1 });
     return Object.assign(text, {
-      x: (x0 - canvas.left) / canvas.width, z: (x1 - canvas.left) / canvas.width,
-      y: 1 - (y1 - canvas.top) / canvas.height, w: 1 - (y0 - canvas.top) / canvas.height,
+      x: (x0 - canvas.left) / canvas.width,
+      z: (x1 - canvas.left) / canvas.width,
+      y: 1 - (y1 - canvas.top) / canvas.height,
+      w: 1 - (y0 - canvas.top) / canvas.height,
     });
   }
   // The gains and march length of the treatment on screen at the current fade
@@ -1273,7 +1605,7 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
     }
     for (const [part, set] of lit) {
       // Sparser streaks on balanced carry a little more light each.
-      const air = set.gain * (!high && config[set.kind].sparse?.[3] || 1);
+      const air = set.gain * ((!high && config[set.kind].sparse?.[3]) || 1);
       set.volume.material.uniforms.shaftGain.value = air * level * blend;
       part.uniforms.shaftGoboGain.value = set.gobo.gain * level * blend;
       part.uniforms.shaftGain.value = inside ? 0 : air * set.over * level * blend;
@@ -1282,7 +1614,8 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
   function whenRevealed() {
     return new Promise((resolve) => {
       (function check() {
-        if (disposed || rendering.renderer?.domElement?.parentNode?.classList?.contains("is-ready")) resolve();
+        if (disposed || rendering.renderer?.domElement?.parentNode?.classList?.contains("is-ready"))
+          resolve();
         else window.setTimeout(check, 50);
       })();
     });
@@ -1292,7 +1625,9 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
     if (!container?.classList?.contains("is-ready")) return true;
     if (revealedAt === null) {
       // The reveal's own User Timing mark (perf-marks.js), or now.
-      revealedAt = performance.getEntriesByName?.("babel:reveal", "mark").at(-1)?.startTime ?? performance.now();
+      revealedAt =
+        performance.getEntriesByName?.("babel:reveal", "mark").at(-1)?.startTime ??
+        performance.now();
       const duration = window.getComputedStyle?.(container)?.transitionDuration ?? "0s";
       revealFade = parseFloat(duration) * (/ms/.test(duration) ? 1 : 1000) || 0;
     }
@@ -1302,8 +1637,15 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
   // The moon's follows the key light's colour and strength (legacy light
   // units, as Three scales them).
   function goboColor(set, target) {
-    const tint = set.gobo.color, scale = set.kind === "moon" && moonLight ? moonLight.intensity * Math.PI : 0;
-    return scale ? target.set(moonLight.color.r * scale * tint[0], moonLight.color.g * scale * tint[1], moonLight.color.b * scale * tint[2]) : target.set(...tint);
+    const tint = set.gobo.color,
+      scale = set.kind === "moon" && moonLight ? moonLight.intensity * Math.PI : 0;
+    return scale
+      ? target.set(
+          moonLight.color.r * scale * tint[0],
+          moonLight.color.g * scale * tint[1],
+          moonLight.color.b * scale * tint[2],
+        )
+      : target.set(...tint);
   }
   const subsystem = {
     lifecycleOrder: 30,
@@ -1313,8 +1655,20 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
     get state() {
       if (disposed) return undefined;
       const list = Object.values(parts);
-      const status = !list.length ? "waiting" : list.every((part) => part.done) ? (list.some((part) => part.failed) ? "fallback" : "ready") : "building";
-      return { status, shown, level, blend, parts: list.map(({ subject, ready, linked }) => ({ subject, ready, linked })) };
+      const status = !list.length
+        ? "waiting"
+        : list.every((part) => part.done)
+          ? list.some((part) => part.failed)
+            ? "fallback"
+            : "ready"
+          : "building";
+      return {
+        status,
+        shown,
+        level,
+        blend,
+        parts: list.map(({ subject, ready, linked }) => ({ subject, ready, linked })),
+      };
     },
     update({ deltaSeconds = 0, reducedMotion = false, motionPaused = false } = {}) {
       if (disposed) return;
@@ -1330,22 +1684,38 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
       const active = Boolean(film.active && moonLight);
       for (const [subject, name] of SUBJECTS) {
         const part = parts[subject];
-        if (active === filmWas && part && frames % 30 !== 0 && underRoot(part.mesh) && part.mesh.material === part.material) continue;
+        if (
+          active === filmWas &&
+          part &&
+          frames % 30 !== 0 &&
+          underRoot(part.mesh) &&
+          part.mesh.material === part.material
+        )
+          continue;
         if (active === filmWas && !part && !active) continue;
         const mesh = active ? subjectMesh(name) : null;
         if (part && mesh === part.mesh && mesh.material === part.material) continue;
         teardown(subject);
-        if (mesh) parts[subject] = { subject, mesh, material: mesh.material, sets: [], done: false };
+        if (mesh)
+          parts[subject] = { subject, mesh, material: mesh.material, sets: [], done: false };
       }
       filmWas = active;
       pump();
       if (frames % 30 === 0) relink();
       // Nothing more to do on a shot without a treatment (the lantern shots).
-      if (!shown && (!shaftTreatment(cinematic.shot?.name) || (!parts.tower?.ready && !parts.tree?.ready))) return;
+      if (
+        !shown &&
+        (!shaftTreatment(cinematic.shot?.name) || (!parts.tower?.ready && !parts.tree?.ready))
+      )
+        return;
       if (frames % 30 === 1 || shared.shaftText.value.x === 2) measureText();
       root.updateWorldMatrix(true, false);
       shared.shaftShift.value.setFromMatrixPosition(root.matrixWorld);
-      shaftDrift(time, config[shown.includes("-star") ? "star" : "moon"].drift, shared.shaftDrift.value);
+      shaftDrift(
+        time,
+        config[shown.includes("-star") ? "star" : "moon"].drift,
+        shared.shaftDrift.value,
+      );
       // The moon's catch follows the key light as the film's lighting moves it.
       for (const [part, set] of lit) goboColor(set, part.uniforms.shaftGoboColor.value);
       if (lit.length) rays(lit[0][1]);
@@ -1357,8 +1727,10 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
       // A dissolve into the shot shows its subject last (postprocess.js, the
       // subject layer's stagger), so its light follows the subject layer and
       // the warm window never floats in before the tower.
-      const stagger = finalPass.uStagger?.value, progress = tour?.running ? tour.transition.progress : 1;
-      const settle = progress < 1 && stagger ? smooth(3 * stagger.x, 3 * stagger.x + stagger.y, progress) : 1;
+      const stagger = finalPass.uStagger?.value,
+        progress = tour?.running ? tour.transition.progress : 1;
+      const settle =
+        progress < 1 && stagger ? smooth(3 * stagger.x, 3 * stagger.x + stagger.y, progress) : 1;
       if (settle !== blend) {
         blend = settle;
         gains();

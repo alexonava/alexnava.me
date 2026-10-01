@@ -66,16 +66,19 @@ test("palette tokens are parseable CSS colors and the ground material stays in r
       return;
     }
     assert.equal(typeof value, "string");
-    assert.ok(
-      hexRegex.test(value) || rgbaRegex.test(value),
-      `expected CSS color, got ${value}`,
-    );
+    assert.ok(hexRegex.test(value) || rgbaRegex.test(value), `expected CSS color, got ${value}`);
   }
 
   for (const value of Object.values(scene.GROUND_TEXTURE_PALETTE)) expectColor(value);
 
-  assert.ok(scene.GROUND_SURFACE_MATERIAL.bumpScale > 0 && scene.GROUND_SURFACE_MATERIAL.bumpScale < 1);
+  assert.ok(
+    scene.GROUND_SURFACE_MATERIAL.bumpScale > 0 && scene.GROUND_SURFACE_MATERIAL.bumpScale < 1,
+  );
 
-  assert.ok(scene.GROUND_SURFACE_MATERIAL.roughness >= 0 && scene.GROUND_SURFACE_MATERIAL.roughness <= 1);
-  assert.ok(scene.GROUND_SURFACE_MATERIAL.metalness >= 0 && scene.GROUND_SURFACE_MATERIAL.metalness <= 1);
+  assert.ok(
+    scene.GROUND_SURFACE_MATERIAL.roughness >= 0 && scene.GROUND_SURFACE_MATERIAL.roughness <= 1,
+  );
+  assert.ok(
+    scene.GROUND_SURFACE_MATERIAL.metalness >= 0 && scene.GROUND_SURFACE_MATERIAL.metalness <= 1,
+  );
 });

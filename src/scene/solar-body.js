@@ -213,11 +213,7 @@ export function makeLoopGeometry(radius = SOLAR_RADIUS, seed = 7143) {
     // Loops run along the meridian: an east-west arch at the side limbs lies
     // in the view ray's plane and projects edge-on as a flat radial "handle",
     // while a meridional one is seen side-on there, rising from the limb.
-    const tangent = new Vector3(
-      -Math.sin(azimuth),
-      0.15 * (random() - 0.5),
-      Math.cos(azimuth),
-    )
+    const tangent = new Vector3(-Math.sin(azimuth), 0.15 * (random() - 0.5), Math.cos(azimuth))
       .cross(n)
       .normalize();
     const span = 0.16 + random() * 0.26,

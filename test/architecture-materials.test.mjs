@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { BoxGeometry, BufferAttribute, Group, Mesh, MeshStandardMaterial, Texture } from "three";
-import { createCompleteTowerArchitecture, createTreeArchitecture, materialFor } from "../src/scene/architecture.js";
+import {
+  createCompleteTowerArchitecture,
+  createTreeArchitecture,
+  materialFor,
+} from "../src/scene/architecture.js";
 
 function sourceAsset(mapped) {
   const scene = new Group(),
@@ -13,10 +17,24 @@ function sourceAsset(mapped) {
     material.roughnessMap = new Texture();
   }
   scene.add(new Mesh(geometry, material));
-  const resources = [geometry, material, material.map, material.normalMap, material.roughnessMap].filter(Boolean);
+  const resources = [
+    geometry,
+    material,
+    material.map,
+    material.normalMap,
+    material.roughnessMap,
+  ].filter(Boolean);
   let disposals = 0;
   for (const resource of resources) resource.addEventListener("dispose", () => disposals++);
-  return { scene, geometry, material, resources, get disposals() { return disposals; } };
+  return {
+    scene,
+    geometry,
+    material,
+    resources,
+    get disposals() {
+      return disposals;
+    },
+  };
 }
 
 function materialShader(material) {
@@ -42,8 +60,11 @@ test("mapless tower retains direct matte response and borrowed atlas across film
   assert.equal(material.normalMap, null);
   assert.equal(material.roughnessMap, null);
   assert.match(shader.fragmentShader, /#include <roughnessmap_fragment>/);
-  assert.doesNotMatch(shader.fragmentShader, /roughnessFactor\s*=/,
-    "no shader remap may lift a mapless scalar toward one");
+  assert.doesNotMatch(
+    shader.fragmentShader,
+    /roughnessFactor\s*=/,
+    "no shader remap may lift a mapless scalar toward one",
+  );
   for (const active of [true, false, true, false]) {
     tower.setFilmTreatment(active);
     assert.equal(material.roughness, 0.9);
@@ -70,9 +91,12 @@ test("tree preserves mapped roughness variation and texture ownership through qu
   assert.equal(material.normalMap, source.material.normalMap);
   assert.equal(material.map, source.material.map);
   assert.deepEqual(material.normalScale.toArray(), [0.46, 0.46]);
-  const remap = shader.fragmentShader.match(/roughnessFactor = mix\(([\d.]+), ([\d.]+), roughnessFactor\);/);
+  const remap = shader.fragmentShader.match(
+    /roughnessFactor = mix\(([\d.]+), ([\d.]+), roughnessFactor\);/,
+  );
   assert.ok(remap, "the compiled material must bound the map's roughness");
-  const floor = Number(remap[1]), ceiling = Number(remap[2]);
+  const floor = Number(remap[1]),
+    ceiling = Number(remap[2]);
   assert.equal(floor, 0.84);
   assert.equal(ceiling, 0.97);
   assert.ok(Math.abs((floor + ceiling) / 2 - 0.905) < 1e-12);
@@ -105,7 +129,12 @@ test("timber lookout reads its baked normal map at full strength with one unifor
   const decoded = geometry.getAttribute("tangent"),
     packed = new Int8Array(decoded.count * 4);
   for (let i = 0; i < decoded.count; i++)
-    for (const [k, value] of [decoded.getX(i), decoded.getY(i), decoded.getZ(i), decoded.getW(i)].entries())
+    for (const [k, value] of [
+      decoded.getX(i),
+      decoded.getY(i),
+      decoded.getZ(i),
+      decoded.getW(i),
+    ].entries())
       packed[i * 4 + k] = Math.round(value * 127);
   geometry.setAttribute("tangent", new BufferAttribute(packed, 4, true));
   const source = geometry.getAttribute("tangent");
@@ -125,15 +154,21 @@ test("timber lookout reads its baked normal map at full strength with one unifor
   // Uniform scale and translation leave each tangent's direction and handedness.
   for (let i = 0; i < source.count; i++) {
     for (const axis of ["X", "Y", "Z"])
-      assert.ok(Math.abs(tangent["get" + axis](i) - source["get" + axis](i)) < 0.02, `tangent ${i} ${axis}`);
+      assert.ok(
+        Math.abs(tangent["get" + axis](i) - source["get" + axis](i)) < 0.02,
+        `tangent ${i} ${axis}`,
+      );
     assert.equal(tangent.getW(i), source.getW(i), `tangent ${i} handedness`);
   }
   assert.equal(tangent.getW(0), 1);
   assert.equal(runtime.normalMap, material.normalMap);
   assert.deepEqual(runtime.normalScale.toArray(), [1, 1]);
   assert.equal(runtime.roughness, 0.9);
-  assert.doesNotMatch(shader.fragmentShader, /babelLocal\.y/,
-    "no height band may single out part of the all-timber tower");
+  assert.doesNotMatch(
+    shader.fragmentShader,
+    /babelLocal\.y/,
+    "no height band may single out part of the all-timber tower",
+  );
   tower.dispose();
   for (const resource of [geometry, material, material.map, material.normalMap]) resource.dispose();
 });
@@ -149,7 +184,9 @@ test("the bare tree takes no procedural film extras and the rocks darken above t
   source.resources.forEach((resource) => resource.dispose());
   const stone = sourceAsset(false),
     rock = materialFor({ scene: stone.scene }, 1, "rock"),
-    band = materialShader(rock).fragmentShader.match(/mix\(([\d.]+), 1\., smoothstep\(([\d.]+), ([\d.]+), babelLocal\.y\)\)/);
+    band = materialShader(rock).fragmentShader.match(
+      /mix\(([\d.]+), 1\., smoothstep\(([\d.]+), ([\d.]+), babelLocal\.y\)\)/,
+    );
   assert.ok(band, "the rock darkens toward its base in local height");
   // rock-build.js sinks each stone up to 0.35 of its height: the band must
   // still show above the slate.

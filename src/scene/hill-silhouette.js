@@ -39,14 +39,25 @@ export const HILL = Object.freeze({
 // at least `jitterMin` degrees) and drops a further `tongue` x cap down the
 // gullies. Lit snow is `lit` x the sky's luma and shadowed snow `shade` x, both
 // seen through the range's air.
-export const SNOW = Object.freeze({ line: 2.9, depth: 0.6, max: 3.6, jitter: 0.3, jitterMin: 0.25, tongue: 0.5, lit: 3.8, shade: 1.25 });
+export const SNOW = Object.freeze({
+  line: 2.9,
+  depth: 0.6,
+  max: 3.6,
+  jitter: 0.3,
+  jitterMin: 0.25,
+  tongue: 0.5,
+  lit: 3.8,
+  shade: 1.25,
+});
 // JS mirror of the shader's snowline: whether snow can reach `elevation`
 // degrees on a massif `massif` degrees high, with the jitter and gully tongue
 // at their most generous. 1 inside that reach, 0 beyond it.
 export function snowReach(elevation, massif) {
   const { line, depth, max, jitter, jitterMin, tongue } = SNOW,
     cap = Math.min(max, Math.max(0, (massif - line) * depth));
-  return cap > 0.001 && elevation > massif - cap * (1 + tongue) - Math.max(cap * jitter, jitterMin) ? 1 : 0;
+  return cap > 0.001 && elevation > massif - cap * (1 + tongue) - Math.max(cap * jitter, jitterMin)
+    ? 1
+    : 0;
 }
 // The ranges' air and rock, near to far: each range's aerial transmittance
 // (summits see through thinner air: it rises toward its square root from 0.5
@@ -151,7 +162,12 @@ export function createHillGeometry({
 const glslFloat = (value) => (Number.isInteger(value) ? value.toFixed(1) : String(value));
 // A per-range constant as GLSL: the range index (vT.y) selects its value.
 const perRange = (values) =>
-  values.slice(1).reduce((glsl, value, i) => `mix(${glsl},${glslFloat(value)},step(${i + 0.5},vT.y))`, glslFloat(values[0]));
+  values
+    .slice(1)
+    .reduce(
+      (glsl, value, i) => `mix(${glsl},${glslFloat(value)},step(${i + 0.5},vT.y))`,
+      glslFloat(values[0]),
+    );
 
 // Film mountains: vertices ride on the camera (world = cameraPosition + position), as
 // the starfield does, so every shot and viewport gets a known backdrop. The ranges
@@ -181,7 +197,8 @@ const perRange = (values) =>
 // blending so it draws after the stars and covers them, writing its depth layer
 // (depth-layers.js) exactly. Noise hashes reach about 1100 cells: highp.
 function mountainMaterial({ skyRadius, shellOpacity, sunPosition }) {
-  const { transmittance, albedo, thin, lift, moon, ambient, rockMax, footHazeHeight } = MOUNTAIN_AIR;
+  const { transmittance, albedo, thin, lift, moon, ambient, rockMax, footHazeHeight } =
+    MOUNTAIN_AIR;
   return new ShaderMaterial({
     name: "EstateMountains",
     transparent: true,
@@ -321,7 +338,11 @@ gl_FragColor=vec4(c,${DEPTH_LAYER.mountains});
 // with the ranges' attributes, which draws nothing.
 function emptyRanges() {
   const geometry = new BufferGeometry();
-  for (const [name, size] of [["position", 3], ["aTerrain", 4], ["aForm", 4]])
+  for (const [name, size] of [
+    ["position", 3],
+    ["aTerrain", 4],
+    ["aForm", 4],
+  ])
     geometry.setAttribute(name, new BufferAttribute(new Float32Array(0), size));
   return geometry;
 }
@@ -365,7 +386,9 @@ export function createHillSilhouette({
     if (pending || disposed || low || !active) return;
     onStatus("loading");
     pending = load()
-      .then(({ buildMountains }) => buildMountains({ rendering, tour, cancelled: () => disposed, mesh }))
+      .then(({ buildMountains }) =>
+        buildMountains({ rendering, tour, cancelled: () => disposed, mesh }),
+      )
       .then((built) => {
         if (!built) return;
         // A build finished after disposal is freed, never kept.

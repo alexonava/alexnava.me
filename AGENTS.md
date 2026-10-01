@@ -8,14 +8,14 @@ Source for alexnava.me: HTML, CSS, vanilla JavaScript, Three.js r160 and esbuild
 
 ## Commands
 
-| Action | Command |
-| --- | --- |
-| Develop with watch and preview | npm run dev |
-| Build once | npm run build:dist |
-| Preview once-built output | npm run preview |
-| Verify compilation | npm run verify |
-| Regression tests | npm test |
-| Dependency audit | npm run audit:ci |
+| Action                         | Command            |
+| ------------------------------ | ------------------ |
+| Develop with watch and preview | npm run dev        |
+| Build once                     | npm run build:dist |
+| Preview once-built output      | npm run preview    |
+| Verify compilation             | npm run verify     |
+| Regression tests               | npm test           |
+| Dependency audit               | npm run audit:ci   |
 
 ## Rules
 

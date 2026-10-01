@@ -12,28 +12,43 @@ const frozen = (...values) => Object.freeze(values);
 // Exported so anything that must match it (the puddle mirror's reflected flame)
 // can be tied to these numbers in tests; lazy chunks cannot import each other.
 export const FLAME = Object.freeze({
-  axis: frozen(0, -.01), // wick axis, local (x, z)
-  base: .49, // wick top: the flame's foot
-  height: .30, // at rest; the draught scales it within about [.78, 1.03]
-  top: .79, // base + height
-  halfWidth: .047,
-  center: .595, // base + .35 height: the bright band, origin of the cage near field
-  globe: Object.freeze({ bottom: .452, top: 1.142, radius: .335 }),
+  axis: frozen(0, -0.01), // wick axis, local (x, z)
+  base: 0.49, // wick top: the flame's foot
+  height: 0.3, // at rest; the draught scales it within about [.78, 1.03]
+  top: 0.79, // base + height
+  halfWidth: 0.047,
+  center: 0.595, // base + .35 height: the bright band, origin of the cage near field
+  globe: Object.freeze({ bottom: 0.452, top: 1.142, radius: 0.335 }),
   // Linear radiance before the draught glow and the fire gain.
-  color: Object.freeze({ blue: frozen(.07, .16, .62), core: frozen(1.35, 1.12, .62), body: frozen(1.12, .80, .25), tip: frozen(1, .24, .035) }),
+  color: Object.freeze({
+    blue: frozen(0.07, 0.16, 0.62),
+    core: frozen(1.35, 1.12, 0.62),
+    body: frozen(1.12, 0.8, 0.25),
+    tip: frozen(1, 0.24, 0.035),
+  }),
   gain: 1.6,
 });
 // Light held in the clear glass: halo around the flame, faint fill, warm rim,
 // a soft glare (a quarter less under bloom), and transmission.
-const GLASS = { halo: .05, fill: .015, rim: .6, glare: .05, transmission: .92, roughness: .1 };
+const GLASS = {
+  halo: 0.05,
+  fill: 0.015,
+  rim: 0.6,
+  glare: 0.05,
+  transmission: 0.92,
+  roughness: 0.1,
+};
 // A globe triangle has every corner in y (.44, 1.175) within r .335 of the axis (the rim ring
 // shares the cup's .443-.447 vertices) and its centroid in y (.452, 1.142): exactly the 266
 // emission-mask triangles of the supplied GLB plus two slivers under the finial.
-const SHELL = { low: .44, high: 1.175 };
+const SHELL = { low: 0.44, high: 1.175 };
 // Where the practical light is absent the near field matches nothing.
 const NO_LIGHT = 1e4;
 
-const n = (value) => { const text = (+value).toFixed(4).replace(/0+$/, ""); return text.endsWith(".") ? text + "0" : text; };
+const n = (value) => {
+  const text = (+value).toFixed(4).replace(/0+$/, "");
+  return text.endsWith(".") ? text + "0" : text;
+};
 const vec = (values) => values.map(n).join(", ");
 
 // Calm breath plus one draught per 7.5 s cell at a hashed moment, strength and
@@ -42,15 +57,21 @@ const vec = (values) => values.map(n).join(", ");
 // practical light (within [.89, 1.07]); height scales the flame; lean is the
 // tip offset in local units along x and z.
 export function lanternDraught(t, out = [1, 1, 0, 0]) {
-  const hash = (k) => { const s = Math.sin(k * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
-  const breath = .5 * Math.sin(t * 6.7) + .3 * Math.sin(t * 10.3) + .2 * Math.sin(t * 16.9);
-  const cell = Math.floor(t / 7.5), start = 1.2 + 4.2 * hash(cell), length = 1.5 + .9 * hash(cell + 17.3);
+  const hash = (k) => {
+    const s = Math.sin(k * 127.1 + 311.7) * 43758.5453;
+    return s - Math.floor(s);
+  };
+  const breath = 0.5 * Math.sin(t * 6.7) + 0.3 * Math.sin(t * 10.3) + 0.2 * Math.sin(t * 16.9);
+  const cell = Math.floor(t / 7.5),
+    start = 1.2 + 4.2 * hash(cell),
+    length = 1.5 + 0.9 * hash(cell + 17.3);
   const k = (t - cell * 7.5 - start) / length;
-  const gust = k > 0 && k < 1 ? (.65 + .35 * hash(cell + 3.1)) * Math.sin(Math.PI * k) ** 2 : 0;
-  const flutter = .6 * Math.sin(t * 21.7) + .4 * Math.sin(t * 34.3);
-  const heading = 6.2832 * hash(cell + 9.7), lean = .036 * gust * (1 + .35 * flutter);
-  out[0] = 1 + .062 * breath * (1 - .6 * gust) - .065 * gust + .022 * gust * flutter;
-  out[1] = 1 + .035 * breath - .13 * gust + .07 * gust * flutter;
+  const gust = k > 0 && k < 1 ? (0.65 + 0.35 * hash(cell + 3.1)) * Math.sin(Math.PI * k) ** 2 : 0;
+  const flutter = 0.6 * Math.sin(t * 21.7) + 0.4 * Math.sin(t * 34.3);
+  const heading = 6.2832 * hash(cell + 9.7),
+    lean = 0.036 * gust * (1 + 0.35 * flutter);
+  out[0] = 1 + 0.062 * breath * (1 - 0.6 * gust) - 0.065 * gust + 0.022 * gust * flutter;
+  out[1] = 1 + 0.035 * breath - 0.13 * gust + 0.07 * gust * flutter;
   out[2] = lean * Math.cos(heading);
   out[3] = lean * Math.sin(heading);
   return out;
@@ -79,8 +100,8 @@ float lanternNoise(vec2 p) {
 // The globe's shell: between the burner cup and the finial, inside its radius.
 // Taking it over the emission mask removes the mask's UV-island seams.
 float lanternBulb(vec3 p) {
-  return smoothstep(${n(FLAME.globe.bottom)}, ${n(FLAME.globe.bottom + .01)}, p.y) * (1. - smoothstep(${n(FLAME.globe.top - .014)}, ${n(FLAME.globe.top)}, p.y))
-    * (1. - smoothstep(${n(FLAME.globe.radius - .02)}, ${n(FLAME.globe.radius)}, length(p.xz - LANTERN_AXIS)));
+  return smoothstep(${n(FLAME.globe.bottom)}, ${n(FLAME.globe.bottom + 0.01)}, p.y) * (1. - smoothstep(${n(FLAME.globe.top - 0.014)}, ${n(FLAME.globe.top)}, p.y))
+    * (1. - smoothstep(${n(FLAME.globe.radius - 0.02)}, ${n(FLAME.globe.radius)}, length(p.xz - LANTERN_AXIS)));
 }
 vec3 lanternFire(vec3 surface) {
   // Flame-plane coordinates: the vertical plane through the wick, facing the eye.
@@ -190,8 +211,19 @@ const NEAR_FIELD = `#include <lights_fragment_end>
 // shared three exports: CustomBlending 5, AddEquation 100, ZeroFactor 200,
 // OneFactor 201, OneMinusConstantAlphaFactor 214, FrontSide 0 (DoubleSide
 // would show the flame twice, through the back wall).
-const GLASS_BLEND = { side: 0, transparent: true, depthWrite: true, blending: 5, blendEquation: 100, blendSrc: 201, blendDst: 214,
-  blendAlpha: +(1 - GLASS.transmission).toFixed(4), blendEquationAlpha: 100, blendSrcAlpha: 201, blendDstAlpha: 200 };
+const GLASS_BLEND = {
+  side: 0,
+  transparent: true,
+  depthWrite: true,
+  blending: 5,
+  blendEquation: 100,
+  blendSrc: 201,
+  blendDst: 214,
+  blendAlpha: +(1 - GLASS.transmission).toFixed(4),
+  blendEquationAlpha: 100,
+  blendSrcAlpha: 201,
+  blendDstAlpha: 200,
+};
 
 /** Own only shader hooks on the assembly's material clones, one glass clone per
  * hooked material, and the globe's draw group. The index is reordered in place
@@ -200,26 +232,46 @@ const GLASS_BLEND = { side: 0, transparent: true, depthWrite: true, blending: 5,
  * stand-in and never loads this chunk; a failed load keeps the supplied static
  * glow. */
 export function createLanternFlame({ root, camera }) {
-  const time = { value: 0 }, eye = { value: new Vector3(0, 1, 6) }, flicker = { value: [1, 1, 0, 0] };
-  const bloom = { value: 1 }, lamp = { value: new Vector3(0, NO_LIGHT, 0) }, probe = new Vector3();
+  const time = { value: 0 },
+    eye = { value: new Vector3(0, 1, 6) },
+    flicker = { value: [1, 1, 0, 0] };
+  const bloom = { value: 1 },
+    lamp = { value: new Vector3(0, NO_LIGHT, 0) },
+    probe = new Vector3();
   const center = new Vector3();
-  const records = new Map(), glasses = new Map(), globes = [];
-  let disposed = false, renderer = null;
+  const records = new Map(),
+    glasses = new Map(),
+    globes = [];
+  let disposed = false,
+    renderer = null;
   // The puddle mirror (terrain-build.js, another lazy chunk) reads the draught
   // here, on the root beside the practical light, to draw the reflected flame
   // at the same height and lean.
   root.userData.lanternFlicker = flicker;
-  const hook = (before, glass) => function (shader, context) {
-    before.call(this, shader, context);
-    renderer = context || renderer;
-    Object.assign(shader.uniforms, { lanternTime: time, lanternEye: eye, lanternFlicker: flicker, lanternBloom: bloom, lanternLight: lamp });
-    shader.vertexShader = shader.vertexShader.replace("#include <common>", "#include <common>\nvarying vec3 vLanternPoint;")
-      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvLanternPoint = position;");
-    shader.fragmentShader = shader.fragmentShader.replace("#include <common>", "#include <common>\n" + FLAME_GLSL)
-      .replace("#include <emissivemap_fragment>", EMISSION(glass));
-    // Glass pixels carry mask 1, where the near field adds nothing.
-    if (!glass) shader.fragmentShader = shader.fragmentShader.replace("#include <lights_fragment_end>", NEAR_FIELD);
-  };
+  const hook = (before, glass) =>
+    function (shader, context) {
+      before.call(this, shader, context);
+      renderer = context || renderer;
+      Object.assign(shader.uniforms, {
+        lanternTime: time,
+        lanternEye: eye,
+        lanternFlicker: flicker,
+        lanternBloom: bloom,
+        lanternLight: lamp,
+      });
+      shader.vertexShader = shader.vertexShader
+        .replace("#include <common>", "#include <common>\nvarying vec3 vLanternPoint;")
+        .replace("#include <begin_vertex>", "#include <begin_vertex>\nvLanternPoint = position;");
+      shader.fragmentShader = shader.fragmentShader
+        .replace("#include <common>", "#include <common>\n" + FLAME_GLSL)
+        .replace("#include <emissivemap_fragment>", EMISSION(glass));
+      // Glass pixels carry mask 1, where the near field adds nothing.
+      if (!glass)
+        shader.fragmentShader = shader.fragmentShader.replace(
+          "#include <lights_fragment_end>",
+          NEAR_FIELD,
+        );
+    };
   function glassFor(material) {
     let glass = glasses.get(material);
     if (!glass) {
@@ -227,7 +279,9 @@ export function createLanternFlame({ root, camera }) {
       glass = Object.assign(material.clone(), GLASS_BLEND);
       glass.name = `${material.name || "lantern"} glass`;
       glass.onBeforeCompile = hook(before, true);
-      glass.customProgramCacheKey = function () { return key.call(this) + "|lantern-flame-v3|lantern-glass"; };
+      glass.customProgramCacheKey = function () {
+        return key.call(this) + "|lantern-flame-v3|lantern-glass";
+      };
       glasses.set(material, glass);
     }
     return glass;
@@ -235,19 +289,43 @@ export function createLanternFlame({ root, camera }) {
   // Globe triangles (see SHELL and FLAME.globe) move to the end of the index
   // as draw group 1, rendered by the glass clone so the cage shows through.
   function splitGlobe(mesh, material) {
-    const geometry = mesh.geometry, index = geometry?.index, position = geometry?.attributes.position;
-    if (!index || !position || geometry.groups.length || geometry.drawRange.start > 0 || geometry.drawRange.count < index.count
-      || globes.some((globe) => globe.geometry === geometry)) return;
-    const { axis: [ax, az], globe: { bottom, top, radius } } = FLAME;
-    const inside = (i) => { const y = position.getY(i); return y > SHELL.low && y < SHELL.high && Math.hypot(position.getX(i) - ax, position.getZ(i) - az) < radius; };
-    const original = index.array.slice(), keep = [], shell = [];
+    const geometry = mesh.geometry,
+      index = geometry?.index,
+      position = geometry?.attributes.position;
+    if (
+      !index ||
+      !position ||
+      geometry.groups.length ||
+      geometry.drawRange.start > 0 ||
+      geometry.drawRange.count < index.count ||
+      globes.some((globe) => globe.geometry === geometry)
+    )
+      return;
+    const {
+      axis: [ax, az],
+      globe: { bottom, top, radius },
+    } = FLAME;
+    const inside = (i) => {
+      const y = position.getY(i);
+      return (
+        y > SHELL.low &&
+        y < SHELL.high &&
+        Math.hypot(position.getX(i) - ax, position.getZ(i) - az) < radius
+      );
+    };
+    const original = index.array.slice(),
+      keep = [],
+      shell = [];
     for (let k = 0; k + 2 < original.length; k += 3) {
-      const a = original[k], b = original[k + 1], c = original[k + 2];
+      const a = original[k],
+        b = original[k + 1],
+        c = original[k + 2];
       const y = (position.getY(a) + position.getY(b) + position.getY(c)) / 3;
       (inside(a) && inside(b) && inside(c) && y > bottom && y < top ? shell : keep).push(a, b, c);
     }
     if (!shell.length) return;
-    const glass = glassFor(material), materials = [material, glass];
+    const glass = glassFor(material),
+      materials = [material, glass];
     index.array.set(keep.concat(shell));
     index.needsUpdate = true;
     geometry.addGroup(0, keep.length, 0);
@@ -266,7 +344,10 @@ export function createLanternFlame({ root, camera }) {
     for (const child of parent.children) {
       if (!child.isPointLight) continue;
       const distance = child.getWorldPosition(probe).distanceToSquared(center);
-      if (distance < best) { best = distance; lamp.value.copy(probe); }
+      if (distance < best) {
+        best = distance;
+        lamp.value.copy(probe);
+      }
     }
   }
   const dispose = () => {
@@ -299,31 +380,47 @@ export function createLanternFlame({ root, camera }) {
     root.traverse((mesh) => {
       const list = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
       for (const material of list) {
-        if (!material?.isMeshStandardMaterial || !material.emissiveMap || records.has(material)) continue;
-        const before = material.onBeforeCompile, key = material.customProgramCacheKey;
+        if (!material?.isMeshStandardMaterial || !material.emissiveMap || records.has(material))
+          continue;
+        const before = material.onBeforeCompile,
+          key = material.customProgramCacheKey;
         records.set(material, { before, key });
         material.onBeforeCompile = hook(before, false);
-        material.customProgramCacheKey = function () { return key.call(this) + "|lantern-flame-v3"; };
+        material.customProgramCacheKey = function () {
+          return key.call(this) + "|lantern-flame-v3";
+        };
         material.needsUpdate = true;
       }
-      if (!Array.isArray(mesh.material) && records.has(mesh.material)) splitGlobe(mesh, mesh.material);
+      if (!Array.isArray(mesh.material) && records.has(mesh.material))
+        splitGlobe(mesh, mesh.material);
     });
   } catch (error) {
     dispose();
     throw error;
   }
   return {
-    get time() { return time.value; },
+    get time() {
+      return time.value;
+    },
     // `bloom` names whether a bloom pass runs this frame. Without it, the
     // renderer's shadow map stands in: quality.js gives shadows and bloom to
     // the same tiers (high), and neither to balanced or low.
-    update({ deltaSeconds = 0, reducedMotion = false, motionPaused = false, bloom: bloomPass } = {}) {
+    update({
+      deltaSeconds = 0,
+      reducedMotion = false,
+      motionPaused = false,
+      bloom: bloomPass,
+    } = {}) {
       if (disposed) return 1;
       if (!reducedMotion && !motionPaused && Number.isFinite(deltaSeconds))
-        time.value += Math.max(0, Math.min(.1, deltaSeconds));
+        time.value += Math.max(0, Math.min(0.1, deltaSeconds));
       root.updateWorldMatrix(true, false);
       if (camera) root.worldToLocal(camera.getWorldPosition(eye.value));
-      bloom.value = (typeof bloomPass === "boolean" ? bloomPass : renderer?.shadowMap?.enabled ?? true) ? 1 : 0;
+      bloom.value = (
+        typeof bloomPass === "boolean" ? bloomPass : (renderer?.shadowMap?.enabled ?? true)
+      )
+        ? 1
+        : 0;
       locateLight();
       // One draught drives the flame shape, the glass light and (through the
       // returned glow) the practical light, which the tree clamps to [.88, 1.12].

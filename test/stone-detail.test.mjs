@@ -9,7 +9,13 @@ import {
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 // A two-map fixture set; the controller itself names no maps.
 const fixtureUrl = (kind, size) => `/images/materials/stone-${kind}-${size}.webp`;
-function harness({ tier = "high", disabled = false, failApply = false, kinds = ["color", "roughness"], urlFor = fixtureUrl } = {}) {
+function harness({
+  tier = "high",
+  disabled = false,
+  failApply = false,
+  kinds = ["color", "roughness"],
+  urlFor = fixtureUrl,
+} = {}) {
   const requests = [],
     applied = [],
     resets = [],
@@ -171,4 +177,3 @@ test("ground detail settings stay restrained and unhashed slate URLs keep their 
   assert.ok(GROUND_DETAIL_SETTINGS.normalScale > 0 && GROUND_DETAIL_SETTINGS.normalScale <= 1);
   assert.equal(slateMaterialUrl("color", 1024), "/images/materials/slate-color-1024.webp");
 });
-

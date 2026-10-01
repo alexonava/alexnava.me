@@ -23,30 +23,36 @@ test("CSS asset URLs and bytes are portable across checkout line endings", async
   try {
     await cp(path.join(projectRoot, "build.mjs"), path.join(fixture, "build.mjs"));
     await cp(path.join(projectRoot, "tools"), path.join(fixture, "tools"), { recursive: true });
-    for (const dir of ["src", "fonts", "images/architecture", "images/materials", "public/.well-known"]) {
+    for (const dir of [
+      "src",
+      "fonts",
+      "images/architecture",
+      "images/materials",
+      "public/.well-known",
+    ]) {
       await mkdir(path.join(fixture, dir), { recursive: true });
     }
     for (const file of [
       "LICENSE",
       ...[
-      "favicon.svg",
-      "favicon.ico",
-      "icon.svg",
-      "icon-maskable.svg",
-      "apple-touch-icon.png",
-      "icon-192.png",
-      "icon-512.png",
-      "icon-maskable-512.png",
-      "manifest.webmanifest",
-      "og.png",
-      "robots.txt",
-      "llms.txt",
-      "sitemap.md",
-      "index.md",
-      "_headers",
-      "_redirects",
-      ".well-known/security.txt",
-      "site-agents.md",
+        "favicon.svg",
+        "favicon.ico",
+        "icon.svg",
+        "icon-maskable.svg",
+        "apple-touch-icon.png",
+        "icon-192.png",
+        "icon-512.png",
+        "icon-maskable-512.png",
+        "manifest.webmanifest",
+        "og.png",
+        "robots.txt",
+        "llms.txt",
+        "sitemap.md",
+        "index.md",
+        "_headers",
+        "_redirects",
+        ".well-known/security.txt",
+        "site-agents.md",
       ].map((name) => `public/${name}`),
     ]) {
       await writeFile(path.join(fixture, file), "fixture\n");
@@ -109,7 +115,9 @@ test("CSS asset URLs and bytes are portable across checkout line endings", async
       "binary artwork, including CRLF bytes, must remain unchanged",
     );
     // A fingerprinted source is published only under its hashed name.
-    await assert.rejects(readFile(path.join(fixture, "dist", "images", "paper-grain.webp")), { code: "ENOENT" });
+    await assert.rejects(readFile(path.join(fixture, "dist", "images", "paper-grain.webp")), {
+      code: "ENOENT",
+    });
 
     assert.ok(lf.bytes.length < Buffer.byteLength(lfSource), "the stylesheet is minified");
     assert.equal(

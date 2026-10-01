@@ -11,28 +11,47 @@ function createFixture({ init = () => true } = {}) {
     kind,
     hidden: false,
     children: [{ kind: "ordinary-link-or-selectable-copy" }],
-    contains(target) { return target === this || this.children.includes(target); },
+    contains(target) {
+      return target === this || this.children.includes(target);
+    },
   }));
   const document = {
     activeElement: { kind: "body" },
-    querySelector: (selector) => selector === ".scene-entry" ? entry : null,
-    querySelectorAll: (selector) => selector === "[data-scene-fallback]" ? fallback : [],
+    querySelector: (selector) => (selector === ".scene-entry" ? entry : null),
+    querySelectorAll: (selector) => (selector === "[data-scene-fallback]" ? fallback : []),
   };
   let calls = 0;
   const window = {
-    BabelSite: { ui: { initPanels() { calls++; return init({ entry, fallback, document }); } } },
+    BabelSite: {
+      ui: {
+        initPanels() {
+          calls++;
+          return init({ entry, fallback, document });
+        },
+      },
+    },
   };
   vm.runInNewContext(source, { window, document }, { filename: "src/ui/scene-menu.js" });
   return {
-    window, document, entry, fallback,
-    get calls() { return calls; },
-    initialize() { return window.BabelSite.ui.initSceneMenu(); },
+    window,
+    document,
+    entry,
+    fallback,
+    get calls() {
+      return calls;
+    },
+    initialize() {
+      return window.BabelSite.ui.initSceneMenu();
+    },
   };
 }
 
 function assertFallbackAvailable(fixture) {
   assert.equal(fixture.entry.hidden, true, "nonfunctional About dialog control stays hidden");
-  assert.ok(fixture.fallback.every((element) => !element.hidden), "ordinary About navigation and category copy remain available");
+  assert.ok(
+    fixture.fallback.every((element) => !element.hidden),
+    "ordinary About navigation and category copy remain available",
+  );
 }
 
 test("scene menu registration does not hide fallback before explicit initialization", () => {
@@ -62,7 +81,12 @@ test("failed, unavailable, or incomplete panel binding preserves fallback and re
     ["false result", () => false],
     ["missing success result", () => undefined],
     ["truthy non-success result", () => 1],
-    ["thrown error", () => { throw new Error("binding failed"); }],
+    [
+      "thrown error",
+      () => {
+        throw new Error("binding failed");
+      },
+    ],
   ];
   for (const [name, init] of cases) {
     await t.test(name, () => {

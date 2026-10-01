@@ -23,7 +23,7 @@ test("the scene opens About through the text button and keeps Contact inside the
 test("estate destinations are labeled HTML buttons in keyboard order without floating icons", async () => {
   const html = await readFile(new URL("index.html", root), "utf8");
   const map = html.match(/<nav class="estate-destinations"[\s\S]*?<\/nav>/)[0];
-  const destinations = [...map.matchAll(/data-panel="([^"]+)"/g)].map(m => m[1]);
+  const destinations = [...map.matchAll(/data-panel="([^"]+)"/g)].map((m) => m[1]);
   assert.deepEqual(destinations, ["profile", "experience", "contact"]);
   assert.doesNotMatch(map, /<img|<canvas/);
   for (const name of destinations) {

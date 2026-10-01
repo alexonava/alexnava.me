@@ -77,42 +77,46 @@ export const MOUNTAINS = Object.freeze({
   // are one contiguous draw range (showRanges()); `margin` degrees pad it.
   sectors: Object.freeze({ count: 24, seam: 202.5, margin: 3 }),
   lowWindow: 2.6,
-  background: Object.freeze([
-    [0, 3.1],
-    [9, 3.2],
-    [17, 3.4],
-    [22, 2],
-    [86, 2],
-    [96, 3.6],
-    [126, 4.4],
-    [140, 4.8],
-    [163, 4],
-    [168, 2.6],
-    [185, 2.6],
-    [200, 4.6],
-    [226, 3.6],
-    [232, 2.6],
-    [282, 2.6],
-    [296, 4.8],
-    [340, 4.2],
-  ].map(Object.freeze)),
-  peaks: Object.freeze([
-    [11, 6, 6, 4],
-    [17, 4.2, 4, 3],
-    [101, 3.6, 4, 3],
-    [114, 4.6, 6, 4],
-    [143, 6.8, 5, 4],
-    [150, 8, 8, 4],
-    [158, 6.2, 5, 3],
-    [175, 2.4, 3.5, 4],
-    [180.5, 2.1, 2.5, 3],
-    [188, 4.6, 3.5, 3],
-    [210, 8.5, 9, 4],
-    [222, 6, 5, 3],
-    [305, 7, 8, 4],
-    [318, 5, 5, 1],
-    [330, 6, 6, 3],
-  ].map(Object.freeze)),
+  background: Object.freeze(
+    [
+      [0, 3.1],
+      [9, 3.2],
+      [17, 3.4],
+      [22, 2],
+      [86, 2],
+      [96, 3.6],
+      [126, 4.4],
+      [140, 4.8],
+      [163, 4],
+      [168, 2.6],
+      [185, 2.6],
+      [200, 4.6],
+      [226, 3.6],
+      [232, 2.6],
+      [282, 2.6],
+      [296, 4.8],
+      [340, 4.2],
+    ].map(Object.freeze),
+  ),
+  peaks: Object.freeze(
+    [
+      [11, 6, 6, 4],
+      [17, 4.2, 4, 3],
+      [101, 3.6, 4, 3],
+      [114, 4.6, 6, 4],
+      [143, 6.8, 5, 4],
+      [150, 8, 8, 4],
+      [158, 6.2, 5, 3],
+      [175, 2.4, 3.5, 4],
+      [180.5, 2.1, 2.5, 3],
+      [188, 4.6, 3.5, 3],
+      [210, 8.5, 9, 4],
+      [222, 6, 5, 3],
+      [305, 7, 8, 4],
+      [318, 5, 5, 1],
+      [330, 6, 6, 3],
+    ].map(Object.freeze),
+  ),
 });
 // The moon key (rendering's sun light, 32,28,14), for the coarse vertex shade;
 // the film shader lights each pixel from aForm.
@@ -192,7 +196,10 @@ function backgroundCap(azimuth) {
 // backgroundCap() per column, shared by every range.
 let capColumns = null;
 function capsOf(columns) {
-  if (capColumns?.length !== columns) capColumns = Float64Array.from({ length: columns }, (_, j) => backgroundCap((j / columns) * 360));
+  if (capColumns?.length !== columns)
+    capColumns = Float64Array.from({ length: columns }, (_, j) =>
+      backgroundCap((j / columns) * 360),
+    );
   return capColumns;
 }
 // Periodic smooth value noise with n knots around the ring.
@@ -245,10 +252,14 @@ function summits(table, seed, cells) {
       if (dd >= 1) continue;
       const height = 0.4 + 0.6 * L[2][i],
         e = exponent[0] + (exponent[1] - exponent[0]) * L[4][i];
-      const v = flankProfile(dd, e, left === hl > hr,
+      const v = flankProfile(
+        dd,
+        e,
+        left === hl > hr,
         shoulder[0] + shoulder[1] * L[5][i],
         shoulder[2] + shoulder[3] * L[6][i],
-        shoulder[4] + shoulder[5] * L[7][i]);
+        shoulder[4] + shoulder[5] * L[7][i],
+      );
       best = Math.max(best, height * v);
     }
     return best;
@@ -260,7 +271,17 @@ function summits(table, seed, cells) {
 // and toothed in proportion to height. Authored peaks keep their exact apex and
 // get warped, shouldered flanks; the low windows keep their 2.6 degree ceiling.
 function* crestSteps(range) {
-  const { columns, share, octaves, summits: cells, notch: notchDepth, teeth: tt, authored, peaks, lowWindow } = MOUNTAINS;
+  const {
+    columns,
+    share,
+    octaves,
+    summits: cells,
+    notch: notchDepth,
+    teeth: tt,
+    authored,
+    peaks,
+    lowWindow,
+  } = MOUNTAINS;
   const part = share[range],
     far = range / (share.length - 1),
     rough = new Float64Array(columns),
@@ -294,12 +315,24 @@ function* crestSteps(range) {
   for (let p = 0; p < peaks.length; p++) {
     const [at, apex, half0, peakRange] = peaks[p];
     if (peakRange !== range) continue;
-    const s = authored.skewOverride[p] ?? authored.skew[0] + (authored.skew[1] - authored.skew[0]) * lattice(p, 4241),
+    const s =
+        authored.skewOverride[p] ??
+        authored.skew[0] + (authored.skew[1] - authored.skew[0]) * lattice(p, 4241),
       half = half0 * authored.widen;
-    own.push({ at, apex, hl: half * s, hr: half * (2 - s),
+    own.push({
+      at,
+      apex,
+      hl: half * s,
+      hr: half * (2 - s),
       e: authored.exponent[0] + (authored.exponent[1] - authored.exponent[0]) * lattice(p, 4243),
-      shoulder: [sh[0] + sh[1] * lattice(p, 4245), sh[2] + sh[3] * lattice(p, 4247), sh[4] + sh[5] * lattice(p, 4249)],
-      warp360: vn(table, 360, 977 + p), warp1080: vn(table, 1080, 979 + p) });
+      shoulder: [
+        sh[0] + sh[1] * lattice(p, 4245),
+        sh[2] + sh[3] * lattice(p, 4247),
+        sh[4] + sh[5] * lattice(p, 4249),
+      ],
+      warp360: vn(table, 360, 977 + p),
+      warp1080: vn(table, 1080, 979 + p),
+    });
     yield;
   }
   const caps = capsOf(columns);
@@ -316,12 +349,24 @@ function* crestSteps(range) {
       // The warp moves a flank by at most 1.5 x warp: beyond that it is bare.
       if (raw >= 1 + 1.5 * authored.warp) continue;
       // Domain warp along the flank, zero at the apex so the apex stays exact.
-      const delta = raw + authored.warp * Math.min(1, 4 * raw) * (2 * warp360(u) - 1 + 0.5 * (2 * warp1080(u) - 1));
-      const v = flankProfile(Math.max(0, delta), e, left === hl > hr, shoulder[0], shoulder[1], shoulder[2]);
+      const delta =
+        raw +
+        authored.warp * Math.min(1, 4 * raw) * (2 * warp360(u) - 1 + 0.5 * (2 * warp1080(u) - 1));
+      const v = flankProfile(
+        Math.max(0, delta),
+        e,
+        left === hl > hr,
+        shoulder[0],
+        shoulder[1],
+        shoulder[2],
+      );
       if (v > 0) value = Math.max(value, apex * v * (1 - notch * Math.min(1, 3 * delta)));
     }
     // Teeth grow with height.
-    const relief = tt.base[0] + (tt.base[1] - tt.base[0]) * far + (tt.perDegree[0] + (tt.perDegree[1] - tt.perDegree[0]) * far) * value;
+    const relief =
+      tt.base[0] +
+      (tt.base[1] - tt.base[0]) * far +
+      (tt.perDegree[0] + (tt.perDegree[1] - tt.perDegree[0]) * far) * value;
     value += relief * (teeth[j] - 0.35);
     crest[j] = Math.max(0.2, cap <= lowWindow ? Math.min(value, lowWindow) : value);
     if (pace(range, j)) yield;
@@ -510,7 +555,8 @@ export function createMountainGeometry() {
   return run(geometrySteps());
 }
 
-const nextFrame = (task) => (globalThis.requestAnimationFrame ?? ((next) => setTimeout(next, 16)))(task);
+const nextFrame = (task) =>
+  (globalThis.requestAnimationFrame ?? ((next) => setTimeout(next, 16)))(task);
 
 // Whether the canvas is fading in over the title card (styles.css, timed from the
 // reveal's babel:reveal mark), or, unless hidden is false, still hidden. Like
@@ -522,11 +568,14 @@ const nextFrame = (task) => (globalThis.requestAnimationFrame ?? ((next) => setT
 function fading(rendering, hidden = true) {
   const container = () => rendering?.renderer?.domElement?.parentNode,
     style = container() && globalThis.getComputedStyle?.(container())?.transitionDuration,
-    duration = typeof style === "string" ? parseFloat(style) * (/ms/.test(style) ? 1 : 1000) || 0 : 0;
+    duration =
+      typeof style === "string" ? parseFloat(style) * (/ms/.test(style) ? 1 : 1000) || 0 : 0;
   let fadeEnd = null;
   return () => {
     if (!container()?.classList?.contains("is-ready")) return hidden;
-    fadeEnd ??= (performance.getEntriesByName?.("babel:reveal", "mark").at(-1)?.startTime ?? -Infinity) + duration;
+    fadeEnd ??=
+      (performance.getEntriesByName?.("babel:reveal", "mark").at(-1)?.startTime ?? -Infinity) +
+      duration;
     return performance.now() < fadeEnd;
   };
 }
@@ -540,15 +589,23 @@ function fading(rendering, hidden = true) {
 export const MOUNTAIN_ENTRANCE = Object.freeze({ fade: 0.45, late: 1.8 });
 function entrance(rendering, tour) {
   const early = fading(rendering, false);
-  return () => !tour?.running || tour.transition.cut || !rendering.renderer?.domElement?.parentNode?.classList?.contains("is-ready")
-    ? 0 : early() ? MOUNTAIN_ENTRANCE.fade : MOUNTAIN_ENTRANCE.late;
+  return () =>
+    !tour?.running ||
+    tour.transition.cut ||
+    !rendering.renderer?.domElement?.parentNode?.classList?.contains("is-ready")
+      ? 0
+      : early()
+        ? MOUNTAIN_ENTRANCE.fade
+        : MOUNTAIN_ENTRANCE.late;
 }
 
 // The sectors of the ring in view of a perspective camera, as [first, count]
 // from the seam, or null to draw them all (a view across the seam, very wide
 // or steep). Any direction inside the frustum lies within the azimuths of its
 // four corner rays while they span less than a half turn.
-const DEGREES = 180 / Math.PI, corner = new Vector3(), ahead = new Vector3();
+const DEGREES = 180 / Math.PI,
+  corner = new Vector3(),
+  ahead = new Vector3();
 export function sectorsInView(camera) {
   const { count, seam, margin } = MOUNTAINS.sectors;
   if (!camera?.isPerspectiveCamera) return null;
@@ -558,7 +615,10 @@ export function sectorsInView(camera) {
   let low = 0,
     high = 0;
   for (let k = 0; k < 4; k++) {
-    corner.set(k & 1 ? 1 : -1, k & 2 ? 1 : -1, 1).applyMatrix4(camera.projectionMatrixInverse).transformDirection(camera.matrixWorld);
+    corner
+      .set(k & 1 ? 1 : -1, k & 2 ? 1 : -1, 1)
+      .applyMatrix4(camera.projectionMatrixInverse)
+      .transformDirection(camera.matrixWorld);
     const turn = ((((Math.atan2(corner.z, corner.x) * DEGREES - forward) % 360) + 540) % 360) - 180;
     low = Math.min(low, turn);
     high = Math.max(high, turn);
@@ -593,13 +653,26 @@ export function showRanges(mesh, ranges, seconds = 0) {
   let fading = seconds > 0 && Boolean(shading?.isShaderMaterial),
     shown = 0,
     last = null;
-  if (fading) Object.assign(shading, { blending: 5, blendEquation: 100, blendEquationAlpha: 100, blendSrc: 213, blendDst: 214,
-    blendSrcAlpha: 213, blendDstAlpha: 214, blendAlpha: 0 });
+  if (fading)
+    Object.assign(shading, {
+      blending: 5,
+      blendEquation: 100,
+      blendEquationAlpha: 100,
+      blendSrc: 213,
+      blendDst: 214,
+      blendSrcAlpha: 213,
+      blendDstAlpha: 214,
+      blendAlpha: 0,
+    });
   ranges.setDrawRange(0, whole);
   mesh.onBeforeRender = function (_renderer, _scene, camera, geometry) {
     if (geometry !== ranges) return;
     const view = sectorsInView(camera);
-    if (view) ranges.setDrawRange(view[0] * sectors.size, Math.min(view[1], sectors.count - view[0]) * sectors.size);
+    if (view)
+      ranges.setDrawRange(
+        view[0] * sectors.size,
+        Math.min(view[1], sectors.count - view[0]) * sectors.size,
+      );
     if (!fading) return;
     const now = performance.now();
     if (last !== null) shown += Math.min(0.1, Math.max(0, (now - last) / 1000));
@@ -652,18 +725,26 @@ function holdSlot(rendering, work) {
 // userData.fadeIn records the seconds (0: at once). cancelled: the
 // ranges were disposed, so the build stops, or the finished geometry is freed,
 // and it resolves to null.
-export function buildMountains({ rendering = null, tour = null, cancelled = () => false, mesh = null } = {}) {
+export function buildMountains({
+  rendering = null,
+  tour = null,
+  cancelled = () => false,
+  mesh = null,
+} = {}) {
   const steps = geometrySteps();
   if (!rendering) return Promise.resolve(cancelled() ? null : run(steps));
-  const idle = typeof globalThis.requestIdleCallback === "function"
-    ? (task) => globalThis.requestIdleCallback(task, { timeout: 100 })
-    : (task) => setTimeout(task, 0);
+  const idle =
+    typeof globalThis.requestIdleCallback === "function"
+      ? (task) => globalThis.requestIdleCallback(task, { timeout: 100 })
+      : (task) => setTimeout(task, 0);
   const rush = fading(rendering, false),
     enter = entrance(rendering, tour);
   let done,
     longest = 0,
     sliced = 0;
-  const slicing = new Promise((resolve) => { done = resolve; });
+  const slicing = new Promise((resolve) => {
+    done = resolve;
+  });
   const claim = holdSlot(rendering, slicing);
   return new Promise((resolve, reject) => {
     const finish = (settle, value) => {
@@ -675,7 +756,7 @@ export function buildMountains({ rendering = null, tour = null, cancelled = () =
         geometry.dispose();
         return resolve(null);
       }
-      showRanges(mesh, geometry, geometry.userData.fadeIn = enter());
+      showRanges(mesh, geometry, (geometry.userData.fadeIn = enter()));
       resolve(geometry);
     };
     // One pending slice at a time: whichever of its waits fires first runs it.
@@ -704,7 +785,17 @@ export function buildMountains({ rendering = null, tour = null, cancelled = () =
       if (cancelled()) return finish(resolve, null);
       claim();
       const early = rush();
-      const until = performance.now() + (early ? (sliced++ < 2 ? 6 : 12) : !deadline ? 5 : deadline.didTimeout ? 2 : Math.max(2, Math.min(8, deadline.timeRemaining())));
+      const until =
+        performance.now() +
+        (early
+          ? sliced++ < 2
+            ? 6
+            : 12
+          : !deadline
+            ? 5
+            : deadline.didTimeout
+              ? 2
+              : Math.max(2, Math.min(8, deadline.timeRemaining())));
       try {
         for (;;) {
           const began = performance.now(),

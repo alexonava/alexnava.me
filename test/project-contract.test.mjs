@@ -64,7 +64,10 @@ test("public agent-discovery files are built from sanitized source artifacts", a
   assert.match(buildScript, /"llms\.txt"/);
   assert.match(buildScript, /"sitemap\.md"/);
   assert.match(buildScript, /"index\.md"/);
-  assert.match(buildScript, /source: `\$\{PUBLIC_DIR\}\/site-agents\.md`, destination: "AGENTS\.md"/);
+  assert.match(
+    buildScript,
+    /source: `\$\{PUBLIC_DIR\}\/site-agents\.md`, destination: "AGENTS\.md"/,
+  );
   for (const pathName of ["/llms.txt", "/AGENTS.md", "/index.md", "/sitemap.md"]) {
     assert.match(headers, new RegExp(`${pathName.replace(".", "\\.")}\\r?\\n\\s+Cache-Control`));
   }
@@ -189,7 +192,10 @@ test("the share card keeps its unpublished backdrop and the images folder is pub
   assert.match(card, /url\("og-card-backdrop\.webp"\)/);
   assert.doesNotMatch(card, /scene-poster|\.\.\/images\//);
   const images = await readdir(path.join(projectRoot, "images"), { recursive: true });
-  assert.deepEqual(images.filter((name) => /scene-poster/.test(name)), []);
+  assert.deepEqual(
+    images.filter((name) => /scene-poster/.test(name)),
+    [],
+  );
   assert.doesNotMatch(buildScript, /scene-poster|POSTER/);
 
   assert.match(buildScript, /const STATIC_DIRS = \["fonts", "images"\];/);
@@ -490,10 +496,7 @@ test("CodeQL default setup is not duplicated by a workflow", async () => {
 test("static headers separate immutable fingerprints from revalidated stable assets", async () => {
   const headers = await readProjectFile("public/_headers");
 
-  assert.match(
-    headers,
-    /Strict-Transport-Security:\s*max-age=31536000; includeSubDomains\r?$/m,
-  );
+  assert.match(headers, /Strict-Transport-Security:\s*max-age=31536000; includeSubDomains\r?$/m);
   for (const directive of ["form-action 'none'", "frame-src 'none'", "worker-src 'none'"]) {
     assert.match(headers, new RegExp(directive.replace(" ", "\\s+")));
   }
@@ -658,7 +661,8 @@ test("Pages header rules resolve one cache policy for stable and fingerprinted p
       .join("/");
     const stable = `/images/${relative}`;
     const hashed = stable.replace(/\.(\w+)$/, `.${hash}.$1`);
-    const hashedByBuild = /^(?:[^/]+\.webp|architecture\/[^/]+\.glb|materials\/slate-[^/]+\.webp)$/.test(relative);
+    const hashedByBuild =
+      /^(?:[^/]+\.webp|architecture\/[^/]+\.glb|materials\/slate-[^/]+\.webp)$/.test(relative);
     fingerprintable += hashedByBuild;
     assert.equal(cacheControl(stable), revalidated, stable);
     assert.equal(cacheControl(hashed), hashedByBuild ? immutable : revalidated, hashed);

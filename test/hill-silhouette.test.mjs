@@ -2,7 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
-import { BufferGeometry, FrontSide, Group, NoBlending, PerspectiveCamera, ShaderMaterial, Vector3 } from "three";
+import {
+  BufferGeometry,
+  FrontSide,
+  Group,
+  NoBlending,
+  PerspectiveCamera,
+  ShaderMaterial,
+  Vector3,
+} from "three";
 import {
   createHillGeometry,
   createHillSilhouette,
@@ -164,7 +172,11 @@ test("film mountains are five camera-centred ranges of rows x columns in one wra
   assert.ok(p.count < 65536, "Uint16 indices");
   assert.ok(index instanceof Uint16Array);
   assert.equal(index.length / 3, radii.length * (rows.length - 1) * n * 2);
-  assert.equal(geometry.attributes.normal, undefined, "the shader lights each pixel, so no normal ships");
+  assert.equal(
+    geometry.attributes.normal,
+    undefined,
+    "the shader lights each pixel, so no normal ships",
+  );
   assert.equal(terrain.itemSize, 4);
   assert.equal(form.itemSize, 4);
   radii.forEach((radius, range) => {
@@ -180,7 +192,10 @@ test("film mountains are five camera-centred ranges of rows x columns in one wra
       for (let row = 1; row < rows.length; row++) {
         const v = crest + row * n;
         near(Math.hypot(p.getX(v), p.getZ(v)), radius * rows[row], 1e-3);
-        assert.ok(elevationOf(p, v - n) - elevationOf(p, v) >= 0.08 - 1e-4, `range ${range} column ${j} row ${row}`);
+        assert.ok(
+          elevationOf(p, v - n) - elevationOf(p, v) >= 0.08 - 1e-4,
+          `range ${range} column ${j} row ${row}`,
+        );
         near(terrain.getX(v), crests[range][j] - elevationOf(p, v), 1e-3);
       }
     }
@@ -188,13 +203,19 @@ test("film mountains are five camera-centred ranges of rows x columns in one wra
     let wraps = 0;
     for (let t = 0; t < index.length; t += 6)
       if (Math.floor(index[t] / perRange) === range && index[t] % n === n - 1) {
-        assert.deepEqual([...index.subarray(t, t + 6)].map((v) => v % n), [n - 1, n - 1, 0, n - 1, 0, 0]);
+        assert.deepEqual(
+          [...index.subarray(t, t + 6)].map((v) => v % n),
+          [n - 1, n - 1, 0, n - 1, 0, 0],
+        );
         wraps++;
       }
     assert.equal(wraps, rows.length - 1);
   });
   // Every quad once (sector by sector: see the sectors test).
-  assert.equal(new Set(Array.from({ length: index.length / 6 }, (_, q) => index[q * 6])).size, index.length / 6);
+  assert.equal(
+    new Set(Array.from({ length: index.length / 6 }, (_, q) => index[q * 6])).size,
+    index.length / 6,
+  );
   for (let t = 0; t < index.length; t += 3) {
     const [a, b, c] = [0, 1, 2].map((k) => [
       p.getX(index[t + k]),
@@ -213,7 +234,8 @@ test("film mountains are five camera-centred ranges of rows x columns in one wra
   // The rows are progressively smoothed crests, so lower spurs broaden downward.
   const rowsOf = mountainRows(crests[4]),
     roughness = (row) => row.reduce((sum, e, j) => sum + Math.abs(row[(j + 1) % n] - e), 0);
-  for (let row = 1; row < rowsOf.length - 1; row++) assert.ok(roughness(rowsOf[row]) < roughness(rowsOf[row - 1]));
+  for (let row = 1; row < rowsOf.length - 1; row++)
+    assert.ok(roughness(rowsOf[row]) < roughness(rowsOf[row - 1]));
 });
 
 test("aForm carries each face's turn, lean and fold and the nearer ranges' skyline", () => {
@@ -241,7 +263,11 @@ test("aForm carries each face's turn, lean and fold and the nearer ranges' skyli
       tangent = [-Math.sin(azimuth), Math.cos(azimuth)],
       inward = [-Math.cos(azimuth), -Math.sin(azimuth)],
       lean = form.getY(v) * (1 + 0.25 * form.getZ(v)),
-      normal = [tangent[0] * form.getX(v) + inward[0] * lean, 1, tangent[1] * form.getX(v) + inward[1] * lean];
+      normal = [
+        tangent[0] * form.getX(v) + inward[0] * lean,
+        1,
+        tangent[1] * form.getX(v) + inward[1] * lean,
+      ];
     return (normal[0] * key[0] + normal[1] * key[1] + normal[2] * key[2]) / Math.hypot(...normal);
   };
   for (const row of [1, 2]) {
@@ -362,7 +388,8 @@ test("the snow edge is anti-aliased across its own gradient and never copies the
   hill.setFilmTreatment(true);
   const shader = hill.mesh.material.fragmentShader,
     // Its assignment (the snowline is assigned where a massif carries snow).
-    statement = (name) => shader.match(new RegExp(String.raw`\b${name}=(?!0\.[,;])[^;]*;`))?.[0] ?? "";
+    statement = (name) =>
+      shader.match(new RegExp(String.raw`\b${name}=(?!0\.[,;])[^;]*;`))?.[0] ?? "";
   // The snowline and the steepness that sheds snow depend only on smooth fields
   // (the massif depth, polar noise and the face's turn), never on vT.x, the
   // depth below the toothed crest, whose per-column steps would echo down the
@@ -380,7 +407,8 @@ test("the snow edge is anti-aliased across its own gradient and never copies the
   // they stay real branches (ANGLE flattens a branch holding one) and every
   // derivative is taken in uniform control flow.
   const branches = [...shader.matchAll(/if\((f2|st|cap)>0\.\)/g)].map((match) => {
-    let at = match.index + match[0].length, depth = 0;
+    let at = match.index + match[0].length,
+      depth = 0;
     const start = at;
     for (; at < shader.length; at++) {
       if (shader[at] === "{") depth++;
@@ -391,7 +419,11 @@ test("the snow edge is anti-aliased across its own gradient and never copies the
   });
   assert.equal(branches.length, 4);
   for (const body of branches) assert.doesNotMatch(body, /fwidth|dFd/, body.slice(0, 60));
-  assert.match(shader, /vec2 g1=pn\(vec2\(w\*1\.3,el\*\.4\),468\.\), g2=vec2\(\.5,0\.\);/, "a skipped fine octave weighs nothing");
+  assert.match(
+    shader,
+    /vec2 g1=pn\(vec2\(w\*1\.3,el\*\.4\),468\.\), g2=vec2\(\.5,0\.\);/,
+    "a skipped fine octave weighs nothing",
+  );
   hill.dispose();
 });
 
@@ -407,7 +439,10 @@ test("thin low strips part as layers without echoing their crest", () => {
   // under its crest, misted at its foot, so the layers still part at every
   // junction), and the rim under the crest and the lean's change with depth fade,
   // while the crest ink stays.
-  assert.match(shader, /float mist=\(1\.-smoothstep\(0\.,min\(\.9,mix\(\.6,\.65,slim\)\*max\(rise,\.05\)\),el-vF\.w\)\)\*far\*mix\(\.7,\.65,slim\);/);
+  assert.match(
+    shader,
+    /float mist=\(1\.-smoothstep\(0\.,min\(\.9,mix\(\.6,\.65,slim\)\*max\(rise,\.05\)\),el-vF\.w\)\)\*far\*mix\(\.7,\.65,slim\);/,
+  );
   assert.match(shader, /c\+=cr\*\(1\.-\.8\*slim\)\*/);
   assert.match(shader, /float lean=mix\(vF\.y,[^,]+,slim\)/);
   hill.dispose();
@@ -420,24 +455,38 @@ test("the rock body stays ordered by distance, below the sky and with a readable
   for (const lit of [0, 0.5, 1]) {
     for (let range = 0; range < transmittance.length; range++) {
       const body = mountainBody(range, lit);
-      assert.ok(body > 0.1 && body <= rockMax && rockMax < 1, `range ${range} stays visible and below the sky`);
-      if (range > 0) assert.ok(body - mountainBody(range - 1, lit) >= 0.025, `range ${range} approaches the sky`);
+      assert.ok(
+        body > 0.1 && body <= rockMax && rockMax < 1,
+        `range ${range} stays visible and below the sky`,
+      );
+      if (range > 0)
+        assert.ok(
+          body - mountainBody(range - 1, lit) >= 0.025,
+          `range ${range} approaches the sky`,
+        );
     }
   }
   // Moonlit and shadowed faces differ by at least a fifth of the sky's luma on
   // every range (the former band clamp held them within 1-2/255), and distance
   // flattens form.
   const contrast = (range) => mountainBody(range, 1) - mountainBody(range, 0);
-  for (let range = 0; range < transmittance.length; range++) assert.ok(contrast(range) >= 0.2, `range ${range} flank ${contrast(range)}`);
+  for (let range = 0; range < transmittance.length; range++)
+    assert.ok(contrast(range) >= 0.2, `range ${range} flank ${contrast(range)}`);
   assert.ok(contrast(4) < contrast(1));
   // Summits see through thinner air: more of their form.
-  assert.ok(mountainBody(4, 1, { elevation: 6 }) - mountainBody(4, 0, { elevation: 6 }) > contrast(4));
+  assert.ok(
+    mountainBody(4, 1, { elevation: 6 }) - mountainBody(4, 0, { elevation: 6 }) > contrast(4),
+  );
   // The shader applies the same air, albedo and moonlight and no longer pins
   // each range to a narrow luma band.
   const hill = createHillSilhouette({ groundHeight });
   hill.setFilmTreatment(true);
   const shader = hill.mesh.material.fragmentShader;
-  assert.ok(shader.includes("float T=mix(mix(mix(mix(0.86,0.72,step(0.5,vT.y)),0.58,step(1.5,vT.y)),0.44,step(2.5,vT.y)),0.3,step(3.5,vT.y))"));
+  assert.ok(
+    shader.includes(
+      "float T=mix(mix(mix(mix(0.86,0.72,step(0.5,vT.y)),0.58,step(1.5,vT.y)),0.44,step(2.5,vT.y)),0.3,step(3.5,vT.y))",
+    ),
+  );
   assert.ok(shader.includes(`*${MOUNTAIN_AIR.moon}*lit+`));
   assert.ok(shader.includes(`c*=min(1.,${rockMax}*sL/max(dot(c,W),1e-4));`));
   assert.doesNotMatch(shader, /bodyLuma|tL-/);
@@ -503,10 +552,12 @@ test("hill treatment swaps and reuses resources while restoring the original bas
 
 test("the ranges are requested only for a visible film, keep the stand-in on failure and are freed after disposal", async () => {
   let requests = 0;
-  const load = (build = () => Promise.resolve(new BufferGeometry())) => () => {
-    requests++;
-    return Promise.resolve({ buildMountains: build });
-  };
+  const load =
+    (build = () => Promise.resolve(new BufferGeometry())) =>
+    () => {
+      requests++;
+      return Promise.resolve({ buildMountains: build });
+    };
   // Low quality never requests the chunk.
   const low = createHillSilhouette({ groundHeight, load: load() });
   low.applyQuality({ tier: "low" });
@@ -521,10 +572,20 @@ test("the ranges are requested only for a visible film, keep the stand-in on fai
   assert.equal(idle.ready, null, "no request until the film is on");
   assert.equal(requests, 1);
   // The build receives the scene's rendering and tour, and can be cancelled.
-  const rendering = {}, tour = { running: true, transition: { cut: false } };
-  let received = null, invalidated = 0;
-  const wired = createHillSilhouette({ groundHeight, rendering, tour, invalidate: () => invalidated++,
-    load: load((options) => { received = options; return Promise.resolve(new BufferGeometry()); }) });
+  const rendering = {},
+    tour = { running: true, transition: { cut: false } };
+  let received = null,
+    invalidated = 0;
+  const wired = createHillSilhouette({
+    groundHeight,
+    rendering,
+    tour,
+    invalidate: () => invalidated++,
+    load: load((options) => {
+      received = options;
+      return Promise.resolve(new BufferGeometry());
+    }),
+  });
   wired.setFilmTreatment(true);
   await wired.ready;
   assert.equal(received.rendering, rendering);
@@ -535,8 +596,11 @@ test("the ranges are requested only for a visible film, keep the stand-in on fai
   assert.equal(received.cancelled(), true);
   // A failed chunk keeps the empty stand-in and reports a fallback.
   const statuses = [];
-  const failed = createHillSilhouette({ groundHeight, onStatus: (status) => statuses.push(status),
-    load: () => Promise.reject(new Error("offline")) });
+  const failed = createHillSilhouette({
+    groundHeight,
+    onStatus: (status) => statuses.push(status),
+    load: () => Promise.reject(new Error("offline")),
+  });
   failed.setFilmTreatment(true);
   await failed.ready;
   assert.deepEqual(statuses, ["loading", "fallback"]);
@@ -546,7 +610,15 @@ test("the ranges are requested only for a visible film, keep the stand-in on fai
   const late = new BufferGeometry();
   let freed = 0;
   late.addEventListener("dispose", () => freed++);
-  const gone = createHillSilhouette({ groundHeight, load: load(() => new Promise((resolve) => { finish = resolve; })) });
+  const gone = createHillSilhouette({
+    groundHeight,
+    load: load(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    ),
+  });
   gone.setFilmTreatment(true);
   await new Promise((resolve) => setImmediate(resolve));
   gone.dispose();
@@ -555,16 +627,23 @@ test("the ranges are requested only for a visible film, keep the stand-in on fai
   assert.equal(freed, 1);
   for (const hill of [low, idle, failed]) hill.dispose();
   // hill-silhouette.js never imports the chunk statically, so it stays out of the entry.
-  const source = await readFile(new URL("../src/scene/hill-silhouette.js", import.meta.url), "utf8");
+  const source = await readFile(
+    new URL("../src/scene/hill-silhouette.js", import.meta.url),
+    "utf8",
+  );
   assert.doesNotMatch(source, /from\s+["']\.\/mountain-build\.js["']/);
   assert.match(source, /import\("\.\/mountain-build\.js"\)/);
   const chunk = await readFile(new URL("../src/scene/mountain-build.js", import.meta.url), "utf8");
-  assert.deepEqual([...chunk.matchAll(/from\s+["']([^"']+)["']/g)].map((match) => match[1]), ["three"]);
+  assert.deepEqual(
+    [...chunk.matchAll(/from\s+["']([^"']+)["']/g)].map((match) => match[1]),
+    ["three"],
+  );
 });
 
 // A frame clock for requestAnimationFrame (the landing gate polls per frame).
 function frames() {
-  const queue = [], previous = globalThis.requestAnimationFrame;
+  const queue = [],
+    previous = globalThis.requestAnimationFrame;
   globalThis.requestAnimationFrame = (task) => queue.push(task);
   return {
     async step(count = 1) {
@@ -581,7 +660,10 @@ function frames() {
 }
 
 test("the ranges build in short idle slices, hold the shafts' slot and fade in wherever they could show mid-shot", async () => {
-  const clock = frames(), idle = globalThis.requestIdleCallback, style = globalThis.getComputedStyle, slices = [];
+  const clock = frames(),
+    idle = globalThis.requestIdleCallback,
+    style = globalThis.getComputedStyle,
+    slices = [];
   let outstanding = 0;
   try {
     globalThis.requestIdleCallback = (task, options) => {
@@ -594,14 +676,22 @@ test("the ranges build in short idle slices, hold the shafts' slot and fade in w
         slices.push(performance.now() - start);
       });
     };
-    const names = new Set(["is-ready"]), tour = { running: true, transition: { cut: false } };
-    const rendering = { renderer: { domElement: { parentNode: { classList: { contains: (name) => names.has(name) } } } } };
+    const names = new Set(["is-ready"]),
+      tour = { running: true, transition: { cut: false } };
+    const rendering = {
+      renderer: {
+        domElement: { parentNode: { classList: { contains: (name) => names.has(name) } } },
+      },
+    };
     globalThis.getComputedStyle = () => ({ transitionDuration: "0s" });
     let arrived = null;
-    buildMountains({ rendering, tour }).then((built) => { arrived = built; });
+    buildMountains({ rendering, tour }).then((built) => {
+      arrived = built;
+    });
     // While it slices, the light shafts wait on rendering.terrainSlicing.
     assert.ok(rendering.terrainSlicing instanceof Promise, "light-shafts.js sees the build");
-    do await clock.step(); while (outstanding);
+    do await clock.step();
+    while (outstanding);
     await clock.step(3);
     // Mid-shot after the fade (a slow phone): it lands at once, fading in over
     // MOUNTAIN_ENTRANCE.late, rather than leaving the horizon bare until the cut.
@@ -614,7 +704,10 @@ test("the ranges build in short idle slices, hold the shafts' slot and fade in w
     // parallel, so a single slice can stretch; the browser check is separate).
     const sorted = [...slices].sort((a, b) => a - b);
     assert.ok(sorted.at(-1) < 50, `no long task (${sorted.at(-1).toFixed(1)} ms)`);
-    assert.ok(sorted[sorted.length >> 1] < 8, `median slice ${sorted[sorted.length >> 1].toFixed(1)} ms`);
+    assert.ok(
+      sorted[sorted.length >> 1] < 8,
+      `median slice ${sorted[sorted.length >> 1].toFixed(1)} ms`,
+    );
     // Exactly the ranges built at once.
     for (const name of ["position", "aTerrain", "aForm"])
       assert.deepEqual(arrived.attributes[name].array, geometry.attributes[name].array, name);
@@ -622,7 +715,9 @@ test("the ranges build in short idle slices, hold the shafts' slot and fade in w
     arrived.dispose();
     // Sharing the slot with the terrain: it holds a promise for both.
     let terrainDone;
-    const terrain = new Promise((resolve) => { terrainDone = resolve; });
+    const terrain = new Promise((resolve) => {
+      terrainDone = resolve;
+    });
     rendering.terrainSlicing = terrain;
     tour.running = false; // not touring: any frame is unseen
     const shared = buildMountains({ rendering, tour });
@@ -638,7 +733,10 @@ test("the ranges build in short idle slices, hold the shafts' slot and fade in w
     assert.equal(rendering.terrainSlicing, null);
     // Disposed first: the build stops and resolves to nothing.
     let gone = false;
-    assert.equal(await buildMountains({ rendering, tour, cancelled: () => gone || !(gone = true) }), null);
+    assert.equal(
+      await buildMountains({ rendering, tour, cancelled: () => gone || !(gone = true) }),
+      null,
+    );
     assert.equal(rendering.terrainSlicing, null);
   } finally {
     clock.restore();
@@ -650,7 +748,9 @@ test("the ranges build in short idle slices, hold the shafts' slot and fade in w
 });
 
 test("under the reveal's fade the ranges rush in back-to-back slices of at most 12 ms", async () => {
-  const idle = globalThis.requestIdleCallback, style = globalThis.getComputedStyle, timeout = globalThis.setTimeout;
+  const idle = globalThis.requestIdleCallback,
+    style = globalThis.getComputedStyle,
+    timeout = globalThis.setTimeout;
   const tasks = [];
   let idles = 0;
   try {
@@ -658,23 +758,43 @@ test("under the reveal's fade the ranges rush in back-to-back slices of at most 
       idles++;
       setImmediate(() => task({ didTimeout: true, timeRemaining: () => 0 }));
     };
-    globalThis.setTimeout = (task, ms, ...rest) => timeout((...args) => {
-      const start = performance.now();
-      task(...args);
-      tasks.push(performance.now() - start);
-    }, ms, ...rest);
-    const names = new Set(["is-ready"]), tour = { running: true, transition: { cut: false } };
-    const rendering = { renderer: { domElement: { parentNode: { classList: { contains: (name) => names.has(name) } } } } };
+    globalThis.setTimeout = (task, ms, ...rest) =>
+      timeout(
+        (...args) => {
+          const start = performance.now();
+          task(...args);
+          tasks.push(performance.now() - start);
+        },
+        ms,
+        ...rest,
+      );
+    const names = new Set(["is-ready"]),
+      tour = { running: true, transition: { cut: false } };
+    const rendering = {
+      renderer: {
+        domElement: { parentNode: { classList: { contains: (name) => names.has(name) } } },
+      },
+    };
     performance.mark("babel:reveal");
     globalThis.getComputedStyle = () => ({ transitionDuration: "60s" });
     const built = await buildMountains({ rendering, tour });
     assert.ok(built?.attributes.aForm, "it lands at once under the fade");
-    assert.equal(built.userData.fadeIn, MOUNTAIN_ENTRANCE.fade, "the canvas is partly opaque: a short fade-in");
+    assert.equal(
+      built.userData.fadeIn,
+      MOUNTAIN_ENTRANCE.fade,
+      "the canvas is partly opaque: a short fade-in",
+    );
     assert.equal(idles, 0, "under the fade no slice waits for idle time");
     // Up to 12 ms each: typically no more, and never a long task under the suite's load.
     const sorted = [...tasks].sort((a, b) => a - b);
-    assert.ok(sorted.length > 0 && sorted.at(-1) < 50, `longest rushed slice ${sorted.at(-1).toFixed(1)} ms`);
-    assert.ok(sorted[sorted.length >> 1] <= 13, `median rushed slice ${sorted[sorted.length >> 1].toFixed(1)} ms`);
+    assert.ok(
+      sorted.length > 0 && sorted.at(-1) < 50,
+      `longest rushed slice ${sorted.at(-1).toFixed(1)} ms`,
+    );
+    assert.ok(
+      sorted[sorted.length >> 1] <= 13,
+      `median rushed slice ${sorted[sorted.length >> 1].toFixed(1)} ms`,
+    );
     built.dispose();
   } finally {
     globalThis.setTimeout = timeout;
@@ -687,19 +807,33 @@ test("under the reveal's fade the ranges rush in back-to-back slices of at most 
 });
 
 test("a starved idle wait before the reveal switches to rushed slices as soon as the fade begins", async () => {
-  const clock = frames(), idle = globalThis.requestIdleCallback, style = globalThis.getComputedStyle;
+  const clock = frames(),
+    idle = globalThis.requestIdleCallback,
+    style = globalThis.getComputedStyle;
   try {
     // A busy phone before and during the reveal: idle callbacks never come.
     let idles = 0;
-    globalThis.requestIdleCallback = () => { idles++; };
-    const names = new Set(), tour = { running: true, transition: { cut: false } };
-    const rendering = { renderer: { domElement: { parentNode: { classList: { contains: (name) => names.has(name) } } } } };
+    globalThis.requestIdleCallback = () => {
+      idles++;
+    };
+    const names = new Set(),
+      tour = { running: true, transition: { cut: false } };
+    const rendering = {
+      renderer: {
+        domElement: { parentNode: { classList: { contains: (name) => names.has(name) } } },
+      },
+    };
     // The canvas container carries its fade (styles.css) before the reveal too;
     // the build reads it up front, never inside a slice.
     let styleReads = 0;
-    globalThis.getComputedStyle = () => { styleReads++; return { transitionDuration: "60s" }; };
+    globalThis.getComputedStyle = () => {
+      styleReads++;
+      return { transitionDuration: "60s" };
+    };
     let arrived = null;
-    buildMountains({ rendering, tour }).then((built) => { arrived = built; });
+    buildMountains({ rendering, tour }).then((built) => {
+      arrived = built;
+    });
     const readsAtStart = styleReads;
     await clock.step(3);
     assert.equal(idles, 1, "waiting for idle time while the canvas is hidden");
@@ -728,17 +862,28 @@ test("a starved idle wait before the reveal switches to rushed slices as soon as
 });
 
 test("hidden, on a cut or still the ranges land at once; otherwise they fade in over the sky by a constant alpha", async () => {
-  const clock = frames(), idle = globalThis.requestIdleCallback, style = globalThis.getComputedStyle;
-  const material = new ShaderMaterial({ transparent: true, blending: NoBlending }), mesh = { material };
+  const clock = frames(),
+    idle = globalThis.requestIdleCallback,
+    style = globalThis.getComputedStyle;
+  const material = new ShaderMaterial({ transparent: true, blending: NoBlending }),
+    mesh = { material };
   try {
-    globalThis.requestIdleCallback = (task) => setImmediate(() => task({ didTimeout: false, timeRemaining: () => 8 }));
+    globalThis.requestIdleCallback = (task) =>
+      setImmediate(() => task({ didTimeout: false, timeRemaining: () => 8 }));
     globalThis.getComputedStyle = () => ({ transitionDuration: "0s" });
-    const names = new Set(), tour = { running: true, transition: { cut: false } };
-    const rendering = { renderer: { domElement: { parentNode: { classList: { contains: (name) => names.has(name) } } } } };
+    const names = new Set(),
+      tour = { running: true, transition: { cut: false } };
+    const rendering = {
+      renderer: {
+        domElement: { parentNode: { classList: { contains: (name) => names.has(name) } } },
+      },
+    };
     // Before the reveal (the canvas is hidden): at once, the material untouched.
     let pending = buildMountains({ rendering, tour, mesh });
     let built = null;
-    pending.then((value) => { built = value; });
+    pending.then((value) => {
+      built = value;
+    });
     while (!built) await clock.step();
     assert.equal(built.userData.fadeIn, 0);
     assert.equal(material.blending, NoBlending, "no fade");
@@ -754,8 +899,11 @@ test("hidden, on a cut or still the ranges land at once; otherwise they fade in 
   // The fade itself: frame time (steps of at most 0.1 s) ramps a constant
   // alpha that blends colour and depth-layer code alike over what the canvas
   // shows, then the material's own blending (none) returns.
-  const now = performance.now, times = [0, 16, 5000, 5016, 5116, 5216, 5316, 5416, 5516, 5616, 5716, 5816, 5916, 6016, 6032];
-  const seen = [], faded = { material: new ShaderMaterial({ transparent: true, blending: NoBlending }) }, fading = faded.material;
+  const now = performance.now,
+    times = [0, 16, 5000, 5016, 5116, 5216, 5316, 5416, 5516, 5616, 5716, 5816, 5916, 6016, 6032];
+  const seen = [],
+    faded = { material: new ShaderMaterial({ transparent: true, blending: NoBlending }) },
+    fading = faded.material;
   try {
     let t = 0;
     performance.now = () => times[t];
@@ -763,8 +911,11 @@ test("hidden, on a cut or still the ranges land at once; otherwise they fade in 
     assert.equal(showRanges(faded, geometry, 1), true);
     assert.equal(fading.blending, 5, "CustomBlending");
     assert.deepEqual([fading.blendEquation, fading.blendEquationAlpha], [100, 100]);
-    assert.deepEqual([fading.blendSrc, fading.blendDst, fading.blendSrcAlpha, fading.blendDstAlpha], [213, 214, 213, 214],
-      "constant alpha for colour and the layer code alike");
+    assert.deepEqual(
+      [fading.blendSrc, fading.blendDst, fading.blendSrcAlpha, fading.blendDstAlpha],
+      [213, 214, 213, 214],
+      "constant alpha for colour and the layer code alike",
+    );
     const camera = new PerspectiveCamera(45, 1.6, 0.1, 500);
     camera.updateMatrixWorld();
     faded.onBeforeRender(null, null, camera, new BufferGeometry());
@@ -783,55 +934,99 @@ test("hidden, on a cut or still the ranges land at once; otherwise they fade in 
     performance.now = now;
     geometry.setDrawRange(0, Infinity);
   }
-  assert.ok(MOUNTAIN_ENTRANCE.late >= 1.5 && MOUNTAIN_ENTRANCE.late <= 2, "a gentle mid-shot fade of 1.5-2 s");
-  assert.ok(MOUNTAIN_ENTRANCE.fade > 0 && MOUNTAIN_ENTRANCE.fade <= 0.5, "under the canvas's own fade, a short one");
+  assert.ok(
+    MOUNTAIN_ENTRANCE.late >= 1.5 && MOUNTAIN_ENTRANCE.late <= 2,
+    "a gentle mid-shot fade of 1.5-2 s",
+  );
+  assert.ok(
+    MOUNTAIN_ENTRANCE.fade > 0 && MOUNTAIN_ENTRANCE.fade <= 0.5,
+    "under the canvas's own fade, a short one",
+  );
   // hill-silhouette.js hands the chunk its mesh.
-  const source = await readFile(new URL("../src/scene/hill-silhouette.js", import.meta.url), "utf8");
-  assert.match(source, /buildMountains\(\{ rendering, tour, cancelled: \(\) => disposed, mesh \}\)/);
+  const source = await readFile(
+    new URL("../src/scene/hill-silhouette.js", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    source,
+    /buildMountains\(\{ rendering, tour, cancelled: \(\) => disposed, mesh \}\)/,
+  );
 });
 
 test("each draw of the ranges takes only the sectors in view, and the whole ring again after it", () => {
-  const { count, seam, margin } = MOUNTAINS.sectors, { size } = geometry.userData.sectors, index = geometry.index.array, n = MOUNTAINS.columns;
+  const { count, seam, margin } = MOUNTAINS.sectors,
+    { size } = geometry.userData.sectors,
+    index = geometry.index.array,
+    n = MOUNTAINS.columns;
   assert.equal(size * count, index.length);
   const mesh = { material: new ShaderMaterial() };
   assert.equal(showRanges(mesh, geometry), true);
   assert.deepEqual([geometry.drawRange.start, geometry.drawRange.count], [0, index.length]);
-  const azimuthOf = (v) => (Math.atan2(geometry.attributes.position.getZ(v), geometry.attributes.position.getX(v)) * 180 / Math.PI + 360) % 360;
+  const azimuthOf = (v) =>
+    ((Math.atan2(geometry.attributes.position.getZ(v), geometry.attributes.position.getX(v)) *
+      180) /
+      Math.PI +
+      360) %
+    360;
   const inView = (camera, azimuth, elevation) => {
-    const direction = new Vector3(Math.cos(azimuth * Math.PI / 180), Math.tan(elevation * Math.PI / 180), Math.sin(azimuth * Math.PI / 180));
+    const direction = new Vector3(
+      Math.cos((azimuth * Math.PI) / 180),
+      Math.tan((elevation * Math.PI) / 180),
+      Math.sin((azimuth * Math.PI) / 180),
+    );
     const ndc = direction.clone().add(camera.position).project(camera);
-    return Math.abs(ndc.x) <= 1 && Math.abs(ndc.y) <= 1 && ndc.z < 1 && direction.clone().applyMatrix4(camera.matrixWorldInverse.clone().setPosition(0, 0, 0)).z < 0;
+    return (
+      Math.abs(ndc.x) <= 1 &&
+      Math.abs(ndc.y) <= 1 &&
+      ndc.z < 1 &&
+      direction.clone().applyMatrix4(camera.matrixWorldInverse.clone().setPosition(0, 0, 0)).z < 0
+    );
   };
   let culled = 0;
-  for (const [aspect, fov] of [[1.6, 45], [0.46, 55], [2.16, 40]])
+  for (const [aspect, fov] of [
+    [1.6, 45],
+    [0.46, 55],
+    [2.16, 40],
+  ])
     for (let yaw = 0; yaw < 360; yaw += 7.5)
       for (const pitch of [-8, 0, 12, 27]) {
         const camera = new PerspectiveCamera(fov, aspect, 0.1, 500);
         camera.position.set(3, 5, -2);
         camera.rotation.order = "YXZ";
-        camera.rotation.set(pitch * Math.PI / 180, -Math.PI / 2 - yaw * Math.PI / 180, 0);
+        camera.rotation.set((pitch * Math.PI) / 180, -Math.PI / 2 - (yaw * Math.PI) / 180, 0);
         camera.updateMatrixWorld();
         mesh.onBeforeRender(null, null, camera, geometry);
         const { start, count: drawn } = geometry.drawRange;
         assert.ok(start % size === 0 && drawn % size === 0 && start + drawn <= index.length);
         if (drawn < index.length) culled++;
         // Every direction in view (azimuth and a mountain elevation) lies in a drawn sector.
-        const from = start / size, to = from + drawn / size;
-        for (let a = 0; a < 360; a += 1) for (const e of [-10, 0, 8]) {
-          if (!inView(camera, a, e)) continue;
-          const sector = Math.floor((((a - seam) % 360) + 360) % 360 / (360 / count));
-          assert.ok(sector >= from && sector < to, `yaw ${yaw} pitch ${pitch} aspect ${aspect}: azimuth ${a} in sector ${sector}, drawn ${from}-${to}`);
-        }
+        const from = start / size,
+          to = from + drawn / size;
+        for (let a = 0; a < 360; a += 1)
+          for (const e of [-10, 0, 8]) {
+            if (!inView(camera, a, e)) continue;
+            const sector = Math.floor(((((a - seam) % 360) + 360) % 360) / (360 / count));
+            assert.ok(
+              sector >= from && sector < to,
+              `yaw ${yaw} pitch ${pitch} aspect ${aspect}: azimuth ${a} in sector ${sector}, drawn ${from}-${to}`,
+            );
+          }
         mesh.onAfterRender(null, null, camera, geometry);
-        assert.deepEqual([geometry.drawRange.start, geometry.drawRange.count], [0, index.length], "whole again after the draw");
+        assert.deepEqual(
+          [geometry.drawRange.start, geometry.drawRange.count],
+          [0, index.length],
+          "whole again after the draw",
+        );
       }
   assert.ok(culled > 200, `${culled} views drew part of the ring`);
   // Each sector's triangles cover its own columns only, nearest range first.
-  const span = n / count, first = Math.round(seam / 360 * n);
+  const span = n / count,
+    first = Math.round((seam / 360) * n);
   for (let sector = 0; sector < count; sector++) {
     let range = 0;
     for (let t = sector * size; t < (sector + 1) * size; t += 6) {
-      const column = index[t] % n, own = (column - first - sector * span + 2 * n) % n;
+      const column = index[t] % n,
+        own = (column - first - sector * span + 2 * n) % n;
       assert.ok(own >= 0 && own < span, `sector ${sector} holds column ${column}`);
       const r = Math.floor(index[t] / perRange);
       assert.ok(r >= range, "nearest range first");
@@ -866,11 +1061,15 @@ test("the mountain shader rides the camera, hazes toward the film sky and writes
   assert.doesNotMatch(material.fragmentShader + material.vertexShader, /sampler2D|texture2D/);
   assert.match(material.fragmentShader, /gl_FragColor=vec4\(c,0\.3333\);\s*}$/);
   // Lit by the moon key (rendering's sun light, 32,28,14).
-  const key = [32, 28, 14].map((value) => (value / Math.hypot(32, 28, 14)).toFixed(3).replace(/^0/, ""));
+  const key = [32, 28, 14].map((value) =>
+    (value / Math.hypot(32, 28, 14)).toFixed(3).replace(/^0/, ""),
+  );
   assert.ok(material.fragmentShader.includes(`K=vec3(${key.join(",")})`));
   // Every polar noise is periodic around the ring (P = 360 x its frequency), so
   // there is no seam behind the camera.
-  const noises = [...material.fragmentShader.matchAll(/pn\(vec2\(\w+\*([\d.]+),[^)]*\),([\d.]+)\)/g)];
+  const noises = [
+    ...material.fragmentShader.matchAll(/pn\(vec2\(\w+\*([\d.]+),[^)]*\),([\d.]+)\)/g),
+  ];
   assert.ok(noises.length >= 8, `${noises.length} polar noises`);
   for (const [, frequency, period] of noises) near(360 * Number(frequency), Number(period), 1e-6);
   // The feet haze to the fog colour over the ground's own horizon distances.
@@ -898,21 +1097,30 @@ test("foot haze keeps the ground seam but clears the exposed low Lantern-study r
   // Lantern-study capture: camera is 2.637 units above the ground datum. At
   // azimuth 45 degrees these four mid-bands are exposed; the fifth is occluded.
   // The old 0..9 fade replaced 70%, 40%, 12%, 1% with the same fog colour.
-  const cameraHeight = 2.637, column = columnOf(45);
-  let preceding = 0, visible = 0;
+  const cameraHeight = 2.637,
+    column = columnOf(45);
+  let preceding = 0,
+    visible = 0;
   for (let range = 0; range < MOUNTAINS.radii.length; range++) {
     const crest = crests[range][column];
     if (crest <= preceding) continue;
     const middle = (preceding + crest) / 2;
-    const aboveDatum = cameraHeight + MOUNTAINS.radii[range] * Math.tan(middle * Math.PI / 180);
-    assert.equal(fogFraction(aboveDatum), 0, `visible range ${range} must retain its own body shade`);
+    const aboveDatum = cameraHeight + MOUNTAINS.radii[range] * Math.tan((middle * Math.PI) / 180);
+    assert.equal(
+      fogFraction(aboveDatum),
+      0,
+      `visible range ${range} must retain its own body shade`,
+    );
     preceding = crest;
     visible++;
   }
   assert.equal(visible, 4);
   const hill = createHillSilhouette({ groundHeight });
   hill.setFilmTreatment(true);
-  assert.match(hill.mesh.material.fragmentShader, /1\.-smoothstep\(0\.,3\.0,vH\)\*smoothstep\(-\.05,-\.008,vL\.y\/r\)/);
+  assert.match(
+    hill.mesh.material.fragmentShader,
+    /1\.-smoothstep\(0\.,3\.0,vH\)\*smoothstep\(-\.05,-\.008,vL\.y\/r\)/,
+  );
   hill.dispose();
 });
 
@@ -942,7 +1150,9 @@ test("stars draw after the sky and before the mountains, which stay inside the f
 });
 
 test("the shared horizon slate reads as distant ground: lighter than a void, below the phone tier's lit slate", () => {
-  const [r, g, b] = TERRAIN_HORIZON.match(/^vec3\(([\d.]+),([\d.]+),([\d.]+)\)$/).slice(1).map(Number);
+  const [r, g, b] = TERRAIN_HORIZON.match(/^vec3\(([\d.]+),([\d.]+),([\d.]+)\)$/)
+    .slice(1)
+    .map(Number);
   const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
   // The post chain writes shader values without an sRGB encode. At luma .0375
   // the plain past the foothills showed as a near-black band (about 9/255),
@@ -961,13 +1171,19 @@ test("crest highlights stay a soft edge near sky level rather than a stack of pa
   assert.ok(width, "the crest band is measured in render pixels");
   // The ink covers the first 1.4 px below each crest; a rim ending within a
   // pixel of it aliases into dashes that crawl as the camera drifts.
-  assert.ok(shader.includes("c=mix(c,vec3(.012,.016,.03),(1.-smoothstep(.4,1.4,px))"), "1.4 px crest ink");
+  assert.ok(
+    shader.includes("c=mix(c,vec3(.012,.016,.03),(1.-smoothstep(.4,1.4,px))"),
+    "1.4 px crest ink",
+  );
   assert.ok(Number(width[2]) - 1.4 >= 1.5, `rim ends ${width[2]} px below the crest`);
   // Every tree shot faces the key light, where the old .35 gain drew each
   // stacked crest at 1.6x the sky's luminance.
   const cool = Number(shader.match(/vec3\(\.55,\.62,\.8\)\*([\d.]+)\*max/)[1]);
   assert.ok(cool > 0 && cool <= 0.15, `cool rim gain ${cool}`);
-  const warm = shader.match(/\+vec3\(([\d.]+),([\d.]+),([\d.]+)\)\*pow\(max\(dot\(v,toSun\)/).slice(1).map(Number);
+  const warm = shader
+    .match(/\+vec3\(([\d.]+),([\d.]+),([\d.]+)\)\*pow\(max\(dot\(v,toSun\)/)
+    .slice(1)
+    .map(Number);
   assert.ok(Math.max(...warm) <= 0.1, `orb rim ${warm} stays a faint tint, not a copper line`);
   // The thin ink line still defines each crest after the rim.
   assert.ok(shader.indexOf("c=mix(c,vec3(.012,.016,.03)") > shader.indexOf("float cr="));
@@ -984,11 +1200,21 @@ test("one moon key: the scene's key light, the sky's glow, the ranges' shade and
   // is that position, normalised. The visible orb (WORLD.SUN_POSITION) is not
   // the key and is not tied here.
   const index = await text("index.js");
-  const position = index.match(/directionalPosition:\s*\{\s*x:\s*([\d.-]+),\s*y:\s*([\d.-]+),\s*z:\s*([\d.-]+),?\s*\}/).slice(1).map(Number);
+  const position = index
+    .match(/directionalPosition:\s*\{\s*x:\s*([\d.-]+),\s*y:\s*([\d.-]+),\s*z:\s*([\d.-]+),?\s*\}/)
+    .slice(1)
+    .map(Number);
   const key = unit(position);
   const rendering = await text("rendering.js");
-  assert.match(rendering, /sunLight\.position\.set\(\s*lighting\.directionalPosition\.x,\s*lighting\.directionalPosition\.y,\s*lighting\.directionalPosition\.z,?\s*\);/);
-  assert.equal((rendering.match(/sunLight\.target\.position\.\w+\(/g) ?? []).join(","), "sunLight.target.position.clone(,sunLight.target.position.copy(,sunLight.target.position.copy(", "the target only saved, restored or moved with the light");
+  assert.match(
+    rendering,
+    /sunLight\.position\.set\(\s*lighting\.directionalPosition\.x,\s*lighting\.directionalPosition\.y,\s*lighting\.directionalPosition\.z,?\s*\);/,
+  );
+  assert.equal(
+    (rendering.match(/sunLight\.target\.position\.\w+\(/g) ?? []).join(","),
+    "sunLight.target.position.clone(,sunLight.target.position.copy(,sunLight.target.position.copy(",
+    "the target only saved, restored or moved with the light",
+  );
   const { DirectionalLight } = await import("three");
   assert.deepEqual(new DirectionalLight().target.position.toArray(), [0, 0, 0]);
   // world.js SUN_DIRECTION, which the sky's glow reads, points the same way.
@@ -1000,10 +1226,15 @@ test("one moon key: the scene's key light, the sky's glow, the ranges' shade and
   // shade mountain-build.js bakes for the Blender export (KEY).
   const hill = createHillSilhouette({ groundHeight });
   hill.setFilmTreatment(true);
-  const shaderKey = hill.mesh.material.fragmentShader.match(/K=vec3\(([\d.]+),([\d.]+),([\d.]+)\)/).slice(1).map(Number);
+  const shaderKey = hill.mesh.material.fragmentShader
+    .match(/K=vec3\(([\d.]+),([\d.]+),([\d.]+)\)/)
+    .slice(1)
+    .map(Number);
   shaderKey.forEach((c, i) => near(c, key[i], 5e-4));
   hill.dispose();
-  const build = (await text("mountain-build.js")).match(/const KEY = \[([\d.,\s-]+)\]\.map\(\(v\) => v \/ Math\.hypot\(([\d.,\s-]+)\)\);/);
+  const build = (await text("mountain-build.js")).match(
+    /const KEY = \[([\d.,\s-]+)\]\.map\(\(v\) => v \/ Math\.hypot\(([\d.,\s-]+)\)\);/,
+  );
   assert.ok(build, "mountain-build.js KEY is a normalised literal");
   const [numbers, norm] = build.slice(1).map((list) => list.split(",").map(Number));
   assert.deepEqual(numbers, norm, "normalised by its own length");

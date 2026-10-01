@@ -262,13 +262,19 @@ test("a pinned asset tier keeps live models through adaptive profile changes wit
     await flush();
     const statusCount = h.statuses.length;
     for (const tier of ["balanced", "low", "high", "balanced"]) {
-      assert.equal(h.controller.applyQuality({ tier }, { pixelRatio: 1, assetTier: "high" }), false);
+      assert.equal(
+        h.controller.applyQuality({ tier }, { pixelRatio: 1, assetTier: "high" }),
+        false,
+      );
     }
     assert.equal(h.controller.setQuality({ tier: "low" }, true, { assetTier: "high" }), false);
     assert.equal(h.requests.length, roles.length, "no other tier is downloaded");
     assert.ok(h.requests.every(({ signal }) => !signal.aborted));
     assert.equal(h.statuses.length, statusCount, "no procedural or loading status is published");
-    assert.ok(!h.events.some((event) => event.endsWith(":restore")), "live models are never blanked");
+    assert.ok(
+      !h.events.some((event) => event.endsWith(":restore")),
+      "live models are never blanked",
+    );
     assert.ok(h.statuses.every(({ tier }) => tier === "high"));
     parsed.forEach((model) => assertReleased(model, 0));
     h.controller.dispose();
@@ -384,7 +390,10 @@ test("reopening the live gate retries failed assets once without a per-frame ret
 test("optional lantern loads independently and its failure cannot block the tree", async () => {
   const h = harness({ includeLantern: true });
   h.controller.setQuality({ tier: "high" }, true);
-  assert.deepEqual(h.requests.map(({ role }) => role), ["tower", "tree", "lantern"]);
+  assert.deepEqual(
+    h.requests.map(({ role }) => role),
+    ["tower", "tree", "lantern"],
+  );
   const [tree] = complete(h, ["tree"]);
   await flush();
   assert.equal(h.treeReady.length, 1);
@@ -400,10 +409,17 @@ test("optional lantern loads independently and its failure cannot block the tree
 
 test("optional lantern releases staged and late parses after tier switches, gate closure and disposal", async () => {
   for (const action of ["tier", "gate", "dispose"]) {
-    const ready = [], events = [];
-    const h = harness({ includeLantern: true,
-      onLanternReady(parsed, { tier }) { ready.push(tier); return () => events.push("cleanup"); },
-      onRestoreLantern() { events.push("restore"); },
+    const ready = [],
+      events = [];
+    const h = harness({
+      includeLantern: true,
+      onLanternReady(parsed, { tier }) {
+        ready.push(tier);
+        return () => events.push("cleanup");
+      },
+      onRestoreLantern() {
+        events.push("restore");
+      },
     });
     h.controller.setQuality({ tier: "high" }, true);
     const old = request(h, "lantern");
@@ -647,18 +663,27 @@ test("the real loader consumes a matching early response once, then fetches for 
 
     const second = await loadArchitectureAsset(url, { signal, tier: "high", role: "tree" });
     assert.ok(second.scene.isObject3D);
-    assert.deepEqual(fetches.map((request) => [request.url, request.signal]), [[url, signal]]);
+    assert.deepEqual(
+      fetches.map((request) => [request.url, request.signal]),
+      [[url, signal]],
+    );
   });
 });
 
 test("the real loader ignores an early response for another URL", async () => {
   const other = earlyRequest(Promise.resolve(new Response(glb(base))));
-  await withPrefetched([[ARCHITECTURE_ASSET_URLS.balanced.tree, other]], async ({ prefetched, fetches }) => {
-    const signal = new AbortController().signal;
-    await loadArchitectureAsset(ARCHITECTURE_ASSET_URLS.high.tree, { signal, tier: "high" });
-    assert.deepEqual(fetches.map(({ url }) => url), [ARCHITECTURE_ASSET_URLS.high.tree]);
-    assert.equal(prefetched.get(ARCHITECTURE_ASSET_URLS.balanced.tree), other);
-  });
+  await withPrefetched(
+    [[ARCHITECTURE_ASSET_URLS.balanced.tree, other]],
+    async ({ prefetched, fetches }) => {
+      const signal = new AbortController().signal;
+      await loadArchitectureAsset(ARCHITECTURE_ASSET_URLS.high.tree, { signal, tier: "high" });
+      assert.deepEqual(
+        fetches.map(({ url }) => url),
+        [ARCHITECTURE_ASSET_URLS.high.tree],
+      );
+      assert.equal(prefetched.get(ARCHITECTURE_ASSET_URLS.balanced.tree), other);
+    },
+  );
 });
 
 test("a failed or unsuccessful early request falls back to the loader's own request", async () => {
@@ -672,7 +697,10 @@ test("a failed or unsuccessful early request falls back to the loader's own requ
       const signal = new AbortController().signal;
       const parsed = await loadArchitectureAsset(url, { signal, tier: "high", role: "tower" });
       assert.ok(parsed.scene.isObject3D);
-      assert.deepEqual(fetches.map((request) => [request.url, request.signal]), [[url, signal]]);
+      assert.deepEqual(
+        fetches.map((request) => [request.url, request.signal]),
+        [[url, signal]],
+      );
       assert.equal(early.aborted, cancelled, "an unused early body is cancelled");
     });
   }
@@ -743,7 +771,10 @@ test("the live selection takes its early requests and releases those for another
       assert.equal(otherTier.aborted, 1);
       for (let index = 0; index < 50 && ready.length < 2; index += 1) await flush();
       assert.deepEqual(ready.sort(), ["tower", "tree"]);
-      assert.deepEqual(fetches.map(({ url }) => url), [ARCHITECTURE_ASSET_URLS.high.tower]);
+      assert.deepEqual(
+        fetches.map(({ url }) => url),
+        [ARCHITECTURE_ASSET_URLS.high.tower],
+      );
       controller.dispose();
     },
   );
@@ -771,7 +802,8 @@ test("the loading line counts the loader's own request once and never re-wraps a
   const early = earlyRequest(Promise.resolve(new Response(glb(base))));
   await withPrefetched([[url, early]], async ({ fetches }) => {
     const tracked = [];
-    let copy = (response) => new Response(response.body, { status: response.status, headers: response.headers });
+    let copy = (response) =>
+      new Response(response.body, { status: response.status, headers: response.headers });
     // ui/scene-loader.js returns a counted copy, which the loader then reads.
     globalThis.BabelSite.sceneLoader = {
       track(trackedUrl, response) {
@@ -790,7 +822,10 @@ test("the loading line counts the loader's own request once and never re-wraps a
     assert.deepEqual(tracked, [url], "the loader's own request is counted exactly once");
     // The loader reads the copy track() returned, not the original.
     copy = () => new Response(Buffer.alloc(10));
-    await assert.rejects(loadArchitectureAsset(url, { signal, tier: "high", role: "tree" }), /payload bounds/);
+    await assert.rejects(
+      loadArchitectureAsset(url, { signal, tier: "high", role: "tree" }),
+      /payload bounds/,
+    );
     assert.deepEqual(tracked, [url, url]);
   });
 });

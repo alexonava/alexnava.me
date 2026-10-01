@@ -80,7 +80,11 @@ function screen(camera, point, width, height) {
 
 for (const tier of ["high", "balanced"])
   test(`${tier} authored detail compositions stay intimate and distinct across desktop and phone`, async () => {
-    const assets = { tower: await asset("tower", tier), tree: await asset("tree", tier), lantern: await asset("lantern", tier) };
+    const assets = {
+      tower: await asset("tower", tier),
+      tree: await asset("tree", tier),
+      lantern: await asset("lantern", tier),
+    };
     const tower = createCompleteTowerArchitecture({
       asset: assets.tower,
       groundY: ground(0, 0),
@@ -99,7 +103,9 @@ for (const tier of ["high", "balanced"])
     tree.setFilmTreatment(true);
     tree.applyQuality({ tier });
     let prepared;
-    const lanternPrepared = new Promise((resolve) => { prepared = resolve; });
+    const lanternPrepared = new Promise((resolve) => {
+      prepared = resolve;
+    });
     const lantern = createLanternMount({ onPrepared: prepared });
     lantern.setTree(tree);
     lantern.stage(assets.lantern);
@@ -157,8 +163,11 @@ for (const tier of ["high", "balanced"])
                 camera.position.y >= ground(camera.position.x, camera.position.z) + 0.795,
                 label + " ground clearance",
               );
-              assert.ok(camera.position.y >= rootSupportHeight(camera.position.x, camera.position.z, ground) + .3,
-                label + " root support lens clearance");
+              assert.ok(
+                camera.position.y >=
+                  rootSupportHeight(camera.position.x, camera.position.z, ground) + 0.3,
+                label + " root support lens clearance",
+              );
               let minY = Infinity,
                 maxY = -Infinity;
               for (let i = 0; i < measured.points.length; i += 3) {
@@ -291,14 +300,24 @@ test("focal clipping intersects large triangles and excludes secondary edge-leaf
 
 test("The watch resolves its landscape variant only for short landscape viewports", () => {
   const watch = DIRECTED_SHOTS.tower[0];
-  for (const [width, height] of [[844, 390], [932, 430], [667, 375], [1200, 480], [1440, 499]]) {
+  for (const [width, height] of [
+    [844, 390],
+    [932, 430],
+    [667, 375],
+    [1200, 480],
+    [1440, 499],
+  ]) {
     const shot = resolveDirectedShot(watch, width, height);
     assert.equal(shot.height, 0.55);
     assert.equal(shot.azimuth, -12);
     assert.equal(shot.region, watch.region);
     assert.equal(resolveDirectedShot(watch, width, height), shot, "each variant is built once");
   }
-  for (const [width, height] of [[1440, 900], [1440, 500], [1024, 768]])
+  for (const [width, height] of [
+    [1440, 900],
+    [1440, 500],
+    [1024, 768],
+  ])
     assert.equal(resolveDirectedShot(watch, width, height), watch);
   assert.equal(resolveDirectedShot(watch, 430, 932).height, 0.66, "portrait keeps its own variant");
   assert.equal(resolveDirectedShot(DIRECTED_SHOTS.tower[1], 844, 390), DIRECTED_SHOTS.tower[1]);

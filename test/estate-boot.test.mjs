@@ -17,14 +17,16 @@ function createFixture({ readyState = "complete", init = () => true } = {}) {
     kind,
     hidden: false,
     children: [{ kind: "ordinary-link-or-selectable-copy" }],
-    contains(target) { return target === this || this.children.includes(target); },
+    contains(target) {
+      return target === this || this.children.includes(target);
+    },
   }));
   const listeners = new Map();
   const document = {
     readyState,
     activeElement: { kind: "body" },
-    querySelector: (selector) => selector === ".scene-entry" ? entry : null,
-    querySelectorAll: (selector) => selector === "[data-scene-fallback]" ? fallback : [],
+    querySelector: (selector) => (selector === ".scene-entry" ? entry : null),
+    querySelectorAll: (selector) => (selector === "[data-scene-fallback]" ? fallback : []),
     getElementById: () => null,
     addEventListener(type, callback, options) {
       const registrations = listeners.get(type) || [];
@@ -34,7 +36,10 @@ function createFixture({ readyState = "complete", init = () => true } = {}) {
     dispatch(type) {
       for (const registration of [...(listeners.get(type) || [])]) {
         if (registration.options?.once) {
-          listeners.set(type, listeners.get(type).filter((item) => item !== registration));
+          listeners.set(
+            type,
+            listeners.get(type).filter((item) => item !== registration),
+          );
         }
         registration.callback();
       }
@@ -43,15 +48,28 @@ function createFixture({ readyState = "complete", init = () => true } = {}) {
   let calls = 0;
   const quietQuery = { matches: false, addEventListener() {}, removeEventListener() {} };
   const window = {
-    BabelSite: { ui: { initPanels() { calls++; return init(); } } },
+    BabelSite: {
+      ui: {
+        initPanels() {
+          calls++;
+          return init();
+        },
+      },
+    },
     location: { search: "" },
     matchMedia: () => quietQuery,
     // The deferred scene load is outside these checks.
     requestIdleCallback() {},
   };
   return {
-    window, document, entry, fallback, listeners,
-    get calls() { return calls; },
+    window,
+    document,
+    entry,
+    fallback,
+    listeners,
+    get calls() {
+      return calls;
+    },
     boot() {
       const context = vm.createContext({ window, document, navigator: {}, URLSearchParams });
       vm.runInContext(menuSource, context, { filename: "src/ui/scene-menu.js" });
@@ -62,7 +80,10 @@ function createFixture({ readyState = "complete", init = () => true } = {}) {
 
 function assertFallbackAvailable(fixture) {
   assert.equal(fixture.entry.hidden, true, "nonfunctional About dialog control stays hidden");
-  assert.ok(fixture.fallback.every((element) => !element.hidden), "ordinary About navigation and category copy remain available");
+  assert.ok(
+    fixture.fallback.every((element) => !element.hidden),
+    "ordinary About navigation and category copy remain available",
+  );
 }
 
 test("a loading document keeps the ordinary About fallback until DOMContentLoaded, then enhances once", () => {
@@ -108,7 +129,12 @@ test("an already parsed document enhances without waiting for another load event
 test("failed or unavailable panel binding at boot preserves the ordinary homepage", async (t) => {
   const cases = [
     ["false result", () => false],
-    ["thrown error", () => { throw new Error("binding failed"); }],
+    [
+      "thrown error",
+      () => {
+        throw new Error("binding failed");
+      },
+    ],
   ];
   for (const [name, init] of cases) {
     await t.test(name, () => {

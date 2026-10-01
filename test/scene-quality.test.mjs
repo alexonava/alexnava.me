@@ -227,7 +227,11 @@ test("quality profiles expose the postprocess tier matrix", async () => {
   for (const profile of [high, balanced, low]) {
     assert.equal(profile.counts, undefined);
     assert.deepEqual(Object.keys(profile.textures), ["groundSize"]);
-    assert.deepEqual(Object.keys(profile.geometry).sort(), ["circleSegments", "skyHeightSegments", "skyWidthSegments"]);
+    assert.deepEqual(Object.keys(profile.geometry).sort(), [
+      "circleSegments",
+      "skyHeightSegments",
+      "skyWidthSegments",
+    ]);
   }
   assert.equal(high.postprocessSettings.contrast, 1.1);
   assert.equal(balanced.postprocessSettings.vignetteStrength, 0.1);
@@ -327,7 +331,10 @@ function drive(governor, clock, frameMs, count, floorTier) {
 
 test("quality governor recovers to the initial tier at a 60 Hz display floor", async () => {
   const scene = await loadQuality(createContext());
-  for (const [displayMs, label] of [[1000 / 60, "60 Hz"], [1000 / 120, "120 Hz"]]) {
+  for (const [displayMs, label] of [
+    [1000 / 60, "60 Hz"],
+    [1000 / 120, "120 Hz"],
+  ]) {
     const governor = scene.createSceneQualityGovernor({ initialTier: "high" });
     const clock = { now: 0 };
     const [downgrade] = drive(governor, clock, 40, 240);
@@ -371,8 +378,18 @@ function driveCosts(governor, clock, costs, count, floorTier) {
 test("quality governor never reads a capped or GPU-bound steady rate as headroom", async () => {
   const scene = await loadQuality(createContext());
   for (const [costs, floorTier, expected, label] of [
-    [{ high: 1000 / 30, balanced: 1000 / 30, low: 1000 / 30 }, "balanced", ["balanced"], "30 Hz cap"],
-    [{ high: 1000 / 30, balanced: 1000 / 30, low: 1000 / 30 }, "low", ["balanced", "low"], "30 Hz cap"],
+    [
+      { high: 1000 / 30, balanced: 1000 / 30, low: 1000 / 30 },
+      "balanced",
+      ["balanced"],
+      "30 Hz cap",
+    ],
+    [
+      { high: 1000 / 30, balanced: 1000 / 30, low: 1000 / 30 },
+      "low",
+      ["balanced", "low"],
+      "30 Hz cap",
+    ],
     [{ high: 40, balanced: 28, low: 25 }, "balanced", ["balanced"], "28 ms at balanced"],
     [{ high: 40, balanced: 28, low: 25 }, "low", ["balanced", "low"], "25 ms at low"],
     [{ high: 45, balanced: 28, low: 25 }, "balanced", ["balanced"], "45/28 ms"],

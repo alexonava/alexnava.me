@@ -27,8 +27,10 @@ test("adaptive quality steps change cost settings without refetching models or t
   const qualityState = await loadQualityState();
   const requests = [],
     restores = [];
-  const load = (kind) => (url, { signal }) =>
-    new Promise((resolve) => requests.push({ kind, url, signal, resolve }));
+  const load =
+    (kind) =>
+    (url, { signal }) =>
+      new Promise((resolve) => requests.push({ kind, url, signal, resolve }));
   const registry = createSceneSubsystemRegistry();
   const architecture = registry.register(
     createArchitectureAssetController({
@@ -42,7 +44,12 @@ test("adaptive quality steps change cost settings without refetching models or t
   // Mirrors the ground textures subsystem: the film slate's maps.
   const initialProfile = qualityState.getProfile();
   const layers = { profile: initialProfile, anisotropy: 4, createCanvas: canvas, publish() {} };
-  const slate = createEarthDetail({ ...layers, preset: "slate", loadImage: load("slate"), restore: () => restores.push("slate") });
+  const slate = createEarthDetail({
+    ...layers,
+    preset: "slate",
+    loadImage: load("slate"),
+    restore: () => restores.push("slate"),
+  });
   registry.register({
     applyQuality(profile, context) {
       slate.applyQuality(profile, context);
@@ -103,14 +110,22 @@ test("adaptive quality steps change cost settings without refetching models or t
 
 test("scene bootstrap pins the asset tier and samples quality only after reveal", async () => {
   const index = flat(await readFile(new URL("../src/scene/index.js", import.meta.url), "utf8"));
-  const textures = flat(await readFile(new URL("../src/scene/textures.js", import.meta.url), "utf8"));
+  const textures = flat(
+    await readFile(new URL("../src/scene/textures.js", import.meta.url), "utf8"),
+  );
 
   assert.match(index, /const assetTier = qualityState\.initialTier \|\| fallbackProfile\.tier;/);
   assert.match(index, /architectureAssets\.setQuality\(state\.profile, true, \{ assetTier \}\);/);
   assert.doesNotMatch(index, /lowPower/);
   assert.match(index, /const revealed = sceneReadyMarked && cinematic\.ready;/);
-  assert.match(index, /revealed && !reducedMotion && !adaptiveSteps\.pending\s*\?\s*qualityState\.sampleRevealed\?\.\(/);
-  assert.match(index, /if \(adaptiveProfile\) applyActiveQualityProfile\(adaptiveProfile, "adaptive"\);/);
+  assert.match(
+    index,
+    /revealed && !reducedMotion && !adaptiveSteps\.pending\s*\?\s*qualityState\.sampleRevealed\?\.\(/,
+  );
+  assert.match(
+    index,
+    /if \(adaptiveProfile\) applyActiveQualityProfile\(adaptiveProfile, "adaptive"\);/,
+  );
   // A step links its programs when sampled and lands on a tour cut, where the
   // crossfade's kept frame hides it; the one-off transition frames go unsampled.
   assert.match(
@@ -135,8 +150,15 @@ test("scene bootstrap pins the asset tier and samples quality only after reveal"
     "cinematic.apply(",
     "rendering.update();",
   ].map((anchor) => frame.indexOf(anchor));
-  assert.ok(order.every((at) => at >= 0), "each frame step is wired");
-  assert.deepEqual(order, [...order].sort((a, b) => a - b), "tour, step, capture skip, crossfade, camera, draw");
+  assert.ok(
+    order.every((at) => at >= 0),
+    "each frame step is wired",
+  );
+  assert.deepEqual(
+    order,
+    [...order].sort((a, b) => a - b),
+    "tour, step, capture skip, crossfade, camera, draw",
+  );
   assert.doesNotMatch(index, /setFade|cameraTour\?\.fade/);
   // Each event that brings uploads or compiles restarts the sampling hold.
   for (const [label, anchor] of [

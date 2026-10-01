@@ -36,7 +36,9 @@ export function createFilmScene({
   }
   return {
     lifecycleOrder: 18,
-    get ready() { return pending; },
+    get ready() {
+      return pending;
+    },
     get active() {
       return active;
     },
@@ -55,14 +57,28 @@ export function createFilmScene({
         // takes idle time only, and it stops if the scene is disposed first. The tufts and the
         // slate's root shading then follow the tree's root supports, and ready
         // resolves to the height the rocks sit on.
-        pending ||= loadTerrain().then(async ({ createEarthGeometry, settleRoots }) => {
-          if (disposed || !(terrain = await createEarthGeometry(groundHeight, foothills, EARTH, rendering, tour, () => disposed))) return;
-          // A terrain finished after disposal is freed, never kept.
-          if (disposed) return terrain.dispose();
-          if (active) ground.geometry = terrain;
-          invalidate();
-          if (foothills) return settleRoots?.(terrain, ground, rendering, groundHeight, invalidate, tour);
-        }).catch(() => {}); // Keep the borrowed procedural ground on failure.
+        pending ||= loadTerrain()
+          .then(async ({ createEarthGeometry, settleRoots }) => {
+            if (
+              disposed ||
+              !(terrain = await createEarthGeometry(
+                groundHeight,
+                foothills,
+                EARTH,
+                rendering,
+                tour,
+                () => disposed,
+              ))
+            )
+              return;
+            // A terrain finished after disposal is freed, never kept.
+            if (disposed) return terrain.dispose();
+            if (active) ground.geometry = terrain;
+            invalidate();
+            if (foothills)
+              return settleRoots?.(terrain, ground, rendering, groundHeight, invalidate, tour);
+          })
+          .catch(() => {}); // Keep the borrowed procedural ground on failure.
         for (const o of effects) {
           const visible = o.visible;
           undo.push(() => {

@@ -8,16 +8,16 @@ Append a query to the local preview, for example:
 
     http://127.0.0.1:4173/?view=tower&angle=1&tour=0
 
-| URL selection | Shot |
-| --- | --- |
-| view=tower&angle=1 | The watch |
-| view=tower&angle=2 | Threshold (the ladder arriving at the gallery) |
+| URL selection      | Shot                                                                                         |
+| ------------------ | -------------------------------------------------------------------------------------------- |
+| view=tower&angle=1 | The watch                                                                                    |
+| view=tower&angle=2 | Threshold (the ladder arriving at the gallery)                                               |
 | view=tower&angle=3 | Masonry study (URL only; excluded from tour; the name is kept for a lattice structure study) |
-| view=tower&angle=4 | Gallery detail (gallery floor to eave) |
-| view=tree&angle=1 | Portrait |
-| view=tree&angle=2 | Lantern study |
-| view=tree&angle=3 | Close-up |
-| view=tree&angle=4 | Root and lantern |
+| view=tower&angle=4 | Gallery detail (gallery floor to eave)                                                       |
+| view=tree&angle=1  | Portrait                                                                                     |
+| view=tree&angle=2  | Lantern study                                                                                |
+| view=tree&angle=3  | Close-up                                                                                     |
+| view=tree&angle=4  | Root and lantern                                                                             |
 
 Explicit view/angle selects the opening composition; add tour=0 to hold it. Without a tour parameter each shot keeps its own hold (`hold` in directed-shots.js): The watch and Portrait 9 seconds, Threshold and Gallery detail 7, the other tree shots 6. tour=3, 5 and 20 are fixed review cadences for every shot; the dissolve takes 1 second, or 0.9 at tour=3. The tour has no shot label or control strip. Panels, reduced motion, and a visitor pause suspend automatic cycling; missing subjects are skipped.
 

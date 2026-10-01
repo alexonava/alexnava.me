@@ -234,7 +234,12 @@ function fingerprintChunks({ basename, entry: source }, { metafile, outputFiles 
 // and tree beside the scene bundle, so it names only those: the other roles'
 // hashes (the rocks among them) then never change the UI bundle.
 // Returns the published scripts, entry first, as [{ name, text, lazy }].
-async function buildScriptBundle({ basename, entry, split }, architecture, materials, sceneModulePreloads) {
+async function buildScriptBundle(
+  { basename, entry, split },
+  architecture,
+  materials,
+  sceneModulePreloads,
+) {
   const options = scriptBuildOptions(entry, split);
   const { urls, sizes } = architecture ?? (await architectureAssetManifest());
   const towerAndTree = (manifest) =>

@@ -71,13 +71,12 @@ test("wide complete tower fits the plinth uniformly and failed construction free
   assert.throws(() => createCompleteTowerArchitecture({ asset, groundY: NaN }), /placement/);
 });
 
-
 test("earth footing seats the unchanged tower without the raised plinth", () => {
- const asset = source();
- const tower = createCompleteTowerArchitecture({asset, groundY: -3, footingOffset: -.08});
- assert.equal(tower.root.position.y, -3.08);
- assert.equal(tower.root.children[0].geometry.boundingBox.min.y, 0);
- assert.ok(Math.abs(tower.root.children[0].geometry.boundingBox.max.y - 39) < 1e-6);
- tower.dispose();
- assert.throws(() => createCompleteTowerArchitecture({asset, footingOffset: NaN}), /placement/);
+  const asset = source();
+  const tower = createCompleteTowerArchitecture({ asset, groundY: -3, footingOffset: -0.08 });
+  assert.equal(tower.root.position.y, -3.08);
+  assert.equal(tower.root.children[0].geometry.boundingBox.min.y, 0);
+  assert.ok(Math.abs(tower.root.children[0].geometry.boundingBox.max.y - 39) < 1e-6);
+  tower.dispose();
+  assert.throws(() => createCompleteTowerArchitecture({ asset, footingOffset: NaN }), /placement/);
 });

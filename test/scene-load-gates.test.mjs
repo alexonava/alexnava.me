@@ -252,7 +252,9 @@ function createContext({
       if (preloadMatch) return links.find((link) => link.href === preloadMatch[1]) || null;
       const dynamicScriptMatch = selector.match(/^script\[data-dynamic-src="(.+)"\]$/);
       if (dynamicScriptMatch) {
-        return scripts.find((script) => script.dataset.dynamicSrc === dynamicScriptMatch[1]) || null;
+        return (
+          scripts.find((script) => script.dataset.dynamicSrc === dynamicScriptMatch[1]) || null
+        );
       }
       return null;
     },
@@ -573,7 +575,11 @@ test("the low tier keeps the title card and never requests the scene bundle", as
   for (const options of [
     // An explicit low tier, with or without known texture limits.
     { ...CAPABLE, search: "?quality=low" },
-    { search: "?quality=low", reducedMotion: true, softwareRenderer: "Microsoft Basic Render Driver" },
+    {
+      search: "?quality=low",
+      reducedMotion: true,
+      softwareRenderer: "Microsoft Basic Render Driver",
+    },
     { ...CAPABLE, search: "?quality=low&sceneDebug=1" },
     // Auto-detected low: weak texture limits.
     { maxTextureSize: 2048, maxAnisotropy: 16 },
@@ -582,7 +588,11 @@ test("the low tier keeps the title card and never requests the scene bundle", as
     const harness = createContext(options);
     await loadMainWithQuality(harness.context);
 
-    assert.equal(await harness.context.window.BabelSite.ensureSceneReady(), false, JSON.stringify(options));
+    assert.equal(
+      await harness.context.window.BabelSite.ensureSceneReady(),
+      false,
+      JSON.stringify(options),
+    );
     assert.equal(harness.host.hidden, true, "the static title card stays");
     assert.equal(harness.scripts.length, 0, "no scene script is requested");
     assert.equal(harness.fetches.length, 0, "no model is requested");
@@ -695,7 +705,11 @@ test("static title card paths never begin the loading line", async () => {
   ]) {
     const harness = createContext({ ...options, sceneLoader: true });
     await loadMainWithQuality(harness.context);
-    assert.equal(await harness.context.window.BabelSite.ensureSceneReady(), false, JSON.stringify(options));
+    assert.equal(
+      await harness.context.window.BabelSite.ensureSceneReady(),
+      false,
+      JSON.stringify(options),
+    );
     assert.ok(!harness.events.includes("loader:begin"), JSON.stringify(options));
     assert.equal(harness.scripts.length, 0);
     assert.equal(harness.host.hidden, true);
@@ -733,10 +747,16 @@ test("the live path begins the loading line before the bundle and reports the bu
 
 test("a failed bundle, a declined initialization or the scene's low-tier decline retires the loading line", async () => {
   for (const [options, expected] of [
-    [{ logger: { warn() {} }, scriptOutcomes: ["error"] }, ["loader:begin", "script", "loader:end:static"]],
+    [
+      { logger: { warn() {} }, scriptOutcomes: ["error"] },
+      ["loader:begin", "script", "loader:end:static"],
+    ],
     [{ initResult: false }, ["loader:begin", "script", "loader:bundle", "loader:end:static"]],
     // Unknown limits: the scene finds the low tier itself and declines.
-    [{ maxTextureSize: 0, initResult: false }, ["loader:begin", "script", "loader:bundle", "loader:end:static"]],
+    [
+      { maxTextureSize: 0, initResult: false },
+      ["loader:begin", "script", "loader:bundle", "loader:end:static"],
+    ],
   ]) {
     const harness = createContext({ ...options, sceneLoader: true });
     await loadMainWithQuality(harness.context);
@@ -764,7 +784,9 @@ test("an early model response resolves to the loading line's counted copy", asyn
   const plain = createContext({ ...CAPABLE, prefetch: true, respond: true });
   await loadMainWithQuality(plain.context);
   await plain.context.window.BabelSite.ensureSceneReady();
-  const response = await plain.context.window.BabelSite.scene.prefetched.get(ARCHITECTURE_URLS.high.tower).response;
+  const response = await plain.context.window.BabelSite.scene.prefetched.get(
+    ARCHITECTURE_URLS.high.tower,
+  ).response;
   assert.equal(response.url, ARCHITECTURE_URLS.high.tower);
   assert.equal(response.ok, true);
 });

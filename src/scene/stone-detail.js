@@ -84,7 +84,10 @@ export function createStoneDetailController({
           return;
         }
         if (
-          images.some((image, i) => image.width !== sizeFor(kinds[i], size) || image.height !== sizeFor(kinds[i], size))
+          images.some(
+            (image, i) =>
+              image.width !== sizeFor(kinds[i], size) || image.height !== sizeFor(kinds[i], size),
+          )
         ) {
           report({ status: "fallback", tier });
           return;

@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AdditiveBlending, CustomBlending, OneFactor, SrcAlphaFactor, UnsignedByteType, ZeroFactor } from "three";
+import {
+  AdditiveBlending,
+  CustomBlending,
+  OneFactor,
+  SrcAlphaFactor,
+  UnsignedByteType,
+  ZeroFactor,
+} from "three";
 import { DEPTH_LAYER } from "../src/scene/depth-layers.js";
 import { createPostprocessPipeline, LAYER_STAGGER } from "../src/scene/postprocess.js";
 
@@ -256,12 +263,19 @@ test("only the scene pass multisamples on the high tier, and a change rebuilds i
   assert.equal(sampled.depthBuffer, true, "the scene keeps its depth test");
   assert.deepEqual(
     pingPongState(),
-    [[0, false], [0, false]],
+    [
+      [0, false],
+      [0, false],
+    ],
     "full-screen passes pay no resolve and need no depth",
   );
   ratio = 1.5;
   pipeline.composer.setPixelRatio(ratio);
-  assert.deepEqual([sampled.width, sampled.height], [1200, 900], "the target follows device pixels");
+  assert.deepEqual(
+    [sampled.width, sampled.height],
+    [1200, 900],
+    "the target follows device pixels",
+  );
 
   const pingPongDisposals = pingPong.map(() => 0);
   pingPong.forEach((target, index) =>
@@ -272,14 +286,24 @@ test("only the scene pass multisamples on the high tier, and a change rebuilds i
   pipeline.setQualityProfile(balanced);
   assert.equal(render.sampledTarget, null);
   assert.equal(sampledDisposals, 1);
-  assert.deepEqual(pingPongState(), [[0, true], [0, true]], "the scene draws straight into them");
+  assert.deepEqual(
+    pingPongState(),
+    [
+      [0, true],
+      [0, true],
+    ],
+    "the scene draws straight into them",
+  );
   assert.deepEqual(pingPongDisposals, [1, 1]);
   pipeline.setQualityProfile(balanced);
   assert.deepEqual(pingPongDisposals, [1, 1], "an unchanged count keeps the targets");
   pipeline.setQualityProfile(high);
   assert.equal(render.sampledTarget.samples, 4);
   assert.deepEqual([render.sampledTarget.width, render.sampledTarget.height], [1200, 900]);
-  assert.deepEqual(pingPongState(), [[0, false], [0, false]]);
+  assert.deepEqual(pingPongState(), [
+    [0, false],
+    [0, false],
+  ]);
   pipeline.dispose();
 
   for (const [limitedRenderer, expected] of [
@@ -337,22 +361,42 @@ test("a multisampled scene resolves once and is copied into the read buffer", ()
   draws.length = 0;
   render.renderToScreen = true;
   render.render(renderer, writeBuffer, readBuffer);
-  assert.deepEqual(draws, [["clear", null], ["scene", null]], "a final scene pass draws directly");
+  assert.deepEqual(
+    draws,
+    [
+      ["clear", null],
+      ["scene", null],
+    ],
+    "a final scene pass draws directly",
+  );
 
   draws.length = 0;
   render.renderToScreen = false;
   pipeline.setQualityProfile({ postprocessGrading: true, postprocessSamples: 0 });
   render.render(renderer, writeBuffer, readBuffer);
-  assert.deepEqual(draws, [["clear", readBuffer], ["scene", readBuffer]], "no samples, no copy");
+  assert.deepEqual(
+    draws,
+    [
+      ["clear", readBuffer],
+      ["scene", readBuffer],
+    ],
+    "no samples, no copy",
+  );
   pipeline.dispose();
 });
 
 test("bloom keeps its CSS-pixel resolution while the composer follows device pixels", () => {
   let ratio = 1;
   const renderer = { ...createRendererMock(), getPixelRatio: () => ratio };
-  const pipeline = createPostprocessPipeline(renderer, {}, {}, { postprocessBloom: true }, {
-    matchMedia: createMatchMedia(),
-  });
+  const pipeline = createPostprocessPipeline(
+    renderer,
+    {},
+    {},
+    { postprocessBloom: true },
+    {
+      matchMedia: createMatchMedia(),
+    },
+  );
   const bloom = pipeline.passes.bloom;
   assert.equal(bloom.renderTargetBright.width, 400);
 
@@ -427,8 +471,14 @@ test("in film the grade leaves the mountains' relief to their own shading and ha
   assert.equal(g.uLayerRelief.value, 1);
   // Only the mountains' depth code (1/3, depth-layers.js) is exempt, and the cel
   // step returns below graded luma .1 so the fogged feet match the ground's crush.
-  assert.match(shader, /float relief = uLayerRelief \* \(1\.0 - smoothstep\(0\.04, 0\.12, abs\(texel\.a - 0\.3333\)\)\);/);
-  assert.match(shader, /color = mix\(color, celColor, uCelMix \* \(1\.0 - relief \* smoothstep\(0\.05, 0\.1, gradedLuma\)\)\);/);
+  assert.match(
+    shader,
+    /float relief = uLayerRelief \* \(1\.0 - smoothstep\(0\.04, 0\.12, abs\(texel\.a - 0\.3333\)\)\);/,
+  );
+  assert.match(
+    shader,
+    /color = mix\(color, celColor, uCelMix \* \(1\.0 - relief \* smoothstep\(0\.05, 0\.1, gradedLuma\)\)\);/,
+  );
   // The post ink skips the mountains and the sky pixel beside a crest, which
   // draws its own hairline; it still reads the same four neighbours.
   assert.equal((shader.match(/texture2D\(tDiffuse, vUv [+-] vec2\(/g) || []).length, 4);
@@ -498,14 +548,22 @@ test("a tour capture keeps grading's output with no added draw, and the cut mixe
   const kept = captured[1][1];
   assert.deepEqual(
     captured,
-    [["scene", readBuffer], ["BabelGradingShader", kept], ["BabelVignetteGrainShader", null]],
+    [
+      ["scene", readBuffer],
+      ["BabelGradingShader", kept],
+      ["BabelVignetteGrainShader", null],
+    ],
     "grading draws straight into the kept target: the draw count is unchanged",
   );
   assert.ok(![readBuffer, writeBuffer].includes(kept));
   assert.equal(final.tDiffuse.value, kept.texture, "the final pass reads the kept frame");
   assert.equal(final.tPrev.value, kept.texture);
   assert.equal(final.uProgress.value, 1, "the capture frame shows the outgoing shot alone");
-  assert.deepEqual(final.uCodeTexel.value.toArray(), [1 / kept.width, 1 / kept.height], "one texel of the frame");
+  assert.deepEqual(
+    final.uCodeTexel.value.toArray(),
+    [1 / kept.width, 1 / kept.height],
+    "one texel of the frame",
+  );
   assert.equal(kept.texture.type, UnsignedByteType);
   assert.equal(kept.depthBuffer, false);
   assert.deepEqual([kept.width, kept.height], [readBuffer.width, readBuffer.height]);
@@ -548,11 +606,14 @@ test("the low tier adds the final pass only for a crossfade; a capture that neve
   assert.equal(pass.uniforms.uProgress.value, 1);
 
   const captured = capture();
-  assert.deepEqual(captured.map(([name, target]) => [name, target === null]), [
-    ["scene", false],
-    ["BabelGradingShader", false],
-    ["BabelVignetteGrainShader", true],
-  ]);
+  assert.deepEqual(
+    captured.map(([name, target]) => [name, target === null]),
+    [
+      ["scene", false],
+      ["BabelGradingShader", false],
+      ["BabelVignetteGrainShader", true],
+    ],
+  );
   const kept = captured[1][1];
   assert.deepEqual(pass.uniforms.uPrevOrigin.value.toArray(), [0.5, 0.5], "no projection: centre");
   pipeline.setTransition({ progress: 0.25, zoom: 0.01 });
@@ -661,10 +722,16 @@ test("film always draws the final pass, staggered and opaque; outside film it is
   pipeline.setFilmTreatment(false);
   assert.equal(pass.enabled, false, "the low tier out of film drops it again");
   assert.equal(pass.uniforms.uLayered.value, 0);
-  assert.deepEqual(pass.uniforms.uStagger.value.toArray(), [LAYER_STAGGER.step, LAYER_STAGGER.window]);
+  assert.deepEqual(pass.uniforms.uStagger.value.toArray(), [
+    LAYER_STAGGER.step,
+    LAYER_STAGGER.window,
+  ]);
   assert.ok(Object.isFrozen(LAYER_STAGGER));
   // The final pass writes opaque alpha only in film; elsewhere it passes alpha through.
-  assert.match(pass.material.fragmentShader, /gl_FragColor = vec4\(clamp\(color, 0\.0, 1\.0\), uLayered > 0\.5 \? 1\.0 : texel\.a\);/);
+  assert.match(
+    pass.material.fragmentShader,
+    /gl_FragColor = vec4\(clamp\(color, 0\.0, 1\.0\), uLayered > 0\.5 \? 1\.0 : texel\.a\);/,
+  );
   // No grey layer-code view: the final pass has no debug uniform.
   assert.equal("showLayers" in pipeline, false);
   assert.equal(pass.uniforms.uLayerView, undefined);
@@ -702,8 +769,13 @@ function layerWeight(progress, prevCode, liveCode, layered = true) {
 
 test("the dissolve stages sky, mountains, ground and subject over the transition, never below either frame", () => {
   const codes = [DEPTH_LAYER.sky, DEPTH_LAYER.mountains, DEPTH_LAYER.ground, "1.0"].map(Number);
-  codes.forEach((code, layer) => assert.ok(Math.abs(3 * code - layer) < 1e-3, "evenly spaced codes"));
-  assert.ok(Math.abs(3 * LAYER_STAGGER.step + LAYER_STAGGER.window - 1) < 1e-12, "the subject settles at the end");
+  codes.forEach((code, layer) =>
+    assert.ok(Math.abs(3 * code - layer) < 1e-3, "evenly spaced codes"),
+  );
+  assert.ok(
+    Math.abs(3 * LAYER_STAGGER.step + LAYER_STAGGER.window - 1) < 1e-12,
+    "the subject settles at the end",
+  );
   // Halfway points at 0.2, 0.4, 0.6 and 0.8 of the dissolve (1 s in the tour).
   codes.forEach((code, layer) => {
     const start = 3 * LAYER_STAGGER.step * code;
@@ -714,14 +786,23 @@ test("the dissolve stages sky, mountains, ground and subject over the transition
   });
   for (let progress = 0; progress <= 1.0001; progress += 0.01) {
     const weights = codes.map((code) => layerWeight(progress, code, code));
-    for (let i = 1; i < weights.length; i++) assert.ok(weights[i - 1] >= weights[i], "farther layers lead");
+    for (let i = 1; i < weights.length; i++)
+      assert.ok(weights[i - 1] >= weights[i], "farther layers lead");
     for (const prev of codes)
       for (const live of codes) {
         const w = layerWeight(progress, prev, live);
         assert.ok(w >= 0 && w <= 1, "a mix of the two frames, never black");
-        assert.equal(w, layerWeight(progress, Math.max(prev, live), Math.max(prev, live)), "the later layer wins");
+        assert.equal(
+          w,
+          layerWeight(progress, Math.max(prev, live), Math.max(prev, live)),
+          "the later layer wins",
+        );
       }
-    assert.equal(layerWeight(progress, 0, 1, false), glslSmoothstep(0, 1, progress), "outside film: the old crossfade");
+    assert.equal(
+      layerWeight(progress, 0, 1, false),
+      glslSmoothstep(0, 1, progress),
+      "outside film: the old crossfade",
+    );
   }
   assert.equal(layerWeight(1, 1, 1), 1);
   assert.equal(layerWeight(0, 0, 0), 0);
@@ -733,15 +814,27 @@ test("the final pass decodes each frame's layer from a 5-tap cross and mixes by 
   const layerCode = shader.slice(shader.indexOf("float layerCode("), shader.indexOf("void main()"));
   assert.equal((layerCode.match(/texture2D\(map, /g) || []).length, 5);
   assert.match(layerCode, /texture2D\(map, uv\)\.a/);
-  for (const tap of ["uv - x", "uv + x", "uv - y", "uv + y"]) assert.ok(layerCode.includes(`texture2D(map, ${tap}).a`), tap);
+  for (const tap of ["uv - x", "uv + x", "uv - y", "uv + y"])
+    assert.ok(layerCode.includes(`texture2D(map, ${tap}).a`), tap);
   assert.match(layerCode, /vec2 x = vec2\(uCodeTexel\.x, 0\.0\), y = vec2\(0\.0, uCodeTexel\.y\);/);
   assert.match(
     shader,
     /start = 3\.0 \* uStagger\.x \* clamp\(max\(layerCode\(tPrev, prevUv\), layerCode\(tDiffuse, vUv\)\), 0\.0, 1\.0\);\s*span = uStagger\.y;/,
   );
-  assert.match(shader, /w = smoothstep\(start, start \+ span, uProgress\);\s*texel = mix\(texture2D\(tPrev, prevUv\), texel, w\);\s*protection = mix\(uTextProtectionFrom, uTextProtection, w\);/);
-  assert.match(shader, /float start = 0\.0, span = 1\.0;\s*if \(uLayered > 0\.5\)/, "unlayered: smoothstep(0, 1, progress)");
+  assert.match(
+    shader,
+    /w = smoothstep\(start, start \+ span, uProgress\);\s*texel = mix\(texture2D\(tPrev, prevUv\), texel, w\);\s*protection = mix\(uTextProtectionFrom, uTextProtection, w\);/,
+  );
+  assert.match(
+    shader,
+    /float start = 0\.0, span = 1\.0;\s*if \(uLayered > 0\.5\)/,
+    "unlayered: smoothstep(0, 1, progress)",
+  );
   assert.match(shader, /if \(uProgress < 1\.0\)/);
-  assert.doesNotMatch(shader, /uBlend|\/\//, "no old uniform, and no comments in the unminified GLSL");
+  assert.doesNotMatch(
+    shader,
+    /uBlend|\/\//,
+    "no old uniform, and no comments in the unminified GLSL",
+  );
   pipeline.dispose();
 });

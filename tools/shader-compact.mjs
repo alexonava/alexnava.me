@@ -7,10 +7,25 @@
 // so preprocessor directives still start their lines. ${} expressions, strings,
 // comments and regular expressions in the JavaScript around them pass through.
 
-const GLSL_MARKER = /gl_FragColor|#include|#ifn?def|#endif|void main|\b(?:uniform|varying|float|vec[234]|mat[234])\s/;
+const GLSL_MARKER =
+  /gl_FragColor|#include|#ifn?def|#endif|void main|\b(?:uniform|varying|float|vec[234]|mat[234])\s/;
 // A "/" after one of these starts a regular expression, not a division.
 const REGEX_AFTER = new Set([..."(,=:[!&|?{};+-*%<>~^"]);
-const REGEX_AFTER_WORD = new Set(["return", "typeof", "case", "do", "else", "in", "of", "new", "delete", "void", "throw", "yield", "await"]);
+const REGEX_AFTER_WORD = new Set([
+  "return",
+  "typeof",
+  "case",
+  "do",
+  "else",
+  "in",
+  "of",
+  "new",
+  "delete",
+  "void",
+  "throw",
+  "yield",
+  "await",
+]);
 
 // Spaces beside GLSL punctuation carry no meaning, except where removing them
 // would join two tokens: "- -", "+ +", "/ /", "/ *" and "* /" keep theirs.
@@ -59,7 +74,8 @@ function compactText(parts) {
         after.startsWith("#") ||
         before.endsWith("\\");
       if (keep) body += "\n" + after;
-      else body += (PUNCTUATION.test(before.at(-1)) || PUNCTUATION.test(after[0]) ? "" : " ") + after;
+      else
+        body += (PUNCTUATION.test(before.at(-1)) || PUNCTUATION.test(after[0]) ? "" : " ") + after;
     }
     return body;
   });
@@ -116,7 +132,8 @@ export function compactShaderSource(source) {
         while (i < n) {
           const d = source[i];
           if (d === "\\") i += 2;
-          else if (d === "\n") throw new Error(`compactShaderSource: unterminated regular expression at ${start}`);
+          else if (d === "\n")
+            throw new Error(`compactShaderSource: unterminated regular expression at ${start}`);
           else {
             if (d === "[") inClass = true;
             else if (d === "]") inClass = false;

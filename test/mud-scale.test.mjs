@@ -74,7 +74,11 @@ test("decorative canopy bounds cannot change authored tree scale, footing or fit
   const decoration = new Mesh(new BoxGeometry(100, 100, 100), new MeshStandardMaterial());
   decoration.userData.excludeFromShot = true;
   tree.add(decoration);
-  for (const [visible, y] of [[false, 80], [true, 80], [true, -80]]) {
+  for (const [visible, y] of [
+    [false, 80],
+    [true, 80],
+    [true, -80],
+  ]) {
     decoration.visible = visible;
     decoration.position.y = y;
     controller.setTree({ root: treeRoot });
@@ -107,8 +111,14 @@ const FILM_CHUNKS = [
 ].join("\n");
 
 test("each ground shading has its own program cache key; the slate's shading needs film", async () => {
-  const { configureGroundShading, createSlateContacts, SLATE_WET, SLATE_TILING, SLATE_PUDDLES, SLATE_CONTACTS } =
-    await import("../src/scene/mud-ground.js");
+  const {
+    configureGroundShading,
+    createSlateContacts,
+    SLATE_WET,
+    SLATE_TILING,
+    SLATE_PUDDLES,
+    SLATE_CONTACTS,
+  } = await import("../src/scene/mud-ground.js");
   const detail = { isTexture: true };
   const material = new MeshStandardMaterial();
   const compile = (...args) => {
@@ -119,7 +129,11 @@ test("each ground shading has its own program cache key; the slate's shading nee
       fragmentShader: FILM_CHUNKS,
     };
     material.onBeforeCompile(shader);
-    return { key: material.customProgramCacheKey(), fragment: shader.fragmentShader, uniforms: shader.uniforms };
+    return {
+      key: material.customProgramCacheKey(),
+      fragment: shader.fragmentShader,
+      uniforms: shader.uniforms,
+    };
   };
   for (const [args, key, slate, authored] of [
     [[false], "ground-baseline", false, false],
@@ -140,43 +154,86 @@ test("each ground shading has its own program cache key; the slate's shading nee
   }
   // Without film the ground keeps Three's own program.
   configureGroundShading(material, false);
-  const baseline = { uniforms: {}, vertexShader: "#include <begin_vertex>", fragmentShader: FILM_CHUNKS };
+  const baseline = {
+    uniforms: {},
+    vertexShader: "#include <begin_vertex>",
+    fragmentShader: FILM_CHUNKS,
+  };
   material.onBeforeCompile(baseline);
-  assert.deepEqual(baseline, { uniforms: {}, vertexShader: "#include <begin_vertex>", fragmentShader: FILM_CHUNKS });
+  assert.deepEqual(baseline, {
+    uniforms: {},
+    vertexShader: "#include <begin_vertex>",
+    fragmentShader: FILM_CHUNKS,
+  });
   const contacts = createSlateContacts();
   const { fragment, uniforms } = compile(true, { detail, contacts });
   const horizon = TERRAIN_HORIZON.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  assert.match(fragment, new RegExp(`gl_FragColor\\.rgb = mix\\(gl_FragColor\\.rgb, ${horizon}, earthHorizon\\);\\s*#endif\\s*gl_FragColor\\.a = 0\\.6667;`));
+  assert.match(
+    fragment,
+    new RegExp(
+      `gl_FragColor\\.rgb = mix\\(gl_FragColor\\.rgb, ${horizon}, earthHorizon\\);\\s*#endif\\s*gl_FragColor\\.a = 0\\.6667;`,
+    ),
+  );
   // Delay distance haze so the phone foreground retains texture; the outer
   // 190-unit square boundary still reaches the shared mountain-foot tone.
-  assert.match(fragment, /float earthHorizon = max\([^;]*,\s*smoothstep\(230\.0, 330\.0, vFogDepth\)\);/);
+  assert.match(
+    fragment,
+    /float earthHorizon = max\([^;]*,\s*smoothstep\(230\.0, 330\.0, vFogDepth\)\);/,
+  );
   // The film specular clamp stays; the wet term only relaxes it, within the
   // brief's 1 + 1.6 bound; puddles take the existing moon and lantern glints.
   assert.match(fragment, /reflectedLight\.directSpecular \*= mix\(\.12, \.22, damp\);/);
-  assert.match(fragment, /reflectedLight\.directSpecular \*= \(1\.0 \+ 0\.8\*slateWet\)\*\(1\.0 \+ 4\.0\*slatePuddle - 3\.2\*slateLanternPuddle\);/);
+  assert.match(
+    fragment,
+    /reflectedLight\.directSpecular \*= \(1\.0 \+ 0\.8\*slateWet\)\*\(1\.0 \+ 4\.0\*slatePuddle - 3\.2\*slateLanternPuddle\);/,
+  );
   assert.match(fragment, /roughnessFactor = mix\(roughnessFactor, 0\.2, slateLanternPuddle\);/);
-  assert.match(fragment, /reflectedLight\.directSpecular \/= 1\.0 \+ 2\.5\*dot\(reflectedLight\.directSpecular,vec3\(\.2126,\.7152,\.0722\)\)\*slateLanternPuddle;/);
+  assert.match(
+    fragment,
+    /reflectedLight\.directSpecular \/= 1\.0 \+ 2\.5\*dot\(reflectedLight\.directSpecular,vec3\(\.2126,\.7152,\.0722\)\)\*slateLanternPuddle;/,
+  );
   // The zone's explicit support prevents dark detail texels elsewhere from
   // receiving the lantern override; parentheses preserve the 1 - fade mask.
-  assert.match(fragment, /float slateLanternPuddle = slatePuddle\*\(1\.-smoothstep\(\.5,1\.,length\([^;]*\)\/2\.8\)\);/);
+  assert.match(
+    fragment,
+    /float slateLanternPuddle = slatePuddle\*\(1\.-smoothstep\(\.5,1\.,length\([^;]*\)\/2\.8\)\);/,
+  );
   assert.equal(SLATE_PUDDLES.lantern.specular, 0.8);
   assert.equal(SLATE_PUDDLES.lantern.roughness, 0.2);
   assert.ok(SLATE_WET.specular <= 1.6);
-  assert.ok(SLATE_WET.fresnel <= 0.2, "the grazing sheen stays low behind the intro text and in the distance");
-  assert.ok(fragment.indexOf("slateWet = ") > fragment.indexOf("float worn ="), "wetness follows the worn mask");
+  assert.ok(
+    SLATE_WET.fresnel <= 0.2,
+    "the grazing sheen stays low behind the intro text and in the distance",
+  );
+  assert.ok(
+    fragment.indexOf("slateWet = ") > fragment.indexOf("float worn ="),
+    "wetness follows the worn mask",
+  );
   // The footing and root plate stay dry; the path is dry except in the lantern clearing.
-  assert.match(fragment, /float slateDry = max\(max\(footingDry, 1\.0-smoothstep\(3\.2,5\.7, slateTree\)\), approach\*smoothstep\(4\.0,7\.0, length\(vMudWorld\.xz-vec2\(50\.92,33\.36\)\)\)\);/);
+  assert.match(
+    fragment,
+    /float slateDry = max\(max\(footingDry, 1\.0-smoothstep\(3\.2,5\.7, slateTree\)\), approach\*smoothstep\(4\.0,7\.0, length\(vMudWorld\.xz-vec2\(50\.92,33\.36\)\)\)\);/,
+  );
   assert.match(fragment, /float slateWet = clamp\([^;]*\)\*\(1\.0-slateDry\);/);
   // Puddles fill the detail map's low texels, glassy and darker, with a sky
   // reflection built from the fog and zenith colours (no environment map).
-  assert.match(fragment, /float slatePuddle = smoothstep\(-\.04, \.04, [^;]*-slateH\)\*\(1\.0-slateDry\);/);
-  assert.match(fragment, new RegExp(`mix\\(fogColor, vec3\\(${SLATE_PUDDLES.zenith.join(",").replaceAll(".", "\\.")}\\)`));
+  assert.match(
+    fragment,
+    /float slatePuddle = smoothstep\(-\.04, \.04, [^;]*-slateH\)\*\(1\.0-slateDry\);/,
+  );
+  assert.match(
+    fragment,
+    new RegExp(
+      `mix\\(fogColor, vec3\\(${SLATE_PUDDLES.zenith.join(",").replaceAll(".", "\\.")}\\)`,
+    ),
+  );
   assert.ok(SLATE_PUDDLES.roughness < 0.2 && SLATE_PUDDLES.darken <= 0.5);
   // Seamless tile: a second, larger lookup turned 126.87 degrees; contrast
   // restored about the tile's mean; detail and macro variation.
   assert.match(fragment, /slateUvB = slateTurnB\*vMapUv\*0\.866\+vec2\(0\.37,0\.61\)/);
   assert.match(fragment, /\/length\(vec2\(slateW,1\.-slateW\)\)/);
-  const turn = (Math.atan2(SLATE_TILING.second.turn[1], SLATE_TILING.second.turn[0]) * 180) / Math.PI;
+  const turn =
+    (Math.atan2(SLATE_TILING.second.turn[1], SLATE_TILING.second.turn[0]) * 180) / Math.PI;
   assert.ok(Math.abs(turn - 126.87) < 0.01, `${turn}`);
   // Two normal fetches (both tile lookups) and three detail fetches.
   assert.equal((fragment.match(/texture2D\(normalMap/g) || []).length, 2);
@@ -203,9 +260,17 @@ test("the film ground material follows the film, so loading and fallback surface
   const surface = globalThis.window.BabelSite.scene.GROUND_SURFACE_MATERIAL;
   assert.equal(surface.filmColor, 0x5c5048);
   // The film slate, with its maps or with the procedural loading/fallback surface.
-  assert.deepEqual(filmGroundSurface({ film: true, surface }), { color: surface.filmColor, roughness: 0.98, metalness: 0 });
+  assert.deepEqual(filmGroundSurface({ film: true, surface }), {
+    color: surface.filmColor,
+    roughness: 0.98,
+    metalness: 0,
+  });
   // Before the film activates.
-  assert.deepEqual(filmGroundSurface({ film: false, surface }), { color: 0x5d6574, roughness: 0.98, metalness: 0.02 });
+  assert.deepEqual(filmGroundSurface({ film: false, surface }), {
+    color: 0x5d6574,
+    roughness: 0.98,
+    metalness: 0.02,
+  });
 });
 
 test("the ground shading call site takes its tint and shading from the film state", async () => {
@@ -222,9 +287,13 @@ test("the ground shading call site takes its tint and shading from the film stat
 test("the wet hollows restate the terrain dune field exactly", async () => {
   const { readFile } = await import("node:fs/promises");
   const vm = await import("node:vm");
-  const { configureGroundShading, terrainDune, TERRAIN_DUNE_TERMS } = await import("../src/scene/mud-ground.js");
+  const { configureGroundShading, terrainDune, TERRAIN_DUNE_TERMS } =
+    await import("../src/scene/mud-ground.js");
   const window = { BabelSite: {} };
-  vm.runInNewContext(await readFile(new URL("../src/scene/helpers.js", import.meta.url), "utf8"), { window, Math });
+  vm.runInNewContext(await readFile(new URL("../src/scene/helpers.js", import.meta.url), "utf8"), {
+    window,
+    Math,
+  });
   const { groundHeight } = window.BabelSite.scene;
   let samples = 0;
   for (let x = -190; x <= 190; x += 7.3)
@@ -238,19 +307,36 @@ test("the wet hollows restate the terrain dune field exactly", async () => {
   // The shader carries the same terms, in world x/z.
   const material = new MeshStandardMaterial();
   configureGroundShading(material, true);
-  const shader = { uniforms: {}, vertexShader: "#include <begin_vertex>", fragmentShader: FILM_CHUNKS };
+  const shader = {
+    uniforms: {},
+    vertexShader: "#include <begin_vertex>",
+    fragmentShader: FILM_CHUNKS,
+  };
   material.onBeforeCompile(shader);
   // Evaluated per vertex (the dune field spans 100+ units over 3-unit quads);
   // fragments read the interpolated height.
   const dune = shader.vertexShader.match(/vSlateDune = (.*);/)[1];
-  assert.match(shader.fragmentShader, /varying float vSlateDune;[^]*float slateHollow = 1\.0 - smoothstep\(-3\.2, -1\.0, vSlateDune\);/);
+  assert.match(
+    shader.fragmentShader,
+    /varying float vSlateDune;[^]*float slateHollow = 1\.0 - smoothstep\(-3\.2, -1\.0, vSlateDune\);/,
+  );
   assert.equal(dune.split(" + ").length, TERRAIN_DUNE_TERMS.length);
-  const glsl = new Function("x", "z", `const vMudWorld = { xz: [x, z] };
+  const glsl = new Function(
+    "x",
+    "z",
+    `const vMudWorld = { xz: [x, z] };
     const vec2 = (a, b) => [a, b];
     const dot = (a, b) => a[0] * b[0] + a[1] * b[1];
     const { sin, cos } = Math;
-    return ${dune};`);
-  for (const [x, z] of [[-120, 40], [0, 0], [55.1, 36.1], [73, -91], [150, 150]]) {
+    return ${dune};`,
+  );
+  for (const [x, z] of [
+    [-120, 40],
+    [0, 0],
+    [55.1, 36.1],
+    [73, -91],
+    [150, 150],
+  ]) {
     assert.ok(Math.abs(glsl(x, z) - terrainDune(x, z)) < 1e-9, `${x},${z}`);
   }
   material.dispose();

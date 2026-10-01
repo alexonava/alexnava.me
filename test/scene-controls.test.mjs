@@ -22,7 +22,14 @@ test("the retired Pause scene control leaves no stored pause behind", () => {
 });
 
 test("blocked or missing storage is a safe no-op", () => {
-  for (const storage of [undefined, { removeItem() { throw new Error("blocked"); } }]) {
+  for (const storage of [
+    undefined,
+    {
+      removeItem() {
+        throw new Error("blocked");
+      },
+    },
+  ]) {
     const site = run(storage);
     assert.equal(site.ui.initSceneControls(), true);
     assert.equal(site.scene.visitorPausedPreference, false);

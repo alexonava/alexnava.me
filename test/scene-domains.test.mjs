@@ -70,7 +70,9 @@ test("atmosphere owns cloud controls and visibility classification", () => {
     },
   });
   const group = new Group();
-  const sky = { uniforms: { uClouds: { value: 1 }, uTime: { value: 0 }, uNebulaLayers: { value: 0 } } };
+  const sky = {
+    uniforms: { uClouds: { value: 1 }, uTime: { value: 0 }, uNebulaLayers: { value: 0 } },
+  };
   atmosphere.setSkyMaterial(sky);
   const visibilitySystem = atmosphere.registerDecorativeSystem({
     getCenter(target) {
