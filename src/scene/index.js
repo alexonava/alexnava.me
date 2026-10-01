@@ -44,7 +44,6 @@ import {
   createVisitorHold,
 } from "./runtime.js";
 import { createSceneSubsystemRegistry, runSceneInitialization } from "./subsystem.js";
-import { createSceneTower } from "./tower.js";
 // Narrow compatibility injection for the procedural ground textures. Scene
 // domains import their Three.js dependencies directly.
 const THREE = {
@@ -63,16 +62,16 @@ const THREE = {
 // bypass it.
 ColorManagement.enabled = false;
 
+// The orbit the hidden canvas keeps until a directed shot is ready: its start
+// angle and its speed in radians per second, before a 0.95 easing.
+const ORBIT_START_ANGLE = 0.12 * Math.PI;
+const ORBIT_SPEED = 0.06;
+
 (() => {
-  const site = (window.BabelSite = window.BabelSite || {}),
-    scene = (site.scene = site.scene || {}),
-    {
-      groundHeight: groundHeight,
-      supportsWebGL: supportsWebGL,
-      GROUND_SURFACE_MATERIAL: GROUND_SURFACE_MATERIAL,
-      createGroundTextures: createGroundTextures,
-      WORLD: WORLD,
-    } = scene;
+  const site = (window.BabelSite = window.BabelSite || {});
+  const scene = (site.scene = site.scene || {});
+  const { groundHeight, supportsWebGL, GROUND_SURFACE_MATERIAL, createGroundTextures, WORLD } =
+    scene;
   scene.initHomeScene = function () {
     const initStart = sceneNow();
     const container = document.getElementById("home-scene");
@@ -102,13 +101,10 @@ ColorManagement.enabled = false;
     let webglContextAvailable = true;
     const reducedMotionMQ = window.matchMedia("(prefers-reduced-motion: reduce)");
     let reducedMotion = Boolean(reducedMotionMQ.matches);
-    // quality.js is an explicit bootstrap dependency; use its single set of
-    // profiles instead of maintaining a second, silently divergent fallback.
-    const fallbackProfile = scene.getSceneQualityProfile("high");
-    const fallbackComposition = scene.getSceneCompositionProfile({
-      width: window.innerWidth,
-      height: window.innerHeight,
-    });
+    // The fixed geometry (sky and ground segments) and the renderer's first
+    // lighting come from the high profile; applyActiveQualityProfile then
+    // applies the startup tier.
+    const highProfile = scene.getSceneQualityProfile("high");
     const qualityState = scene.createSceneQualityState({
       navigatorInfo: navigator,
       search: window.location?.search || "",
@@ -119,22 +115,18 @@ ColorManagement.enabled = false;
     // The low tier keeps the static title card. main.js normally decides this
     // before the scene bundle loads; this covers an unknown probe there.
     if (qualityState.initialTier === "low") return false;
-    const qualityControls = qualityState.controls || {
-      debug: false,
-      overrideTier: null,
-      requestedTier: "auto",
-    };
+    const qualityControls = qualityState.controls;
     // ?sceneDebug=1: a plain status object for captures and checks
     // (docs/SCENE-MODES.md). It has no controls of its own.
     const qualityDebug = qualityControls.debug ? (window.BabelSite.sceneDebug = {}) : null;
     // Downloaded models and terrain maps keep the startup tier. Adaptive steps
     // change only per-frame cost (DPR, shadows, post, leaves).
-    const assetTier = qualityState.initialTier || fallbackProfile.tier;
+    const assetTier = qualityState.initialTier;
     function updateSceneDebug(extra = {}) {
       if (!qualityDebug) return;
       Object.assign(qualityDebug, {
         caps: qualityState.caps || null,
-        initialTier: qualityState.initialTier || fallbackProfile.tier,
+        initialTier: qualityState.initialTier,
         overrideTier: qualityControls.overrideTier,
         requestedTier: qualityControls.requestedTier,
         tier: state.profile.tier,
@@ -168,7 +160,7 @@ ColorManagement.enabled = false;
       }
     }
     const state = {
-        profile: fallbackProfile,
+        profile: highProfile,
       },
       skyWidthSegments = state.profile.geometry.skyWidthSegments,
       skyHeightSegments = state.profile.geometry.skyHeightSegments,
@@ -222,7 +214,6 @@ ColorManagement.enabled = false;
         frameScheduler?.resume();
       },
       profile: state.profile,
-      threeExports: THREE,
       width: window.innerWidth,
       world: WORLD,
     });
@@ -287,27 +278,17 @@ ColorManagement.enabled = false;
           })
         : null;
       if (cameraTour) subsystemRegistry.register({ dispose: () => cameraTour.dispose() });
-      function chooseAnisotropy(minimum, maximum) {
-        const profileRange = state.profile.anisotropy || {
-          min: minimum,
-          max: maximum,
-        };
-        const fullAnisotropy = Math.min(maximum, profileRange.max ?? maximum);
-        return Math.max(1, Math.min(renderer.capabilities.getMaxAnisotropy(), fullAnisotropy));
+      // The current profile's anisotropy, within the caller's maximum and the GPU's.
+      function chooseAnisotropy(maximum) {
+        const cap = Math.min(maximum, state.profile.anisotropy.max);
+        return Math.max(1, Math.min(renderer.capabilities.getMaxAnisotropy(), cap));
       }
       function applyActiveQualityProfile(profile, reason = "runtime") {
-        state.profile = profile || fallbackProfile;
-        const effectiveCap =
-          typeof qualityState.resolveDprCap === "function"
-            ? qualityState.resolveDprCap(state.profile)
-            : typeof scene.resolveEffectiveDprCap === "function"
-              ? scene.resolveEffectiveDprCap(state.profile, {
-                  caps: qualityState.caps || {},
-                  touchPrimary: qualityState.touchPrimary,
-                  navigatorInfo: qualityState.navigatorInfo || navigator,
-                })
-              : state.profile.dprCap || 1;
-        const pixelRatio = Math.min(window.devicePixelRatio || 1, effectiveCap || 1);
+        state.profile = profile;
+        const pixelRatio = Math.min(
+          window.devicePixelRatio || 1,
+          qualityState.resolveDprCap(state.profile),
+        );
         // Built and loaded content follows the pinned asset tier (context).
         subsystemRegistry.applyQuality(state.profile, { pixelRatio, assetTier });
         updateSceneDebug({
@@ -325,17 +306,14 @@ ColorManagement.enabled = false;
         profile: state.profile,
       });
       subsystemRegistry.register(atmosphereSystem);
-      applyActiveQualityProfile(
-        typeof qualityState.getProfile === "function" ? qualityState.getProfile() : fallbackProfile,
-        "initial",
-      );
+      applyActiveQualityProfile(qualityState.getProfile(), "initial");
       const skyShell = new Mesh(
         new SphereGeometry(WORLD.SKY_DOME_RADIUS, skyWidthSegments, skyHeightSegments),
         createEstateSkyMaterial(skyConfig),
       );
-      ((skyShell.renderOrder = -1),
-        (skyShell.material.depthWrite = !1),
-        atmosphereSystem.root.add(skyShell));
+      skyShell.renderOrder = -1;
+      skyShell.material.depthWrite = false;
+      atmosphereSystem.root.add(skyShell);
       atmosphereSystem.setSkyMaterial(skyShell.material);
       const solarBody = createSolarBody({
         parent: atmosphereSystem.root,
@@ -386,9 +364,9 @@ ColorManagement.enabled = false;
         },
       });
       const groundTextures = createGroundTextures({
-          THREE: THREE,
+          THREE,
           qualityProfile: state.profile,
-          chooseAnisotropy: chooseAnisotropy,
+          chooseAnisotropy,
           invalidate() {
             invalidateContent();
           },
@@ -448,9 +426,9 @@ ColorManagement.enabled = false;
             metalness: GROUND_SURFACE_MATERIAL.metalness,
           }),
         );
-      ((groundMesh.rotation.x = -Math.PI / 2),
-        (groundMesh.receiveShadow = true),
-        environmentRoot.add(groundMesh));
+      groundMesh.rotation.x = -Math.PI / 2;
+      groundMesh.receiveShadow = true;
+      environmentRoot.add(groundMesh);
       groundSurface = groundMesh;
       subsystemRegistry.register(groundTextures);
       // The film ranges are a lazy chunk (mountain-build.js), requested once the film is
@@ -479,7 +457,7 @@ ColorManagement.enabled = false;
         groundHeight,
         terrain: () => filmScene.ready,
         tier: assetTier,
-        anisotropy: chooseAnisotropy(2, 6),
+        anisotropy: chooseAnisotropy(6),
         compile: () => rendering.compileShaders(),
         contacts: groundContacts.slateContacts.value,
         onStatus: (status) => {
@@ -487,9 +465,9 @@ ColorManagement.enabled = false;
         },
       });
       subsystemRegistry.register(rockScatter);
-      const towerSystem = createSceneTower({ parent: environmentRoot });
-      subsystemRegistry.register(towerSystem);
-      const towerRoot = towerSystem.root;
+      // The authored tower hangs under its own group in the environment.
+      const towerRoot = new Group();
+      environmentRoot.add(towerRoot);
       const towerGroundY = groundHeight(0, 0);
       // Authored casters and the sun hold still within a shot, so the shadow map
       // redraws only on reported changes.
@@ -588,7 +566,7 @@ ColorManagement.enabled = false;
         });
       }
       const lanternMount = createLanternMount({
-        anisotropy: chooseAnisotropy(2, 6),
+        anisotropy: chooseAnisotropy(6),
         camera,
         onPrepared: invalidateContent,
         onChange({ committed, tree }) {
@@ -616,7 +594,7 @@ ColorManagement.enabled = false;
             asset: assets.tower,
             groundY: towerGroundY,
             footingOffset: -0.22,
-            anisotropy: chooseAnisotropy(2, 6),
+            anisotropy: chooseAnisotropy(6),
           });
           try {
             setGroundedLighting(true);
@@ -654,7 +632,7 @@ ColorManagement.enabled = false;
           const replacement = createTreeArchitecture({
             asset,
             groundHeight,
-            anisotropy: chooseAnisotropy(2, 6),
+            anisotropy: chooseAnisotropy(6),
             anchor: [ESTATE.tree.x, ESTATE.tree.z],
           });
           replacement.applyQuality(state.profile);
@@ -720,20 +698,18 @@ ColorManagement.enabled = false;
           height: window.innerHeight,
         },
         compositionState = {
-          profile: fallbackComposition,
+          profile: scene.getSceneCompositionProfile({
+            width: window.innerWidth,
+            height: window.innerHeight,
+          }),
         },
         visibilityScale = 1.15,
         lookTarget = new Vector3();
-      function resolveSceneCompositionProfile() {
-        return typeof scene.getSceneCompositionProfile === "function"
-          ? scene.getSceneCompositionProfile({
-              width: viewport.width,
-              height: viewport.height,
-            })
-          : fallbackComposition;
-      }
-      function applySceneComposition(profile, reason = "runtime") {
-        compositionState.profile = profile || fallbackComposition;
+      function applySceneComposition(reason = "runtime") {
+        compositionState.profile = scene.getSceneCompositionProfile({
+          width: viewport.width,
+          height: viewport.height,
+        });
         updateSceneDebug({
           composition: compositionState.profile.name,
           compositionReason: reason,
@@ -742,12 +718,12 @@ ColorManagement.enabled = false;
       function applySceneSize({ width, height }) {
         qualityState.holdSampling();
         cinematicArea = measureCinematicArea(width, height);
-        ((viewport.width = width),
-          (viewport.height = height),
-          applySceneComposition(resolveSceneCompositionProfile(), "resize"),
-          applyActiveQualityProfile(state.profile, "resize"));
+        viewport.width = width;
+        viewport.height = height;
+        applySceneComposition("resize");
+        applyActiveQualityProfile(state.profile, "resize");
         subsystemRegistry.resize({
-          cameraFov: compositionState.profile.camera?.fov ?? fallbackComposition.camera.fov,
+          cameraFov: compositionState.profile.camera.fov,
           composition: compositionState.profile,
           height,
           width,
@@ -795,11 +771,8 @@ ColorManagement.enabled = false;
         frameScheduler?.invalidate();
       };
       window.addEventListener("resize", onWindowResize);
-      window.addEventListener("scroll", onWindowScroll, {
-        passive: !0,
-      });
+      window.addEventListener("scroll", onWindowScroll, { passive: true });
       resizeController.update({ force: true });
-      const orbitStartAngle = 0.12 * Math.PI;
       let debugRenderFrameCount = 0;
       let debugRenderWindowStart = null;
       let firstFrameDrawn = false;
@@ -818,11 +791,11 @@ ColorManagement.enabled = false;
         // revealed scene animates continuously, outside a post-event hold, and
         // not while a step waits for its cut.
         const revealed = sceneReadyMarked && cinematic.ready;
-        const nowMs = 1e3 * elapsedTime;
+        const nowMs = 1000 * elapsedTime;
         const sampledProfile =
           revealed && !reducedMotion && !adaptiveSteps.pending
             ? qualityState.sampleRevealed?.({
-                frameMs: 1e3 * sampleDeltaSeconds,
+                frameMs: 1000 * sampleDeltaSeconds,
                 nowMs,
                 timestamp,
                 profile: state.profile,
@@ -864,25 +837,22 @@ ColorManagement.enabled = false;
         // predates the capture; the next three cover capture, cut and dissolve.
         if (transition.capture) qualityState.skipSamples?.(3);
         rendering.postprocessPipeline.setTransition?.(transition);
-        const activeProfile = state.profile,
-          cameraProfile = compositionState.profile.camera || fallbackComposition.camera,
-          orbitMotionScale = 1;
+        const cameraProfile = compositionState.profile.camera;
         viewport.scroll = reducedMotion
           ? viewport.scrollTarget
           : viewport.scroll + 0.025 * (viewport.scrollTarget - viewport.scroll);
         // Until a subject is ready the hidden canvas keeps the original orbit
         // camera, which the directed shot replaces before the reveal.
-        const orbitSpeed = activeProfile.isLow ? 0.055 : 0.06,
-          orbitTravel = elapsedTime * (0.95 * orbitSpeed) * orbitMotionScale,
+        const orbitTravel = elapsedTime * (0.95 * ORBIT_SPEED),
           orbitWobble = 0.09 * Math.sin(3 * orbitTravel) + 0.05 * Math.sin(2 * orbitTravel),
-          orbitAngle = orbitStartAngle + orbitTravel - orbitWobble,
+          orbitAngle = ORBIT_START_ANGLE + orbitTravel - orbitWobble,
           scrolledOrbitBase =
             cameraProfile.orbitBase - cameraProfile.orbitScrollDelta * viewport.scroll,
           orbitHeight =
             cameraProfile.heightBase +
             cameraProfile.heightScrollDelta * viewport.scroll +
-            0.45 * Math.sin(0.28 * elapsedTime) * orbitMotionScale +
-            0.6 * Math.sin(0.13 * elapsedTime) * orbitMotionScale,
+            0.45 * Math.sin(0.28 * elapsedTime) +
+            0.6 * Math.sin(0.13 * elapsedTime),
           lookAtHeight =
             cameraProfile.lookAtBase + cameraProfile.lookAtScrollDelta * viewport.scroll,
           orbitDistance = cameraProfile.orbitScale * (scrolledOrbitBase - cameraProfile.orbitTrim);
@@ -892,7 +862,7 @@ ColorManagement.enabled = false;
           elapsedSeconds: elapsedTime,
           reducedMotion,
           tourPhase,
-          fallbackFov: cameraProfile.fov || 45,
+          fallbackFov: cameraProfile.fov,
         });
         if (!cinematicApplied) {
           camera.position.set(
@@ -910,7 +880,7 @@ ColorManagement.enabled = false;
           motionPaused: visitorHold?.paused || document.body.hasAttribute("data-panel-open"),
           reducedMotion,
           render: false,
-          visibilityScale: visibilityScale,
+          visibilityScale,
         });
         if (filmActive)
           filmScene.finishFrame(
@@ -946,7 +916,7 @@ ColorManagement.enabled = false;
           debugRenderFrameCount += 1;
           const debugRenderWindowMs = timestamp - debugRenderWindowStart;
           if (debugRenderWindowMs >= 500) {
-            qualityDebug.renderFps = (1e3 * debugRenderFrameCount) / debugRenderWindowMs;
+            qualityDebug.renderFps = (1000 * debugRenderFrameCount) / debugRenderWindowMs;
             debugRenderFrameCount = 0;
             debugRenderWindowStart = timestamp;
           }
@@ -986,11 +956,7 @@ ColorManagement.enabled = false;
         reducedMotion = Boolean(event?.matches);
         frameScheduler.setReducedMotion(reducedMotion);
       };
-      if (typeof reducedMotionMQ.addEventListener === "function") {
-        reducedMotionMQ.addEventListener("change", onReducedMotionChange);
-      } else if (typeof reducedMotionMQ.addListener === "function") {
-        reducedMotionMQ.addListener(onReducedMotionChange);
-      }
+      reducedMotionMQ.addEventListener("change", onReducedMotionChange);
       const onDocumentVisibilityChange = () => {
         if (document.hidden) return;
         qualityState.holdSampling();
@@ -1038,11 +1004,7 @@ ColorManagement.enabled = false;
         window.removeEventListener("resize", onWindowResize);
         window.removeEventListener("scroll", onWindowScroll);
         document.removeEventListener("visibilitychange", onDocumentVisibilityChange);
-        if (typeof reducedMotionMQ.removeEventListener === "function") {
-          reducedMotionMQ.removeEventListener("change", onReducedMotionChange);
-        } else if (typeof reducedMotionMQ.removeListener === "function") {
-          reducedMotionMQ.removeListener(onReducedMotionChange);
-        }
+        reducedMotionMQ.removeEventListener("change", onReducedMotionChange);
         sceneIntersectionObserver?.disconnect();
         sceneIntersectionObserver = null;
         panelObserver?.disconnect();

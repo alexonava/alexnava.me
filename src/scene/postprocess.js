@@ -460,11 +460,7 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
 
   resize(size.width, size.height);
 
-  if (typeof transparencyQuery?.addEventListener === "function") {
-    transparencyQuery.addEventListener("change", onTransparencyChange);
-  } else if (typeof transparencyQuery?.addListener === "function") {
-    transparencyQuery.addListener(onTransparencyChange);
-  }
+  transparencyQuery?.addEventListener?.("change", onTransparencyChange);
 
   return {
     composer,
@@ -475,11 +471,7 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
       vignetteGrain: vignetteGrainPass,
     },
     dispose() {
-      if (typeof transparencyQuery?.removeEventListener === "function") {
-        transparencyQuery.removeEventListener("change", onTransparencyChange);
-      } else if (typeof transparencyQuery?.removeListener === "function") {
-        transparencyQuery.removeListener(onTransparencyChange);
-      }
+      transparencyQuery?.removeEventListener?.("change", onTransparencyChange);
       for (const pass of composer.passes) {
         if (typeof pass.dispose === "function") pass.dispose();
       }

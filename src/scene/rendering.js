@@ -31,16 +31,6 @@ function whenLinked(programs, timeoutMs = SHADER_WARMUP_TIMEOUT_MS) {
   });
 }
 
-function setRendererOutputColorSpace(renderer, threeExports = {}) {
-  const srgbColorSpace = threeExports.SRGBColorSpace || SRGBColorSpace;
-  const srgbEncoding = threeExports.sRGBEncoding;
-  if (srgbColorSpace && "outputColorSpace" in renderer) {
-    renderer.outputColorSpace = srgbColorSpace;
-  } else if (srgbEncoding && "outputEncoding" in renderer) {
-    renderer.outputEncoding = srgbEncoding;
-  }
-}
-
 export function createSceneRendering({
   container,
   height,
@@ -49,7 +39,6 @@ export function createSceneRendering({
   onContextRestored,
   onInvalidate,
   profile,
-  threeExports,
   width,
   world,
   createPipeline = createPostprocessPipeline,
@@ -76,7 +65,7 @@ export function createSceneRendering({
     powerPreference: "default",
   });
   renderer.setClearColor(0, 0);
-  setRendererOutputColorSpace(renderer, threeExports);
+  renderer.outputColorSpace = SRGBColorSpace;
   renderer.toneMapping = NoToneMapping;
   renderer._useLegacyLights = true;
   renderer.shadowMap.type = PCFSoftShadowMap;

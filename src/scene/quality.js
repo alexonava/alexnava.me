@@ -18,7 +18,6 @@
       },
       name: "compact",
       sceneOffsetY: -7.5,
-      towerScale: 1,
     },
     desktop: {
       camera: {
@@ -34,7 +33,6 @@
       },
       name: "desktop",
       sceneOffsetY: -7.5,
-      towerScale: 1,
     },
     portraitPhone: {
       camera: {
@@ -50,7 +48,6 @@
       },
       name: "portraitPhone",
       sceneOffsetY: -6.8,
-      towerScale: 1,
     },
     // Phone rotated to landscape (~844x390). Viewport is very short, so the
     // camera pulls up and the look-at target lowers to keep the tower in the
@@ -69,7 +66,6 @@
       },
       name: "landscapePhone",
       sceneOffsetY: -7.2,
-      towerScale: 1,
     },
     // Tablet in portrait (iPad-class, ~810x1080). Wider than a phone but still
     // touch-primary; framing sits between portraitPhone and compact.
@@ -87,7 +83,6 @@
       },
       name: "tabletPortrait",
       sceneOffsetY: -7.2,
-      towerScale: 1,
     },
   };
   // dprCap bounds the canvas and every composer target, so fragment cost grows
@@ -252,7 +247,6 @@
       camera: { ...profile.camera },
       name: profile.name,
       sceneOffsetY: profile.sceneOffsetY,
-      towerScale: profile.towerScale,
     };
   }
 

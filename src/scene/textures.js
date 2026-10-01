@@ -280,7 +280,7 @@ import { measureScene, sceneNow } from "./perf-marks.js";
     }
     paintGround(!["high", "balanced"].includes(profile.tier));
 
-    const aniso = chooseAnisotropy(profile.anisotropy.min, profile.anisotropy.max);
+    const aniso = chooseAnisotropy(profile.anisotropy.max);
     const textures = {
       colorMap: makeTexture(THREE, colorCanvas, (tex) => {
         tex.wrapS = THREE.MirroredRepeatWrapping;

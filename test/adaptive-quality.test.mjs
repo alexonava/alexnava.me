@@ -114,7 +114,7 @@ test("scene bootstrap pins the asset tier and samples quality only after reveal"
     await readFile(new URL("../src/scene/textures.js", import.meta.url), "utf8"),
   );
 
-  assert.match(index, /const assetTier = qualityState\.initialTier \|\| fallbackProfile\.tier;/);
+  assert.match(index, /const assetTier = qualityState\.initialTier;/);
   assert.match(index, /architectureAssets\.setQuality\(state\.profile, true, \{ assetTier \}\);/);
   assert.doesNotMatch(index, /lowPower/);
   assert.match(index, /const revealed = sceneReadyMarked && cinematic\.ready;/);
