@@ -11,8 +11,10 @@ import { flat as flatHtml } from "./support/html.mjs";
 import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createHash } from "node:crypto";
 
 const testDir = path.dirname(fileURLToPath(import.meta.url));
+
 const projectRoot = path.resolve(testDir, "..");
 
 async function readIndexHtml() {
@@ -566,6 +568,7 @@ test("modern iPhones open full-bleed: night to every edge, no bounce, matching b
   assert.equal(manifest.background_color, night);
   // The canvas's buffer follows the full-bleed container (scene-bootstrap.test.mjs).
 });
+
 test("fixed chrome and dialogs clear left and right safe-area insets", async () => {
   const styles = await readStyles();
   assert.match(
@@ -812,4 +815,80 @@ test("the 404 is a centered cotton-paper sheet with dark ink", async () => {
     (selector) => cssRule(styles, selector).match(/(?:^|[;\s])color:\s*(#[0-9a-f]{6});/i)[1],
   );
   for (const ink of inks) assert.ok(contrast(ink, paper) >= 4.5, `${ink} on paper`);
+});
+
+const root = new URL("../", import.meta.url);
+
+test("the scene opens About through the text button and keeps Contact inside the estate", async () => {
+  const html = flatHtml(await readFile(new URL("index.html", root), "utf8"));
+  const entry = html.match(/<button[^>]*class="[^"]*scene-entry"[\s\S]*?<\/button>/)[0];
+  assert.match(entry, /data-panel="about"/);
+  assert.match(entry, /aria-controls="panel-about"/);
+  assert.match(entry, /aria-label="About"/);
+  assert.match(entry, / hidden>/);
+  assert.match(entry, /<span class="about-link__label">About<\/span>/);
+  assert.doesNotMatch(entry, /<img|<canvas/);
+  assert.match(html, /href="#about-text"[^>]*data-scene-fallback>[\s\S]*?about-link__label/);
+  const primary = html.match(/<footer class="site-footer"[\s\S]*?<\/footer>/)[0];
+  assert.doesNotMatch(primary, /data-panel="contact"/);
+  for (const name of ["profile", "experience", "contact"]) {
+    assert.ok(html.includes(`aria-controls="panel-${name}"`));
+  }
+});
+
+test("estate destinations are labeled HTML buttons in keyboard order without floating icons", async () => {
+  const html = await readFile(new URL("index.html", root), "utf8");
+  const map = html.match(/<nav class="estate-destinations"[\s\S]*?<\/nav>/)[0];
+  const destinations = [...map.matchAll(/data-panel="([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(destinations, ["profile", "experience", "contact"]);
+  assert.doesNotMatch(map, /<img|<canvas/);
+  for (const name of destinations) {
+    assert.ok(map.includes(`aria-controls="panel-${name}"`));
+    assert.ok(map.includes(`<span>${name[0].toUpperCase() + name.slice(1)}</span>`));
+  }
+});
+
+const categories = ["profile", "experience", "contact"];
+
+test("three distinct transparent paper vignettes share the 200 KiB section-paper budget", async () => {
+  let total = 0;
+  for (const name of ["paper-grain.webp", "paper-edge.webp"]) {
+    total += (await readFile(new URL(`images/${name}`, root))).length;
+  }
+  const hashes = new Set();
+  for (const category of categories) {
+    const bytes = await readFile(new URL(`images/paper-vignette-${category}.webp`, root));
+    total += bytes.length;
+    assert.equal(bytes.toString("ascii", 0, 4), "RIFF");
+    assert.equal(bytes.toString("ascii", 8, 12), "WEBP");
+    assert.equal(bytes.toString("ascii", 12, 16), "VP8X");
+    assert.ok(bytes[20] & 0x10, `${category} must preserve transparency`);
+    assert.equal(bytes.readUIntLE(24, 3) + 1, 420);
+    assert.equal(bytes.readUIntLE(27, 3) + 1, 420);
+    hashes.add(createHash("sha256").update(bytes).digest("hex"));
+  }
+  assert.equal(hashes.size, 3, "each category must have its own illustration");
+  assert.ok(total <= 200 * 1024, `shared paper and vignettes use ${total} bytes`);
+});
+
+test("each child dialog owns one decorative noninteractive vignette without changing menu destinations", async () => {
+  const html = await readFile(new URL("index.html", root), "utf8");
+  for (const category of categories) {
+    const start = html.indexOf(`id="panel-${category}"`);
+    const next = html.indexOf('class="panel-overlay"', start + 1);
+    const panel = html.slice(start, next === -1 ? undefined : next);
+    const decoration = panel.match(/<div class="panel-vignette [^"]+"[^>]*>/g) || [];
+    assert.equal(decoration.length, 1, `${category} requires one decorative illustration`);
+    assert.ok(decoration[0].includes(`panel-vignette--${category}`));
+    assert.ok(decoration[0].includes('aria-hidden="true"'));
+    assert.doesNotMatch(decoration[0], /tabindex|role=|data-panel|aria-label/);
+    assert.ok(panel.includes('aria-label="Back to About"'));
+    assert.ok(panel.includes(`id="panel-${category}-title"`));
+  }
+  const menu = html.match(/<nav class="estate-destinations"[\s\S]*?<\/nav>/)[0];
+  assert.deepEqual(
+    [...menu.matchAll(/data-panel="([^"]+)"/g)].map((match) => match[1]),
+    categories,
+  );
+  assert.doesNotMatch(menu, /panel-vignette|<img|<canvas/);
 });

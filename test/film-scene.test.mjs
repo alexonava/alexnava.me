@@ -1,3 +1,6 @@
+// The film treatment: its scene borrowing, the slate ground maps, the estate's
+// growth and ground detail, depth layers and the environment root.
+
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -6,97 +9,19 @@ import {
   Group,
   Mesh,
   MeshStandardMaterial,
-  PerspectiveCamera,
   RepeatWrapping,
   SRGBColorSpace,
   Vector3,
 } from "three";
-import { DIRECTED_SHOTS, measureShot, resolveDirectedShot } from "../src/scene/directed-shots.js";
-import { createCinematicCamera, cinematicSafeArea } from "../src/scene/cinematic.js";
 import { createEarthDetail, FILM_GROUND_PRESETS } from "../src/scene/filmic-earth.js";
 import { createFilmScene } from "../src/scene/film-scene.js";
+import { DEPTH_LAYER, stampDepthLayer } from "../src/scene/depth-layers.js";
+import { createEstateGroundDetail, estatePathDistance } from "../src/scene/estate-ground-detail.js";
+import { rockKeepouts } from "../src/scene/rock-scatter.js";
+import { createSceneEnvironment } from "../src/scene/environment.js";
 
 const close = (a, b) => assert.ok(Math.abs(a - b) < 1e-5, `${a} != ${b}`);
-test("directed framing clips actual geometry and includes the entire lantern", () => {
-  const root = new Group();
-  const trunk = new Mesh(new BoxGeometry(5, 20, 5), new MeshStandardMaterial());
-  trunk.name = "meshy-tree";
-  trunk.position.y = 10;
-  const lantern = new Mesh(new BoxGeometry(1, 4, 1), new MeshStandardMaterial());
-  lantern.name = "tree-lantern";
-  lantern.position.set(7, 2, 0);
-  root.add(trunk, lantern);
-  const measured = measureShot(root, DIRECTED_SHOTS.tree[1]);
-  close(measured.region.min.y, 0);
-  close(measured.region.max.y, 4);
-  close(measured.region.max.x, 7.5);
-  close(measured.cameraY, 4 * DIRECTED_SHOTS.tree[1].height);
-  close(measured.region.min.x, 6.5);
-});
-test("all directed framing regions fit desktop and phone through both movement extremes with fixed camera height", () => {
-  for (const [w, h] of [
-    [1440, 900],
-    [390, 844],
-    [844, 390],
-  ])
-    for (const subject of ["tower", "tree"])
-      for (const angle of DIRECTED_SHOTS[subject].keys()) {
-        const camera = new PerspectiveCamera(45, w / h, 0.1, 1000),
-          root = new Group();
-        const mesh = new Mesh(
-          new BoxGeometry(subject === "tree" ? 4 : 14, 34, subject === "tree" ? 4 : 12),
-          new MeshStandardMaterial(),
-        );
-        mesh.position.y = 17;
-        root.add(mesh);
-        root.position.set(3, -6, 4);
-        const area = cinematicSafeArea(w, h, { right: 420, bottom: 220 }, { top: h - 105 });
-        const controller = createCinematicCamera({
-          camera,
-          selected: subject,
-          angle,
-          getSafeArea: () => area,
-        });
-        controller.setSubject("tower", root);
-        controller.setStatus({ kind: "tower", status: "ready" });
-        controller.setSubject("tree", root);
-        controller.setStatus({ kind: "tree", status: "ready" });
-        const shot = resolveDirectedShot(DIRECTED_SHOTS[subject][angle], w, h);
-        const measured = measureShot(root, shot);
-        let frame;
-        for (const t of [0, 12, 36, 48]) {
-          assert.equal(controller.apply({ width: w, height: h, elapsedSeconds: t }), true);
-          if (frame)
-            assert.equal(controller.frame, frame, "framing is cached between animation frames");
-          frame = controller.frame;
-          camera.updateMatrixWorld();
-          close(camera.position.y, -6 + 34 * shot.height);
-          assert.equal(camera.fov, shot.fov);
-          for (let i = 0; i < measured.points.length; i += 3) {
-            const v = new Vector3(...measured.points.slice(i, i + 3)).project(camera),
-              x = ((v.x + 1) * w) / 2,
-              y = ((1 - v.y) * h) / 2;
-            assert.ok(
-              x >= area.left &&
-                x <= area.left + area.width &&
-                y >= area.top &&
-                y <= area.top + area.height,
-              `${shot.name} region escaped safe area`,
-            );
-          }
-        }
-        const center = camera.position.clone();
-        controller.apply({ width: w, height: h, elapsedSeconds: 17, reducedMotion: true });
-        close(camera.position.distanceTo(center), 0);
-        controller.apply({ width: w + 5, height: h, elapsedSeconds: 18 });
-        assert.notEqual(frame, controller.frame, "resize invalidates cached fit");
-        controller.dispose();
-        root.traverse((o) => {
-          o.geometry?.dispose();
-          o.material?.dispose();
-        });
-      }
-});
+
 test("film scene restores geometry, lighting and sky before disposal and tolerates repeated teardown", async () => {
   const ground = new Mesh(new BoxGeometry(), new MeshStandardMaterial()),
     original = ground.geometry;
@@ -132,7 +57,9 @@ test("film scene restores geometry, lighting and sky before disposal and tolerat
 });
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
+
 const canvas = () => ({ width: 0, height: 0, getContext: () => ({ drawImage() {} }) });
+
 test("the default film slate binds its seamless maps and shared detail map at the classic tile after the film gate", async () => {
   const pending = [],
     published = [],
@@ -288,72 +215,131 @@ test("the slate keeps its loaded maps through adaptive profile changes with a pi
   }
 });
 
-test("low shots retain terrain clearance throughout the bounded camera arc", () => {
-  const camera = new PerspectiveCamera(),
-    root = new Group();
-  const tree = new Mesh(new BoxGeometry(5, 20, 5), new MeshStandardMaterial());
-  tree.position.y = 10;
-  root.add(tree);
-  const ground = (x, z) => 4 + 0.02 * x + 0.025 * z;
-  const c = createCinematicCamera({
-    camera,
-    selected: "tree",
-    angle: 2,
-    getGroundY: ground,
-    getSafeArea: () => ({ left: 480, top: 30, width: 920, height: 670 }),
-  });
-  for (const kind of ["tower", "tree"]) {
-    c.setSubject(kind, root);
-    c.setStatus({ kind, status: "ready" });
+const groundHeight = (x, z) => Math.sin(x * 0.07) + Math.cos(z * 0.04);
+
+const profile = { tier: "high" };
+
+test("estate growth is seeded, terrain-seated and clear of both footprints and the winding approach", () => {
+  const a = createEstateGroundDetail(groundHeight),
+    b = createEstateGroundDetail(groundHeight);
+  const keepouts = rockKeepouts();
+  const p = a.mesh.geometry.attributes.position,
+    q = b.mesh.geometry.attributes.position;
+  assert.deepEqual(p.array, q.array);
+  assert.equal(p.count, 360 * 12);
+  for (let i = 0; i < p.count; i += 12) {
+    const x = (p.getX(i) + p.getX(i + 1)) / 2,
+      z = (p.getZ(i) + p.getZ(i + 1)) / 2;
+    assert.ok(Math.abs(p.getY(i) - groundHeight(x, z) + 0.018) < 1e-5);
+    assert.ok(Math.hypot(x, z) > 10.4);
+    assert.ok(Math.hypot(x - 55.1, z - 36.1) > 5.8);
+    assert.ok(estatePathDistance(x, z) > 2.09);
+    assert.ok(p.getY(i + 3) > p.getY(i));
+    // No tuft stands in a scattered rock or the ring its pebble may take.
+    for (const rock of keepouts) assert.ok(Math.hypot(x - rock.x, z - rock.z) >= rock.radius);
   }
-  for (const time of [0, 12, 36, 48]) {
-    c.apply({ width: 1440, height: 900, elapsedSeconds: time });
-    assert.ok(camera.position.y - ground(camera.position.x, camera.position.z) >= 0.795);
-  }
-  c.dispose();
-  tree.geometry.dispose();
-  tree.material.dispose();
+  assert.equal(a.mesh.material.transparent, false);
+  // Growth dissolves with the ground it stands on in the tour's staggered cut.
+  assert.match(a.mesh.material.customProgramCacheKey(), /\|depth-layer-0\.6667$/);
+  const shader = { vertexShader: "", fragmentShader: "#include <dithering_fragment>\n}" };
+  a.mesh.material.onBeforeCompile(shader);
+  assert.equal(shader.fragmentShader, "#include <dithering_fragment>\ngl_FragColor.a = 0.6667;\n}");
+  a.dispose();
+  b.dispose();
 });
 
-test("a foreground ridge cannot hide the roots in a low tree composition", () => {
-  const ground = (x, z) =>
-    1.8 * Math.sin(0.055 * x) +
-    1.35 * Math.cos(0.052 * z) +
-    0.9 * Math.sin(0.031 * (x + z)) +
-    0.55 * Math.cos(0.018 * (x - z)) -
-    6.8;
-  const camera = new PerspectiveCamera(),
-    root = new Group();
-  const tree = new Mesh(new BoxGeometry(12, 19.8, 12), new MeshStandardMaterial());
-  tree.name = "meshy-tree";
-  tree.position.y = 9.9;
-  root.position.set(55.1, ground(55.1, 36.1), 36.1);
-  root.add(tree);
-  const controller = createCinematicCamera({
-    camera,
-    selected: "tree",
-    angle: 1,
-    getGroundY: ground,
-    getSafeArea: () => ({ left: 20, top: 220, width: 346, height: 460 }),
+test("ground-detail quality changes trim a shared geometry and restore original world positions", () => {
+  const detail = createEstateGroundDetail(groundHeight),
+    mesh = detail.mesh;
+  const original = mesh.geometry.attributes.position.array.slice();
+  assert.equal(mesh.visible, false);
+  detail.setActive(true);
+  assert.equal(mesh.geometry.drawRange.count, 360 * 18);
+  detail.applyQuality({ tier: "balanced" });
+  assert.equal(mesh.geometry.drawRange.count, 300 * 18);
+  assert.equal(mesh.visible, true);
+  detail.applyQuality({ tier: "low" });
+  assert.equal(mesh.visible, false);
+  detail.applyQuality(profile);
+  assert.deepEqual(mesh.geometry.attributes.position.array, original);
+  assert.equal(mesh.visible, true);
+  detail.setActive(false);
+  assert.equal(mesh.visible, false);
+  let freed = 0;
+  mesh.geometry.addEventListener("dispose", () => freed++);
+  assert.equal(detail.dispose(), true);
+  assert.equal(detail.dispose(), false);
+  detail.setActive(true);
+  assert.equal(mesh.visible, false);
+  assert.equal(freed, 1);
+});
+
+test("environment creates growth only after film activation and owns its lifecycle", () => {
+  const parent = new Group(),
+    environment = createSceneEnvironment({ parent, groundHeight, profile });
+  assert.equal(environment.root.children.length, 0);
+  environment.setFilmTreatment(true);
+  const mesh = environment.root.getObjectByName("estate-ground-growth");
+  assert.ok(mesh?.visible);
+  environment.resize({ composition: { sceneOffsetY: -7.5 } });
+  assert.equal(mesh.getWorldPosition(new Vector3()).y, -7.5);
+  environment.setFilmTreatment(false);
+  assert.equal(mesh.visible, false);
+  environment.setFilmTreatment(true);
+  assert.equal(environment.root.children.length, 1);
+  environment.applyQuality({ tier: "low" });
+  assert.equal(mesh.visible, false);
+  environment.dispose();
+  assert.equal(mesh.parent, null);
+  assert.equal(environment.setFilmTreatment(true), false);
+});
+
+test("depth-layer stamps compose with a material's own shader hook and program key", () => {
+  assert.deepEqual({ ...DEPTH_LAYER }, { sky: "0.0", mountains: "0.3333", ground: "0.6667" });
+  assert.ok(Object.isFrozen(DEPTH_LAYER));
+  const material = new MeshStandardMaterial();
+  const calls = [];
+  material.onBeforeCompile = function (shader, renderer) {
+    calls.push([this, renderer]);
+    shader.fragmentShader = shader.fragmentShader.replace(
+      "#include <fog_fragment>",
+      "#include <fog_fragment>\nfogged();",
+    );
+  };
+  material.customProgramCacheKey = () => "own-key";
+  assert.equal(stampDepthLayer(material, DEPTH_LAYER.mountains), material);
+  const shader = { fragmentShader: "#include <fog_fragment>\n#include <dithering_fragment>\n}" };
+  const renderer = {};
+  material.onBeforeCompile(shader, renderer);
+  assert.deepEqual(calls, [[material, renderer]]);
+  assert.equal(
+    shader.fragmentShader,
+    "#include <fog_fragment>\nfogged();\n#include <dithering_fragment>\ngl_FragColor.a = 0.3333;\n}",
+  );
+  assert.equal(material.customProgramCacheKey(), "own-key|depth-layer-0.3333");
+  material.dispose();
+});
+
+const highProfile = {
+  lighting: {
+    practicalIntensityScale: 1,
+  },
+  tier: "high",
+};
+
+test("environment owns composition and its disposal", () => {
+  const parent = new Group();
+  const environment = createSceneEnvironment({
+    groundHeight: (x, z) => x + z,
+    parent,
+    profile: highProfile,
   });
-  for (const kind of ["tower", "tree"]) {
-    controller.setSubject(kind, root);
-    controller.setStatus({ kind, status: "ready" });
-  }
-  let elevation;
-  for (const time of [0, 12, 36, 48]) {
-    controller.apply({ width: 390, height: 844, elapsedSeconds: time });
-    elevation ??= camera.position.y;
-    close(camera.position.y, elevation);
-    for (let k = 1; k < 24; k++) {
-      const t = k / 24,
-        point = camera.position.clone().lerp(root.position, t);
-      const lineY = camera.position.y * (1 - t) + (root.position.y + 0.18) * t;
-      assert.ok(lineY >= ground(point.x, point.z) + 0.07);
-    }
-  }
-  assert.ok(elevation >= root.position.y + 19.8 * DIRECTED_SHOTS.tree[1].height - 1e-6);
-  controller.dispose();
-  tree.geometry.dispose();
-  tree.material.dispose();
+  environment.resize({ composition: { sceneOffsetY: -6 } });
+  assert.equal(environment.root.position.y, -6);
+  assert.equal(environment.applyQuality({ tier: "balanced" }), true);
+  assert.equal(environment.dispose(), true);
+  assert.equal(environment.dispose(), false);
+  assert.equal(environment.root.visible, false);
+  assert.equal(environment.applyQuality(highProfile), false);
+  assert.equal(parent.children.includes(environment.root), true);
 });

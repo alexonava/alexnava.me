@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { after } from "node:test";
 import { BoxGeometry, Group, Mesh, MeshStandardMaterial, Texture } from "three";
 import {
   ARCHITECTURE_ASSET_BUDGETS,
@@ -7,9 +7,15 @@ import {
   createArchitectureAssetController,
   loadArchitectureAsset,
 } from "../src/scene/architecture-assets.js";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { parseGlb } from "./support/glb.mjs";
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
+
 const towerRoles = ["tower"];
+
 function asset(name, events = []) {
   const counts = { geometry: 0, material: 0, color: 0, roughness: 0, bitmap: 0 };
   const bitmap = {
@@ -34,6 +40,7 @@ function asset(name, events = []) {
   scene.add(new Mesh(geometry, material), new Mesh(geometry, [material, material]));
   return { scene, scenes: [scene], counts, geometry, material, color, roughness, bitmap };
 }
+
 function harness(options = {}) {
   const requests = [],
     statuses = [],
@@ -79,9 +86,11 @@ function harness(options = {}) {
   });
   return { controller, requests, statuses, towerReady, treeReady, events };
 }
+
 function request(h, role, tier = "high") {
   return h.requests.findLast((record) => record.role === role && record.tier === tier);
 }
+
 function complete(h, roles = [...towerRoles, "tree"], tier = "high") {
   return roles.map((role) => {
     const parsed = asset(`${tier}-${role}`, h.events);
@@ -89,6 +98,7 @@ function complete(h, roles = [...towerRoles, "tree"], tier = "high") {
     return parsed;
   });
 }
+
 function assertReleased(parsed, expected = 1) {
   assert.deepEqual(Object.values(parsed.counts), Array(5).fill(expected));
 }
@@ -621,6 +631,7 @@ test("an embedded image failure rejects the GLB and closes other decoded images 
 });
 
 const base = { asset: { version: "2.0" }, scene: 0, scenes: [{ nodes: [] }], nodes: [] };
+
 // main.js shares early model requests on window.BabelSite.scene.prefetched.
 async function withPrefetched(entries, run) {
   const previousSite = Object.getOwnPropertyDescriptor(globalThis, "BabelSite");
@@ -641,6 +652,7 @@ async function withPrefetched(entries, run) {
     else delete globalThis.BabelSite;
   }
 }
+
 function earlyRequest(response) {
   const entry = { aborted: 0, response };
   entry.response.catch(() => {});
@@ -828,4 +840,30 @@ test("the loading line counts the loader's own request once and never re-wraps a
     );
     assert.deepEqual(tracked, [url, url]);
   });
+});
+
+const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+// Every model the live scene loads, and the slate maps each tier requests.
+const ROLES = ["tower", "tree", "lantern", "lichen-rock", "weathered-stone"];
+
+test("every delivered model is one self-contained, static, triangle mesh", async () => {
+  for (const tier of ["high", "balanced"])
+    for (const role of ROLES) {
+      const name = `${role}-${tier}.glb`;
+      const source = await readFile(path.join(projectRoot, "images", "architecture", name));
+      assert.equal(source.toString("ascii", 0, 4), "glTF");
+      assert.equal(source.readUInt32LE(8), source.length);
+      const gltf = parseGlb(source).json;
+      assert.equal(gltf.meshes.length, 1, name + " should have one shared mesh");
+      assert.equal(gltf.meshes[0].primitives.length, 1, name + " should have one shared material");
+      assert.ok(gltf.images.length > 0, name + " must retain source surface detail");
+      for (const resource of [...gltf.images, ...gltf.buffers])
+        assert.equal(resource.uri, undefined);
+      assert.equal(gltf.animations?.length || 0, 0);
+      const primitive = gltf.meshes[0].primitives[0];
+      assert.equal(primitive.mode ?? 4, 4, "triangle topology required");
+      for (const semantic of ["POSITION", "NORMAL", "TEXCOORD_0"])
+        assert.ok(Number.isInteger(primitive.attributes[semantic]));
+    }
 });

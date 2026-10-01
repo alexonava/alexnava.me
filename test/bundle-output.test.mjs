@@ -1,23 +1,38 @@
 import assert from "node:assert/strict";
+
 import test, { after } from "node:test";
+
 import { execFile } from "node:child_process";
+
 import { createHash } from "node:crypto";
+
 import { promisify } from "node:util";
+
 import { cp, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+
 import path from "node:path";
+
 import { fileURLToPath } from "node:url";
-import { parseGlb } from "./support/glb.mjs";
+
 import { ARCHITECTURE_ASSET_BUDGETS } from "../src/scene/architecture-assets.js";
 
 const execFileP = promisify(execFile);
+
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
 const scratchRoot = path.join(projectRoot, ".tmp-preview-review");
+
 await mkdir(scratchRoot, { recursive: true });
+
 const bundleScratch = await mkdtemp(path.join(scratchRoot, "bundle-output-"));
+
 const distDir = path.join(bundleScratch, "dist");
+
 const scriptsDir = path.join(distDir, "scripts");
+
 // Every model the live scene loads, and the slate maps each tier requests.
 const ROLES = ["tower", "tree", "lantern", "lichen-rock", "weathered-stone"];
+
 const slateMaps = (tier) => {
   const size = tier === "high" ? 1024 : 512;
   return [`slate-color-${size}.webp`, `slate-normal-${size}.webp`, "slate-detail-512.webp"];
@@ -27,6 +42,7 @@ after(async () => {
   assert.equal(path.dirname(path.resolve(bundleScratch)), scratchRoot);
   await rm(bundleScratch, { recursive: true, force: true });
 });
+
 await execFileP(process.execPath, ["build.mjs", "--dist", "--outdir", distDir], {
   cwd: projectRoot,
 });
@@ -521,27 +537,6 @@ test("models and slate maps are deferred: the scene entry names their hashed cop
       assert.ok(loaded.get(entry).includes(`/images/materials/${published}`), published);
     }
   }
-});
-
-test("every delivered model is one self-contained, static, triangle mesh", async () => {
-  for (const tier of ["high", "balanced"])
-    for (const role of ROLES) {
-      const name = `${role}-${tier}.glb`;
-      const source = await readFile(path.join(projectRoot, "images", "architecture", name));
-      assert.equal(source.toString("ascii", 0, 4), "glTF");
-      assert.equal(source.readUInt32LE(8), source.length);
-      const gltf = parseGlb(source).json;
-      assert.equal(gltf.meshes.length, 1, name + " should have one shared mesh");
-      assert.equal(gltf.meshes[0].primitives.length, 1, name + " should have one shared material");
-      assert.ok(gltf.images.length > 0, name + " must retain source surface detail");
-      for (const resource of [...gltf.images, ...gltf.buffers])
-        assert.equal(resource.uri, undefined);
-      assert.equal(gltf.animations?.length || 0, 0);
-      const primitive = gltf.meshes[0].primitives[0];
-      assert.equal(primitive.mode ?? 4, 4, "triangle topology required");
-      for (const semantic of ["POSITION", "NORMAL", "TEXCOORD_0"])
-        assert.ok(Number.isInteger(primitive.attributes[semantic]));
-    }
 });
 
 test("the complete scene fits 6 MiB on high and 3 MiB on balanced, and each model the loader's limit", async () => {
