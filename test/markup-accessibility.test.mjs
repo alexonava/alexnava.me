@@ -121,35 +121,134 @@ test("the scene is the landing content and the estate starts inside the hidden A
   assert.equal((html.match(/class="panel-close panel-back" aria-label="Back to About"/g) || []).length, 3);
 });
 
-test("responsive scene posters paint before the deferred renderer and debug UI stays out of published markup", async () => {
+const LOADER_MARKUP =
+  '<div class="scene-loader" id="scene-loader" aria-hidden="true" hidden><p class="scene-loader__label">Loading the estate &middot; <span class="scene-loader__value">0%</span></p><div class="scene-loader__track"><div class="scene-loader__fill"></div></div></div>';
+
+test("the title card paints no picture, and its hidden loading line sits between the bottom bar and footer", async () => {
   const html = await readIndexHtml();
-  assert.match(html, /<picture class="scene-poster" aria-hidden="true">/);
-  assert.match(html, /media="\(orientation: portrait\)"[\s\S]*?srcset="\/images\/scene-poster-portrait\.webp"/);
-  assert.match(html, /src="\/images\/scene-poster-landscape\.webp"[\s\S]*?alt=""[\s\S]*?loading="eager"[\s\S]*?fetchpriority="high"/);
+  // The owner retired the poster (2026-09-30): no picture anywhere on the site.
+  assert.doesNotMatch(html, /<picture|<img|scene-poster/);
+  assert.equal(html.split(LOADER_MARKUP).length - 1, 1, "the loading line's exact markup, once");
+  const at = html.indexOf(LOADER_MARKUP);
+  assert.ok(html.indexOf('<div class="bottom-bar"') < at, "after the bottom bar");
+  assert.ok(at < html.indexOf('<footer class="site-footer">'), "before the footer");
+  const main = html.match(/<main[\s\S]*?<\/main>/)[0];
+  assert.doesNotMatch(main, /scene-loader/, "outside main");
+  // The CSP allows no inline style; the line moves only through the CSSOM.
+  for (const page of [html, await readNotFoundHtml()]) {
+    assert.doesNotMatch(page, /\sstyle=|<style[\s>]/);
+  }
   assert.doesNotMatch(html, /dev-mode-hud/, "developer mode creates its HUD on demand");
   assert.doesNotMatch(html, /loading-ritual/);
 });
 
-test("the poster stays opaque until the canvas fade completes", async () => {
+test("the canvas keeps one 480ms fade over the title card, and the loading line finishes within it", async () => {
   const styles = await readStyles();
-  const canvasFade = styles.match(/\.scene-canvas\s*\{[^}]*transition:\s*opacity (\d+)ms/)?.[1];
-  assert.ok(canvasFade, "the canvas fades in");
-  assert.match(
-    styles,
-    /\n\.scene-poster\s*\{[^}]*z-index:\s*0;[^}]*opacity:\s*1;[^}]*transition:\s*none;/,
-    "the poster under the canvas returns at once when the canvas fades out",
+  const canvas = cssRule(styles, ".scene-canvas");
+  assert.match(canvas, /z-index:\s*1;/);
+  assert.match(canvas, /opacity:\s*0;/);
+  assert.match(canvas, /transition:\s*opacity 480ms ease-out;/);
+  assert.match(cssRule(styles, ".scene-canvas.is-ready"), /opacity:\s*1;/);
+  // terrain-build.js, mountain-build.js and light-shafts.js read the canvas's
+  // one transitionDuration, so no other rule may add or change a transition.
+  const canvasTransitions = cssRules(styles, (selector) =>
+    selector.split(",").some((part) => /^\.scene-canvas(?:\.is-ready)?$/.test(part.trim())),
+  ).flatMap(({ body }) => [...body.matchAll(/transition[\w-]*:\s*([^;]+);/g)].map((match) => match[1]));
+  assert.deepEqual(canvasTransitions, ["opacity 480ms ease-out", "none"]);
+  assert.match(cssRule(styles, ".scene-loader.is-loading"), /opacity:\s*1;\s*transition:\s*opacity 320ms ease 240ms;/);
+  const [, duration, delay] = cssRule(styles, ".scene-loader.is-done").match(
+    /opacity:\s*0;\s*transition:\s*opacity (\d+)ms ease (\d+)ms;/,
   );
-  assert.match(
-    styles,
-    new RegExp(
-      `\\.scene-canvas\\.is-ready \\+ \\.scene-poster\\s*\\{[^}]*opacity:\\s*0;[^}]*transition:\\s*opacity 0s linear ${canvasFade}ms;`,
-    ),
+  assert.ok(Number(duration) + Number(delay) <= 480, "the line is gone when the canvas is in");
+  const reduced = mediaBlock(styles, "(prefers-reduced-motion: reduce)");
+  for (const selector of [".scene-canvas", ".scene-loader.is-loading", ".scene-loader.is-done", ".scene-loader__fill"]) {
+    assert.ok(
+      cssRules(reduced, (list) => list.split(",").some((part) => part.trim() === selector)).some(({ body }) =>
+        /transition:\s*none;/.test(body),
+      ),
+      `${selector} is immediate for reduced motion`,
+    );
+  }
+  assert.match(reduced, /\.scene-loader__fill::after\s*\{[^}]*display:\s*none;/, "no glint for reduced motion");
+});
+
+test("the loading line is fixed above the footer, inert, legible and drawn by one transform", async () => {
+  const styles = await readStyles();
+  const loader = cssRule(styles, ".scene-loader");
+  assert.match(loader, /position:\s*fixed;/);
+  assert.match(loader, /right:\s*0;/);
+  assert.match(loader, /left:\s*0;/);
+  assert.match(loader, /z-index:\s*10;/);
+  assert.match(loader, /pointer-events:\s*none;/);
+  assert.match(loader, /bottom:\s*calc\(max\(30px, calc\(22px \+ env\(safe-area-inset-bottom\)\)\) \+ 44px\);/);
+  assert.match(loader, /width:\s*min\(240px, calc\(100% - 48px\)\);/);
+  assert.match(loader, /margin-inline:\s*auto;/);
+  assert.match(loader, /font-size:\s*12px;/);
+  assert.match(loader, /line-height:\s*16px;/);
+  assert.match(loader, /color:\s*var\(--text-accent\);/);
+  assert.match(loader, /text-shadow:\s*var\(--text-meta-shadow\);/);
+  assert.match(loader, /opacity:\s*0;/);
+  assert.match(cssRule(styles, ".scene-loader__label"), /white-space:\s*nowrap;[^}]*font-variant-numeric:\s*tabular-nums;/);
+  assert.match(cssRule(styles, ".scene-loader__value"), /display:\s*inline-block;\s*min-width:\s*4ch;\s*text-align:\s*left;/);
+  assert.match(cssRule(styles, ".scene-loader__track"), /height:\s*2px;[^}]*background:\s*rgba\(230, 226, 214, 0\.16\);/);
+  const fill = cssRule(styles, ".scene-loader__fill");
+  assert.match(fill, /background:\s*#dfb882;/, "the sun's colour");
+  assert.match(fill, /transform:\s*scaleX\(0\);/);
+  assert.match(fill, /transform-origin:\s*0 50%;/);
+  // Only the transform animates, and the script writes nothing else.
+  const fillTransitions = cssRules(styles, (selector) => /\.scene-loader__fill$/.test(selector.trim()))
+    .flatMap(({ body }) => [...body.matchAll(/transition(?:-property)?:\s*([^;]+);/g)].map((match) => match[1]));
+  assert.ok(fillTransitions.length > 0);
+  for (const transition of fillTransitions) assert.match(transition, /^(?:transform \d+ms\b|none$)/);
+  const script = await readFile(path.join(projectRoot, "src", "ui", "scene-loader.js"), "utf8");
+  assert.deepEqual(
+    [...new Set([...script.matchAll(/\.style\.(\w+)\s*=/g)].map((match) => match[1]))],
+    ["transform"],
   );
-  assert.match(
-    styles,
-    /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.scene-canvas,\s*\.scene-poster,\s*\.scene-canvas\.is-ready \+ \.scene-poster\s*\{\s*transition:\s*none;/,
-    "reduced motion swaps the poster and canvas immediately",
-  );
+  assert.match(mediaBlock(styles, "(forced-colors: active)"), /\.scene-loader\s*\{\s*display:\s*none;/);
+  const transparency = mediaBlock(styles, "(prefers-reduced-transparency: reduce)");
+  assert.match(transparency, /\.scene-loader__track\s*\{\s*background:\s*#34373c;/);
+  assert.match(transparency, /\.scene-loader__fill\s*\{\s*box-shadow:\s*none;/);
+  // The label's ink, resolved through its custom properties, on the night.
+  const token = (name) => styles.match(new RegExp(`${name}:\\s*([^;]+);`))?.[1].trim();
+  let ink = token("--text-accent");
+  while (ink?.startsWith("var(")) ink = token(ink.slice(4, -1));
+  assert.match(ink, /^#[0-9a-f]{6}$/i);
+  assert.ok(contrast(ink, "#0c1016") >= 4.5, `${ink} on the night is ${contrast(ink, "#0c1016").toFixed(2)}:1`);
+});
+
+test("the title card's night sky is two tiling star layers drawn in CSS, with no image request", async () => {
+  const styles = await readStyles();
+  const stars = cssRule(styles, ".scene-shell::before");
+  assert.match(stars, /position:\s*absolute;/);
+  assert.match(stars, /inset:\s*0;/);
+  assert.match(stars, /z-index:\s*0;/, "under the canvas (1) and vignette (2)");
+  assert.match(stars, /pointer-events:\s*none;/);
+  assert.match(stars, /background-size:\s*640px 640px,\s*1040px 1040px;/);
+  const mask = "linear-gradient\\(180deg, #000 0%, #000 36%, transparent 84%\\)";
+  assert.match(stars, new RegExp(`-webkit-mask-image:\\s*${mask};`));
+  assert.match(stars, new RegExp(`[;\\s]mask-image:\\s*${mask};`));
+  const layers = [...stars.matchAll(/url\("(data:image\/svg\+xml,[^"]+)"\)/g)].map((match) => match[1]);
+  assert.equal(layers.length, 2);
+  for (const [index, layer] of layers.entries()) {
+    // Encoded like --cursor-line: no raw markup characters in the URL.
+    assert.doesNotMatch(layer, /[<>#"]/);
+    const size = [640, 1040][index];
+    assert.match(layer, new RegExp(`width='${size}' height='${size}'`));
+    const circles = [...layer.matchAll(/%3Ccircle cx='(\d+)' cy='(\d+)' r='([\d.]+)' opacity='([\d.]+)'\/%3E/g)];
+    assert.ok(circles.length >= 30 && circles.length <= 50, `${circles.length} stars`);
+    for (const [, x, y, r, opacity] of circles) {
+      assert.ok(Number(r) >= 0.4 && Number(r) <= 1.1, `radius ${r}`);
+      assert.ok(Number(opacity) >= 0.2 && Number(opacity) <= 0.8, `opacity ${opacity}`);
+      // A star never crosses its tile's edge, so the tiles meet without a seam.
+      for (const at of [x, y]) assert.ok(Number(at) - Number(r) > 0 && Number(at) + Number(r) < size);
+    }
+    assert.deepEqual([...new Set(layer.match(/fill='[^']+'/g))].sort(), ["fill='%23d6dee8'", "fill='%23efe8da'"]);
+  }
+  for (const { selector, body } of cssRules(styles, (selector) => selector.includes(".scene-shell"))) {
+    assert.doesNotMatch(body, /\/images\//, `${selector} requests no image`);
+  }
+  assert.match(cssRule(styles, ".scene-vignette"), /z-index:\s*2;/);
 });
 
 test("estate layers preserve artwork proportions without masking labels", async () => {
@@ -168,6 +267,7 @@ test("paper and estate surfaces are declared once, without retired layers", asyn
   // so a later .scene-home layer cannot quietly override the rules below.
   for (const retired of [
     /loading-ritual/,
+    /scene-poster/,
     /\.hero-kicker/,
     /\.scene-home\b/,
     /\.estate-home(?!-map)\b/,
@@ -334,6 +434,16 @@ test("the hero backdrop fades to transparent before every edge of its box", asyn
   assert.doesNotMatch(rule, /mask-image/, "no mask edge of its own");
 });
 
+test("main clips the hero backdrop's horizontal overflow so phones keep a device-width layout", async () => {
+  // The backdrop's box reaches about 196px past the hero's right edge. On a
+  // 390px phone that widened the mobile layout viewport to ~495px and pushed
+  // the footer below the screen; body's overflow-x: hidden does not stop it.
+  const styles = await readStyles();
+  const main = cssRule(styles, "main");
+  assert.match(main, /overflow-x:\s*clip;/);
+  assert.doesNotMatch(main, /overflow(-y)?:\s*(hidden|auto|scroll)/, "no scroll container or vertical clip");
+});
+
 test("every contact address sits inside Cloudflare email_off markers", async () => {
   const html = await readIndexHtml();
   const wrapped =
@@ -470,7 +580,9 @@ test("landmarks and heading levels describe the page structure", async () => {
   assert.match(notFound, /<h1>That page isn't here\.<\/h1>/);
   assert.doesNotMatch(notFound, /<h2>/);
   assert.match(notFound, /<meta name="theme-color" content="#0c1016" \/>/);
-  assert.match(notFound, /<picture class="scene-poster" aria-hidden="true">/);
+  // The 404 shares the title card's night: no picture, only the vignette.
+  assert.doesNotMatch(notFound, /<picture|<img|scene-poster/);
+  assert.match(notFound, /<div class="scene-shell" aria-hidden="true"><div class="scene-vignette"><\/div><\/div>/);
   const classTokens = [...notFound.matchAll(/class="([^"]+)"/g)].flatMap((match) => match[1].split(/\s+/));
   for (const token of classTokens) {
     assert.match(styles, new RegExp(`\\.${token}(?![\\w-])`), `404 class "${token}" has no styles`);
@@ -493,6 +605,14 @@ test("social previews describe the share image", async () => {
 function cssRule(styles, selector) {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return styles.match(new RegExp(`(?:^|[}/{])\\s*${escaped}\\s*\\{([^}]*)\\}`))?.[1] || "";
+}
+
+// Every innermost rule, top level or nested in an at-rule, whose selector
+// (comments removed) passes the test: [{ selector, body }].
+function cssRules(styles, matches) {
+  return [...styles.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .map(([, selector, body]) => ({ selector: selector.trim(), body }))
+    .filter(({ selector }) => matches(selector));
 }
 
 // Every block for a media query, joined in source order.

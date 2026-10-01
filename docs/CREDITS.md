@@ -16,8 +16,8 @@ Both are self-hosted as local woff2 subsets in `fonts/`.
 ## Site content and code
 
 Site code, procedural scene (sky, clouds, terrain, materials, camera and
-animation) and responsive posters © 2026 Alex Nava. Released under the MIT
-License (see LICENSE).
+animation) and the share card backdrop (`tools/og-card-backdrop.webp`) © 2026
+Alex Nava. Released under the MIT License (see LICENSE).
 
 ## Supplied timber lookout tower
 

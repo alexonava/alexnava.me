@@ -145,6 +145,10 @@ button {
 main {
   position: relative;
   z-index: 2;
+  /* The hero backdrop's oval reaches past the screen edge on phones. Clipping
+     it here keeps mobile browsers from widening the layout viewport, which
+     pushed the footer below the screen; body's overflow-x alone doesn't. */
+  overflow-x: clip;
 }
 
 main:focus {
@@ -175,21 +179,40 @@ main:focus {
   outline-offset: 4px;
 }
 
+/* Under the canvas, so only the title card shows it: a faint cool haze where
+   the moon sits in the opening shot, over the night gradient. */
 .scene-shell {
   position: fixed;
   inset: 0;
   z-index: 0;
   overflow: hidden;
   background:
-    radial-gradient(circle at 76% 20%, rgba(186, 202, 212, 0.12) 0%, rgba(186, 202, 212, 0) 28%),
-    radial-gradient(circle at 48% 26%, rgba(230, 224, 214, 0.15) 0%, rgba(230, 224, 214, 0) 26%),
-    radial-gradient(circle at 24% 16%, rgba(204, 207, 198, 0.08) 0%, rgba(204, 207, 198, 0) 21%),
+    radial-gradient(ellipse 60% 45% at 78% 16%, rgba(124, 142, 190, 0.13) 0%, rgba(124, 142, 190, 0) 100%),
+    radial-gradient(ellipse 80% 50% at 40% 8%, rgba(92, 104, 150, 0.08) 0%, rgba(92, 104, 150, 0) 100%),
     linear-gradient(180deg, rgba(9, 13, 24, 0.12) 0%, rgba(12, 14, 28, 0.49) 100%);
 }
 
+/* The title card's night sky, the first paint on every path and the final one
+   on static paths: two tiling star layers whose 640px and 1040px tiles never
+   line up, fading out toward the horizon, under the canvas (z-index 1) and the
+   vignette (2). The stars were generated once with a seeded generator. */
+.scene-shell::before {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  content: "";
+  pointer-events: none;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='640'%3E%3Cg fill='%23efe8da'%3E%3Ccircle cx='264' cy='35' r='.6' opacity='.6'/%3E%3Ccircle cx='382' cy='629' r='.8' opacity='.5'/%3E%3Ccircle cx='228' cy='551' r='.8' opacity='.5'/%3E%3Ccircle cx='148' cy='64' r='.4' opacity='.5'/%3E%3Ccircle cx='19' cy='608' r='.6' opacity='.2'/%3E%3Ccircle cx='277' cy='275' r='.8' opacity='.3'/%3E%3Ccircle cx='326' cy='130' r='.6' opacity='.2'/%3E%3Ccircle cx='154' cy='407' r='.4' opacity='.3'/%3E%3Ccircle cx='589' cy='616' r='.7' opacity='.4'/%3E%3Ccircle cx='557' cy='71' r='.4' opacity='.8'/%3E%3Ccircle cx='513' cy='574' r='.6' opacity='.7'/%3E%3Ccircle cx='361' cy='590' r='.7' opacity='.6'/%3E%3Ccircle cx='4' cy='100' r='.8' opacity='.2'/%3E%3Ccircle cx='563' cy='580' r='.4' opacity='.3'/%3E%3Ccircle cx='17' cy='361' r='.8' opacity='.3'/%3E%3Ccircle cx='379' cy='271' r='.7' opacity='.8'/%3E%3Ccircle cx='336' cy='134' r='.6' opacity='.2'/%3E%3Ccircle cx='568' cy='619' r='.8' opacity='.3'/%3E%3Ccircle cx='622' cy='259' r='.4' opacity='.5'/%3E%3Ccircle cx='39' cy='257' r='.5' opacity='.4'/%3E%3Ccircle cx='325' cy='630' r='.5' opacity='.8'/%3E%3Ccircle cx='299' cy='175' r='.6' opacity='.3'/%3E%3Ccircle cx='488' cy='63' r='.6' opacity='.3'/%3E%3Ccircle cx='400' cy='102' r='.5' opacity='.3'/%3E%3Ccircle cx='14' cy='43' r='.6' opacity='.3'/%3E%3Ccircle cx='199' cy='73' r='.7' opacity='.5'/%3E%3Ccircle cx='520' cy='427' r='.7' opacity='.3'/%3E%3Ccircle cx='592' cy='588' r='.7' opacity='.8'/%3E%3Ccircle cx='385' cy='626' r='.8' opacity='.4'/%3E%3Ccircle cx='170' cy='119' r='.7' opacity='.5'/%3E%3Ccircle cx='334' cy='288' r='.7' opacity='.7'/%3E%3Ccircle cx='626' cy='442' r='.5' opacity='.2'/%3E%3Ccircle cx='617' cy='279' r='.8' opacity='.5'/%3E%3Ccircle cx='35' cy='112' r='.7' opacity='.6'/%3E%3Ccircle cx='331' cy='143' r='.7' opacity='.3'/%3E%3Ccircle cx='93' cy='412' r='.4' opacity='.6'/%3E%3C/g%3E%3Cg fill='%23d6dee8'%3E%3Ccircle cx='468' cy='243' r='.7' opacity='.6'/%3E%3Ccircle cx='193' cy='553' r='.8' opacity='.8'/%3E%3Ccircle cx='3' cy='472' r='.5' opacity='.5'/%3E%3Ccircle cx='410' cy='154' r='.8' opacity='.7'/%3E%3C/g%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1040' height='1040'%3E%3Cg fill='%23efe8da'%3E%3Ccircle cx='976' cy='599' r='.9' opacity='.6'/%3E%3Ccircle cx='686' cy='147' r='1.1' opacity='.3'/%3E%3Ccircle cx='875' cy='304' r='1' opacity='.6'/%3E%3Ccircle cx='104' cy='410' r='.9' opacity='.4'/%3E%3Ccircle cx='148' cy='108' r='1' opacity='.7'/%3E%3Ccircle cx='912' cy='566' r='1' opacity='.6'/%3E%3Ccircle cx='359' cy='251' r='1' opacity='.5'/%3E%3Ccircle cx='839' cy='310' r='1' opacity='.5'/%3E%3Ccircle cx='17' cy='415' r='1' opacity='.4'/%3E%3Ccircle cx='436' cy='623' r='.9' opacity='.4'/%3E%3Ccircle cx='238' cy='447' r='.9' opacity='.7'/%3E%3Ccircle cx='219' cy='453' r='.8' opacity='.3'/%3E%3Ccircle cx='659' cy='871' r='.9' opacity='.8'/%3E%3Ccircle cx='28' cy='520' r='1' opacity='.2'/%3E%3Ccircle cx='527' cy='920' r='.6' opacity='.3'/%3E%3Ccircle cx='1006' cy='1027' r='1' opacity='.7'/%3E%3Ccircle cx='951' cy='89' r='1' opacity='.6'/%3E%3Ccircle cx='631' cy='14' r='.8' opacity='.6'/%3E%3Ccircle cx='196' cy='243' r='.6' opacity='.8'/%3E%3Ccircle cx='282' cy='571' r='1.1' opacity='.6'/%3E%3Ccircle cx='807' cy='762' r='.8' opacity='.6'/%3E%3Ccircle cx='78' cy='264' r='1' opacity='.7'/%3E%3Ccircle cx='486' cy='293' r='.9' opacity='.8'/%3E%3Ccircle cx='1036' cy='355' r='.8' opacity='.3'/%3E%3Ccircle cx='823' cy='271' r='.8' opacity='.5'/%3E%3Ccircle cx='535' cy='457' r='.8' opacity='.3'/%3E%3Ccircle cx='448' cy='321' r='.8' opacity='.3'/%3E%3Ccircle cx='701' cy='927' r='1' opacity='.3'/%3E%3Ccircle cx='487' cy='155' r='.9' opacity='.7'/%3E%3Ccircle cx='983' cy='395' r='.7' opacity='.3'/%3E%3Ccircle cx='539' cy='538' r='.8' opacity='.6'/%3E%3Ccircle cx='387' cy='1027' r='.9' opacity='.4'/%3E%3Ccircle cx='751' cy='785' r='.9' opacity='.7'/%3E%3Ccircle cx='153' cy='85' r='1' opacity='.6'/%3E%3Ccircle cx='647' cy='531' r='.6' opacity='.3'/%3E%3Ccircle cx='606' cy='342' r='.6' opacity='.4'/%3E%3Ccircle cx='660' cy='240' r='.8' opacity='.5'/%3E%3Ccircle cx='93' cy='987' r='1' opacity='.4'/%3E%3C/g%3E%3Cg fill='%23d6dee8'%3E%3Ccircle cx='496' cy='319' r='.8' opacity='.3'/%3E%3Ccircle cx='379' cy='680' r='.8' opacity='.6'/%3E%3C/g%3E%3C/svg%3E");
+  background-size:
+    640px 640px,
+    1040px 1040px;
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 36%, transparent 84%);
+  mask-image: linear-gradient(180deg, #000 0%, #000 36%, transparent 84%);
+}
+
 .scene-canvas,
-.scene-poster,
-.scene-poster img,
 .scene-canvas canvas {
   position: absolute;
   inset: 0;
@@ -197,6 +220,10 @@ main:focus {
   height: 100%;
 }
 
+/* The live scene fades in over the title card at its reveal. Keep this single
+   480ms opacity transition: terrain-build.js, mountain-build.js and
+   light-shafts.js read its transitionDuration to time work under the fade, and
+   the loading line (.scene-loader.is-done) finishes within it. */
 .scene-canvas {
   z-index: 1;
   opacity: 0;
@@ -207,32 +234,8 @@ main:focus {
   opacity: 1;
 }
 
-.scene-poster {
-  z-index: 0;
-  margin: 0;
-  pointer-events: none;
-  opacity: 1;
-  transition: none;
-}
-
-.scene-poster img {
-  display: block;
-  object-fit: cover;
-  object-position: center;
-}
-
-/* The poster sits under the canvas, so it returns at once when the canvas
-   fades out and hides only after the canvas finishes its 480ms fade in; the
-   two layers never dip through each other in either direction. */
-.scene-canvas.is-ready + .scene-poster {
-  opacity: 0;
-  transition: opacity 0s linear 480ms;
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .scene-canvas,
-  .scene-poster,
-  .scene-canvas.is-ready + .scene-poster {
+  .scene-canvas {
     transition: none;
   }
 }
@@ -500,6 +503,134 @@ main:focus {
     text-decoration: underline;
     text-decoration-color: rgba(229, 228, 223, 0.5);
     text-underline-offset: 3px;
+  }
+}
+
+/* The title card's loading line (src/ui/scene-loader.js): shown only while the
+   live scene loads, centred 44px above the footer line, clear of the identity
+   and About. Its value is real progress; it reads 100% at the reveal and fades
+   out within the canvas's 480ms fade-in (120ms delay + 360ms). */
+.scene-loader {
+  position: fixed;
+  right: 0;
+  bottom: calc(max(30px, calc(22px + env(safe-area-inset-bottom))) + 44px);
+  left: 0;
+  z-index: 10;
+  display: grid;
+  row-gap: 10px;
+  width: min(240px, calc(100% - 48px));
+  margin-inline: auto;
+  color: var(--text-accent);
+  font-size: 12px;
+  line-height: 16px;
+  letter-spacing: 0.08em;
+  text-align: center;
+  text-shadow: var(--text-meta-shadow);
+  pointer-events: none;
+  -webkit-user-select: none;
+  user-select: none;
+  opacity: 0;
+}
+
+.scene-loader.is-loading {
+  opacity: 1;
+  transition: opacity 320ms ease 240ms;
+}
+
+.scene-loader.is-done {
+  opacity: 0;
+  transition: opacity 360ms ease 120ms;
+}
+
+.scene-loader__label {
+  margin: 0;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A fixed slot for the value, so the label never shifts as digits change. */
+.scene-loader__value {
+  display: inline-block;
+  min-width: 4ch;
+  text-align: left;
+}
+
+.scene-loader__track {
+  position: relative;
+  height: 2px;
+  border-radius: 1px;
+  background: rgba(230, 226, 214, 0.16);
+}
+
+/* The sun's colour; only its transform moves. */
+.scene-loader__fill {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  background: #dfb882;
+  box-shadow: 0 0 6px rgba(223, 184, 130, 0.5);
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+  transition: transform 520ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.scene-loader.is-done .scene-loader__fill {
+  transition-duration: 240ms;
+}
+
+.scene-loader__fill::after {
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  content: "";
+  background: linear-gradient(
+    90deg,
+    rgba(255, 246, 228, 0) 0%,
+    rgba(255, 246, 228, 0.7) 50%,
+    rgba(255, 246, 228, 0) 100%
+  );
+  transform: translateX(-100%);
+  animation: scene-loader-glint 2.4s ease-in-out infinite;
+}
+
+@keyframes scene-loader-glint {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(250%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scene-loader.is-loading,
+  .scene-loader.is-done,
+  .scene-loader__fill,
+  .scene-loader.is-done .scene-loader__fill {
+    transition: none;
+  }
+
+  .scene-loader__fill::after {
+    display: none;
+    animation: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .scene-loader__track {
+    background: #34373c;
+  }
+
+  .scene-loader__fill {
+    box-shadow: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .scene-loader {
+    display: none;
   }
 }
 

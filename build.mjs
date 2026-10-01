@@ -56,7 +56,6 @@ const STATIC_FILES = [
   { source: `${PUBLIC_DIR}/site-agents.md`, destination: "AGENTS.md" },
 ];
 const STATIC_DIRS = ["fonts", "images"];
-const FINGERPRINTED_POSTERS = ["scene-poster-landscape.webp", "scene-poster-portrait.webp"];
 const FINGERPRINTED_PAPER = [
   "paper-grain.webp",
   "paper-edge.webp",
@@ -71,7 +70,7 @@ const FINGERPRINTED_PAPER = [
 export function isFingerprintedSource(file) {
   const path = file.split(sep).join("/");
   return (
-    [...FINGERPRINTED_POSTERS, ...FINGERPRINTED_PAPER].some((name) => path === `images/${name}`) ||
+    FINGERPRINTED_PAPER.some((name) => path === `images/${name}`) ||
     /^images\/architecture\/[^/]+\.glb$/.test(path) ||
     /^images\/materials\/slate-[^/]+\.webp$/.test(path)
   );
@@ -126,20 +125,24 @@ function sha8(buf) {
   return createHash("sha256").update(buf).digest("hex").slice(0, 8);
 }
 
+// { urls, sizes, files }: each tier's hashed model URLs and byte sizes by role.
 async function architectureAssetManifest() {
   const urls = {};
+  const sizes = {};
   const files = [];
   for (const tier of ["high", "balanced"]) {
     urls[tier] = {};
+    sizes[tier] = {};
     for (const role of ["tower", "tree", "lantern", "lichen-rock", "weathered-stone"]) {
       const name = role + "-" + tier + ".glb";
       const bytes = await readFile(join(__dirname, "images", "architecture", name));
       const hashedName = name.replace(".glb", "." + sha8(bytes) + ".glb");
       urls[tier][role] = "/images/architecture/" + hashedName;
+      sizes[tier][role] = bytes.length;
       files.push({ hashedName, bytes });
     }
   }
-  return { urls, files };
+  return { urls, sizes, files };
 }
 
 // The film slate's maps (images/materials/slate-*.webp) are hashed too:
@@ -233,7 +236,11 @@ function fingerprintChunks({ basename, entry: source }, { metafile, outputFiles 
 // Returns the published scripts, entry first, as [{ name, text, lazy }].
 async function buildScriptBundle({ basename, entry, split }, architecture, materials, sceneModulePreloads) {
   const options = scriptBuildOptions(entry, split);
-  const { urls } = architecture ?? (await architectureAssetManifest());
+  const { urls, sizes } = architecture ?? (await architectureAssetManifest());
+  const towerAndTree = (manifest) =>
+    Object.fromEntries(
+      Object.entries(manifest).map(([tier, { tower, tree }]) => [tier, { tower, tree }]),
+    );
   // The scene manifests are string literals that the scene parses: an
   // object-valued define becomes a virtual module that splitting places in the
   // shared Three.js chunk, so each model or map revision would change its URL.
@@ -246,11 +253,10 @@ async function buildScriptBundle({ basename, entry, split }, architecture, mater
           ),
         }
       : {
-          __BABEL_ARCHITECTURE_PREFETCH_URLS__: JSON.stringify(
-            Object.fromEntries(
-              Object.entries(urls).map(([tier, { tower, tree }]) => [tier, { tower, tree }]),
-            ),
-          ),
+          __BABEL_ARCHITECTURE_PREFETCH_URLS__: JSON.stringify(towerAndTree(urls)),
+          // The same files' sizes, which the title card's loading line
+          // (src/ui/scene-loader.js) counts each download against.
+          __BABEL_ARCHITECTURE_PREFETCH_BYTES__: JSON.stringify(towerAndTree(sizes)),
           __BABEL_SCENE_MODULE_PRELOADS__: JSON.stringify(sceneModulePreloads ?? []),
         };
   const result = await build(options);
@@ -287,14 +293,14 @@ export function contentDateModified(markdown) {
   return frontMatter.match(/^dateModified:\s*["']?(\d{4}-\d{2}-\d{2})["']?\s*$/m)?.[1];
 }
 
-function rewriteHtml(src, { appPath, cssPath, scenePath, posterPaths }) {
+function rewriteHtml(src, { appPath, cssPath, scenePath, imagePaths }) {
   // Match source refs with or without a ?v=NNN query,
   // so stale query strings in source can't drift away from the real hashed path.
   let html = src
     .replace(/\/styles\.css(\?v=\d+)?/g, cssPath)
     .replace(/\/scripts\/app\.js(\?v=\d+)?/g, appPath)
     .replace(/\/scripts\/scene\.js(\?v=\d+)?/g, scenePath);
-  for (const [sourcePath, hashedPath] of Object.entries(posterPaths)) {
+  for (const [sourcePath, hashedPath] of Object.entries(imagePaths)) {
     html = html.replaceAll(sourcePath, hashedPath);
   }
   return html;
@@ -308,7 +314,7 @@ async function writePayload(DIST_DIR) {
   const architecture = await architectureAssetManifest();
   const materials = await materialAssetManifest();
   const fingerprintedImages = new Map();
-  for (const name of [...FINGERPRINTED_POSTERS, ...FINGERPRINTED_PAPER]) {
+  for (const name of FINGERPRINTED_PAPER) {
     fingerprintedImages.set(name, await readFile(join(__dirname, "images", name)));
   }
 
@@ -356,9 +362,9 @@ async function writePayload(DIST_DIR) {
       await copyFile(join(__dirname, source), join(DIST_DIR, destination));
     }),
   );
-  // Fingerprinted sources publish only under their hashed names: the posters,
-  // paper and estate maps, every model and the slate maps. Nothing the build
-  // writes names their source paths, so no plain copy is kept.
+  // Fingerprinted sources publish only under their hashed names: the paper and
+  // estate maps, every model and the slate maps. Nothing the build writes names
+  // their source paths, so no plain copy is kept.
   await Promise.all(
     STATIC_DIRS.map((dir) =>
       cp(join(__dirname, dir), join(DIST_DIR, dir), {
@@ -378,14 +384,14 @@ async function writePayload(DIST_DIR) {
     await writeFile(join(DIST_DIR, "images", "materials", hashedName), bytes);
   }
 
-  // New pages receive a fresh URL whenever poster or paper bytes change,
+  // New pages receive a fresh URL whenever paper or estate-map bytes change,
   // independent of the browser's image cache.
-  const posterPaths = {};
-  for (const name of [...FINGERPRINTED_POSTERS, ...FINGERPRINTED_PAPER]) {
+  const imagePaths = {};
+  for (const name of FINGERPRINTED_PAPER) {
     const bytes = fingerprintedImages.get(name);
     const hashedName = name.replace(/\.webp$/, `.${sha8(bytes)}.webp`);
     await writeFile(join(DIST_DIR, "images", hashedName), bytes);
-    posterPaths[`/images/${name}`] = `/images/${hashedName}`;
+    imagePaths[`/images/${name}`] = `/images/${hashedName}`;
   }
 
   for (const name of ["index.html", "404.html"]) {
@@ -394,7 +400,7 @@ async function writePayload(DIST_DIR) {
       appPath: scriptPaths.app,
       cssPath: cssHashedUrl,
       scenePath: scriptPaths.scene,
-      posterPaths,
+      imagePaths,
     });
     await writeFile(join(DIST_DIR, name), rewritten);
   }

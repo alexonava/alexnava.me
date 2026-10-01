@@ -632,7 +632,7 @@ test("settling the roots seats the tufts at once and never holds the reveal for 
 test("the shaded ground switches early in the canvas's fade-in, on a still frame, or links again after a change", async () => {
   const clock = frames(), style = globalThis.getComputedStyle;
   try {
-    // During the reveal's 480 ms fade-in over the poster, timed from its mark.
+    // During the reveal's 480 ms fade-in over the title card, timed from its mark.
     globalThis.getComputedStyle = () => ({ transitionDuration: "0.48s" });
     const fade = linkRig({ revealed: true }), tour = { running: true, transition: { cut: false } };
     performance.mark("babel:reveal");
@@ -795,7 +795,7 @@ test("while the terrain slices it holds the shafts off, idles while the canvas i
     await Promise.resolve();
     assert.ok(released, "and lets the shafts go");
     assert.ok(idles > 3, `${idles} idle slices before the reveal, none back to back`);
-    // Fading in over the poster: the build rushes, slices back to back.
+    // Fading in over the title card: the build rushes, slices back to back.
     names.add("is-ready");
     performance.mark("babel:reveal");
     globalThis.getComputedStyle = () => ({ transitionDuration: "60s" });

@@ -58,8 +58,6 @@ test("CSS asset URLs and bytes are portable across checkout line endings", async
       await writeFile(path.join(fixture, file), '<link rel="stylesheet" href="/styles.css">');
     }
     for (const name of [
-      "scene-poster-landscape",
-      "scene-poster-portrait",
       "paper-grain",
       "paper-edge",
       "paper-vignette-profile",

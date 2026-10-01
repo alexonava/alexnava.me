@@ -74,8 +74,12 @@ function createContext({
   maxTextureSize = 0,
   modulePreloads,
   prefetch = false,
+  // Model requests answer at once instead of staying in flight.
+  respond = false,
   reducedMotion = false,
   saveData = false,
+  // Records the title card's loading line calls (src/ui/scene-loader.js).
+  sceneLoader = false,
   scriptOutcomes = ["load"],
   sceneUrl = "/scripts/scene.js",
   search = "",
@@ -128,6 +132,31 @@ function createContext({
     requestAnimationFrame() {},
   };
   const navigator = { connection, hardwareConcurrency };
+  // Without the recorder main.js runs exactly as before: every call is optional.
+  const loaderCalls = [];
+  const tracked = new Map();
+  if (sceneLoader) {
+    window.BabelSite.sceneLoader = {
+      begin(options) {
+        events.push("loader:begin");
+        loaderCalls.push({ method: "begin", tier: options?.tier });
+      },
+      stage(name) {
+        events.push(`loader:${name}`);
+        loaderCalls.push({ method: "stage", name });
+      },
+      end(reason) {
+        events.push(`loader:end:${reason}`);
+        loaderCalls.push({ method: "end", reason });
+      },
+      track(url, response) {
+        loaderCalls.push({ method: "track", url });
+        const copy = { copyOf: response, url };
+        tracked.set(url, copy);
+        return copy;
+      },
+    };
+  }
   const loadScript = (script) => {
     window.BabelSite.scene.initHomeScene = () => initResult;
     script.dispatch("load");
@@ -249,7 +278,7 @@ function createContext({
       fetch(url, options) {
         events.push(`fetch:${url}`);
         fetches.push({ url, options });
-        return new Promise(() => {});
+        return respond ? Promise.resolve({ ok: true, url }) : new Promise(() => {});
       },
     });
   }
@@ -258,6 +287,8 @@ function createContext({
     context,
     events,
     fetches,
+    loaderCalls,
+    tracked,
     host,
     connection,
     dataQuery,
@@ -323,7 +354,7 @@ test("explicit quality override still allows the scene bundle on reduced-data co
   assert.equal(getWebglProbeCount(), 1);
 });
 
-test("scene loader keeps the poster static when reduced motion is requested", async () => {
+test("scene loader keeps the title card static when reduced motion is requested", async () => {
   const { context, host, scripts, getWebglProbeCount } = createContext({
     reducedMotion: true,
   });
@@ -361,7 +392,7 @@ test("clearing an initial static preference loads and reveals the scene exactly 
   assert.equal(harness.scripts.length, 1, "preference changes after recovery do not reload");
 });
 
-test("scene loader keeps the poster for software-rendered WebGL and releases the probe", async () => {
+test("scene loader keeps the title card for software-rendered WebGL and releases the probe", async () => {
   for (const renderer of [
     "Google SwiftShader",
     "llvmpipe (LLVM 18.1)",
@@ -538,7 +569,7 @@ test("the live scene requests its startup tier's tower and tree at low priority 
   }
 });
 
-test("the low tier keeps the poster and never requests the scene bundle", async () => {
+test("the low tier keeps the title card and never requests the scene bundle", async () => {
   for (const options of [
     // An explicit low tier, with or without known texture limits.
     { ...CAPABLE, search: "?quality=low" },
@@ -552,7 +583,7 @@ test("the low tier keeps the poster and never requests the scene bundle", async 
     await loadMainWithQuality(harness.context);
 
     assert.equal(await harness.context.window.BabelSite.ensureSceneReady(), false, JSON.stringify(options));
-    assert.equal(harness.host.hidden, true, "the static poster stays");
+    assert.equal(harness.host.hidden, true, "the static title card stays");
     assert.equal(harness.scripts.length, 0, "no scene script is requested");
     assert.equal(harness.fetches.length, 0, "no model is requested");
   }
@@ -564,7 +595,7 @@ test("the low tier keeps the poster and never requests the scene bundle", async 
   const unknown = createContext({ maxTextureSize: 0, initResult: false });
   await loadMainWithQuality(unknown.context);
   assert.equal(await unknown.context.window.BabelSite.ensureSceneReady(), false);
-  assert.equal(unknown.host.hidden, true, "a declined initialization keeps the poster");
+  assert.equal(unknown.host.hidden, true, "a declined initialization keeps the title card");
   // Retired comparison URLs open the default film, with its early model requests.
   const comparison = createContext({ ...CAPABLE, search: "?architecture=classic" });
   await loadMainWithQuality(comparison.context);
@@ -572,7 +603,7 @@ test("the low tier keeps the poster and never requests the scene bundle", async 
   assert.equal(comparison.fetches.length, 2);
 });
 
-test("static poster paths and the low tier make no early model request", async () => {
+test("static title card paths and the low tier make no early model request", async () => {
   for (const options of [
     { reducedMotion: true },
     { saveData: true },
@@ -650,4 +681,90 @@ test("a hidden page requests models only if it is shown while the bundle still l
       "an initialized scene requests its own models at its first frame; a failed one needs none",
     );
   }
+});
+
+test("static title card paths never begin the loading line", async () => {
+  for (const options of [
+    { reducedMotion: true },
+    { saveData: true },
+    { softwareRenderer: "Google SwiftShader" },
+    { webgl: false },
+    { search: "?quality=low" },
+    { ...CAPABLE, search: "?quality=low&sceneDebug=1" },
+    { maxTextureSize: 2048, maxAnisotropy: 16 },
+  ]) {
+    const harness = createContext({ ...options, sceneLoader: true });
+    await loadMainWithQuality(harness.context);
+    assert.equal(await harness.context.window.BabelSite.ensureSceneReady(), false, JSON.stringify(options));
+    assert.ok(!harness.events.includes("loader:begin"), JSON.stringify(options));
+    assert.equal(harness.scripts.length, 0);
+    assert.equal(harness.host.hidden, true);
+  }
+});
+
+test("the live path begins the loading line before the bundle and reports the bundle and initialization", async () => {
+  for (const [options, tier] of [
+    [{ maxAnisotropy: 16, maxTextureSize: 8192 }, "high"],
+    [{ maxAnisotropy: 16, maxTextureSize: 8192, hardwareConcurrency: 4 }, "balanced"],
+    [{ search: "?quality=balanced" }, "balanced"],
+    // Unknown texture limits leave the tier to the scene.
+    [{}, null],
+  ]) {
+    const harness = createContext({ ...options, sceneLoader: true });
+    await loadMainWithQuality(harness.context);
+    assert.equal(await harness.context.window.BabelSite.ensureSceneReady(), true);
+    assert.deepEqual(harness.events, ["loader:begin", "script", "loader:bundle", "loader:init"]);
+    assert.equal(harness.loaderCalls[0].tier, tier, JSON.stringify(options));
+    assert.equal(harness.host.hidden, false);
+  }
+  // The early model requests start after the bundle request, inside the run.
+  const prefetching = createContext({ ...CAPABLE, sceneLoader: true });
+  await loadMainWithQuality(prefetching.context);
+  await prefetching.context.window.BabelSite.ensureSceneReady();
+  const urls = [ARCHITECTURE_URLS.high.tower, ARCHITECTURE_URLS.high.tree];
+  assert.deepEqual(prefetching.events, [
+    "loader:begin",
+    "script",
+    ...urls.map((url) => `fetch:${url}`),
+    "loader:bundle",
+    "loader:init",
+  ]);
+});
+
+test("a failed bundle, a declined initialization or the scene's low-tier decline retires the loading line", async () => {
+  for (const [options, expected] of [
+    [{ logger: { warn() {} }, scriptOutcomes: ["error"] }, ["loader:begin", "script", "loader:end:static"]],
+    [{ initResult: false }, ["loader:begin", "script", "loader:bundle", "loader:end:static"]],
+    // Unknown limits: the scene finds the low tier itself and declines.
+    [{ maxTextureSize: 0, initResult: false }, ["loader:begin", "script", "loader:bundle", "loader:end:static"]],
+  ]) {
+    const harness = createContext({ ...options, sceneLoader: true });
+    await loadMainWithQuality(harness.context);
+    assert.equal(await harness.context.window.BabelSite.ensureSceneReady(), false);
+    assert.deepEqual(harness.events, expected, JSON.stringify(options));
+    assert.equal(harness.host.hidden, true, "the title card stays");
+  }
+});
+
+test("an early model response resolves to the loading line's counted copy", async () => {
+  const harness = createContext({ ...CAPABLE, prefetch: true, respond: true, sceneLoader: true });
+  await loadMainWithQuality(harness.context);
+  assert.equal(await harness.context.window.BabelSite.ensureSceneReady(), true);
+  const prefetched = harness.context.window.BabelSite.scene.prefetched;
+  for (const url of [ARCHITECTURE_URLS.high.tower, ARCHITECTURE_URLS.high.tree]) {
+    const response = await prefetched.get(url).response;
+    assert.equal(response, harness.tracked.get(url), "the scene takes what track() returned");
+    assert.equal(response.copyOf.url, url);
+  }
+  assert.deepEqual(
+    harness.loaderCalls.filter(({ method }) => method === "track").map(({ url }) => url),
+    [ARCHITECTURE_URLS.high.tower, ARCHITECTURE_URLS.high.tree],
+  );
+  // Without the line the early response is the network's own.
+  const plain = createContext({ ...CAPABLE, prefetch: true, respond: true });
+  await loadMainWithQuality(plain.context);
+  await plain.context.window.BabelSite.ensureSceneReady();
+  const response = await plain.context.window.BabelSite.scene.prefetched.get(ARCHITECTURE_URLS.high.tower).response;
+  assert.equal(response.url, ARCHITECTURE_URLS.high.tower);
+  assert.equal(response.ok, true);
 });
