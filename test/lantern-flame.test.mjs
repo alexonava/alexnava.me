@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { glbAsset, modelBytes } from "./support/glb.mjs";
 import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -61,47 +62,10 @@ function compile(material, renderer = {}) {
   return shader;
 }
 // The supplied GLB's single mesh, built as the asset controller hands it over.
-async function suppliedAsset(tier) {
-  const bytes = await readFile(
-    new URL(`../images/architecture/lantern-${tier}.glb`, import.meta.url),
-  );
-  const length = bytes.readUInt32LE(12),
-    json = JSON.parse(bytes.subarray(20, 20 + length)),
-    bin = 20 + length + 8;
-  const read = (id) => {
-    const accessor = json.accessors[id],
-      view = json.bufferViews[accessor.bufferView];
-    const Type = { 5126: Float32Array, 5125: Uint32Array, 5123: Uint16Array }[
-      accessor.componentType
-    ];
-    const size = { SCALAR: 1, VEC2: 2, VEC3: 3 }[accessor.type],
-      start = bin + (view.byteOffset || 0) + (accessor.byteOffset || 0);
-    return new BufferAttribute(
-      new Type(
-        bytes.buffer.slice(
-          bytes.byteOffset + start,
-          bytes.byteOffset + start + accessor.count * size * Type.BYTES_PER_ELEMENT,
-        ),
-      ),
-      size,
-    );
-  };
-  const primitive = json.meshes[0].primitives[0],
-    geometry = new BufferGeometry();
-  geometry.setAttribute("position", read(primitive.attributes.POSITION));
-  geometry.setAttribute("normal", read(primitive.attributes.NORMAL));
-  geometry.setAttribute("uv", read(primitive.attributes.TEXCOORD_0));
-  geometry.setIndex(read(primitive.indices));
-  const scene = new Group();
-  scene.add(
-    new Mesh(
-      geometry,
-      new MeshStandardMaterial({ emissiveMap: new Texture(), map: new Texture() }),
-    ),
-  );
-  scene.userData.lantern = json.nodes[0].extras.lantern;
-  return { scene };
-}
+const suppliedAsset = async (tier) =>
+  glbAsset(modelBytes("lantern", tier), {
+    material: new MeshStandardMaterial({ emissiveMap: new Texture(), map: new Texture() }),
+  });
 const triangles = (array) =>
   Array.from({ length: array.length / 3 }, (_, k) =>
     [...array.slice(k * 3, k * 3 + 3)].join(","),

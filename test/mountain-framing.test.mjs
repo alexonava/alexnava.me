@@ -1,16 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { glbAsset, modelBytes } from "./support/glb.mjs";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
-import {
-  BufferAttribute,
-  BufferGeometry,
-  Group,
-  Mesh,
-  MeshStandardMaterial,
-  PerspectiveCamera,
-  Vector3,
-} from "three";
+import { Group, PerspectiveCamera, Vector3 } from "three";
 import {
   createCompleteTowerArchitecture,
   createTreeArchitecture,
@@ -29,49 +22,7 @@ const ground = (x, z) =>
   0.9 * Math.sin(0.031 * (x + z)) +
   0.55 * Math.cos(0.018 * (x - z)) -
   6.8;
-async function asset(name, tier = "high") {
-  const b = await readFile(new URL(`../images/architecture/${name}-${tier}.glb`, import.meta.url)),
-    len = b.readUInt32LE(12),
-    j = JSON.parse(b.subarray(20, 20 + len)),
-    p = j.meshes[0].primitives[0],
-    g = new BufferGeometry();
-  for (const [n, id, size] of [
-    ["position", p.attributes.POSITION, 3],
-    ["normal", p.attributes.NORMAL, 3],
-    ["uv", p.attributes.TEXCOORD_0, 2],
-    ["index", p.indices, 1],
-  ]) {
-    const a = j.accessors[id],
-      v = j.bufferViews[a.bufferView],
-      T = {
-        5120: Int8Array,
-        5122: Int16Array,
-        5126: Float32Array,
-        5125: Uint32Array,
-        5123: Uint16Array,
-      }[a.componentType],
-      get = {
-        5120: "readInt8",
-        5122: "readInt16LE",
-        5126: "readFloatLE",
-        5125: "readUInt32LE",
-        5123: "readUInt16LE",
-      }[a.componentType],
-      data = new T(a.count * size),
-      start = 28 + len + (v.byteOffset || 0) + (a.byteOffset || 0);
-    for (let i = 0; i < a.count; i++)
-      for (let k = 0; k < size; k++)
-        data[i * size + k] = b[get](
-          start + i * (v.byteStride || size * T.BYTES_PER_ELEMENT) + k * T.BYTES_PER_ELEMENT,
-        );
-    const attr = new BufferAttribute(data, size, Boolean(a.normalized));
-    if (n === "index") g.setIndex(attr);
-    else g.setAttribute(n, attr);
-  }
-  const scene = new Group();
-  scene.add(new Mesh(g, new MeshStandardMaterial()));
-  return { scene };
-}
+const asset = async (name, tier = "high") => glbAsset(modelBytes(name, tier));
 
 // Hero text and bottom bar measured from the live page at each size.
 const LAYOUTS = [

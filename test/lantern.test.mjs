@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { parseGlb } from "./support/glb.mjs";
+import { flat } from "./support/code.mjs";
 import { readFile } from "node:fs/promises";
 import {
   Box3,
@@ -398,7 +400,7 @@ test("both delivered lantern tiers embed authored PBR maps, masked emission and 
     assert.equal(bytes.toString("ascii", 0, 4), "glTF");
     assert.equal(bytes.readUInt32LE(8), bytes.length);
     assert.ok(bytes.length <= ARCHITECTURE_ASSET_BUDGETS[tier]);
-    const json = JSON.parse(bytes.subarray(20, 20 + bytes.readUInt32LE(12)));
+    const { json } = parseGlb(bytes);
     const primitive = json.meshes[0].primitives[0],
       material = json.materials[primitive.material];
     assert.equal(json.accessors[primitive.indices].count / 3, 3000);
@@ -424,14 +426,3 @@ test("both delivered lantern tiers embed authored PBR maps, masked emission and 
     assert.equal(json.animations?.length || 0, 0);
   }
 });
-
-// Formatting-neutral source: comment lines go, whitespace runs become one
-// space with none just inside brackets, and trailing commas go, so a check
-// reads the same before and after Prettier.
-function flat(code) {
-  return code
-    .replace(/^[ \t]*\/\/.*$/gm, "")
-    .replace(/\s+/g, " ")
-    .replace(/,(\s*[)\]}])/g, "$1")
-    .replace(/([([]) | ([)\]])/g, "$1$2");
-}

@@ -3,11 +3,9 @@ import test from "node:test";
 import {
   BoxGeometry,
   Color,
-  Fog,
   Group,
   Mesh,
   MeshStandardMaterial,
-  MirroredRepeatWrapping,
   PerspectiveCamera,
   RepeatWrapping,
   SRGBColorSpace,

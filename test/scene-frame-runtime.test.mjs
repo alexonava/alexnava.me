@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { flat } from "./support/code.mjs";
 import {
   createPanelHold,
   createRefreshEstimator,
@@ -775,14 +776,3 @@ test("scene bootstrap idles before reveal, holds behind dialogs and fails to the
   // The authored scene's shadows are static: the map redraws only on reported changes.
   assert.match(source, /rendering\.setStaticShadows\(true\);/);
 });
-
-// Formatting-neutral source: comment lines go, whitespace runs become one
-// space with none just inside brackets, and trailing commas go, so a check
-// reads the same before and after Prettier.
-function flat(code) {
-  return code
-    .replace(/^[ \t]*\/\/.*$/gm, "")
-    .replace(/\s+/g, " ")
-    .replace(/,(\s*[)\]}])/g, "$1")
-    .replace(/([([]) | ([)\]])/g, "$1$2");
-}

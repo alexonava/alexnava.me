@@ -1,16 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFile } from "node:fs/promises";
-import {
-  BoxGeometry,
-  BufferAttribute,
-  BufferGeometry,
-  Float32BufferAttribute,
-  Group,
-  Matrix4,
-  Mesh,
-  MeshStandardMaterial,
-} from "three";
+import { glbAsset, modelBytes } from "./support/glb.mjs";
+import { BoxGeometry, Group, Mesh, MeshStandardMaterial } from "three";
 import { createTreeArchitecture } from "../src/scene/architecture.js";
 
 const asset = () => {
@@ -84,60 +75,11 @@ test("tree construction rolls back its cloned geometry when material preparation
   assert.equal(sourceDisposals, 0);
 });
 
-async function treeGeometryFromGlb(tier) {
-  const bytes = await readFile(
-    new URL("../images/architecture/tree-" + tier + ".glb", import.meta.url),
-  );
-  const jsonLength = bytes.readUInt32LE(12);
-  const json = JSON.parse(bytes.subarray(20, 20 + jsonLength).toString());
-  const binaryOffset = 28 + jsonLength;
-  const node = json.nodes.find((item) => item.mesh !== undefined);
-  const primitive = json.meshes[node.mesh].primitives[0];
-  const geometry = new BufferGeometry();
-  const types = {
-    5120: [Int8Array, 1, "readInt8"],
-    5122: [Int16Array, 2, "readInt16LE"],
-    5126: [Float32Array, 4, "readFloatLE"],
-  };
-  for (const [name, semantic] of [
-    ["position", "POSITION"],
-    ["normal", "NORMAL"],
-  ]) {
-    const accessor = json.accessors[primitive.attributes[semantic]];
-    const view = json.bufferViews[accessor.bufferView];
-    const [Type, width, reader] = types[accessor.componentType];
-    const values = new Type(accessor.count * 3);
-    const start = binaryOffset + (view.byteOffset || 0) + (accessor.byteOffset || 0);
-    for (let i = 0; i < accessor.count; i++)
-      for (let axis = 0; axis < 3; axis++) {
-        values[i * 3 + axis] = bytes[reader](
-          start + i * (view.byteStride || width * 3) + axis * width,
-        );
-      }
-    geometry.setAttribute(name, new BufferAttribute(values, 3, Boolean(accessor.normalized)));
-  }
-  geometry.setAttribute(
-    "uv",
-    new Float32BufferAttribute(new Float32Array(geometry.attributes.position.count * 2), 2),
-  );
-  const mesh = new Mesh(geometry, new MeshStandardMaterial());
-  if (node.matrix)
-    new Matrix4().fromArray(node.matrix).decompose(mesh.position, mesh.quaternion, mesh.scale);
-  else {
-    if (node.translation) mesh.position.fromArray(node.translation);
-    if (node.rotation) mesh.quaternion.fromArray(node.rotation);
-    if (node.scale) mesh.scale.fromArray(node.scale);
-  }
-  const scene = new Group();
-  scene.add(mesh);
-  return { scene };
-}
-
 for (const tier of ["high", "balanced"])
   test(
     "actual " + tier + " quantized tree scales to22 units without changing its compact source",
     async () => {
-      const source = await treeGeometryFromGlb(tier);
+      const source = glbAsset(modelBytes("tree", tier));
       const original = source.scene.children[0].geometry.attributes.position;
       assert.ok(original.array instanceof Int16Array);
       assert.equal(original.normalized, true);

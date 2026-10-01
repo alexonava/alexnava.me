@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { flat } from "./support/code.mjs";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import { Group } from "three";
@@ -179,14 +180,3 @@ test("scene bootstrap pins the asset tier and samples quality only after reveal"
     /applyQuality\(profile, context\) \{ filmMaps\.applyQuality\(profile, context\); \}/,
   );
 });
-
-// Formatting-neutral source: comment lines go, whitespace runs become one
-// space with none just inside brackets, and trailing commas go, so a check
-// reads the same before and after Prettier.
-function flat(code) {
-  return code
-    .replace(/^[ \t]*\/\/.*$/gm, "")
-    .replace(/\s+/g, " ")
-    .replace(/,(\s*[)\]}])/g, "$1")
-    .replace(/([([]) | ([)\]])/g, "$1$2");
-}

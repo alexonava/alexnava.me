@@ -1,4 +1,5 @@
 import test from "node:test";
+import { modelBytes, parseGlb, readAccessor } from "./support/glb.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
@@ -234,19 +235,12 @@ test("triangulated lantern clearing and full puddle blend retain baseline height
 });
 
 function authoredRootVertices(tier) {
-  const raw = readFileSync(new URL(`../images/architecture/tree-${tier}.glb`, import.meta.url));
-  const length = raw.readUInt32LE(12),
-    json = JSON.parse(raw.subarray(20, 20 + length));
-  const accessor = json.accessors[json.meshes[0].primitives[0].attributes.POSITION];
-  const view = json.bufferViews[accessor.bufferView];
-  assert.equal(accessor.componentType, 5122);
-  assert.equal(accessor.normalized, true);
-  const start = 28 + length + (view.byteOffset || 0) + (accessor.byteOffset || 0),
-    vertices = [];
-  for (let i = 0; i < accessor.count; i++)
-    vertices.push(
-      [0, 1, 2].map((k) => raw.readInt16LE(start + i * view.byteStride + k * 2) / 32767),
-    );
+  const glb = parseGlb(modelBytes("tree", tier));
+  const position = readAccessor(glb, glb.json.meshes[0].primitives[0].attributes.POSITION);
+  assert.ok(position.array instanceof Int16Array && position.normalized);
+  const vertices = [];
+  for (let i = 0; i < position.count; i++)
+    vertices.push([position.getX(i), position.getY(i), position.getZ(i)]);
   const min = Math.min(...vertices.map((v) => v[1])),
     max = Math.max(...vertices.map((v) => v[1]));
   const scale = (DOOR_HEIGHT * 4.2) / (max - min);
@@ -1949,10 +1943,7 @@ test("the puddle mirror's restated constants follow their sources", async () => 
   // at the GLB's luminous centre (both variants).
   assert.equal(LANTERN_IMAGE.scale, 1.98 / LANTERN_AUTHORING_HEIGHT);
   for (const tier of ["high", "balanced"]) {
-    const raw = readFileSync(
-      new URL(`../images/architecture/lantern-${tier}.glb`, import.meta.url),
-    );
-    const json = JSON.parse(raw.subarray(20, 20 + raw.readUInt32LE(12)));
+    const { json } = parseGlb(modelBytes("lantern", tier));
     const { luminousCenter, authoredHeight } = json.scenes[json.scene ?? 0].extras.lantern;
     assert.equal(authoredHeight, LANTERN_AUTHORING_HEIGHT);
     assert.ok(Math.abs(luminousCenter[1] - LANTERN_IMAGE.glow) < 1e-4);

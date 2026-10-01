@@ -1,60 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { glbAsset, modelBytes } from "./support/glb.mjs";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
-import {
-  BufferAttribute,
-  BufferGeometry,
-  Group,
-  Mesh,
-  MeshStandardMaterial,
-  PerspectiveCamera,
-  Raycaster,
-  Vector3,
-  DoubleSide,
-} from "three";
+import { PerspectiveCamera, Raycaster, Vector3, DoubleSide } from "three";
 import { createCompleteTowerArchitecture } from "../src/scene/architecture.js";
 import { DIRECTED_SHOTS, measureShot } from "../src/scene/directed-shots.js";
 import { createCinematicCamera, cinematicSafeArea } from "../src/scene/cinematic.js";
-
-// Decode the authored tower's geometry without loading its browser-only textures.
-async function towerAsset(tier) {
-  const bytes = await readFile(
-    new URL("../images/architecture/tower-" + tier + ".glb", import.meta.url),
-  );
-  const length = bytes.readUInt32LE(12);
-  const gltf = JSON.parse(bytes.subarray(20, 20 + length));
-  const primitive = gltf.meshes[0].primitives[0];
-  const geometry = new BufferGeometry();
-  function attribute(id, size) {
-    const a = gltf.accessors[id],
-      v = gltf.bufferViews[a.bufferView];
-    const types = {
-      5126: [Float32Array, "readFloatLE"],
-      5125: [Uint32Array, "readUInt32LE"],
-      5123: [Uint16Array, "readUInt16LE"],
-      5122: [Int16Array, "readInt16LE"],
-      5120: [Int8Array, "readInt8"],
-    };
-    const [Type, reader] = types[a.componentType],
-      width = Type.BYTES_PER_ELEMENT;
-    const values = new Type(a.count * size);
-    const start = 28 + length + (v.byteOffset || 0) + (a.byteOffset || 0);
-    for (let i = 0; i < a.count; i++)
-      for (let k = 0; k < size; k++)
-        values[i * size + k] = bytes[reader](
-          start + i * (v.byteStride || size * width) + k * width,
-        );
-    return new BufferAttribute(values, size, Boolean(a.normalized));
-  }
-  geometry.setAttribute("position", attribute(primitive.attributes.POSITION, 3));
-  geometry.setAttribute("normal", attribute(primitive.attributes.NORMAL, 3));
-  geometry.setAttribute("uv", attribute(primitive.attributes.TEXCOORD_0, 2));
-  geometry.setIndex(attribute(primitive.indices, 1));
-  const scene = new Group();
-  scene.add(new Mesh(geometry, new MeshStandardMaterial()));
-  return { scene };
-}
 
 for (const tier of ["high", "balanced"])
   test(
@@ -68,7 +20,7 @@ for (const tier of ["high", "balanced"])
         },
       );
       const sun = new Vector3(...window.BabelSite.scene.WORLD.SUN_POSITION);
-      const asset = await towerAsset(tier);
+      const asset = glbAsset(modelBytes("tower", tier));
       // Ground at origin 2.9, ground root offset -6.8, film footing overlap -0.22.
       const tower = createCompleteTowerArchitecture({
         asset,

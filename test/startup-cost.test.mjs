@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { flat } from "./support/code.mjs";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import {
@@ -623,14 +624,3 @@ test("scene bootstrap warms shaders before drawing and records start-up marks", 
     assert.doesNotMatch(await source(path), /high-performance/, path);
   }
 });
-
-// Formatting-neutral source: comment lines go, whitespace runs become one
-// space with none just inside brackets, and trailing commas go, so a check
-// reads the same before and after Prettier.
-function flat(code) {
-  return code
-    .replace(/^[ \t]*\/\/.*$/gm, "")
-    .replace(/\s+/g, " ")
-    .replace(/,(\s*[)\]}])/g, "$1")
-    .replace(/([([]) | ([)\]])/g, "$1$2");
-}

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { flat as flatHtml } from "./support/html.mjs";
 import { readFile } from "node:fs/promises";
 
 const root = new URL("../", import.meta.url);
@@ -31,10 +32,3 @@ test("estate destinations are labeled HTML buttons in keyboard order without flo
     assert.ok(map.includes(`<span>${name[0].toUpperCase() + name.slice(1)}</span>`));
   }
 });
-
-// Formatting-neutral markup, so a check reads the same before and after
-// Prettier: whitespace runs become one space, and none sits beside a tag's
-// angle brackets.
-function flatHtml(text) {
-  return text.replace(/\s+/g, " ").replace(/ ?([<>]) ?/g, "$1");
-}

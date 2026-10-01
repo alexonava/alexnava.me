@@ -1,5 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import {
+  contrast,
+  flat as flatCss,
+  mediaBlock,
+  rule as cssRule,
+  rules as cssRules,
+} from "./support/css.mjs";
+import { flat as flatHtml } from "./support/html.mjs";
 import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -718,52 +726,6 @@ test("social previews describe the share image", async () => {
   assert.ok(html.includes(`<meta name="twitter:image:alt" content="${alt}" />`));
 });
 
-// The first standalone rule for a selector, not one listed after a comma.
-function cssRule(styles, selector) {
-  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return styles.match(new RegExp(`(?:^|[}/{])\\s*${escaped}\\s*\\{([^}]*)\\}`))?.[1] || "";
-}
-
-// Every innermost rule, top level or nested in an at-rule, whose selector
-// (comments removed) passes the test: [{ selector, body }].
-function cssRules(styles, matches) {
-  return [...styles.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^{}]*)\}/g)]
-    .map(([, selector, body]) => ({ selector: selector.trim(), body }))
-    .filter(({ selector }) => matches(selector));
-}
-
-// Every block for a media query, joined in source order.
-function mediaBlock(styles, query) {
-  const blocks = [];
-  for (
-    let start = styles.indexOf(`@media ${query} {`);
-    start >= 0;
-    start = styles.indexOf(`@media ${query} {`, start + 1)
-  ) {
-    let depth = 0;
-    for (let index = styles.indexOf("{", start); index < styles.length; index += 1) {
-      if (styles[index] === "{") depth += 1;
-      if (styles[index] === "}" && --depth === 0) {
-        blocks.push(styles.slice(start, index + 1));
-        break;
-      }
-    }
-  }
-  return blocks.join("\n");
-}
-
-function contrast(foreground, background) {
-  const luminance = (hex) => {
-    const [r, g, b] = hex.match(/[0-9a-f]{2}/gi).map((part) => {
-      const channel = parseInt(part, 16) / 255;
-      return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
-    });
-    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  };
-  const [light, dark] = [luminance(foreground), luminance(background)].sort((a, b) => b - a);
-  return (light + 0.05) / (dark + 0.05);
-}
-
 test("About is the only footer control and keeps the corner clear", async () => {
   const html = await readIndexHtml();
   const footer = html.match(/<footer class="site-footer">([\s\S]*?)<\/footer>/)?.[1] || "";
@@ -984,13 +946,3 @@ test("the 404 is a centered cotton-paper sheet with dark ink", async () => {
     assert.ok(contrast(ink, "#e8ddc8") >= 4.5, `${ink} on paper`);
   }
 });
-
-// Formatting-neutral text, so a check reads the same before and after
-// Prettier: whitespace runs become one space, with none just inside
-// parentheses or brackets; markup also drops it beside tags' angle brackets.
-function flatCss(text) {
-  return text.replace(/\s+/g, " ").replace(/([([]) | ([)\]])/g, "$1$2");
-}
-function flatHtml(text) {
-  return flatCss(text).replace(/ ?([<>]) ?/g, "$1");
-}

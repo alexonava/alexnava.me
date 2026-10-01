@@ -7,6 +7,7 @@ import { cp, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isFingerprintedSource } from "../build.mjs";
+import { parseGlb } from "./support/glb.mjs";
 
 const execFileP = promisify(execFile);
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -542,7 +543,7 @@ test("architecture stays deferred and each selected model fits both tier budgets
       );
       assert.equal(source.toString("ascii", 0, 4), "glTF");
       assert.equal(source.readUInt32LE(8), source.length);
-      const gltf = JSON.parse(source.toString("utf8", 20, 20 + source.readUInt32LE(12)));
+      const gltf = parseGlb(source).json;
       assert.equal(gltf.meshes.length, 1, name + " should have one shared mesh");
       assert.equal(gltf.meshes[0].primitives.length, 1, name + " should have one shared material");
       assert.ok(gltf.images.length > 0, name + " must retain source surface detail");
