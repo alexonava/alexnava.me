@@ -33,4 +33,8 @@ Add `?view=tower&angle=1&tour=0` to hold a composition, or `tour=5` for a faster
 
 Local work does not publish the site; production releases go through an approved pull request to main.
 
-[Live website](https://alexnava.me/) · [Credits](docs/CREDITS.md) · [Security](SECURITY.md) · [MIT license](LICENSE)
+## License
+
+The code (`build.mjs`, `src/`, `tools/`, the tests, the workflows and the HTML and CSS markup) is released under the [MIT License](LICENSE). The artwork, 3D models and textures as prepared for the site, the images, icons and share card, the writing and the visual design are © 2026 Alex Nava, all rights reserved. The fonts are licensed under the SIL Open Font License 1.1 ([fonts/OFL.txt](fonts/OFL.txt)), and Three.js under the MIT License. [Credits](docs/CREDITS.md) has the details.
+
+[Live website](https://alexnava.me/) · [Credits](docs/CREDITS.md) · [Security](SECURITY.md) · [License](#license)

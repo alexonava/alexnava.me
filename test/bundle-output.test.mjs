@@ -368,6 +368,24 @@ test("fonts publish only under hashed names, which the stylesheet and the preloa
     .filter(Boolean);
   assert.deepEqual([...cssFonts].sort(), [...hashed].sort());
   assert.deepEqual([...preloads].sort(), [...hashed].sort());
+
+  // The fonts' license and copyright notices ship beside them.
+  const ofl = await readFile(path.join(distDir, "fonts", "OFL.txt"), "utf8");
+  assert.equal(ofl, await readFile(path.join(projectRoot, "fonts", "OFL.txt"), "utf8"));
+  assert.match(ofl, /^Copyright 2015 The Cormorant Project Authors /m);
+  assert.match(ofl, /^Copyright 2022 The Instrument Sans Project Authors /m);
+  assert.match(ofl, /SIL OPEN FONT LICENSE Version 1\.1/);
+});
+
+test("the shared scene chunk keeps Three.js's license notice, and the site publishes no LICENSE", async () => {
+  const { loaded } = await sceneScripts();
+  const [shared] =
+    [...loaded].find(([name]) => /^scene\.shared\.[a-f0-9]{8}\.js$/.test(name)) ?? [];
+  assert.ok(shared, "the scene loads a shared chunk");
+  const text = loaded.get(shared);
+  assert.match(text, /@license/);
+  assert.match(text, /Three\.js Authors/);
+  await assert.rejects(readFile(path.join(distDir, "LICENSE")), { code: "ENOENT" });
 });
 
 test("the pages publish no picture, and the share card's backdrop stays unpublished", async () => {
@@ -456,7 +474,7 @@ test("changing only a fixture tower model changes only its URL and size in the U
     await rm(path.join(fixture, "fonts"), { recursive: true, force: true });
     await cp(path.join(projectRoot, "fonts"), path.join(fixture, "fonts"), { recursive: true });
     await cp(path.join(projectRoot, "images"), path.join(fixture, "images"), { recursive: true });
-    for (const file of ["build.mjs", "index.html", "404.html", "styles.css", "LICENSE"]) {
+    for (const file of ["build.mjs", "index.html", "404.html", "styles.css"]) {
       await cp(path.join(projectRoot, file), path.join(fixture, file));
     }
     await cp(path.join(projectRoot, "public"), path.join(fixture, "public"), { recursive: true });

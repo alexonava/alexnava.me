@@ -219,7 +219,6 @@ test("static headers separate immutable fingerprints from revalidated stable ass
     "/og.png",
     "/robots.txt",
     "/sitemap.xml",
-    "/LICENSE",
     "/.well-known/security.txt",
     "/fonts/*",
   ]) {
@@ -231,15 +230,11 @@ test("static headers separate immutable fingerprints from revalidated stable ass
       ),
     );
   }
-  for (const textPath of ["/LICENSE", "/.well-known/security.txt"]) {
-    assert.match(
-      headers,
-      new RegExp(
-        `^${escape(textPath)}\\r?\\n\\s+Cache-Control[^\\r\\n]*\\r?\\n\\s+Content-Type: text/plain; charset=utf-8`,
-        "m",
-      ),
-    );
-  }
+  assert.match(
+    headers,
+    /^\/\.well-known\/security\.txt\r?\n\s+Cache-Control[^\r\n]*\r?\n\s+Content-Type: text\/plain; charset=utf-8/m,
+  );
+  assert.doesNotMatch(headers, /^\/LICENSE/m, "the site publishes no LICENSE");
   for (const fingerprintedPath of [
     "/css/styles.*.css",
     "/scripts/app.*.js",
@@ -335,7 +330,6 @@ test("Pages header rules resolve one cache policy for stable and fingerprinted p
     "/icon-512.png",
     "/icon-maskable-512.png",
     "/.well-known/security.txt",
-    "/LICENSE",
     "/fonts/OFL.txt",
   ]) {
     assert.equal(cacheControl(pathname), revalidated, pathname);
@@ -349,7 +343,7 @@ test("Pages header rules resolve one cache policy for stable and fingerprinted p
     const hashed = `/fonts/${name.replace(/\.woff2$/, `.${hash}.woff2`)}`;
     assert.equal(cacheControl(hashed), immutable, hashed);
   }
-  for (const pathname of ["/LICENSE", "/.well-known/security.txt", "/llms.txt"]) {
+  for (const pathname of ["/.well-known/security.txt", "/llms.txt"]) {
     assert.equal(headersFor(pathname).get("content-type"), "text/plain; charset=utf-8", pathname);
   }
 

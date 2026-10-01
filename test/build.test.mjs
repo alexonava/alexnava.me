@@ -412,7 +412,6 @@ test("CSS asset URLs and bytes are portable across checkout line endings", async
       await mkdir(path.join(fixture, dir), { recursive: true });
     }
     for (const file of [
-      "LICENSE",
       ...[
         "favicon.svg",
         "favicon.ico",

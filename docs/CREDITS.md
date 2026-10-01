@@ -1,23 +1,37 @@
 # Credits
 
+## Rights
+
+- **Code**: `build.mjs`, `src/`, `tools/`, the tests, the GitHub workflows and
+  scripts, and the HTML and CSS markup are released under the MIT License
+  ([LICENSE](../LICENSE)). That includes the procedural scene: sky, clouds,
+  terrain, materials, camera and animation.
+- **Artwork and content**: the 3D models and textures as prepared for this site
+  (made on a paid Meshy plan, so owned by Alex Nava), the images, the icons, the
+  share card (`public/og.png` and `tools/og-card-backdrop.webp`), the writing
+  and the visual design are © 2026 Alex Nava, all rights reserved. The MIT
+  License does not cover them.
+- **Fonts**: Cormorant Garamond and Instrument Sans are licensed under the SIL
+  Open Font License 1.1 ([fonts/OFL.txt](../fonts/OFL.txt)).
+- **Three.js**: MIT License.
+
 ## Third-party libraries
 
-- **Three.js** (r160) — MIT License. Copyright (c) 2010-2023 three.js authors.
-  Bundled into the content-hashed `dist/scripts/scene.*.js` chunks (Three.js core in `scene.shared.HASH.js`).
+- **Three.js** (r160) — MIT License. Copyright 2010-2023 Three.js Authors.
+  Bundled into the content-hashed `dist/scripts/scene.*.js` chunks; the Three.js
+  core is in `scene.shared.HASH.js`, which keeps its license notice at the end.
   Source: https://github.com/mrdoob/three.js
 
 ## Typography
 
-- **Cormorant Garamond** by Christian Thalmann — SIL Open Font License (OFL).
-- **Instrument Sans** by The Instrument Sans Project Authors — SIL Open Font License (OFL).
+- **Cormorant Garamond** by The Cormorant Project Authors (designer Christian
+  Thalmann) — SIL Open Font License 1.1.
+- **Instrument Sans** by The Instrument Sans Project Authors — SIL Open Font
+  License 1.1.
 
-Both are self-hosted as local woff2 subsets in `fonts/`.
-
-## Site content and code
-
-Site code, procedural scene (sky, clouds, terrain, materials, camera and
-animation) and the share card backdrop (`tools/og-card-backdrop.webp`) © 2026
-Alex Nava. Released under the MIT License (see LICENSE).
+Both are self-hosted as variable woff2 subsets in `fonts/`. Their copyright
+notices and the license text are in `fonts/OFL.txt`, which the site publishes
+beside them at `/fonts/OFL.txt`.
 
 ## Supplied timber lookout tower
 

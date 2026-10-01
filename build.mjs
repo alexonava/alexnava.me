@@ -27,9 +27,8 @@ const SCRIPT_ENTRIES = [
 const SPLIT_OUTDIR = join(__dirname, ".cache", "split-scripts");
 
 // Files copied verbatim (no URL rewriting) to the same path in dist: the
-// hosting, icon and discovery files kept in public/, plus LICENSE, which GitHub
-// reads from the repository root. The internal agent guide's public
-// counterpart, public/site-agents.md, is published as /AGENTS.md.
+// hosting, icon and discovery files kept in public/. The internal agent
+// guide's public counterpart, public/site-agents.md, is published as /AGENTS.md.
 const PUBLIC_DIR = "public";
 const PUBLIC_FILES = [
   "favicon.svg",
@@ -51,7 +50,6 @@ const PUBLIC_FILES = [
   ".well-known/security.txt",
 ];
 const STATIC_FILES = [
-  { source: "LICENSE", destination: "LICENSE" },
   ...PUBLIC_FILES.map((file) => ({ source: `${PUBLIC_DIR}/${file}`, destination: file })),
   { source: `${PUBLIC_DIR}/site-agents.md`, destination: "AGENTS.md" },
 ];
@@ -77,7 +75,6 @@ export function isFingerprintedSource(file) {
   );
 }
 export const BUILD_INPUT_FILES = [
-  "LICENSE",
   "index.html",
   "404.html",
   "styles.css",
@@ -109,7 +106,9 @@ const scriptBuildOptions = (entry, split = false) => ({
   minify: true,
   target: "es2022",
   format: split ? "esm" : "iife",
-  legalComments: "none",
+  // Third-party license notices (Three.js's @license header) move to the end
+  // of the file or chunk that carries the code.
+  legalComments: "eof",
   write: false,
   plugins: [compactShaders],
   ...(split && {
