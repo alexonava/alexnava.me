@@ -20,23 +20,6 @@ const asset = () => {
   return { scene };
 };
 
-test("bare tree metadata suppresses derived leaves through quality and film changes", () => {
-  const source = asset();
-  source.scene.userData.tree = { foliage: false };
-  const tree = createTreeArchitecture({ asset: source, groundHeight: () => 0 });
-  for (const tier of ["high", "balanced", "low", "high"]) {
-    tree.setFilmTreatment(true);
-    tree.applyQuality({ tier });
-    assert.equal(tree.root.getObjectByName("estate-canopy-leaves"), undefined);
-    assert.ok(tree.root.getObjectByName("tree-lantern-light"));
-    tree.setFilmTreatment(false);
-  }
-  assert.equal(tree.dispose(), true);
-  assert.equal(tree.dispose(), false);
-  source.scene.children[0].geometry.dispose();
-  source.scene.children[0].material.dispose();
-});
-
 test("tree retains its anchor and height with a quality-scaled non-shadow lantern", () => {
   const source = asset();
   const replacement = createTreeArchitecture({ asset: source, groundHeight: () => -2 });

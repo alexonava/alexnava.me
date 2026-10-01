@@ -13,7 +13,7 @@ import {
   Vector3,
 } from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { createTreeFoliage, smoothTreeNormals } from "./tree-foliage.js";
+import { smoothTreeNormals } from "./tree-normals.js";
 import { ESTATE } from "./estate-layout.js";
 
 export const ARCHITECTURE = Object.freeze({
@@ -318,13 +318,11 @@ export function createTreeArchitecture({ asset, groundHeight, anisotropy = 4, an
     materials.add(material);
     return material;
   };
-  let disposed = false,
-    foliage = null;
+  let disposed = false;
   const dispose = () => {
     if (disposed) return false;
     disposed = true;
     root.removeFromParent();
-    foliage?.dispose();
     geometries.forEach((geometry) => geometry.dispose());
     materials.forEach((material) => material.dispose());
     geometries.clear();
@@ -348,9 +346,6 @@ export function createTreeArchitecture({ asset, groundHeight, anisotropy = 4, an
     tree.name = "meshy-tree";
     tree.castShadow = tree.receiveShadow = true;
     root.add(tree);
-    // Bare authored trees keep their branch silhouette; older leafy assets
-    // retain the existing derived canopy accents.
-    if (asset.scene.userData?.tree?.foliage !== false) foliage = createTreeFoliage(geometry, tree);
     const normalAttribute = geometry.attributes.normal;
     const originalNormals = normalAttribute.array.slice(),
       softenedNormals = smoothTreeNormals(geometry).array;
@@ -471,8 +466,6 @@ export function createTreeArchitecture({ asset, groundHeight, anisotropy = 4, an
       applyFilmGrade(material, film);
       normalAttribute.array.set(film ? softenedNormals : originalNormals);
       normalAttribute.needsUpdate = true;
-      foliage?.setActive(film);
-      foliage?.applyQuality(currentProfile);
       // The unshadowed fill sits in the crown about 10 units above the lantern.
       // In film its reach drops from the prop-scaled 37.8 to 24, so it still
       // models the bark and the lantern cap but no longer floods the clearing.
