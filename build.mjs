@@ -298,16 +298,19 @@ export function contentDateModified(markdown) {
   return frontMatter.match(/^dateModified:\s*["']?(\d{4}-\d{2}-\d{2})["']?\s*$/m)?.[1];
 }
 
-function rewriteHtml(src, { appPath, cssPath, scenePath, imagePaths }) {
-  // Match source refs with or without a ?v=NNN query,
-  // so stale query strings in source can't drift away from the real hashed path.
+// Points a page at the published, content-hashed assets. The sources name
+// the plain paths; an un-hashed stylesheet or script path, or a ?v= query,
+// left after the rewrite would request a file the build never publishes.
+function rewriteHtml(name, src, { appPath, cssPath, scenePath, imagePaths }) {
   let html = src
-    .replace(/\/styles\.css(\?v=\d+)?/g, cssPath)
-    .replace(/\/scripts\/app\.js(\?v=\d+)?/g, appPath)
-    .replace(/\/scripts\/scene\.js(\?v=\d+)?/g, scenePath);
+    .replaceAll("/styles.css", cssPath)
+    .replaceAll("/scripts/app.js", appPath)
+    .replaceAll("/scripts/scene.js", scenePath);
   for (const [sourcePath, hashedPath] of Object.entries(imagePaths)) {
     html = html.replaceAll(sourcePath, hashedPath);
   }
+  const stale = html.match(/\/styles\.css|\/scripts\/[\w-]+\.js|\?v=/);
+  if (stale) throw new Error(`${name} names an un-hashed asset after the rewrite: ${stale[0]}`);
   return html;
 }
 
@@ -401,7 +404,7 @@ async function writePayload(DIST_DIR) {
 
   for (const name of ["index.html", "404.html"]) {
     const htmlSrc = await readFile(join(__dirname, name), "utf8");
-    const rewritten = rewriteHtml(htmlSrc, {
+    const rewritten = rewriteHtml(name, htmlSrc, {
       appPath: scriptPaths.app,
       cssPath: cssHashedUrl,
       scenePath: scriptPaths.scene,
