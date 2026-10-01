@@ -171,47 +171,6 @@
         practicalIntensityScale: 0.84,
       },
     },
-    low: {
-      // Low keeps the 1x composer resolution it has always rendered at.
-      dprCap: 1,
-      anisotropy: { min: 1, max: 4 },
-      textures: {
-        groundSize: 512,
-      },
-      geometry: {
-        skyWidthSegments: 16,
-        skyHeightSegments: 10,
-        circleSegments: 56,
-      },
-      shadows: {
-        enabled: false,
-        mapSize: 0,
-      },
-      postprocessGrading: true,
-      postprocessBloom: false,
-      postprocessVignette: false,
-      postprocessGrain: false,
-      postprocessSamples: 0,
-      postprocessSettings: {
-        bloomStrength: 0,
-        celMix: 0.2,
-        contrast: 1.05,
-        grainStrength: 0,
-        highlightWarmMix: 0.14,
-        shadowCoolMix: 0.22,
-        vignetteStrength: 0,
-      },
-      lighting: {
-        fogNear: 60,
-        fogFar: 144,
-        ambientIntensity: 0.24,
-        hemisphereIntensity: 0.7,
-        directionalIntensity: 2.45,
-        fillIntensity: 0,
-        extraDirectional: false,
-        practicalIntensityScale: 0.58,
-      },
-    },
   };
 
   function normalizeTier(value, fallback = null) {
@@ -221,11 +180,14 @@
     return TIER_ORDER.includes(normalized) ? normalized : fallback;
   }
 
+  // The scene never renders the low tier: main.js and the scene keep the
+  // static title card there, and a revealed scene's low step only lowers the
+  // pixel ratio (createSceneQualityState). A low request reads balanced.
   function cloneProfile(tier) {
-    const profile = SCENE_QUALITY_PROFILES[tier] || SCENE_QUALITY_PROFILES.high;
+    const name = tier === "low" ? "balanced" : tier;
+    const profile = SCENE_QUALITY_PROFILES[name] || SCENE_QUALITY_PROFILES.high;
     return {
-      tier,
-      isLow: tier === "low",
+      tier: name,
       dprCap: profile.dprCap,
       anisotropy: { ...profile.anisotropy },
       textures: { ...profile.textures },
@@ -579,10 +541,6 @@
         const cap = resolveEffectiveDprCap(profile, { touchPrimary });
         return resolutionRelief ? Math.min(cap, 1) : cap;
       },
-      sample(frameTimeMs, nowMs, floorTier) {
-        const nextTier = governor.sample(frameTimeMs, nowMs, floorTier);
-        return nextTier ? cloneProfile(nextTier) : null;
-      },
       // Skips samples for SAMPLE_HOLD_MS from the next sampled frame.
       holdSampling() {
         sampleResumeAt = null;
@@ -605,7 +563,7 @@
         }
         const nextTier = governor.sample(frameMs, nowMs, "low");
         if (!nextTier) return null;
-        resolutionRelief = nextTier === "low" && profile?.tier !== "low";
+        resolutionRelief = nextTier === "low";
         return resolutionRelief ? profile : cloneProfile(nextTier);
       },
     };

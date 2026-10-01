@@ -27,7 +27,7 @@ import { createSceneAtmosphere } from "../src/scene/atmosphere.js";
 import { createFilmScene } from "../src/scene/film-scene.js";
 
 const groundHeight = (x, z) => Math.sin(x * 0.07) + Math.cos(z * 0.04);
-const profile = { tier: "high", isLow: false };
+const profile = { tier: "high" };
 test("estate growth is seeded, terrain-seated and clear of both footprints and the winding approach", () => {
   const a = createEstateGroundDetail(groundHeight),
     b = createEstateGroundDetail(groundHeight);
@@ -94,7 +94,7 @@ test("environment creates growth only after film activation and owns its lifecyc
   assert.equal(mesh.visible, false);
   environment.setFilmTreatment(true);
   assert.equal(environment.root.children.length, 1);
-  environment.applyQuality({ tier: "low", isLow: true });
+  environment.applyQuality({ tier: "low" });
   assert.equal(mesh.visible, false);
   environment.dispose();
   assert.equal(mesh.parent, null);

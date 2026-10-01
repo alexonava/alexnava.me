@@ -21,7 +21,7 @@ export const SOLAR_QUALITY = Object.freeze({
   low: Object.freeze({ detail: 1, loops: 0 }),
 });
 export function celestialTier(profile = {}) {
-  return SOLAR_QUALITY[profile.tier] ? profile.tier : profile.isLow ? "low" : "high";
+  return SOLAR_QUALITY[profile.tier] ? profile.tier : "high";
 }
 export function createCelestialClock() {
   let previous = null,

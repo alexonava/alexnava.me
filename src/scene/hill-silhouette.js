@@ -422,7 +422,7 @@ export function createHillSilhouette({
     },
     applyQuality(profile) {
       if (disposed) return false;
-      low = profile?.tier === "low" || Boolean(profile?.isLow);
+      low = profile?.tier === "low";
       mesh.visible = !low;
       request();
       return true;

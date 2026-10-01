@@ -62,7 +62,12 @@ function tourSetup(interval = 5) {
   return { camera, controller, tour, render };
 }
 
-const LOW = { postprocessGrading: true, postprocessVignette: false, postprocessGrain: false };
+// Grading alone, so the final pass draws only for a crossfade.
+const GRADING_ONLY = {
+  postprocessGrading: true,
+  postprocessVignette: false,
+  postprocessGrain: false,
+};
 const rendererMock = () => ({
   autoClear: true,
   autoClearColor: true,
@@ -82,9 +87,15 @@ const rendererMock = () => ({
 
 test("tour shots open without black and dissolve the kept outgoing frame into each cut", () => {
   const f = tourSetup(5);
-  const pipeline = createPostprocessPipeline(rendererMock(), { isScene: true }, f.camera, LOW, {
-    matchMedia: () => ({ matches: false }),
-  });
+  const pipeline = createPostprocessPipeline(
+    rendererMock(),
+    { isScene: true },
+    f.camera,
+    GRADING_ONLY,
+    {
+      matchMedia: () => ({ matches: false }),
+    },
+  );
   const pass = pipeline.passes.vignetteGrain;
   // Mirrors index.js: the tour, then the pipeline, then the camera and the draw.
   const frame = (time, flags = {}) => {
@@ -110,13 +121,13 @@ test("tour shots open without black and dissolve the kept outgoing frame into ea
   frame(5);
   assert.equal(f.tour.transition.capture, true);
   assert.equal(f.controller.shot.name, "The watch", "the capture keeps the outgoing shot");
-  assert.equal(pass.enabled, true, "the low tier adds the final pass for the crossfade");
+  assert.equal(pass.enabled, true, "grading alone adds the final pass for the crossfade");
   assert.equal(pass.uniforms.uProgress.value, 1);
   assert.ok(pass.uniforms.tPrev.value, "grading's output is kept");
   // The kept frame pushes in about the safe-area centre, in UV from the bottom.
   close(pass.uniforms.uPrevOrigin.value.x, (450 + 940 / 2) / 1440, 1e-6);
   close(pass.uniforms.uPrevOrigin.value.y, 1 - (32 + 720 / 2) / 900, 1e-6);
-  pipeline.setQualityProfile(LOW);
+  pipeline.setQualityProfile(GRADING_ONLY);
   assert.equal(pass.enabled, true, "a quality step keeps the crossfade");
 
   frame(5.05);
@@ -133,7 +144,7 @@ test("tour shots open without black and dissolve the kept outgoing frame into ea
   frame(6.1);
   assert.deepEqual({ ...f.tour.transition }, { ...TOUR_IDLE });
   assert.equal(pass.uniforms.uProgress.value, 1);
-  assert.equal(pass.enabled, false, "the low tier drops the final pass after the dissolve");
+  assert.equal(pass.enabled, false, "grading alone drops the final pass after the dissolve");
 
   // A pause mid-dissolve settles on the incoming shot; resuming does not replay it.
   frame(10);

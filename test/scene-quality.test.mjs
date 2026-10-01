@@ -185,7 +185,8 @@ test("quality profiles expose the postprocess tier matrix", async () => {
   const scene = await loadQuality(createContext());
   const high = scene.getSceneQualityProfile("high");
   const balanced = scene.getSceneQualityProfile("balanced");
-  const low = scene.getSceneQualityProfile("low");
+  // The scene never renders low; a low request reads balanced.
+  assert.deepEqual(scene.getSceneQualityProfile("low"), balanced);
 
   assert.deepEqual(
     [
@@ -206,25 +207,19 @@ test("quality profiles expose the postprocess tier matrix", async () => {
     [true, false, true, true],
   );
   assert.deepEqual(
-    [low.postprocessGrading, low.postprocessBloom, low.postprocessVignette, low.postprocessGrain],
-    [true, false, false, false],
-  );
-  assert.deepEqual(
-    [high.postprocessSamples, balanced.postprocessSamples, low.postprocessSamples],
-    [4, 0, 0],
+    [high.postprocessSamples, balanced.postprocessSamples],
+    [4, 0],
     "only high multisamples the composer targets",
   );
-  assert.deepEqual([high.dprCap, balanced.dprCap, low.dprCap], [1.5, 1.25, 1]);
+  assert.deepEqual([high.dprCap, balanced.dprCap], [1.5, 1.25]);
   assert.equal("antialias" in high, false, "the renderer never multisamples the final quad");
   assert.equal(high.lighting.directionalIntensity, 3.25);
   assert.equal(high.lighting.fillIntensity, 0.46);
   assert.equal(high.lighting.practicalIntensityScale, 1.08);
   assert.equal(balanced.lighting.extraDirectional, true);
   assert.equal(balanced.lighting.practicalIntensityScale, 0.84);
-  assert.equal(low.lighting.extraDirectional, false);
-  assert.equal(low.lighting.practicalIntensityScale, 0.58);
   // The procedural world's particle counts and canvases are gone.
-  for (const profile of [high, balanced, low]) {
+  for (const profile of [high, balanced]) {
     assert.equal(profile.counts, undefined);
     assert.deepEqual(Object.keys(profile.textures), ["groundSize"]);
     assert.deepEqual(Object.keys(profile.geometry).sort(), [
@@ -235,7 +230,6 @@ test("quality profiles expose the postprocess tier matrix", async () => {
   }
   assert.equal(high.postprocessSettings.contrast, 1.1);
   assert.equal(balanced.postprocessSettings.vignetteStrength, 0.1);
-  assert.equal(low.postprocessSettings.grainStrength, 0);
 });
 
 test("readWebGLQualityCaps falls back when probing fails and reports parameters when it succeeds", async () => {
@@ -579,7 +573,7 @@ test("landscapePhone and tabletPortrait profiles carry touch-friendly framing", 
   );
 });
 
-test("createSceneQualityState exposes profile, governor, and live sample handoff", async () => {
+test("createSceneQualityState exposes the startup tier, its profile and the governor", async () => {
   const context = createContext({ search: "?quality=auto", innerWidth: 1440, innerHeight: 900 });
   const scene = await loadQuality(context);
 
@@ -594,20 +588,8 @@ test("createSceneQualityState exposes profile, governor, and live sample handoff
   assert.equal(state.getTier(), "high");
   assert.equal(state.getProfile().dprCap, 1.5);
   assert.equal(state.getProfile().postprocessSamples, 4);
-
-  // Warmup: first 59 frames return null regardless (streak check gated on a full sample window).
-  for (let frame = 0; frame < 59; frame += 1) {
-    assert.equal(state.sample(40, frame * 40), null);
-  }
-  // Streak builds once the window fills — 120 consecutive over-budget frames trigger one step down.
-  let downgrade = null;
-  for (let frame = 59; frame < 360 && !downgrade; frame += 1) {
-    downgrade = state.sample(40, frame * 40);
-  }
-  assert.ok(downgrade, "governor returns the downgraded profile once the streak is complete");
-  assert.equal(state.getTier(), "balanced");
-  assert.equal(downgrade.dprCap, 1.25);
-  assert.equal(downgrade.postprocessSamples, 0);
+  assert.equal(state.governor.getInitialTier(), "high");
+  assert.equal(state.getProfile("balanced").dprCap, 1.25);
 });
 
 function driveRevealed(state, clock, frameMs, count, profile) {
@@ -663,7 +645,7 @@ test("a revealed scene's low step lowers only the pixel ratio, and recovery rest
     { tier: "balanced", dprCap: 1.25, governor: "balanced" },
     { tier: "balanced", dprCap: 1, governor: "low" },
   ]);
-  assert.equal(sustained.profile.isLow, false, "the revealed visuals never descend to low");
+  assert.equal(sustained.profile.tier, "balanced", "the revealed visuals never descend to low");
 });
 
 test("revealed sampling waits three seconds after the first frame and after each hold", async () => {

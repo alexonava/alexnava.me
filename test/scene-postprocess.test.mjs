@@ -126,7 +126,7 @@ test("balanced tier disables bloom while keeping grading, vignette, and grain", 
   pipeline.dispose();
 });
 
-test("low tier keeps only grading enabled", () => {
+test("a grading-only profile keeps only grading enabled", () => {
   const pipeline = createPipeline({
     postprocessGrading: true,
     postprocessBloom: false,
@@ -525,7 +525,9 @@ function createRecordedPipeline(profile, camera = {}) {
   return { capture, draws, frame, pipeline };
 }
 
-const LOW = { postprocessGrading: true };
+// Grading alone: no bloom, vignette or grain, so the final pass draws only for
+// a crossfade or the film.
+const GRADING_ONLY = { postprocessGrading: true };
 
 test("a tour capture keeps grading's output with no added draw, and the cut mixes it out", () => {
   const elements = new Array(16).fill(0);
@@ -580,19 +582,23 @@ test("a tour capture keeps grading's output with no added draw, and the cut mixe
   pipeline.setTransition({ progress: 0.25, zoom: 0.01 });
   assert.equal(final.uProgress.value, 0.25, "linear: the final pass eases it");
 
-  pipeline.setQualityProfile(LOW);
+  pipeline.setQualityProfile(GRADING_ONLY);
   assert.equal(pipeline.passes.vignetteGrain.enabled, true, "a quality step keeps the blend");
   pipeline.composer.setPixelRatio(1.5);
   pipeline.setTransition({ progress: 0.5, zoom: 0.01 });
   assert.equal(final.uProgress.value, 0.5, "so does a pixel-ratio change");
   pipeline.setTransition({ capture: false, cut: false, progress: 1, zoom: 0 });
   assert.equal(final.uProgress.value, 1);
-  assert.equal(pipeline.passes.vignetteGrain.enabled, false, "low drops the final pass again");
+  assert.equal(
+    pipeline.passes.vignetteGrain.enabled,
+    false,
+    "grading alone drops the final pass again",
+  );
   pipeline.dispose();
 });
 
-test("the low tier adds the final pass only for a crossfade; a capture that never drew cuts hard", () => {
-  const { capture, frame, pipeline } = createRecordedPipeline(LOW);
+test("grading alone adds the final pass only for a crossfade; a capture that never drew cuts hard", () => {
+  const { capture, frame, pipeline } = createRecordedPipeline(GRADING_ONLY);
   const pass = pipeline.passes.vignetteGrain;
   assert.equal(pass.enabled, false);
   assert.deepEqual(frame().at(-1), ["BabelGradingShader", null], "grading draws to the canvas");
@@ -624,7 +630,7 @@ test("the low tier adds the final pass only for a crossfade; a capture that neve
 });
 
 test("a CSS resize or a lost context ends a crossfade; the same size keeps it", () => {
-  const { capture, pipeline } = createRecordedPipeline(LOW);
+  const { capture, pipeline } = createRecordedPipeline(GRADING_ONLY);
   const pass = pipeline.passes.vignetteGrain;
   const startBlend = () => {
     capture();
@@ -650,7 +656,7 @@ test("a CSS resize or a lost context ends a crossfade; the same size keeps it", 
 });
 
 test("the phone text band follows each pixel's dissolve instead of switching at the cut", () => {
-  const { capture, pipeline } = createRecordedPipeline(LOW);
+  const { capture, pipeline } = createRecordedPipeline(GRADING_ONLY);
   const v = pipeline.passes.vignetteGrain.uniforms;
   pipeline.setFilmTreatment(true);
   pipeline.setTextProtection(true, 0.3);
@@ -676,7 +682,7 @@ test("the phone text band follows each pixel's dissolve instead of switching at 
 });
 
 test("compile links the crossfade programs once for their real targets; dispose frees the frame", () => {
-  const { capture, draws, pipeline } = createRecordedPipeline(LOW);
+  const { capture, draws, pipeline } = createRecordedPipeline(GRADING_ONLY);
   const renderer = pipeline.composer.renderer;
   const previous = { isWebGLRenderTarget: true };
   renderer.setRenderTarget(previous);
@@ -699,13 +705,13 @@ test("compile links the crossfade programs once for their real targets; dispose 
   pipeline.dispose();
   assert.equal(disposals, 1);
 
-  const bare = createPipeline(LOW);
+  const bare = createPipeline(GRADING_ONLY);
   assert.doesNotThrow(() => bare.compile(), "a renderer without compile() skips it");
   bare.dispose();
 });
 
 test("film always draws the final pass, staggered and opaque; outside film it is the plain crossfade", () => {
-  const { capture, frame, pipeline } = createRecordedPipeline(LOW);
+  const { capture, frame, pipeline } = createRecordedPipeline(GRADING_ONLY);
   const pass = pipeline.passes.vignetteGrain;
   assert.equal(pass.enabled, false);
   assert.equal(pass.uniforms.uLayered.value, 0);
@@ -713,14 +719,14 @@ test("film always draws the final pass, staggered and opaque; outside film it is
   assert.equal(pass.enabled, true, "layer codes never reach the transparent canvas");
   assert.equal(pass.uniforms.uLayered.value, 1);
   assert.deepEqual(frame().at(-1), ["BabelVignetteGrainShader", null]);
-  pipeline.setQualityProfile({ ...LOW });
+  pipeline.setQualityProfile({ ...GRADING_ONLY });
   assert.equal(pass.enabled, true);
   capture();
   pipeline.setTransition({ capture: false, cut: true, progress: 0.5, zoom: 0.01 });
   pipeline.setTransition({ progress: 1 });
   assert.equal(pass.enabled, true, "and after a dissolve");
   pipeline.setFilmTreatment(false);
-  assert.equal(pass.enabled, false, "the low tier out of film drops it again");
+  assert.equal(pass.enabled, false, "grading alone out of film drops it again");
   assert.equal(pass.uniforms.uLayered.value, 0);
   assert.deepEqual(pass.uniforms.uStagger.value.toArray(), [
     LAYER_STAGGER.step,
@@ -809,7 +815,7 @@ test("the dissolve stages sky, mountains, ground and subject over the transition
 });
 
 test("the final pass decodes each frame's layer from a 5-tap cross and mixes by it", () => {
-  const pipeline = createPipeline(LOW);
+  const pipeline = createPipeline(GRADING_ONLY);
   const shader = pipeline.passes.vignetteGrain.material.fragmentShader;
   const layerCode = shader.slice(shader.indexOf("float layerCode("), shader.indexOf("void main()"));
   assert.equal((layerCode.match(/texture2D\(map, /g) || []).length, 5);

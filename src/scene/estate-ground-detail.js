@@ -106,7 +106,7 @@ export function createEstateGroundDetail(groundHeight) {
     },
     applyQuality(profile = {}) {
       if (disposed) return false;
-      tier = profile.isLow ? "low" : profile.tier || "high";
+      tier = profile.tier || "high";
       apply();
       return true;
     },

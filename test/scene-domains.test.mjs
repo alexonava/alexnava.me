@@ -5,7 +5,6 @@ import { Group } from "three";
 import { createSceneEnvironment } from "../src/scene/environment.js";
 
 const highProfile = {
-  isLow: false,
   lighting: {
     practicalIntensityScale: 1,
   },
@@ -21,7 +20,7 @@ test("environment owns composition and its disposal", () => {
   });
   environment.resize({ composition: { sceneOffsetY: -6 } });
   assert.equal(environment.root.position.y, -6);
-  assert.equal(environment.applyQuality({ isLow: true }), true);
+  assert.equal(environment.applyQuality({ tier: "balanced" }), true);
   assert.equal(environment.dispose(), true);
   assert.equal(environment.dispose(), false);
   assert.equal(environment.root.visible, false);
