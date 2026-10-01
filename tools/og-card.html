@@ -9,8 +9,8 @@
       file:///<repo>/tools/og-card.html
     magick <scratch>\og-raw.png -alpha off -kmeans 224 -unique-colors <scratch>\og-pal.png
     magick <scratch>\og-raw.png -alpha off -dither FloydSteinberg -define dither:diffusion-amount=55%
-      -remap <scratch>\og-pal.png -strip -define png:compression-level=9 PNG8:og.png
-  Keep og.png opaque, exactly 1200x630 and under 300 KB, then re-scrape it with LinkedIn Post Inspector.
+      -remap <scratch>\og-pal.png -strip -define png:compression-level=9 PNG8:publicog.png
+  Keep public/og.png opaque, exactly 1200x630 and under 300 KB, then re-scrape it with LinkedIn Post Inspector.
 -->
 <html lang="en">
   <head>

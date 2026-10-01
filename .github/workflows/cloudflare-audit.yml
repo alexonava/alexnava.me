@@ -266,7 +266,7 @@ jobs:
           origin="https://alexnava.me"
           origin_host="alexnava.me"
           browser_ua="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
-          checklist="See the Cloudflare dashboard checklist in OPERATIONS.md; after changing the dashboard, run this workflow manually."
+          checklist="See the Cloudflare dashboard checklist in docs/OPERATIONS.md; after changing the dashboard, run this workflow manually."
           work="$RUNNER_TEMP/edge-settings"
           mkdir -p "$work"
           failures=()

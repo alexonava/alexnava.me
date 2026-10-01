@@ -49,4 +49,4 @@ Without overrides, reduced motion/data, unavailable WebGL, software rendering an
 
 With sceneDebug=1 the scene publishes a plain status object, `window.BabelSite.sceneDebug`, for captures and checks. It has no controls and loads no extra code: `tier`, `initialTier`, `assetTier`, `pixelRatio` and `composition`; `architecture.tower`, `architecture.tree` and `architecture.lantern` (each with a `status`: loading, ready or fallback) and `lanternCommitted`; `ground` (the slate maps) and `groundTreatment`; `rocks`; `mountains`; `shaders` (warm-up per label: scene, ground, tower, tree, lantern); `cinematic` (`shot`, `selected`, `angle`, `current`, `film` and the tour state); `programs` (linked programs) and `renderFps`; and `failure` when the scene stopped for the poster. A deterministic capture passes `?quality=high|balanced&view=…&angle=…&tour=0&sceneDebug=1` and waits on these fields.
 
-See [OPERATIONS.md](../OPERATIONS.md) for the exact delivery and release policy.
+See [OPERATIONS.md](OPERATIONS.md) for the exact delivery and release policy.

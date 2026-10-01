@@ -19,7 +19,7 @@ Open [localhost:4173](http://127.0.0.1:4173/). Development mode builds the site,
 | npm test | Run the regression suite |
 | npm run audit:ci | Check dependency advisories |
 
-Edit JavaScript in src, markup in index.html, styles in styles.css and runtime artwork in images. Never hand-edit dist. The build emits content-hashed scripts/app.HASH.js, the deferred scripts/scene.HASH.js (an ES module that imports its hashed scripts/scene.*.js chunks), css/styles.HASH.css and fingerprinted runtime images.
+Edit JavaScript in src, markup in index.html, styles in styles.css, runtime artwork in images, and the hosting, icon and discovery files (headers, redirects, robots.txt, llms.txt, manifest, icons) in public. Never hand-edit dist. The build emits content-hashed scripts/app.HASH.js, the deferred scripts/scene.HASH.js (an ES module that imports its hashed scripts/scene.*.js chunks), css/styles.HASH.css and fingerprinted runtime images.
 
 Add `?view=tower&angle=1&tour=0` to hold a composition, or `tour=5` for a faster review cadence. The [scene-mode guide](docs/SCENE-MODES.md) lists every shot.
 
@@ -27,10 +27,10 @@ Add `?view=tower&angle=1&tour=0` to hold a composition, or `tour=5` for a faster
 
 - [Architecture and source map](docs/ARCHITECTURE.md)
 - [Camera and scene modes](docs/SCENE-MODES.md)
-- [STYLE.md](STYLE.md): accepted visual, motion and accessibility constraints
+- [Style](docs/STYLE.md): accepted visual, motion and accessibility constraints
 - [AGENTS.md](AGENTS.md): instructions for coding agents
-- [OPERATIONS.md](OPERATIONS.md): release gates, deploy, smoke checks and rollback
+- [Operations](docs/OPERATIONS.md): release gates, deploy, smoke checks and rollback
 
 Local work does not publish the site; production releases go through an approved pull request to main.
 
-[Live website](https://alexnava.me/) · [Credits](CREDITS.md) · [Security](SECURITY.md) · [MIT license](LICENSE)
+[Live website](https://alexnava.me/) · [Credits](docs/CREDITS.md) · [Security](SECURITY.md) · [MIT license](LICENSE)

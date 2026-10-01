@@ -28,7 +28,7 @@ The responsive poster is eager and decorative, so it is a truthful first visual 
 
 The scene entry imports one shared chunk statically (Three.js core). Lazy chunks load only for the live film scene (high or balanced): rocks, lantern flame, terrain, light shafts (WebGL2 only) and mountains. All match the immutable `/scripts/scene.*.js` rule in `_headers`, and the pages still name exactly one app, one scene entry and one CSS asset.
 
-Whenever the posters change, regenerate `og.png` from `tools/og-card.html` (the recipe is in that file) and re-scrape it with LinkedIn Post Inspector after release.
+Whenever the posters change, regenerate `public/og.png` from `tools/og-card.html` (the recipe is in that file) and re-scrape it with LinkedIn Post Inspector after release.
 
 ## GitHub environments and credentials
 
@@ -64,9 +64,9 @@ If any post-upload smoke check fails, the workflow posts to Cloudflare's officia
 
 ## Response headers
 
-`_headers` is the tracked baseline. HTML revalidates immediately. Fonts, icons and stable-named files revalidate after seven days. Content-hashed CSS, JavaScript, images and GLBs are immutable for one year. Do not add absolute-host patterns to `_headers`: Pages applies them by path, so a `pages.dev`-only `X-Robots-Tag` can leak onto the apex.
+`public/_headers` is the tracked baseline. HTML revalidates immediately. Fonts, icons and stable-named files revalidate after seven days. Content-hashed CSS, JavaScript, images and GLBs are immutable for one year. Do not add absolute-host patterns to `_headers`: Pages applies them by path, so a `pages.dev`-only `X-Robots-Tag` can leak onto the apex.
 
-`/.well-known/security.txt` expires 2027-09-23. The contract test fails 30 days earlier, so renew its `Expires` line before 2027-08-24.
+`/.well-known/security.txt` expires 2027-09-23. The contract test fails 30 days earlier, so renew the `Expires` line in `public/.well-known/security.txt` before 2027-08-24.
 
 The apex is a native custom domain on `alexnava-me`. An exact-host Cloudflare Bulk Redirect (list `alexnava_pages_hostname_redirects`) sends `alexnava-me.pages.dev` to the apex, preserving paths and query strings. Do not recreate the removed `babel-apex` or `babel-bot` Worker routes: a Worker fetch to the Pages hostname can loop through that redirect.
 

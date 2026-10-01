@@ -241,7 +241,7 @@ test("fallback About link and matching category copy remain usable before scene 
 
 test("homepage modification metadata matches its public Markdown equivalent", async () => {
   const html = await readIndexHtml();
-  const markdown = await readFile(path.join(projectRoot, "index.md"), "utf8");
+  const markdown = await readFile(path.join(projectRoot, "public", "index.md"), "utf8");
   assert.equal(
     html.match(/"dateModified": "([^"]+)"/)[1],
     markdown.match(/dateModified: (\S+)/)[1],
@@ -415,7 +415,7 @@ test("phones do not gain a phantom scroll below the small-viewport hero", async 
 test("modern iPhones open full-bleed: night to every edge, no bounce, matching bars", async () => {
   const styles = await readStyles();
   const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
-  const manifest = JSON.parse(await readFile(new URL("../manifest.webmanifest", import.meta.url), "utf8"));
+  const manifest = JSON.parse(await readFile(new URL("../public/manifest.webmanifest", import.meta.url), "utf8"));
   assert.match(html, /<meta name="viewport" content="[^"]*viewport-fit=cover[^"]*"/);
   assert.match(html, /<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/);
   // Safari's bars, the notch area and any overscroll show the page's own night.
@@ -582,7 +582,7 @@ test("footer controls keep 44px targets without blocking the scene", async () =>
 
 test("category copy stays minimal and matches its Markdown equivalent", async () => {
   const html = await readIndexHtml();
-  const markdown = await readFile(path.join(projectRoot, "index.md"), "utf8");
+  const markdown = await readFile(path.join(projectRoot, "public", "index.md"), "utf8");
   const profile = "This is my personal corner of the web.";
   const experience = "Analytics, reporting, remediation, and controls, across banking and health.";
   for (const [id, sentence] of [["profile", profile], ["experience", experience]]) {
@@ -598,7 +598,7 @@ test("category copy stays minimal and matches its Markdown equivalent", async ()
 
 test("structured data describes the person without new facts and dates match Markdown", async () => {
   const html = await readIndexHtml();
-  const markdown = await readFile(path.join(projectRoot, "index.md"), "utf8");
+  const markdown = await readFile(path.join(projectRoot, "public", "index.md"), "utf8");
   const data = JSON.parse(html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)[1]);
   assert.equal(data["@type"], "ProfilePage");
   assert.equal(data.description, "Alex Nava’s personal website");

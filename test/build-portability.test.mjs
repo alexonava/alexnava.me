@@ -23,11 +23,12 @@ test("CSS asset URLs and bytes are portable across checkout line endings", async
   try {
     await cp(path.join(projectRoot, "build.mjs"), path.join(fixture, "build.mjs"));
     await cp(path.join(projectRoot, "tools"), path.join(fixture, "tools"), { recursive: true });
-    for (const dir of ["src", "fonts", "images/architecture", "images/materials", ".well-known"]) {
+    for (const dir of ["src", "fonts", "images/architecture", "images/materials", "public/.well-known"]) {
       await mkdir(path.join(fixture, dir), { recursive: true });
     }
     for (const file of [
       "LICENSE",
+      ...[
       "favicon.svg",
       "favicon.ico",
       "icon.svg",
@@ -46,6 +47,7 @@ test("CSS asset URLs and bytes are portable across checkout line endings", async
       "_redirects",
       ".well-known/security.txt",
       "site-agents.md",
+      ].map((name) => `public/${name}`),
     ]) {
       await writeFile(path.join(fixture, file), "fixture\n");
     }
@@ -139,7 +141,7 @@ test("CSS asset URLs and bytes are portable across checkout line endings", async
       "a syntax error must leave the last successful assets available",
     );
     await writeFile(path.join(fixture, "src", "app.js"), "void 0;");
-    await rm(path.join(fixture, "favicon.svg"));
+    await rm(path.join(fixture, "public", "favicon.svg"));
     await assert.rejects(
       execFileP(process.execPath, ["build.mjs", "--dist", "--outdir", path.join(fixture, "dist")], {
         cwd: fixture,

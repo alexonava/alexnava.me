@@ -26,9 +26,12 @@ const SCRIPT_ENTRIES = [
 // write: false nothing is written, and fingerprintChunks renames everything.
 const SPLIT_OUTDIR = join(__dirname, ".cache", "split-scripts");
 
-// Files copied verbatim (no URL rewriting).
-const STATIC_FILES = [
-  "LICENSE",
+// Files copied verbatim (no URL rewriting) to the same path in dist: the
+// hosting, icon and discovery files kept in public/, plus LICENSE, which GitHub
+// reads from the repository root. The internal agent guide's public
+// counterpart, public/site-agents.md, is published as /AGENTS.md.
+const PUBLIC_DIR = "public";
+const PUBLIC_FILES = [
   "favicon.svg",
   "favicon.ico",
   "icon.svg",
@@ -47,7 +50,11 @@ const STATIC_FILES = [
   "_redirects",
   ".well-known/security.txt",
 ];
-const STATIC_FILE_ALIASES = [{ source: "site-agents.md", destination: "AGENTS.md" }];
+const STATIC_FILES = [
+  { source: "LICENSE", destination: "LICENSE" },
+  ...PUBLIC_FILES.map((file) => ({ source: `${PUBLIC_DIR}/${file}`, destination: file })),
+  { source: `${PUBLIC_DIR}/site-agents.md`, destination: "AGENTS.md" },
+];
 const STATIC_DIRS = ["fonts", "images"];
 const FINGERPRINTED_POSTERS = ["scene-poster-landscape.webp", "scene-poster-portrait.webp"];
 const FINGERPRINTED_PAPER = [
@@ -70,8 +77,7 @@ export function isFingerprintedSource(file) {
   );
 }
 export const BUILD_INPUT_FILES = [
-  ...STATIC_FILES,
-  ...STATIC_FILE_ALIASES.map(({ source }) => source),
+  "LICENSE",
   "index.html",
   "404.html",
   "styles.css",
@@ -79,9 +85,9 @@ export const BUILD_INPUT_FILES = [
   "package.json",
   "package-lock.json",
 ];
-// The watcher follows root files without recursion, so a nested static file's
-// directory is watched as a whole.
-export const BUILD_INPUT_DIRS = ["src", ...STATIC_DIRS, ".well-known", "tools"];
+// The watcher follows root files without recursion; directories, public/
+// included, are watched as a whole.
+export const BUILD_INPUT_DIRS = ["src", ...STATIC_DIRS, PUBLIC_DIR, "tools"];
 
 // esbuild keeps template literal text verbatim: the scene's GLSL loses its
 // indentation, comments and spaces beside punctuation here instead
@@ -345,15 +351,10 @@ async function writePayload(DIST_DIR) {
 
   // copyFile creates no directories; .well-known/security.txt needs its own.
   await Promise.all(
-    STATIC_FILES.map(async (file) => {
-      await mkdir(dirname(join(DIST_DIR, file)), { recursive: true });
-      await copyFile(join(__dirname, file), join(DIST_DIR, file));
+    STATIC_FILES.map(async ({ source, destination }) => {
+      await mkdir(dirname(join(DIST_DIR, destination)), { recursive: true });
+      await copyFile(join(__dirname, source), join(DIST_DIR, destination));
     }),
-  );
-  await Promise.all(
-    STATIC_FILE_ALIASES.map(({ source, destination }) =>
-      copyFile(join(__dirname, source), join(DIST_DIR, destination)),
-    ),
   );
   // Fingerprinted sources publish only under their hashed names: the posters,
   // paper and estate maps, every model and the slate maps. Nothing the build
@@ -401,7 +402,7 @@ async function writePayload(DIST_DIR) {
   // lastmod reports when the content changed, matching the JSON-LD dateModified,
   // so an unrelated rebuild does not advertise a fresh page.
   const lastmod =
-    contentDateModified(await readFile(join(__dirname, "index.md"), "utf8")) ??
+    contentDateModified(await readFile(join(__dirname, PUBLIC_DIR, "index.md"), "utf8")) ??
     new Date().toISOString().slice(0, 10);
   const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
