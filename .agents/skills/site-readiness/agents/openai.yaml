@@ -1,4 +1,0 @@
-interface:
-  display_name: "Site Readiness"
-  short_description: "Verify alexnava.me before release"
-  default_prompt: "Use $site-readiness to check alexnava.me for release readiness."

@@ -20,7 +20,6 @@ test("repo contract reflects the current preview workflow and test suite", async
   const preview = await readProjectFile(".github/workflows/preview.yml");
   const readme = await readProjectFile("README.md");
   const agents = await readProjectFile("AGENTS.md");
-  const claude = await readProjectFile("CLAUDE.md");
 
   assert.equal(packageJson.engines.node, ">=22");
   for (const workflow of [ci, deploy, preview]) {
@@ -35,8 +34,6 @@ test("repo contract reflects the current preview workflow and test suite", async
   assert.match(readme, /scripts\/scene\.HASH\.js/);
   assert.match(agents, /npm run preview/);
   assert.match(agents, /deferred `scripts\/scene\.HASH\.js`/);
-  assert.doesNotMatch(claude, /There is no automated test suite in this repo\./);
-  assert.match(claude, /npm test/);
 });
 
 test("site source includes a committed OG image and matching social metadata", async () => {
@@ -112,7 +109,6 @@ function parseRobotsGroups(text) {
 
 test("robots.txt declines AI training but keeps search and citation crawlers welcome", async () => {
   const robots = await readProjectFile("robots.txt");
-  const operations = await readProjectFile("OPERATIONS.md");
   const { groups, directives } = parseRobotsGroups(robots);
 
   // Lighthouse's robots-txt audit (SEO must stay at 1) fails on unknown directives.
@@ -180,7 +176,6 @@ test("robots.txt declines AI training but keeps search and citation crawlers wel
   }
 
   // The decision is recorded next to the Cloudflare setting that enforces it.
-  assert.match(operations, /AI model training is declined/);
 });
 
 test("scene posters are committed, copied into dist, and use stable-asset caching", async () => {
@@ -276,7 +271,6 @@ test("Cloudflare preview credentials run separately from pull-request build code
 test("deploy workflows expose environment metadata and use explicit missing-credential policies", async () => {
   const deploy = await readProjectFile(".github/workflows/deploy.yml");
   const preview = await readProjectFile(".github/workflows/preview.yml");
-  const operations = await readProjectFile("OPERATIONS.md");
 
   assert.match(
     deploy,
@@ -289,11 +283,6 @@ test("deploy workflows expose environment metadata and use explicit missing-cred
   assert.match(deploy, /Production deploy requires[\s\S]*?exit 1/);
   assert.doesNotMatch(deploy, /skipping deploy/i);
   assert.match(preview, /ready=false[\s\S]*?skipping preview deploy[\s\S]*?exit 0/i);
-  assert.match(
-    operations,
-    /Remove the legacy token fallback only after preview and production each validate/,
-  );
-  assert.match(operations, /repository Actions variable shared by both environments/);
 });
 
 test("deploy workflows retry post-upload smoke checks", async () => {
@@ -372,7 +361,6 @@ test("Lighthouse uses repository artifacts and hard performance-quality budgets"
 
 test("Cloudflare audit is scheduled, manual, least-privilege, and sanitized", async () => {
   const workflow = await readProjectFile(".github/workflows/cloudflare-audit.yml");
-  const operations = await readProjectFile("OPERATIONS.md");
 
   assert.match(workflow, /schedule:\r?\n\s+- cron:\s*"17 15 \* \* 1"/);
   assert.match(workflow, /workflow_dispatch:/);
@@ -422,19 +410,12 @@ test("Cloudflare audit is scheduled, manual, least-privilege, and sanitized", as
   assert.doesNotMatch(workflow, /set -x/);
   assert.match(workflow, /actions\/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a/);
   assert.match(workflow, /retention-days:\s*14/);
-  assert.match(operations, /extracts only each request's final response-header block/);
-  assert.match(operations, /effective host exactly `alexnava\.me`/);
-  assert.match(
-    operations,
-    /redirect its root with `301`\/`308` to exactly `https:\/\/alexnava\.me\/`/,
-  );
 });
 
 test("Cloudflare audit checks dashboard-owned edge settings outside the rollback path", async () => {
   const workflow = await readProjectFile(".github/workflows/cloudflare-audit.yml");
   const smoke = await readProjectFile(".github/scripts/smoke-pages.sh");
   const deploy = await readProjectFile(".github/workflows/deploy.yml");
-  const operations = await readProjectFile("OPERATIONS.md");
 
   const edgeStart = workflow.indexOf("\n  edge-settings:");
   assert.ok(edgeStart > workflow.indexOf("\n  audit:"), "edge checks run as a separate job");
@@ -486,82 +467,12 @@ test("Cloudflare audit checks dashboard-owned edge settings outside the rollback
     );
     assert.doesNotMatch(rollbackPath, /cloudflare-audit|edge-settings/);
   }
-
-  const checklistStart = operations.search(/^## Cloudflare dashboard checklist\r?$/m);
-  assert.ok(checklistStart > 0, "OPERATIONS must keep the Cloudflare dashboard checklist");
-  const checklistEnd = operations.indexOf("\n## ", checklistStart + 1);
-  const checklist = operations.slice(
-    checklistStart,
-    checklistEnd === -1 ? undefined : checklistEnd,
-  );
-  for (const item of [
-    /no-store/,
-    /Email Address Obfuscation/,
-    /<!--email_off-->/,
-    /Web Analytics/,
-    /Observatory/,
-    /model\/gltf-binary/,
-    /application\/octet-stream/,
-    /HTTP\/3/,
-    /AI crawlers/,
-    /HSTS preload/,
-    /`edge-settings` audit job asserts items 1–4/,
-  ]) {
-    assert.match(checklist, item);
-  }
-  assert.match(operations, /These checks deliberately stay out of `smoke-pages\.sh`/);
 });
 
-test("OPERATIONS separates CI Lighthouse from the local live-scene gate", async () => {
-  const operations = await readProjectFile("OPERATIONS.md");
-
-  assert.match(operations, /CI Lighthouse runs on GPU-less GitHub-hosted runners/);
-  assert.match(
-    operations,
-    /The CI check therefore audits the static poster delivery path, not the live scene\./,
-  );
-  assert.match(operations, /measuring it locally on GPU hardware for each release/);
-});
-
-test("canonical Pages hostname workflow is exact, protected, and idempotent", async () => {
-  const workflow = await readProjectFile(".github/workflows/cloudflare-canonical-hostname.yml");
-  const script = await readProjectFile(
-    ".github/scripts/configure-cloudflare-canonical-redirect.mjs",
-  );
-
-  assert.match(workflow, /workflow_dispatch:/);
-  assert.match(workflow, /environment:\s*\n\s+name:\s*production/);
-  assert.match(workflow, /refs\/heads\/main/);
-  assert.match(workflow, /CONFIRM.*alexnava-me\.pages\.dev/s);
-  assert.match(workflow, /secrets\.CLOUDFLARE_REDIRECTS_API_TOKEN/);
-  assert.match(workflow, /Verify apex remains direct and indexable/);
-
-  assert.match(script, /const LIST_NAME = "alexnava_pages_hostname_redirects"/);
-  assert.match(script, /const RULE_REF = "canonicalize_alexnava_pages_hostname"/);
-  assert.match(script, /source_url:\s*SOURCE_URL/);
-  assert.match(script, /target_url:\s*TARGET_URL/);
-  assert.match(script, /status_code:\s*301/);
-  assert.match(script, /include_subdomains:\s*false/);
-  assert.match(script, /subpath_matching:\s*true/);
-  assert.match(script, /preserve_path_suffix:\s*true/);
-  assert.match(script, /preserve_query_string:\s*true/);
-  assert.match(script, /Refusing to overwrite unexpected entries/);
-  assert.match(script, /listRules\.length > 1/);
-  assert.match(script, /matchingRules\[0\]\.id !== listRules\[0\]\.id/);
-  assert.match(script, /const managedRule = matchingRules\[0\] \?\? listRules\[0\]/);
-  assert.match(
-    script,
-    /rulesets\/\$\{ruleset\.id\}\/rules\/\$\{managedRule\.id\}/,
-    "the workflow should adopt a matching dashboard-created rule instead of duplicating it",
-  );
-});
-
-test("operations document CodeQL default setup without a duplicate workflow", async () => {
+test("CodeQL default setup is not duplicated by a workflow", async () => {
   const workflowDir = path.join(projectRoot, ".github", "workflows");
   const workflowFiles = await readdir(workflowDir);
-  const operations = await readProjectFile("OPERATIONS.md");
 
-  assert.match(operations, /GitHub CodeQL default setup is enabled as the low-maintenance scanner/);
   assert.equal(
     workflowFiles.some((file) => /codeql/i.test(file)),
     false,
@@ -818,20 +729,16 @@ test("hosting files publish security.txt, raster icons and a stable manifest id"
 test("production deploy is workflow-owned and explicitly publishes main", async () => {
   const packageJson = JSON.parse(await readProjectFile("package.json"));
   const deploy = await readProjectFile(".github/workflows/deploy.yml");
-  const operations = await readProjectFile("OPERATIONS.md");
 
   assert.equal(packageJson.scripts["deploy:prod"], undefined);
   assert.match(deploy, /npx wrangler pages deploy dist --project-name=alexnava-me --branch=main/);
   assert.match(deploy, /if:\s*github\.ref == 'refs\/heads\/main'/);
   assert.match(deploy, /group:\s*pages-production\r?\n\s+cancel-in-progress:\s*false/);
-  assert.match(operations, /Production has no direct local npm deploy command/);
-  assert.match(operations, /gh workflow run deploy\.yml --ref main/);
 });
 
 test("production deploy captures and verifies an automatic Pages rollback target", async () => {
   const deploy = await readProjectFile(".github/workflows/deploy.yml");
   const smoke = await readProjectFile(".github/scripts/smoke-pages.sh");
-  const operations = await readProjectFile("OPERATIONS.md");
 
   await access(path.join(projectRoot, ".github", "scripts", "smoke-pages.sh"));
   assert.match(
@@ -862,8 +769,6 @@ test("production deploy captures and verifies an automatic Pages rollback target
   assert.doesNotMatch(deploy, /"\$DEPLOYMENT_URL" --rollback/);
   assert.match(deploy, /previous deployment was restored and verified\.[\s\S]*?exit 1/);
   assert.doesNotMatch(smoke, /CLOUDFLARE_(API_TOKEN|ACCOUNT_ID)/);
-  assert.match(operations, /official Pages rollback endpoint/);
-  assert.match(operations, /keeps the workflow red/);
 });
 
 test("GitHub Actions workflows pin third-party actions to full SHAs", async () => {

@@ -64,8 +64,6 @@ export async function validateOutputDirectory(projectRoot, directory) {
     "test",
     "node_modules",
     ".git",
-    ".agents",
-    ".codex",
     ".cache",
   ]) {
     if (within(path.join(root, protectedPath), output))
