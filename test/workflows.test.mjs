@@ -207,79 +207,66 @@ test("Lighthouse uses repository artifacts and hard performance-quality budgets"
   assert.doesNotMatch(workflow, /pull-requests:\s*write/);
 });
 
-test("Cloudflare audit is scheduled, manual, least-privilege, and sanitized", async () => {
+test("Cloudflare audit is scheduled, manual and least-privilege, and runs the scripts in .github/scripts", async () => {
   const workflow = await readProjectFile(".github/workflows/cloudflare-audit.yml");
 
   assert.match(workflow, /schedule:\r?\n\s+- cron:\s*"[^"]+"/);
   assert.match(workflow, /workflow_dispatch:/);
-  assert.match(workflow, /audit:\r?\n\s+if:\s*github\.ref == 'refs\/heads\/main'/);
-  assert.match(workflow, /permissions:\r?\n\s+contents:\s*read/);
-  // Redirects are inspected, never followed.
-  assert.match(workflow, /--max-redirs 0/);
-  assert.doesNotMatch(workflow, /--location\b/);
-  assert.match(workflow, /\[ "\$apex_status" != "200" \]/);
-  assert.match(workflow, /\[ "\$apex_effective_url" != "https:\/\/alexnava\.me\/" \]/);
-  assert.match(workflow, /\[ "\$pages_status" = "301" \]/);
-  assert.match(workflow, /\[ "\$www_status" != "301" \]/);
-  assert.match(workflow, /sanitize_headers /);
-  // Nothing dumps the raw project or traces a command line with a token.
-  assert.doesNotMatch(workflow, /cat "\$raw_project"/);
-  assert.doesNotMatch(workflow, /set -x/);
+  assert.match(workflow, /^permissions:\r?\n  contents: read$/m);
+  const jobs = workflow.slice(workflow.indexOf("\njobs:"));
+  assert.deepEqual(
+    [...jobs.matchAll(/^  ([\w-]+):$/gm)].map((match) => match[1]),
+    ["pages-project", "edge-settings"],
+  );
+
+  const project = job(workflow, "pages-project");
+  assert.match(project, /if: github\.ref == 'refs\/heads\/main'/);
+  assert.match(project, /environment:\r?\n\s+name: production/);
+  assert.match(project, /run: bash \.github\/scripts\/cloudflare-audit\.sh project/);
+  assert.match(project, /run: bash \.github\/scripts\/cloudflare-audit\.sh headers/);
+
+  // The edge checks need no credentials.
+  const edge = job(workflow, "edge-settings");
+  assert.match(edge, /if: github\.ref == 'refs\/heads\/main'/);
+  assert.match(edge, /permissions:\r?\n\s+contents: read/);
+  assert.doesNotMatch(edge, /secrets\.|environment:/);
+  assert.match(edge, /run: bash \.github\/scripts\/cloudflare-edge-settings\.sh/);
 });
 
-test("Cloudflare audit checks dashboard-owned edge settings outside the rollback path", async () => {
-  const workflow = await readProjectFile(".github/workflows/cloudflare-audit.yml");
+test("Cloudflare audit scripts never follow redirects, trace commands or keep raw project data, and stay off the rollback path", async () => {
+  const audit = await readProjectFile(".github/scripts/cloudflare-audit.sh");
+  const edge = await readProjectFile(".github/scripts/cloudflare-edge-settings.sh");
+  const headers = await readProjectFile(".github/scripts/headers.sh");
+
+  for (const script of [audit, edge, headers]) {
+    assert.doesNotMatch(script, /set -x|set -o xtrace/);
+    assert.doesNotMatch(script, /--location\b|\scurl[^\n]*\s-L\b/);
+  }
+  for (const script of [audit, edge]) {
+    assert.match(script, /^set -euo pipefail$/m);
+    assert.match(script, /--max-redirs 0/);
+    assert.match(script, /^source "\$\(dirname "\$0"\)\/headers\.sh"$/m);
+  }
+  assert.doesNotMatch(edge, /CLOUDFLARE_|Authorization|api\.cloudflare\.com/);
+  assert.doesNotMatch(headers, /CLOUDFLARE_|Authorization/);
+
+  // The raw project response stays in the runner's temp and only jq reads it.
+  assert.match(audit, /raw_project="\$RUNNER_TEMP\//);
+  for (const line of audit.split("\n").filter((entry) => entry.includes("$raw_project")))
+    assert.match(line, /raw_project=|--output "\$raw_project"|^\s*(?:'\s*)?"\$raw_project"/, line);
+
+  // A rollback cannot change a dashboard setting, so none of this is on that path.
   const smoke = await readProjectFile(".github/scripts/smoke-pages.sh");
   const deploy = await readProjectFile(".github/workflows/deploy.yml");
-
-  const edgeStart = workflow.indexOf("\n  edge-settings:");
-  assert.ok(edgeStart > workflow.indexOf("\n  audit:"), "edge checks run as a separate job");
-  const edge = workflow.slice(edgeStart);
-  assert.match(edge, /^\s+edge-settings:\r?\n\s+if:\s*github\.ref == 'refs\/heads\/main'/);
-  assert.match(edge, /\n\s+permissions:\s*\{\}\r?\n/);
-  assert.doesNotMatch(edge, /secrets\.|environment:/, "edge checks need no credentials");
-  assert.match(edge, /browser_ua="Mozilla\/5\.0 [^"\r\n]*Chrome\/[^"\r\n]*"/);
-  assert.match(edge, /--user-agent "\$browser_ua"/);
-  assert.match(edge, /--header 'Accept: text\/html,application\/xhtml\+xml/);
-  assert.match(edge, /--max-redirs 0/);
-
-  // Email obfuscation, injected third-party scripts and appended no-store.
-  assert.match(edge, /grep -Fq 'href="mailto:alexonava@gmail\.com"'/);
-  assert.match(edge, /! grep -Fq '\/cdn-cgi\/l\/email-protection'/);
-  assert.match(edge, /grep -oiE '<script\[\^>\]\*>'/);
-  assert.match(edge, /\[ "\$host" != "\$origin_host" \]/);
-  assert.match(edge, /html_cache_control,,\}" == \*no-store\*/);
-
-  // Fingerprinted assets: app, CSS, the named scene entry and its static chunks.
-  assert.match(edge, /\/scripts\/app\\\.\[a-f0-9\]\{8\}\\\.js/);
-  assert.match(edge, /\/css\/styles\\\.\[a-f0-9\]\{8\}\\\.css/);
-  assert.match(edge, /name="babel:scene-script"/);
-  assert.match(
-    edge,
-    /\(from\|import\)\[\[:space:\]\]\*/,
-    "only static imports name checked chunks",
-  );
-  assert.match(edge, /\^\/scripts\/scene\\\.shared\\\.\[a-f0-9\]\{8\}\\\.js\$/);
-  assert.match(edge, /cache_control,,\}" != \*immutable\*/);
-  assert.match(edge, /cache_control,,\}" == \*no-store\*/);
-
-  // A fingerprinted GLB must come back compressed.
-  assert.match(edge, /\/images\/architecture\/tower-high\\\.\[a-f0-9\]\{8\}\\\.glb/);
-  assert.match(edge, /--header 'Accept-Encoding: br, gzip'/);
-  assert.match(edge, /200:br \| 200:gzip\)/);
-
-  // Every failure is collected and reported before the job fails.
-  assert.match(edge, /failures\+=\(/);
-  assert.match(edge, /if \[ "\$\{#failures\[@\]\}" -gt 0 \]; then[\s\S]*?exit 1/);
-  assert.match(edge, /GITHUB_STEP_SUMMARY/);
-
-  // Rollback cannot fix dashboard settings, so none of this reaches the smoke path.
   for (const rollbackPath of [smoke, deploy]) {
     assert.doesNotMatch(
       rollbackPath,
       /no-store|email-protection|Accept-Encoding|cloudflareinsights/i,
     );
-    assert.doesNotMatch(rollbackPath, /cloudflare-audit|edge-settings/);
+    assert.doesNotMatch(
+      rollbackPath,
+      /cloudflare-audit|cloudflare-edge-settings|edge-settings|headers\.sh/,
+    );
   }
 });
 

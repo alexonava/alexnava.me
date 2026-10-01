@@ -68,9 +68,9 @@ The apex is a native custom domain on `alexnava-me`. An exact-host Cloudflare Bu
 
 ## Scheduled Cloudflare audit
 
-`Cloudflare Audit` runs every Monday at 15:17 UTC and on demand. Its `audit` job reads the Pages project with a read-only token, extracts only each request's final response-header block, and requires the apex to answer `200` with effective host exactly `alexnava.me`. The Pages hostname must either return `200` with noindex or redirect its root with `301`/`308` to exactly `https://alexnava.me/`. Sanitized reports are kept for 14 days.
+`Cloudflare Audit` runs every Monday at 15:17 UTC and on demand. Its `pages-project` job reads the Pages project with the repository's Cloudflare secrets and keeps only its name, branch and domains; it extracts only each request's final response-header block, and requires the apex to answer `200` with effective host exactly `alexnava.me`. The Pages hostname must either return `200` with noindex or redirect its root with `301`/`308` to exactly `https://alexnava.me/`. Sanitized reports are kept for 14 days.
 
-The `edge-settings` job uses no credentials and checks what dashboard settings can change after `_headers`: no email obfuscation, same-origin scripts, no `no-store`, immutable fingerprinted assets, and a compressed `tower-high` GLB. These checks deliberately stay out of `smoke-pages.sh`, because a rollback cannot fix a dashboard setting.
+The scripts live in `.github/scripts/` (`cloudflare-audit.sh`, `cloudflare-edge-settings.sh`, and the shared `headers.sh`). The `edge-settings` job uses no credentials and checks what dashboard settings can change after `_headers`: no email obfuscation, same-origin scripts, no `no-store`, immutable fingerprinted assets, and a compressed `tower-high` GLB. These checks deliberately stay out of `smoke-pages.sh`, because a rollback cannot fix a dashboard setting.
 
 ## Cloudflare dashboard checklist
 
