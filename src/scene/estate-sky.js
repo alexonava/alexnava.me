@@ -11,6 +11,74 @@ return mix(c,vec3(.045,.065,.13),smoothstep(.24,.9,a));
 }
 vec3 filmBand(float a) { return vec3(.03,.036,.048)*exp(-pow((a-.03)*6.0,2.0)); }`;
 
+// The film's cloud field on the sky shell, as GLSL statements, shared with the stars,
+// which dim behind the banks (starfield.js). They expect `vec3 direction` (the shell
+// point's direction from the world origin), `float altitude` (its y) and the
+// uNebulaLayers and uClouds uniforms in scope, and leave the bank density `d` (`da`
+// offset toward the sun), the weather terms and `cover`, the bank's opacity before the
+// sky's .94 mix. `time` names the drift clock uniform.
+export function cloudFieldGLSL(time = "uTime") {
+  return `float T=${time};
+float lift=max(altitude,0.0)+.24;
+vec2 b=direction.xz/lift*1.1;
+float bl=max(length(b),.001);
+float wa=T*.000436;
+vec2 p=b+2.98*(sin(wa)*vec2(.923,.385)+(1.-cos(wa))*vec2(-.385,.923));
+vec2 q=p+vec2(5.7,0.9);
+vec2 sunB=vec2(-1.17,-.20);
+vec2 toSun=(sunB-b)*inversesqrt(dot(sunB-b,sunB-b)+.09);
+vec2 L=toSun-b*inversesqrt(dot(b,b)+.01)*.7;
+L*=inversesqrt(dot(L,L)+.2);
+vec2 qa=q;
+vec2 NP[9]; float NV[9];
+NP[0]=q*.5+vec2(7.3,1.9);
+int nc=uNebulaLayers>2.5?9:(uNebulaLayers>1.5?7:5);
+for(int k=0;k<9;k++){
+if(k>=nc) break;
+if(k==1){
+qa=q+L*clamp(bl*.1,.1,.2);
+NP[1]=q; NP[2]=q*2.07+vec2(4.3,1.7); NP[3]=qa; NP[4]=qa*2.07+vec2(4.3,1.7);
+NP[5]=q*4.3-vec2(2.9,6.1); NP[6]=qa*4.3-vec2(2.9,6.1);
+NP[7]=p*9.1+vec2(1.3,.7); NP[8]=p*16.0-vec2(.2,.4);
+}
+if(k==0 && uNebulaLayers<1.5) continue;
+vec2 x=NP[k], xi=floor(x), xf=fract(x); xf=xf*xf*(3.-2.*xf);
+vec4 cx=xi.x+vec4(0.,1.,0.,1.), cy=xi.y+vec4(0.,0.,1.,1.);
+vec4 h1=fract(cx*.1031), h2=fract(cy*.1031), h3=h1;
+vec4 hd=h1*(h2+33.33)+h2*(h3+33.33)+h3*(h1+33.33);
+vec4 hv=fract((h1+h2+2.*hd)*(h3+hd));
+NV[k]=mix(mix(hv.x,hv.y,xf.x),mix(hv.z,hv.w,xf.x),xf.y);
+if(k==0){
+vec2 wm=(b-vec2(-1.1,.3))/1.1;
+vec2 wo=vec2(.8,-.5)*(NV[0]-.5)*.8*(1.-exp(-dot(wm,wm)));
+q+=wo; p+=wo;
+}
+}
+float n0=NV[1], n1=NV[2], a0=NV[3], a1=NV[4];
+float d=n0*.62+n1*.38, da=a0*.62+a1*.38;
+if(uNebulaLayers>1.5){
+float c2=NV[5]*2.-1., e2=NV[6]*2.-1.;
+float g2=sqrt(c2*c2+.04)+.1, h2=sqrt(e2*e2+.04)+.1;
+float fine=.5;
+if(uNebulaLayers>2.5) fine=NV[7]*.65+NV[8]*.35;
+d=n0*.5+n1*.27+g2*.16+fine*.07;
+da=a0*.5+a1*.27+h2*.16+fine*.07;
+}
+vec2 gapUV=(b-vec2(-1.5,0.0))/vec2(.46,.85);
+vec2 bankUV=(b-vec2(-.98,.42))/vec2(.42,.34);
+vec2 sunBankUV=(b-vec2(-1.12,-.50))/vec2(.32,.26);
+vec2 eaveUV=(b-vec2(-1.64,.76))/vec2(.40,.36);
+vec2 thinUV=(b-vec2(-1.07,-.28))/vec2(.30,.30);
+float thin=exp(-dot(thinUV,thinUV));
+float gapG=exp(-dot(gapUV,gapUV)), eaveG=exp(-dot(eaveUV,eaveUV));
+float shape=exp(-dot(bankUV,bankUV))*.24+exp(-dot(sunBankUV,sunBankUV))*.30-gapG*.19
+-eaveG*.17-thin*.06-smoothstep(.70,.84,altitude)*.22;
+d+=shape; da+=shape;
+float horizonFade=uNebulaLayers>1.5?smoothstep(0.,.045,altitude):smoothstep(-.03,.17,altitude);
+float w=uNebulaLayers>1.5?.034:mix(.05,.034,smoothstep(.45,.8,altitude));
+float cover=smoothstep(.548-w,.548+w,d)*horizonFade*uClouds;`;
+}
+
 // Density lives on the fixed world-space sky shell, never camera-facing cards:
 // no extra render pass or image request. Outside film the shell keeps its
 // baseline branch.
@@ -84,65 +152,7 @@ float altitude=direction.y;
 col=filmSky(altitude);
 if(uNebulaLayers>0.5) col+=nebula(normalize(vWorldPosition-cameraPosition));
 if(uClouds>0.001){
-float T=uTime;
-float lift=max(altitude,0.0)+.24;
-vec2 b=direction.xz/lift*1.1;
-float bl=max(length(b),.001);
-float wa=T*.000436;
-vec2 p=b+2.98*(sin(wa)*vec2(.923,.385)+(1.-cos(wa))*vec2(-.385,.923));
-vec2 q=p+vec2(5.7,0.9);
-vec2 sunB=vec2(-1.17,-.20);
-vec2 toSun=(sunB-b)*inversesqrt(dot(sunB-b,sunB-b)+.09);
-vec2 L=toSun-b*inversesqrt(dot(b,b)+.01)*.7;
-L*=inversesqrt(dot(L,L)+.2);
-vec2 qa=q;
-vec2 NP[9]; float NV[9];
-NP[0]=q*.5+vec2(7.3,1.9);
-int nc=uNebulaLayers>2.5?9:(uNebulaLayers>1.5?7:5);
-for(int k=0;k<9;k++){
-if(k>=nc) break;
-if(k==1){
-qa=q+L*clamp(bl*.1,.1,.2);
-NP[1]=q; NP[2]=q*2.07+vec2(4.3,1.7); NP[3]=qa; NP[4]=qa*2.07+vec2(4.3,1.7);
-NP[5]=q*4.3-vec2(2.9,6.1); NP[6]=qa*4.3-vec2(2.9,6.1);
-NP[7]=p*9.1+vec2(1.3,.7); NP[8]=p*16.0-vec2(.2,.4);
-}
-if(k==0 && uNebulaLayers<1.5) continue;
-vec2 x=NP[k], xi=floor(x), xf=fract(x); xf=xf*xf*(3.-2.*xf);
-vec4 cx=xi.x+vec4(0.,1.,0.,1.), cy=xi.y+vec4(0.,0.,1.,1.);
-vec4 h1=fract(cx*.1031), h2=fract(cy*.1031), h3=h1;
-vec4 hd=h1*(h2+33.33)+h2*(h3+33.33)+h3*(h1+33.33);
-vec4 hv=fract((h1+h2+2.*hd)*(h3+hd));
-NV[k]=mix(mix(hv.x,hv.y,xf.x),mix(hv.z,hv.w,xf.x),xf.y);
-if(k==0){
-vec2 wm=(b-vec2(-1.1,.3))/1.1;
-vec2 wo=vec2(.8,-.5)*(NV[0]-.5)*.8*(1.-exp(-dot(wm,wm)));
-q+=wo; p+=wo;
-}
-}
-float n0=NV[1], n1=NV[2], a0=NV[3], a1=NV[4];
-float d=n0*.62+n1*.38, da=a0*.62+a1*.38;
-if(uNebulaLayers>1.5){
-float c2=NV[5]*2.-1., e2=NV[6]*2.-1.;
-float g2=sqrt(c2*c2+.04)+.1, h2=sqrt(e2*e2+.04)+.1;
-float fine=.5;
-if(uNebulaLayers>2.5) fine=NV[7]*.65+NV[8]*.35;
-d=n0*.5+n1*.27+g2*.16+fine*.07;
-da=a0*.5+a1*.27+h2*.16+fine*.07;
-}
-vec2 gapUV=(b-vec2(-1.5,0.0))/vec2(.46,.85);
-vec2 bankUV=(b-vec2(-.98,.42))/vec2(.42,.34);
-vec2 sunBankUV=(b-vec2(-1.12,-.50))/vec2(.32,.26);
-vec2 eaveUV=(b-vec2(-1.64,.76))/vec2(.40,.36);
-vec2 thinUV=(b-vec2(-1.07,-.28))/vec2(.30,.30);
-float thin=exp(-dot(thinUV,thinUV));
-float gapG=exp(-dot(gapUV,gapUV)), eaveG=exp(-dot(eaveUV,eaveUV));
-float shape=exp(-dot(bankUV,bankUV))*.24+exp(-dot(sunBankUV,sunBankUV))*.30-gapG*.19
--eaveG*.17-thin*.06-smoothstep(.70,.84,altitude)*.22;
-d+=shape; da+=shape;
-float horizonFade=uNebulaLayers>1.5?smoothstep(0.,.045,altitude):smoothstep(-.03,.17,altitude);
-float w=uNebulaLayers>1.5?.034:mix(.05,.034,smoothstep(.45,.8,altitude));
-float cover=smoothstep(.548-w,.548+w,d)*horizonFade*uClouds;
+${cloudFieldGLSL("uTime")}
 float lit=clamp(.45+(d-da)*4.0,0.0,1.0);
 float thick=smoothstep(.52,.8,d);
 vec3 cloudCol=mix(vec3(.30,.32,.46),vec3(.62,.60,.72),smoothstep(0.,.55,lit));

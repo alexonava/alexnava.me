@@ -326,11 +326,13 @@ const ORBIT_SPEED = 0.06;
         profile: state.profile,
       });
       subsystemRegistry.register(solarBody);
+      // The stars borrow the shell's uniforms, so they hide behind its cloud banks.
       const starfield = createStarfield({
         parent: atmosphereSystem.root,
         camera,
         profile: state.profile,
-        nebulaLayers: skyShell.material.uniforms.uNebulaLayers,
+        sky: skyShell.material.uniforms,
+        skyRadius: WORLD.SKY_DOME_RADIUS,
       });
       subsystemRegistry.register(starfield);
       const environmentSystem = createSceneEnvironment({
