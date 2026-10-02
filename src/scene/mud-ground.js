@@ -1,5 +1,5 @@
 import { DEPTH_LAYER } from "./depth-layers.js";
-import { TERRAIN_HORIZON } from "./hill-silhouette.js";
+import { HORIZON_AIR, TERRAIN_HORIZON } from "./hill-silhouette.js";
 import { ESTATE, estatePoint } from "./estate-layout.js";
 // The estate's human scale for props and trees: one doorway height. The
 // timber lookout matches it: its cabin rises about 6.5 from gallery floor
@@ -499,13 +499,20 @@ ${SLATE_TEXT_GLSL}`
       }
     `,
         )
+        // In place of the scene fog the slate's far edge (and the plain past 230
+        // units of view depth) darkens toward the far plain's air, the shared
+        // slate lifted by HORIZON_AIR.ground, where the ranges' body below eye
+        // level meets it. It never lightens: slate already darker keeps its tone,
+        // so the edge cannot rise through the grade's cel step into a pale rim.
         .replace(
           "#include <fog_fragment>",
           `
       #ifdef USE_FOG
       float earthHorizon = max(smoothstep(155.0, 190.0, max(abs(vMudWorld.x),abs(vMudWorld.z))),
         smoothstep(230.0, 330.0, vFogDepth));
-      gl_FragColor.rgb = mix(gl_FragColor.rgb, ${TERRAIN_HORIZON}, earthHorizon);
+      vec3 earthAir = ${TERRAIN_HORIZON}*${glslNumber(HORIZON_AIR.ground)};
+      earthHorizon *= smoothstep(1.0, 1.15, dot(gl_FragColor.rgb, ${LUMA})/dot(earthAir, ${LUMA}));
+      gl_FragColor.rgb = mix(gl_FragColor.rgb, earthAir, earthHorizon);
       #endif
       gl_FragColor.a = ${DEPTH_LAYER.ground};
     `,
