@@ -200,6 +200,13 @@ test("renders keep an even display cadence near 60 Hz: desktops at or above it, 
   );
 });
 
+test("the phone text band shades only a name stacked above the subject", () => {
+  assert.match(
+    index,
+    /filmScene\.finishFrame\(camera, lookTarget, cinematic\.frame, viewport\.width < 900 && isStackedLayout\(viewport\.width, viewport\.height\) && cinematic\.shot\?\.arc === 2, \(cinematicArea\?\.top \|\| 200\) \/ viewport\.height\);/,
+  );
+});
+
 test("the authored scene's shadow map redraws only on reported changes", () => {
   assert.match(index, /rendering\.setStaticShadows\(true\);/);
   assert.match(index, /rendering\.invalidateShadows\(\); invalidateContent\(\); \}\);/);

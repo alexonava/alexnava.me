@@ -8,6 +8,7 @@ import {
   chooseCinematicAngle,
   cinematicSafeArea,
   createCinematicCamera,
+  isStackedLayout,
   layoutRect,
 } from "./cinematic.js";
 import { configureGroundShading, createSlateContacts, filmGroundSurface } from "./mud-ground.js";
@@ -938,12 +939,16 @@ const ORBIT_SPEED = 0.06;
           visibilityScale,
           bloom: rendering.postprocessPipeline.passes?.bloom?.enabled === true,
         });
+        // The phone band shades the frame's top behind a name stacked above
+        // the subject; beside it (landscape phones) it would dim the subject.
         if (filmActive)
           filmScene.finishFrame(
             camera,
             lookTarget,
             cinematic.frame,
-            viewport.width < 900 && cinematic.shot?.arc === 2,
+            viewport.width < 900 &&
+              isStackedLayout(viewport.width, viewport.height) &&
+              cinematic.shot?.arc === 2,
             (cinematicArea?.top || 200) / viewport.height,
           );
         if (qualityDebug)
