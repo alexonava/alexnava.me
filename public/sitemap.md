@@ -5,6 +5,7 @@
 ## Pages
 
 - [Home](https://alexnava.me/): Alex Nava’s personal website
+- [Home in Markdown](https://alexnava.me/index.md): The homepage as Markdown
 
 ## Machine-readable resources
 

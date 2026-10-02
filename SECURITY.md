@@ -2,10 +2,12 @@
 
 ## Reporting a vulnerability
 
-Please use GitHub's private vulnerability reporting for sensitive security issues in this repository.
+Report sensitive security issues privately, through either channel:
 
-- Open the repository's **Security** tab and use **Report a vulnerability**.
-- Include reproduction steps, impact, and any suggested mitigations if you have them.
+- **GitHub private vulnerability reporting.** Open the repository's **Security** tab and use **Report a vulnerability**. If the tab offers no such button, use email.
+- **Email.** Write to the `Contact` address in the site's [security.txt](https://alexnava.me/.well-known/security.txt) (`public/.well-known/security.txt` in this repository). Its `Preferred-Languages: en` names English as the preferred language.
+
+Include reproduction steps, impact, and any suggested mitigations if you have them.
 
 Do not open a public issue for an undisclosed vulnerability.
 
