@@ -610,7 +610,7 @@ test("the lazy ground shading extends only the slate's program, under its own ke
     );
     assert.match(
       fragment,
-      /reflectedLight\.indirectDiffuse \*= 1\.0-0\.95\*slateSky;\n#include <aomap_fragment>/,
+      /reflectedLight\.indirectDiffuse \*= vec3\(1\.14, 1\.19, 1\.25\);\nreflectedLight\.indirectDiffuse \*= 1\.0-0\.75\*slateSky;\n#include <aomap_fragment>/,
     );
     assert.match(fragment, /roughnessFactor = mix\(roughnessFactor, 0\.55, slateDamp\);/);
     // Only the authored maps' soil follows the cracks, with a crumbly grain.
@@ -620,7 +620,7 @@ test("the lazy ground shading extends only the slate's program, under its own ke
     );
     assert.equal(
       fragment.includes(
-        "*slatePuddle)*(1.-mix(0.45*slateSettle, 0.5*(1.-vSlateRoot.w), slateKeep)), mix(slateNA.z",
+        "*slatePuddle)*(1.-mix(0.15*slateSettle, 0.5*(1.-vSlateRoot.w), slateKeep)), mix(slateNA.z",
       ),
       authored,
     );
@@ -666,7 +666,7 @@ test("the lazy ground shading extends only the slate's program, under its own ke
     );
     assert.ok(
       fragment.indexOf("if (slateWater > 0.0) {") <
-        fragment.indexOf("reflectedLight.indirectDiffuse *= 1.0-0.95*slateSky;"),
+        fragment.indexOf("reflectedLight.indirectDiffuse *= 1.0-0.75*slateSky;"),
     );
     // No texture lookup, light or pass is added.
     assert.equal(count(fragment, "texture2D("), count(before.fragmentShader, "texture2D("));

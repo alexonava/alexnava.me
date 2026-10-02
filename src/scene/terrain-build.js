@@ -507,26 +507,31 @@ export const SLATE_SOIL = Object.freeze({
     crack: 1.4,
     bias: 0.45,
     dry: 0.7,
-    mix: 0.5,
-    flatten: 0.45,
+    mix: 0.15,
+    flatten: 0.15,
     depth: 0.6,
     tone: 0.92,
   }),
   grain: Object.freeze({ amount: 0.35, frequency: 9, near: Object.freeze([3, 10]) }),
   crease: 6,
   occlusion: Object.freeze({
-    indirect: 0.95,
-    fill: 0.92,
+    indirect: 0.75,
+    fill: 0.7,
     lantern: 0.2,
     key: 0.85,
     creaseSky: 0.9,
     creaseKey: 0.55,
     crack: 0.6,
+    // Only the near-root and cavity shade stays: the baked sky is remapped.
+    remap: Object.freeze([0.5, 0.95]),
   }),
+  // Shadowed ground keeps cool moonlit detail: the indirect light gains a cool
+  // tint and the cool fills a little strength, across the slate ground.
+  moonlit: Object.freeze({ indirect: Object.freeze([1.14, 1.19, 1.25]), fill: 1.2 }),
   damp: Object.freeze({
     crease: Object.freeze([0.1, 0.45]),
-    cavity: 0.7,
-    albedo: 0.16,
+    cavity: 0.35,
+    albedo: 0.08,
     roughness: 0.55,
     wet: 0.6,
   }),
@@ -580,6 +585,7 @@ float slateGate(vec3 L, vec3 C) {
 void RE_Direct_Slate(const in IncidentLight directLight, const in vec3 geometryPosition, const in vec3 geometryNormal, const in vec3 geometryViewDir, const in vec3 geometryClearcoatNormal, const in PhysicalMaterial material, inout ReflectedLight reflectedLight) {
   IncidentLight slateLight = directLight;
   slateLight.color *= slateGate(directLight.direction, directLight.color);
+  if (dot(directLight.direction, slateKeyView) <= .9995 && directLight.color.b >= .7*directLight.color.r) slateLight.color *= ${glsl(SLATE_SOIL.moonlit.fill)};
   RE_Direct_Physical(slateLight, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight);
 }
 #undef RE_Direct
@@ -630,6 +636,7 @@ if (vSlateShade.x + vSlateShade.y + vSlateRoot.z > 0.0) {
   float slateBreak = (slateDepth-.5)*${glsl(OCCLUSION.crack)};
   float slateS0 = max(vSlateShade.x, ${glsl(OCCLUSION.creaseSky)}*slateCrease), slateK0 = vSlateShade.y*${glsl(OCCLUSION.key)};
   slateSky = clamp(slateS0+slateBreak*slateS0*(1.0-slateS0)*2.0, 0.0, 1.0)*slateGuard;
+  slateSky = smoothstep(${glsl(OCCLUSION.remap[0])}, ${glsl(OCCLUSION.remap[1])}, slateSky);
   slateKeyOcc = clamp(max((slateK0+slateBreak*slateK0*(1.0-slateK0)*2.0)*clamp((slateContactGain-.6)*2.5, 0.0, 1.0), ${glsl(OCCLUSION.creaseKey)}*slateCrease), 0.0, 1.0)*slateGuard;
   float slateDamp = clamp(max(smoothstep(${glsl(DAMP.crease[0])}, ${glsl(DAMP.crease[1])}, slateCrease), ${glsl(DAMP.cavity)}*smoothstep(.3, .95, slateSky)), 0.0, 1.0);
   diffuseColor.rgb *= 1.0 - ${glsl(DAMP.albedo)}*slateDamp;
@@ -646,7 +653,7 @@ if (vSlateShade.x + vSlateShade.y + vSlateRoot.z > 0.0) {
     [
       "fragmentShader",
       "|#include <aomap_fragment>",
-      `reflectedLight.indirectDiffuse *= 1.0-${glsl(OCCLUSION.indirect)}*slateSky;\n`,
+      `reflectedLight.indirectDiffuse *= vec3(${SLATE_SOIL.moonlit.indirect.map(glsl).join(", ")});\nreflectedLight.indirectDiffuse *= 1.0-${glsl(OCCLUSION.indirect)}*slateSky;\n`,
     ],
   ];
   // The authored maps' tile blend and close relief.

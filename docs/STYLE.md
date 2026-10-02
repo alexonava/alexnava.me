@@ -64,12 +64,12 @@ The rules for visual, motion and typographic changes. Read them before changing 
 
 ## Ground, puddles and roots
 
-- Dark cracked slate: maps at 1024 on high and 512 on balanced on a 22-unit tile at 0.45 normal strength, blended so no repeat or seam shows, with a shared 512 detail map near the lens. It reads dark slate grey under the cool light.
+- Dark cracked slate: maps at 1024 on high and 512 on balanced on a 22-unit tile at 0.45 normal strength, blended so no repeat or seam shows, with a shared 512 detail map near the lens. It reads dark slate grey under the cool light, lifted 1.2× so shadowed ground keeps visible detail.
 - A calm wet sheen gathers in hollows, cracks and under the drip line; distant ground never lifts into a pale veil, and the tower footing, root plate and path stay dry.
 - Puddles are still, clear water with soft shores that follow the cracks. Their analytic mirror shows only the sky, the trunk and the lantern with its flame; the lantern's image stays at most about three quarters of the flame's peak and never slices into strips. The lantern puddle's highlight uses roughness 0.20 and specular gain 0.8 and keeps 22% of it; the others keep roughness 0.12 and gain 4. Drips 4 to 9 s apart ring a puddle and tilt only the mirror.
 - Keep the lantern clearing and front puddle at their heights and slopes: no mound, bowl, cutout or rim.
 - The tree sits on a level plate east of the trunk, never above its footing; root ends rest on low berms (slope at most about 1.2) and soil banks bury no root by more than 0.2. The south-east spur stays an open aerial root.
-- Settled soil fills the cracks around the roots; baked occlusion shades the cavity under the arches to about 0.30–0.48 of open ground and fades gradually, never a black hole, disc or ring. About fifty pieces of dark litter lie in the root crooks, clear of the lantern and puddles.
+- The cracked slate continues under the roots: settled soil only lightly softens it (15%). Baked occlusion shades just the near-root ground and the cavities under the arches, which stay grounded but never a black hole, disc or ring. Shadowed ground keeps a cool moonlit tint, and the grade's cel band fades out in the ground's deepest shade (luma below about .03–.08), so the tree's shadow has no hard edge. About fifty pieces of dark litter lie in the root crooks, clear of the lantern and puddles.
 
 ## Light shafts
 

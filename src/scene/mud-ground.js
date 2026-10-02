@@ -41,7 +41,7 @@ export const SLATE_WET = Object.freeze({
   crack: Object.freeze([0.07, 0.18]), // linear map luminance: dark cracks hold water
   crackWeight: 0.55,
   halo: Object.freeze([6.0, 16.0]), // distance from the tree: damp within, dry beyond
-  haloWeight: 0.45,
+  haloWeight: 0.225,
   rootDry: Object.freeze([ESTATE.tree.root, 5.7]), // the root plate stays dry
   roughness: 0.5,
   roughnessWeight: 0.75,
@@ -69,6 +69,7 @@ export const SLATE_TILING = Object.freeze({
   blendGain: 2.4,
   heightGain: 1.6,
   mean: Object.freeze([0.2293, 0.2258, 0.2366]),
+  lift: 1.2, // albedo multiplier on the whole slate ground
   macroCell: 53,
   detail: Object.freeze({
     ratio: 4.37, // base tiles per detail tile: 22 / 4.37 = 5.03 units
@@ -238,7 +239,7 @@ float slateNoise(vec2 p){vec2 i=floor(p),f=fract(p);f*=f*(3.-2.*f);return mix(mi
       float worn = max(earthContact,approach);
       float damp = smoothstep(.78,.98,earthBroad)*(1.0-earthContact);
       roughnessFactor = mix(max(.88,roughnessFactor), .78, damp);
-      diffuseColor.rgb *= .84 + .10*earthBroad - .04*earthContact - .035*damp + .035*approach;
+      diffuseColor.rgb *= ${glslNumber(SLATE_TILING.lift)}*(.84 + .10*earthBroad - .04*earthContact - .035*damp + .035*approach);
       roughnessFactor = mix(roughnessFactor,.94,approach*.65);
       ${
         useWet
