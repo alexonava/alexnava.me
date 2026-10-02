@@ -67,6 +67,7 @@ body {
 a,
 button {
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* The pale line cursor vanishes on paper dialogs and in contrast modes. */
@@ -102,11 +103,6 @@ body[data-panel-open="true"] {
 
 [hidden] {
   display: none !important;
-}
-
-a,
-button {
-  -webkit-tap-highlight-color: transparent;
 }
 
 button {
@@ -286,7 +282,9 @@ main:focus {
   position: relative;
   isolation: isolate;
   max-width: 720px;
-  animation: hero-reveal 720ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  /* Backwards fill only: once the rise ends, hero.js's inline scroll
+     transform applies instead of the last keyframe. */
+  animation: hero-reveal 720ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
 
 .hero-minimal::before {
@@ -367,16 +365,6 @@ main:focus {
   }
 }
 
-@keyframes hero-rise {
-  from {
-    transform: translateY(8px);
-  }
-
-  to {
-    transform: translateY(0);
-  }
-}
-
 .bottom-bar {
   position: fixed;
   right: 0;
@@ -385,7 +373,6 @@ main:focus {
   z-index: 10;
   display: flex;
   justify-content: flex-end;
-  gap: 24px;
   padding: 0 max(20px, calc(env(safe-area-inset-right) + 8px))
     max(30px, calc(22px + env(safe-area-inset-bottom)));
   pointer-events: none;
@@ -416,17 +403,11 @@ main:focus {
 /* The bottom bar's empty spacer (index.html): its box keeps the bar's height,
    whose top edge the directed camera frames above (cinematic.js). */
 .bottom-btn--icon {
-  position: relative;
   width: 52px;
   height: 52px;
   padding: 4px;
   box-sizing: border-box;
   display: grid;
-  place-items: center;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
 }
 
 /* About sits at the left inset. Its 44px target
@@ -447,7 +428,7 @@ main:focus {
   letter-spacing: 0.08em;
   text-shadow: var(--text-meta-shadow);
   pointer-events: none;
-  animation: hero-rise 820ms both;
+  animation: hero-reveal 820ms both;
   animation-delay: 560ms;
 }
 
@@ -973,7 +954,6 @@ body[data-panel-open]::after {
   }
 
   .bottom-bar {
-    gap: 18px;
     padding-right: max(16px, calc(env(safe-area-inset-right) + 8px));
   }
 
@@ -1039,11 +1019,6 @@ body[data-panel-open]::after {
   }
 
   .hero-minimal,
-  .hero h1,
-  .hero h1 .hero-word,
-  .hero-intro,
-  .scene-shell,
-  .site-shell,
   .site-footer {
     animation: none;
   }
@@ -1092,7 +1067,6 @@ body[data-panel-open]::after {
   }
 
   .bottom-bar {
-    gap: 16px;
     padding-right: max(16px, calc(env(safe-area-inset-right) + 8px));
   }
 
