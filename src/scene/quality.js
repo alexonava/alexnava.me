@@ -139,12 +139,13 @@
         skyHeightSegments: 12,
         circleSegments: 72,
       },
-      // Mobile and slow-CPU desktops land here. Shadows are a full extra
-      // render pass of every shadow-casting object each frame — big win on
-      // phones to skip it entirely rather than render a low-res shadow map.
+      // Mobile and slow-CPU desktops land here. The moon key's shadow map is
+      // half high's size: the scene's casters hold still, so it redraws only
+      // on a cut or a change (rendering.js setStaticShadows), and each frame
+      // pays only its lookups.
       shadows: {
-        enabled: false,
-        mapSize: 0,
+        enabled: true,
+        mapSize: 1024,
       },
       postprocessGrading: true,
       postprocessBloom: false,

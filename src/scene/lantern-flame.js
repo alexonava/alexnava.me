@@ -402,9 +402,10 @@ export function createLanternFlame({ root, camera }) {
     get time() {
       return time.value;
     },
-    // `bloom` names whether a bloom pass runs this frame. Without it, the
-    // renderer's shadow map stands in: quality.js gives shadows and bloom to
-    // the same tiers (high), and neither to balanced or low.
+    // `bloom` names whether a bloom pass runs this frame (index.js passes it
+    // every frame). Without it, the renderer's shadow map stands in, which
+    // holds on high (both) and low (neither) but not on balanced, whose
+    // shadow map runs without bloom.
     update({
       deltaSeconds = 0,
       reducedMotion = false,

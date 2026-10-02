@@ -11,16 +11,27 @@ import {
   Vector3,
   Box3,
   PointLight,
+  ShaderLib,
 } from "three";
 import {
   createTreeArchitecture,
   createCompleteTowerArchitecture,
   materialFor,
   applyFilmGrade,
+  BARK_TEXT_LIGHTS,
+  ENVIRONMENT_ROLES,
+  LANTERN_REACH,
+  WET_BARK,
 } from "../src/scene/architecture.js";
+import { ESTATE } from "../src/scene/estate-layout.js";
 import { smoothTreeNormals } from "../src/scene/tree-normals.js";
 import { DIRECTED_SHOTS, measureShot, fitShot } from "../src/scene/directed-shots.js";
-import { DOOR_HEIGHT as D } from "../src/scene/mud-ground.js";
+import {
+  DOOR_HEIGHT as D,
+  SLATE_TEXT_GUARD,
+  createSlateContacts,
+} from "../src/scene/mud-ground.js";
+import { goboHook } from "../src/scene/light-shafts.js";
 import { createPropScale } from "../src/scene/prop-scale.js";
 
 const asset = () => {
@@ -55,7 +66,11 @@ test("tree retains its anchor and height with a quality-scaled non-shadow lanter
   replacement.setFilmTreatment(true);
   replacement.applyQuality({ lighting: { practicalIntensityScale: 1 } });
   assert.equal(replacement.light.intensity, 4.8);
-  assert.equal(replacement.light.distance, 10.5);
+  // A candle's warm pool on the wet soil out to about six units (LANTERN_REACH).
+  assert.equal(replacement.light.distance, LANTERN_REACH.distance);
+  assert.equal(replacement.light.decay, LANTERN_REACH.decay);
+  assert.ok(LANTERN_REACH.distance >= 10.5 && LANTERN_REACH.distance <= 16);
+  assert.ok(LANTERN_REACH.decay >= 1 && LANTERN_REACH.decay <= 1.2);
   assert.equal(replacement.fillLight.intensity, 2.4 * 0.95);
   assert.equal(replacement.fillLight.color.getHex(), 0xc2d2ec);
   assert.equal(tree.material.emissiveIntensity, 0.04);
@@ -281,6 +296,40 @@ test("timber lookout reads its baked normal map at full strength with one unifor
   for (const resource of [geometry, material, material.map, material.normalMap]) resource.dispose();
 });
 
+test("the film's night sky lights the bark and the rocks from above and leaves the tower as it was", () => {
+  const source = sourceAsset(true),
+    tree = createTreeArchitecture({ asset: source, groundHeight: () => 0 }),
+    material = tree.root.getObjectByName("meshy-tree").material;
+  const shader = {
+    uniforms: {},
+    vertexShader: "#include <common>\n#include <begin_vertex>",
+    fragmentShader: "#include <common>\n#include <lights_fragment_maps>",
+  };
+  material.onBeforeCompile(shader);
+  // The light maps' own sums, reweighted by role right after Three makes them,
+  // only with an environment: without one (a failed capture) the ambient stays whole.
+  assert.match(
+    shader.fragmentShader,
+    /#include <lights_fragment_maps>\s*#ifdef USE_ENVMAP\s*irradiance \*= babelEnvironment\.x;\s*iblIrradiance \*= babelEnvironment\.y;\s*radiance \*= babelEnvironment\.z;\s*#endif/,
+  );
+  const environment = shader.uniforms.babelEnvironment.value;
+  assert.deepEqual(environment.toArray(), [1, 0, 0], "outside the film nothing changes");
+  tree.setFilmTreatment(true);
+  assert.deepEqual(environment.toArray(), [...ENVIRONMENT_ROLES.tree]);
+  tree.setFilmTreatment(false);
+  assert.deepEqual(environment.toArray(), [1, 0, 0]);
+  // The tower keeps its look: all of its ambient, none of the sky.
+  assert.deepEqual([...ENVIRONMENT_ROLES.tower], [1, 0, 0]);
+  for (const role of ["tree", "rock"]) {
+    const [ambient, sky, reflection] = ENVIRONMENT_ROLES[role];
+    assert.ok(ambient > 0.5 && ambient < 1, role);
+    assert.ok(sky > 1 && sky <= 2.5, role);
+    assert.ok(reflection >= 1 && reflection <= 2, role);
+  }
+  tree.dispose();
+  source.resources.forEach((resource) => resource.dispose());
+});
+
 test("the bare tree takes no procedural film extras and the rocks darken above their sunk base", () => {
   const source = sourceAsset(true),
     tree = createTreeArchitecture({ asset: source, groundHeight: () => 0 }),
@@ -288,6 +337,46 @@ test("the bare tree takes no procedural film extras and the rocks darken above t
   // The leafy asset's leaf lift tinted the bare tree's mossy upper trunk cyan;
   // its sub-pixel furrow only printed aliased lines.
   assert.doesNotMatch(treeShader.fragmentShader, /leafMask|furrow|fwidth/);
+  // After the rain the bark is wet at its base, under film only: smoother
+  // below the band (its 0.84-0.97 remap stays above it), with a faint grazing
+  // sheen where the lights end.
+  const [low, high] = WET_BARK.band.map((v) => v.toFixed(2));
+  assert.ok(
+    treeShader.fragmentShader.includes(
+      `float babelWet = babelFilm*(1.0-smoothstep(${low}, ${high}, babelLocal.y));\nroughnessFactor = mix(roughnessFactor, ${WET_BARK.roughness.toFixed(2)}, babelWet);`,
+    ),
+  );
+  assert.ok(WET_BARK.roughness >= 0.5 && WET_BARK.roughness < 0.84 && WET_BARK.sheen <= 0.15);
+  const lit = {
+    uniforms: {},
+    vertexShader: "#include <common>\n#include <begin_vertex>",
+    fragmentShader:
+      "#include <common>\n#include <roughnessmap_fragment>\n#include <map_fragment>\n#include <lights_fragment_end>",
+  };
+  tree.root.getObjectByName("meshy-tree").material.onBeforeCompile(lit);
+  assert.match(lit.fragmentShader, /reflectedLight\.indirectSpecular \+= fogColor\*\(babelWet\*/);
+  // With the film's night sky as the environment, the wet bark mirrors it
+  // instead of the fog-colour stand-in.
+  assert.match(
+    lit.fragmentShader,
+    /#if defined\( USE_FOG \) && !defined\( USE_ENVMAP \)\s*reflectedLight\.indirectSpecular \+= fogColor/,
+  );
+  // Where the roots and the trunk enter the soil the bark is muddy: darker and
+  // wetter, in film only, below the wet band.
+  const [mudLow, mudHigh] = WET_BARK.mud.map((v) => v.toFixed(2));
+  assert.ok(
+    treeShader.fragmentShader.includes(
+      `float babelMud = babelFilm*(1.0-smoothstep(${mudLow}, ${mudHigh}, babelLocal.y));\nroughnessFactor = mix(roughnessFactor, ${WET_BARK.mudRoughness.toFixed(2)}, babelMud);`,
+    ),
+  );
+  assert.ok(
+    treeShader.fragmentShader.includes(
+      `diffuseColor.rgb *= mix(vec3(1.0), vec3(${WET_BARK.mudTone.map((v) => v.toFixed(2)).join(", ")}), babelFilm*(1.0-smoothstep(${mudLow}, ${mudHigh}, babelLocal.y)));`,
+    ),
+  );
+  assert.ok(WET_BARK.mud[1] < WET_BARK.band[0], "the mud stays below the wet band's edge");
+  assert.ok(WET_BARK.mudTone.every((v) => v >= 0.5 && v < 1));
+  assert.ok(WET_BARK.mudRoughness < WET_BARK.roughness);
   tree.dispose();
   source.resources.forEach((resource) => resource.dispose());
   const stone = sourceAsset(false),
@@ -300,6 +389,9 @@ test("the bare tree takes no procedural film extras and the rocks darken above t
   // still show above the slate.
   assert.ok(Number(band[3]) >= 0.35 + 0.1, `band ends at ${band[3]}`);
   assert.ok(Number(band[1]) >= 0.4 && Number(band[1]) < 1);
+  // Wet from the rain: pale enough to read on the slate, smooth enough to glint.
+  assert.equal(rock.roughness, 0.5);
+  assert.ok(rock.color.getHex() === 0xc8c4bc);
   rock.dispose();
   stone.resources.forEach((resource) => resource.dispose());
 });
@@ -474,6 +566,73 @@ test("supplied tower and tree switch between source and moonlight grades without
   tree.dispose();
 });
 
+test("beside About the bark's highlights from the lantern and the crown's fill pass the ground's knee", () => {
+  const contacts = createSlateContacts(),
+    physical = () => ({
+      uniforms: {},
+      vertexShader: ShaderLib.physical.vertexShader,
+      fragmentShader: ShaderLib.physical.fragmentShader,
+    });
+  const tree = createTreeArchitecture({
+    asset: boxAsset(),
+    groundHeight: () => 0,
+    textGuard: contacts,
+  });
+  const material = tree.root.getObjectByName("meshy-tree").material,
+    shader = physical();
+  material.onBeforeCompile(shader);
+  // The ground's own uniform objects, so the boxes index.js measures reach the bark.
+  for (const name of ["slateText", "slateAbout", "slateAspect"])
+    assert.equal(shader.uniforms[name], contacts[name], name);
+  assert.ok(shader.fragmentShader.includes(SLATE_TEXT_GUARD));
+  assert.match(SLATE_TEXT_GUARD, /#define SLATE_TEXT_KNEE /);
+  assert.match(shader.vertexShader, /#include <project_vertex>\nvSlateClip = gl_Position;/);
+  assert.match(shader.fragmentShader, /varying vec4 vSlateClip;/);
+  // After all the lights, beside About only: the point lights' highlight
+  // taken again as RE_Direct_Physical takes it, and only the knee's cut removed.
+  assert.ok(
+    shader.fragmentShader.includes(`#include <lights_fragment_begin>\n${BARK_TEXT_LIGHTS}`),
+  );
+  assert.match(
+    BARK_TEXT_LIGHTS,
+    /^float babelBehind = slateBehind\(slateAbout, vSlateClip\.xy\/vSlateClip\.w\*\.5\+\.5\);\nif \(babelBehind > 0\.0\) \{/,
+  );
+  assert.match(
+    BARK_TEXT_LIGHTS,
+    /#pragma unroll_loop_start\s+for \( int i = 0; i < NUM_POINT_LIGHTS; i \+\+ \) \{\s+getPointLightInfo\(pointLights\[ i \], geometryPosition, babelLight\);\s+babelPoint \+= saturate\(dot\(geometryNormal, babelLight\.direction\)\)\*babelLight\.color\*BRDF_GGX\(babelLight\.direction, geometryViewDir, geometryNormal, material\);\s+\}\s+#pragma unroll_loop_end/,
+  );
+  assert.ok(
+    BARK_TEXT_LIGHTS.includes(
+      "reflectedLight.directSpecular -= babelPoint*(1.0-1.0/(1.0+babelBehind*dot(babelPoint, vec3(.2126, .7152, .0722))/SLATE_TEXT_KNEE));",
+    ),
+  );
+  assert.doesNotMatch(BARK_TEXT_LIGHTS, /slateText|directionalLights|spotLights/);
+  // The light shafts' gobo still lands after the light chunk, on its own hook.
+  const gobo = goboHook(material, {}, 0),
+    composed = physical();
+  gobo.install();
+  material.onBeforeCompile(composed);
+  assert.ok(composed.fragmentShader.includes("if(shaftGoboGain>0.){"));
+  assert.ok(composed.fragmentShader.includes(BARK_TEXT_LIGHTS));
+  gobo.restore();
+  // Without the ground's uniforms the bark is as it was, on its own program.
+  const plain = createTreeArchitecture({ asset: boxAsset(), groundHeight: () => 0 }),
+    plainMaterial = plain.root.getObjectByName("meshy-tree").material,
+    unguarded = physical();
+  plainMaterial.onBeforeCompile(unguarded);
+  assert.doesNotMatch(unguarded.fragmentShader + unguarded.vertexShader, /slateBehind|vSlateClip/);
+  assert.equal(unguarded.uniforms.slateText, undefined);
+  assert.notEqual(material.customProgramCacheKey(), plainMaterial.customProgramCacheKey());
+  // The tower and the rocks never take it.
+  const rock = materialFor(boxAsset(), 1, "rock", contacts),
+    rockShader = physical();
+  rock.onBeforeCompile(rockShader);
+  assert.doesNotMatch(rockShader.fragmentShader, /slateBehind/);
+  rock.dispose();
+  tree.dispose();
+  plain.dispose();
+});
+
 test("the lantern is an iron post lantern with glass, candle and flame, authored 2.48 units tall and fully owned", () => {
   const tree = createTreeArchitecture({ asset: boxAsset(), groundHeight: () => 0 });
   const lantern = tree.root.getObjectByName("tree-lantern");
@@ -555,6 +714,10 @@ test("independently loaded tree and lantern resize and restore without changing 
   c.setTree({ root: treeRoot, light, fillLight });
   near(size(tree).y, 4.2 * D);
   near(size(lantern).y, 0.3 * D);
+  // The lantern stands on the ground; the tree ESTATE.tree.sink into it, so
+  // its resting roots enter the soil (the ground root sits at -7).
+  near(new Box3().setFromObject(lantern).min.y, -7);
+  near(new Box3().setFromObject(tree).min.y, -7 - ESTATE.tree.sink);
   c.setTree(null);
   near(size(tree).y, 22);
   near(light.distance, 23);
@@ -584,7 +747,10 @@ test("decorative canopy bounds cannot change authored tree scale, footing or fit
     area = { left: 576, top: 80, width: 806, height: 820 },
     expectedFit = fitShot(expected, shot, area, 1440, 1000);
   near(expected.height, 4.2 * D);
+  // The tree stands ESTATE.tree.sink into the soil below its lowest vertex;
+  // its shots are framed from the soil line all the same.
   near(expected.footing, -5);
+  assert.equal(tree.userData.sunk, ESTATE.tree.sink);
   assert.ok(expectedFit.distance > 0 && expectedFit.distance < 200);
   const decoration = new Mesh(new BoxGeometry(100, 100, 100), new MeshStandardMaterial());
   decoration.userData.excludeFromShot = true;
@@ -607,6 +773,7 @@ test("decorative canopy bounds cannot change authored tree scale, footing or fit
     assert.deepEqual(fitShot(measured, shot, area, 1440, 1000), expectedFit);
   }
   controller.dispose();
+  assert.equal(tree.userData.sunk, undefined, "restored with the tree");
   assert.deepEqual(tree.position, original.position);
   assert.deepEqual(tree.scale, original.scale);
   assert.deepEqual(tree.geometry.attributes.position.array, original.vertices);

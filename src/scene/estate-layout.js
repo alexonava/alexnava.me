@@ -3,10 +3,21 @@
 // builders read them here, and nothing reads the tree or lantern geometry, so
 // replacement models only need these points. helpers.js restates the tower and
 // tree terraces (lift, flat and blend radii); a test holds the two equal.
-// clear: keep-out radius for scattered rocks. root: the dry root plate.
+// clear: keep-out radius for scattered rocks. root: the root contact's radius
+// (rock-scatter.js estateContacts()). sink: how far prop-scale.js sets the tree
+// into the soil below its lowest vertex (terrain-build.js TREE_SINK restates it).
 export const ESTATE = Object.freeze({
   tower: Object.freeze({ x: 0, z: 0, lift: 1, flat: 9, blend: 20, clear: 16 }),
-  tree: Object.freeze({ x: 55.1, z: 36.1, lift: 0.75, flat: 6, blend: 14, root: 3.2, clear: 8 }),
+  tree: Object.freeze({
+    x: 55.1,
+    z: 36.1,
+    lift: 0.75,
+    flat: 6,
+    blend: 14,
+    root: 3.2,
+    clear: 8,
+    sink: 0.45,
+  }),
   // The lantern stands `offset` units from the tree toward the tower.
   lantern: Object.freeze({ offset: 5, clear: 1.2 }),
   // The winding approach from the tower's entrance side to the lantern clearing.

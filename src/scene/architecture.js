@@ -15,6 +15,7 @@ import {
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { smoothTreeNormals } from "./tree-normals.js";
 import { ESTATE } from "./estate-layout.js";
+import { SLATE_TEXT_GUARD } from "./mud-ground.js";
 
 export const ARCHITECTURE = Object.freeze({
   treeHeight: 22,
@@ -42,12 +43,70 @@ const MATERIAL_PROFILES = Object.freeze({
     highlights: 0.12,
   },
   // The film's scattered Meshy rocks (rock-scatter.js): baked colour with its
-  // ambient occlusion and a tangent-space normal map made for scale 1. Their
-  // geometry is unit height, so materialFor darkens local y 0.1-0.5 toward the
-  // base: rock-build.js sinks each stone 0.12-0.35 of its height, so the band
-  // must reach above the slate for the stones to sit in it rather than on it.
-  rock: { color: 0xa8a49e, normalScale: 1, roughness: 0.9 },
+  // ambient occlusion and a tangent-space normal map made for scale 1, wet
+  // from the rain (roughness 0.5: the moon and the lantern glint on their
+  // edges). Their geometry is unit height, so materialFor darkens local y
+  // 0.1-0.5 toward the base: rock-build.js sinks each stone 0.12-0.35 of its
+  // height, so the band must reach above the slate for the stones to sit in it
+  // rather than on it.
+  rock: { color: 0xc8c4bc, normalScale: 1, roughness: 0.5 },
 });
+
+// The tree's bark is wet at its base after the rain (film only): below the
+// local height `band` (tree units: the tree is authored 22 tall, then
+// prop-scale.js scales it 1.26x and sinks it 0.45, so about the lowest 1.5
+// world units above the soil) its roughness eases to `roughness`, so it
+// mirrors the night sky (the film's environment) at grazing angles. Where the
+// roots and the trunk enter the soil (`mud`: local heights, about the lowest
+// 0.1-0.55 world units above it) the bark is muddy: darker (`mudTone`) and
+// wetter still (`mudRoughness`). Without the environment a faint grazing
+// sheen of the fog colour (`sheen`) stands in for the reflection.
+export const WET_BARK = Object.freeze({
+  band: Object.freeze([1.1, 1.9]),
+  roughness: 0.55,
+  sheen: 0.12,
+  mud: Object.freeze([0.45, 0.85]),
+  mudTone: Object.freeze([0.55, 0.52, 0.5]),
+  mudRoughness: 0.35,
+});
+
+// How each film material takes the night sky (night-environment.js) once the
+// film sets it as the scene's environment: [the share of the flat ambient and
+// hemisphere it keeps, the sky's diffuse light (times the sky as shown), its
+// reflection]. The tower keeps its look unchanged; the bark and the rocks are
+// lit from above by the sky and darker beneath, and the wet stones and bark
+// mirror it.
+export const ENVIRONMENT_ROLES = Object.freeze({
+  tower: Object.freeze([1, 0, 0]),
+  tree: Object.freeze([0.7, 1.8, 1.3]),
+  rock: Object.freeze([0.6, 2, 1.8]),
+});
+
+// Beside About the bark's highlights from the point lights (the lantern and
+// the crown's fill) pass the ground's luminance knee (mud-ground.js
+// SLATE_TEXT_GUARD: About's box, the same reach and knee): in tree-4 a root's
+// wet, muddy base caught the lantern in a warm glint beside the small, dim
+// label, the brightest pixel of its backdrop. The name and intro, large and
+// bright, keep the bark's highlights behind them (6.4:1 or better as they
+// are). After the lights (where the light shafts' gobo adds its own,
+// light-shafts.js) the point lights' highlight is taken again as
+// RE_Direct_Physical takes it, and only what the knee removes comes off; away
+// from About nothing runs. The moon's broad sheen stays as it is.
+export const BARK_TEXT_LIGHTS = `float babelBehind = slateBehind(slateAbout, vSlateClip.xy/vSlateClip.w*.5+.5);
+if (babelBehind > 0.0) {
+  vec3 babelPoint = vec3(0.0);
+  #if NUM_POINT_LIGHTS > 0
+  IncidentLight babelLight;
+  #pragma unroll_loop_start
+  for ( int i = 0; i < NUM_POINT_LIGHTS; i ++ ) {
+    getPointLightInfo(pointLights[ i ], geometryPosition, babelLight);
+    babelPoint += saturate(dot(geometryNormal, babelLight.direction))*babelLight.color*BRDF_GGX(babelLight.direction, geometryViewDir, geometryNormal, material);
+  }
+  #pragma unroll_loop_end
+  #endif
+  reflectedLight.directSpecular -= babelPoint*(1.0-1.0/(1.0+babelBehind*dot(babelPoint, vec3(.2126, .7152, .0722))/SLATE_TEXT_KNEE));
+}
+`;
 
 // Moonlight grade for the supplied maps, which carry baked daylight and
 // ambient occlusion: cooler, less saturated, compressed sunlit highlights and
@@ -73,14 +132,14 @@ const FILM_GRADES = Object.freeze({
     shadowTint: [0.1, 0.14, 0.18],
     lift: 0.1,
   },
-  // The pale Meshy stones sit darker than the timber, so they settle into the
-  // wet slate instead of glowing through the fog.
+  // The pale Meshy stones, wet from the rain, read clearly against the slate
+  // without glowing through the fog.
   rock: {
     saturation: 0.6,
-    highlights: 0.45,
+    highlights: 0.35,
     tint: [0.9, 0.95, 1.0],
     shadowTint: [0.08, 0.1, 0.13],
-    lift: 0.05,
+    lift: 0.1,
   },
 });
 export function applyFilmGrade(material, active) {
@@ -94,6 +153,9 @@ export function applyFilmGrade(material, active) {
   grade.uniforms.babelShadowTint.value.setRGB(...(film?.shadowTint ?? [0.19, 0.17, 0.15]));
   grade.uniforms.babelLift.value = film?.lift ?? 0;
   grade.uniforms.babelFilm.value = active ? 1 : 0;
+  grade.uniforms.babelEnvironment.value.set(
+    ...((active && ENVIRONMENT_ROLES[grade.role]) || [1, 0, 0]),
+  );
   return true;
 }
 
@@ -102,6 +164,9 @@ const COMPLETE_TOWER_HEIGHT = 39;
 const COMPLETE_TOWER_RADIUS_CAP = 20.4;
 
 const TREE_LANTERN_INTENSITY = 4.0;
+// The film lantern's reach: a candle's warm pool about its foot on the wet
+// soil, the near roots and stones, out to about six units.
+export const LANTERN_REACH = Object.freeze({ distance: 14, decay: 1 });
 const TREE_FILL_INTENSITY = 2.4;
 
 export function sourceMesh(asset) {
@@ -139,7 +204,9 @@ export function editableGeometry(source) {
   return geometry;
 }
 
-export function materialFor(asset, anisotropy, role) {
+// textGuard: the ground's createSlateContacts() uniforms, for the bark's guard
+// beside About (BARK_TEXT_LIGHTS); the tree takes it, the tower and the rocks never.
+export function materialFor(asset, anisotropy, role, textGuard = null) {
   const material = sourceMesh(asset).material.clone();
   const profile = MATERIAL_PROFILES[role] || {};
   try {
@@ -162,7 +229,11 @@ export function materialFor(asset, anisotropy, role) {
       "#include <roughnessmap_fragment>" +
       (directRoughness
         ? ""
-        : `\nroughnessFactor = mix(${roughnessFloor.toFixed(3)}, ${roughnessCeiling.toFixed(3)}, roughnessFactor);`);
+        : `\nroughnessFactor = mix(${roughnessFloor.toFixed(3)}, ${roughnessCeiling.toFixed(3)}, roughnessFactor);`) +
+      (role === "tree"
+        ? `\nfloat babelWet = babelFilm*(1.0-smoothstep(${WET_BARK.band[0].toFixed(2)}, ${WET_BARK.band[1].toFixed(2)}, babelLocal.y));\nroughnessFactor = mix(roughnessFactor, ${WET_BARK.roughness.toFixed(2)}, babelWet);\nfloat babelMud = babelFilm*(1.0-smoothstep(${WET_BARK.mud[0].toFixed(2)}, ${WET_BARK.mud[1].toFixed(2)}, babelLocal.y));\nroughnessFactor = mix(roughnessFactor, ${WET_BARK.mudRoughness.toFixed(2)}, babelMud);`
+        : "");
+    const guarded = role === "tree" && Boolean(textGuard);
     const uniforms = {
       babelSaturation: { value: profile.saturation ?? 1 },
       babelHighlights: { value: profile.highlights ?? 0 },
@@ -170,10 +241,11 @@ export function materialFor(asset, anisotropy, role) {
       babelShadowTint: { value: new Color(0.19, 0.17, 0.15) },
       babelLift: { value: 0 },
       babelFilm: { value: 0 },
+      babelEnvironment: { value: new Vector3(1, 0, 0) },
     };
     material.userData.babelGrade = { role, uniforms };
     material.customProgramCacheKey = () =>
-      `babel-estate-material-v5-${role}-${roughnessFloor}-${roughnessCeiling}-${directRoughness}`;
+      `babel-estate-material-v6-${role}-${roughnessFloor}-${roughnessCeiling}-${directRoughness}${guarded ? "-text" : ""}`;
     material.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, uniforms);
       shader.vertexShader = shader.vertexShader
@@ -189,7 +261,19 @@ export function materialFor(asset, anisotropy, role) {
           uniform vec3 babelShadowTint;
           uniform float babelLift;
           uniform float babelFilm;
+          uniform vec3 babelEnvironment;
           varying vec3 babelLocal;`,
+        )
+        // The role's share of the flat ambient and of the sky's light; without an
+        // environment (the film off, or a failed capture) the ambient stays whole.
+        .replace(
+          "#include <lights_fragment_maps>",
+          `#include <lights_fragment_maps>
+          #ifdef USE_ENVMAP
+          irradiance *= babelEnvironment.x;
+          iblIrradiance *= babelEnvironment.y;
+          radiance *= babelEnvironment.z;
+          #endif`,
         )
         .replace("#include <roughnessmap_fragment>", roughnessFragment)
         .replace(
@@ -200,8 +284,40 @@ export function materialFor(asset, anisotropy, role) {
           diffuseColor.rgb *= 1.0 - babelHighlights * smoothstep(0.30, 0.85, babelLuma);
           diffuseColor.rgb = mix(diffuseColor.rgb, babelShadowTint, babelLift * (1.0 - smoothstep(0.02, 0.22, babelLuma)));
           diffuseColor.rgb *= babelTint;
-          ${role === "rock" ? "diffuseColor.rgb *= mix(.45, 1., smoothstep(.1, .5, babelLocal.y));" : ""}`,
+          ${role === "rock" ? "diffuseColor.rgb *= mix(.62, 1., smoothstep(.1, .5, babelLocal.y));" : ""}
+          ${role === "tree" ? `diffuseColor.rgb *= mix(vec3(1.0), vec3(${WET_BARK.mudTone.map((v) => v.toFixed(2)).join(", ")}), babelFilm*(1.0-smoothstep(${WET_BARK.mud[0].toFixed(2)}, ${WET_BARK.mud[1].toFixed(2)}, babelLocal.y)));` : ""}`,
         );
+      // Without the environment, the wet bark's faint grazing sheen.
+      if (role === "tree")
+        shader.fragmentShader = shader.fragmentShader.replace(
+          "#include <lights_fragment_end>",
+          `#include <lights_fragment_end>
+          #if defined( USE_FOG ) && !defined( USE_ENVMAP )
+          reflectedLight.indirectSpecular += fogColor*(babelWet*${WET_BARK.sheen.toFixed(2)}*pow(1.0-saturate(dot(geometryNormal, geometryViewDir)), 3.0));
+          #endif`,
+        );
+      if (guarded) {
+        Object.assign(shader.uniforms, {
+          slateText: textGuard.slateText,
+          slateAbout: textGuard.slateAbout,
+          slateAspect: textGuard.slateAspect,
+        });
+        shader.vertexShader = shader.vertexShader
+          .replace("#include <common>", "#include <common>\nvarying vec4 vSlateClip;")
+          .replace(
+            "#include <project_vertex>",
+            "#include <project_vertex>\nvSlateClip = gl_Position;",
+          );
+        shader.fragmentShader = shader.fragmentShader
+          .replace(
+            "#include <common>",
+            () => `#include <common>\nvarying vec4 vSlateClip;\n${SLATE_TEXT_GUARD}`,
+          )
+          .replace(
+            "#include <lights_fragment_begin>",
+            () => `#include <lights_fragment_begin>\n${BARK_TEXT_LIGHTS}`,
+          );
+      }
     };
     if (material.normalScale && profile.normalScale) {
       material.normalScale.set(profile.normalScale, profile.normalScale);
@@ -303,7 +419,14 @@ export function createCompleteTowerArchitecture({
   }
 }
 
-export function createTreeArchitecture({ asset, groundHeight, anisotropy = 4, anchor = [58, 38] }) {
+// textGuard: the ground's createSlateContacts() uniforms (materialFor()).
+export function createTreeArchitecture({
+  asset,
+  groundHeight,
+  anisotropy = 4,
+  anchor = [58, 38],
+  textGuard = null,
+}) {
   const root = new Group();
   root.name = "supplied-meshy-tree";
   const [treeX, treeZ] = anchor;
@@ -341,7 +464,7 @@ export function createTreeArchitecture({ asset, groundHeight, anisotropy = 4, an
     geometry.translate(0, -bounds.min.y, 0);
     geometry.scale(scale, scale, scale);
     geometry.computeBoundingSphere();
-    const material = ownMaterial(materialFor(asset, anisotropy, "tree"));
+    const material = ownMaterial(materialFor(asset, anisotropy, "tree", textGuard));
     const tree = new Mesh(geometry, material);
     tree.name = "meshy-tree";
     tree.castShadow = tree.receiveShadow = true;
@@ -470,8 +593,8 @@ export function createTreeArchitecture({ asset, groundHeight, anisotropy = 4, an
       // In film its reach drops from the prop-scaled 37.8 to 24, so it models
       // the bark and the lantern cap without flooding the clearing.
       if (film) {
-        light.distance = 10.5;
-        light.decay = 1.2;
+        light.distance = LANTERN_REACH.distance;
+        light.decay = LANTERN_REACH.decay;
         fillLight.distance = 24;
       }
     }

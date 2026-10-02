@@ -162,8 +162,12 @@ export function measureShot(root, shot) {
   });
   const height = box.max.y - box.min.y;
   if (!Number.isFinite(height) || height <= 0) throw new Error("Empty cinematic subject");
-  const lo = box.min.y + height * shot.region[0];
-  const hi = box.min.y + height * shot.region[1];
+  // A subject set into the soil (prop-scale.js sinks the tree) is framed from
+  // the soil line, as before it sank: the camera keeps its height above the
+  // ground and the lantern its place in the frame; the buried toe never counts.
+  const footing = box.min.y + (subject.userData.sunk ?? 0);
+  const lo = footing + height * shot.region[0];
+  const hi = footing + height * shot.region[1];
   const center = box.getCenter(new Vector3());
   const yaw = (shot.azimuth * Math.PI) / 180;
   const right = new Vector3(-Math.sin(yaw), 0, Math.cos(yaw));
@@ -225,12 +229,12 @@ export function measureShot(root, shot) {
   });
   if (!points.length) throw new Error("Empty cinematic focal region");
   const target = region.getCenter(new Vector3());
-  target.y = box.min.y + height * (shot.targetHeight ?? (shot.region[0] + shot.region[1]) / 2);
+  target.y = footing + height * (shot.targetHeight ?? (shot.region[0] + shot.region[1]) / 2);
   return {
     points: new Float32Array(points),
     target,
-    cameraY: box.min.y + shot.height * height,
-    footing: box.min.y,
+    cameraY: footing + shot.height * height,
+    footing,
     groundAnchor: subject.getWorldPosition(new Vector3()),
     height,
     region,

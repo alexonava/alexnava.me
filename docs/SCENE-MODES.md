@@ -58,6 +58,7 @@ With `sceneDebug=1`, `window.BabelSite.sceneDebug` is a plain, read-only status 
 | `shaders`                                 | Warm-up per label (`scene`, `ground`, `tower`, `tree`, `lantern`): `ready` or `unwarmed`   |
 | `cinematic`                               | `shot`, `selected`, `angle` (1-based), `current`, `film` and `tour` (state and transition) |
 | `programs`, `renderFps`                   | Linked program count; frames drawn per second                                              |
+| `environment`                             | The film sky's capture: `status` (`none`, `ready` or `failed`) and `ms`, its time          |
 | `failure`                                 | `{ stage, message }` when the scene stopped for the title card                             |
 
 ## sceneLoader.state

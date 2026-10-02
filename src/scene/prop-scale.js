@@ -1,7 +1,10 @@
 import { Box3, Vector3 } from "three";
+import { ESTATE } from "./estate-layout.js";
 import { DOOR_HEIGHT as D } from "./mud-ground.js";
 // Sizes the authored tree and its post lantern to the estate's doorway scale
-// and seats both on the ground while active.
+// and seats both on the ground while active: the lantern on its foot, the
+// tree ESTATE.tree.sink below its lowest vertex (one toe), so its resting
+// roots enter the soil rather than hanging 0.3 above it.
 export function createPropScale({ groundRoot, groundHeight }) {
   let active = false,
     disposed = false,
@@ -24,11 +27,11 @@ export function createPropScale({ groundRoot, groundHeight }) {
     }
     return new Box3().setFromObject(o);
   }
-  function ground(o, ownGeometry = false) {
+  function ground(o, ownGeometry = false, sink = 0) {
     const b = bounds(o, ownGeometry),
       w = o.getWorldPosition(new Vector3()),
       local = groundRoot.worldToLocal(w.clone());
-    local.y = groundHeight(local.x, local.z);
+    local.y = groundHeight(local.x, local.z) - sink;
     const target = groundRoot.localToWorld(local);
     const bottom = o.parent.worldToLocal(new Vector3(w.x, b.min.y, w.z));
     const top = o.parent.worldToLocal(new Vector3(w.x, target.y, w.z));
@@ -54,7 +57,10 @@ export function createPropScale({ groundRoot, groundHeight }) {
       const size = bounds(t, true).getSize(new Vector3());
       // 4.2 doorways tall, the tree reads as a mature tree beside the tower.
       t.scale.multiplyScalar((4.2 * D) / size.y);
-      ground(t, true);
+      ground(t, true, ESTATE.tree.sink);
+      // directed-shots.js frames it from the soil line, not its buried toe.
+      t.userData.sunk = ESTATE.tree.sink;
+      treeUndo.push(() => delete t.userData.sunk);
     }
     if (l) {
       save(l, treeUndo);

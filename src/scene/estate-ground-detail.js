@@ -83,7 +83,7 @@ export function createEstateGroundDetail(groundHeight) {
   );
   const mesh = new Mesh(geometry, material);
   // terrain-build.js settleRoots() finds it by name and raises the blades that
-  // stand on the tree's root plate or a berm once the film terrain arrives.
+  // stand on the tree's knoll once the film terrain arrives.
   mesh.name = "estate-ground-growth";
   mesh.castShadow = mesh.receiveShadow = false;
   mesh.matrixAutoUpdate = false;

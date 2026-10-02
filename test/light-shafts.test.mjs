@@ -812,6 +812,11 @@ test("a quality step sets the march length from the tier it applies, ahead of re
   assert.equal(steps(), SHAFTS.star.steps[1], "the balanced march at once, not a step late");
   registry.applyQuality({ shadows: { enabled: true } });
   assert.equal(steps(), SHAFTS.star.steps[0]);
+  // A named tier decides it: balanced draws the moon's shadow too, and keeps its march.
+  registry.applyQuality({ tier: "balanced", shadows: { enabled: true } });
+  assert.equal(steps(), SHAFTS.star.steps[1]);
+  registry.applyQuality({ tier: "high", shadows: { enabled: true } });
+  assert.equal(steps(), SHAFTS.star.steps[0]);
   h.cinematic.shot = { name: "Threshold" };
   h.shafts.update({ deltaSeconds: 0 });
   assert.equal(steps(), SHAFTS.moon.steps[0], "each treatment keeps its own length");

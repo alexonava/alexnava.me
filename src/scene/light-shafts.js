@@ -429,9 +429,10 @@ if(s.r+s.g+s.b<=0.)discard;
 gl_FragColor=vec4(s*shaftLayer,0.);
 }`;
 // Added to the subject's lighting: the treatment's light, gated by the map (its
-// window and the subject's own occlusion) and, for the moon on high, by the
-// key light's real shadow map (four taps at a named level, so the branch
-// stays real). Wrapped diffuse and a rim catch let it land on the edges of
+// window and the subject's own occlusion) and, for the moon where its shadow
+// map is drawn (high and balanced), by the key light's real shadow map (four
+// taps at a named level, so the branch stays real). Wrapped diffuse and a rim
+// catch let it land on the edges of
 // backlit bark and timber; where the surface turns faster than a pixel (a
 // twig) the rim fades out and the wrapped light to 40%, so thin geometry takes
 // no isolated glints and a crown no frost. A soft shoulder
@@ -915,9 +916,10 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
       ? (task) => window.requestIdleCallback(task, { timeout: 120 })
       : (task) => window.setTimeout(task, 16);
   // One uniform object each, shared by every box and subject program. The
-  // march length follows the treatment on screen and the quality tier (high
-  // draws shadows; balanced does not).
-  let high = Boolean(rendering.renderer?.shadowMap?.enabled);
+  // march length follows the treatment on screen and the quality tier (the
+  // rendering's, or where none is named, high draws shadows).
+  const isHigh = (tier, shadows) => (tier ? tier === "high" : Boolean(shadows));
+  let high = isHigh(rendering.tier, rendering.renderer?.shadowMap?.enabled);
   const shared = {
     shaftShift: { value: new Vector3() },
     shaftDrift: { value: { x: 0, y: 0 } },
@@ -963,7 +965,7 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
   };
   // The moon's slot among shadow-casting directional lights, found by
   // reference when a subject links: Three sorts casters first, in scene
-  // order. Its shadow map is sampled only while it casts (high).
+  // order. Its shadow map is sampled only while it casts (high and balanced).
   function shadowIndex() {
     let index = -1,
       count = 0;
@@ -1761,9 +1763,8 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
       invalidate();
     },
     applyQuality(profile) {
-      // The march length follows the tier being applied (rendering, later in
-      // the same step, sets the shadow map to match).
-      high = Boolean(profile?.shadows?.enabled);
+      // The march length follows the tier being applied.
+      high = isHigh(profile?.tier, profile?.shadows?.enabled);
       gains();
       if (lit.length) rays(lit[0][1]);
       invalidate();
