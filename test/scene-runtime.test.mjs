@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   createDeferredQualityStep,
   createPanelHold,
+  createPixelRatioWatcher,
   createRefreshEstimator,
   createSceneFrameScheduler,
   createSceneResizeController,
@@ -697,6 +698,117 @@ test("resize controller coalesces bursts and skips unchanged viewport sizes", ()
   assert.equal(applied.length, 3, "DPR-only changes reapply renderer sizing");
   assert.deepEqual(applied[2], size);
   resize.dispose();
+});
+
+// A matchMedia stand-in: each query keeps its change listeners and can fire them.
+function createMediaHarness() {
+  const queries = [];
+  return {
+    queries,
+    matchMedia(media) {
+      const listeners = new Set();
+      const query = {
+        media,
+        get listeners() {
+          return listeners.size;
+        },
+        addEventListener(type, listener) {
+          assert.equal(type, "change");
+          listeners.add(listener);
+        },
+        removeEventListener(type, listener) {
+          if (type === "change") listeners.delete(listener);
+        },
+        fire() {
+          for (const listener of [...listeners]) listener({ matches: false, media });
+        },
+      };
+      queries.push(query);
+      return query;
+    },
+  };
+}
+
+test("the pixel-ratio watcher re-arms on each change and stops after dispose", () => {
+  const media = createMediaHarness();
+  const changes = [];
+  let ratio = 1;
+  const watcher = createPixelRatioWatcher({
+    getRatio: () => ratio,
+    matchMedia: media.matchMedia,
+    onChange: () => changes.push(ratio),
+  });
+  assert.equal(watcher.watching, true);
+  assert.deepEqual(
+    media.queries.map((query) => query.media),
+    ["(resolution: 1dppx)"],
+  );
+
+  ratio = 2;
+  media.queries[0].fire();
+  assert.deepEqual(changes, [2]);
+  assert.equal(media.queries[0].listeners, 0, "a spent query lets go");
+  assert.equal(media.queries[1].media, "(resolution: 2dppx)");
+  assert.equal(media.queries[1].listeners, 1, "it re-arms on the new ratio");
+
+  ratio = 1.25;
+  media.queries[1].fire();
+  assert.deepEqual(changes, [2, 1.25]);
+  assert.equal(media.queries[2].media, "(resolution: 1.25dppx)");
+
+  assert.equal(watcher.dispose(), true);
+  assert.equal(watcher.dispose(), false);
+  assert.equal(watcher.watching, false);
+  assert.equal(media.queries[2].listeners, 0);
+  media.queries[2].fire();
+  assert.deepEqual(changes, [2, 1.25], "nothing reports after dispose");
+  assert.equal(media.queries.length, 3, "nothing re-arms after dispose");
+});
+
+test("a pixel-ratio change alone reapplies the renderer size through the resize controller", () => {
+  const frames = createFrameHarness();
+  const media = createMediaHarness();
+  const applied = [];
+  let size = { width: 1600, height: 900, pixelRatio: 1 };
+  const resize = createSceneResizeController({
+    cancelFrame: frames.cancelFrame,
+    onResize: (next) => applied.push(next),
+    readSize: () => size,
+    requestFrame: frames.requestFrame,
+  });
+  const watcher = createPixelRatioWatcher({
+    getRatio: () => size.pixelRatio,
+    matchMedia: media.matchMedia,
+    onChange: () => resize.resize(),
+  });
+  resize.update({ force: true });
+  size = { ...size, pixelRatio: 2 };
+  media.queries.at(-1).fire();
+  frames.step(16);
+  assert.deepEqual(applied, [
+    { width: 1600, height: 900, pixelRatio: 1 },
+    { width: 1600, height: 900, pixelRatio: 2 },
+  ]);
+  watcher.dispose();
+  resize.dispose();
+});
+
+test("the pixel-ratio watcher idles without a usable matchMedia", () => {
+  const onChange = () => assert.fail("no change can be reported");
+  for (const matchMedia of [
+    null,
+    () => {
+      throw new Error("unsupported query");
+    },
+    () => null,
+    // Pre-2020 Safari: a MediaQueryList with only addListener.
+    () => ({ addListener() {}, removeListener() {} }),
+  ]) {
+    const watcher = createPixelRatioWatcher({ getRatio: () => 2, matchMedia, onChange });
+    assert.equal(watcher.watching, false);
+    assert.equal(watcher.dispose(), true);
+  }
+  assert.throws(() => createPixelRatioWatcher({ matchMedia: null }), TypeError);
 });
 
 test("stable scalar values do not request redundant buffer uploads", () => {

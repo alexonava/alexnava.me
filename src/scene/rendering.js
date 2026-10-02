@@ -69,6 +69,9 @@ export function createSceneRendering({
   renderer.outputColorSpace = SRGBColorSpace;
   renderer.toneMapping = NoToneMapping;
   renderer._useLegacyLights = true;
+  // PCF soft filters a fixed bilinear 3x3 texel footprint: in r160 it ignores
+  // shadow.radius (only PCFShadowMap and VSM read it), so the shadow map's texel
+  // size alone sets how soft an edge falls.
   renderer.shadowMap.type = PCFSoftShadowMap;
   container.appendChild(renderer.domElement);
 
@@ -120,7 +123,6 @@ export function createSceneRendering({
   sunLight.shadow.camera.far = world.SHADOW_CAMERA_FAR;
   sunLight.shadow.bias = -0.00045;
   sunLight.shadow.normalBias = 0.028;
-  sunLight.shadow.radius = 2.6;
   fillLight.position.set(...(lighting.fillPosition ?? world.FILL_LIGHT_POSITION));
   homeScene.add(ambientLight, hemisphereLight, sunLight, fillLight, sunLight.target);
   // The film's night sky as the scene's environment (night-environment.js),
@@ -147,7 +149,6 @@ export function createSceneRendering({
   let shadowKey = "";
   const baselineKeyColor = sunLight.color.clone();
   const baselineGroundColor = hemisphereLight.groundColor.clone();
-  const baselineShadowRadius = sunLight.shadow.radius;
   const baselineShadowBias = sunLight.shadow.bias,
     baselineNormalBias = sunLight.shadow.normalBias;
   let baselineKeyIntensity = sunLight.intensity;
@@ -168,9 +169,6 @@ export function createSceneRendering({
     hemisphereLight.groundColor.copy(baselineGroundColor);
     if (filmLighting) hemisphereLight.groundColor.setHex(0x37404a);
     ambientLight.intensity = baselineAmbientIntensity;
-    // Soft enough that close, low shots never show the tree canopy's cast
-    // shadow as a hard-edged dark pool on the ground.
-    sunLight.shadow.radius = filmLighting ? 6.5 : baselineShadowRadius;
     // Lit, relief-mapped earth shows acne bands at grazing moonlight; bias more.
     sunLight.shadow.bias = filmLighting ? -0.0016 : baselineShadowBias;
     sunLight.shadow.normalBias = filmLighting ? 0.09 : baselineNormalBias;
@@ -250,7 +248,7 @@ export function createSceneRendering({
       // outside its frustum takes the frustum edge's clamped depth-texture
       // value, a hard-edged dark wedge across the ground with no relation to
       // any real occluder. The wide floor costs some shadow resolution on the
-      // near subject (already softened by the film shadow radius).
+      // near subject, whose larger texels also soften the PCF edge.
       const extent = Math.max(32, Math.min(48, radius + 8));
       const key = [...target.toArray(), extent].join(",");
       if (key === shadowKey) return;

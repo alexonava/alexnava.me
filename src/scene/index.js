@@ -8,6 +8,7 @@ import {
   chooseCinematicAngle,
   cinematicSafeArea,
   createCinematicCamera,
+  isStackedLayout,
   layoutRect,
 } from "./cinematic.js";
 import { configureGroundShading, createSlateContacts, filmGroundSurface } from "./mud-ground.js";
@@ -38,6 +39,7 @@ import { createSceneRendering } from "./rendering.js";
 import {
   createDeferredQualityStep,
   createPanelHold,
+  createPixelRatioWatcher,
   createSceneFrameScheduler,
   createSceneResizeController,
   createShaderWarmup,
@@ -795,6 +797,11 @@ const ORBIT_SPEED = 0.06;
           ? new ResizeObserver(() => resizeController.resize())
           : null;
       containerResizeObserver?.observe(container);
+      // Moving the window to a display of another scale changes the pixel
+      // ratio alone, which fires neither of those.
+      const pixelRatioWatcher = createPixelRatioWatcher({
+        onChange: () => resizeController.resize(),
+      });
       // viewport.height is refreshed inside applySceneSize (the resize handler)
       // on every resize, so reading it inside the scroll handler avoids a
       // layout-flushing window.innerHeight access per scroll event.
@@ -932,12 +939,16 @@ const ORBIT_SPEED = 0.06;
           visibilityScale,
           bloom: rendering.postprocessPipeline.passes?.bloom?.enabled === true,
         });
+        // The phone band shades the frame's top behind a name stacked above
+        // the subject; beside it (landscape phones) it would dim the subject.
         if (filmActive)
           filmScene.finishFrame(
             camera,
             lookTarget,
             cinematic.frame,
-            viewport.width < 900 && cinematic.shot?.arc === 2,
+            viewport.width < 900 &&
+              isStackedLayout(viewport.width, viewport.height) &&
+              cinematic.shot?.arc === 2,
             (cinematicArea?.top || 200) / viewport.height,
           );
         if (qualityDebug)
@@ -1062,6 +1073,7 @@ const ORBIT_SPEED = 0.06;
         panelObserver?.disconnect();
         panelHold.dispose();
         visitorHold.dispose();
+        pixelRatioWatcher.dispose();
         containerResizeObserver?.disconnect();
         resizeController.dispose();
         frameScheduler.dispose();
