@@ -128,16 +128,20 @@ main:focus {
 
 .skip-link {
   position: fixed;
-  top: 14px;
-  left: 14px;
+  top: max(14px, env(safe-area-inset-top));
+  left: max(14px, env(safe-area-inset-left));
   z-index: 80;
-  padding: 11px 15px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 15px;
   border: 1px solid var(--border-soft);
   border-radius: 999px;
   background: rgba(14, 18, 34, 0.88);
   color: var(--text-primary);
   text-decoration: none;
-  transform: translateY(-180%);
+  /* Its own height plus its top offset, so it never peeks below a notch. */
+  transform: translateY(calc(-100% - max(14px, env(safe-area-inset-top)) - 8px));
   transition: transform 180ms ease;
 }
 
@@ -148,6 +152,20 @@ main:focus {
 :focus-visible {
   outline: 3px solid var(--ui-focus);
   outline-offset: 4px;
+}
+
+/* Selected text takes a translucent wash of the sun's amber, never system
+   blue; warm white on the night, dark ink on paper. */
+::selection {
+  background: rgba(223, 184, 130, 0.32);
+  color: #f7f1ea;
+}
+
+.panel-parchment ::selection,
+.panel-estate ::selection,
+.not-found .story-shell ::selection {
+  background: rgba(223, 184, 130, 0.45);
+  color: #211c16;
 }
 
 /* Under the canvas, so only the title card shows it: a faint cool haze where
@@ -384,8 +402,10 @@ main:focus {
   z-index: -1;
   content: "";
   pointer-events: none;
+  /* Centred on the bottom edge, its vertical radius is the box's height, so it
+     is transparent along the top edge: no straight line across the ground. */
   background: radial-gradient(
-    ellipse 34% 120% at 50% 100%,
+    ellipse 34% 100% at 50% 100%,
     rgba(7, 10, 18, 0.56) 0%,
     rgba(7, 10, 18, 0.34) 54%,
     rgba(7, 10, 18, 0) 100%
@@ -394,10 +414,7 @@ main:focus {
 
 .bottom-btn {
   pointer-events: auto;
-  transition:
-    transform 180ms ease,
-    border-color 180ms ease,
-    box-shadow 180ms ease;
+  transition: background-color 180ms ease;
 }
 
 /* The bottom bar's empty spacer (index.html): its box keeps the bar's height,
@@ -471,6 +488,11 @@ main:focus {
     text-decoration-color: rgba(229, 228, 223, 0.5);
     text-underline-offset: 3px;
   }
+}
+
+.site-footer__link:active {
+  color: var(--text);
+  text-decoration-color: currentColor;
 }
 
 /* The title card's loading line (src/ui/scene-loader.js): shown only while the
@@ -631,7 +653,8 @@ body[data-panel-open]::after {
     max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-gutter: stable;
+  /* Both edges, so a classic scrollbar's gutter never pushes the paper off centre. */
+  scrollbar-gutter: stable both-edges;
   -webkit-overflow-scrolling: touch;
   background: transparent;
   opacity: 0;
@@ -759,6 +782,7 @@ body[data-panel-open]::after {
   font-weight: 500;
   line-height: 1;
   letter-spacing: -0.015em;
+  text-wrap: balance;
 }
 
 .panel-parchment__sheet .panel-body {
@@ -766,21 +790,37 @@ body[data-panel-open]::after {
   margin: 24px 0 0;
   color: #211c16;
   font: 400 17px/1.65 var(--font-body);
+  text-wrap: pretty;
 }
 
 #panel-contact .panel-parchment__sheet .panel-body {
   font-size: clamp(17px, 1.55vw, 20px);
 }
 
-/* The address is the Contact paper's one action. */
+/* The address is the Contact paper's one action. Its 8px block padding makes
+   a 44px target (1.2 x 24px + 16px at the smallest size); the bottom margin
+   takes the padding back, so the glyphs and the line box stay where they were. */
 #panel-contact .panel-body a {
   display: inline-block;
-  margin-top: 8px;
+  margin-block: 0 -8px;
+  padding-block: 8px;
   color: #211c16;
   font: 500 clamp(24px, 2.4vw, 30px) / 1.2 var(--font-display);
   text-decoration-color: rgba(94, 76, 52, 0.48);
   text-decoration-thickness: 1px;
   text-underline-offset: 0.18em;
+  transition: text-decoration-color 160ms ease;
+}
+
+@media (hover: hover) {
+  #panel-contact .panel-body a:hover {
+    text-decoration-color: currentColor;
+  }
+}
+
+#panel-contact .panel-body a:active {
+  text-decoration-color: currentColor;
+  text-decoration-thickness: 2px;
 }
 
 /* 30px clears the 24px deckled edge so Back sits wholly on the paper. */
@@ -883,11 +923,25 @@ body[data-panel-open]::after {
   outline-color: #59472f;
 }
 
-.panel-close:hover,
 .panel-close:focus-visible {
   background: rgba(88, 72, 50, 0.16);
   color: #241910;
   transform: translateY(-1px);
+}
+
+/* Touch browsers keep :hover after a tap; the lift follows real hover only. */
+@media (hover: hover) {
+  .panel-close:hover {
+    background: rgba(88, 72, 50, 0.16);
+    color: #241910;
+    transform: translateY(-1px);
+  }
+}
+
+.panel-close:active {
+  background: rgba(88, 72, 50, 0.24);
+  color: #241910;
+  transform: none;
 }
 
 @media (max-width: 820px) {
@@ -993,8 +1047,8 @@ body[data-panel-open]::after {
   }
 }
 
+/* The hero's scrim stays: it is what keeps the name legible over the scene. */
 @media (prefers-reduced-transparency: reduce) {
-  .hero-minimal::before,
   .bottom-bar::before {
     display: none;
   }
@@ -1014,6 +1068,8 @@ body[data-panel-open]::after {
   .panel-close,
   .panel-surface,
   .site-footer__link,
+  #panel-contact .panel-body a,
+  .not-found .back-link,
   body::after {
     transition: none;
   }
@@ -1300,7 +1356,7 @@ body[data-panel-open]::after {
   }
 }
 .estate-destination:focus-visible {
-  outline: 2px solid #59452b;
+  outline: 2px solid #59472f;
   outline-offset: 3px;
 }
 .panel-estate .panel-close {
@@ -1312,11 +1368,17 @@ body[data-panel-open]::after {
   border-color: rgba(81, 61, 35, 0.22);
   background: rgba(242, 230, 203, 0.58);
 }
+.panel-estate .panel-close:active {
+  background: rgba(222, 204, 168, 0.82);
+}
+/* The paper dialogs' focus ink; 2px keeps the ring off the artwork. */
 .panel-estate .panel-close:focus-visible {
-  outline: 2px solid #59452b;
+  outline: 2px solid #59472f;
   outline-offset: 3px;
 }
-@media (max-width: 600px) {
+/* Portrait phones take the 2:3 map; small landscape phones keep the 3:2 map
+   under its short-viewport cap, which a 2:3 map would overflow. */
+@media (max-width: 600px) and (orientation: portrait) {
   .panel-estate {
     width: min(100%, 440px);
   }
@@ -1392,12 +1454,32 @@ body[data-panel-open]::after {
 [data-scene-fallback][hidden] {
   display: none;
 }
+/* The no-JavaScript About starts below the fold (the desktop hero ends 90px
+   above it), so the title card shows alone until the visitor scrolls. */
 .scene-fallback-content {
   max-width: 720px;
-  margin: 0 auto;
+  margin: 90px auto 0;
   padding: 48px 24px 160px;
 }
+.scene-fallback-content :is(h2, h3) {
+  margin: 0;
+  color: #f7f1ea;
+  font-family: var(--font-display);
+  font-weight: 500;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
+.scene-fallback-content h2 {
+  font-size: 40px;
+}
+.scene-fallback-content h3 {
+  margin-bottom: 4px;
+  font-size: 28px;
+}
 .scene-fallback-content a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   color: var(--parchment-200);
   text-decoration-color: rgba(198, 208, 202, 0.48);
 }
@@ -1425,6 +1507,8 @@ body[data-panel-open]::after {
   margin-inline: auto;
   padding: clamp(56px, 8vw, 72px) clamp(44px, 8vw, 72px);
   color: #211c16;
+  /* The pale line cursor vanishes on the paper, as on the dialogs. */
+  cursor: auto;
   filter: drop-shadow(0 22px 30px rgba(3, 4, 8, 0.4)) drop-shadow(0 6px 12px rgba(3, 4, 8, 0.26));
 }
 
@@ -1482,6 +1566,7 @@ body[data-panel-open]::after {
   color: #393229;
   font-size: 18px;
   line-height: 1.72;
+  text-wrap: pretty;
 }
 
 .error-cta {
@@ -1501,12 +1586,21 @@ body[data-panel-open]::after {
   text-decoration: none;
   transition:
     background 180ms ease,
-    border-color 180ms ease;
+    border-color 180ms ease,
+    color 180ms ease;
 }
 
-.not-found .back-link:hover {
-  border-color: rgba(64, 47, 30, 0.34);
-  background: rgba(88, 72, 50, 0.16);
+@media (hover: hover) {
+  .not-found .back-link:hover {
+    border-color: rgba(64, 47, 30, 0.34);
+    background: rgba(88, 72, 50, 0.16);
+    color: #241910;
+  }
+}
+
+.not-found .back-link:active {
+  border-color: rgba(64, 47, 30, 0.42);
+  background: rgba(88, 72, 50, 0.24);
   color: #241910;
 }
 

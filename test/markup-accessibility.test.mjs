@@ -446,6 +446,30 @@ test("the hero backdrop fades to transparent before every edge of its box", asyn
   assert.doesNotMatch(rule, /mask-image/, "no mask edge of its own");
 });
 
+test("the bottom scrim fades to transparent before the top and sides of its box", async () => {
+  // Centred on the box's bottom edge, an ellipse whose vertical radius is at
+  // most the box's height, and whose horizontal radius clears both sides,
+  // reaches its last, transparent stop inside the box: no straight edge shows
+  // across the ground where the box ends.
+  const styles = await readStyles();
+  const gradient = cssRule(styles, ".bottom-bar::before").match(
+    /radial-gradient\(([\s\S]*?)\);/,
+  )?.[1];
+  assert.ok(gradient, "the scrim is a radial gradient");
+  const [rx, ry, cx, cy] = gradient
+    .match(/^\s*ellipse ([\d.]+)% ([\d.]+)% at ([\d.]+)% ([\d.]+)%\s*,/)
+    .slice(1)
+    .map(Number);
+  assert.equal(cy, 100, "centred on the bottom edge");
+  assert.ok(ry <= cy, `the vertical radius (${ry}%) ends at or before the top edge`);
+  assert.ok(rx <= Math.min(cx, 100 - cx), `the horizontal radius (${rx}%) clears both sides`);
+  const stops = [...gradient.matchAll(/rgba\(7, 10, 18, ([\d.]+)\) ([\d.]+)%/g)].map(
+    ([, alpha, at]) => [+alpha, +at],
+  );
+  assert.equal(stops[0].join(), "0.56,0", "the same darkness at the centre");
+  assert.equal(stops.at(-1).join(), "0,100", "fully transparent at the ellipse's edge");
+});
+
 test("main clips the hero backdrop's horizontal overflow so phones keep a device-width layout", async () => {
   // The backdrop's box reaches about 196px past the hero's right edge. On a
   // 390px phone that widened the mobile layout viewport to ~495px and pushed
@@ -518,6 +542,60 @@ test("no-JavaScript fallback links stay legible on the night", async () => {
   assert.ok(contrast(color(styles, ink), color(styles, "var(--night-900)")) >= 4.5, ink);
 });
 
+test("the no-JavaScript About starts below the fold with display headings and 44px links", async () => {
+  const styles = await readStyles();
+  // The desktop hero ends 90px above the fold; the fallback clears it.
+  const heroShortfall = Number(
+    cssRule(styles, ".hero").match(/min-height:\s*calc\(100svh - (\d+)px\);/)[1],
+  );
+  const fallback = cssRule(styles, ".scene-fallback-content");
+  const [marginTop] = fallback
+    .match(/margin:\s*(\d+)px auto 0;/)
+    .slice(1)
+    .map(Number);
+  assert.ok(marginTop >= heroShortfall, `${marginTop}px clears the hero's ${heroShortfall}px`);
+  const headings = cssRule(styles, ".scene-fallback-content :is(h2, h3)");
+  assert.match(headings, /font-family:\s*var\(--font-display\);/);
+  assert.match(headings, /font-weight:\s*500;/);
+  assert.ok(contrast(headings.match(/color:\s*(#[0-9a-f]{6});/i)[1], "#0c1016") >= 4.5);
+  const link = cssRule(styles, ".scene-fallback-content a");
+  assert.match(link, /display:\s*inline-flex;/);
+  assert.match(link, /align-items:\s*center;/);
+  assert.match(link, /min-height:\s*44px;/);
+});
+
+test("the skip link clears the notch, is a 44px target and hides wholly above any inset", async () => {
+  const styles = await readStyles();
+  const skip = cssRule(styles, ".skip-link");
+  const top = skip.match(/(?:^|[;\s])top:\s*([^;]+);/)[1];
+  assert.equal(top, "max(14px, env(safe-area-inset-top))");
+  assert.match(skip, /(?:^|[;\s])left:\s*max\(14px, env\(safe-area-inset-left\)\);/);
+  assert.match(skip, /display:\s*inline-flex;/);
+  assert.match(skip, /min-height:\s*44px;/);
+  // Hidden, it moves up by its own height and its whole top offset.
+  const hidden = skip.match(/transform:\s*translateY\(calc\(-100% - (.+) - (\d+)px\)\);/);
+  assert.ok(hidden, "the hidden transform names its height and offset");
+  assert.equal(hidden[1], top);
+  assert.ok(Number(hidden[2]) > 0);
+  assert.match(cssRule(styles, ".skip-link:focus"), /transform:\s*translateY\(0\);/);
+});
+
+test("reduced transparency keeps the hero's text scrim", async () => {
+  const styles = await readStyles();
+  const transparency = mediaBlock(styles, "(prefers-reduced-transparency: reduce)");
+  assert.match(transparency, /\.bottom-bar::before\s*\{\s*display:\s*none;/);
+  assert.doesNotMatch(transparency, /\.hero-minimal::before/, "the name keeps its scrim");
+});
+
+test("paper copy wraps without orphans and dialogs centre beside a classic scrollbar", async () => {
+  const styles = await readStyles();
+  assert.match(cssRule(styles, ".panel-parchment__sheet h2"), /text-wrap:\s*balance;/);
+  for (const selector of [".panel-parchment__sheet .panel-body", ".not-found .story-text"])
+    assert.match(cssRule(styles, selector), /text-wrap:\s*pretty;/, selector);
+  const overlay = styles.match(/\n\.panel-overlay\s*\{[^}]*position:\s*fixed;[^}]*\}/)[0];
+  assert.match(overlay, /scrollbar-gutter:\s*stable both-edges;/);
+});
+
 test("the 3:2 estate map fits short laptop and landscape-phone viewports", async () => {
   const styles = flatCss(await readStyles());
   assert.match(
@@ -536,6 +614,13 @@ test("the 3:2 estate map fits short laptop and landscape-phone viewports", async
   const cap = styles.lastIndexOf("(100svh - max(8px");
   const portrait = styles.indexOf(".panel-estate { width: min(100%, 440px); }");
   assert.ok(cap > 0 && portrait > cap);
+  // Only portrait phones take the 2:3 map: a 568x320 landscape phone keeps the
+  // 3:2 map under its short-viewport cap, which the 2:3 map would overflow.
+  const portraitMap = mediaBlock(styles, "(max-width: 600px) and (orientation: portrait)");
+  assert.match(portraitMap, /\.panel-estate \{ width: min\(100%, 440px\); \}/);
+  assert.match(portraitMap, /aspect-ratio: 2 \/ 3;/);
+  assert.match(portraitMap, /estate-map-portrait\.webp/);
+  assert.equal(mediaBlock(styles, "(max-width: 600px)").includes("aspect-ratio"), false);
 });
 
 test("phones do not gain a phantom scroll below the small-viewport hero", async () => {
@@ -799,6 +884,146 @@ test("dialog polish keeps readable ink, touch cues and paper-safe controls", asy
   );
 });
 
+test("the Contact address is a 44px target whose padding never moves its line", async () => {
+  const styles = await readStyles();
+  const email = cssRule(styles, "#panel-contact .panel-body a");
+  const [, smallest, lineHeight] = email.match(
+    /font:\s*500 clamp\((\d+)px,[^)]*\)\s*\/\s*([\d.]+)\s/,
+  );
+  const padding = Number(email.match(/padding-block:\s*(\d+)px;/)[1]);
+  const [top, bottom] = email
+    .match(/margin-block:\s*([^;]+);/)[1]
+    .split(/\s+/)
+    .map((value) => Number.parseFloat(value));
+  assert.ok(
+    Number(smallest) * Number(lineHeight) + 2 * padding >= 44,
+    `${smallest}px x ${lineHeight} + 2 x ${padding}px reaches 44px`,
+  );
+  // The bottom margin takes the bottom padding back, so the line box keeps
+  // its depth below the baseline, and the address keeps its 8px gap above.
+  assert.equal(bottom, -padding);
+  assert.equal(top + padding, 8);
+  assert.doesNotMatch(email, /(?:^|[;\s])margin(?:-top|-bottom)?:/, "one margin declaration");
+  // Real hover deepens the underline; a press firms it on every device.
+  assert.match(
+    mediaBlock(styles, "(hover: hover)"),
+    /#panel-contact \.panel-body a:hover\s*\{\s*text-decoration-color:\s*currentColor;/,
+  );
+  assert.match(
+    cssRule(styles, "#panel-contact .panel-body a:active"),
+    /text-decoration-color:\s*currentColor;/,
+  );
+});
+
+test("controls tint on real hover, press deeper without lifting and share one paper focus ink", async () => {
+  const styles = await readStyles();
+  // Touch browsers keep :hover after a tap, so tints and lifts follow real
+  // hover; reduced motion may only cancel the lift.
+  const hover = mediaBlock(styles, "(hover: hover)");
+  const reduced = mediaBlock(styles, "(prefers-reduced-motion: reduce)");
+  // mediaBlock joins a query's blocks; each one leaves the sheet on its own.
+  const outside = [hover, reduced]
+    .flatMap((joined) => joined.split(/\n(?=@media )/))
+    .reduce((sheet, block) => sheet.replace(block, ""), styles);
+  for (const selector of [".panel-close:hover", ".not-found .back-link:hover"]) {
+    assert.ok(cssRules(hover, (list) => list.includes(selector)).length > 0, selector);
+    assert.ok(!outside.includes(selector), `${selector} only on real hover`);
+  }
+  assert.match(
+    cssRule(styles, ".panel-close:focus-visible"),
+    /background:[^;]+;[^}]*transform:\s*translateY\(-1px\);/,
+    "keyboard focus keeps the tint and lift",
+  );
+  for (const selector of [
+    ".panel-close:active",
+    ".not-found .back-link:active",
+    ".site-footer__link:active",
+  ]) {
+    const body = cssRule(styles, selector);
+    assert.ok(body, `${selector} has a pressed state`);
+    assert.doesNotMatch(body, /translate/, `${selector} does not lift`);
+  }
+  assert.match(cssRule(styles, ".panel-close:active"), /transform:\s*none;/);
+  assert.match(cssRule(styles, ".panel-estate .panel-close:active"), /background:/);
+  assert.match(cssRule(styles, ".not-found .back-link"), /transition:[^;]*\bcolor 180ms ease;/);
+  // Only the estate destinations' background ever changes on .bottom-btn.
+  assert.match(cssRule(styles, ".bottom-btn"), /transition:\s*background-color 180ms ease;/);
+  for (const selector of [
+    ".bottom-btn",
+    ".panel-close",
+    ".site-footer__link",
+    ".not-found .back-link",
+    "#panel-contact .panel-body a",
+  ]) {
+    assert.ok(
+      cssRules(reduced, (list) => list.split(",").some((part) => part.trim() === selector)).some(
+        ({ body }) => /transition:\s*none;/.test(body),
+      ),
+      `${selector} is immediate for reduced motion`,
+    );
+  }
+  // Every focus ring on paper or the estate map takes one ink.
+  const paperInks = cssRules(
+    styles,
+    (selector) =>
+      selector.includes("focus-visible") &&
+      /panel-parchment|panel-estate|estate-destination|not-found/.test(selector),
+  ).flatMap(({ body }) => [...body.matchAll(/#[0-9a-f]{6}/gi)].map(([ink]) => ink.toLowerCase()));
+  assert.ok(paperInks.length >= 4);
+  assert.deepEqual([...new Set(paperInks)], ["#59472f"]);
+});
+
+test("selected text takes a warm wash that keeps its ink legible on the night and on paper", async () => {
+  const styles = await readStyles();
+  // The wash composited over its ground, as #rrggbb.
+  const over = (wash, ground) => {
+    const [r, g, b, a] = wash
+      .match(/rgba\(([^)]+)\)/)[1]
+      .split(",")
+      .map(Number);
+    const base = ground.match(/[0-9a-f]{2}/gi).map((part) => parseInt(part, 16));
+    return `#${[r, g, b]
+      .map((channel, index) => Math.round(channel * a + base[index] * (1 - a)))
+      .map((channel) => channel.toString(16).padStart(2, "0"))
+      .join("")}`;
+  };
+  const night = cssRule(styles, "::selection");
+  const [paperRule] = cssRules(styles, (selector) =>
+    selector.split(",").some((part) => part.trim() === ".panel-parchment ::selection"),
+  );
+  assert.ok(paperRule, "paper has its own selection");
+  for (const scope of [".panel-estate ::selection", ".not-found .story-shell ::selection"])
+    assert.ok(paperRule.selector.includes(scope), scope);
+  const paper = cssRule(styles, ".panel-parchment__sheet::before").match(
+    /background-color:\s*(#[0-9a-f]{6});/i,
+  )[1];
+  for (const [body, ground] of [
+    [night, color(styles, "var(--night-900)")],
+    [night, color(styles, "var(--night-800)")],
+    [paperRule.body, paper],
+  ]) {
+    const wash = body.match(/background:\s*(rgba\([^)]+\));/)[1];
+    const ink = body.match(/(?:^|[;\s])color:\s*(#[0-9a-f]{6});/i)[1];
+    const selected = over(wash, ground);
+    assert.ok(
+      contrast(ink, selected) >= 4.5,
+      `${ink} on ${selected} is ${contrast(ink, selected).toFixed(2)}:1`,
+    );
+    // The sun's amber, never the system blue.
+    const [r, , b] = wash
+      .match(/rgba\(([^)]+)\)/)[1]
+      .split(",")
+      .map(Number);
+    assert.ok(r > b, `${wash} is warm`);
+  }
+});
+
+test("both pages declare their dark colour scheme", async () => {
+  for (const page of [await readIndexHtml(), await readNotFoundHtml()]) {
+    assert.match(flatHtml(page), /<meta name="color-scheme" content="dark" \/>/);
+  }
+});
+
 test("the 404 is a centered cotton-paper sheet with dark ink", async () => {
   const notFound = await readNotFoundHtml();
   const styles = await readStyles();
@@ -811,6 +1036,8 @@ test("the 404 is a centered cotton-paper sheet with dark ink", async () => {
     /border-image:\s*url\("\/images\/paper-edge\.webp"\)/,
   );
   assert.match(cssRule(styles, ".not-found .back-link"), /min-height:\s*44px;/);
+  // The pale line cursor vanishes on the paper, so the sheet takes the system one.
+  assert.match(cssRule(styles, ".not-found .story-shell"), /cursor:\s*auto;/);
   const inks = [".not-found .story-shell", ".not-found .story-shell .eyebrow"].map(
     (selector) => cssRule(styles, selector).match(/(?:^|[;\s])color:\s*(#[0-9a-f]{6});/i)[1],
   );
