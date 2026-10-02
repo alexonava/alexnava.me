@@ -11,6 +11,7 @@ import {
   SRGBColorSpace,
   WebGLRenderer,
 } from "three";
+import { createNightEnvironment } from "./night-environment.js";
 import { createPostprocessPipeline } from "./postprocess.js";
 import { disposeSceneRuntimeResources } from "./runtime.js";
 
@@ -84,8 +85,10 @@ export function createSceneRendering({
     onContextLost?.(event);
   };
   const handleContextRestored = (event) => {
-    // A restored context has an empty shadow map, even when its casters are static.
+    // A restored context has an empty shadow map, even when its casters are static,
+    // and an empty environment target: the sky is drawn into it again.
     sunLight.shadow.needsUpdate = true;
+    if (homeScene.environment) homeScene.environment = environment.restore();
     onContextRestored?.(event);
   };
   renderer.domElement?.addEventListener?.("webglcontextlost", handleContextLost);
@@ -118,6 +121,15 @@ export function createSceneRendering({
   sunLight.shadow.radius = 2.6;
   fillLight.position.set(...(lighting.fillPosition ?? world.FILL_LIGHT_POSITION));
   homeScene.add(ambientLight, hemisphereLight, sunLight, fillLight, sunLight.target);
+  // The film's night sky as the scene's environment (night-environment.js),
+  // captured once, from the sky shell's own shader, when the film starts.
+  const environment = createNightEnvironment(renderer, {
+    keyDirection: [
+      lighting.directionalPosition.x,
+      lighting.directionalPosition.y,
+      lighting.directionalPosition.z,
+    ],
+  });
 
   let groundedLighting = false,
     filmLighting = false;
@@ -195,6 +207,9 @@ export function createSceneRendering({
     },
     homeScene,
     lifecycleOrder: 100,
+    // The quality tier last applied (applyQuality), null before.
+    tier: null,
+    environment,
     lights: {
       ambient: ambientLight,
       fill: fillLight,
@@ -208,6 +223,9 @@ export function createSceneRendering({
       filmLighting = Boolean(active);
       applyLightingTreatment();
       sunLight.shadow.needsUpdate = true;
+      // Every standard material takes the film sky as its environment; without
+      // the film (or a sky) none does.
+      homeScene.environment = filmLighting ? environment.capture() : null;
       postprocessPipeline.setFilmTreatment?.(filmLighting);
       if (!filmLighting) {
         sunLight.position.copy(originalSunPosition);
@@ -217,6 +235,10 @@ export function createSceneRendering({
         shadowKey = "";
       }
       return true;
+    },
+    // The sky shell whose film sky the environment captures (index.js).
+    setEnvironmentSky(material, shellOpacity) {
+      if (!disposed) environment.setSky(material, shellOpacity);
     },
     focusFilmShadow(target, radius) {
       if (disposed || !filmLighting) return;
@@ -337,6 +359,7 @@ export function createSceneRendering({
     },
     applyQuality(nextProfile, { pixelRatio } = {}) {
       if (disposed) return false;
+      rendering.tier = nextProfile.tier ?? null;
       homeScene.fog.near = nextProfile.lighting.fogNear;
       homeScene.fog.far = nextProfile.lighting.fogFar;
       baselineAmbientIntensity = nextProfile.lighting.ambientIntensity;
@@ -350,6 +373,12 @@ export function createSceneRendering({
       renderer.shadowMap.enabled = Boolean(nextProfile.shadows.enabled);
       sunLight.castShadow = Boolean(nextProfile.shadows.enabled);
       if (nextProfile.shadows.enabled && nextProfile.shadows.mapSize > 0) {
+        // Three keeps a drawn map at its first size: a step between tiers'
+        // sizes frees it, and the next shadow draw allocates one at the new size.
+        if (sunLight.shadow.map && sunLight.shadow.map.width !== nextProfile.shadows.mapSize) {
+          sunLight.shadow.map.dispose();
+          sunLight.shadow.map = null;
+        }
         sunLight.shadow.mapSize.width = nextProfile.shadows.mapSize;
         sunLight.shadow.mapSize.height = nextProfile.shadows.mapSize;
         sunLight.shadow.needsUpdate = true;
@@ -368,6 +397,8 @@ export function createSceneRendering({
       disposed = true;
       renderer.domElement?.removeEventListener?.("webglcontextlost", handleContextLost);
       renderer.domElement?.removeEventListener?.("webglcontextrestored", handleContextRestored);
+      homeScene.environment = null;
+      environment.dispose();
       disposeResult = disposeResources({
         postprocessPipeline,
         renderer,

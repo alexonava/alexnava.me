@@ -100,7 +100,9 @@ test("rocks sit on the terrain and fill the ground's contact slots after the tre
   );
   writeRockContacts(contacts, layout);
   const filled = layout.filter((rock) => rock.height >= 0.3).length;
-  assert.ok(contacts[8 + 4 * (Math.min(filled, SLATE_CONTACTS - 2) - 1) + 3] > 0);
+  // Every rock 0.3 or taller has a slot of its own after the tree and lantern.
+  assert.ok(filled <= SLATE_CONTACTS - 2, `${filled} rocks for ${SLATE_CONTACTS - 2} slots`);
+  assert.ok(contacts[8 + 4 * (filled - 1) + 3] > 0);
   assert.equal(contacts[3], Math.fround(0.22), "the tree contact is kept");
 });
 
@@ -250,9 +252,12 @@ function fixture() {
 }
 
 const FILM_CHUNKS = [
+  "#include <lights_physical_pars_fragment>",
   "#include <map_fragment>",
   "#include <roughnessmap_fragment>",
   "#include <normal_fragment_maps>",
+  "#include <lights_fragment_begin>",
+  "#include <lights_fragment_maps>",
   "#include <lights_fragment_end>",
   "#include <fog_fragment>",
 ].join("\n");
@@ -265,6 +270,8 @@ test("each ground shading has its own program cache key; the slate's shading nee
     SLATE_TILING,
     SLATE_PUDDLES,
     SLATE_CONTACTS,
+    SLATE_LIGHT,
+    SLATE_WATER,
   } = await import("../src/scene/mud-ground.js");
   const detail = { isTexture: true };
   const material = new MeshStandardMaterial();
@@ -332,7 +339,7 @@ test("each ground shading has its own program cache key; the slate's shading nee
   assert.match(fragment, /reflectedLight\.directSpecular \*= mix\(\.12, \.22, damp\);/);
   assert.match(
     fragment,
-    /reflectedLight\.directSpecular \*= \(1\.0 \+ 0\.8\*slateWet\)\*\(1\.0 \+ 4\.0\*slatePuddle - 3\.2\*slateLanternPuddle\);/,
+    /reflectedLight\.directSpecular \*= \(1\.0 \+ 1\.6\*slateWet\)\*\(1\.0 \+ 4\.0\*slatePuddle - 3\.2\*slateLanternPuddle\);/,
   );
   assert.match(fragment, /roughnessFactor = mix\(roughnessFactor, 0\.2, slateLanternPuddle\);/);
   assert.match(
@@ -348,32 +355,120 @@ test("each ground shading has its own program cache key; the slate's shading nee
   assert.equal(SLATE_PUDDLES.lantern.specular, 0.8);
   assert.equal(SLATE_PUDDLES.lantern.roughness, 0.2);
   assert.ok(SLATE_WET.specular <= 1.6);
+  // Just after rain: wet ground is glossy, not darker (it keeps the ground's
+  // brightness), its own sky reflection is clamped less where wet, and a film
+  // of water mirrors the night sky, fading with view distance, so the far
+  // plain stays calm.
+  assert.ok(SLATE_WET.darken <= 0.05 && SLATE_WET.roughnessWeight >= 0.9);
+  // Never mirror-smooth: below 0.5 the crack walls near the lens glint behind
+  // the name and intro in the lantern shots (the water's own lobes are bounded
+  // by their knees instead).
+  assert.ok(SLATE_WET.roughness >= 0.5);
+  assert.match(fragment, /reflectedLight\.indirectSpecular \*= \.18;/);
+  assert.equal(SLATE_WET.indirect[0], 0.18, "the dry clamp is the literal the roots anchor on");
+  assert.ok(SLATE_WET.indirect[1] > SLATE_WET.indirect[0] && SLATE_WET.indirect[1] <= 1);
   assert.ok(
-    SLATE_WET.fresnel <= 0.2,
-    "the grazing sheen stays low behind the intro text and in the distance",
+    fragment.includes(
+      `reflectedLight.indirectSpecular *= mix(1.0, ${+(SLATE_WET.indirect[1] / SLATE_WET.indirect[0]).toFixed(4)}, slateWet*slateShow);`,
+    ),
+  );
+  // The water: water's Fresnel (f0 .02) on a normal levelled by the water
+  // (standing water: the world's up), the film's share of the wet ground or a
+  // puddle whole, faded by view distance; a mirror never brighter than about
+  // twice the sky as shown.
+  assert.equal(SLATE_WATER.f0, 0.02);
+  assert.ok(SLATE_WATER.far[0] >= 50 && SLATE_WATER.far[1] <= 140, "the far plain stays calm");
+  assert.ok(SLATE_WATER.gain.every((gain) => gain >= 1 && gain <= 2));
+  assert.ok(
+    SLATE_WATER.film.every((share) => share >= 0) && SLATE_WATER.film[0] + SLATE_WATER.film[1] <= 1,
+  );
+  assert.ok(SLATE_WATER.roughness[1] < SLATE_WATER.roughness[0]);
+  assert.match(
+    fragment,
+    /slateWaterN = normalize\(mix\(mix\(normal, nonPerturbedNormal, [\d.]+\), mat3\(viewMatrix\)\[1\], slatePuddle\)\+slateWaterTilt\);/,
+  );
+  assert.ok(
+    fragment.indexOf("slateWaterN = normalize(") <
+      fragment.indexOf("#include <lights_fragment_begin>"),
+    "the water's normal and share are set before the lights",
+  );
+  assert.ok(
+    fragment.includes(
+      `*(1.0-slatePuddle)*(1.0-smoothstep(${SLATE_WATER.far.map((v) => (Number.isInteger(v) ? v.toFixed(1) : String(v))).join(",")}, length(vViewPosition)));`,
+    ),
+  );
+  assert.match(
+    fragment,
+    /vec3 slateWaterSky = mix\(getIBLRadiance\(geometryViewDir, slateWaterN, /,
+  );
+  assert.match(
+    fragment,
+    /vec3 slateWaterRefl = slateWaterSky\*\(0\.02\+0\.98\*pow\(1\.0-saturate\(dot\(slateWaterN, geometryViewDir\)\), 5\.0\)\)\*slateWaterCover\*slateSkyVis\*slateShow;/,
+  );
+  // The moon's and the lantern's lobes on the water film are bounded by their knees.
+  for (const lobe of [SLATE_WATER.moon, SLATE_WATER.lamp]) {
+    assert.ok(lobe.knee > 0 && lobe.knee <= 0.4 && lobe.roughness >= 0.15);
+  }
+  assert.ok(SLATE_WATER.moon.knee <= 0.08, "the moon's glints stay low behind the name and intro");
+  // Like the light shafts' air, the water eases off behind the name and intro
+  // and behind About (over a fifth of the screen's smaller side), and there the
+  // soil's own highlights pass a knee: text stays at 5:1 over the wet ground.
+  const [share, knee] = SLATE_WATER.text;
+  assert.ok(share > 0 && share < 1 && knee > 0 && knee <= 0.05);
+  assert.match(
+    fragment,
+    /float slateBehind\(vec4 r,vec2 v\)\{[^}]*return 1\.-smoothstep\(0\.,\.2,length\(f\)\);\}/,
+  );
+  assert.match(fragment, /return max\(slateBehind\(slateText,v\),slateBehind\(slateAbout,v\)\);/);
+  assert.ok(fragment.includes(`#define SLATE_TEXT_KNEE ${knee}\n`));
+  // After the water's glints and mirror, both the direct and the sky's
+  // reflections pass the knee there.
+  for (const term of ["directSpecular", "indirectSpecular"])
+    assert.ok(
+      fragment.indexOf(
+        `reflectedLight.${term} /= 1.0+slateBehind*dot(reflectedLight.${term},vec3(.2126,.7152,.0722))/SLATE_TEXT_KNEE;`,
+      ) > fragment.indexOf("reflectedLight.indirectSpecular += slateWaterRefl;"),
+      term,
+    );
+  assert.match(
+    fragment,
+    /slateLampSpec \*= [\d.]+\*slateShow;\s*slateMoonSpec \*= [\d.]+\*slateShow;/,
+  );
+  // The night's light on the film ground: the key dominates, the unshadowed
+  // fills and the flat ambient keep a share, the sky lights it; only with the
+  // environment (night-environment.js), else the fills and ambient stay whole.
+  assert.ok(SLATE_LIGHT.key >= 1 && SLATE_LIGHT.key <= 1.5);
+  for (const share of [SLATE_LIGHT.fill, SLATE_LIGHT.crown, SLATE_LIGHT.ambient])
+    assert.ok(share > 0 && share < 1);
+  assert.ok(SLATE_LIGHT.bounce > 0 && SLATE_LIGHT.bounce <= 0.25);
+  assert.match(
+    fragment,
+    /#include <lights_physical_pars_fragment>\s*vec3 slateWaterN[\s\S]*void RE_Direct_Moonlit\([\s\S]*#undef RE_Direct\n#define RE_Direct RE_Direct_Moonlit/,
+  );
+  assert.match(fragment, /#ifdef USE_ENVMAP\s*irradiance \*= [\d.]+;\s*iblIrradiance \*= [\d.]+;/);
+  assert.ok(
+    fragment.indexOf("if (!slateWarm) slateL.color *=") > fragment.indexOf("#ifdef USE_ENVMAP"),
   );
   assert.ok(
     fragment.indexOf("slateWet = ") > fragment.indexOf("float worn ="),
     "wetness follows the worn mask",
   );
-  // The footing and root plate stay dry; the path is dry except in the lantern clearing.
-  assert.match(
-    fragment,
-    /float slateDry = max\(max\(footingDry, 1\.0-smoothstep\(3\.2,5\.7, slateTree\)\), approach\*smoothstep\(4\.0,7\.0, length\(vMudWorld\.xz-vec2\(50\.92,33\.36\)\)\)\);/,
-  );
+  // Only the tower footing stays dry: the root area, the path and the lantern
+  // clearing are wet.
+  assert.match(fragment, /float slateDry = footingDry;/);
   assert.match(fragment, /float slateWet = clamp\([^;]*\)\*\(1\.0-slateDry\);/);
-  // Puddles fill the detail map's low texels, glassy and darker, with a sky
-  // reflection built from the fog and zenith colours (no environment map).
+  // The puddles fill fuller, Portrait's foreground puddle among them.
+  assert.equal(SLATE_PUDDLES.zones.length, 4);
+  assert.match(fragment, /\*\(0\.62\+\.4\*slateNoise\(vMudWorld\.xz\*\.9\)\)-slateH\)/);
+  assert.match(fragment, /length\(\(vMudWorld\.xz-vec2\(52\.32,20\.34\)\)\)\/2\.0\)/);
+  // Puddles fill the detail map's low texels, glassy and darker, and mirror
+  // the night sky as standing water (SLATE_WATER above), no fog-colour sheen.
   assert.match(
     fragment,
     /float slatePuddle = smoothstep\(-\.04, \.04, [^;]*-slateH\)\*\(1\.0-slateDry\);/,
   );
-  assert.match(
-    fragment,
-    new RegExp(
-      `mix\\(fogColor, vec3\\(${SLATE_PUDDLES.zenith.join(",").replaceAll(".", "\\.")}\\)`,
-    ),
-  );
+  assert.equal(fragment.includes("slateSheen"), false);
+  assert.equal(fragment.includes("mix(fogColor,"), false);
   assert.ok(SLATE_PUDDLES.roughness < 0.2 && SLATE_PUDDLES.darken <= 0.5);
   // Seamless tile: a second, larger lookup turned 126.87 degrees; contrast
   // restored about the tile's mean; detail and macro variation.
@@ -391,7 +486,15 @@ test("each ground shading has its own program cache key; the slate's shading nee
   assert.match(fragment, /diffuseColor\.rgb \*= 1\.0 - slateAo\*slateContactGain;/);
   // The shared uniform objects: rocks arriving or shadows switching change
   // values, never the program.
-  for (const name of ["slateContacts", "slateRockContact", "slateContactGain", "slateDetail"])
+  for (const name of [
+    "slateContacts",
+    "slateRockContact",
+    "slateContactGain",
+    "slateDetail",
+    "slateText",
+    "slateAbout",
+    "slateAspect",
+  ])
     assert.equal(uniforms[name], contacts[name], name);
   assert.equal(contacts.slateDetail.value, detail);
   const key = material.customProgramCacheKey();
@@ -419,6 +522,22 @@ test("the film ground material follows the film, so loading and fallback surface
     roughness: 0.98,
     metalness: 0.02,
   });
+});
+
+test("the film ground tells the moon key and the cool fill by the directions index.js and world.js give them", async () => {
+  const { MOON_LIGHTS } = await import("../src/scene/mud-ground.js");
+  const window = { BabelSite: {} };
+  vm.runInNewContext(await readFile(new URL("../src/scene/world.js", import.meta.url), "utf8"), {
+    window,
+  });
+  assert.deepEqual([...MOON_LIGHTS.fill], [...window.BabelSite.scene.WORLD.FILL_LIGHT_POSITION]);
+  // The key's direction is its position over its target at the origin.
+  const index = await readFile(new URL("../src/scene/index.js", import.meta.url), "utf8");
+  const [, x, y, z] = index.match(
+    /directionalPosition: \{\s*x: (-?[\d.]+),\s*y: (-?[\d.]+),\s*z: (-?[\d.]+),?\s*\}/,
+  );
+  assert.deepEqual([...MOON_LIGHTS.key], [x, y, z].map(Number));
+  assert.equal(/fillPosition/.test(index), false, "the fill keeps world.js's position");
 });
 
 test("the wet hollows restate the terrain dune field exactly", async () => {

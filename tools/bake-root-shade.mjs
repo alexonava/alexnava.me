@@ -1,6 +1,7 @@
 // Bakes the twisted tree's root tables for src/scene/terrain-build.js from both
-// authored tree variants (images/architecture/tree-{high,balanced}.glb):
-//   ROOT_RESTS  soil banks under the resting stretches of the roots,
+// authored tree variants (images/architecture/tree-{high,balanced}.glb), set
+// TREE_SINK into the soil as prop-scale.js seats them:
+//   ROOT_RESTS  entry lips where the sunk roots leave the soil,
 //   ROOT_SHADE  sky and moon-key occlusion and the contact cut on the 0.75
 //               fine lattice (6-bit, 0 neutral),
 //   ROOT_COVER  where a root covers the soil (0.25 grid), for the tufts and
@@ -20,6 +21,7 @@ import {
   SHADE_ALPHABET,
   terrainSurface,
   TREE_FOOTING,
+  TREE_SINK,
   zoneDistance,
 } from "../src/scene/terrain-build.js";
 import { DOOR_HEIGHT } from "../src/scene/mud-ground.js";
@@ -102,7 +104,8 @@ export function groundBase() {
 }
 
 // The tree's triangles as the scene places it: x/z relative to the tree
-// anchor, y above its footing (bottom at 0, height DOOR_HEIGHT x 4.2).
+// anchor, y above its footing (height DOOR_HEIGHT x 4.2, its lowest vertex
+// TREE_SINK below the footing, as prop-scale.js seats it).
 export function treeMesh(tier) {
   const raw = readFileSync(new URL(`../images/architecture/tree-${tier}.glb`, import.meta.url));
   const length = raw.readUInt32LE(12),
@@ -130,7 +133,7 @@ export function treeMesh(tier) {
   const scale = (DOOR_HEIGHT * 4.2) / (max - min);
   for (let i = 0; i < accessor.count; i++) {
     positions[i * 3] *= scale;
-    positions[i * 3 + 1] = (positions[i * 3 + 1] - min) * scale;
+    positions[i * 3 + 1] = (positions[i * 3 + 1] - min) * scale - TREE_SINK;
     positions[i * 3 + 2] *= scale;
   }
   const indexAccessor = json.accessors[primitive.indices],
@@ -291,8 +294,8 @@ function treeVoxels({ positions, indices }) {
   };
 }
 
-// The film terrain on the lattice before the banks, as terrain-build.js
-// renders it: the coarse surface plus the plate and berms at each lattice
+// The film terrain on the lattice before the lips, as terrain-build.js
+// renders it: the coarse surface plus the knoll, its relief and hollows at each lattice
 // point (every one is a vertex of the fine root grid), linear over the fine
 // grid's triangles between them. Heights are ground-local, like groundHeight().
 export function latticeGround(base = groundBase()) {
@@ -333,16 +336,17 @@ export function latticeTriangle(wx, wz) {
 const latticeLinear = (values, wx, wz) =>
   latticeTriangle(wx, wz).reduce((sum, [i, w]) => sum + values[i] * w, 0);
 
-// Bake constants (plan 2A; the prototype's Stronger variant).
+// Bake constants. The rests are small entry lips (high, over, top): the sunk
+// tree's resting roots already enter the knoll.
 export const BAKE = Object.freeze({
   rest: Object.freeze({
     step: 0.2,
     low: -0.05,
-    high: 0.62,
-    over: 0.08,
+    high: 0.12,
+    over: 0.035,
     arch: 0.6,
     taper: 1.2,
-    top: 0.1,
+    top: 0.05,
     slope: 1.1,
     bury: 0.2,
     clear: 0.62,
@@ -420,8 +424,8 @@ export function bakeRootShade({ tiers = ["high", "balanced"], base = groundBase(
   const vertexAt = (col, row) =>
     col >= 0 && row >= 0 && col < cols && row < rows ? vertices[row * cols + col] : null;
 
-  // Soil banks: where a root's underside lies within R.high of the soil, a
-  // narrow round-topped ridge rises to R.over above it, tapering toward each
+  // Entry lips: where a root's underside lies within R.high of the soil, a
+  // small round-topped lip rises to R.over above it, tapering toward each
   // arch; never into the hover band under an arch, never burying by more than
   // R.bury, and none in the lantern clearing or the puddles.
   const R = BAKE.rest,
@@ -483,7 +487,7 @@ export function bakeRootShade({ tiers = ["high", "balanced"], base = groundBase(
     }
     if (!buried) break;
   }
-  // Where a bank meets a berm or the plate's rim, their slopes add: the
+  // Where a lip meets the knoll's rim or its relief, their slopes add: the
   // supported ground stays under R.steep (measured as the terrain regression
   // measures it, on the analytic dunes, 0.25 either side); the banks there
   // give way.

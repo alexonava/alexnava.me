@@ -302,3 +302,40 @@ test("the film terrain is film-scene.js's lazy chunk and never holds the reveal"
   assert.doesNotMatch(index, /createFilmScene\(\{[^}]*warm[:,]/);
   assert.equal(index.match(/import\("\.\/terrain-build\.js"\)/g), null);
 });
+
+test("the film's environment, the ground's text guard and the flame's bloom are wired from the bootstrap", () => {
+  // The environment is captured from the sky shell's own film sky.
+  assert.match(
+    index,
+    /atmosphereSystem\.setSkyMaterial\(skyShell\.material\); rendering\.setEnvironmentSky\(skyShell\.material, skyConfig\.shellOpacity\);/,
+  );
+  // The ground's water eases off behind the name and intro and behind About,
+  // measured on the canvas on resize, on font loads and every 30th frame.
+  assert.match(index, /box\(groundContacts\.slateText\.value, \[".hero h1", ".hero-intro"\]\);/);
+  assert.match(
+    index,
+    /box\(groundContacts\.slateAbout\.value, \[".site-footer__about .about-link__label"\]\);/,
+  );
+  assert.match(
+    index,
+    /cinematicArea = measureCinematicArea\(width, height\); measureGroundText\(\);/,
+  );
+  assert.match(
+    index,
+    /cameraTour\?\.prepareNext\(\); measureGroundText\(\); invalidateContent\(\);/,
+  );
+  assert.match(index, /if \(\+\+groundTextFrames % 30 === 1\) measureGroundText\(\);/);
+  // Beside About the bark's lantern highlights pass the same guard, on the ground's uniforms.
+  assert.match(
+    index,
+    /createTreeArchitecture\(\{ asset, groundHeight, anisotropy: chooseAnisotropy\(6\), anchor: \[ESTATE\.tree\.x, ESTATE\.tree\.z\], textGuard: groundContacts \}\);/,
+  );
+  // The lantern flame's glare follows the bloom pass, not the shadow map
+  // (balanced draws shadows without bloom).
+  assert.match(index, /bloom: rendering\.postprocessPipeline\.passes\?\.bloom\?\.enabled === true/);
+  // sceneDebug reports the capture.
+  assert.match(
+    index,
+    /qualityDebug\.environment = \{ status, ms: Math\.round\(ms \* 10\) \/ 10 \};/,
+  );
+});

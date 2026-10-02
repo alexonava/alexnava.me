@@ -25,19 +25,29 @@ import {
   DRIP_RIPPLES,
   dripAt,
   dripClock,
+  FINE_WINDOW,
   foothillHeight,
   KEY_LIGHT,
+  knollWeight,
   LANTERN_FLAME,
   LANTERN_FOOT,
   LANTERN_IMAGE,
   LITTER,
   mirrorPoint,
   MIRROR_FLAME,
+  PIN_KEEP,
+  pinKeep,
+  POOL_FIELD,
+  poolField,
   PUDDLE_MIRROR,
   PUDDLE_ZONES,
-  ROOT_BENCH,
+  reliefNoise,
   ROOT_COVER,
+  ROOT_HOLLOWS,
+  ROOT_KNOLL,
   ROOT_LATTICE,
+  ROOT_LINES,
+  ROOT_RELIEF,
   ROOT_RESTS,
   ROOT_SHADE,
   rootBankLift,
@@ -46,6 +56,7 @@ import {
   rootOcclusion,
   rootShade,
   rootSupportHeight,
+  rootSupportLifts,
   scatterLitter,
   settleRoots,
   SHADE_ALPHABET,
@@ -54,9 +65,11 @@ import {
   shadeSlatePuddles,
   shadeSlateRoots,
   SLATE_SOIL,
+  SPUR,
   terrainHeight,
   terrainLift,
   TREE_FOOTING,
+  TREE_SINK,
   TRUNK,
   TUFTS,
   zoneDistance,
@@ -66,6 +79,7 @@ import {
   formatRootTables,
   latticeGround,
   latticeGuard,
+  pinDistance,
   rootProbe,
   SHADE_PIN,
   shadeGuard,
@@ -79,22 +93,95 @@ import { createEstateGroundDetail } from "../src/scene/estate-ground-detail.js";
 import { createFilmScene } from "../src/scene/film-scene.js";
 import { plainDunes } from "./support/terrain.mjs";
 
+test("rain stands where the soil lies below its neighbours, never on the pinned ground", () => {
+  // The cavity is the local mean height less the height: a bowl holds water
+  // at its middle, a crest sheds it, a plane neither.
+  const n = 13,
+    far = () => [0, 0]; // well away from the lantern and the puddles
+  const grid = (height) =>
+    Float32Array.from({ length: n * n }, (_, k) => height(k % n, Math.floor(k / n)));
+  const bowl = poolField(
+    grid((i, j) => 0.01 * ((i - 6) ** 2 + (j - 6) ** 2)),
+    n,
+    n,
+    far,
+  );
+  const crest = poolField(
+    grid((i, j) => -0.01 * ((i - 6) ** 2 + (j - 6) ** 2)),
+    n,
+    n,
+    far,
+  );
+  const plane = poolField(
+    grid((i, j) => 0.3 * i - 0.2 * j),
+    n,
+    n,
+    far,
+  );
+  const middle = 6 * n + 6;
+  assert.ok(bowl[middle] > 0 && crest[middle] < 0);
+  assert.ok(Math.abs(bowl[middle] + crest[middle]) < 1e-6);
+  assert.ok(
+    plane.every((v) => Math.abs(v) < 1e-5),
+    "a slope holds no water",
+  );
+  // Nothing within the box's reach of the grid's own edge, where the mean is one-sided.
+  for (let j = 0; j < n; j++)
+    for (let i = 0; i < n; i++)
+      if (Math.min(i, j, n - 1 - i, n - 1 - j) < POOL_FIELD.mean) assert.equal(bowl[j * n + i], 0);
+  // None on the pinned ground: the lantern clearing.
+  const pinned = poolField(
+    grid((i, j) => 0.01 * ((i - 6) ** 2 + (j - 6) ** 2)),
+    n,
+    n,
+    () => [LANTERN_FOOT.x, LANTERN_FOOT.z],
+  );
+  assert.ok(pinned.every((v) => v === 0));
+  // On the film terrain: the fine grid's vertices carry it, both signs (the
+  // knoll's rim sheds water, its foot holds it), and nothing about the
+  // lantern or in a puddle.
+  const geometry = createEarthGeometry(groundBase());
+  const pool = geometry.attributes.slatePool,
+    position = geometry.attributes.position;
+  assert.equal(pool.itemSize, 1);
+  let wet = 0,
+    dry = 0;
+  for (let i = 0; i < pool.count; i++) {
+    const value = pool.getX(i),
+      x = position.getX(i),
+      z = -position.getY(i);
+    if (!value) continue;
+    assert.ok(Math.abs(value) < 1, `${value} at ${x},${z}`);
+    assert.ok(
+      x > TREE_FOOTING.x + FINE_WINDOW.x[0] - 2 && x < TREE_FOOTING.x + FINE_WINDOW.x[1] + 2,
+    );
+    assert.ok(Math.hypot(x - LANTERN_FOOT.x, z - LANTERN_FOOT.z) > PIN_KEEP.lantern);
+    for (const zone of PUDDLE_ZONES) assert.ok(zoneDistance(zone, x, z) > zone.radius * 0.5);
+    if (value > SLATE_SOIL.pool.water[0]) wet++;
+    if (value < 0) dry++;
+  }
+  assert.ok(wet > 20 && dry > 20, `${wet} wet, ${dry} crest vertices`);
+  geometry.dispose();
+});
+
 test("root supports preserve coarse terrain vertices, map scale and bounded mesh cost", () => {
   const base = (x, z) => Math.sin(x * 0.055) + Math.cos(z * 0.052);
   const original = plainDunes(base),
     hills = createEarthGeometry(base);
   const b = hills.attributes.position;
+  // The refined rectangle: every coarse cell whose centre lies in FINE_WINDOW.
+  const refined = (x, z) =>
+    x - TREE_FOOTING.x > FINE_WINDOW.x[0] - 1.5 &&
+    x - TREE_FOOTING.x < FINE_WINDOW.x[1] + 1.5 &&
+    z - TREE_FOOTING.z > FINE_WINDOW.z[0] - 1.5 &&
+    z - TREE_FOOTING.z < FINE_WINDOW.z[1] + 1.5;
   for (let i = 0; i < b.count; i++) {
     const x = b.getX(i),
       z = -b.getY(i),
       r = Math.hypot(x, z);
     assert.ok(Number.isFinite(b.getZ(i)));
-    if (
-      r < 88 &&
-      x % 3 === 0 &&
-      z % 3 === 0 &&
-      Math.hypot(x - TREE_FOOTING.x - 3, z - TREE_FOOTING.z) >= 15
-    )
+    // Nothing of the knoll reaches a coarse vertex beyond the fine grid.
+    if (r < 88 && x % 3 === 0 && z % 3 === 0 && !refined(x, z))
       assert.equal(b.getZ(i), Math.fround(base(x, z)));
     if (r > 184) assert.equal(b.getZ(i), 0);
     assert.ok(Math.abs(hills.attributes.normal.getZ(i)) <= 1);
@@ -184,6 +271,8 @@ function surface(geometry) {
 
 test("triangulated lantern clearing and full puddle blend retain baseline heights and shading normals", () => {
   assert.deepEqual(TREE_FOOTING, { x: ESTATE.tree.x, z: ESTATE.tree.z });
+  // The sink prop-scale.js seats the tree with, restated for the bake.
+  assert.equal(TREE_SINK, ESTATE.tree.sink);
   assert.equal(ESTATE.lantern.offset, 5);
   const zone = SLATE_PUDDLES.zones[0];
   assert.deepEqual(zone, {
@@ -234,6 +323,8 @@ test("triangulated lantern clearing and full puddle blend retain baseline height
   b.dispose();
 });
 
+// The authored tree's vertices as the scene seats it: relative to the tree,
+// its lowest vertex TREE_SINK below the footing (prop-scale.js).
 function authoredRootVertices(tier) {
   const glb = parseGlb(modelBytes("tree", tier));
   const position = readAccessor(glb, glb.json.meshes[0].primitives[0].attributes.POSITION);
@@ -244,11 +335,11 @@ function authoredRootVertices(tier) {
   const min = Math.min(...vertices.map((v) => v[1])),
     max = Math.max(...vertices.map((v) => v[1]));
   const scale = (DOOR_HEIGHT * 4.2) / (max - min);
-  return vertices.map(([x, y, z]) => [x * scale, (y - min) * scale, z * scale]);
+  return vertices.map(([x, y, z]) => [x * scale, (y - min) * scale - TREE_SINK, z * scale]);
 }
 
 for (const tier of ["high", "balanced"])
-  test(`${tier} actual root ends contact discreet soil without burying them`, () => {
+  test(`${tier} actual root ends enter the soil without burying them deeply`, () => {
     const base = groundBase(),
       terrain = surface(createEarthGeometry(base));
     const floor = base(TREE_FOOTING.x, TREE_FOOTING.z),
@@ -274,14 +365,15 @@ for (const tier of ["high", "balanced"])
           overlap,
           terrain.at(v[0] + TREE_FOOTING.x, v[2] + TREE_FOOTING.z).point.y - floor - v[1],
         );
-      assert.ok(overlap >= -0.02, `${tier} root ${x},${z} floats by ${-overlap}`);
+      // Sunk TREE_SINK, each root end enters the soil, never deeper than 0.2.
+      assert.ok(overlap >= 0.05, `${tier} root ${x},${z} enters the soil by only ${overlap}`);
       assert.ok(overlap < 0.2, `${tier} root ${x},${z} buried by ${overlap}`);
     }
     terrain.dispose();
   });
 
 for (const tier of ["high", "balanced"])
-  test(`${tier} south-east root spur stays an open aerial root above the level plate`, () => {
+  test(`${tier} south-east root spur stays an open aerial root over the knoll`, () => {
     const base = groundBase(),
       terrain = surface(createEarthGeometry(base));
     const floor = base(TREE_FOOTING.x, TREE_FOOTING.z),
@@ -304,8 +396,9 @@ for (const tier of ["high", "balanced"])
       if (!slice.length) continue;
       const underside = Math.min(...slice.map((v) => v[1]));
       const ground = terrain.at(cx + TREE_FOOTING.x, cz + TREE_FOOTING.z).point.y - floor;
+      // Sunk with the tree, it still clears the footing by half a unit or more.
       assert.ok(
-        underside > 0.9,
+        underside > 0.5,
         `${tier} spur underside ${underside} at ${cx},${cz} is not clearly above the footing`,
       );
       assert.ok(
@@ -340,37 +433,37 @@ function steepestLift(geometry) {
   return steepest;
 }
 
-test("root supports: a level plate east of the trunk, low berms under the root ends, open ground elsewhere", () => {
+test("the knoll: soil rises toward the footing where the roots touch down, with relief and crook hollows, never a level plate", () => {
   const base = groundBase(),
     floor = base(TREE_FOOTING.x, TREE_FOOTING.z);
   const trunkX = TREE_FOOTING.x + TRUNK[0],
     trunkZ = TREE_FOOTING.z + TRUNK[1];
-  let bermArea = 0,
-    bankArea = 0,
-    benchArea = 0,
-    benchVolume = 0,
+  const relief = ROOT_RELIEF.octaves.reduce((sum, [, amplitude]) => sum + amplitude, 0),
+    hollow = ROOT_HOLLOWS.reduce((sum, [, , , depth]) => sum + depth, 0);
+  let knollArea = 0,
+    lipArea = 0,
     slope = 0,
-    bankSlope = 0;
+    lipSlope = 0;
   const height = (x, z) => rootSupportHeight(x, z, base);
   const supports = (x, z) => rootSupportHeight(x, z, base, false);
   for (let x = 35; x < 80; x += 0.25)
     for (let z = 15; z < 60; z += 0.25) {
-      const raised = height(x, z) - base(x, z),
-        berm = rootBermExcess(x, z, base),
-        bench = raised - berm,
-        bank = rootBankLift(x, z);
-      // The plate and berms lift at most to the footing's hollow; a bank adds its narrow ridge.
-      assert.ok(raised >= 0 && raised - bank < 2.3 && bank <= 0.7);
-      if (berm > 0.01) bermArea += 0.0625;
-      if (bank > 0.01) bankArea += 0.0625;
-      if (bench > 0.01) benchArea += 0.0625;
-      if (bench > 0) benchVolume += bench * 0.0625;
-      // The plate only levels ground up to the footing, east of the trunk.
-      if (bench > 1e-9) {
-        assert.ok(base(x, z) + bench <= floor + 1e-9, `plate above the footing at ${x},${z}`);
-        assert.ok(x > trunkX, `plate west of the trunk at ${x},${z}`);
-      }
-      if (raised > 0.01)
+      const [b, knoll, shape, lip] = rootSupportLifts(x, z, base);
+      assert.equal(b, base(x, z));
+      assert.ok(Math.abs(height(x, z) - (b + knoll + shape + lip)) < 1e-12);
+      // The knoll only fills: up to the footing, a little more toward the
+      // trunk collar (its dome), never above.
+      assert.ok(knoll >= 0, `${x},${z}`);
+      assert.ok(
+        b + knoll <= Math.max(b, floor + ROOT_KNOLL.dome[0]) + 1e-9,
+        `knoll above the footing at ${x},${z}`,
+      );
+      // The relief and hollows stay small; a lip is a lip, not a berm.
+      assert.ok(Math.abs(shape) <= relief + hollow, `${x},${z}`);
+      assert.ok(lip >= -1e-12 && lip <= 0.2, `${x},${z}`);
+      if (knoll > 0.01) knollArea += 0.0625;
+      if (lip > 0.01) lipArea += 0.0625;
+      if (supports(x, z) !== b)
         slope = Math.max(
           slope,
           Math.hypot(
@@ -378,54 +471,77 @@ test("root supports: a level plate east of the trunk, low berms under the root e
             height(x, z + 0.25) - height(x, z - 0.25),
           ) / 0.5,
         );
-      // The plate and berms fall off C1, never in a hard vertical rim at a
-      // support's boundary; the soil banks follow the fine grid's own
-      // triangles, continuous and gently sloped (below), as the ground renders.
-      if (supports(x, z) === base(x, z)) {
-        assert.ok(supports(x + 0.001, z) - base(x + 0.001, z) < 0.00002);
-        assert.ok(supports(x, z + 0.001) - base(x, z + 0.001) < 0.00002);
+      // Everything falls off C1, never in a hard rim at a support's boundary.
+      if (supports(x, z) === b) {
+        assert.ok(Math.abs(supports(x + 0.001, z) - base(x + 0.001, z)) < 0.00002);
+        assert.ok(Math.abs(supports(x, z + 0.001) - base(x, z + 0.001)) < 0.00002);
       }
-      if (bank > 0.01)
-        bankSlope = Math.max(
-          bankSlope,
+      if (lip > 0.01)
+        lipSlope = Math.max(
+          lipSlope,
           Math.hypot(
             rootBankLift(x + 0.05, z) - rootBankLift(x - 0.05, z),
             rootBankLift(x, z + 0.05) - rootBankLift(x, z - 0.05),
           ) / 0.1,
         );
     }
-  // Berms and the banks under the resting roots together stay narrow soil, not a mound.
-  assert.ok(
-    bermArea > 20 && bermArea <= 130,
-    `berm and bank area is ${bermArea}, not a 15-unit-radius mound`,
-  );
-  assert.ok(bankArea > 10 && bankArea < 60, `bank area is ${bankArea}`);
-  assert.ok(bankSlope <= 1.2, `a bank's own slope reaches ${bankSlope}`);
-  assert.ok(benchArea > 60 && benchArea <= 200, `plate area is ${benchArea}`);
-  assert.ok(benchVolume <= 150, `plate volume is ${benchVolume}`);
-  assert.ok(slope <= 1.2, `terrain slope reaches ${slope} in the lift`);
+  assert.ok(knollArea > 100 && knollArea < 600, `knoll area is ${knollArea}`);
+  assert.ok(lipArea > 1 && lipArea < 15, `lip area is ${lipArea}: entry lips, not banks`);
+  assert.ok(lipSlope <= 1.2, `a lip's own slope reaches ${lipSlope}`);
+  assert.ok(slope <= 1.2, `terrain slope reaches ${slope} in the supports`);
   const geometry = createEarthGeometry(base),
     rendered = steepestLift(geometry);
   geometry.dispose();
-  assert.ok(rendered <= 1.25, `rendered terrain slope reaches ${rendered} in the lift`);
-  // Open ground west of the trunk and under the arches between root ends.
+  assert.ok(rendered <= 1.25, `rendered terrain slope reaches ${rendered} in the supports`);
+  // Never a level plate: about the trunk, away from the pinned ground and
+  // the roots, the soil undulates.
+  const probe = rootProbe(treeMesh("high")),
+    open = [];
+  for (let r = 2.5; r <= 9; r += 0.5)
+    for (let a = 0; a < 360; a += 3) {
+      const x = trunkX + r * Math.cos((a * Math.PI) / 180),
+        z = trunkZ + r * Math.sin((a * Math.PI) / 180),
+        soil = supports(x, z) - floor;
+      if (pinKeep(x, z) < 1) continue;
+      if (probe(x - TREE_FOOTING.x, z - TREE_FOOTING.z, soil - 0.5, soil + 1.5) < Infinity)
+        continue;
+      open.push(soil);
+    }
+  const level = open.filter((soil) => Math.abs(soil) < 0.01).length / open.length;
+  assert.ok(
+    open.length > 500 && level < 0.35,
+    `${(level * 100).toFixed(1)}% of ${open.length} open points level`,
+  );
+  // The knoll holds where the east and north-east roots touch down and gives
+  // way between and beyond them.
   for (const [x, z] of [
-    [0, 0],
-    [3, -3],
-    [0, 3],
-    [-5, 2],
-    [5, 9],
+    [11, -1.75],
+    [8.5, 3.2],
+    [7, 4.9],
   ])
     assert.equal(
-      height(TREE_FOOTING.x + x, TREE_FOOTING.z + z),
-      base(TREE_FOOTING.x + x, TREE_FOOTING.z + z),
+      knollWeight(x - TRUNK[0], z - TRUNK[1], TREE_FOOTING.x + x, TREE_FOOTING.z + z),
+      1,
     );
-  assert.ok(
-    Math.abs(ROOT_BENCH[3]) + ROOT_BENCH[4] < 90,
-    "the plate's arc stays east of the trunk",
-  );
-  // The drip-line puddles keep their ground and gain no rim: untouched to half
-  // a unit beyond their edge, at most a trace at three quarters.
+  for (const [x, z] of [
+    [16, 6],
+    [21, -2],
+    [-9, 3],
+  ])
+    assert.ok(
+      knollWeight(x - TRUNK[0], z - TRUNK[1], TREE_FOOTING.x + x, TREE_FOOTING.z + z) < 0.5,
+    );
+  // The pinned ground takes nothing: within PIN_KEEP of the lantern and the
+  // front puddle, and beyond each drip-line puddle's radius.
+  for (let a = 0; a < 6.3; a += 0.1)
+    for (const r of [0, 1, 2, PIN_KEEP.lantern]) {
+      const x = LANTERN_FOOT.x + r * Math.cos(a),
+        z = LANTERN_FOOT.z + r * Math.sin(a);
+      assert.equal(supports(x, z), base(x, z), `lantern clearing raised at ${x},${z}`);
+    }
+  // The drip-line puddles and Portrait's foreground puddle keep their ground
+  // and gain no rim: untouched to half a unit beyond their edge, at most a
+  // trace at three quarters.
   for (const zone of SLATE_PUDDLES.zones.slice(1)) {
     const p = estatePoint(zone.anchor, zone.deg, zone.dist);
     for (let a = 0; a < 6.3; a += 0.05)
@@ -434,12 +550,29 @@ test("root supports: a level plate east of the trunk, low berms under the root e
           z = p.z + r * Math.sin(a);
         if (r <= zone.radius + 0.5)
           assert.equal(height(x, z), base(x, z), `drip-line puddle raised at ${x},${z}`);
-        else assert.ok(height(x, z) - base(x, z) < 0.005, `drip-line puddle rim at ${x},${z}`);
+        else
+          assert.ok(
+            Math.abs(height(x, z) - base(x, z)) < 0.005,
+            `drip-line puddle rim at ${x},${z}`,
+          );
       }
   }
+  // Under the south-east spur the knoll keeps SPUR's depth below the footing
+  // (where the dune is no lower, the soil stays as it was): never above it.
+  const [ax, az, bx, bz, , , depth] = SPUR;
+  for (let t = 0; t <= 1; t += 0.05) {
+    const x = TREE_FOOTING.x + ax + (bx - ax) * t,
+      z = TREE_FOOTING.z + az + (bz - az) * t,
+      [b, knoll, shape] = rootSupportLifts(x, z, base);
+    assert.ok(supports(x, z) - floor < 0.001, `soil under the spur at ${x},${z}`);
+    assert.ok(b + knoll <= Math.max(b, floor - depth) + 1e-9 && shape <= 0, `${x},${z}`);
+  }
+  // The relief is seeded and deterministic.
+  assert.equal(reliefNoise(60.3, 31.7), reliefNoise(60.3, 31.7));
+  assert.ok(Math.abs(reliefNoise(60.3, 31.7)) <= relief);
 });
 
-test("root contact shading is neutral away from the roots and settles the root plate", () => {
+test("root contact shading is neutral away from the roots and settles the soil about the trunk", () => {
   const base = groundBase(),
     geometry = createEarthGeometry(base),
     shade = geometry.attributes.slateRoot;
@@ -459,7 +592,7 @@ test("root contact shading is neutral away from the roots and settles the root p
       assert.equal(lift(p.getX(i), -p.getY(i)), 0);
     }
     if (Math.hypot(x - TRUNK[0], z - TRUNK[1]) < 3) {
-      assert.equal(open, 0, "the root plate is settled soil");
+      assert.equal(open, 0, "the soil about the trunk is settled");
       near++;
     }
   }
@@ -487,16 +620,23 @@ test("root contact shading is neutral away from the roots and settles the root p
   const [vx, vz, contact] = rootShade(12.1, -1.1, 0);
   assert.ok(Math.hypot(vx, vz) < 0.01 && contact > 0.6, `${contact}`);
   assert.ok(rootShade(11.6, -1.15, 0)[2] > 0.9);
-  // Where a centreline runs over open soil, the contact is cut: the south
-  // (L0) and east (L2) roots arch a unit or more above the soil near the
-  // trunk (the mesh's footprint lies far from their lines there).
+  // Where a centreline runs over open soil, the contact is cut: the east (L2)
+  // root and the spur arch a unit or more above the soil near the trunk (the
+  // mesh's footprint lies far from their lines there). Where the sunk south
+  // (L0) and east roots come down within half a unit of the soil, only a
+  // faint crease shows.
+  for (const [x, z] of [
+    [6, -1.6],
+    [7.3, -1.6],
+    [5.4, -2.8],
+  ])
+    assert.equal(rootShade(x, z, 0)[2], 0, `${x},${z}`);
   for (const [x, z] of [
     [3.1, -5.5],
     [3.3, -4.3],
-    [7.3, -1.6],
     [8.5, -1.7],
   ])
-    assert.equal(rootShade(x, z, 0)[2], 0, `${x},${z}`);
+    assert.ok(rootShade(x, z, 0)[2] < 0.35, `${x},${z}`);
   // The aerial spur only takes a soft shade, never a contact line.
   assert.ok(rootShade(7.9, -6, 0)[2] < 0.4);
   // The puddles never take settled soil (it would dry them).
@@ -554,16 +694,47 @@ test("the lazy ground shading extends only the slate's program, under its own ke
     const vertex = after.vertexShader,
       fragment = after.fragmentShader;
     assert.equal(before.fragmentShader.includes("vSlateRoot"), false);
-    // The root attributes: the contact vector, strength and settled soil, and the baked occlusion.
+    // The root attributes: the contact vector, strength and settled soil, the
+    // baked occlusion, and the soil's cavity (POOL_FIELD).
     assert.match(
       vertex,
-      /^attribute vec4 slateRoot;\nattribute vec2 slateShade;\nvarying vec4 vSlateRoot;\nvarying vec2 vSlateShade;\n/,
+      /^attribute vec4 slateRoot;\nattribute vec2 slateShade;\nattribute float slatePool;\nvarying vec4 vSlateRoot;\nvarying vec2 vSlateShade;\nvarying float vSlatePool;\n/,
     );
-    assert.match(vertex, /vSlateRoot = slateRoot;\nvSlateShade = slateShade;/);
+    assert.match(
+      vertex,
+      /vSlateRoot = slateRoot;\nvSlateShade = slateShade;\nvSlatePool = slatePool;/,
+    );
     assert.match(
       fragment,
-      /^varying vec4 vSlateRoot;\nvarying vec2 vSlateShade;\nuniform vec3 slateKeyView;\n/,
+      /^varying vec4 vSlateRoot;\nvarying vec2 vSlateShade;\nvarying float vSlatePool;\nuniform vec3 slateKeyView;\n/,
     );
+    // Rain in the soil's low spots: standing water (a puddle, before the lantern
+    // puddle is taken), wet mud about it and drier crests, clear of the clearing;
+    // the trunk darkens the water's mirror; grit only near the lens.
+    const P = SLATE_SOIL.pool;
+    assert.ok(
+      fragment.includes(
+        `float slatePoolW = smoothstep(${P.water[0]}, ${P.water[1]}, slatePoolDepth)*(1.0-slateDry)*(1.0-slateKeep);`,
+      ),
+    );
+    assert.ok(
+      fragment.indexOf("slatePuddle = max(slatePuddle, slatePoolW);") <
+        fragment.indexOf("float slateLanternPuddle ="),
+    );
+    assert.match(fragment, /slateWet = max\(slateWet\*\(1\.0-[\d.]+\*slateCrest\), slateMud\);/);
+    assert.match(fragment, /slateWaterVeil = max\(/);
+    assert.match(
+      fragment,
+      /float slateGritN = \(1\.0-smoothstep\([\d.]+, [\d.]+, length\(vViewPosition\)\)\)\*\(1\.0-slatePuddle\)\*\(1\.0-slateKeep\);/,
+    );
+    assert.match(
+      fragment,
+      /roughnessFactor = mix\(roughnessFactor, [\d.]+, slateMud\*\(1\.0-slatePuddle\)\);/,
+    );
+    // The root contact's damp soil is mud too.
+    assert.ok(fragment.includes(`slateMud = max(slateMud, ${SLATE_SOIL.damp.mud}*slateDamp);`));
+    // The water's mirror sees only the sky the tree leaves open.
+    assert.match(fragment, /slateSkyVis = 1\.0-slateSky;/);
     // In the lantern clearing (1.9-2.4 about the lantern) the earlier terms stay exactly as they were.
     assert.match(
       fragment,
@@ -571,7 +742,7 @@ test("the lazy ground shading extends only the slate's program, under its own ke
     );
     assert.match(
       fragment,
-      /slateDry = max\(slateDry, mix\(0\.7\*slateSettle, 1\.0-vSlateRoot\.w, slateKeep\)\);\s*float slateWet = /,
+      /slateDry = max\(slateDry, mix\(0\.15\*slateSettle, 1\.0-vSlateRoot\.w, slateKeep\)\);\s*float slateWet = /,
     );
     assert.match(
       fragment,
@@ -603,6 +774,13 @@ test("the lazy ground shading extends only the slate's program, under its own ke
       fragment.indexOf("#define RE_Direct RE_Direct_Slate") >
         fragment.indexOf("#define RE_Direct\t\t\t\tRE_Direct_Physical"),
     );
+    // The root occlusion wraps the film ground's own balance of the lights.
+    assert.ok(
+      fragment.indexOf("#define RE_Direct RE_Direct_Slate") >
+        fragment.indexOf("#define RE_Direct RE_Direct_Moonlit"),
+    );
+    assert.match(fragment, /RE_Direct_Moonlit\(slateLight, geometryPosition,/);
+    assert.equal(fragment.includes("slateLight.color *= 1.2;"), false);
     // Occluded sky light and reflections; damp soil in the creases and the cavity only.
     assert.match(
       fragment,
@@ -642,12 +820,14 @@ test("the lazy ground shading extends only the slate's program, under its own ke
     assert.match(fragment, /slateZoneW = smoothstep\(0\.0, \.04, slateLevel\+slateH\);/);
     assert.match(
       fragment,
-      /\(\(\.02\+\.98\*slateFresnel\)\*\(1\.0-slateZoneW\)\*/,
-      "the grazing sky sheen gives way to the mirror",
+      /slateWaterCover \*= 1\.0-slatePuddle\*slateZoneW;\nvec3 slateWaterRefl =/,
+      "the water film's and the puddles' mirror give way to the zone's own",
     );
+    // The zone's mirror shows the night sky (the environment) at its sharpest,
+    // and the old horizon, fog and zenith sky only without it.
     assert.match(
       fragment,
-      /slateSheen\*\(slateWet\*\(1\.0-slatePuddle\*slateZoneW\)\*slateFresnel/,
+      /#ifdef USE_ENVMAP\s*vec3 slateSkyW = textureCubeUV\(envMap, slateR, 0\.0\)\.rgb\*envMapIntensity;\s*#else\s*vec3 slateSkyW = mix\(/,
     );
     assert.match(fragment, /slatePuddle = mix\(slatePuddle, smoothstep\([^;]*\), slateZoneW\);/);
     assert.match(
@@ -668,7 +848,8 @@ test("the lazy ground shading extends only the slate's program, under its own ke
       fragment.indexOf("if (slateWater > 0.0) {") <
         fragment.indexOf("reflectedLight.indirectDiffuse *= 1.0-0.75*slateSky;"),
     );
-    // No texture lookup, light or pass is added.
+    // No 2D texture lookup, light or pass is added (the water reads the film's
+    // environment cube, night-environment.js).
     assert.equal(count(fragment, "texture2D("), count(before.fragmentShader, "texture2D("));
     assert.equal(count(vertex, "texture2D("), count(before.vertexShader, "texture2D("));
     // The lazy chunk's own uniforms.
@@ -712,7 +893,7 @@ test("the puddle mirror and the root shading apply without each other", () => {
     // Without a root anchor, the puddles still apply; the root list changes nothing.
     const noRoots = program();
     noRoots.fragmentShader = noRoots.fragmentShader.replace(
-      "#include <lights_physical_pars_fragment>",
+      "#define RE_Direct RE_Direct_Moonlit",
       "",
     );
     assert.deepEqual(shadeSlateGround(noRoots), { puddles: true, roots: false });
@@ -1427,9 +1608,14 @@ test("the root tables are neutral beyond the tree and leave the lantern clearing
   // The trunk's cavity is deeply occluded, the open plate beyond the crown barely.
   assert.ok(rootOcclusion(TREE_FOOTING.x + TRUNK[0] + 1.5, TREE_FOOTING.z + TRUNK[1])[0] > 0.6);
   assert.ok(rootOcclusion(TREE_FOOTING.x + 14, TREE_FOOTING.z - 10)[0] < 0.05);
-  // The banks stay under the roots: none in the lantern clearing or within a
-  // puddle's pinned margin, every one where a root rests close above the soil.
-  assert.ok(ROOT_RESTS.length > 20 && ROOT_RESTS.every(([, , lift]) => lift > 0 && lift <= 0.7));
+  // The entry lips stay under the roots: none in the lantern clearing or
+  // within a puddle's pinned margin; a few small ones where a sunk root leaves
+  // the soil.
+  assert.ok(
+    ROOT_RESTS.length >= 3 &&
+      ROOT_RESTS.length <= 30 &&
+      ROOT_RESTS.every(([, , lift]) => lift > 0 && lift <= 0.2),
+  );
   for (const [col, row] of ROOT_RESTS) {
     const x = LX + col * pitch,
       z = LZ + row * pitch;
@@ -1470,85 +1656,111 @@ test("the occlusion tables ramp: no lattice edge or pinned-ground cliff reads", 
   assert.ok(cavity[0] > 0.7 && cavity[1] > 0.6, JSON.stringify(cavity));
 });
 
-// Lattice-point gaps between each variant's lowest root surface and the
-// rendered soil (bank included), within [soil - .35, soil + 1.3].
-function rootGaps(tier) {
+// The sunk tree against the rendered soil (the knoll at the fine grid's
+// vertices, linear between them, lips included) on a 0.25 grid: each
+// variant's lowest root surface from 0.6 below the soil to 2 above it, as a
+// gap over the soil, and its authored height above its own toe (TREE_SINK
+// added back), which tells the resting roots (0.42 or less: they hung 0.3
+// above the footing before the tree sank) from the arches (0.62 to 1.4).
+function rootContacts(tier) {
   const probe = rootProbe(treeMesh(tier)),
     ground = latticeGround(groundBase()),
     { x: LX, z: LZ, pitch, cols, rows } = ROOT_LATTICE;
-  const gaps = [];
-  for (let row = 0; row < rows; row++)
-    for (let col = 0; col < cols; col++) {
-      const x = LX + col * pitch,
-        z = LZ + row * pitch,
-        soil = ground.heights[row * cols + col],
-        bank = rootBankLift(x, z);
+  const points = [];
+  for (let z = LZ + 1; z <= LZ + (rows - 1) * pitch - 1; z += 0.25)
+    for (let x = LX + 1; x <= LX + (cols - 1) * pitch - 1; x += 0.25) {
+      const soil = ground.at(x, z) + rootBankLift(x, z);
       const under =
         probe(
           x - TREE_FOOTING.x,
           z - TREE_FOOTING.z,
-          soil - 0.35 - ground.floor,
-          soil + 1.3 - ground.floor,
+          soil - 0.6 - ground.floor,
+          soil + 2 - ground.floor,
         ) + ground.floor;
-      // Pinned: the vertex's triangles reach the pinned ground or its half-unit ramp.
-      gaps.push({
+      if (!Number.isFinite(under)) continue;
+      points.push({
         x,
         z,
-        before: under - soil,
-        after: under - soil - bank,
-        pinned: latticeGuard(x, z) < 1,
+        gap: under - soil,
+        authored: under - ground.floor + TREE_SINK,
+        // The lantern clearing and the puddles' margins, where the soil is pinned.
+        pinned: pinDistance(x, z) < 0.5,
+        // The one low toe the tree used to stand on.
+        toe: Math.hypot(x - TREE_FOOTING.x - 1.85, z - TREE_FOOTING.z - 4.5) < 0.9,
       });
     }
-  return gaps;
+  return points;
 }
 
 for (const tier of ["high", "balanced"])
-  test(`${tier} resting roots no longer hover over the soil beyond the pinned lantern clearing and puddles`, () => {
-    // The float census: lattice points where the lowest root surface hangs
-    // 0.25-0.6 above the soil (19-20 before the banks). The ones left all lie
-    // where the ground is pinned (the front puddle and its 0.75 margin, the
-    // north drip-line puddle and the lantern clearing), so the banks cannot
-    // reach them.
-    const gaps = rootGaps(tier),
-      floats = (key) => gaps.filter((g) => g[key] > 0.25 && g[key] <= 0.6);
-    assert.ok(floats("before").length >= 18, `${floats("before").length} before`);
+  test(`${tier} the sunk tree's resting roots enter the soil and none hovers beyond the pinned ground`, () => {
+    // Before the tree sank they hung 0.3 above the footing and soil banks
+    // rose to meet them. Now each enters the knoll about 0.11 deep; within
+    // the pinned lantern clearing and puddle margins the soil cannot move,
+    // so a few hang there, never more than 0.2.
+    const points = rootContacts(tier),
+      resting = points.filter((p) => p.authored <= 0.42 && !p.toe),
+      open = resting.filter((p) => !p.pinned);
+    assert.ok(open.length > 100, `${open.length} resting points`);
+    const hovering = open.filter((p) => p.gap > 0.03);
+    assert.equal(hovering.length, 0, JSON.stringify(hovering.slice(0, 5)));
+    const depths = open.map((p) => -p.gap).sort((a, b) => a - b),
+      median = depths[Math.floor(depths.length / 2)];
+    assert.ok(median >= 0.1 && median <= 0.16, `median entry depth ${median}`);
     assert.ok(
-      floats("after").filter((g) => !g.pinned).length <= 4,
-      JSON.stringify(floats("after").filter((g) => !g.pinned)),
+      resting.filter((p) => p.pinned).every((p) => p.gap <= 0.2),
+      "a root over the pinned ground hangs 0.2 or more",
     );
-    assert.equal(floats("after").filter((g) => !g.pinned).length, 0);
-    assert.ok(floats("after").length <= 9, `${floats("after").length} after`);
   });
 
 for (const tier of ["high", "balanced"])
-  test(`${tier} soil banks never bury a root by more than 0.2`, () => {
-    // Every tree vertex near the soil: where a bank lifts the soil, the root
-    // ends up at most 0.2 below it (or no deeper than it already was).
+  test(`${tier} the soil buries no root deeper than 0.2 but the toe, and the arches stay open`, () => {
+    // Every tree vertex near the soil. The deepest, but for the toe, is the
+    // north-east root's low point by the trunk, authored 0.24 above the toe.
     const { positions } = treeMesh(tier),
       ground = latticeGround(groundBase()),
       { x: LX, z: LZ, pitch, cols, rows } = ROOT_LATTICE;
     let checked = 0,
-      banked = 0;
+      lipped = 0,
+      deepest = 0,
+      toe = 0,
+      lowest = Infinity;
     for (let i = 0; i < positions.length; i += 3) {
+      lowest = Math.min(lowest, positions[i + 1]);
       const x = positions[i] + TREE_FOOTING.x,
         z = positions[i + 2] + TREE_FOOTING.z;
       if (x < LX || z < LZ || x > LX + (cols - 1) * pitch || z > LZ + (rows - 1) * pitch) continue;
       const soil = ground.at(x, z),
         y = positions[i + 1] + ground.floor,
-        bank = rootBankLift(x, z);
+        lip = rootBankLift(x, z);
       if (y > soil + 1.3) continue;
       checked++;
-      if (!bank) continue;
-      banked++;
+      if (Math.hypot(x - TREE_FOOTING.x - 1.85, z - TREE_FOOTING.z - 4.5) < 0.9)
+        toe = Math.max(toe, soil + lip - y);
+      else deepest = Math.max(deepest, soil + lip - y);
+      // A lip buries no root by more than 0.2 (or deeper than it already was).
+      if (!lip) continue;
+      lipped++;
       assert.ok(
-        soil + bank - y <= Math.max(0.2, soil - y) + 1e-3,
-        `${tier} root at ${x},${z} buried by ${soil + bank - y}`,
+        soil + lip - y <= Math.max(0.2, soil - y) + 1e-3,
+        `${tier} root at ${x},${z} buried by ${soil + lip - y}`,
       );
     }
-    assert.ok(checked > 500 && banked > 100, `${checked} near-soil vertices, ${banked} over banks`);
+    // The tree stands TREE_SINK into the soil below its lowest vertex.
+    assert.ok(Math.abs(lowest + TREE_SINK) < 1e-9, `lowest vertex at ${lowest}`);
+    assert.ok(checked > 500 && lipped > 5, `${checked} near-soil vertices, ${lipped} over lips`);
+    assert.ok(deepest <= 0.21, `${tier} a root is buried ${deepest} deep`);
+    assert.ok(toe > 0.3 && toe <= TREE_SINK + 0.01, `${tier} the toe is buried ${toe} deep`);
+    // Under every arch the soil stays clear of the root.
+    const arches = rootContacts(tier).filter((p) => p.authored > 0.62 && p.authored <= 1.4);
+    assert.ok(arches.length > 200, `${arches.length} arch points`);
+    assert.ok(
+      arches.every((p) => p.gap >= 0.1),
+      JSON.stringify(arches.filter((p) => p.gap < 0.1).slice(0, 5)),
+    );
   });
 
-test("sparse dark litter lies beside the roots, clear of the lantern, the puddles and the roots themselves", () => {
+test("sparse dark litter and small grey stones lie among the roots, clear of the lantern, the puddles and the roots themselves", () => {
   const base = groundBase(),
     terrain = createEarthGeometry(base),
     surface = terrainHeight(terrain);
@@ -1591,8 +1803,9 @@ test("sparse dark litter lies beside the roots, clear of the lantern, the puddle
       );
   // On the rendered ground, and dark: at most half the ground's own albedo.
   const p = litter.attributes.position,
-    c = litter.attributes.color;
-  for (let i = 0; i < p.count; i++) {
+    c = litter.attributes.color,
+    litterVertices = litter.userData.litterVertices;
+  for (let i = 0; i < litterVertices; i++) {
     assert.ok(
       Math.abs(p.getY(i) - surface(p.getX(i), p.getZ(i))) < 0.16,
       `litter vertex ${i} off the ground`,
@@ -1601,7 +1814,47 @@ test("sparse dark litter lies beside the roots, clear of the lantern, the puddle
       c.getX(i) <= color.r * LITTER.albedo * 0.6 && c.getZ(i) <= color.b * LITTER.albedo * 0.6,
     );
   }
-  assert.ok(p.count / 3 > 300 && p.count / 3 < 900, `${p.count / 3} triangles`);
+  assert.ok(
+    litterVertices / 3 > 300 && litterVertices / 3 < 900,
+    `${litterVertices / 3} triangles`,
+  );
+  // The small stones: among the roots and about the trunk's base, clear of
+  // the roots and arches, the lantern and the puddles, sunk part way into the
+  // rendered soil, a cool grey lighter than the dark litter (the soil's mean
+  // times LITTER.stones.tone).
+  const S = LITTER.stones,
+    stones = litter.userData.stones;
+  assert.equal(stones.length, S.count);
+  const mean = 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b;
+  const perStone = (p.count - litterVertices) / stones.length;
+  assert.equal(perStone, 240, "a smooth icosphere each");
+  stones.forEach(([x, z, width], k) => {
+    assert.ok(width >= S.size[0] && width <= S.size[1], `stone ${k} is ${width} wide`);
+    assert.ok(x > LX && z > LZ && x < LX + (cols - 1) * pitch && z < LZ + (rows - 1) * pitch);
+    assert.ok(Math.hypot(x - LANTERN_FOOT.x, z - LANTERN_FOOT.z) >= LITTER.lantern);
+    for (const zone of PUDDLE_ZONES)
+      assert.ok(zoneDistance(zone, x, z) >= zone.radius + LITTER.puddle);
+    assert.equal(rootCovered(x, z), false, "never under a root or an arch");
+    let among = false;
+    for (let dx = -S.among; dx <= S.among && !among; dx += 0.25)
+      for (let dz = -S.among; dz <= S.among; dz += 0.25)
+        if (Math.hypot(dx, dz) <= S.among && rootCovered(x + dx, z + dz)) {
+          among = true;
+          break;
+        }
+    assert.ok(among, `stone ${x},${z} among the roots`);
+    for (const [ox, oz] of stones.slice(k + 1))
+      assert.ok(Math.hypot(ox - x, oz - z) >= S.spacing, "stones keep apart");
+    let below = 0,
+      above = 0;
+    for (let i = litterVertices + k * perStone; i < litterVertices + (k + 1) * perStone; i++) {
+      if (p.getY(i) < surface(p.getX(i), p.getZ(i))) below++;
+      else above++;
+      const grey = 0.2126 * c.getX(i) + 0.7152 * c.getY(i) + 0.0722 * c.getZ(i);
+      assert.ok(grey <= mean * LITTER.albedo * S.tone[1] * 1.1 && c.getZ(i) >= c.getX(i));
+    }
+    assert.ok(below > 0 && above > below / 2, `stone ${k} sits part way in the soil`);
+  });
   // Deterministic.
   assert.deepEqual(scatterLitter(surface, color).attributes.position.array, p.array);
   litter.dispose();
@@ -1845,9 +2098,13 @@ test("the mirrored flame is the flame's own light as the frame shows it, after t
     "slateRefl += slateFlameW*(0.5*(1.0-exp(-(slateY+slateFlamePk*slateF)/0.5))-slateKnee);",
   );
   assert.ok(
-    knee > 0 &&
-      add > knee &&
-      add < fragment.indexOf("reflectedLight.indirectSpecular += slateRefl*slateWater;"),
+    knee > 0 && add > knee && add < fragment.indexOf("vec3 slateZoneRefl = slateRefl*slateWater;"),
+  );
+  // Behind the name and intro it passes the ground's text knee (mud-ground.js SLATE_WATER.text).
+  assert.ok(
+    fragment.includes(
+      "reflectedLight.indirectSpecular += slateZoneRefl/(1.0+slateBehind*dot(slateZoneRefl, vec3(.2126, .7152, .0722))/SLATE_TEXT_KNEE);",
+    ),
   );
   const core = LANTERN_FLAME.color.core;
   assert.ok(
@@ -2105,18 +2362,18 @@ test("the film's ready resolves to the root-aware ground once the roots settle",
   assert.equal(typeof height, "function");
   assert.equal(r.ground.material.userData.slateRoot, shadeSlateGround);
   assert.equal(r.invalidations(), 2, "the terrain and then its shading invalidate a paused frame");
-  // On flat ground the root ends' soil stands at its level (at a vertex, exactly as
-  // built; between vertices, as rendered), with its bank; open ground stays at 0.
+  // On flat ground the knoll adds only its collar's dome, and the relief, the
+  // crook hollows and the lips shape the soil about the tree (at a vertex,
+  // exactly as built; between vertices, as rendered); open ground stays at 0.
   assert.ok(Math.abs(height(67.5, 35.25) - rootSupportHeight(67.5, 35.25, () => 0)) < 1e-6);
-  assert.ok(
-    Math.abs(
-      height(TREE_FOOTING.x + 12.1, TREE_FOOTING.z - 1.1) -
-        0.36 -
-        rootBankLift(TREE_FOOTING.x + 12.1, TREE_FOOTING.z - 1.1),
-    ) < 0.05,
-  );
-  assert.equal(height(TREE_FOOTING.x, TREE_FOOTING.z), 0);
+  for (const [x, z] of [
+    [TREE_FOOTING.x + 12.1, TREE_FOOTING.z - 1.1],
+    [TREE_FOOTING.x, TREE_FOOTING.z],
+    [TREE_FOOTING.x + TRUNK[0], TREE_FOOTING.z + TRUNK[1]],
+  ])
+    assert.ok(Math.abs(height(x, z) - rootSupportHeight(x, z, () => 0)) < 0.03, `${x},${z}`);
   assert.equal(height(0, 0), 0);
+  assert.equal(height(TREE_FOOTING.x + 30, TREE_FOOTING.z), 0);
   const geometry = r.ground.geometry;
   r.film.dispose();
   assert.equal(r.ground.material.userData.slateRoot, undefined, "disposal withdraws the shading");

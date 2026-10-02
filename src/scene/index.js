@@ -315,6 +315,8 @@ const ORBIT_SPEED = 0.06;
       skyShell.material.depthWrite = false;
       atmosphereSystem.root.add(skyShell);
       atmosphereSystem.setSkyMaterial(skyShell.material);
+      // The film's environment is captured from this shell's film sky.
+      rendering.setEnvironmentSky(skyShell.material, skyConfig.shellOpacity);
       const solarBody = createSolarBody({
         parent: atmosphereSystem.root,
         camera,
@@ -358,6 +360,41 @@ const ORBIT_SPEED = 0.06;
       // The slate's contact darkening (tree roots, lantern, rocks) and detail map
       // slot: uniforms, so rocks arriving or shadows switching never recompile.
       const groundContacts = createSlateContacts(estateContacts());
+      // The name and intro, and About, on the canvas, in its UV (y up), where
+      // the ground's water eases off (mud-ground.js SLATE_WATER.text), as the
+      // light shafts' air does, and beside About the bark's lantern highlights
+      // pass the same knee (the tree takes these uniforms); measured on resize,
+      // on font loads and every 30th frame.
+      function measureGroundText() {
+        const canvas = renderer.domElement?.getBoundingClientRect?.();
+        const box = (text, selectors) => {
+          let x0 = Infinity,
+            y0 = Infinity,
+            x1 = -Infinity,
+            y1 = -Infinity;
+          for (const selector of selectors)
+            for (const element of document.querySelectorAll(selector)) {
+              const r = element.getBoundingClientRect?.();
+              if (!r?.width || !r.height) continue;
+              x0 = Math.min(x0, r.left);
+              x1 = Math.max(x1, r.right);
+              y0 = Math.min(y0, r.top);
+              y1 = Math.max(y1, r.bottom);
+            }
+          if (!canvas?.width || !canvas.height || x0 > x1)
+            return Object.assign(text, { x: 2, y: 2, z: -1, w: -1 });
+          return Object.assign(text, {
+            x: (x0 - canvas.left) / canvas.width,
+            z: (x1 - canvas.left) / canvas.width,
+            y: 1 - (y1 - canvas.top) / canvas.height,
+            w: 1 - (y0 - canvas.top) / canvas.height,
+          });
+        };
+        if (canvas?.width && canvas.height)
+          groundContacts.slateAspect.value = canvas.width / canvas.height;
+        box(groundContacts.slateText.value, [".hero h1", ".hero-intro"]);
+        box(groundContacts.slateAbout.value, [".site-footer__about .about-link__label"]);
+      }
       subsystemRegistry.register({
         applyQuality(profile) {
           groundContacts.slateContactGain.value = profile?.shadows?.enabled ? 0.6 : 1;
@@ -634,6 +671,7 @@ const ORBIT_SPEED = 0.06;
             groundHeight,
             anisotropy: chooseAnisotropy(6),
             anchor: [ESTATE.tree.x, ESTATE.tree.z],
+            textGuard: groundContacts,
           });
           replacement.applyQuality(state.profile);
           environmentRoot.add(replacement.root);
@@ -718,6 +756,7 @@ const ORBIT_SPEED = 0.06;
       function applySceneSize({ width, height }) {
         qualityState.holdSampling();
         cinematicArea = measureCinematicArea(width, height);
+        measureGroundText();
         viewport.width = width;
         viewport.height = height;
         applySceneComposition("resize");
@@ -763,6 +802,7 @@ const ORBIT_SPEED = 0.06;
       const onFontsLoaded = () => {
         cinematicArea = measureCinematicArea(viewport.width, viewport.height);
         cameraTour?.prepareNext();
+        measureGroundText();
         invalidateContent();
       };
       document.fonts?.addEventListener?.("loadingdone", onFontsLoaded);
@@ -773,7 +813,8 @@ const ORBIT_SPEED = 0.06;
       window.addEventListener("resize", onWindowResize);
       window.addEventListener("scroll", onWindowScroll, { passive: true });
       resizeController.update({ force: true });
-      let debugRenderFrameCount = 0;
+      let debugRenderFrameCount = 0,
+        groundTextFrames = 0;
       let debugRenderWindowStart = null;
       let firstFrameDrawn = false;
       // Governor steps link their programs at once and apply on a tour cut.
@@ -787,6 +828,7 @@ const ORBIT_SPEED = 0.06;
         timestamp,
       }) {
         const frameStart = firstFrameDrawn ? 0 : sceneNow();
+        if (++groundTextFrames % 30 === 1) measureGroundText();
         // Samples are rAF intervals, not render cost; take them only while the
         // revealed scene animates continuously, outside a post-event hold, and
         // not while a step waits for its cut.
@@ -881,6 +923,7 @@ const ORBIT_SPEED = 0.06;
           reducedMotion,
           render: false,
           visibilityScale,
+          bloom: rendering.postprocessPipeline.passes?.bloom?.enabled === true,
         });
         if (filmActive)
           filmScene.finishFrame(
@@ -912,6 +955,8 @@ const ORBIT_SPEED = 0.06;
         if (qualityDebug) {
           // Linked programs: a first crossfade or quality step should add none.
           qualityDebug.programs = renderer.info?.programs?.length ?? null;
+          const { status, ms } = rendering.environment;
+          qualityDebug.environment = { status, ms: Math.round(ms * 10) / 10 };
           debugRenderWindowStart ??= timestamp;
           debugRenderFrameCount += 1;
           const debugRenderWindowMs = timestamp - debugRenderWindowStart;

@@ -887,7 +887,10 @@ test("quality controls keep capable auto-tier devices on high and expose current
   assert.equal(tier, "high");
   assert.equal(balanced.dprCap, 1.25);
   assert.equal(balanced.textures.groundSize, 768);
-  assert.equal(balanced.shadows.mapSize, 0);
+  // Balanced draws the moon key's shadow at half high's map size.
+  assert.equal(balanced.shadows.enabled, true);
+  assert.equal(balanced.shadows.mapSize, 1024);
+  assert.equal(scene.getSceneQualityProfile("high").shadows.mapSize, 2048);
 });
 
 test("quality overrides and governor transitions are deterministic", async () => {

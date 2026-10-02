@@ -2,6 +2,9 @@ import { Box3, Group, Mesh, Vector3 } from "three";
 import { editableGeometry } from "./architecture.js";
 
 export const LANTERN_AUTHORING_HEIGHT = 2.48;
+// The lantern's iron and glass mirror the film's night sky (night-environment.js)
+// at this share: cool glints on the cap and the glass, the metal still dark.
+export const LANTERN_ENVIRONMENT = 0.7;
 
 // The asset controller owns the GLB and its maps. This assembly owns only its
 // geometry/material clones; its authored PBR and masked emission receive no
@@ -32,6 +35,7 @@ export function createLanternArchitecture({ asset, anisotropy = 4 }) {
       let material = clonedMaterials.get(source);
       if (!material) {
         material = source.clone();
+        material.envMapIntensity = LANTERN_ENVIRONMENT;
         clonedMaterials.set(source, material);
         materials.add(material);
         Object.values(material).forEach((value) => {

@@ -563,3 +563,33 @@ test("the film ground starts from a flat preview and paints in full in the next 
   assert.deepEqual(full.sizes(), [512, 512]);
   assert.equal(full.ground.ensureProcedural(), false);
 });
+
+test("a step between the tiers' shadow map sizes frees the drawn map for one of the new size", () => {
+  const { rendering } = createRendering();
+  const sun = rendering.lights.sun;
+  const profile = (tier, mapSize) => ({
+    tier,
+    lighting: {
+      fogNear: 60,
+      fogFar: 150,
+      ambientIntensity: 0.2,
+      hemisphereIntensity: 0.6,
+      directionalIntensity: 3,
+      fillIntensity: 0.4,
+      extraDirectional: true,
+    },
+    shadows: { enabled: true, mapSize },
+  });
+  rendering.applyQuality(profile("high", 2048));
+  assert.equal(rendering.tier, "high");
+  let freed = 0;
+  sun.shadow.map = { width: 2048, dispose: () => freed++ };
+  rendering.applyQuality(profile("high", 2048));
+  assert.equal(freed, 0, "the same size keeps its map");
+  rendering.applyQuality(profile("balanced", 1024));
+  assert.equal(freed, 1);
+  assert.equal(sun.shadow.map, null, "the next shadow draw allocates it at 1024");
+  assert.equal(sun.shadow.mapSize.width, 1024);
+  assert.equal(sun.shadow.needsUpdate, true);
+  assert.equal(rendering.tier, "balanced");
+});

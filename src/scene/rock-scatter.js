@@ -26,6 +26,8 @@ export const ROCK_TYPES = Object.freeze({
 // A: right of the tower base in The watch. G: a distant silhouette in the fog.
 // C: behind Root and lantern and Portrait. D: behind the lantern, to the right,
 // in Lantern study. F: the right side of Portrait. E: at the lantern's foot.
+// N: beyond the tree's north root, right of the trunk in Portrait, behind the
+// lantern.
 export const ROCK_CLUSTERS = Object.freeze(
   [
     ["A1", "tower", -145.6, 21.2, "lichen", 3.4],
@@ -33,16 +35,18 @@ export const ROCK_CLUSTERS = Object.freeze(
     ["A3", "tower", -133.9, 21.9, "weathered", 0.55],
     ["A4", "tower", -153.4, 21.9, "lichen", 0.4],
     ["G1", "tower", -163.8, 64.6, "weathered", 5.0],
-    ["C1", "tree", 15, 13.0, "weathered", 2.9],
+    ["C1", "tree", 15, 13.0, "weathered", 3.8],
     ["C2", "tree", 5, 14.5, "lichen", 0.7],
     ["C3", "tree", 25, 11.8, "weathered", 0.45],
     ["D1", "tree", 110, 12.0, "lichen", 2.4],
-    ["F1", "tree", 170, 15.0, "lichen", 3.0],
+    ["F1", "tree", 170, 15.0, "lichen", 3.9],
     ["F2", "tree", 166, 17.0, "weathered", 0.6],
     ["F3", "tree", 160, 13.8, "lichen", 0.35],
     ["E1", "lantern", 125, 2.1, "weathered", 0.5],
     ["E2", "lantern", 140, 2.7, "lichen", 0.32],
     ["E3", "lantern", 150, 1.8, "weathered", 0.22],
+    ["N1", "tree", 126, 13.2, "weathered", 1.9],
+    ["N2", "tree", 138, 12.4, "lichen", 0.85],
   ].map(Object.freeze),
 );
 // Rocks at least this tall get one pebble each, 1.2-2.6 of their radius out.
@@ -135,7 +139,7 @@ export function createRockScatter({
       return;
     started = true;
     onStatus({ status: "loading", tier });
-    // Seat the rocks on the film terrain (the tree's root plate) once it exists.
+    // Seat the rocks on the film terrain (the tree's knoll) once it exists.
     Promise.all([load(), terrain()]).then(
       ([{ createRocks }, groundHeight = options.groundHeight]) => {
         if (disposed) return;

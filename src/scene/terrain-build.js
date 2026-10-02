@@ -1,7 +1,8 @@
 import { BufferAttribute, BufferGeometry, Mesh, Vector3 } from "three";
 
-// A lazy chunk: the film terrain with its foothills, the tree's root supports
-// and their shading, the puddles and their drips, the tufts and the litter.
+// A lazy chunk: the film terrain with its foothills, the knoll under the tree
+// and its root shading, the puddles and their drips, the tufts, the litter and
+// the small stones.
 
 // Two low, broken ridges beyond the estate's entire occupied area: radius,
 // half-width and lift.
@@ -36,40 +37,97 @@ const ease = (a, b, value) => {
 // centre, measured on both GLBs, relative to the tree.
 export const TRUNK = [3.9, -0.05];
 
-// The level root plate: east of the trunk the root flare overhangs the dune
-// hollow, so the ground there is brought up to the footing, never above it.
-// [flat radius about the trunk, blend radius, level below the footing, half-arc
-// about +x in degrees, arc feather]. It only fills ground below that level and
-// never reaches west of the trunk, the lantern clearing or any puddle; tests
-// cap its area and volume.
-export const ROOT_BENCH = [6.5, 12.5, 0, 55, 22];
+// How far the tree is set into the soil below its lowest vertex (estate-layout.js
+// ESTATE.tree.sink, restated as TREE_FOOTING is): prop-scale.js seats the tree
+// on that toe, so without it every resting root would hang 0.3 above the
+// footing. Sunk, the resting roots enter the soil 0.1-0.15 deep.
+export const TREE_SINK = 0.45;
 
-// Soil that takes each root end, measured on both authored quality variants:
-// tip x/z relative to the tree, outward heading (degrees, atan2(z, x)), soil
-// level above the footing (a little over the root's underside, so the end sinks
-// in), how far that level holds back along the root, how far it tapers out
-// beyond the tip, and its half-width. Each berm adds only what the root plate
-// does not already provide, and never more than at its root end, so the ends
-// on the plate take long, low ramps (terrain slope about 1.2 at most). The spur
-// heading south-east from the trunk (about 7.9, -6) has none: it stays an open
-// aerial root, its underside a unit or more above the plate.
-export const ROOT_BERMS = [
-  [1.5, -9.1, -124, 0.42, 1.6, 1.6, 1.3],
-  [12.1, -1.1, 11, 0.36, 1.8, 2.8, 1.9],
-  [-2.8, -0.8, -176, 0.44, 1.2, 0.4, 0.7],
-  [7.4, 6.9, 82, 0.41, 2.8, 2.8, 1.9],
-  [-3.7, 7.45, 167, 0.42, 1.6, 1.5, 1.3],
-  [9, 4, 31, 0.5, 1.6, 1.1, 1.3],
-];
+// The knoll under the tree. The dune falls away from the footing to the
+// north-east, east and south, so there the soil rises toward it where the
+// roots touch down. It holds within `core` of the trunk ([full radius, rim])
+// and runs out along each resting root (lobes: heading in degrees, atan2(z, x);
+// reach from the trunk; half-width; the rim beside it and the longer one
+// beyond its end, down the dune), each rim's edge moved in and out by a slow
+// noise (wobble: amplitude and cell, units) so it never draws a clean arc. The
+// lobes join smoothly. Toward a puddle it eases out over `feather` beyond the
+// pinned ground's keep (PIN_KEEP), so no puddle sits in a cut. It rises a little
+// toward the trunk collar (dome: height, full within, none beyond), fills only
+// ground below that level, stays well under the south-east spur (SPUR) and
+// keeps off the pinned ground (PIN_KEEP).
+export const ROOT_KNOLL = Object.freeze({
+  core: Object.freeze([4.4, 3]),
+  lobes: Object.freeze([
+    Object.freeze([-12, 8.3, 1.2, 6.5, 7]), // east
+    Object.freeze([34, 6.8, 1, 4.2, 7.5]), // east-north-east
+    Object.freeze([57, 7.4, 0.9, 4, 7.5]), // north-east
+    Object.freeze([124, 10.7, 0.9, 2.4, 2.4]), // north
+    Object.freeze([-97, 9.7, 0.9, 2.4, 2.4]), // south
+    Object.freeze([-48, 7.4, 1.2, 3.8, 5]), // south-east, under the spur
+  ]),
+  wobble: Object.freeze([0.7, 3.5]),
+  feather: 1.6,
+  dome: Object.freeze([0.14, 0.8, 3.8]),
+});
+
+// The aerial spur heading south-east from the trunk (tree-relative, from where
+// it leaves the flare to its tip), the half-width about it and its feather,
+// and how far below the footing the knoll keeps there (no relief either): it
+// stays an open aerial root, its underside 0.9 or more above the soil.
+export const SPUR = Object.freeze([5.4, -2.8, 8.2, -6.2, 1.1, 1.4, 0.35]);
+
+// The micro-relief that keeps the soil under the tree from reading as a level
+// plate: three octaves of seeded value noise ([wavelength, amplitude, turn in
+// degrees]), full within reach[0] of the trunk and gone by reach[1]. It holds
+// off a resting root (a ROOT_LINES stretch of contact `contact` or more) to
+// `roots` beyond its half-width, so the roots keep their 0.1-0.15 entry depth,
+// and off the pinned ground (PIN_KEEP). It is soil shape only: the settled
+// soil (rootBermExcess()) ignores it.
+export const ROOT_RELIEF = Object.freeze({
+  octaves: Object.freeze([
+    Object.freeze([7.5, 0.11, 20]),
+    Object.freeze([4.1, 0.065, 65]),
+    Object.freeze([2.5, 0.035, 110]),
+  ]),
+  reach: Object.freeze([10.5, 13.5]),
+  roots: Object.freeze([0.25, 1.2]),
+  contact: 0.7,
+  seed: 6271,
+});
+
+// Shallow hollows in the root crooks near the trunk: tree-relative x, z,
+// radius and depth. Each lies clear of every root and arch above it.
+export const ROOT_HOLLOWS = Object.freeze([
+  Object.freeze([9.7, 1.5, 1.7, 0.12]),
+  Object.freeze([8.8, -3.8, 1.3, 0.08]),
+  Object.freeze([1.4, -5.9, 1.4, 0.1]),
+  Object.freeze([-1.8, 2.5, 2.2, 0.12]),
+  Object.freeze([-0.9, 4.1, 1.2, 0.07]),
+  Object.freeze([-0.5, 0.3, 1.2, 0.06]),
+]);
+
+// Where nothing of the knoll, the relief or the hollows reaches, so the pinned
+// ground keeps its exact heights and shading normals: within `lantern` of the
+// lantern, `front` (its own stretched units) of the front puddle and `drip`
+// beyond each other puddle's radius, easing in over `feather`. Each margin is
+// its pin plus a fine-grid triangle's reach (0.75 x sqrt 2).
+export const PIN_KEEP = Object.freeze({ lantern: 2.5, front: 4.6, drip: 0.8, feather: 1 });
+
+// Rain stands where the soil lies below its neighbours: the cavity, the fine
+// root grid's local mean height (a box `mean` cells either side) less its own
+// height, is the slatePool attribute the root shading pools water and mud in
+// (SLATE_SOIL.pool). It is 0 on the pinned ground (pinKeep()) and fades in
+// over `edge` cells inside the fine grid's own edge.
+export const POOL_FIELD = Object.freeze({ mean: 2, edge: 2 });
 
 // Root centrelines for contact shading, relative to the tree: x, z, half-width
-// and contact strength (1 where the root meets the soil, lower under arches and
-// under the aerial spur).
+// and contact strength (1 where the sunk root enters the soil, lower where it
+// rises into an arch and under the aerial spur).
 export const ROOT_LINES = [
   [
     [3.4, -3.2, 1, 0.25],
-    [3.1, -5.5, 0.8, 0.4],
-    [2.5, -7.6, 0.5, 0.8],
+    [3.1, -5.5, 0.8, 0.45],
+    [2.5, -7.6, 0.5, 0.85],
     [1.5, -9.1, 0.35, 1],
   ],
   [
@@ -79,44 +137,44 @@ export const ROOT_LINES = [
   ],
   [
     [6, -1.6, 1.2, 0.3],
-    [8.5, -1.7, 1, 0.5],
-    [10.5, -1.4, 0.9, 0.85],
+    [8.5, -1.7, 1, 0.6],
+    [10.5, -1.4, 0.9, 0.95],
     [12.1, -1.1, 0.4, 1],
   ],
   [
-    [1.5, -1, 0.8, 0.5],
-    [-0.5, -1.3, 0.5, 0.6],
-    [-2.5, -1.3, 0.35, 0.9],
+    [1.5, -1, 0.8, 0.6],
+    [-0.5, -1.3, 0.5, 0.7],
+    [-2.5, -1.3, 0.35, 0.95],
     [-4, -1.4, 0.25, 1],
   ],
   [
-    [5.8, 2.5, 0.8, 0.5],
-    [6.8, 4.2, 0.6, 0.9],
+    [5.8, 2.5, 0.8, 0.85],
+    [6.8, 4.2, 0.6, 1],
     [7.4, 6.2, 0.5, 1],
     [7.4, 6.9, 0.4, 1],
   ],
   [
-    [6.5, 2.5, 1, 0.6],
-    [8, 3.3, 1, 0.9],
+    [6.5, 2.5, 1, 0.85],
+    [8, 3.3, 1, 1],
     [9, 4, 0.5, 1],
   ],
   [
-    [2.2, 3.5, 0.6, 0.5],
-    [1, 5.5, 0.6, 0.9],
-    [-0.5, 6.8, 0.5, 0.8],
+    [2.2, 3.5, 0.6, 0.9],
+    [1, 5.5, 0.6, 1],
+    [-0.5, 6.8, 0.5, 0.95],
     [-2.2, 7.2, 0.9, 1],
     [-3.8, 7.5, 0.4, 1],
   ],
   [
-    [2.4, -3, 1, 0.4],
-    [1, -4, 0.5, 0.6],
-    [-0.2, -4.6, 0.4, 0.9],
+    [2.4, -3, 1, 0.5],
+    [1, -4, 0.5, 0.9],
+    [-0.2, -4.6, 0.4, 1],
     [-1.1, -5.35, 0.4, 1],
   ],
 ];
-// Contact shading reach beyond a root's half-width, the settled root plate
-// around the trunk (full within, none beyond), the berm height at which soil is
-// fully settled, and how far settled soil reaches beside each root line.
+// Contact shading reach beyond a root's half-width, the settled soil about the
+// trunk (full within, none beyond), the lip height at which soil is fully
+// settled, and how far settled soil reaches beside each root line.
 const SHADE = { reach: 0.8, plate: [3.6, 7.5], soilLift: 0.3, band: 1.4 };
 
 // The fine root grid's 0.75 lattice under the tree, in world x/z: its first
@@ -164,6 +222,7 @@ export const PUDDLE_ZONES = Object.freeze([
   zoneAt(LANTERN_FOOT, -115, 3, 2.8, 1.4, 33),
   zoneAt(TREE_FOOTING, 185, 8, 2.2),
   zoneAt(TREE_FOOTING, 75, 9, 2.5),
+  zoneAt(TREE_FOOTING, -100, 16, 2),
 ]);
 // A zone's distance from its centre in its own stretched frame (units).
 export const zoneDistance = ({ x: cx, z: cz, stretch, c, s }, x, z) =>
@@ -174,23 +233,17 @@ export const zoneDistance = ({ x: cx, z: cz, stretch, c, s }, x, z) =>
 // ROOT_SHADE's key occlusion is baked along.
 export const KEY_LIGHT = Object.freeze([32, 28, 14].map((v, _, all) => v / Math.hypot(...all)));
 
-// Soil banks under the resting stretches of the roots, measured on both
-// authored tree variants (tools/bake-root-shade.mjs): where a root's underside
-// lies within 0.62 of the soil, the soil rises to 0.08 above it in a narrow,
-// round-topped ridge that tapers toward each arch, never lifting soil into
-// the space under an arch, burying no root vertex by more than 0.2 and keeping
-// the supported ground under a slope of 1.15. Lattice column, row and lift;
-// the rest of the lattice stays open ground. No lattice triangle that reaches
-// the lantern clearing, the front puddle or a drip-line puddle takes any.
+// Entry lips where the sunk roots leave the soil, measured on both authored
+// tree variants (tools/bake-root-shade.mjs): where a root's underside lies
+// within 0.12 above the knoll, the soil rises to 0.035 above it in a small,
+// round-topped lip that tapers toward each arch, never lifting soil into the
+// space under an arch, burying no root vertex by more than 0.2 and keeping the
+// supported ground under a slope of 1.15. Lattice column, row and lift; the
+// rest of the lattice stays open ground. No lattice triangle that reaches the
+// lantern clearing, the front puddle or a drip-line puddle takes any.
 // prettier-ignore
 export const ROOT_RESTS = Object.freeze([
-  [14,4,0.063], [15,4,0.381], [16,4,0.04], [15,5,0.155], [16,5,0.557], [17,5,0.033], [15,6,0.106], [16,6,0.477],
-  [17,6,0.166], [16,7,0.056], [12,10,0.319], [12,11,0.479], [12,12,0.049], [24,13,0.093], [25,13,0.374], [26,13,0.103],
-  [10,14,0.076], [25,14,0.329], [26,14,0.324], [27,14,0.051], [9,15,0.12], [10,15,0.341], [25,15,0.019], [26,15,0.466],
-  [27,15,0.314], [28,15,0.024], [25,16,0.495], [26,16,0.402], [22,19,0.479], [20,20,0.056], [22,20,0.195], [23,20,0.11],
-  [14,21,0.031], [20,21,0.244], [21,21,0.006], [13,22,0.029], [14,22,0.137], [15,22,0.016], [20,22,0.165], [21,22,0.088],
-  [20,23,0.083], [22,23,0.1], [21,24,0.103], [22,24,0.098], [23,24,0.152], [9,25,0.154], [10,25,0.024], [21,25,0.095],
-  [22,25,0.053], [7,26,0.04], [8,26,0.044], [9,26,0.046],
+  [12,11,0.072], [27,15,0.134], [26,16,0.105], [22,20,0.09], [20,22,0.016], [21,25,0.052],
 ]);
 const BANKS = new Float32Array(ROOT_LATTICE.cols * ROOT_LATTICE.rows);
 for (const [col, row, lift] of ROOT_RESTS) BANKS[row * ROOT_LATTICE.cols + col] = lift;
@@ -214,67 +267,67 @@ export const ROOT_SHADE = Object.freeze({
   sky: [
     "000000000000000000000000000000000",
     "000000000000000000000000000000000",
-    "000000000000012343221100000000000",
-    "000000000000148bb9743210000000000",
-    "0000000000013ajpojd85321000000000",
-    "0000000000125erAAsjc8532100000000",
-    "0000000001247erCEyogb853210000000",
-    "0000000000579enxDAskfc96311000000",
-    "00000000002dfhnvBAvplie9532100000",
-    "00000000000bmorxCCzvtpkd853110000",
-    "00000000000bmwxBFFCAzwpha74210000",
-    "00000000001bmxEHJIGFFDwnfa7421000",
-    "00000000005eoyIMNLKJKIDwpjd731000",
-    "00000000007jsBKQQPONNNKHCwnd62000",
-    "0000000000boyGOSSSRQPPPONIxj83100",
-    "0000000009jvFLPRSSSQONMNNKzla3100",
-    "000000019jtzDIMOQRRPLIFDDAsi93100",
-    "000009cfkoswAEILNPPOKFzuqnic63100",
-    "000068bdhlptyCGIKMONLGzqjea742000",
-    "000467acfjotxBEFHJMNMKEsha7421000",
-    "0024579cfintyCDDDFJMMKEtg95321000",
-    "0023568beinuzAxxxzEJKHzpe74210000",
-    "0012457aejpwsmjjjmrzHEvkc63210000",
-    "0012347afltpg95558foyDvja53100000",
-    "0001236birpf5000004epBvi842100000",
-    "0000125akrf500000006jupe621000000",
-    "00001138gl8000000001fhf8310000000",
-    "00000125af30000000007763100000000",
-    "000000124620000000012221000000000",
-    "000000001230000000000000000000000",
+    "000000000000001233211000000000000",
+    "0000000000001368aa742100000000000",
+    "00000000000127flnlf84210000000000",
+    "0000000000114bmxBwlc7421000000000",
+    "0000000001235bnBHDrga642100000000",
+    "0000000000357bkxHFukeb85210000000",
+    "000000000029belwFFyqlid8421000000",
+    "00000000000bilqzGHBvtqkc731000000",
+    "00000000000bmuxEJJEBAyqh942100000",
+    "00000000001bmxFJNMIGGExme84100000",
+    "00000000005eoyIPRQMKLLFxpia510000",
+    "00000000007jsBKUUTRPPQPLEwod41000",
+    "0000000000boyGOWWVTSRSTTSKzl82000",
+    "0000000009jvFMUVWVUSQPQRRODo92000",
+    "000000019jtAFLPSTUTRNJGFFCuh72000",
+    "000008adhmqvAGKORSSQMFyspmg931000",
+    "000068acfjnsyDHLNQRROIyogb7410000",
+    "0004579beimsxCFIJMPRQMDqf84210000",
+    "0134578bdhmsyDFFFHMQPMEsf73200000",
+    "0124568adhmtAAxxxzEKNIApd63100000",
+    "00234579chovsmjjjmrzIEvka52100000",
+    "00123468cjrpg95558foyCui831000000",
+    "00012359fnpf5000004epAuh621000000",
+    "00011259hqf500000006jsod410000000",
+    "00000148el8000000001egd7200000000",
+    "000001248c30000000006652100000000",
+    "000000012420000000012211000000000",
+    "000000000120000000000100000000000",
     "000000000000000000000000000000000",
     "000000000000000000000000000000000",
   ].join(""),
   key: [
     "000000000000000000000000000000000",
-    "000000000000001110000000000000000",
-    "000000000000136752000000000000000",
-    "00000000000026cea4100000000000000",
-    "0000000000014clng7200000000000000",
-    "0000000000139juwnb421100000000000",
-    "00000000025bjuDEug975310000000000",
-    "00000000006itFNJxmhgd620000000000",
-    "00000000002dpAMKxrstla30000000000",
-    "00000000000bmxJLzxDDte41000000000",
-    "00000000000bmxHOFFMMAm93110000000",
-    "00000000001bmxHSOPTTIvlc742100000",
-    "00000000005eoyITWWXXSHyrkd7310000",
-    "00000000007jsBKUYWVVURNGzqg720000",
-    "0000000000boyGOYWRNLMOPOJAnb41000",
-    "0000000009jvFMUWRLEzyACDDyoc41000",
-    "000000019jtDMTYUOHzrmlnonmg931000",
-    "000007cfktDNUUWUOHzqjeca997410000",
-    "000015hsxENSMLQTRLCsmhd8432100000",
-    "000002bqGQWQHDGMQOHxqmjc510000000",
-    "0000016lAQWSIzwAHMMEuokd620000000",
-    "0000014hxMULFypmtzEJApha510000000",
-    "0000014gwMJAsmichmrzErf7310000000",
-    "0000015iyJzpg95558foyug6200000000",
-    "0000015jzzpf5000004eprg6100000000",
-    "0000015gwrf500000006jjc5100000000",
-    "0000003aml80000000018962000000000",
-    "00000015af30000000002221000000000",
-    "000000013420000000000000000000000",
+    "000000000000000111000000000000000",
+    "000000000000024786200000000000000",
+    "00000000000015bhhb410000000000000",
+    "0000000000003aksqg610000000000000",
+    "0000000000015fsBxj721000000000000",
+    "000000000025cnAHAma54210000000000",
+    "00000000006eoAKMDofec720000000000",
+    "00000000002dpAMRFsnpne51000000000",
+    "00000000000bmxJTHwwBxj71000000000",
+    "00000000000bmxHTJDGKEpb3100000000",
+    "00000000001bmxHSNLPRLxmc642100000",
+    "00000000005eoyITTSVWSIyrjd7410000",
+    "00000000007jsBKUYWWWVSNFzria41000",
+    "0000000000boyGOYZVQOQRQOKDsg62000",
+    "0000000009jvFMU-XQIDDFFFFCuh72000",
+    "000000019jtDMT-ZVNDvsqppqqlc51000",
+    "000007cfktDNUYYYUNEwqlgcbba620000",
+    "000013bqxENXWTSUUQKDwqia533110000",
+    "0000015ixNXYTNJLQSQJCvmd510000000",
+    "0000003csHVYSKBAFNRNDume620000000",
+    "00000019pEULFAwoszEKEsia510000000",
+    "00000018oDJAsmjfgmrzEsf7310000000",
+    "00000029pEzpg95558foytg6200000000",
+    "0000003brzpf5000004eppf6100000000",
+    "0000014dqrf500000006hhb5100000000",
+    "0000014akl80000000017862000000000",
+    "00000126ae30000000002221000000000",
+    "000000123420000000000000000000000",
     "000000000110000000000000000000000",
     "000000000000000000000000000000000",
     "000000000000000000000000000000000",
@@ -287,26 +340,26 @@ export const ROOT_SHADE = Object.freeze({
     "000000000-___q00q______________w0",
     "0000000000___O000m_____________w0",
     "00000000000___Q000_____________w0",
-    "00000000000z___U0O_____________w0",
+    "00000000000z___L00_____________w0",
+    "000000000000____00_____________w0",
+    "000000000000____0______________w0",
+    "0000000000008___a______________w0",
+    "0000000000000d_________________w0",
     "000000000000___________________w0",
-    "000000000000___________________w0",
-    "0000000000008__________________w0",
-    "0000000000000O_________________w0",
-    "000000000000___________________w0",
-    "00000000000P____________000____w0",
-    "00000000002-____________U000B__w0",
-    "00000000000E_____________000v__w0",
-    "00000003ST______________T00v___w0",
+    "00000000000P__________60000____w0",
+    "000000000020____U______t0000B__w0",
+    "0000000000000008______X88000v__w0",
+    "00000003ST__qhUR_______0000v___w0",
     "000000U________________________w0",
-    "00000s_________________________w0",
-    "0000r________________r0________w0",
-    "000A__________________00O______w0",
-    "0w___________E0Y___80__00______w0",
-    "0w___________00eN-_M0___I______w0",
-    "0w__________6000002_0__________w0",
-    "0w_______Zj000000000q0_________w0",
+    "00000s______________U__________w0",
+    "0000r_____________60_00________w0",
+    "000A______________2___00O______w0",
+    "0w___________80E___00__00______w0",
+    "0w__________Y00eN-_00___I______w0",
+    "0w_________d0000002_0__________w0",
+    "0w_______Z0000000000q0_________w0",
     "0w_____O000000000000y00m_______w0",
-    "0w_____00000000000003__________w0",
+    "0w_____00000000000003M_________w0",
     "0w_____ZZh00000000000__________w0",
     "0w_______a00000000001__________w0",
     "0w_______b0000000000f__________w0",
@@ -332,20 +385,20 @@ export const rootOcclusion = (x, z) => [latticeAt(SKY, x, z), latticeAt(KEY, x, 
 export const ROOT_COVER = Object.freeze({ cols: 97, rows: 94, bits: [
     "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
     "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA4AMAAAAAAAAAAAAAwB8AAAAAAAAA",
-    "AAAAAH8AAAAAAAAAAAAAAPwBAAAAAAAAAAAAAPgHAAAAAAAAAAAAAMAfAAAAAAAAAAAAAAA/AAAA",
-    "AAAAAAAAAAD8AAAAAAAAAAAAAAD4AQAAAAAAAAAAAADwAwAAAAAAAAAAAADgBwAAAAAAAAAAAADA",
-    "DwAAAAAAAAAAAACAHwAAAAAAAAAAAAAAPwAAAAAAAAAAAAAAfgAOAAAAAAAAAAYA/AA/AAAAAAAA",
-    "ABwA+AE8AAAAAAAAAHgA8AM4AAAAAAAAAOAB8AdwAAAAAAAAAMAH4B/gAQAAAAAAAAAfwB/AAwAA",
-    "AAAAAAB8gB+ADwAAAAAAAADwAT8AHAAAAAAAAADgBz8AOAAAAAAAAACAH34AYAAAAAAAAAAAPvwA",
-    "wAAAAAAAAAAAfPwDAA8AAAAAAAAA+P4HAP4PAAAAAAAA4P4PAPh/AAAAAAAAgP8fAOD/AQAAAAAA",
-    "MP8/AAD/DwAAAOAH/v8/AAD8PwAAAID///7/AAD4/wAAAADwH/z8AwD4fwAAAACAAXjwBwD/fwAA",
-    "AAAAAADwDwD8fwAAAAAAAADgHwCAfwAAAAAAAACAPwAAAAAAAAAAAAAAPgAAAAAAAAAAAAAAOAAA",
-    "AAAAAAAAAAAAAAACAAAAAAAAAAAAAAAMAAAAAAAAAAAAAAAwAAAAAAAAAAAAAADAAAAAAAAAAAAA",
-    "AMABAwAAAAAAAAAAAIAPBgAAAAAAAAAAAAA/GAAAAAAAAAAAAAD+YQAAAAAAAAAAAAD8hwMAAAAA",
-    "AAAAAADwDw4AAAAAAAAAAADgPzwAAAAAAAAAAAeA/3AAAAAAAAAAAA8A/+EAAAAAAAAAAD8A/AMA",
-    "AAAAAAAAAD8A8AcAAAAAAAAAAH8A4B8AAAAAAAAAAH8AgD8AAAAAAAAAgD8AAP4AAAAAAAAAgD8A",
-    "APgBAAAAAAAAAH8AAPADAAAAAAAAAP8AAMAPAAAAAAAAgP8AAAAfAAAAAAAAgP8BAAB+AAAAAAAA",
+    "AAAAAAAAAAAAAAAAAMAAAAAAAAAAAAAAAMABAAAAAAAAAAAA4IMBAAAAAAAAAAAAwJ8DAAAAAAAA",
+    "AAAAAP8HAAAAAAAAAAAAAPwHAAAAAAAAAAAAAPgPAAAAAAAAAAAAAMAfAAAAAAAAAAAAAAB/AAAA",
+    "AAAAAAAAAAD8AAAAAAAAAAAAAAD4AQAAAAAAAAAAAADwBwAAAAAAAAAAAADgDwAAAAAAAAAAAADA",
+    "HwAAAAAAAAAAAACAPwAAAAAAAAAAAAAAfwAYAAAAAAAAAAAA/wAfAAAAAAAAAAYA/gE/AAAAAAAA",
+    "ABwA/AM8AAAAAAAAAHgA/Ac4AAAAAAAAAOAB+A9wAAAAAAAAAMAH8B/gAQAAAAAAAAAf4D/AAwAA",
+    "AAAAAAB84H/ADwAAAAAAAADwwX+AHwAAAAAAAADgh/8APwAAAAAAAACAH/8BfAAAAAAAAAAAP/8b",
+    "4AAAAAAAAAAAfP5/wA8AAAAAAAAA+P//AP8PAAAAAAAA8P9/AP5/AAAAAAAAwP9/APj/AQAAAAAA",
+    "8P//APD/DwAAAOAH/v//AcD/PwAAAID/////B4D//wAAAADwH/z/D8D/fwAAAACAAfj/H4D/fwAA",
+    "AAAAAID/PwD/fwAAAAAAAAD/fwCAfwAAAAAAAADs/wAAAAAAAAAAAACA/wEAAAAAAAAAAAAA/4MA",
+    "AAAAAAAAAAAA/g8DAAAAAAAAAAAA/B8OAAAAAAAAAAAA8H8wAAAAAAAAAAAAIP/BAAAAAAAAAAAA",
+    "APgHAwAAAAAAAAAAAPAfBgAAAAAAAAAAAMB/GAAAAAAAAAAAAID/YQAAAAAAAAAAAAD+hwMAAAAA",
+    "AAAAAAD4Dw4AAAAAAAAAAAPwPzwAAAAAAAAAgA/A/3AAAAAAAAAAgB8A/+EAAAAAAAAAgDMA/AMA",
+    "AAAAAAAAgCcA8AcAAAAAAAAAgE8A4B8AAAAAAAAAgH8AgD8AAAAAAAAAgH8AAP4AAAAAAAAAgH8A",
+    "APgBAAAAAAAAAP8AAPADAAAAAAAAAP8AAMAPAAAAAAAAgP8AAAAfAAAAAAAAgP8BAAB+AAAAAAAA",
     "4P8BAAB4AAAAAAAA8P8DAAAwAAAAAAAA+P8HAAAAAAAAAAAA+OcHAAAAAAAAAAAAIIAHAAAAAAAA",
     "AAAAAAAGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
     "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
@@ -360,82 +413,154 @@ export function rootCovered(x, z) {
   return Boolean(COVER[bit >> 3] & (1 << (bit & 7)));
 }
 
-// How far the plate raises a point relative to the tree, whose base height is
-// base, toward the footing at floor.
-function plateLift(dx, dz, base, floor) {
-  const [flat, blend, drop, arc, soft] = ROOT_BENCH,
-    tx = dx - TRUNK[0],
-    tz = dz - TRUNK[1];
-  const facing = (Math.abs(Math.atan2(tz, tx)) * 180) / Math.PI;
-  return (
-    Math.max(0, floor - drop - base) *
-    (1 - ease(flat, blend, Math.hypot(tx, tz))) *
-    (1 - ease(arc, arc + soft, facing))
-  );
-}
-
-// [base, plate, berm, bank] at x/z: the plate fill, then the most any berm
-// adds above it, then the soil bank. A berm tops out at its soil level and
-// never stands higher above the plate than it does at its root end, so it
-// follows the ground down beyond the tip.
-const BERM_HEADINGS = ROOT_BERMS.map(([, , deg]) => [
-  Math.cos((deg * Math.PI) / 180),
-  Math.sin((deg * Math.PI) / 180),
+const RAD = Math.PI / 180;
+const KNOLL_LOBES = ROOT_KNOLL.lobes.map(([heading, reach, half, side, end]) => [
+  Math.cos(heading * RAD),
+  Math.sin(heading * RAD),
+  reach,
+  half,
+  side,
+  end,
 ]);
-function supportLifts(x, z, baseHeight, banks = true) {
-  const dx = x - TREE_FOOTING.x,
-    dz = z - TREE_FOOTING.z;
-  const base = baseHeight(x, z),
-    floor = baseHeight(TREE_FOOTING.x, TREE_FOOTING.z);
-  const plate = plateLift(dx, dz, base, floor);
-  let berm = 0;
-  for (let k = 0; k < ROOT_BERMS.length; k++) {
-    const [tx, tz, , level, hold, reach, half] = ROOT_BERMS[k],
-      [c, s] = BERM_HEADINGS[k];
-    const u = (dx - tx) * c + (dz - tz) * s,
-      v = (dz - tz) * c - (dx - tx) * s;
-    const along = u > 0 ? 1 - ease(0, reach, u) : 1 - ease(hold, hold + 1.2, -u);
-    const across = 1 - ease(0.3, half, Math.abs(v));
-    if (along <= 0 || across <= 0) continue;
-    const tipBase = baseHeight(TREE_FOOTING.x + tx, TREE_FOOTING.z + tz);
-    const tip = floor + level - tipBase - plateLift(tx, tz, tipBase, floor);
-    berm = Math.max(
-      berm,
-      Math.max(0, Math.min(floor + level - base - plate, tip)) * along * across,
+// How fully the knoll holds at a point relative to the trunk (tx, tz; world
+// x, z for its wobble): 1 within its core and lobes, 0 beyond their rims.
+export function knollWeight(tx, tz, x, z) {
+  const [full, rim] = ROOT_KNOLL.core,
+    [amplitude, cell] = ROOT_KNOLL.wobble;
+  const wobble = amplitude * latticeNoise(x / cell, z / cell, ROOT_RELIEF.seed - 1);
+  let open = ease(full, full + rim + wobble, Math.hypot(tx, tz));
+  for (const [c, s, reach, half, side, end] of KNOLL_LOBES) {
+    if (!open) break;
+    const along = tx * c + tz * s,
+      beyond = Math.max(0, along - reach) * (side / end);
+    open *= ease(
+      half,
+      half + side + wobble,
+      Math.hypot(beyond, along < 0 ? Infinity : tz * c - tx * s),
     );
   }
-  return [base, plate, berm, banks ? rootBankLift(x, z) : 0];
+  return 1 - open;
+}
+// 1 under the spur, 0 clear of it.
+function underSpur(dx, dz) {
+  const [ax, az, bx, bz, half, feather] = SPUR,
+    ex = bx - ax,
+    ez = bz - az;
+  const t = Math.min(1, Math.max(0, ((dx - ax) * ex + (dz - az) * ez) / (ex * ex + ez * ez)));
+  return 1 - ease(half, half + feather, Math.hypot(ax + ex * t - dx, az + ez * t - dz));
+}
+// 1 beyond the pinned ground's keep (PIN_KEEP), easing in over feather; 0 on it.
+export function pinKeep(x, z, feather = PIN_KEEP.feather) {
+  const { lantern, front, drip } = PIN_KEEP;
+  let keep = ease(lantern, lantern + feather, Math.hypot(x - LANTERN_FOOT.x, z - LANTERN_FOOT.z));
+  for (let i = 0; keep > 0 && i < PUDDLE_ZONES.length; i++) {
+    const zone = PUDDLE_ZONES[i],
+      margin = i ? zone.radius + drip : front;
+    keep *= ease(margin, margin + feather, zoneDistance(zone, x, z));
+  }
+  return keep;
+}
+// Seeded value noise in [-1, 1] on a unit lattice, C1 (smoothstep weights), the
+// same on every engine (an integer hash, as dripHash()).
+function latticeNoise(x, z, salt) {
+  const i = Math.floor(x),
+    j = Math.floor(z),
+    u = x - i,
+    v = z - j;
+  const hash = (a, b) => {
+    let h = Math.imul(a, 0x27d4eb2d) ^ Math.imul(b, 0x165667b1) ^ Math.imul(salt, 0x9e3779b1);
+    h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
+    h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+    return (((h ^ (h >>> 16)) >>> 0) / 4294967296) * 2 - 1;
+  };
+  const a = hash(i, j),
+    b = hash(i + 1, j),
+    c = hash(i, j + 1),
+    d = hash(i + 1, j + 1);
+  const su = u * u * (3 - 2 * u),
+    sv = v * v * (3 - 2 * v);
+  return a + (b - a) * su + (c - a) * sv + (a - b - c + d) * su * sv;
+}
+const RELIEF_TURNS = ROOT_RELIEF.octaves.map(([, , turn]) => [
+  Math.cos(turn * RAD),
+  Math.sin(turn * RAD),
+]);
+// The relief's noise at a world x/z, before any of its holds.
+export function reliefNoise(x, z) {
+  let sum = 0;
+  ROOT_RELIEF.octaves.forEach(([wavelength, amplitude], k) => {
+    const [c, s] = RELIEF_TURNS[k];
+    sum +=
+      amplitude *
+      latticeNoise(
+        (c * x + s * z) / wavelength,
+        (c * z - s * x) / wavelength,
+        ROOT_RELIEF.seed + k,
+      );
+  });
+  return sum;
+}
+// How much relief a point relative to the tree takes beside the resting roots:
+// 0 on a root line of full contact, rising to 1 by ROOT_RELIEF.roots beyond its
+// half-width.
+function restingKeep(dx, dz) {
+  const [near, far] = ROOT_RELIEF.roots,
+    floor = ROOT_RELIEF.contact;
+  let keep = 1;
+  for (const line of ROOT_LINES)
+    for (let i = 0; i < line.length - 1; i++) {
+      const [ax, az, ah, as] = line[i],
+        [bx, bz, bh, bs] = line[i + 1],
+        ex = bx - ax,
+        ez = bz - az;
+      const t = Math.min(1, Math.max(0, ((dx - ax) * ex + (dz - az) * ez) / (ex * ex + ez * ez)));
+      const d = Math.hypot(ax + ex * t - dx, az + ez * t - dz),
+        half = ah + (bh - ah) * t;
+      if (d >= half + far) continue;
+      const rest = ease(floor - 0.2, floor + 0.2, as + (bs - as) * t);
+      keep *= 1 - rest * (1 - ease(half + near, half + far, d));
+    }
+  return keep;
 }
 
-// Match ESTATE's lamp and SLATE_PUDDLES' existing front ellipse. Preserve
-// its entire footprint plus a .75-unit margin; don't shape a bowl around it.
-const PUDDLE = [
-  3 * Math.cos((-115 * Math.PI) / 180),
-  3 * Math.sin((-115 * Math.PI) / 180),
-  Math.cos((33 * Math.PI) / 180),
-  Math.sin((33 * Math.PI) / 180),
-];
+// [base, knoll, relief, lip] at x/z: the knoll's fill (its dome included),
+// then the relief and the crook hollows (signed), both held off the pinned
+// ground, then the entry lip.
+export function rootSupportLifts(x, z, baseHeight, banks = true) {
+  const dx = x - TREE_FOOTING.x,
+    dz = z - TREE_FOOTING.z,
+    tx = dx - TRUNK[0],
+    tz = dz - TRUNK[1];
+  const base = baseHeight(x, z),
+    bank = banks ? rootBankLift(x, z) : 0,
+    r = Math.hypot(tx, tz);
+  const keep = Math.hypot(dx, dz) < SUPPORT_REACH ? pinKeep(x, z) : 0;
+  if (!keep) return [base, 0, 0, bank];
+  const knollKeep = pinKeep(x, z, ROOT_KNOLL.feather);
+  const floor = baseHeight(TREE_FOOTING.x, TREE_FOOTING.z),
+    spur = underSpur(dx, dz);
+  const [dome, domeFull, domeNone] = ROOT_KNOLL.dome;
+  const level = floor + dome * (1 - ease(domeFull, domeNone, r)) - SPUR[6] * spur;
+  const knoll = Math.max(0, level - base) * knollWeight(tx, tz, x, z);
+  let relief = 0;
+  const fade = 1 - ease(ROOT_RELIEF.reach[0], ROOT_RELIEF.reach[1], r);
+  if (fade > 0) relief = reliefNoise(x, z) * fade * (1 - spur) * restingKeep(dx, dz);
+  for (const [hx, hz, radius, depth] of ROOT_HOLLOWS)
+    relief -= depth * (1 - ease(0.2 * radius, radius, Math.hypot(dx - hx, dz - hz)));
+  return [base, knoll * knollKeep, relief * keep, bank];
+}
+
 // The supported ground at x/z; banks false leaves out the soil banks (what
 // tools/bake-root-shade.mjs measures them against).
 export function rootSupportHeight(x, z, baseHeight, banks = true) {
-  const [base, plate, berm, bank] = supportLifts(x, z, baseHeight, banks);
-  const lift = plate + berm;
-  if (!lift) return base + bank;
-  const dx = x - TREE_FOOTING.x,
-    dz = z - TREE_FOOTING.z;
-  const lx = dx + (5 * TREE_FOOTING.x) / LANTERN_LENGTH,
-    lz = dz + (5 * TREE_FOOTING.z) / LANTERN_LENGTH;
-  const [ox, oz, c, s] = PUDDLE,
-    px = lx - ox,
-    pz = lz - oz;
-  const puddleDistance = Math.hypot((c * px + s * pz) / 1.4, -s * px + c * pz);
-  return base + lift * ease(1.4, 1.9, Math.hypot(lx, lz)) * ease(3.55, 4.1, puddleDistance) + bank;
+  const [base, knoll, relief, bank] = rootSupportLifts(x, z, baseHeight, banks);
+  return base + knoll + relief + bank;
 }
 
-// What the berms and banks add above the root plate: where the soil settles.
-export function rootBermExcess(x, z, baseHeight) {
-  const [, , berm, bank] = supportLifts(x, z, baseHeight);
-  return berm + bank;
+// What the entry lips add: where the soil settles (the knoll, its relief and
+// the hollows are the ground's own shape).
+export function rootBermExcess(x, z) {
+  return rootBankLift(x, z);
 }
 
 // The ground shader's root contact and settled soil (the slateRoot attribute
@@ -443,7 +568,7 @@ export function rootBermExcess(x, z, baseHeight) {
 // of that root's shadow reach (affine within each segment's region, so
 // fragments interpolate it exactly and the contact line stays crisp between
 // 0.75-unit vertices), the root's contact strength, and 1 minus the settled
-// soil (dry, finer earth on the berms, around the trunk and along each root).
+// soil (finer earth on the entry lips, around the trunk and along each root).
 // The contact strength loses ROOT_SHADE's cut where a centreline strays over
 // open soil.
 export function rootShade(dx, dz, lift) {
@@ -489,15 +614,15 @@ export function rootShade(dx, dz, lift) {
 // contact: settled soil keeps half the slate's albedo contrast and relief, and
 // a root line darkens it by up to 0.35 of the contact gain). Everywhere else:
 // - settle: fine soil fills the low, dark texels first, so it follows the
-//   cracks, with a crumbly grain near the lens; it is dry;
+//   cracks, with a crumbly grain near the lens; after the rain it is only a
+//   little drier than the open slate;
 // - crease: each root line's contact falls off as 1/(1 + 6u^2), u in reach
 //   units, broken a little by the cracks;
 // - occlusion: ROOT_SHADE's sky term dims the unshadowed fills, the lantern
 //   (less: it is the main light under the arches), the sky light and the
 //   reflections; its key term dims the moon only where no shadow map does
 //   (slateContactGain 1: shadows off);
-// - damp: soil in the creases and the deepest cavity is darker and a little
-//   glossier; the open plate stays dry.
+// - damp: soil in the creases and the deepest cavity is darker and wetter.
 export const SLATE_SOIL = Object.freeze({
   albedo: 0.5,
   flatten: 0.5,
@@ -506,7 +631,7 @@ export const SLATE_SOIL = Object.freeze({
     gain: 1.1,
     crack: 1.4,
     bias: 0.45,
-    dry: 0.7,
+    dry: 0.15,
     mix: 0.15,
     flatten: 0.15,
     depth: 0.6,
@@ -526,16 +651,42 @@ export const SLATE_SOIL = Object.freeze({
     remap: Object.freeze([0.5, 0.95]),
   }),
   // Shadowed ground keeps cool moonlit detail: the indirect light gains a cool
-  // tint and the cool fills a little strength, across the slate ground.
-  moonlit: Object.freeze({ indirect: Object.freeze([1.14, 1.19, 1.25]), fill: 1.2 }),
+  // tint across the slate ground (the fills' share is mud-ground.js SLATE_LIGHT).
+  moonlit: Object.freeze({ indirect: Object.freeze([1.14, 1.19, 1.25]) }),
   damp: Object.freeze({
     crease: Object.freeze([0.1, 0.45]),
     cavity: 0.35,
     albedo: 0.08,
     roughness: 0.55,
-    wet: 0.6,
+    wet: 0.9,
+    mud: 0.8, // its share of the pools' mud (pool.tone, .saturation) where the roots enter the soil
+  }),
+  // Grit and dark organic flecks in the soil near the lens (within near[0],
+  // gone by near[1]): cells of 1/frequency units, `share` of them lit or dark,
+  // by up to `amount` of the albedo.
+  grit: Object.freeze({
+    frequency: 11,
+    share: 0.12,
+    amount: 0.45,
+    near: Object.freeze([4, 14]),
   }),
   keep: Object.freeze([1.9, 2.4]),
+  // Rain in the soil's low spots (POOL_FIELD's cavity, in units; the detail
+  // map's high texels raise the soil by up to `texel`, so shores follow the
+  // cracks): standing water beyond `water`; wet mud beyond `mud`, darker
+  // (`tone`), a little more saturated and smoother; and the crests above
+  // `crest` a little drier (`dry`: less wet) and paler (`lift`).
+  pool: Object.freeze({
+    texel: 0.05,
+    water: Object.freeze([0.022, 0.032]),
+    mud: Object.freeze([-0.01, 0.025]),
+    tone: Object.freeze([0.74, 0.66, 0.58]),
+    saturation: 1.35,
+    roughness: 0.26,
+    crest: Object.freeze([0.02, 0.06]),
+    dry: 0.6,
+    lift: 0.08,
+  }),
 });
 const glsl = (value) => (Number.isInteger(value) ? value.toFixed(1) : String(+value.toFixed(4)));
 const glslVec = (...values) => `vec${values.length}(${values.map(glsl).join(",")})`;
@@ -571,10 +722,11 @@ function applyEdits(shader, edits, prefix = {}) {
 // The moon key's view-space direction, so the root shading finds that light
 // among the direct lights (settleRoots() keeps it current per draw).
 const KEY_VIEW = { value: new Vector3(...KEY_LIGHT) };
-const { settle: SETTLE, grain: GRAIN, occlusion: OCCLUSION, damp: DAMP } = SLATE_SOIL;
+const { settle: SETTLE, grain: GRAIN, occlusion: OCCLUSION, damp: DAMP, grit: GRIT } = SLATE_SOIL;
 // Each direct light is dimmed by the root occlusion: the moon key by its baked
 // term (found by direction), the lantern (the one warm light) and the cool
-// fills (the directional fill and the crown's point fill) by the sky term.
+// fills (the directional fill and the crown's point fill) by the sky term,
+// before the film ground's own balance of them (mud-ground.js SLATE_LIGHT).
 const ROOT_LIGHTS = `
 float slateGate(vec3 L, vec3 C) {
   if (slateSky + slateKeyOcc <= 0.0) return 1.0;
@@ -585,18 +737,52 @@ float slateGate(vec3 L, vec3 C) {
 void RE_Direct_Slate(const in IncidentLight directLight, const in vec3 geometryPosition, const in vec3 geometryNormal, const in vec3 geometryViewDir, const in vec3 geometryClearcoatNormal, const in PhysicalMaterial material, inout ReflectedLight reflectedLight) {
   IncidentLight slateLight = directLight;
   slateLight.color *= slateGate(directLight.direction, directLight.color);
-  if (dot(directLight.direction, slateKeyView) <= .9995 && directLight.color.b >= .7*directLight.color.r) slateLight.color *= ${glsl(SLATE_SOIL.moonlit.fill)};
-  RE_Direct_Physical(slateLight, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight);
+  RE_Direct_Moonlit(slateLight, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight);
 }
 #undef RE_Direct
 #define RE_Direct RE_Direct_Slate
 `;
 const ROOT_FRAGMENT = `varying vec4 vSlateRoot;
 varying vec2 vSlateShade;
+varying float vSlatePool;
 uniform vec3 slateKeyView;
 float slateSky = 0.0, slateKeyOcc = 0.0, slateSettle = 0.0, slateDepth = 0.5, slateKeep = 0.0;
 float slateKeepAt(vec2 p) { return 1.0 - smoothstep(${glsl(SLATE_SOIL.keep[0])}, ${glsl(SLATE_SOIL.keep[1])}, length(p - ${LANTERN_GLSL})); }
 float slateSettleAt(float w, float depth) { return smoothstep(0.0, .25, (1.0 - w)*${glsl(SETTLE.gain)} - (depth - .5)*${glsl(SETTLE.crack)} - ${glsl(SETTLE.bias)})*smoothstep(0.0, .2, 1.0 - w); }
+`;
+const POOL = SLATE_SOIL.pool;
+const POOL_SHADING = `float slatePoolDepth = vSlatePool-(slateH-.5)*${glsl(POOL.texel)};
+float slatePoolW = smoothstep(${glsl(POOL.water[0])}, ${glsl(POOL.water[1])}, slatePoolDepth)*(1.0-slateDry)*(1.0-slateKeep);
+float slateMud = smoothstep(${glsl(POOL.mud[0])}, ${glsl(POOL.mud[1])}, slatePoolDepth)*(1.0-slateDry)*(1.0-slateKeep);
+float slateCrest = smoothstep(${glsl(POOL.crest[0])}, ${glsl(POOL.crest[1])}, -slatePoolDepth)*(1.0-slateKeep);
+slatePuddle = max(slatePuddle, slatePoolW);
+slateWet = max(slateWet*(1.0-${glsl(POOL.dry)}*slateCrest), slateMud);
+float slateGritN = (1.0-smoothstep(${glsl(GRIT.near[0])}, ${glsl(GRIT.near[1])}, length(vViewPosition)))*(1.0-slatePuddle)*(1.0-slateKeep);
+if (slateGritN > 0.0) {
+  vec2 slateGC = floor(vMudWorld.xz*${glsl(GRIT.frequency)});
+  float slateG1 = slateHash(slateGC), slateG2 = slateHash(slateGC+17.31);
+  diffuseColor.rgb *= 1.0+${glsl(GRIT.amount)}*slateGritN*(step(${glsl(1 - GRIT.share)}, slateG1)-step(${glsl(1 - GRIT.share)}, slateG2));
+}
+vec3 slateMudC = diffuseColor.rgb*${glslVec(...POOL.tone)};
+diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(dot(slateMudC, vec3(.2126,.7152,.0722))), slateMudC, ${glsl(POOL.saturation)}), slateMud)*(1.0+${glsl(POOL.lift)}*slateCrest);
+`;
+// The trunk and its flare as the water's dark occluder, as the lantern
+// puddle's mirror draws it (PUDDLE_MIRROR), for a ray off level water.
+const WATER_VEIL =
+  () => `vec3 slateVR = reflect(normalize(vMudWorld-cameraPosition), vec3(0.0, 1.0, 0.0));
+vec2 slateVO = vMudWorld.xz-${glslVec(+(TREE_FOOTING.x + TRUNK[0]).toFixed(2), +(TREE_FOOTING.z + TRUNK[1]).toFixed(2))};
+float slateVA = max(dot(slateVR.xz, slateVR.xz), 1e-4), slateVT = -dot(slateVO, slateVR.xz)/slateVA;
+if (slateVT > 0.0) {
+  float slateVH = slateVT*slateVR.y, slateVD = length(slateVO+slateVT*slateVR.xz);
+  slateWaterVeil = max((1.0-smoothstep(${glsl(PUDDLE_MIRROR.trunk[0])}, ${glsl(PUDDLE_MIRROR.trunk[1])}, slateVD))*(1.0-smoothstep(${glsl(PUDDLE_MIRROR.trunk[2])}, ${glsl(PUDDLE_MIRROR.trunk[3])}, slateVH)), (1.0-smoothstep(${glsl(PUDDLE_MIRROR.flare[0])}, ${glsl(PUDDLE_MIRROR.flare[1])}, slateVD))*(1.0-smoothstep(${glsl(PUDDLE_MIRROR.flare[2])}, ${glsl(PUDDLE_MIRROR.flare[3])}, slateVH)));
+  slateWaterBark = ${glslVec(...PUDDLE_MIRROR.bark)};
+}
+float slatePoolNear = slatePoolW*(1.0-smoothstep(${glsl(PUDDLE_MIRROR.undulationFade[0])}, ${glsl(PUDDLE_MIRROR.undulationFade[1])}, length(vViewPosition)));
+if (slatePoolNear > 0.0) {
+  vec2 slateUP = vMudWorld.xz*1.7;
+  float slateU0 = slateNoise(slateUP);
+  slateWaterTilt = mat3(viewMatrix)*vec3(slateU0-slateNoise(slateUP+vec2(.15, 0.0)), 0.0, slateU0-slateNoise(slateUP+vec2(0.0, .15)))*${glsl(+(PUDDLE_MIRROR.undulation * 15).toFixed(4))}*slatePoolNear;
+}
 `;
 const SETTLE_AT =
   "slateKeep = slateKeepAt(vMudWorld.xz);\nslateSettle = slateSettleAt(vSlateRoot.w, slateDepth);\n";
@@ -613,9 +799,9 @@ export function shadeSlateRoots(shader) {
     [
       "vertexShader",
       "#include <begin_vertex>|",
-      "\nvSlateRoot = slateRoot;\nvSlateShade = slateShade;",
+      "\nvSlateRoot = slateRoot;\nvSlateShade = slateShade;\nvSlatePool = slatePool;",
     ],
-    ["fragmentShader", "#include <lights_physical_pars_fragment>|", ROOT_LIGHTS],
+    ["fragmentShader", "#define RE_Direct RE_Direct_Moonlit|", ROOT_LIGHTS],
     // Settled soil is dry (the procedural -p surface has no map depth or tile blend).
     [
       "fragmentShader",
@@ -623,6 +809,8 @@ export function shadeSlateRoots(shader) {
       (authored ? "" : "slateDepth = slateH;\n" + SETTLE_AT) +
         `slateDry = max(slateDry, mix(${glsl(SETTLE.dry)}*slateSettle, 1.0-vSlateRoot.w, slateKeep));\n`,
     ],
+    // Rain in the low spots: standing water (a puddle), wet mud about it, drier crests.
+    ["fragmentShader", "|float slateLanternPuddle =", POOL_SHADING + WATER_VEIL()],
     // The origin-centred tree contact (slot 0) gives way to the root lines, but in the clearing.
     ["fragmentShader", "slateContacts[i].w|", "*(i > 0 ? 1.0 : slateKeep)"],
     [
@@ -637,12 +825,17 @@ if (vSlateShade.x + vSlateShade.y + vSlateRoot.z > 0.0) {
   float slateS0 = max(vSlateShade.x, ${glsl(OCCLUSION.creaseSky)}*slateCrease), slateK0 = vSlateShade.y*${glsl(OCCLUSION.key)};
   slateSky = clamp(slateS0+slateBreak*slateS0*(1.0-slateS0)*2.0, 0.0, 1.0)*slateGuard;
   slateSky = smoothstep(${glsl(OCCLUSION.remap[0])}, ${glsl(OCCLUSION.remap[1])}, slateSky);
+  slateSkyVis = 1.0-slateSky;
   slateKeyOcc = clamp(max((slateK0+slateBreak*slateK0*(1.0-slateK0)*2.0)*clamp((slateContactGain-.6)*2.5, 0.0, 1.0), ${glsl(OCCLUSION.creaseKey)}*slateCrease), 0.0, 1.0)*slateGuard;
   float slateDamp = clamp(max(smoothstep(${glsl(DAMP.crease[0])}, ${glsl(DAMP.crease[1])}, slateCrease), ${glsl(DAMP.cavity)}*smoothstep(.3, .95, slateSky)), 0.0, 1.0);
   diffuseColor.rgb *= 1.0 - ${glsl(DAMP.albedo)}*slateDamp;
+  vec3 slateDampC = diffuseColor.rgb*${glslVec(...POOL.tone)};
+  diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(dot(slateDampC, vec3(.2126,.7152,.0722))), slateDampC, ${glsl(POOL.saturation)}), ${glsl(DAMP.mud)}*slateDamp);
+  slateMud = max(slateMud, ${glsl(DAMP.mud)}*slateDamp);
   roughnessFactor = mix(roughnessFactor, ${glsl(DAMP.roughness)}, slateDamp);
   slateWet = max(slateWet, ${glsl(DAMP.wet)}*slateDamp);
-}`,
+}
+roughnessFactor = mix(roughnessFactor, ${glsl(POOL.roughness)}, slateMud*(1.0-slatePuddle));`,
     ],
     // The occluded sky: less reflection, less sky light.
     [
@@ -678,7 +871,7 @@ sampledDiffuseColor.rgb = mix(sampledDiffuseColor.rgb, slateSoilTone, mix(${glsl
   if (
     !applyEdits(shader, edits, {
       vertexShader:
-        "attribute vec4 slateRoot;\nattribute vec2 slateShade;\nvarying vec4 vSlateRoot;\nvarying vec2 vSlateShade;\n",
+        "attribute vec4 slateRoot;\nattribute vec2 slateShade;\nattribute float slatePool;\nvarying vec4 vSlateRoot;\nvarying vec2 vSlateShade;\nvarying float vSlatePool;\n",
       fragmentShader: ROOT_FRAGMENT,
     })
   )
@@ -706,7 +899,7 @@ export const PUDDLE_MIRROR = Object.freeze({
   f0: 0.02,
   shore: Object.freeze([-0.02, 0.09]),
   margin: Object.freeze([-0.16, -0.02]),
-  marginAlbedo: 0.2,
+  marginAlbedo: 0.08,
   coat: 0.15,
   darken: Object.freeze([0.3, 0.75]),
   water: 0.02,
@@ -821,7 +1014,9 @@ export function dripAt(t, aim = () => null) {
   return null;
 }
 const zoneGlsl = (zone) => glslVec(+zone.x.toFixed(2), +zone.z.toFixed(2));
-const NORTH = PUDDLE_ZONES[2];
+// The puddles that lie on dune slopes keep the ground's height in the mirror:
+// the north drip-line puddle and Portrait's foreground one.
+const SLOPED = [PUDDLE_ZONES[2], PUDDLE_ZONES[3]];
 const LAMP_FOOT = LANTERN_IMAGE.glow * LANTERN_IMAGE.scale;
 // slateDrip: the live drip (dripAt(): world x, z, age; w 1 while one lives),
 // set per draw on the CPU. slateFlame: the lantern flame's draught (height
@@ -883,12 +1078,17 @@ if (slateWater > 0.0) {
     if (length(w.xz-${LANTERN_GLSL}) < .3) { slateLamp = pointLights[i].color; slateLampW = w; }
   }
   #endif
-  // Reflect from a level water plane just above the lantern's footing (the east drip-line puddle lies on a dune slope and keeps the ground's height).
+  // Reflect from a level water plane just above the lantern's footing (the puddles on dune slopes keep the ground's height).
   vec3 slateP = vMudWorld;
-  if (dot(slateLamp, slateLamp) > 0.0 && length(vMudWorld.xz-${zoneGlsl(NORTH)}) > ${glsl(NORTH.radius + 0.1)})
+  if (dot(slateLamp, slateLamp) > 0.0${SLOPED.map((zone) => ` && length(vMudWorld.xz-${zoneGlsl(zone)}) > ${glsl(zone.radius + 0.1)}`).join("")})
     slateP = cameraPosition+(vMudWorld-cameraPosition)*((cameraPosition.y-slateLampW.y+${glsl(LAMP_FOOT - M.water)})/max(cameraPosition.y-vMudWorld.y, .01));
+  // The night sky (the film's environment, night-environment.js) at its sharpest; without it, a sky from the horizon, fog and zenith colours.
+  #ifdef USE_ENVMAP
+  vec3 slateSkyW = textureCubeUV(envMap, slateR, 0.0).rgb*envMapIntensity;
+  #else
   vec3 slateSkyW = mix(mix(${glslVec(...M.horizon)}, fogColor, smoothstep(0.0, .1, slateR.y)), ${glslVec(...M.zenith)}, smoothstep(.12, .6, slateR.y));
   slateSkyW *= 1.0+${glsl(2 * M.cloud)}*(slateNoise((slateP.xz+slateR.xz*(60.0/max(slateR.y, .05)))/45.0)-.5)*smoothstep(.02, .12, slateR.y);
+  #endif
   // The trunk and its root flare as a dark occluder.
   vec2 slateO = slateP.xz-${TRUNK_GLSL};
   float slateT = -dot(slateO, slateR.xz)/slateRA, slateTH = slateT*slateR.y, slateTD = length(slateO+slateT*slateR.xz), slateTrunk = 0.0;
@@ -949,7 +1149,8 @@ if (slateWater > 0.0) {
   reflectedLight.directDiffuse *= 1.0-slateF*slateWater;
   reflectedLight.indirectDiffuse *= 1.0-slateF*slateWater;
   reflectedLight.directSpecular *= mix(1.0, ${glsl(M.ggxKeep)}, slateLanternPuddle);
-  reflectedLight.indirectSpecular += slateRefl*slateWater;
+  vec3 slateZoneRefl = slateRefl*slateWater;
+  reflectedLight.indirectSpecular += slateZoneRefl/(1.0+slateBehind*dot(slateZoneRefl, vec3(.2126, .7152, .0722))/SLATE_TEXT_KNEE);
 }
 #endif
 `;
@@ -1002,9 +1203,12 @@ float slateMargin = smoothstep(${glsl(M.margin[0])}-slateShore, ${glsl(M.margin[
       "|float slateAo =",
       `slatePuddle = slateBody;\nslateLanternPuddle = slateBodyL;\ndiffuseColor.rgb *= 1.0-${glsl(M.marginAlbedo)}*slateMargin;\n`,
     ],
-    // In the water, the grazing sky sheen and the wet sheen give way to the mirror.
-    ["fragmentShader", "((.02+.98*slateFresnel)*|", "(1.0-slateZoneW)*"],
-    ["fragmentShader", "slateSheen*(slateWet|*slateFresnel", "*(1.0-slatePuddle*slateZoneW)"],
+    // In the zone's water, the water film's and the puddles' sky mirror give way to the zone's own.
+    [
+      "fragmentShader",
+      "|vec3 slateWaterRefl =",
+      "slateWaterCover *= 1.0-slatePuddle*slateZoneW;\n",
+    ],
     ["fragmentShader", "|#include <aomap_fragment>", MIRROR],
   ];
   if (!applyEdits(shader, edits)) return false;
@@ -1140,8 +1344,9 @@ export const SHADING_EARLY = 150;
 
 // The estate tufts (estate-ground-detail.js) on the film terrain: a blade
 // where a root covers the soil, or in the trunk's deep cavity (sky occlusion
-// over TUFTS.cull), collapses to a point under the ground; the rest rise with
-// the plate, berms and banks, and those in the tree's shade darken.
+// over TUFTS.cull), collapses to a point under the ground; the rest rise and
+// fall with the knoll, its relief and the lips, and those in the tree's shade
+// darken.
 export const TUFTS = Object.freeze({ cull: 0.6, shade: 0.75 });
 function settleTufts(growth, liftAt) {
   const p = growth.geometry.attributes.position,
@@ -1178,7 +1383,7 @@ function settleTufts(growth, liftAt) {
 // Sparse dark litter in the root crooks: pebbles (flattened octahedra), bark
 // flakes (bent quads) and a few twigs (tapering, kinked prisms, never under
 // 0.04 wide), seeded beside the roots, in their shade, clear of the lantern,
-// the puddles, the roots themselves and the open plate. Its colours follow the
+// the puddles, the roots themselves and the open ground. Its colours follow the
 // ground's albedo (the slate tile's mean, about 0.23 of the ground colour), so
 // it reads dark. One draw with the tufts' material.
 export const LITTER = Object.freeze({
@@ -1200,7 +1405,89 @@ export const LITTER = Object.freeze({
   twigWidth: Object.freeze([0.055, 0.075]),
   minWidth: 0.04,
   tone: Object.freeze({ pebble: Object.freeze([0.3, 0.5]), flake: 0.28, twig: 0.34 }),
+  // Small stones among the roots and about the trunk's base: rounded, a cool
+  // grey `tone` times the soil's mean (they catch the light the dark slate
+  // swallows), `size` wide, sunk `sink` of their height.
+  // Most lie beside a resting root (`beside` beyond its half-width); the rest
+  // in the crooks `crook` from the trunk, within `among` of a root. Never
+  // under a root or an arch, nor at the lantern or a puddle.
+  stones: Object.freeze({
+    count: 16,
+    seed: 52817,
+    rootShare: 0.6,
+    size: Object.freeze([0.12, 0.3]),
+    height: Object.freeze([0.5, 0.75]),
+    sink: Object.freeze([0.3, 0.5]),
+    beside: Object.freeze([0.1, 0.55]),
+    crook: Object.freeze([2.6, 6]),
+    among: 1.4,
+    spacing: 0.5,
+    tone: Object.freeze([1.1, 2.3]),
+    tint: Object.freeze([0.94, 1, 1.1]),
+  }),
 });
+// A unit icosphere (one subdivision: 42 vertices, 80 faces), the stones' shape.
+const ICOSPHERE = (() => {
+  const t = (1 + Math.sqrt(5)) / 2,
+    vertices = [
+      [-1, t, 0],
+      [1, t, 0],
+      [-1, -t, 0],
+      [1, -t, 0],
+      [0, -1, t],
+      [0, 1, t],
+      [0, -1, -t],
+      [0, 1, -t],
+      [t, 0, -1],
+      [t, 0, 1],
+      [-t, 0, -1],
+      [-t, 0, 1],
+    ].map((v) => v.map((c) => c / Math.hypot(...v)));
+  const faces = [
+    [0, 11, 5],
+    [0, 5, 1],
+    [0, 1, 7],
+    [0, 7, 10],
+    [0, 10, 11],
+    [1, 5, 9],
+    [5, 11, 4],
+    [11, 10, 2],
+    [10, 7, 6],
+    [7, 1, 8],
+    [3, 9, 4],
+    [3, 4, 2],
+    [3, 2, 6],
+    [3, 6, 8],
+    [3, 8, 9],
+    [4, 9, 5],
+    [2, 4, 11],
+    [6, 2, 10],
+    [8, 6, 7],
+    [9, 8, 1],
+  ];
+  const middle = new Map(),
+    mid = (a, b) => {
+      const key = a < b ? `${a},${b}` : `${b},${a}`;
+      if (!middle.has(key)) {
+        const m = vertices[a].map((c, k) => c + vertices[b][k]);
+        vertices.push(m.map((c) => c / Math.hypot(...m)));
+        middle.set(key, vertices.length - 1);
+      }
+      return middle.get(key);
+    };
+  const split = faces.flatMap(([a, b, c]) => {
+    const ab = mid(a, b),
+      bc = mid(b, c),
+      ca = mid(c, a);
+    return [
+      [a, ab, ca],
+      [b, bc, ab],
+      [c, ca, bc],
+      [ab, bc, ca],
+    ];
+  });
+  return { vertices, faces: split };
+})();
 // Distance from x/z to the nearest root-covered cell, up to limit (Infinity beyond).
 function coverDistance(x, z, limit) {
   let best = Infinity;
@@ -1397,12 +1684,120 @@ export function scatterLitter(surface, groundColor) {
     }
     placed.push([x, z, kind]);
   }
+  // The small stones, on their own seed after the litter (which they keep
+  // clear of): rounded, smooth-shaded, a little darker where they meet the soil.
+  const S = L.stones,
+    stones = [],
+    litterVertices = positions.length / 3,
+    stoneNormals = [];
+  let stoneSeed = S.seed;
+  const draw = () => (stoneSeed = (Math.imul(stoneSeed, 1664525) + 1013904223) >>> 0) / 4294967296;
+  const between = ([a, b]) => a + draw() * (b - a);
+  for (let attempt = 0; stones.length < S.count && attempt < 20000; attempt++) {
+    let x, z;
+    if (draw() < S.rootShare) {
+      // Beside a resting root, stepped off one side.
+      const line = ROOT_LINES[Math.floor(draw() * ROOT_LINES.length)],
+        s = Math.floor(draw() * (line.length - 1));
+      const [ax, az, ah, as] = line[s],
+        [bx, bz, bh, bs] = line[s + 1],
+        t = draw();
+      if (as + (bs - as) * t < 0.7) continue;
+      const hx = bx - ax,
+        hz = bz - az,
+        hl = Math.hypot(hx, hz),
+        side = draw() < 0.5 ? -1 : 1,
+        off = ah + (bh - ah) * t + between(S.beside);
+      x = TREE_FOOTING.x + ax + hx * t - (hz / hl) * off * side;
+      z = TREE_FOOTING.z + az + hz * t + (hx / hl) * off * side;
+    } else {
+      // In a crook about the trunk's base.
+      const turn = draw() * Math.PI * 2,
+        r = between(S.crook);
+      x = TREE_FOOTING.x + TRUNK[0] + Math.cos(turn) * r;
+      z = TREE_FOOTING.z + TRUNK[1] + Math.sin(turn) * r;
+    }
+    const width = between(S.size),
+      depth = width * between([0.7, 1]),
+      height = width * between(S.height),
+      sunk = between(S.sink),
+      yaw = draw() * Math.PI * 2,
+      tone = between(S.tone),
+      jitter = draw() * 1e4;
+    if (
+      x < left + 1 ||
+      z < top + 1 ||
+      x > left + (cols - 1) * pitch - 1 ||
+      z > top + (rows - 1) * pitch - 1
+    )
+      continue;
+    if (Math.hypot(x - LANTERN_FOOT.x, z - LANTERN_FOOT.z) < L.lantern) continue;
+    if (PUDDLE_ZONES.some((zone) => zoneDistance(zone, x, z) < zone.radius + L.puddle)) continue;
+    // Clear of every root and arch above it (the stone's own reach), yet among them.
+    if (rootCovered(x, z)) continue;
+    const near = coverDistance(x, z, S.among);
+    if (!(near > width * 0.6 + 0.1 && near <= S.among)) continue;
+    if (stones.some(([px, pz]) => Math.hypot(px - x, pz - z) < S.spacing)) continue;
+    if (placed.some(([px, pz]) => Math.hypot(px - x, pz - z) < L.spacing + width / 2)) continue;
+    const y = surface(x, z);
+    if (!Number.isFinite(y)) continue;
+    const [sky] = rootOcclusion(x, z),
+      dim = 1 - L.shade * sky,
+      cy = Math.cos(yaw),
+      sy = Math.sin(yaw);
+    const shape = ICOSPHERE.vertices.map(([vx, vy, vz], k) => {
+      const bump = 0.86 + 0.26 * dripHash(Math.floor(jitter) + k, 7);
+      return [vx * bump, vy * bump, vz * bump];
+    });
+    const world = shape.map(([vx, vy, vz]) => {
+      const px = (vx * width) / 2,
+        pz = (vz * depth) / 2;
+      return [
+        x + px * cy - pz * sy,
+        y + (vy * height) / 2 + height * (0.5 - sunk),
+        z + px * sy + pz * cy,
+      ];
+    });
+    // Smooth normals: the mean of the faces about each vertex.
+    const normals = world.map(() => [0, 0, 0]);
+    for (const [a, b, c] of ICOSPHERE.faces) {
+      const [ax, ay, az] = world[a],
+        [bx, by, bz] = world[b],
+        [qx, qy, qz] = world[c];
+      const ux = bx - ax,
+        uy = by - ay,
+        uz = bz - az,
+        vx = qx - ax,
+        vy = qy - ay,
+        vz = qz - az;
+      const n = [uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx];
+      for (const k of [a, b, c]) for (let e = 0; e < 3; e++) normals[k][e] += n[e];
+    }
+    for (const n of normals) {
+      const length = Math.hypot(...n) || 1;
+      for (let e = 0; e < 3; e++) n[e] /= length;
+    }
+    const grey = (0.2126 * base[0] + 0.7152 * base[1] + 0.0722 * base[2]) * tone * dim;
+    for (const face of ICOSPHERE.faces)
+      for (const k of face) {
+        positions.push(...world[k]);
+        stoneNormals.push(...normals[k]);
+        // A little darker toward the soil it is sunk in.
+        const shade = grey * (0.62 + 0.38 * Math.min(1, Math.max(0, (normals[k][1] + 0.4) / 1.2)));
+        colors.push(...S.tint.map((t) => shade * t));
+      }
+    stones.push([x, z, width]);
+  }
   const geometry = new BufferGeometry();
   geometry.setAttribute("position", new BufferAttribute(new Float32Array(positions), 3));
   geometry.setAttribute("color", new BufferAttribute(new Float32Array(colors), 3));
   geometry.computeVertexNormals();
+  geometry.attributes.normal.array.set(stoneNormals, litterVertices * 3);
   geometry.computeBoundingSphere();
   geometry.userData.litter = placed;
+  // The stones' vertices follow the litter's.
+  geometry.userData.stones = stones;
+  geometry.userData.litterVertices = litterVertices;
   return geometry;
 }
 
@@ -1644,28 +2039,74 @@ export function settleRoots(
   return height;
 }
 
-function terrainAxis(width, subdivisions, center) {
+// POOL_FIELD over a w x h grid of heights (row by row); at(i, j) gives a
+// vertex's world [x, z].
+export function poolField(heights, w, h, at) {
+  const r = POOL_FIELD.mean,
+    across = new Float32Array(w * h),
+    cavity = new Float32Array(w * h);
+  const box = (source, target, n, index) => {
+    for (let k = 0; k < n; k++) {
+      let sum = 0,
+        count = 0;
+      for (let d = -r; d <= r; d++)
+        if (k + d >= 0 && k + d < n) {
+          sum += source[index(k + d)];
+          count++;
+        }
+      target[index(k)] = sum / count;
+    }
+  };
+  for (let j = 0; j < h; j++) box(heights, across, w, (i) => j * w + i);
+  const mean = new Float32Array(w * h);
+  for (let i = 0; i < w; i++) box(across, mean, h, (j) => j * w + i);
+  for (let j = 0; j < h; j++)
+    for (let i = 0; i < w; i++) {
+      const edge = Math.min(i, j, w - 1 - i, h - 1 - j) - r;
+      if (edge < 0) continue;
+      const [x, z] = at(i, j);
+      cavity[j * w + i] =
+        (mean[j * w + i] - heights[j * w + i]) *
+        pinKeep(x, z) *
+        Math.min(1, (edge + 1) / POOL_FIELD.edge);
+    }
+  return cavity;
+}
+
+// The fine root grid refines the coarse cells whose centres lie within this
+// window about the tree (tree-relative x and z): 15 either side of 3 east of
+// the tree, and two cells further east, where the knoll's rim falls into the
+// dune hollow.
+export const FINE_WINDOW = Object.freeze({
+  x: Object.freeze([-12, 24]),
+  z: Object.freeze([-15, 15]),
+});
+function terrainAxis(width, subdivisions, [lo, hi]) {
   const axis = [],
     step = width / subdivisions;
   for (let i = 0; i < subdivisions; i++) {
     const start = -width / 2 + i * step;
-    const pieces = Math.abs(start + step / 2 - center) < 15 ? 4 : 1;
+    const pieces = start + step / 2 > lo && start + step / 2 < hi ? 4 : 1;
     for (let j = 0; j < pieces; j++) axis.push(start + (step * j) / pieces);
   }
   axis.push(width / 2);
   return axis;
 }
 
-// Beyond this distance from the tree no support reaches: past the root plate's
-// blend about the trunk, every berm's extent about its root end and the
-// triangles about every banked lattice vertex.
+// Beyond this distance from the tree no support reaches: past the rim of the
+// knoll's core and every lobe (wobble included) and the relief's reach about
+// the trunk, every crook hollow and the triangles about every banked lattice
+// vertex.
 const SUPPORT_REACH =
   Math.max(
-    Math.hypot(...TRUNK) + ROOT_BENCH[1],
-    ...ROOT_BERMS.map(
-      ([tx, tz, , , hold, reach, half]) =>
-        Math.hypot(tx, tz) + Math.hypot(Math.max(reach, hold + 1.2), half),
-    ),
+    Math.hypot(...TRUNK) +
+      Math.max(
+        ROOT_KNOLL.core[0] + ROOT_KNOLL.core[1],
+        ...ROOT_KNOLL.lobes.map(([, reach, half, side, end]) => reach + half + end),
+        ROOT_RELIEF.reach[1] - ROOT_KNOLL.wobble[0],
+      ) +
+      ROOT_KNOLL.wobble[0],
+    ...ROOT_HOLLOWS.map(([x, z, radius]) => Math.hypot(x, z) + radius),
     ...ROOT_RESTS.map(
       ([col, row]) =>
         Math.hypot(
@@ -1786,8 +2227,16 @@ function* earthSteps(groundHeight, EARTH) {
   const lift = (x, z) => rootSupportHeight(x, z, sample) - sample(x, z);
   // Sub-unit samples around the roots share the existing ground draw. Only
   // this local rectangle is refined; the rest keeps its original triangles.
-  const xs = terrainAxis(EARTH.width, EARTH.subdivisions, TREE_FOOTING.x + 3);
-  const zs = terrainAxis(EARTH.width, EARTH.subdivisions, TREE_FOOTING.z);
+  const xs = terrainAxis(
+    EARTH.width,
+    EARTH.subdivisions,
+    FINE_WINDOW.x.map((v) => TREE_FOOTING.x + v),
+  );
+  const zs = terrainAxis(
+    EARTH.width,
+    EARTH.subdivisions,
+    FINE_WINDOW.z.map((v) => TREE_FOOTING.z + v),
+  );
   // The fine grid: its first column and row, and how many cells of pitch.
   const pitch = step / 2,
     fineX = xs.indexOf(xs.find((x, i) => xs[i + 1] - x < step));
@@ -1877,6 +2326,11 @@ function* earthSteps(groundHeight, EARTH) {
     if (near) occlusion.set(rootOcclusion(x, z), i * 2);
     if (i % 8 === 7) yield;
   }
+  const pools = poolField(surface, cols + 1, rows + 1, (i, j) => [xs[fineX + i], zs[fineZ + j]]);
+  const pool = new Float32Array(count);
+  for (let j = 0; j <= rows; j++)
+    pool.set(pools.subarray(j * (cols + 1), (j + 1) * (cols + 1)), (fineZ + j) * xs.length + fineX);
+  yield;
   let cursor = 0,
     center = grid;
   const vertex = (i, j) => j * xs.length + i;
@@ -1943,6 +2397,7 @@ function* earthSteps(groundHeight, EARTH) {
   geometry.setAttribute("uv", new BufferAttribute(uvs, 2));
   geometry.setAttribute("slateRoot", new BufferAttribute(shading, 4));
   geometry.setAttribute("slateShade", new BufferAttribute(occlusion, 2));
+  geometry.setAttribute("slatePool", new BufferAttribute(pool, 1));
   geometry.setIndex(new BufferAttribute(indices, 1));
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();

@@ -52,18 +52,19 @@ _lazy_ marks a chunk loaded on demand.
 
 **Scene core (`src/scene/`; the entry is `src/scene-entry.js`)**
 
-| File              | Role                                                |
-| ----------------- | --------------------------------------------------- |
-| `index.js`        | Assembly, reveal, holds, commits, `sceneDebug`      |
-| `runtime.js`      | Scheduler, cadence, holds, warm-ups, deferred steps |
-| `subsystem.js`    | Subsystem registry and lifecycle                    |
-| `rendering.js`    | Renderer, lights, shadows, shader compilation       |
-| `postprocess.js`  | Composer, grade, bloom, ink, dissolve               |
-| `depth-layers.js` | Depth-layer codes for the dissolve                  |
-| `perf-marks.js`   | `babel:` marks and measures                         |
-| `helpers.js`      | Ground height and math on `BabelSite.scene`         |
-| `palette.js`      | Ground palette                                      |
-| `world.js`        | World constants                                     |
+| File                   | Role                                                |
+| ---------------------- | --------------------------------------------------- |
+| `index.js`             | Assembly, reveal, holds, commits, `sceneDebug`      |
+| `runtime.js`           | Scheduler, cadence, holds, warm-ups, deferred steps |
+| `subsystem.js`         | Subsystem registry and lifecycle                    |
+| `rendering.js`         | Renderer, lights, shadows, shader compilation       |
+| `night-environment.js` | The film sky captured as the scene's environment    |
+| `postprocess.js`       | Composer, grade, bloom, ink, dissolve               |
+| `depth-layers.js`      | Depth-layer codes for the dissolve                  |
+| `perf-marks.js`        | `babel:` marks and measures                         |
+| `helpers.js`           | Ground height and math on `BabelSite.scene`         |
+| `palette.js`           | Ground palette                                      |
+| `world.js`             | World constants                                     |
 
 **Camera (`src/scene/`)**
 
@@ -132,7 +133,7 @@ The scene runs on the high and balanced tiers only; the low tier keeps the title
 |                     | High      | Balanced |
 | ------------------- | --------- | -------- |
 | Pixel-ratio cap     | 1.5       | 1.25     |
-| Shadows             | 2048 map  | off      |
+| Shadows             | 2048 map  | 1024 map |
 | Bloom               | on        | off      |
 | Scene MSAA (WebGL2) | 4 samples | none     |
 | Stars               | 4200      | 2600     |
@@ -141,7 +142,7 @@ Touch-primary devices cap the pixel ratio at 1.25 on every tier. The composer's 
 
 The governor samples display intervals only after the reveal, and not for 3 s after a resize, resume, dialog release or asset commit; a dissolve's capture, cut and first blended frames are skipped. A 60-frame window averaging over 20 ms for 120 consecutive frames steps down one tier. A revealed scene never draws the low profile: its low step keeps the profile and lowers only the pixel ratio to 1. Recovery needs 300 frames whose window average stays under the larger of 15 ms and 1.1 times its 10th percentile, counted only while that percentile is at most 17.5 ms (a display at 60 Hz or faster that keeps up), and 10 s since the last change; each recovery followed by another downgrade doubles both, and after two such oscillations recovery stops. While the tour runs, a step waits for the next cut; where the browser links programs in parallel, it links them first (`rendering.prepareQuality()`).
 
-[runtime.js](../src/scene/runtime.js) renders only visible frames, on an even cadence: every nth vsync of the estimated refresh rate near 60 Hz (144 Hz draws 72 fps; touch screens stay at or below 60). The sun's shadow map redraws only after a shot, quality, resize, model or treatment change. A ResizeObserver on the host resizes the renderer with `setSize(width, height, false)`. rendering.js checks the WebGL context before entering the composer, so a lost context is caught before Three.js hears of it. The page opens two WebGL contexts, the probe and the renderer, both with `powerPreference: "default"`.
+[runtime.js](../src/scene/runtime.js) renders only visible frames, on an even cadence: every nth vsync of the estimated refresh rate near 60 Hz (144 Hz draws 72 fps; touch screens stay at or below 60). The sun's shadow map redraws only after a shot, quality, resize, model or treatment change; a step between the tiers' map sizes frees the map for the next draw to allocate. When the film starts, rendering.js sets the film sky as the scene's environment: [night-environment.js](../src/scene/night-environment.js) links the capture's sky program in the background from start-up and draws the sky shell's own shader once into a prefiltered (PMREM) cube, again only after a lost context. A ResizeObserver on the host resizes the renderer with `setSize(width, height, false)`. rendering.js checks the WebGL context before entering the composer, so a lost context is caught before Three.js hears of it. The page opens two WebGL contexts, the probe and the renderer, both with `powerPreference: "default"`.
 
 ## Assets and budgets
 
