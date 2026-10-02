@@ -588,7 +588,6 @@ main:focus {
 .scene-loader__fill {
   position: absolute;
   inset: 0;
-  overflow: hidden;
   border-radius: inherit;
   background: #dfb882;
   box-shadow: 0 0 6px rgba(223, 184, 130, 0.5);
@@ -601,42 +600,12 @@ main:focus {
   transition-duration: 240ms;
 }
 
-.scene-loader__fill::after {
-  position: absolute;
-  inset: 0;
-  width: 40%;
-  content: "";
-  background: linear-gradient(
-    90deg,
-    rgba(255, 246, 228, 0) 0%,
-    rgba(255, 246, 228, 0.7) 50%,
-    rgba(255, 246, 228, 0) 100%
-  );
-  transform: translateX(-100%);
-  animation: scene-loader-glint 2.4s ease-in-out infinite;
-}
-
-@keyframes scene-loader-glint {
-  from {
-    transform: translateX(-100%);
-  }
-
-  to {
-    transform: translateX(250%);
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .scene-loader.is-loading,
   .scene-loader.is-done,
   .scene-loader__fill,
   .scene-loader.is-done .scene-loader__fill {
     transition: none;
-  }
-
-  .scene-loader__fill::after {
-    display: none;
-    animation: none;
   }
 }
 

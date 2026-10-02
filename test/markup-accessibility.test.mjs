@@ -184,10 +184,22 @@ test("the canvas keeps one 480ms fade over the title card, and the loading line 
       `${selector} is immediate for reduced motion`,
     );
   }
-  assert.match(
-    reduced,
-    /\.scene-loader__fill::after\s*\{[^}]*display:\s*none;/,
-    "no glint for reduced motion",
+  // The bar moves only with real progress: no glint sweeps it, for anyone.
+  assert.deepEqual(
+    cssRules(
+      styles,
+      (selector) => /scene-loader/.test(selector) && /::(?:after|before)/.test(selector),
+    ),
+    [],
+    "no decorative layer on the loading line",
+  );
+  assert.doesNotMatch(styles, /@keyframes scene-loader|glint/, "no glint keyframes");
+  assert.doesNotMatch(
+    cssRules(styles, (selector) => selector.includes("scene-loader"))
+      .map(({ body }) => body)
+      .join(""),
+    /animation/,
+    "nothing on the loading line animates",
   );
 });
 
