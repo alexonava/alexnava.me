@@ -1018,6 +1018,26 @@ test("selected text takes a warm wash that keeps its ink legible on the night an
   }
 });
 
+test("the 404 shares the homepage's icons, font preloads and description", async () => {
+  const home = flatHtml(await readIndexHtml());
+  const notFound = flatHtml(await readNotFoundHtml());
+  const links = (html, pattern) => (html.match(pattern) || []).sort();
+  for (const pattern of [
+    /<link rel="icon"[^>]*>/g,
+    /<link rel="apple-touch-icon"[^>]*>/g,
+    /<link rel="preload" href="\/fonts\/[^>]*>/g,
+  ]) {
+    const shared = links(home, pattern);
+    assert.ok(shared.length > 0, String(pattern));
+    assert.deepEqual(links(notFound, pattern), shared, String(pattern));
+  }
+  for (const preload of links(notFound, /<link rel="preload"[^>]*>/g)) {
+    assert.match(preload, /as="font" type="font\/woff2" crossorigin/);
+  }
+  const description = (html) => html.match(/<meta name="description" content="([^"]+)"/)[1];
+  assert.equal(description(notFound), description(home), "no new copy");
+});
+
 test("both pages declare their dark colour scheme", async () => {
   for (const page of [await readIndexHtml(), await readNotFoundHtml()]) {
     assert.match(flatHtml(page), /<meta name="color-scheme" content="dark" \/>/);
@@ -1031,6 +1051,18 @@ test("the 404 is a centered cotton-paper sheet with dark ink", async () => {
   assert.match(cssRule(styles, ".not-found"), /display:\s*grid;\s*place-items:\s*center;/);
   const sheet = cssRule(styles, ".not-found .story-shell::before");
   const paper = sheet.match(/(#[0-9a-f]{6}) url\("\/images\/paper-grain\.webp"\)/i)[1];
+  // The dialogs' paper: their light layer first, over the same ivory.
+  const dialogLight = cssRule(styles, ".panel-parchment__sheet::before").match(
+    /linear-gradient\([^;]*?\)\)/,
+  )[0];
+  assert.match(sheet, /background:\s*linear-gradient\(/);
+  assert.ok(sheet.includes(dialogLight), "the 404 shares the dialogs' 115deg light");
+  assert.equal(
+    paper,
+    cssRule(styles, ".panel-parchment__sheet::before").match(
+      /background-color:\s*(#[0-9a-f]{6});/i,
+    )[1],
+  );
   assert.match(
     cssRule(styles, ".not-found .story-shell::after"),
     /border-image:\s*url\("\/images\/paper-edge\.webp"\)/,

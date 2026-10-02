@@ -1524,10 +1524,13 @@ body[data-panel-open]::after {
   pointer-events: none;
 }
 
+/* The dialogs' paper: their 115deg light over the ivory and its grain. */
 .not-found .story-shell::before {
   inset: 23px;
-  background: #e8ddc8 url("/images/paper-grain.webp") repeat;
-  background-size: 384px;
+  background:
+    linear-gradient(115deg, rgba(255, 252, 240, 0.19), rgba(71, 47, 22, 0.035)) 0 0 / 100% 100%
+      no-repeat,
+    #e8ddc8 url("/images/paper-grain.webp") 0 0 / 384px 384px repeat;
 }
 
 .not-found .story-shell::after {
