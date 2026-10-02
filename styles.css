@@ -254,6 +254,39 @@ main:focus {
     );
 }
 
+/* Anti-banding grain for the title card's dark gradients: a 150px tile of
+   fine fractal noise split into faint white and black specks whose alphas
+   balance on the night (no mean shift near code value 23), so 8-bit screens
+   see the gradients dithered instead of stepped. It lies above the canvas
+   and beneath all text, and fades with the canvas's 480ms reveal, so the
+   live scene never shows it. */
+.scene-vignette::before {
+  position: absolute;
+  inset: 0;
+  content: "";
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='150' height='150'%3E%3Cfilter id='g' filterUnits='userSpaceOnUse' x='0' y='0' width='150' height='150' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' seed='7' stitchTiles='stitch' result='n'/%3E%3CfeColorMatrix in='n' values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 .045 0 0 0 -.0225' result='l'/%3E%3CfeColorMatrix in='n' values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -.45 0 0 0 .225' result='d'/%3E%3CfeMerge%3E%3CfeMergeNode in='d'/%3E%3CfeMergeNode in='l'/%3E%3C/feMerge%3E%3C/filter%3E%3Crect width='150' height='150' filter='url(%23g)'/%3E%3C/svg%3E");
+  background-size: 150px 150px;
+  transition: opacity 480ms ease-out;
+}
+
+.scene-home:has(.scene-canvas.is-ready) .scene-vignette::before {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scene-vignette::before {
+    transition: none;
+  }
+}
+
+/* System colours and increased contrast take no texture. */
+@media (forced-colors: active), (prefers-contrast: more) {
+  .scene-vignette::before {
+    display: none;
+  }
+}
+
 .site-shell {
   position: fixed;
   inset: 0;

@@ -269,6 +269,70 @@ test("the title card's night sky is two tiling star layers drawn in CSS, with no
   }
 });
 
+test("a faint, zero-mean grain dithers the title card and fades with the reveal", async () => {
+  const styles = await readStyles();
+  const grain = cssRule(styles, ".scene-vignette::before");
+  assert.match(grain, /position:\s*absolute;/);
+  assert.match(grain, /inset:\s*0;/);
+  assert.match(grain, /content:\s*"";/);
+  assert.match(grain, /pointer-events:\s*none;/);
+  // One tile, encoded like --cursor-line, requesting nothing.
+  const tiles = [...grain.matchAll(/url\("(data:image\/svg\+xml,[^"]+)"\)/g)].map(
+    (match) => match[1],
+  );
+  assert.equal(tiles.length, 1);
+  assert.doesNotMatch(tiles[0], /[<>#"]|%(?![0-9A-F]{2})/i);
+  const svg = decodeURIComponent(tiles[0].slice("data:image/svg+xml,".length));
+  const size = Number(svg.match(/<svg [^>]*width='(\d+)'/)[1]);
+  assert.equal(Number(svg.match(/<svg [^>]*height='(\d+)'/)[1]), size);
+  assert.match(grain, new RegExp(`background-size:\\s*${size}px ${size}px;`));
+  assert.match(svg, /<feTurbulence type='fractalNoise' [^>]*stitchTiles='stitch'/);
+  assert.match(svg, /color-interpolation-filters='sRGB'/);
+  // Two layers from one noise channel: white specks where it rises above its
+  // middle, black specks where it falls below, each alpha zero at the middle.
+  const [light, dark] = [...svg.matchAll(/<feColorMatrix in='n' values='([^']+)'/g)].map((match) =>
+    match[1].split(" ").map(Number),
+  );
+  assert.deepEqual(light.slice(0, 15), [0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], "white");
+  assert.deepEqual(dark.slice(0, 15), Array(15).fill(0), "black");
+  const [kLight, kDark] = [light[15], -dark[15]];
+  assert.ok(kLight > 0 && kDark > 0);
+  assert.ok(Math.abs(light[19] + kLight / 2) < 1e-9 && Math.abs(dark[19] - kDark / 2) < 1e-9);
+  // White lifts a code value L by its alpha x (255 - L), black lowers it by
+  // its alpha x L: they balance at L = 255 kLight / (kLight + kDark), which
+  // must lie on the night, between its darkest and lightest tokens.
+  const luma = (hex) => {
+    const [r, g, b] = hex.match(/[0-9a-f]{2}/gi).map((part) => parseInt(part, 16));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const balance = (255 * kLight) / (kLight + kDark);
+  const [darkest, lightest] = ["var(--night-900)", "var(--night-800)"].map((token) =>
+    luma(color(styles, token)),
+  );
+  assert.ok(
+    balance >= darkest && balance <= lightest,
+    `balances at ${balance.toFixed(1)}, not on the night (${darkest.toFixed(1)}-${lightest.toFixed(1)})`,
+  );
+  // Faint: even at the noise's extremes a speck moves the night by a few codes.
+  assert.ok((kLight / 2) * (255 - darkest) <= 6 && (kDark / 2) * lightest <= 7);
+  // Gone with the canvas's own 480ms fade, at once for reduced motion, and
+  // never in forced colours or increased contrast.
+  const canvasFade = cssRule(styles, ".scene-canvas").match(/transition:\s*opacity (\d+ms) /)[1];
+  assert.match(grain, new RegExp(`transition:\\s*opacity ${canvasFade} ease-out;`));
+  assert.match(
+    cssRule(styles, ".scene-home:has(.scene-canvas.is-ready) .scene-vignette::before"),
+    /opacity:\s*0;/,
+  );
+  assert.match(
+    mediaBlock(styles, "(prefers-reduced-motion: reduce)"),
+    /\.scene-vignette::before\s*\{\s*transition:\s*none;/,
+  );
+  assert.match(
+    mediaBlock(styles, "(forced-colors: active), (prefers-contrast: more)"),
+    /\.scene-vignette::before\s*\{\s*display:\s*none;/,
+  );
+});
+
 test("estate layers preserve artwork proportions without masking labels", async () => {
   const css = flatCss(await readStyles());
   assert.match(css, /aspect-ratio: 3 \/ 2/);
