@@ -10,6 +10,8 @@ import { celestialTier, createCelestialClock, seededRandom } from "./solar-body.
 import { CELESTIAL_FIELD_GLSL, celestialClusterDirection } from "./celestial-field.js";
 import { cloudFieldGLSL } from "./estate-sky.js";
 export const STAR_COUNTS = Object.freeze({ high: 4200, balanced: 2600, low: 1200 });
+// The smallest star sprite in device pixels (the faint stars are 1.25-1.9 CSS px).
+export const STAR_MIN_FOOTPRINT = 2;
 export function makeStarGeometry(seed = 92717) {
   const random = seededRandom(seed),
     clusterRandom = seededRandom(seed ^ 0x9e3779b9),
@@ -128,7 +130,12 @@ export function createStarfield({
           vColor*=1.0-.94*skyCloudCover(normalize(cameraPosition+ray*reach));
         }
         gl_Position=projectionMatrix*modelViewMatrix*vec4(starPosition,1.0);
-        gl_PointSize=aSize*uPixelRatio;
+        // No star draws under STAR_MIN_FOOTPRINT device px: a smaller sprite falls
+        // between pixel centres and shimmers as the camera drifts. The wider sprite
+        // keeps the star's light (colour scales by the area ratio).
+        float size=aSize*uPixelRatio, footprint=max(size,${STAR_MIN_FOOTPRINT.toFixed(1)});
+        vColor*=size*size/(footprint*footprint);
+        gl_PointSize=footprint;
       }`,
     fragmentShader: `
       varying vec3 vColor;

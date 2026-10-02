@@ -28,7 +28,12 @@ import {
   SOLAR_RADIUS,
   SOLAR_QUALITY,
 } from "../src/scene/solar-body.js";
-import { createStarfield, makeStarGeometry, STAR_COUNTS } from "../src/scene/starfield.js";
+import {
+  createStarfield,
+  makeStarGeometry,
+  STAR_COUNTS,
+  STAR_MIN_FOOTPRINT,
+} from "../src/scene/starfield.js";
 import { createSceneAtmosphere } from "../src/scene/atmosphere.js";
 import { cloudFieldGLSL, createEstateSkyMaterial, FILM_SKY_GLSL } from "../src/scene/estate-sky.js";
 import { celestialClusterDirection, NEBULA_FRAME } from "../src/scene/celestial-field.js";
@@ -146,6 +151,36 @@ test("seeded stars preserve positions between tiers and remain distant while cam
   assert.equal(disposed, 1);
   assert.equal(parent.children.length, 0);
   [a, b, c].forEach((g) => g.dispose());
+});
+
+test("faint stars keep a two-pixel footprint and their light, so they hold still as the camera drifts", () => {
+  assert.equal(STAR_MIN_FOOTPRINT, 2);
+  const stars = createStarfield({ parent: new Group(), profile: { tier: "high" } }),
+    shader = flat(stars.root.material.vertexShader);
+  assert.ok(
+    shader.includes(
+      "float size=aSize*uPixelRatio, footprint=max(size,2.0); vColor*=size*size/(footprint*footprint); gl_PointSize=footprint; }",
+    ),
+    "the point size is set last, from the footprint",
+  );
+  // Evaluate the emitted terms: never under two device pixels, and the sprite's
+  // light (colour times area) is the star's own at every size and pixel ratio.
+  const [, footprintTerm] = shader.match(/footprint=([^;]+);/),
+    [, gainTerm] = shader.match(/vColor\*=([^;]+);\s*gl_PointSize=footprint;/);
+  const footprintOf = new Function("size", "max", `return ${footprintTerm}`),
+    gainOf = new Function("size", "footprint", `return ${gainTerm}`);
+  const sizes = makeStarGeometry().attributes.aSize;
+  for (const pixelRatio of [0.5, 1, 1.25, 1.5, 2]) {
+    for (let i = 0; i < sizes.count; i += 7) {
+      const size = sizes.getX(i) * pixelRatio,
+        footprint = footprintOf(size, Math.max),
+        gain = gainOf(size, footprint);
+      assert.ok(footprint >= 2 && footprint >= size);
+      assert.ok(Math.abs(gain * footprint * footprint - size * size) < 1e-9);
+      if (size >= 2) assert.equal(gain, 1, "stars already two pixels wide are unchanged");
+    }
+  }
+  stars.dispose();
 });
 
 test("solar prominence loops run along the meridian, so side-limb loops rise as arches", () => {
