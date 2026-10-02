@@ -11,11 +11,12 @@ return mix(c,vec3(.045,.065,.13),smoothstep(.24,.9,a));
 }
 vec3 filmBand(float a) { return vec3(.03,.036,.048)*exp(-pow((a-.03)*6.0,2.0)); }`;
 
-// The film's cloud field on the sky shell, as GLSL statements. They expect
-// `vec3 direction` (the shell point's direction from the world origin), `float altitude`
-// (its y) and the uNebulaLayers and uClouds uniforms in scope, and leave the bank
-// density `d` (`da` offset toward the sun), the weather terms and `cover`, the bank's
-// opacity before the sky's .94 mix. `time` names the drift clock uniform.
+// The film's cloud field on the sky shell, as GLSL statements, shared with the stars,
+// which dim behind the banks (starfield.js). They expect `vec3 direction` (the shell
+// point's direction from the world origin), `float altitude` (its y) and the
+// uNebulaLayers and uClouds uniforms in scope, and leave the bank density `d` (`da`
+// offset toward the sun), the weather terms and `cover`, the bank's opacity before the
+// sky's .94 mix. `time` names the drift clock uniform.
 export function cloudFieldGLSL(time = "uTime") {
   return `float T=${time};
 float lift=max(altitude,0.0)+.24;
