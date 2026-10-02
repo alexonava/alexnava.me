@@ -77,7 +77,8 @@ export function createNightEnvironment(renderer, { keyDirection, shellOpacity = 
     capture = null,
     target = null,
     status = "none",
-    ms = 0;
+    ms = 0,
+    linking = null;
   const key = new Vector3(...(keyDirection ?? [0, 1, 0])).normalize();
   // The sky shell's film sky, with the environment's additions, on a sphere.
   function captureScene() {
@@ -110,10 +111,19 @@ export function createNightEnvironment(renderer, { keyDirection, shellOpacity = 
     scene.add(new Mesh(geometry, material));
     return (capture = { scene, material, geometry });
   }
+  // While its program links in the background, Three polls it until it is
+  // ready: freeing the capture's material sooner would throw from that poll,
+  // so it is freed once the link settles.
   function release() {
-    capture?.material.dispose();
-    capture?.geometry.dispose();
+    const done = capture;
     capture = null;
+    if (!done) return;
+    const free = () => {
+      done.material.dispose();
+      done.geometry.dispose();
+    };
+    if (linking) linking.then(free);
+    else free();
   }
   // Links the capture's program against a linear half-float target, as the
   // PMREM cube draws it, without blocking (KHR_parallel_shader_compile).
@@ -131,9 +141,16 @@ export function createNightEnvironment(renderer, { keyDirection, shellOpacity = 
       const { scene } = captureScene();
       probe = new WebGLRenderTarget(1, 1, { type: HalfFloatType });
       renderer.setRenderTarget(probe);
-      Promise.resolve(renderer.compileAsync(scene, new PerspectiveCamera(90, 1, 0.1, 100))).catch(
+      const linked = Promise.resolve(
+        renderer.compileAsync(scene, new PerspectiveCamera(90, 1, 0.1, 100)),
+      ).then(
+        () => {},
         () => {},
       );
+      linking = linked;
+      linked.then(() => {
+        if (linking === linked) linking = null;
+      });
     } catch {
       // The capture links on its own draw instead.
     } finally {

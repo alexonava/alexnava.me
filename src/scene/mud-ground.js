@@ -145,10 +145,12 @@ export const SLATE_LIGHT = Object.freeze({
 // soil, film[0] of it everywhere but the dry tower footing and film[1] more
 // with the wet mask, in broad drained and glossy patches (patch: the noise's
 // cell in units and the share it keeps at least), a little rough
-// (roughness[0]) as it follows the soil; standing water (puddles) is whole and
-// sharp (roughness[1]). The sky it mirrors is the sky as shown times gain
-// ([film, standing water]: above 1 the stylised night's dimmed sky lights its
-// own reflection more), and in standing water the tree's trunk darkens it where
+// (roughness[0]) as it follows the soil; standing water (the knoll's low-spot
+// pools) is whole and sharp (roughness[1]). The authored puddles take none of
+// this: terrain-build.js's zone mirror draws their sky, at the sky as shown.
+// The sky the water mirrors is the sky as shown times gain ([film, standing
+// water]: above 1 the stylised night's dimmed sky lights its own reflection
+// more), and in standing water the tree's trunk darkens it where
 // it stands in the way (terrain-build.js sets slateWaterVeil; the rough film
 // would only smear it). It fades with view distance
 // (far), so the far plain behind the intro text stays calm.
@@ -244,13 +246,31 @@ const LUMA = "vec3(.2126,.7152,.0722)";
 const WATER = SLATE_WATER,
   LIGHT = SLATE_LIGHT;
 // The film ground's own direct light (SLATE_LIGHT): it finds the key and the
-// fill by their fixed directions and the lantern by its warm colour; any other
-// light is the crown's cool point fill. Where the soil is wet (slateWetLamp,
-// set before the lights) the moon and the lantern also light the water film
-// over it (SLATE_WATER.moon, .lamp), on the water's normal (slateWaterN), into
-// slateMoonSpec and slateLampSpec.
+// fill among the directional lights by their fixed directions and the lantern
+// by its warm colour; any other light is the crown's cool point fill. Three's
+// light loops fetch each light through get*LightInfo(), so wrapping those marks
+// a directional one (slateDirectional): where the crown's point light lines up
+// with the key or the fill from some spot on the ground, it stays the crown's.
+// Where the soil is wet (slateWetLamp, set before the lights) the moon and the
+// lantern also light the water film over it (SLATE_WATER.moon, .lamp), on the
+// water's normal (slateWaterN), into slateMoonSpec and slateLampSpec.
 // The root shading (terrain-build.js) wraps this function in turn.
 const MOONLIT_LIGHTS = `
+bool slateDirectional = false;
+#if NUM_DIR_LIGHTS > 0
+void slateDirectionalInfo(const in DirectionalLight light, out IncidentLight incident) {
+  getDirectionalLightInfo(light, incident);
+  slateDirectional = true;
+}
+#define getDirectionalLightInfo slateDirectionalInfo
+#endif
+#if NUM_POINT_LIGHTS > 0
+void slatePointInfo(const in PointLight light, const in vec3 position, out IncidentLight incident) {
+  getPointLightInfo(light, position, incident);
+  slateDirectional = false;
+}
+#define getPointLightInfo slatePointInfo
+#endif
 vec3 slateWaterN = vec3(0.0, 0.0, 1.0), slateLampSpec = vec3(0.0), slateMoonSpec = vec3(0.0);
 float slateWetFilm = 0.0, slateSkyVis = 1.0, slateWaterVeil = 0.0;
 vec3 slateWaterTilt = vec3(0.0);
@@ -265,9 +285,9 @@ vec3 slateWaterLobe(const in IncidentLight light, const in vec3 viewDir, const i
 void RE_Direct_Moonlit(const in IncidentLight directLight, const in vec3 geometryPosition, const in vec3 geometryNormal, const in vec3 geometryViewDir, const in vec3 geometryClearcoatNormal, const in PhysicalMaterial material, inout ReflectedLight reflectedLight) {
   IncidentLight slateL = directLight;
   bool slateWarm = directLight.color.b < .7*directLight.color.r;
-  bool slateKey = !slateWarm && dot(directLight.direction, normalize(mat3(viewMatrix)*${unitGlsl(MOON_LIGHTS.key)})) > .9999;
+  bool slateKey = slateDirectional && !slateWarm && dot(directLight.direction, normalize(mat3(viewMatrix)*${unitGlsl(MOON_LIGHTS.key)})) > .9999;
   #ifdef USE_ENVMAP
-  if (!slateWarm) slateL.color *= slateKey ? ${glslNumber(LIGHT.key)} : dot(directLight.direction, normalize(mat3(viewMatrix)*${unitGlsl(MOON_LIGHTS.fill)})) > .9999 ? ${glslNumber(LIGHT.fill)} : ${glslNumber(LIGHT.crown)};
+  if (!slateWarm) slateL.color *= slateKey ? ${glslNumber(LIGHT.key)} : slateDirectional && dot(directLight.direction, normalize(mat3(viewMatrix)*${unitGlsl(MOON_LIGHTS.fill)})) > .9999 ? ${glslNumber(LIGHT.fill)} : ${glslNumber(LIGHT.crown)};
   #endif
   RE_Direct_Physical(slateL, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight);
   #ifdef USE_ENVMAP

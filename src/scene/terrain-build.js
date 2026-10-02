@@ -724,13 +724,14 @@ function applyEdits(shader, edits, prefix = {}) {
 const KEY_VIEW = { value: new Vector3(...KEY_LIGHT) };
 const { settle: SETTLE, grain: GRAIN, occlusion: OCCLUSION, damp: DAMP, grit: GRIT } = SLATE_SOIL;
 // Each direct light is dimmed by the root occlusion: the moon key by its baked
-// term (found by direction), the lantern (the one warm light) and the cool
-// fills (the directional fill and the crown's point fill) by the sky term,
-// before the film ground's own balance of them (mud-ground.js SLATE_LIGHT).
+// term (found among the directional lights by direction, mud-ground.js
+// slateDirectional), the lantern (the one warm light) and the cool fills (the
+// directional fill and the crown's point fill) by the sky term, before the film
+// ground's own balance of them (mud-ground.js SLATE_LIGHT).
 const ROOT_LIGHTS = `
 float slateGate(vec3 L, vec3 C) {
   if (slateSky + slateKeyOcc <= 0.0) return 1.0;
-  if (dot(L, slateKeyView) > .9995) return 1.0 - slateKeyOcc;
+  if (slateDirectional && dot(L, slateKeyView) > .9995) return 1.0 - slateKeyOcc;
   if (C.b < .7*C.r) return 1.0 - ${glsl(OCCLUSION.lantern)}*slateSky;
   return 1.0 - ${glsl(OCCLUSION.fill)}*slateSky;
 }

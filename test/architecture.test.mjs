@@ -306,10 +306,11 @@ test("the film's night sky lights the bark and the rocks from above and leaves t
     fragmentShader: "#include <common>\n#include <lights_fragment_maps>",
   };
   material.onBeforeCompile(shader);
-  // The light maps' own sums, reweighted by role right after Three makes them.
+  // The light maps' own sums, reweighted by role right after Three makes them,
+  // only with an environment: without one (a failed capture) the ambient stays whole.
   assert.match(
     shader.fragmentShader,
-    /#include <lights_fragment_maps>\s*irradiance \*= babelEnvironment\.x;\s*iblIrradiance \*= babelEnvironment\.y;\s*radiance \*= babelEnvironment\.z;/,
+    /#include <lights_fragment_maps>\s*#ifdef USE_ENVMAP\s*irradiance \*= babelEnvironment\.x;\s*iblIrradiance \*= babelEnvironment\.y;\s*radiance \*= babelEnvironment\.z;\s*#endif/,
   );
   const environment = shader.uniforms.babelEnvironment.value;
   assert.deepEqual(environment.toArray(), [1, 0, 0], "outside the film nothing changes");

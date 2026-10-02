@@ -429,9 +429,10 @@ if(s.r+s.g+s.b<=0.)discard;
 gl_FragColor=vec4(s*shaftLayer,0.);
 }`;
 // Added to the subject's lighting: the treatment's light, gated by the map (its
-// window and the subject's own occlusion) and, for the moon on high, by the
-// key light's real shadow map (four taps at a named level, so the branch
-// stays real). Wrapped diffuse and a rim catch let it land on the edges of
+// window and the subject's own occlusion) and, for the moon where its shadow
+// map is drawn (high and balanced), by the key light's real shadow map (four
+// taps at a named level, so the branch stays real). Wrapped diffuse and a rim
+// catch let it land on the edges of
 // backlit bark and timber; where the surface turns faster than a pixel (a
 // twig) the rim fades out and the wrapped light to 40%, so thin geometry takes
 // no isolated glints and a crown no frost. A soft shoulder
@@ -964,7 +965,7 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
   };
   // The moon's slot among shadow-casting directional lights, found by
   // reference when a subject links: Three sorts casters first, in scene
-  // order. Its shadow map is sampled only while it casts (high).
+  // order. Its shadow map is sampled only while it casts (high and balanced).
   function shadowIndex() {
     let index = -1,
       count = 0;

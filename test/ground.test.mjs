@@ -155,7 +155,9 @@ test("the rock scatter waits for the reveal, film, tree and tier, loads its chun
   assert.equal(loads, 1);
   const root = parent.getObjectByName("film-rocks");
   assert.equal(root.children.length, 2, "one instanced mesh per stone");
-  assert.ok(root.children.every((mesh) => mesh.count === 0 && mesh.castShadow === false));
+  assert.ok(root.children.every((mesh) => mesh.count === 0));
+  // Balanced draws the moon's shadow map too: its rocks cast into it and take the tree's.
+  assert.ok(root.children.every((mesh) => mesh.castShadow && mesh.receiveShadow));
   assert.equal(root.visible, false);
   assert.ok(contacts[8 + 3] > 0, "rock contacts are written before they show");
   // The link is queued, then the instances land on a tour cut.
@@ -443,7 +445,27 @@ test("each ground shading has its own program cache key; the slate's shading nee
   assert.ok(SLATE_LIGHT.bounce > 0 && SLATE_LIGHT.bounce <= 0.25);
   assert.match(
     fragment,
-    /#include <lights_physical_pars_fragment>\s*vec3 slateWaterN[\s\S]*void RE_Direct_Moonlit\([\s\S]*#undef RE_Direct\n#define RE_Direct RE_Direct_Moonlit/,
+    /#include <lights_physical_pars_fragment>\s*bool slateDirectional = false;[\s\S]*vec3 slateWaterN[\s\S]*void RE_Direct_Moonlit\([\s\S]*#undef RE_Direct\n#define RE_Direct RE_Direct_Moonlit/,
+  );
+  // Three's light loops fetch each light through get*LightInfo(): wrapped (after
+  // Three defines them), they mark a directional light, so the key and the fill
+  // are found among those by direction, and the crown's point light, lined up
+  // with either from some spot on the ground, keeps its own share there.
+  assert.match(
+    fragment,
+    /#if NUM_DIR_LIGHTS > 0\s*void slateDirectionalInfo\(const in DirectionalLight light, out IncidentLight incident\) \{\s*getDirectionalLightInfo\(light, incident\);\s*slateDirectional = true;\s*\}\s*#define getDirectionalLightInfo slateDirectionalInfo\s*#endif/,
+  );
+  assert.match(
+    fragment,
+    /#if NUM_POINT_LIGHTS > 0\s*void slatePointInfo\(const in PointLight light, const in vec3 position, out IncidentLight incident\) \{\s*getPointLightInfo\(light, position, incident\);\s*slateDirectional = false;\s*\}\s*#define getPointLightInfo slatePointInfo\s*#endif/,
+  );
+  assert.match(
+    fragment,
+    /bool slateKey = slateDirectional && !slateWarm && dot\(directLight\.direction,/,
+  );
+  assert.match(
+    fragment,
+    /: slateDirectional && dot\(directLight\.direction, normalize\(mat3\(viewMatrix\)\*/,
   );
   assert.match(fragment, /#ifdef USE_ENVMAP\s*irradiance \*= [\d.]+;\s*iblIrradiance \*= [\d.]+;/);
   assert.ok(

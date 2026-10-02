@@ -87,32 +87,80 @@ test("the published, compacted sky shader keeps the environment's anchor", async
 });
 
 test("a capture that cannot draw fails once, quietly, and never retries", () => {
-  let draws = 0;
+  let attempts = 0;
   const renderer = {
     extensions: { has: () => false },
     getRenderTarget: () => null,
     setRenderTarget() {},
-    // PMREMGenerator asks the renderer to draw: this one cannot.
-    render() {
-      draws++;
+    // A capture starts with a PMREMGenerator, which links its blur program at
+    // once: this renderer cannot.
+    compile() {
+      attempts++;
       throw new Error("no context");
     },
   };
   const environment = createNightEnvironment(renderer, { keyDirection: [0, 1, 0] });
-  environment.setSky(skyMaterial());
+  const sky = skyMaterial();
+  environment.setSky(sky);
   assert.equal(environment.capture(), null);
+  assert.equal(attempts, 1);
   assert.equal(environment.status, "failed");
   assert.equal(environment.texture, null);
   assert.equal(environment.capture(), null);
-  assert.ok(draws <= 1);
+  assert.equal(attempts, 1, "no second attempt");
   assert.equal(environment.restore(), null, "nothing to restore");
   environment.dispose();
+  sky.dispose();
 });
 
-test("the film sets the night sky as the scene's environment and clears it without the film", () => {
+// Three polls a program linking in the background until it is ready, and that
+// poll throws once its material is freed: the capture's sky waits for the link.
+test("the capture's sky is freed only once its background link settles", async () => {
+  let settle = null,
+    linked = null;
+  const renderer = {
+    extensions: { has: (name) => name === "KHR_parallel_shader_compile" },
+    getRenderTarget: () => null,
+    setRenderTarget() {},
+    compileAsync(scene) {
+      linked = scene;
+      return new Promise((resolve) => (settle = resolve));
+    },
+  };
+  const later = () => new Promise((resolve) => setImmediate(resolve));
+  const sky = skyMaterial();
+  // Torn down mid-link: freed when the link settles.
+  const early = createNightEnvironment(renderer, { keyDirection: [0, 1, 0] });
+  early.setSky(sky, 0.52);
+  let freed = 0;
+  linked.children[0].material.addEventListener("dispose", () => freed++);
+  early.dispose();
+  await later();
+  assert.equal(freed, 0, "still linking");
+  settle(linked);
+  await later();
+  assert.equal(freed, 1, "freed once linked");
+  // Torn down after the link: freed at once.
+  const settled = createNightEnvironment(renderer, { keyDirection: [0, 1, 0] });
+  settled.setSky(sky, 0.52);
+  freed = 0;
+  linked.children[0].material.addEventListener("dispose", () => freed++);
+  settle(linked);
+  await later();
+  settled.dispose();
+  assert.equal(freed, 1);
+  sky.dispose();
+});
+
+// A rendering over a renderer stub; `listeners` holds its canvas's handlers.
+function filmRendering() {
+  const listeners = {};
   const renderer = {
     capabilities: { getMaxAnisotropy: () => 8 },
-    domElement: {},
+    domElement: {
+      addEventListener: (type, handler) => (listeners[type] = handler),
+      removeEventListener() {},
+    },
     extensions: { has: () => false },
     shadowMap: {},
     getContext: () => ({ isContextLost: () => false }),
@@ -155,6 +203,11 @@ test("the film sets the night sky as the scene's environment and clears it witho
       SHADOW_CAMERA_NEAR: 0.5,
     },
   });
+  return { rendering, listeners };
+}
+
+test("the film sets the night sky as the scene's environment and clears it without the film", () => {
+  const { rendering } = filmRendering();
   const sky = { isTexture: true };
   let captures = 0;
   rendering.environment.capture = () => {
@@ -170,4 +223,26 @@ test("the film sets the night sky as the scene's environment and clears it witho
   rendering.setFilmTreatment(true);
   rendering.dispose();
   assert.equal(rendering.homeScene.environment, null, "disposed before the scene's resources");
+});
+
+test("a restored context draws the sky again, with or without the film", () => {
+  const { rendering, listeners } = filmRendering();
+  let drawn = { isTexture: true },
+    restores = 0;
+  rendering.environment.capture = () => drawn;
+  rendering.environment.restore = () => {
+    restores++;
+    return (drawn = { isTexture: true, restored: restores });
+  };
+  // Lost and restored with the film off: the sky is drawn again all the same,
+  // and the film's next start takes the fresh drawing, never the lost one.
+  listeners.webglcontextrestored();
+  assert.equal(restores, 1);
+  assert.equal(rendering.homeScene.environment, null, "no environment without the film");
+  rendering.setFilmTreatment(true);
+  assert.equal(rendering.homeScene.environment.restored, 1);
+  // Restored during the film: the scene takes the fresh drawing at once.
+  listeners.webglcontextrestored();
+  assert.equal(rendering.homeScene.environment.restored, 2);
+  rendering.dispose();
 });

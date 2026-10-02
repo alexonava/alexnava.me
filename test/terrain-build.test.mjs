@@ -764,8 +764,13 @@ test("the lazy ground shading extends only the slate's program, under its own ke
     );
     // The baked key occlusion only where no shadow map does (contact gain 1: shadows off).
     assert.match(fragment, /\*clamp\(\(slateContactGain-\.6\)\*2\.5, 0\.0, 1\.0\)/);
-    // Each direct light is dimmed by the occlusion (the key by direction, the lantern by colour).
-    assert.match(fragment, /if \(dot\(L, slateKeyView\) > \.9995\) return 1\.0 - slateKeyOcc;/);
+    // Each direct light is dimmed by the occlusion (the key by direction among the
+    // directional lights, so the crown's point light never takes the key's term;
+    // the lantern by colour).
+    assert.match(
+      fragment,
+      /if \(slateDirectional && dot\(L, slateKeyView\) > \.9995\) return 1\.0 - slateKeyOcc;/,
+    );
     assert.ok(
       fragment.includes(`if (C.b < .7*C.r) return 1.0 - ${SLATE_SOIL.occlusion.lantern}*slateSky;`),
     );

@@ -808,13 +808,17 @@ const ORBIT_SPEED = 0.06;
       document.fonts?.addEventListener?.("loadingdone", onFontsLoaded);
       const onWindowScroll = () => {
         viewport.scrollTarget = Math.min(window.scrollY / (1.8 * viewport.height), 1.25);
+        // The hero scrolls over the fixed canvas: the next frame re-measures
+        // the ground's text guard (measuring here would flush layout per event).
+        groundTextScrolled = true;
         frameScheduler?.invalidate();
       };
       window.addEventListener("resize", onWindowResize);
       window.addEventListener("scroll", onWindowScroll, { passive: true });
       resizeController.update({ force: true });
       let debugRenderFrameCount = 0,
-        groundTextFrames = 0;
+        groundTextFrames = 0,
+        groundTextScrolled = false;
       let debugRenderWindowStart = null;
       let firstFrameDrawn = false;
       // Governor steps link their programs at once and apply on a tour cut.
@@ -828,7 +832,10 @@ const ORBIT_SPEED = 0.06;
         timestamp,
       }) {
         const frameStart = firstFrameDrawn ? 0 : sceneNow();
-        if (++groundTextFrames % 30 === 1) measureGroundText();
+        if (++groundTextFrames % 30 === 1 || groundTextScrolled) {
+          groundTextScrolled = false;
+          measureGroundText();
+        }
         // Samples are rAF intervals, not render cost; take them only while the
         // revealed scene animates continuously, outside a post-event hold, and
         // not while a step waits for its cut.

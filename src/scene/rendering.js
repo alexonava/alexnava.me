@@ -86,9 +86,11 @@ export function createSceneRendering({
   };
   const handleContextRestored = (event) => {
     // A restored context has an empty shadow map, even when its casters are static,
-    // and an empty environment target: the sky is drawn into it again.
+    // and an empty environment target: the sky is drawn into it again, also with
+    // the film off, so the film's next start finds it whole.
     sunLight.shadow.needsUpdate = true;
-    if (homeScene.environment) homeScene.environment = environment.restore();
+    const restored = environment.restore();
+    if (filmLighting) homeScene.environment = restored;
     onContextRestored?.(event);
   };
   renderer.domElement?.addEventListener?.("webglcontextlost", handleContextLost);

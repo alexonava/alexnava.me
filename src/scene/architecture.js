@@ -264,12 +264,16 @@ export function materialFor(asset, anisotropy, role, textGuard = null) {
           uniform vec3 babelEnvironment;
           varying vec3 babelLocal;`,
         )
+        // The role's share of the flat ambient and of the sky's light; without an
+        // environment (the film off, or a failed capture) the ambient stays whole.
         .replace(
           "#include <lights_fragment_maps>",
           `#include <lights_fragment_maps>
+          #ifdef USE_ENVMAP
           irradiance *= babelEnvironment.x;
           iblIrradiance *= babelEnvironment.y;
-          radiance *= babelEnvironment.z;`,
+          radiance *= babelEnvironment.z;
+          #endif`,
         )
         .replace("#include <roughnessmap_fragment>", roughnessFragment)
         .replace(

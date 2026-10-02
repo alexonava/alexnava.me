@@ -310,7 +310,8 @@ test("the film's environment, the ground's text guard and the flame's bloom are 
     /atmosphereSystem\.setSkyMaterial\(skyShell\.material\); rendering\.setEnvironmentSky\(skyShell\.material, skyConfig\.shellOpacity\);/,
   );
   // The ground's water eases off behind the name and intro and behind About,
-  // measured on the canvas on resize, on font loads and every 30th frame.
+  // measured on the canvas on resize, on font loads, every 30th frame and on
+  // the first frame after a scroll.
   assert.match(index, /box\(groundContacts\.slateText\.value, \[".hero h1", ".hero-intro"\]\);/);
   assert.match(
     index,
@@ -324,7 +325,15 @@ test("the film's environment, the ground's text guard and the flame's bloom are 
     index,
     /cameraTour\?\.prepareNext\(\); measureGroundText\(\); invalidateContent\(\);/,
   );
-  assert.match(index, /if \(\+\+groundTextFrames % 30 === 1\) measureGroundText\(\);/);
+  assert.match(
+    index,
+    /if \(\+\+groundTextFrames % 30 === 1 \|\| groundTextScrolled\) \{ groundTextScrolled = false; measureGroundText\(\); \}/,
+  );
+  // The hero scrolls over the fixed canvas: the scroll handler only flags the
+  // guard (measuring there would flush layout on every scroll event).
+  const onScroll = index.match(/const onWindowScroll = \(\) => \{[^}]*\};/)?.[0] ?? "";
+  assert.match(onScroll, /groundTextScrolled = true; frameScheduler\?\.invalidate\(\);/);
+  assert.doesNotMatch(onScroll, /measureGroundText|getBoundingClientRect/);
   // Beside About the bark's lantern highlights pass the same guard, on the ground's uniforms.
   assert.match(
     index,

@@ -231,7 +231,9 @@ export function createRocks(
         mesh.setColorAt(i, color.setScalar(rock.tone));
       });
       mesh.count = 0;
-      mesh.castShadow = mesh.receiveShadow = tier === "high";
+      // Every tier that loads the rocks (high and balanced) draws the moon's
+      // shadow map: they cast into it and take the tree's, as the lantern does.
+      mesh.castShadow = mesh.receiveShadow = true;
       meshes.push(mesh);
       root.add(mesh);
     });
