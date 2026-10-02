@@ -213,6 +213,12 @@ test("the drawing buffer follows the full-bleed container while the canvas keeps
   assert.match(index, /new ResizeObserver\(\(\) => resizeController\.resize\(\)\)/);
   assert.match(index, /containerResizeObserver\?\.observe\(container\);/);
   assert.match(index, /containerResizeObserver\?\.disconnect\(\); resizeController\.dispose\(\);/);
+  // A pixel-ratio change alone, as on a move between displays, resizes too.
+  assert.match(
+    index,
+    /const pixelRatioWatcher = createPixelRatioWatcher\(\{ onChange: \(\) => resizeController\.resize\(\) \}\);/,
+  );
+  assert.match(between("function disposeHomeSceneRuntime"), /pixelRatioWatcher\.dispose\(\);/);
 });
 
 test("the ground shading has one call site, which takes the tint and shading from the film", () => {

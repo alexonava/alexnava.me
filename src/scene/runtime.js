@@ -592,6 +592,61 @@ export function createSceneResizeController({
   };
 }
 
+/**
+ * Reports device-pixel-ratio changes that resize nothing: a window moved to a
+ * display of another scale, or a zoom that keeps the canvas box. A
+ * `(resolution: <ratio>dppx)` query matches only the current ratio, so its
+ * change event fires once, on leaving it; the watcher then re-arms on the new
+ * ratio before calling onChange. It owns only its listener, which dispose()
+ * removes; without matchMedia it watches nothing.
+ */
+export function createPixelRatioWatcher({
+  getRatio = () => globalThis.devicePixelRatio || 1,
+  matchMedia = globalThis.matchMedia?.bind(globalThis),
+  onChange,
+} = {}) {
+  if (typeof onChange !== "function") {
+    throw new TypeError("createPixelRatioWatcher requires onChange");
+  }
+  let disposed = false;
+  let query = null;
+
+  function arm() {
+    query = null;
+    if (disposed || typeof matchMedia !== "function") return;
+    let next = null;
+    try {
+      next = matchMedia(`(resolution: ${getRatio()}dppx)`);
+    } catch {
+      next = null;
+    }
+    if (typeof next?.addEventListener !== "function") return;
+    next.addEventListener("change", handleChange);
+    query = next;
+  }
+
+  function handleChange() {
+    query?.removeEventListener?.("change", handleChange);
+    if (disposed) return;
+    arm();
+    onChange();
+  }
+
+  arm();
+  return {
+    get watching() {
+      return query !== null;
+    },
+    dispose() {
+      if (disposed) return false;
+      disposed = true;
+      query?.removeEventListener?.("change", handleChange);
+      query = null;
+      return true;
+    },
+  };
+}
+
 function collectTexture(value, textures) {
   if (!value) return;
   if (value.isTexture) {
