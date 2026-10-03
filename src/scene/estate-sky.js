@@ -16,32 +16,39 @@ vec3 filmBand(float a) { return vec3(.03,.036,.048)*exp(-pow((a-.03)*6.0,2.0)); 
 // density over the cover threshold. On the cloud plane `b` that crop spans azimuths
 // (atan(b.y,b.x)) of 122-174 degrees from radius 1.13 out, through the shot's whole drift.
 // `wedge` (degrees) protects azimuths fully between its middle two values, easing out to
-// its first and last; `radius` eases that protection in from the zenith. The open sky
-// beyond, `open` (0 there, 1 clear of it), takes the reshaping, which never reaches the
-// crop:
+// its first and last; `radius` eases that protection in from the zenith. Beyond them the
+// sky takes the reshaping, which never reaches the crop, through two weights, both 0 over
+// it: `open`, for the density, also leaves the clear lane over the roof (gapG) alone;
+// `bend`, for the noise's coordinates, eases in over the wider azimuths and radius it
+// names instead, so the coordinates never bend fast enough to shear or fold the noise.
 // - `horizon`: past radius [0] the noise's radius grows by only [1] per unit, so banks
-//   near the horizon keep the reference's size instead of shrinking to small ovals;
-// - `banks`: the half-frequency octave lifts broad banks and opens broad clear sky,
-//   [0] + [1] x (octave - .5) on the density;
-// - `swirl`: the same octave turns the noise a further `swirl` along its own angle;
-// - `text`: behind the name and intro (the ground's text boxes, mud-ground.js) the lift
-//   eases out by [0] over [1] of the screen's smaller side, so the sky about the name
-//   stays as open as before.
-// The clear lane over the roof (gapG) stays clear: `open` takes its complement. The
-// uCloudReshape uniform scales it: 1 for the sky and the stars, 0 for the environment's
-// one capture (night-environment.js), so the ground's and the bark's approved sky light
-// and reflections keep the authored clouds' brightness.
+//   near the horizon keep about the reference's size and layering instead of shrinking to
+//   small ovals; `scale` then enlarges the open sky's noise evenly, every way alike, to
+//   the reference's breadth;
+// - `banks`: the half-frequency octave decides, broadly, bank or clear sky: across its
+//   values [2]-[3] the density goes from [0] (clear, so no stray peak becomes an island)
+//   to [1] (a bank, layered by the finer octaves within it);
+// - `swirl`: the same octave turns the noise a further `swirl` along a half turn of its
+//   own value, gently enough never to fold it;
+// - `text`: behind the name and intro (the ground's text boxes, mud-ground.js), easing
+//   out over [1] of the screen's smaller side, the lift gives way to a clearing of [0], so
+//   the sky about the name stays open.
+// The uCloudReshape uniform scales both weights: 1 for the sky and the stars, 0 for the
+// environment's one capture (night-environment.js), so the ground's and the bark's
+// approved sky light and reflections keep the authored clouds' brightness.
 export const CLOUD_RESHAPE = Object.freeze({
   wedge: Object.freeze([111, 119, 176, 180]),
   radius: Object.freeze([0.85, 1.12]),
-  horizon: Object.freeze([1.5, 0.35]),
-  banks: Object.freeze([0.05, 0.45]),
-  swirl: 0.45,
-  text: Object.freeze([0.9, 0.4]),
+  bend: Object.freeze([99, 196, 0.6]),
+  horizon: Object.freeze([1.5, 0.6]),
+  scale: 0.85,
+  banks: Object.freeze([-0.15, 0.12, 0.3, 0.7]),
+  swirl: 0.25,
+  text: Object.freeze([0.12, 0.3]),
 });
 
 const glslFloat = (value) => (Number.isInteger(value) ? value.toFixed(1) : String(value));
-const { wedge, radius, horizon, banks, swirl, text } = CLOUD_RESHAPE;
+const { wedge, radius, bend, horizon, scale, banks, swirl, text } = CLOUD_RESHAPE;
 // The soft knee's own offset at the zenith, so the noise radius starts at 0 there.
 const horizonZero = (Math.sqrt(horizon[0] ** 2 + 0.04) - horizon[0]).toFixed(6);
 
@@ -49,9 +56,9 @@ const horizonZero = (Math.sqrt(horizon[0] ** 2 + 0.04) - horizon[0]).toFixed(6);
 // which dim behind the banks (starfield.js). They expect `vec3 direction` (the shell
 // point's direction from the world origin), `float altitude` (its y), `float cloudText`
 // (1 behind the name and intro, easing to 0; CLOUD_TEXT_GLSL) and the uNebulaLayers,
-// uClouds and uCloudReshape uniforms in scope, and leave the bank density `d` (`da` offset toward the
-// sun), the weather terms, the reshaping's weight `open` and `cover`, the bank's opacity
-// before the sky's .94 mix. `time` names the drift clock uniform.
+// uClouds and uCloudReshape uniforms in scope, and leave the bank density `d` (`da`
+// offset toward the sun), the weather terms, the reshaping's weights `open` and `bend`
+// and `cover`, the bank's opacity before the sky's .94 mix. `time` names the drift clock uniform.
 export function cloudFieldGLSL(time = "uTime") {
   return `float T=${time};
 float lift=max(altitude,0.0)+.24;
@@ -63,9 +70,10 @@ float cloudAz=degrees(atan(b.y,b.x+1e-6));
 cloudAz+=cloudAz<0.?360.:0.;
 float open=(1.-smoothstep(${glslFloat(wedge[0])},${glslFloat(wedge[1])},cloudAz)*(1.-smoothstep(${glslFloat(wedge[2])},${glslFloat(wedge[3])},cloudAz))*smoothstep(${glslFloat(radius[0])},${glslFloat(radius[1])},bl))*(1.-gapG);
 open*=uCloudReshape;
+float bend=(1.-smoothstep(${glslFloat(bend[0])},${glslFloat(wedge[1])},cloudAz)*(1.-smoothstep(${glslFloat(wedge[2])},${glslFloat(bend[1])},cloudAz))*smoothstep(${glslFloat(bend[2])},${glslFloat(radius[1])},bl))*uCloudReshape;
 float cloudOut=bl-${glslFloat(horizon[0])};
 float cloudR=bl-${glslFloat(1 - horizon[1])}*.5*(cloudOut+sqrt(cloudOut*cloudOut+.04)-${horizonZero});
-vec2 bn=b*mix(1.,cloudR/bl,open);
+vec2 bn=b*mix(1.,cloudR/bl*${glslFloat(scale)},bend);
 float wa=T*.000436;
 vec2 p=bn+2.98*(sin(wa)*vec2(.923,.385)+(1.-cos(wa))*vec2(-.385,.923));
 vec2 q=p+vec2(5.7,0.9);
@@ -95,8 +103,8 @@ NV[k]=mix(mix(hv.x,hv.y,xf.x),mix(hv.z,hv.w,xf.x),xf.y);
 if(k==0){
 vec2 wm=(b-vec2(-1.1,.3))/1.1;
 vec2 wo=vec2(.8,-.5)*(NV[0]-.5)*.8*(1.-exp(-dot(wm,wm)));
-float turn=6.2832*NV[0];
-wo+=open*${glslFloat(swirl)}*vec2(cos(turn),sin(turn));
+float turn=3.1416*NV[0];
+wo+=bend*${glslFloat(swirl)}*vec2(cos(turn),sin(turn));
 q+=wo; p+=wo;
 }
 }
@@ -109,7 +117,7 @@ float fine=.5;
 if(uNebulaLayers>2.5) fine=NV[7]*.65+NV[8]*.35;
 d=n0*.5+n1*.27+g2*.16+fine*.07;
 da=a0*.5+a1*.27+h2*.16+fine*.07;
-float bank=open*(1.-${glslFloat(text[0])}*cloudText)*(${glslFloat(banks[0])}+${glslFloat(banks[1])}*(NV[0]-.5));
+float bank=open*((1.-cloudText)*mix(${glslFloat(banks[0])},${glslFloat(banks[1])},smoothstep(${glslFloat(banks[2])},${glslFloat(banks[3])},NV[0]))-${glslFloat(text[0])}*cloudText);
 d+=bank; da+=bank;
 }
 vec2 bankUV=(b-vec2(-.98,.42))/vec2(.42,.34);

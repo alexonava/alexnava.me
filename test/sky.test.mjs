@@ -550,28 +550,164 @@ test("the clouds' reshaping never reaches the reference banks or the roof's lane
     previous = r;
   }
   assert.ok(Math.abs(radiusOf(4, outer(4), Math.sqrt) - (knee + rate * (4 - knee))) < 0.01);
-  assert.match(shader, /vec2 bn=b\*mix\(1\.,cloudR\/bl,open\);/);
   // The sky draws the reshaping; the environment's capture turns it off.
   assert.match(shader, /\*\(1\.-gapG\);\s*open\*=uCloudReshape;/);
   assert.equal(material.uniforms.uCloudReshape.value, 1);
-  assert.match(shader, /vec2 p=bn\+2\.98\*\(/);
-  // The banks lift only the open sky, and ease out behind the name and intro.
-  const bankOf = new Function("open", "cloudText", "NV", `return ${line("bank")}`);
-  const [lift, spread] = CLOUD_RESHAPE.banks;
-  assert.equal(bankOf(0, 0, [1]), 0);
-  assert.ok(Math.abs(bankOf(1, 0, [0.5]) - lift) < 1e-12);
-  assert.ok(Math.abs(bankOf(1, 0, [1]) - (lift + spread / 2)) < 1e-12);
-  assert.ok(
-    Math.abs(bankOf(1, 1, [1]) - (1 - CLOUD_RESHAPE.text[0]) * (lift + spread / 2)) < 1e-12,
+  // The coordinates' weight, bend: 0 over the reference too, but easing in over wider
+  // azimuths and radius, and never held off by the roof's lane (bending coordinates
+  // fast would shear the noise; the lane keeps its own clearing in the density).
+  const bendOf = new Function(
+    "cloudAz",
+    "bl",
+    "uCloudReshape",
+    "smoothstep",
+    `return ${line("bend")}`,
   );
+  const bend = (x, y) => {
+    let az = azimuthOf({ x, y }, Math.atan2, degrees);
+    if (az < 0) az += 360;
+    return bendOf(az, Math.max(Math.hypot(x, y), 0.001), 1, smoothstep);
+  };
+  for (const [x, y] of [
+    [-0.7, 1.15],
+    [-1.13, 0.12],
+    [-2.36, 0.25],
+    [-1.34, 2.04],
+    [-2.0, 1.3],
+    [-1.1, 0.5],
+  ])
+    assert.equal(bend(x, y), 0, `reference banks keep their coordinates at ${x},${y}`);
+  assert.ok(bend(cx, cy) > 0, "the lane's own coordinates may reshape");
+  assert.equal(bendOf(150, 2, 0, smoothstep), 0, "the environment's capture: none");
+  assert.ok(open(-0.5, 0.6) > 0.9, "above the reference, toward the zenith, it reshapes");
+  // It eases over at least 20 degrees on each side of the wedge.
+  const [farLeft, farRight] = CLOUD_RESHAPE.bend;
+  assert.ok(CLOUD_RESHAPE.wedge[1] - farLeft >= 20 && farRight - CLOUD_RESHAPE.wedge[2] >= 20);
+  const scale = CLOUD_RESHAPE.scale;
+  assert.ok(scale > 0 && scale <= 1);
+  assert.ok(shader.includes(`vec2 bn=b*mix(1.,cloudR/bl*${scale},bend);`));
+  assert.match(shader, /vec2 p=bn\+2\.98\*\(/);
+  // The swirl turns the noise along half a turn of the half-frequency octave.
+  const swirlLine = shader.match(/wo\+=bend\*([\d.]+)\*vec2\(cos\(turn\),sin\(turn\)\);/);
+  const turnLine = shader.match(/float turn=([\d.]+)\*NV\[0\];/);
+  assert.ok(swirlLine && turnLine);
+  assert.equal(Number(swirlLine[1]), CLOUD_RESHAPE.swirl);
+  // With every weight at full strength, the map from the cloud plane to the noise never
+  // folds: the noise is never mirrored into creases. The model below is the emitted
+  // code's coordinate path (its value noise, the reference warp, the swirl and the
+  // radius and scale above) over the whole plane the shell reaches (|b| <= 1.1/.24).
+  const fract = (v) => v - Math.floor(v);
+  const noise = (x, y) => {
+    const xi = Math.floor(x),
+      yi = Math.floor(y);
+    let fx = x - xi,
+      fy = y - yi;
+    fx = fx * fx * (3 - 2 * fx);
+    fy = fy * fy * (3 - 2 * fy);
+    const corner = (cxi, cyi) => {
+      const h1 = fract(cxi * 0.1031),
+        h2 = fract(cyi * 0.1031),
+        h3 = h1;
+      const hd = h1 * (h2 + 33.33) + h2 * (h3 + 33.33) + h3 * (h1 + 33.33);
+      return fract((h1 + h2 + 2 * hd) * (h3 + hd));
+    };
+    const top = corner(xi, yi) + (corner(xi + 1, yi) - corner(xi, yi)) * fx,
+      bottom = corner(xi, yi + 1) + (corner(xi + 1, yi + 1) - corner(xi, yi + 1)) * fx;
+    return top + (bottom - top) * fy;
+  };
+  assert.ok(shader.includes("vec4 hv=fract((h1+h2+2.*hd)*(h3+hd));"));
+  assert.ok(shader.includes("NP[0]=q*.5+vec2(7.3,1.9);"));
+  assert.ok(shader.includes("vec2 wo=vec2(.8,-.5)*(NV[0]-.5)*.8*(1.-exp(-dot(wm,wm)));"));
+  const turnScale = Number(turnLine[1]);
+  const noiseAt = (x, y) => {
+    const bl = Math.max(Math.hypot(x, y), 0.001),
+      w = bend(x, y),
+      k = 1 + (radiusOf(bl, outer(bl), Math.sqrt) / bl) * scale * w - w;
+    const qx = x * k + 5.7,
+      qy = y * k + 0.9;
+    const nv = noise(qx * 0.5 + 7.3, qy * 0.5 + 1.9);
+    const wmx = (x + 1.1) / 1.1,
+      wmy = (y - 0.3) / 1.1;
+    const shear = (nv - 0.5) * 0.8 * (1 - Math.exp(-(wmx * wmx + wmy * wmy)));
+    const turn = turnScale * nv;
+    return [
+      qx + 0.8 * shear + w * CLOUD_RESHAPE.swirl * Math.cos(turn),
+      qy - 0.5 * shear + w * CLOUD_RESHAPE.swirl * Math.sin(turn),
+    ];
+  };
+  const h = 1e-4;
+  for (let x = -4.58; x <= 4.58; x += 0.06)
+    for (let y = -4.58; y <= 4.58; y += 0.06) {
+      if (Math.hypot(x, y) > 1.1 / 0.24) continue;
+      const a = noiseAt(x, y),
+        dx = noiseAt(x + h, y),
+        dy = noiseAt(x, y + h);
+      const det = ((dx[0] - a[0]) * (dy[1] - a[1]) - (dy[0] - a[0]) * (dx[1] - a[1])) / (h * h);
+      assert.ok(det > 0.1, `the noise folds at ${x.toFixed(2)},${y.toFixed(2)}`);
+    }
+  // The banks lift only the open sky; behind the name and intro they give way to a
+  // clearing, so the sky about the name stays open.
+  const bankOf = new Function(
+    "open",
+    "cloudText",
+    "NV",
+    "mix",
+    "smoothstep",
+    `return ${line("bank")}`,
+  );
+  const mix = (a, b, t) => a + (b - a) * t;
+  const bank = (o, t, nv) => bankOf(o, t, [nv], mix, smoothstep);
+  const [clear, lift, from, to] = CLOUD_RESHAPE.banks;
+  const [clearing, textReach] = CLOUD_RESHAPE.text;
+  assert.ok(clear < 0 && lift > 0 && from < to);
+  assert.ok(bank(0, 0, 1) === 0 && bank(0, 1, 1) === 0, "none over the reference");
+  // Decisive: clear sky below the octave's [2], a bank above its [3], so no stray peak
+  // of the finer octaves stands alone in the clear as an island.
+  for (const nv of [0, from / 2, from]) assert.ok(Math.abs(bank(1, 0, nv) - clear) < 1e-12);
+  for (const nv of [to, (to + 1) / 2, 1]) assert.ok(Math.abs(bank(1, 0, nv) - lift) < 1e-12);
+  let last = -Infinity;
+  for (let nv = 0; nv <= 1; nv += 0.01) {
+    assert.ok(bank(1, 0, nv) >= last - 1e-12, "the bank rises with the octave");
+    last = bank(1, 0, nv);
+  }
+  // Behind the name and intro, a clearing whatever the octave.
+  for (const nv of [0, 0.5, 1]) assert.ok(Math.abs(bank(1, 1, nv) + clearing) < 1e-12);
   assert.match(shader, /d\+=bank; da\+=bank;/);
-  assert.match(shader, /wo\+=open\*0\.45\*vec2\(cos\(turn\),sin\(turn\)\);/);
+  // NV[0] exists only on the high and balanced skies: its readers sit after the
+  // octave's own `continue` for the low sky, or inside the >1.5 branch.
+  const lowSkip = shader.indexOf("if(k==0 && uNebulaLayers<1.5) continue;");
+  assert.ok(lowSkip > 0 && shader.indexOf("float turn=") > lowSkip);
+  const bankBranch = shader.indexOf("if(uNebulaLayers>1.5){\nfloat c2=");
+  assert.ok(bankBranch > 0 && shader.indexOf("float bank=") > bankBranch);
+  assert.ok(shader.indexOf("float bank=") < shader.indexOf("vec2 bankUV="));
   // The guard reads the clip position the shell's vertex shader hands on, and the
-  // ground's box and aspect (nothing behind the text without them).
+  // ground's box and aspect (nothing behind the text without them). Its exact source:
+  assert.equal(
+    CLOUD_TEXT_GLSL,
+    `float cloudTextAt(vec4 clip){vec2 v=clip.xy/clip.w*.5+.5;
+vec2 f=max(max(slateText.xy-v,v-slateText.zw),0.)*vec2(slateAspect,1.)/min(slateAspect,1.);
+return 1.-smoothstep(0.,${textReach},length(f));}`,
+  );
+  // which behaves so: 1 inside the box, 0 at [1] of the smaller side beyond it, in x
+  // and in y under either aspect, after the perspective divide.
+  const textAt = ([x, y, , w], box, aspect) => {
+    const vx = (x / w) * 0.5 + 0.5,
+      vy = (y / w) * 0.5 + 0.5;
+    const fx = (Math.max(box.x - vx, vx - box.z, 0) * aspect) / Math.min(aspect, 1),
+      fy = Math.max(box.y - vy, vy - box.w, 0) / Math.min(aspect, 1);
+    return 1 - smoothstep(0, textReach, Math.hypot(fx, fy));
+  };
+  const box = { x: 0.1, y: 0.2, z: 0.3, w: 0.5 };
+  for (const aspect of [16 / 9, 9 / 19.5]) {
+    const small = Math.min(aspect, 1);
+    assert.equal(textAt([-0.6 * 2, -0.3 * 2, 0, 2], box, aspect), 1);
+    assert.ok(textAt([(0.3 + (textReach * small) / aspect) * 2 - 1, 0, 0, 1], box, aspect) < 1e-9);
+    assert.ok(textAt([-0.6, (0.5 + textReach * small) * 2 - 1, 0, 1], box, aspect) < 1e-9);
+    assert.ok(textAt([(0.3 + (textReach * small) / aspect / 2) * 2 - 1, 0, 0, 1], box, aspect) > 0);
+  }
   assert.ok(shader.includes(CLOUD_TEXT_GLSL));
   assert.match(shader, /float cloudText=cloudTextAt\(vCloudClip\);/);
   assert.match(material.vertexShader, /vCloudClip = gl_Position;/);
-  assert.match(CLOUD_TEXT_GLSL, /smoothstep\(0\.,0\.4,length\(f\)\)/);
   assert.deepEqual(material.uniforms.slateText.value, { x: 2, y: 2, z: -1, w: -1 });
   const guard = { slateText: { value: {} }, slateAspect: { value: 1 } };
   const guarded = createEstateSkyMaterial({ sunDirection: new Vector3(0, 1, 0) }, guard);
