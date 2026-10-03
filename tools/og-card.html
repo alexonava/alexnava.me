@@ -11,10 +11,10 @@
       --user-data-dir=<scratch>\edge-profile --screenshot=<scratch>\og-raw.png
       file:///<repo>/tools/og-card.html
     magick <scratch>\og-raw.png -alpha off -kmeans 224 -unique-colors <scratch>\og-pal.png
-    magick <scratch>\og-raw.png -alpha off -dither FloydSteinberg -define dither:diffusion-amount=65%
+    magick <scratch>\og-raw.png -alpha off -dither FloydSteinberg -define dither:diffusion-amount=70%
       -remap <scratch>\og-pal.png -strip -define png:compression-level=9 PNG8:public/og.png
   The dither hides the palette's banding in the night's gradients: use the largest amount that
-  keeps the file at or under 300 KB (65% gave 297 KB; each 5% adds about 8 KB). test/hosting.test.mjs
+  keeps the file at or under 300 KB (70% gave 296 KB; each 5% adds about 8 KB). test/hosting.test.mjs
   holds public/og.png opaque, exactly 1200x630 and at most 300 KB. Re-scrape it with LinkedIn Post
   Inspector after the release.
 -->
