@@ -666,6 +666,9 @@ test("the clouds' reshaping never reaches the reference banks or the roof's lane
   for (const nv0 of [0, from / 2, from])
     for (const nv2 of [0, 0.5, 1])
       assert.ok(Math.abs(bank(1, nv0, nv2) - clear) < 1e-12, "the clear takes no lanes");
+  // The clear eases in by open squared, so the wedge's ease never reads as a clear column.
+  assert.ok(Math.abs(bank(0.5, 0) - clear / 4) < 1e-12);
+  assert.ok(Math.abs(bank(0.5, 1) - lift / 2) < 1e-12);
   for (const nv0 of [to, (to + 1) / 2, 1]) {
     assert.ok(Math.abs(bank(1, nv0) - lift) < 1e-12);
     assert.ok(Math.abs(bank(1, nv0, 1) - (lift + lanes / 2)) < 1e-12);

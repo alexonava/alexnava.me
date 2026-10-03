@@ -26,7 +26,8 @@ vec3 filmBand(float a) { return vec3(.03,.036,.048)*exp(-pow((a-.03)*6.0,2.0)); 
 //   small ovals; `scale` then enlarges the open sky's noise evenly, every way alike, to
 //   the reference's breadth;
 // - `banks`: the half-frequency octave decides, broadly, bank or clear sky: across its
-//   values [2]-[3] the density goes from [0] (clear, so no stray peak becomes an island)
+//   values [2]-[3] the density goes from [0] (clear, so no stray peak becomes an island;
+//   it eases in by open squared, so the wedge's ease never reads as a clear column)
 //   to [1] (a bank, layered by the finer octaves within it), and `lanes` lets the next
 //   octave cut darker lanes through the banks (+-[lanes]/2), never into the clear;
 // - `swirl`: the same octave turns the noise a further `swirl` along a half turn of its
@@ -48,7 +49,7 @@ export const CLOUD_RESHAPE = Object.freeze({
   banks: Object.freeze([-0.22, 0.2, 0.4, 0.6]),
   lanes: 0.1,
   swirl: 0.25,
-  text: Object.freeze([0.2, 0.45]),
+  text: Object.freeze([0.12, 0.5]),
 });
 
 const glslFloat = (value) => (Number.isInteger(value) ? value.toFixed(1) : String(value));
@@ -121,7 +122,7 @@ float fine=.5;
 if(uNebulaLayers>2.5) fine=NV[7]*.65+NV[8]*.35;
 d=n0*.5+n1*.27+g2*.16+fine*.07;
 da=a0*.5+a1*.27+h2*.16+fine*.07;
-float bank=open*(mix(${glslFloat(banks[0])},${glslFloat(banks[1])}+${glslFloat(lanes)}*(NV[2]-.5),smoothstep(${glslFloat(banks[2])},${glslFloat(banks[3])},NV[0]))-${glslFloat(text[0])}*cloudText);
+float bank=open*(mix(${glslFloat(banks[0])}*open,${glslFloat(banks[1])}+${glslFloat(lanes)}*(NV[2]-.5),smoothstep(${glslFloat(banks[2])},${glslFloat(banks[3])},NV[0]))-${glslFloat(text[0])}*cloudText);
 d+=bank; da+=bank;
 }
 vec2 bankUV=(b-vec2(-.98,.42))/vec2(.42,.34);
