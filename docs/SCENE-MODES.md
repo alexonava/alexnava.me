@@ -87,7 +87,7 @@ Status values:
 | `ground`             | `procedural` (tier `low`) until the film starts, then `loading`, then `ready` or `fallback`; a fallback keeps the procedural ground |
 | `rocks`, `mountains` | `loading`, then `ready` or `fallback`                                                                                               |
 
-`rocks` appears once the rocks start loading (after the reveal, with the film on and the tree settled), and `mountains` once the film requests the ranges. In `cinematic`, `selected` is `tower` or `tree`, `current` is `tower`, `tree`, `orbit` or `null` (nothing ready yet), and `tour` holds the tour's state and transition, or `null` when there is no tour (`tour` present with any value other than 3, 5 or 20).
+`rocks` appears once the rocks start loading (after the reveal, with the film on and the tree settled), and `mountains` once the film requests the ranges; its `fallback` means the ranges' chunk failed (the film shows no mountains) or a Meshy massif failed or did not arrive within 12 s (`MASSIFS.deadline`; the five procedural rings stand in). In `cinematic`, `selected` is `tower` or `tree`, `current` is `tower`, `tree`, `orbit` or `null` (nothing ready yet), and `tour` holds the tour's state and transition, or `null` when there is no tour (`tour` present with any value other than 3, 5 or 20).
 
 ## sceneLoader.state
 

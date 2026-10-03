@@ -133,7 +133,16 @@ async function architectureAssetManifest() {
   for (const tier of ["high", "balanced"]) {
     urls[tier] = {};
     sizes[tier] = {};
-    for (const role of ["tower", "tree", "lantern", "lichen-rock", "weathered-stone"]) {
+    for (const role of [
+      "tower",
+      "tree",
+      "lantern",
+      "lichen-rock",
+      "weathered-stone",
+      "mountain-ridge",
+      "mountain-spine",
+      "mountain-summit",
+    ]) {
       const name = role + "-" + tier + ".glb";
       const bytes = await readFile(join(__dirname, "images", "architecture", name));
       const hashedName = name.replace(".glb", "." + sha8(bytes) + ".glb");

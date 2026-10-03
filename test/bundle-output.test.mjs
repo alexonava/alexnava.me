@@ -31,7 +31,16 @@ const distDir = path.join(bundleScratch, "dist");
 const scriptsDir = path.join(distDir, "scripts");
 
 // Every model the live scene loads, and the slate maps each tier requests.
-const ROLES = ["tower", "tree", "lantern", "lichen-rock", "weathered-stone"];
+const ROLES = [
+  "tower",
+  "tree",
+  "lantern",
+  "lichen-rock",
+  "weathered-stone",
+  "mountain-ridge",
+  "mountain-spine",
+  "mountain-summit",
+];
 
 const slateMaps = (tier) => {
   const size = tier === "high" ? 1024 : 512;
@@ -415,7 +424,7 @@ test("the UI carries the loading line and its tower and tree byte sizes; the sce
       assert.ok(!scene.includes(`${role}:${size}`), `the scene carries no ${role}-${tier} size`);
     }
   }
-  for (const role of ["lantern", "lichen-rock", "weathered-stone"]) {
+  for (const role of ROLES.filter((item) => !["tower", "tree"].includes(item))) {
     const { size } = await stat(
       path.join(projectRoot, "images", "architecture", `${role}-high.glb`),
     );
@@ -596,8 +605,8 @@ test("models and slate maps are deferred: the scene entry names their hashed cop
 });
 
 test("the complete scene fits 6 MiB on high and 3 MiB on balanced, and each model the loader's limit", async () => {
-  // A live scene downloads the tower, tree, lantern, both rocks and the
-  // slate's color, normal and detail maps.
+  // A live scene downloads the tower, tree, lantern, both rocks, the three
+  // Meshy massifs and the slate's color, normal and detail maps.
   for (const [tier, budget] of [
     ["high", 6 * 1024 * 1024],
     ["balanced", 3 * 1024 * 1024],
