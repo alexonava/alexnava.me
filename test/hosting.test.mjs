@@ -22,6 +22,37 @@ test("the page names its committed share image for social previews", async () =>
   assert.match(indexHtml, /name="twitter:card"\s+content="summary_large_image"/);
 });
 
+test("the share image is an opaque 1200x630 PNG of at most 300 KB, as its tags say", async () => {
+  const png = await readFile(path.join(projectRoot, "public", "og.png"));
+  assert.ok(png.length <= 300_000, `og.png is ${png.length} bytes`);
+  assert.deepEqual([...png.subarray(0, 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  // Walk the chunks: IHDR first, then no transparency anywhere.
+  const chunks = [];
+  for (let at = 8; at < png.length;) {
+    const length = png.readUInt32BE(at),
+      type = png.toString("latin1", at + 4, at + 8);
+    chunks.push({ type, data: png.subarray(at + 8, at + 8 + length) });
+    at += 12 + length;
+  }
+  assert.equal(chunks[0].type, "IHDR");
+  assert.equal(chunks.at(-1).type, "IEND");
+  const ihdr = chunks[0].data;
+  const [width, height, depth, colorType] = [
+    ihdr.readUInt32BE(0),
+    ihdr.readUInt32BE(4),
+    ihdr[8],
+    ihdr[9],
+  ];
+  assert.deepEqual([width, height], [1200, 630]);
+  assert.equal(depth, 8);
+  // Truecolour or palette, never with an alpha channel or a tRNS chunk.
+  assert.ok([2, 3].includes(colorType), `colour type ${colorType}`);
+  assert.ok(!chunks.some(({ type }) => type === "tRNS"), "no transparency chunk");
+  const indexHtml = await readProjectFile("index.html");
+  assert.match(indexHtml, /property="og:image:width"\s+content="1200"/);
+  assert.match(indexHtml, /property="og:image:height"\s+content="630"/);
+});
+
 test("public agent-discovery files keep their own headers and the page links its Markdown", async () => {
   const headers = await readProjectFile("public/_headers");
   const indexHtml = await readProjectFile("index.html");
