@@ -8,7 +8,6 @@
     "main",
     ".bottom-bar",
     ".site-footer",
-    ".site-copyright",
   ];
   const FOCUSABLE_SELECTOR = 'button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
 

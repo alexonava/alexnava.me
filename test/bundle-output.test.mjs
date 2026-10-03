@@ -636,7 +636,8 @@ test("paper textures and category vignettes are fingerprinted", async () => {
   const cssName = (await readdir(cssDir)).find((name) => /^styles\.[a-f0-9]{8}\.css$/.test(name));
   const css = await readFile(path.join(cssDir, cssName), "utf8");
   assert.equal(cssName, `styles.${createHash("sha256").update(css).digest("hex").slice(0, 8)}.css`);
-  // Their 200 KiB budget is held in paper-vignettes.test.mjs.
+  // Their 200 KiB budget is held in markup-accessibility.test.mjs ("three distinct
+  // transparent paper vignettes share the 200 KiB section-paper budget").
   for (const name of [
     "paper-grain",
     "paper-edge",
