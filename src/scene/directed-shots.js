@@ -147,14 +147,19 @@ export function isStackedLayout(width, height) {
 // Each portrait or short-landscape variant is built once, so a shot and
 // orientation always resolve to the same object: the cinematic camera keys its
 // measurements and fits on it. Tall canvases and stacked layouts take the
-// portrait variant, wherever the name sits; landscape screens under 500px tall
-// take the landscape one, or the compact one under 600px wide.
+// portrait variant, wherever the name sits, and so do landscape screens up to
+// 500px tall (the hero's own short-landscape breakpoint) narrower than
+// SQUAT_LANDSCAPE: on those squarish windows the wide variants push the sun out
+// past the right edge. Wider ones up to 500px tall, every landscape phone among
+// them, take the landscape variant, or the compact one under 600px wide.
+export const SQUAT_LANDSCAPE = 1.55;
 const variantShots = new WeakMap();
 export function resolveDirectedShot(shot, width, height) {
+  const short = height <= 500;
   const variant =
-    height > width || isStackedLayout(width, height)
+    height > width || isStackedLayout(width, height) || (short && width < SQUAT_LANDSCAPE * height)
       ? shot.portrait
-      : height < 500 && ((width < 600 && shot.compact) || shot.landscape);
+      : short && ((width < 600 && shot.compact) || shot.landscape);
   if (!variant) return shot;
   let resolved = variantShots.get(variant);
   if (!resolved) variantShots.set(variant, (resolved = { ...shot, ...variant }));

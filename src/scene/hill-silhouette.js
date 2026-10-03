@@ -109,9 +109,10 @@ export const TERRAIN_HORIZON = "vec3(.062,.065,.073)";
 // slate there (11/255) would lie darker than both the mountain feet and the lit
 // ground, a near-black band. So that body eases, within about a degree below
 // eye level, to the slate lifted by `horizon` at eye level, rising to `edge`
-// where the terrain's edge (TERRAIN_EDGE) meets the view: dark air at the
-// feet's own tone (about 26/255 on screen) that lightens toward the lit ground
-// (about 29/255). The slate's far edge darkens toward `ground` x the slate but
+// where the terrain's edge (TERRAIN_EDGE) meets the view: dark air that starts
+// from the range's own dark foot at eye level and lightens below it, to about
+// 18-22/255 on screen, still darker than the lit ground (about 33/255). The
+// slate's far edge darkens toward `ground` x the slate but
 // never lightens: the grade (postprocess.js) keeps the ground's cel step at
 // luma .1 (x0.76 below, lifted above), and this gain stays above it, so the
 // plain's edge never drops into the step.

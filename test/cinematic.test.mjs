@@ -128,9 +128,12 @@ test("short landscape uses a side-by-side safe area instead of backing out below
   assert.ok(area.top + area.height < 285);
   assert.ok(area.height >= 200);
   // A landscape phone under 600px wide keeps its name top-left beside the subject.
-  const small = cinematicSafeArea(568, 320, { right: 245, bottom: 138 }, { top: 246 });
+  // Its hero box (measured after the fonts load) is wider than the intro's
+  // glyphs; the 0.48w cap binds, still clear of the box.
+  const small = cinematicSafeArea(568, 320, { right: 253, bottom: 138 }, { top: 246 });
   assert.equal(small.top, 32);
-  assert.ok(small.left >= 245 * 1.1);
+  assert.equal(small.left, 568 * 0.48);
+  assert.ok(small.left >= 253 + 16);
   assert.ok(small.top + small.height <= 246 - 28);
   assert.ok(small.height >= 180);
 });
@@ -182,7 +185,7 @@ test("the stacked layout follows the page's hero breakpoints", () => {
 });
 
 test("a portrait monitor frames the subject above its bottom-left name, across the width", () => {
-  const hero = { left: 16, right: 278, top: 1496, bottom: 1726 },
+  const hero = { left: 16, right: 283, top: 1496, bottom: 1726 },
     nav = { top: 1838 };
   assert.deepEqual(cinematicSafeArea(1080, 1920, hero, nav), {
     left: 20,
