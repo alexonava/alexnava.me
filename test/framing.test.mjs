@@ -31,6 +31,7 @@ import { createCinematicCamera, cinematicSafeArea } from "../src/scene/cinematic
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import { MASSIF_SNOW, MASSIFS, snowReach } from "../src/scene/hill-silhouette.js";
+import { SOLAR_GLOW_RADIUS } from "../src/scene/solar-body.js";
 import {
   createMountainGeometry,
   createRangeGeometry,
@@ -519,9 +520,11 @@ test("the camera-centred ranges frame every tour shot: sun, roof lane, tree shot
               );
             }
           if (name === "The watch") {
-            // The corona (4.2 units, as in solar-framing) stays clear of every crest.
+            // The star's glow (SOLAR_GLOW_RADIUS, its furthest reach) stays clear of every crest.
             const s = screen(sun),
-              radius = (((4.2 * camera.projectionMatrix.elements[5]) / s.depth) * height) / 2;
+              radius =
+                (((SOLAR_GLOW_RADIUS * camera.projectionMatrix.elements[5]) / s.depth) * height) /
+                2;
             const nearest = Math.min(...crest.map((p) => Math.hypot(p.x - s.x, p.y - s.y)));
             assert.ok(
               nearest >= radius + 12,
@@ -711,8 +714,11 @@ test("the Meshy massifs frame every tour shot: sun, roof lane, open sky over the
               );
             }
           if (name === "The watch") {
+            // The star's glow stays clear of every crest.
             const s = screen(sun),
-              radius = (((4.2 * camera.projectionMatrix.elements[5]) / s.depth) * height) / 2;
+              radius =
+                (((SOLAR_GLOW_RADIUS * camera.projectionMatrix.elements[5]) / s.depth) * height) /
+                2;
             const nearest = Math.min(...crest.map((p) => Math.hypot(p.x - s.x, p.y - s.y)));
             assert.ok(
               nearest >= radius + 12,
@@ -946,6 +952,14 @@ for (const tier of ["high", "balanced"])
             assert.ok(
               textDistance > radius + 4,
               label + " corona approaches text: " + (textDistance - radius),
+            );
+            // Its glow, out to its furthest reach, stays clear of the text too. (Only the
+            // glow's faint outer fade may graze the frame's edge while the star itself is
+            // just out of frame, as in Threshold on landscape phones.)
+            const glow = (radius * SOLAR_GLOW_RADIUS) / 4.2;
+            assert.ok(
+              textDistance > glow + 4,
+              label + " glow approaches text: " + (textDistance - glow),
             );
             const right = new Vector3(1, 0, 0).applyQuaternion(camera.quaternion),
               up = new Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
