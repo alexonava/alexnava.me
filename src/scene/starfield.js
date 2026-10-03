@@ -8,7 +8,10 @@ import {
 } from "three";
 import { celestialTier, createCelestialClock, seededRandom } from "./solar-body.js";
 import { CELESTIAL_FIELD_GLSL, celestialClusterDirection } from "./celestial-field.js";
+import { CLOUD_TEXT_GLSL, cloudFieldGLSL } from "./estate-sky.js";
 export const STAR_COUNTS = Object.freeze({ high: 4200, balanced: 2600, low: 1200 });
+// The smallest star sprite in device pixels (the faint stars are 1.25-1.9 CSS px).
+export const STAR_MIN_FOOTPRINT = 2;
 export function makeStarGeometry(seed = 92717) {
   const random = seededRandom(seed),
     clusterRandom = seededRandom(seed ^ 0x9e3779b9),
@@ -52,7 +55,19 @@ export function makeStarGeometry(seed = 92717) {
   geometry.computeBoundingSphere();
   return geometry;
 }
-export function createStarfield({ parent, camera, profile = {}, nebulaLayers = { value: 0 } }) {
+// `sky` is the sky shell material's uniforms and `skyRadius` the shell's radius
+// (WORLD.SKY_DOME_RADIUS): in film each star dims behind the cloud bank its view ray
+// meets on the shell, on the sky's own drift clock, so stars show only between the
+// banks, and the banks' text guard reads the same name and intro box (slateText,
+// slateAspect). Without them the stars draw over a clear sky.
+export function createStarfield({
+  parent,
+  camera,
+  profile = {},
+  sky = {},
+  skyRadius = 130,
+  nebulaLayers = sky.uNebulaLayers ?? { value: 0 },
+}) {
   const clock = createCelestialClock(),
     center = new Vector3();
   const material = new ShaderMaterial({
@@ -71,14 +86,32 @@ export function createStarfield({ parent, camera, profile = {}, nebulaLayers = {
       // Borrowed from the sky: film activation, fallback and tiers change once.
       uNebulaLayers: nebulaLayers,
       uCelestialTier: { value: 1 },
+      // Also borrowed, never owned or freed: the cloud banks' clock and switches.
+      uSkyTime: sky.uTime ?? { value: 0 },
+      uFilm: sky.uFilm ?? { value: 0 },
+      uClouds: sky.uClouds ?? { value: 0 },
+      uSkyRadius: { value: skyRadius },
+      uCloudReshape: sky.uCloudReshape ?? { value: 0 },
+      slateText: sky.slateText ?? { value: { x: 2, y: 2, z: -1, w: -1 } },
+      slateAspect: sky.slateAspect ?? { value: 1 },
     },
     vertexShader: `
       attribute float aSize;attribute float aPhase;
       attribute vec3 aCelestialPosition;
       uniform float uTime;uniform float uPixelRatio;uniform float uVisibility;
       uniform float uNebulaLayers;uniform float uCelestialTier;
+      uniform float uSkyTime;uniform float uFilm;uniform float uClouds;uniform float uSkyRadius;
+      uniform float uCloudReshape;uniform vec4 slateText;uniform float slateAspect;
       varying vec3 vColor;
       ${CELESTIAL_FIELD_GLSL}
+      ${CLOUD_TEXT_GLSL}
+      // The sky's cloud cover at a shell direction, with the text guard where the
+      // star lands on screen (estate-sky.js).
+      float skyCloudCover(vec3 direction,float cloudText){
+        float altitude=direction.y;
+        ${cloudFieldGLSL("uSkyTime")}
+        return cover;
+      }
       void main(){
         bool cosmic=uNebulaLayers>.5 && uCelestialTier>.5;
         vec3 starPosition=cosmic?aCelestialPosition:position;
@@ -95,7 +128,21 @@ export function createStarfield({ parent, camera, profile = {}, nebulaLayers = {
                           +.035*sin(uTime*1.17+aPhase*7.0);
         vColor=color*extinction*twinkle*uVisibility;
         gl_Position=projectionMatrix*modelViewMatrix*vec4(starPosition,1.0);
-        gl_PointSize=aSize*uPixelRatio;
+        if(uFilm>.5 && uClouds>.001){
+          // Where this star's view ray leaves the sky shell (centred on the world
+          // origin): the bank there covers the star as it covers the sky (.94).
+          vec3 ray=normalize((modelMatrix*vec4(starPosition,1.0)).xyz-cameraPosition);
+          float along=dot(cameraPosition,ray);
+          float reach=-along+sqrt(max(along*along-dot(cameraPosition,cameraPosition)
+                                      +uSkyRadius*uSkyRadius,0.0));
+          vColor*=1.0-.94*skyCloudCover(normalize(cameraPosition+ray*reach),cloudTextAt(gl_Position));
+        }
+        // No star draws under STAR_MIN_FOOTPRINT device px: a smaller sprite falls
+        // between pixel centres and shimmers as the camera drifts. The wider sprite
+        // keeps the star's light (colour scales by the area ratio).
+        float size=aSize*uPixelRatio, footprint=max(size,${STAR_MIN_FOOTPRINT.toFixed(1)});
+        vColor*=size*size/(footprint*footprint);
+        gl_PointSize=footprint;
       }`,
     fragmentShader: `
       varying vec3 vColor;

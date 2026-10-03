@@ -21,7 +21,12 @@ import {
 import { createPropScale } from "../src/scene/prop-scale.js";
 import { rootSupportHeight } from "../src/scene/terrain-build.js";
 import { createLanternMount } from "../src/scene/lantern.js";
-import { DIRECTED_SHOTS, measureShot, resolveDirectedShot } from "../src/scene/directed-shots.js";
+import {
+  DIRECTED_SHOTS,
+  measureShot,
+  resolveDirectedShot,
+  SQUAT_LANDSCAPE,
+} from "../src/scene/directed-shots.js";
 import { createCinematicCamera, cinematicSafeArea } from "../src/scene/cinematic.js";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
@@ -78,18 +83,28 @@ for (const tier of ["high", "balanced"])
     await lanternPrepared;
     lantern.take();
     try {
-      for (const [width, height, heroBottom] of [
+      for (const [width, height, heroBottom, measured] of [
         [1600, 900],
         [390, 844],
         [390, 844, 180],
         [450, 800],
         [844, 390],
+        // A small landscape phone (name top-left) and a portrait monitor (name
+        // bottom-left), measured from the live page.
+        [568, 320, null, { hero: { right: 253, bottom: 138 }, nav: { top: 246 } }],
+        [
+          1080,
+          1920,
+          null,
+          { hero: { left: 16, right: 283, top: 1496, bottom: 1726 }, nav: { top: 1838 } },
+        ],
       ]) {
         const hero =
-          height > width
+          measured?.hero ??
+          (height > width
             ? { right: 340, bottom: heroBottom ?? 253 }
-            : { right: width * 0.33, bottom: 220 };
-        const area = cinematicSafeArea(width, height, hero, { top: height - 110 });
+            : { right: width * 0.33, bottom: 220 });
+        const area = cinematicSafeArea(width, height, hero, measured?.nav ?? { top: height - 110 });
         const distances = {},
           sizes = {};
         for (const [kind, object] of [
@@ -271,6 +286,9 @@ test("The watch resolves its landscape variant only for short landscape viewport
     [667, 375],
     [1200, 480],
     [1440, 499],
+    // The hero's short-landscape breakpoint includes 500px (max-height: 500px).
+    [1440, 500],
+    [780, 499],
   ]) {
     const shot = resolveDirectedShot(watch, width, height);
     assert.equal(shot.height, 0.55);
@@ -280,11 +298,44 @@ test("The watch resolves its landscape variant only for short landscape viewport
   }
   for (const [width, height] of [
     [1440, 900],
-    [1440, 500],
+    [1440, 501],
     [1024, 768],
   ])
     assert.equal(resolveDirectedShot(watch, width, height), watch);
+  // Squarish short windows (narrower than SQUAT_LANDSCAPE) take the portrait
+  // variant, which keeps the sun in frame; every landscape phone is wider.
+  assert.equal(SQUAT_LANDSCAPE, 1.55);
+  for (const [width, height] of [
+    [599, 499],
+    [620, 499],
+    [700, 480],
+    [560, 450],
+    [760, 499],
+  ])
+    assert.equal(resolveDirectedShot(watch, width, height), resolveDirectedShot(watch, 430, 932));
+  for (const [width, height] of [
+    [568, 320],
+    [667, 375],
+    [640, 360],
+    [844, 390],
+    [932, 430],
+  ])
+    assert.ok(width >= SQUAT_LANDSCAPE * height, `${width}x${height} is a landscape phone`);
   assert.equal(resolveDirectedShot(watch, 430, 932).height, 0.66, "portrait keeps its own variant");
+  // A portrait monitor sets the name below the subject, but keeps the portrait shot.
+  assert.equal(resolveDirectedShot(watch, 1080, 1920).height, 0.66);
+  assert.equal(resolveDirectedShot(watch, 1080, 1920), resolveDirectedShot(watch, 430, 932));
+  // Landscape phones under 600px wide take a compact variant, lower again.
+  for (const [width, height] of [
+    [568, 320],
+    [599, 360],
+  ]) {
+    const shot = resolveDirectedShot(watch, width, height);
+    assert.equal(shot.height, 0.4);
+    assert.equal(shot.azimuth, -12);
+    assert.equal(resolveDirectedShot(watch, width, height), shot);
+  }
+  assert.equal(resolveDirectedShot(DIRECTED_SHOTS.tree[0], 568, 320), DIRECTED_SHOTS.tree[0]);
   assert.equal(resolveDirectedShot(DIRECTED_SHOTS.tower[1], 844, 390), DIRECTED_SHOTS.tower[1]);
 });
 
@@ -325,6 +376,20 @@ const LAYOUTS = [
     height: 1080,
     hero: { left: 141, right: 465, top: 613, bottom: 886 },
     nav: { top: 962 },
+  },
+  // A small landscape phone sets the name top-left beside the subject; a
+  // portrait monitor sets it bottom-left, below the subject.
+  {
+    width: 568,
+    height: 320,
+    hero: { left: 12, right: 253, top: 12, bottom: 138 },
+    nav: { top: 246 },
+  },
+  {
+    width: 1080,
+    height: 1920,
+    hero: { left: 16, right: 283, top: 1496, bottom: 1726 },
+    nav: { top: 1838 },
   },
 ];
 
@@ -572,6 +637,34 @@ for (const tier of ["high", "balanced"])
           hero: { left: 141, right: 465, top: 613, bottom: 886 },
           nav: { top: 962 },
         },
+        // A small landscape phone (name top-left) and a portrait monitor (name
+        // bottom-left), measured from the live page.
+        {
+          width: 568,
+          height: 320,
+          hero: { left: 12, right: 253, top: 12, bottom: 138 },
+          nav: { top: 246 },
+        },
+        {
+          width: 1080,
+          height: 1920,
+          hero: { left: 16, right: 283, top: 1496, bottom: 1726 },
+          nav: { top: 1838 },
+        },
+        // Squarish short windows, the hero top-left (measured from the live page):
+        // the wide variants would push the sun past the right edge there.
+        ...[
+          [599, 499, 254, 151, 425],
+          [599, 500, 254, 151, 426],
+          [620, 499, 254, 151, 425],
+          [700, 480, 261, 148, 406],
+          [560, 450, 253, 143, 376],
+        ].map(([width, height, right, bottom, top]) => ({
+          width,
+          height,
+          hero: { left: 12, right, top: 12, bottom },
+          nav: { top },
+        })),
       ];
       // The Watch frames the sun. Every other tower shot either leaves the whole
       // corona out of frame or shows all of it, uncropped, clear of the name and

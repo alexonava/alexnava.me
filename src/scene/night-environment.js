@@ -97,9 +97,15 @@ export function createNightEnvironment(renderer, { keyDirection, shellOpacity = 
       "void main()",
       "uniform float envCapture;\nuniform vec3 envKeyDirection;\nvoid main()",
     );
+    // The cube's faces have no name or intro behind them: the clouds' text guard
+    // reads an empty box, not the live one the clone shares. The capture keeps
+    // the authored clouds without their reshaping (estate-sky.js CLOUD_RESHAPE),
+    // so the sky light and reflections the materials take keep their brightness.
     Object.assign(material.uniforms, {
       envCapture: { value: 1 },
       envKeyDirection: { value: key },
+      slateText: { value: { x: 2, y: 2, z: -1, w: -1 } },
+      uCloudReshape: { value: 0 },
     });
     material.uniforms.uFilm.value = 1;
     material.uniforms.uClouds.value = 1;

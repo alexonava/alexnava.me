@@ -361,13 +361,16 @@ test("fonts publish only under hashed names, which the stylesheet and the preloa
     /^styles\.[a-f0-9]{8}\.css$/.test(name),
   );
   const css = await readFile(path.join(distDir, "css", cssName), "utf8");
-  const html = await readFile(path.join(distDir, "index.html"), "utf8");
   const cssFonts = [...css.matchAll(/url\("?(\/fonts\/[^")]+)"?\)/g)].map((match) => match[1]);
-  const preloads = [...html.matchAll(/<link[^>]*rel="preload"[^>]*>/g)]
-    .map(([link]) => link.match(/href="(\/fonts\/[^"]+)"/)?.[1])
-    .filter(Boolean);
   assert.deepEqual([...cssFonts].sort(), [...hashed].sort());
-  assert.deepEqual([...preloads].sort(), [...hashed].sort());
+  // Both pages preload the very files the stylesheet names.
+  for (const page of ["index.html", "404.html"]) {
+    const html = await readFile(path.join(distDir, page), "utf8");
+    const preloads = [...html.matchAll(/<link[^>]*rel="preload"[^>]*>/g)]
+      .map(([link]) => link.match(/href="(\/fonts\/[^"]+)"/)?.[1])
+      .filter(Boolean);
+    assert.deepEqual([...preloads].sort(), [...hashed].sort(), page);
+  }
 
   // The fonts' license and copyright notices ship beside them.
   const ofl = await readFile(path.join(distDir, "fonts", "OFL.txt"), "utf8");
@@ -633,7 +636,8 @@ test("paper textures and category vignettes are fingerprinted", async () => {
   const cssName = (await readdir(cssDir)).find((name) => /^styles\.[a-f0-9]{8}\.css$/.test(name));
   const css = await readFile(path.join(cssDir, cssName), "utf8");
   assert.equal(cssName, `styles.${createHash("sha256").update(css).digest("hex").slice(0, 8)}.css`);
-  // Their 200 KiB budget is held in paper-vignettes.test.mjs.
+  // Their 200 KiB budget is held in markup-accessibility.test.mjs ("three distinct
+  // transparent paper vignettes share the 200 KiB section-paper budget").
   for (const name of [
     "paper-grain",
     "paper-edge",

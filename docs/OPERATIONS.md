@@ -4,7 +4,7 @@ The repository-owned path from source to Cloudflare Pages. Dashboard, DNS, secre
 
 ## Release gates
 
-Use Node.js 22 (`.nvmrc`). The local equivalent of CI:
+Use Node.js 22 (`.nvmrc`). The local equivalent of CI, in PowerShell:
 
 ```powershell
 npm.cmd ci
@@ -15,9 +15,20 @@ npm.cmd test
 npm.cmd run build:dist
 ```
 
-`audit:ci` fails on high or critical advisories, and `format:check` on any file Prettier would change (`npm run format` fixes them). Budgets are enforced by the tests: the UI bundle under 30 KiB, the scene entry and its static chunks under 820 KiB, and the complete scene within 6 MiB on high and 3 MiB on balanced.
+In a Linux or macOS shell:
 
-Lighthouse runs three times and asserts the median: performance at least 0.80, accessibility 1.00, best practices 0.95 and SEO 1.00; LCP at most 2500 ms, CLS 0.10 and TBT 200 ms. GitHub's runners have no GPU, so CI audits the static title card. For each release, also run three default Lighthouse passes of the live scene on GPU hardware and hold its median to the same performance and TBT gates.
+```sh
+npm ci
+npm run audit:ci
+npm run format:check
+npm run verify
+npm test
+npm run build:dist
+```
+
+`audit:ci` fails on high or critical advisories, and `format:check` on any file Prettier would change (`npm run format` fixes them). [Assets](ASSETS.md#budgets) lists every byte and script budget and the test that holds it; the model loader also refuses a model over its tier's limit at runtime.
+
+Lighthouse (`lighthouserc.json`) audits the homepage from the built `dist/` three times and asserts the median: performance at least 0.80, accessibility 1.00, best practices 0.95 and SEO 1.00; LCP at most 2500 ms, CLS 0.10 and TBT 200 ms. GitHub's runners have no GPU, so CI audits the static title card. For each release, also run three default Lighthouse passes of the live scene on GPU hardware and hold its median to the same performance and TBT gates.
 
 ## CI
 
@@ -28,7 +39,7 @@ Lighthouse runs three times and asserts the median: performance at least 0.80, a
 - `preview` (same-repository pull requests only, in the `preview` environment) deploys that artifact with a pinned Wrangler to a `preview-<branch>` alias, without checking out pull-request code, and smoke-checks it.
 - `comment` posts the preview URL on the pull request.
 
-`deploy.yml` runs on pushes to `main` and manual runs, and repeats every gate before publishing. `cloudflare-audit.yml` runs weekly. CodeQL uses GitHub's default setup, not a workflow.
+`deploy.yml` runs on pushes to `main` and manual runs, in one job in the `production` environment. Before publishing it installs, audits, checks formatting, verifies, tests and builds, as CI's `build` job does, then checks the credentials. It does not run Lighthouse: that gate runs only in `ci.yml`, on pull requests and manual runs. `cloudflare-audit.yml` runs weekly. CodeQL uses GitHub's default setup, not a workflow.
 
 ## Credentials
 
@@ -46,7 +57,7 @@ There is no local production deploy command; merging an approved pull request re
 gh workflow run deploy.yml --ref main
 ```
 
-`npm run deploy:preview` publishes a local build to the `preview` branch alias.
+`npm run deploy:preview` builds and publishes the local `dist/` to the `preview` branch alias of `alexnava-me`, with whatever Cloudflare credentials Wrangler has locally. It never publishes production.
 
 ## Rollback
 
@@ -58,7 +69,7 @@ If a post-upload smoke check fails, the workflow calls Cloudflare's Pages rollba
 
 A deploy does not purge the zone's cache. After a release that changes a stable-named file (`/robots.txt`, `/og.png`, `/favicon.ico`, `/manifest.webmanifest`, `/llms.txt`, `/fonts/OFL.txt` and the like), purge those URLs (Caching → Configuration → Custom Purge). HTML and hashed files need no purge.
 
-`/.well-known/security.txt` expires on 2027-09-23, and a test fails 30 days earlier: renew its `Expires` line before 2027-08-24.
+`/.well-known/security.txt` expires on 2027-09-23, and a test fails 30 days earlier: renew its `Expires` line before 2027-08-24. The same test (`test/hosting.test.mjs`) also fails when `Expires` lies more than 366 days ahead, so a renewal sets it at most a year out.
 
 The apex is a native custom domain on `alexnava-me`. An exact-host Bulk Redirect (list `alexnava_pages_hostname_redirects`) sends `alexnava-me.pages.dev` to the apex, keeping paths and queries. Do not add Workers on these hostnames: a Worker fetching the Pages hostname can loop through that redirect.
 

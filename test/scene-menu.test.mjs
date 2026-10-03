@@ -151,3 +151,112 @@ test("incomplete scene menu markup does not attempt panel initialization", () =>
     assertFallbackAvailable(fixture);
   }
 });
+
+// A fixture whose About control takes listeners, with the dialog art the
+// stylesheet names and optional browser features.
+function createWarmFixture({ saveData = false, computedStyle = true, image = true } = {}) {
+  const listeners = new Map();
+  const entry = {
+    hidden: true,
+    addEventListener(type, handler) {
+      listeners.set(type, [...(listeners.get(type) || []), handler]);
+    },
+    removeEventListener(type, handler) {
+      listeners.set(
+        type,
+        (listeners.get(type) || []).filter((candidate) => candidate !== handler),
+      );
+    },
+    dispatch(type) {
+      for (const handler of listeners.get(type) || []) handler({ type });
+    },
+  };
+  const fallback = [{ hidden: false, contains: () => false }];
+  const art = {
+    ".estate-home-map .estate-map": {
+      "::before": {
+        "background-image": 'url("https://alexnava.me/images/estate-map-desktop.0123abcd.webp")',
+      },
+    },
+    ".panel-parchment__sheet": {
+      "::before": {
+        "background-image":
+          'linear-gradient(115deg, rgba(255, 252, 240, 0.19), rgba(71, 47, 22, 0.035)), url("https://alexnava.me/images/paper-grain.0123abcd.webp")',
+      },
+      "::after": {
+        "border-image-source": 'url("https://alexnava.me/images/paper-edge.0123abcd.webp")',
+      },
+    },
+  };
+  const elements = Object.fromEntries(Object.keys(art).map((selector) => [selector, { selector }]));
+  const document = {
+    activeElement: { kind: "body" },
+    querySelector: (selector) => (selector === ".scene-entry" ? entry : elements[selector] || null),
+    querySelectorAll: (selector) => (selector === "[data-scene-fallback]" ? fallback : []),
+  };
+  const reads = [];
+  const requested = [];
+  const window = {
+    BabelSite: { ui: { initPanels: () => true }, scene: { detectSaveData: () => saveData } },
+  };
+  if (computedStyle) {
+    window.getComputedStyle = (element, pseudo) => {
+      reads.push(`${element.selector}${pseudo}`);
+      return { getPropertyValue: (property) => art[element.selector][pseudo]?.[property] ?? "" };
+    };
+  }
+  if (image) {
+    window.Image = class {
+      set src(url) {
+        requested.push(url);
+      }
+    };
+  }
+  vm.runInNewContext(source, { window, document }, { filename: "src/ui/scene-menu.js" });
+  return {
+    entry,
+    listeners,
+    reads,
+    requested,
+    initialize: () => window.BabelSite.ui.initSceneMenu(),
+  };
+}
+
+test("the first sign of intent toward About warms the map and paper art once", () => {
+  const fixture = createWarmFixture();
+  assert.equal(fixture.initialize(), true);
+  assert.equal(fixture.initialize(), true, "a repeat initialization binds nothing more");
+  for (const type of ["pointerenter", "focusin", "touchstart"])
+    assert.equal(fixture.listeners.get(type).length, 1, `one ${type} listener`);
+  assert.deepEqual(fixture.requested, [], "nothing loads before intent");
+
+  fixture.entry.dispatch("focusin");
+  // The hashed URLs the computed styles name, never a gradient.
+  assert.deepEqual(fixture.requested, [
+    "https://alexnava.me/images/estate-map-desktop.0123abcd.webp",
+    "https://alexnava.me/images/paper-grain.0123abcd.webp",
+    "https://alexnava.me/images/paper-edge.0123abcd.webp",
+  ]);
+  for (const type of ["pointerenter", "focusin", "touchstart"]) {
+    fixture.entry.dispatch(type);
+    assert.equal(fixture.listeners.get(type).length, 0, `${type} is released`);
+  }
+  assert.equal(fixture.requested.length, 3, "one shot");
+});
+
+test("Save-Data visitors are never sent the dialog art early", () => {
+  const fixture = createWarmFixture({ saveData: true });
+  assert.equal(fixture.initialize(), true);
+  fixture.entry.dispatch("pointerenter");
+  assert.deepEqual(fixture.reads, []);
+  assert.deepEqual(fixture.requested, []);
+});
+
+test("warming the dialog art survives a browser without computed styles or images", () => {
+  for (const missing of [{ computedStyle: false }, { image: false }]) {
+    const fixture = createWarmFixture(missing);
+    assert.equal(fixture.initialize(), true, "About still opens");
+    assert.doesNotThrow(() => fixture.entry.dispatch("touchstart"));
+    assert.deepEqual(fixture.requested, []);
+  }
+});

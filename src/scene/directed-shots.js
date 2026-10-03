@@ -24,6 +24,9 @@ export const DIRECTED_SHOTS = {
       // Landscape phones hold the intro over the upper third, where the snowy
       // range projected; lower and further round, it runs between text and tower.
       landscape: { height: 0.55, azimuth: -12 },
+      // Under 600px wide the intro spans nearly half the screen and the range
+      // still met its last line at 0.55; lower again, it runs below the intro.
+      compact: { height: 0.4, azimuth: -12 },
     },
     {
       name: "Threshold",
@@ -131,12 +134,32 @@ export const DIRECTED_SHOTS = {
   ],
 };
 
+// Whether the name stacks above the subject. It follows styles.css, where the
+// hero tops portrait screens (squares included) up to 1024px wide and landscape
+// ones up to 760px wide or 500px tall. Of those, landscape screens up to 500px
+// tall (phones turned sideways, of any width) or from 600px wide frame the
+// subject beside the name. Elsewhere the hero sits bottom-left: beside the
+// subject on desktops, below it on portrait monitors (cinematicSafeArea).
+export function isStackedLayout(width, height) {
+  return height >= width ? width <= 1024 : width < 600 && height > 500;
+}
+
 // Each portrait or short-landscape variant is built once, so a shot and
 // orientation always resolve to the same object: the cinematic camera keys its
-// measurements and fits on it.
+// measurements and fits on it. Tall canvases and stacked layouts take the
+// portrait variant, wherever the name sits, and so do landscape screens up to
+// 500px tall (the hero's own short-landscape breakpoint) narrower than
+// SQUAT_LANDSCAPE: on those squarish windows the wide variants push the sun out
+// past the right edge. Wider ones up to 500px tall, every landscape phone among
+// them, take the landscape variant, or the compact one under 600px wide.
+export const SQUAT_LANDSCAPE = 1.55;
 const variantShots = new WeakMap();
 export function resolveDirectedShot(shot, width, height) {
-  const variant = width < 600 || height > width ? shot.portrait : height < 500 && shot.landscape;
+  const short = height <= 500;
+  const variant =
+    height > width || isStackedLayout(width, height) || (short && width < SQUAT_LANDSCAPE * height)
+      ? shot.portrait
+      : short && ((width < 600 && shot.compact) || shot.landscape);
   if (!variant) return shot;
   let resolved = variantShots.get(variant);
   if (!resolved) variantShots.set(variant, (resolved = { ...shot, ...variant }));

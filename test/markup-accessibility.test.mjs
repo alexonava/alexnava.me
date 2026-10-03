@@ -184,10 +184,22 @@ test("the canvas keeps one 480ms fade over the title card, and the loading line 
       `${selector} is immediate for reduced motion`,
     );
   }
-  assert.match(
-    reduced,
-    /\.scene-loader__fill::after\s*\{[^}]*display:\s*none;/,
-    "no glint for reduced motion",
+  // The bar moves only with real progress: no glint sweeps it, for anyone.
+  assert.deepEqual(
+    cssRules(
+      styles,
+      (selector) => /scene-loader/.test(selector) && /::(?:after|before)/.test(selector),
+    ),
+    [],
+    "no decorative layer on the loading line",
+  );
+  assert.doesNotMatch(styles, /@keyframes scene-loader|glint/, "no glint keyframes");
+  assert.doesNotMatch(
+    cssRules(styles, (selector) => selector.includes("scene-loader"))
+      .map(({ body }) => body)
+      .join(""),
+    /animation/,
+    "nothing on the loading line animates",
   );
 });
 
@@ -267,6 +279,77 @@ test("the title card's night sky is two tiling star layers drawn in CSS, with no
   )) {
     assert.doesNotMatch(body, /\/images\//, `${selector} requests no image`);
   }
+});
+
+test("a faint, zero-mean grain dithers the title card and fades with the reveal", async () => {
+  const styles = await readStyles();
+  const grain = cssRule(styles, ".scene-vignette::before");
+  assert.match(grain, /position:\s*absolute;/);
+  assert.match(grain, /inset:\s*0;/);
+  assert.match(grain, /content:\s*"";/);
+  assert.match(grain, /pointer-events:\s*none;/);
+  // One tile, encoded like --cursor-line, requesting nothing.
+  const tiles = [...grain.matchAll(/url\("(data:image\/svg\+xml,[^"]+)"\)/g)].map(
+    (match) => match[1],
+  );
+  assert.equal(tiles.length, 1);
+  assert.doesNotMatch(tiles[0], /[<>#"]|%(?![0-9A-F]{2})/i);
+  const svg = decodeURIComponent(tiles[0].slice("data:image/svg+xml,".length));
+  const size = Number(svg.match(/<svg [^>]*width='(\d+)'/)[1]);
+  assert.equal(Number(svg.match(/<svg [^>]*height='(\d+)'/)[1]), size);
+  assert.match(grain, new RegExp(`background-size:\\s*${size}px ${size}px;`));
+  assert.match(svg, /<feTurbulence type='fractalNoise' [^>]*stitchTiles='stitch'/);
+  assert.match(svg, /color-interpolation-filters='sRGB'/);
+  // Two layers from one noise channel: white specks where it rises above its
+  // middle, black specks where it falls below, each alpha zero at the middle.
+  const [light, dark] = [...svg.matchAll(/<feColorMatrix in='n' values='([^']+)'/g)].map((match) =>
+    match[1].split(" ").map(Number),
+  );
+  assert.deepEqual(light.slice(0, 15), [0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], "white");
+  assert.deepEqual(dark.slice(0, 15), Array(15).fill(0), "black");
+  const [kLight, kDark] = [light[15], -dark[15]];
+  assert.ok(kLight > 0 && kDark > 0);
+  assert.ok(Math.abs(light[19] + kLight / 2) < 1e-9 && Math.abs(dark[19] - kDark / 2) < 1e-9);
+  // White lifts a code value L by its alpha x (255 - L), black lowers it by
+  // its alpha x L: they balance at L = 255 kLight / (kLight + kDark), which
+  // must lie on the night, between its darkest and lightest tokens.
+  const luma = (hex) => {
+    const [r, g, b] = hex.match(/[0-9a-f]{2}/gi).map((part) => parseInt(part, 16));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const balance = (255 * kLight) / (kLight + kDark);
+  const [darkest, lightest] = ["var(--night-900)", "var(--night-800)"].map((token) =>
+    luma(color(styles, token)),
+  );
+  assert.ok(
+    balance >= darkest && balance <= lightest,
+    `balances at ${balance.toFixed(1)}, not on the night (${darkest.toFixed(1)}-${lightest.toFixed(1)})`,
+  );
+  // Faint: even at the noise's extremes a speck moves the night by a few codes.
+  assert.ok((kLight / 2) * (255 - darkest) <= 6 && (kDark / 2) * lightest <= 7);
+  // Gone with the canvas's own 480ms fade, at once for reduced motion, and
+  // never in forced colours or increased contrast.
+  const canvasFade = cssRule(styles, ".scene-canvas").match(/transition:\s*opacity (\d+ms) /)[1];
+  assert.match(grain, new RegExp(`transition:\\s*opacity ${canvasFade} ease-out;`));
+  // A sibling selector (the vignette follows the canvas), so browsers without
+  // :has() fade it too.
+  assert.match(
+    cssRule(styles, ".scene-canvas.is-ready + .scene-vignette::before"),
+    /opacity:\s*0;/,
+  );
+  assert.match(
+    flatHtml(await readIndexHtml()),
+    /<div id="home-scene" class="scene-canvas"><\/div>\s*<div class="scene-vignette"><\/div>/,
+  );
+  assert.doesNotMatch(styles, /:has\(/);
+  assert.match(
+    mediaBlock(styles, "(prefers-reduced-motion: reduce)"),
+    /\.scene-vignette::before\s*\{\s*transition:\s*none;/,
+  );
+  assert.match(
+    mediaBlock(styles, "(forced-colors: active), (prefers-contrast: more)"),
+    /\.scene-vignette::before\s*\{\s*display:\s*none;/,
+  );
 });
 
 test("estate layers preserve artwork proportions without masking labels", async () => {
@@ -396,12 +479,20 @@ test("the first-paint hero, action cursors, microcopy and paper copy stay legibl
     /font-size:\s*(?:[0-9](?:\.[0-9]+)?|1[01](?:\.[0-9]+)?)px/,
     "user-facing microcopy must not fall below 12px",
   );
-  // The one top-level sheet rule holds every paper's height at all widths.
+  // The one top-level sheet rule holds every paper's height at all widths but
+  // on small landscape phones, whose screens are shorter than it: there the
+  // vignette goes back beside the copy and the sheet keeps its content's height.
   assert.match(cssRule(styles, ".panel-parchment__sheet"), /min-height:\s*\d+px;/);
+  const shortLandscape = mediaBlock(
+    styles,
+    "(orientation: landscape) and (max-height: 500px) and (max-width: 700px)",
+  );
+  assert.match(shortLandscape, /\.panel-parchment__sheet\s*\{[^}]*min-height:\s*0;/);
+  assert.match(shortLandscape, /\.panel-vignette\s*\{[^}]*grid-column:\s*2;/);
   assert.doesNotMatch(
-    styles.replace(/\n\.panel-parchment__sheet\s*\{[^}]*\}/, ""),
+    styles.replace(/\n\.panel-parchment__sheet\s*\{[^}]*\}/, "").replace(shortLandscape, ""),
     /\.panel-parchment__sheet\s*\{[^}]*min-height/,
-    "no later or media rule overrides the paper height",
+    "no other later or media rule overrides the paper height",
   );
   // The eyebrow and body ink that render read on the paper.
   const paper = cssRule(styles, ".panel-parchment__sheet::before").match(
@@ -444,6 +535,30 @@ test("the hero backdrop fades to transparent before every edge of its box", asyn
     );
   }
   assert.doesNotMatch(rule, /mask-image/, "no mask edge of its own");
+});
+
+test("the bottom scrim fades to transparent before the top and sides of its box", async () => {
+  // Centred on the box's bottom edge, an ellipse whose vertical radius is at
+  // most the box's height, and whose horizontal radius clears both sides,
+  // reaches its last, transparent stop inside the box: no straight edge shows
+  // across the ground where the box ends.
+  const styles = await readStyles();
+  const gradient = cssRule(styles, ".bottom-bar::before").match(
+    /radial-gradient\(([\s\S]*?)\);/,
+  )?.[1];
+  assert.ok(gradient, "the scrim is a radial gradient");
+  const [rx, ry, cx, cy] = gradient
+    .match(/^\s*ellipse ([\d.]+)% ([\d.]+)% at ([\d.]+)% ([\d.]+)%\s*,/)
+    .slice(1)
+    .map(Number);
+  assert.equal(cy, 100, "centred on the bottom edge");
+  assert.ok(ry <= cy, `the vertical radius (${ry}%) ends at or before the top edge`);
+  assert.ok(rx <= Math.min(cx, 100 - cx), `the horizontal radius (${rx}%) clears both sides`);
+  const stops = [...gradient.matchAll(/rgba\(7, 10, 18, ([\d.]+)\) ([\d.]+)%/g)].map(
+    ([, alpha, at]) => [+alpha, +at],
+  );
+  assert.equal(stops[0].join(), "0.56,0", "the same darkness at the centre");
+  assert.equal(stops.at(-1).join(), "0,100", "fully transparent at the ellipse's edge");
 });
 
 test("main clips the hero backdrop's horizontal overflow so phones keep a device-width layout", async () => {
@@ -518,6 +633,60 @@ test("no-JavaScript fallback links stay legible on the night", async () => {
   assert.ok(contrast(color(styles, ink), color(styles, "var(--night-900)")) >= 4.5, ink);
 });
 
+test("the no-JavaScript About starts below the fold with display headings and 44px links", async () => {
+  const styles = await readStyles();
+  // The desktop hero ends 90px above the fold; the fallback clears it.
+  const heroShortfall = Number(
+    cssRule(styles, ".hero").match(/min-height:\s*calc\(100svh - (\d+)px\);/)[1],
+  );
+  const fallback = cssRule(styles, ".scene-fallback-content");
+  const [marginTop] = fallback
+    .match(/margin:\s*(\d+)px auto 0;/)
+    .slice(1)
+    .map(Number);
+  assert.ok(marginTop >= heroShortfall, `${marginTop}px clears the hero's ${heroShortfall}px`);
+  const headings = cssRule(styles, ".scene-fallback-content :is(h2, h3)");
+  assert.match(headings, /font-family:\s*var\(--font-display\);/);
+  assert.match(headings, /font-weight:\s*500;/);
+  assert.ok(contrast(headings.match(/color:\s*(#[0-9a-f]{6});/i)[1], "#0c1016") >= 4.5);
+  const link = cssRule(styles, ".scene-fallback-content a");
+  assert.match(link, /display:\s*inline-flex;/);
+  assert.match(link, /align-items:\s*center;/);
+  assert.match(link, /min-height:\s*44px;/);
+});
+
+test("the skip link clears the notch, is a 44px target and hides wholly above any inset", async () => {
+  const styles = await readStyles();
+  const skip = cssRule(styles, ".skip-link");
+  const top = skip.match(/(?:^|[;\s])top:\s*([^;]+);/)[1];
+  assert.equal(top, "max(14px, env(safe-area-inset-top))");
+  assert.match(skip, /(?:^|[;\s])left:\s*max\(14px, env\(safe-area-inset-left\)\);/);
+  assert.match(skip, /display:\s*inline-flex;/);
+  assert.match(skip, /min-height:\s*44px;/);
+  // Hidden, it moves up by its own height and its whole top offset.
+  const hidden = skip.match(/transform:\s*translateY\(calc\(-100% - (.+) - (\d+)px\)\);/);
+  assert.ok(hidden, "the hidden transform names its height and offset");
+  assert.equal(hidden[1], top);
+  assert.ok(Number(hidden[2]) > 0);
+  assert.match(cssRule(styles, ".skip-link:focus"), /transform:\s*translateY\(0\);/);
+});
+
+test("reduced transparency keeps the hero's text scrim", async () => {
+  const styles = await readStyles();
+  const transparency = mediaBlock(styles, "(prefers-reduced-transparency: reduce)");
+  assert.match(transparency, /\.bottom-bar::before\s*\{\s*display:\s*none;/);
+  assert.doesNotMatch(transparency, /\.hero-minimal::before/, "the name keeps its scrim");
+});
+
+test("paper copy wraps without orphans and dialogs centre beside a classic scrollbar", async () => {
+  const styles = await readStyles();
+  assert.match(cssRule(styles, ".panel-parchment__sheet h2"), /text-wrap:\s*balance;/);
+  for (const selector of [".panel-parchment__sheet .panel-body", ".not-found .story-text"])
+    assert.match(cssRule(styles, selector), /text-wrap:\s*pretty;/, selector);
+  const overlay = styles.match(/\n\.panel-overlay\s*\{[^}]*position:\s*fixed;[^}]*\}/)[0];
+  assert.match(overlay, /scrollbar-gutter:\s*stable both-edges;/);
+});
+
 test("the 3:2 estate map fits short laptop and landscape-phone viewports", async () => {
   const styles = flatCss(await readStyles());
   assert.match(
@@ -536,6 +705,13 @@ test("the 3:2 estate map fits short laptop and landscape-phone viewports", async
   const cap = styles.lastIndexOf("(100svh - max(8px");
   const portrait = styles.indexOf(".panel-estate { width: min(100%, 440px); }");
   assert.ok(cap > 0 && portrait > cap);
+  // Only portrait phones take the 2:3 map: a 568x320 landscape phone keeps the
+  // 3:2 map under its short-viewport cap, which the 2:3 map would overflow.
+  const portraitMap = mediaBlock(styles, "(max-width: 600px) and (orientation: portrait)");
+  assert.match(portraitMap, /\.panel-estate \{ width: min\(100%, 440px\); \}/);
+  assert.match(portraitMap, /aspect-ratio: 2 \/ 3;/);
+  assert.match(portraitMap, /estate-map-portrait\.webp/);
+  assert.equal(mediaBlock(styles, "(max-width: 600px)").includes("aspect-ratio"), false);
 });
 
 test("phones do not gain a phantom scroll below the small-viewport hero", async () => {
@@ -782,10 +958,18 @@ test("dialog polish keeps readable ink, touch cues and paper-safe controls", asy
     baseLabel >= 0 && touchLabel > baseLabel,
     "the touch underline follows the base label rule",
   );
-  const unscopedHover = styles
-    .replace(/@media \(hover: hover\)\s*\{[^{}]*\{[^}]*\}\s*\}/g, "")
-    .match(/\.estate-destination:hover span/);
-  assert.equal(unscopedHover, null, "the map underline follows real hover only");
+  const unscoped = styles.replace(/@media \(hover: hover\)\s*\{(?:[^{}]*\{[^}]*\})*\s*\}/g, "");
+  assert.equal(
+    unscoped.match(/\.estate-destination:hover span/),
+    null,
+    "the map underline follows real hover only",
+  );
+  // So does the destination's tint, so a tap leaves none behind.
+  assert.doesNotMatch(unscoped, /\.estate-destination:hover[^{]*\{[^}]*background/);
+  assert.match(
+    styles,
+    /@media \(hover: hover\)\s*\{\s*\.estate-destination:hover\s*\{\s*background:/,
+  );
 
   // Back clears the paper's 24px deckled edge, so it sits wholly on the paper.
   const back = Number(
@@ -799,6 +983,166 @@ test("dialog polish keeps readable ink, touch cues and paper-safe controls", asy
   );
 });
 
+test("the Contact address is a 44px target whose padding never moves its line", async () => {
+  const styles = await readStyles();
+  const email = cssRule(styles, "#panel-contact .panel-body a");
+  const [, smallest, lineHeight] = email.match(
+    /font:\s*500 clamp\((\d+)px,[^)]*\)\s*\/\s*([\d.]+)\s/,
+  );
+  const padding = Number(email.match(/padding-block:\s*(\d+)px;/)[1]);
+  const [top, bottom] = email
+    .match(/margin-block:\s*([^;]+);/)[1]
+    .split(/\s+/)
+    .map((value) => Number.parseFloat(value));
+  assert.ok(
+    Number(smallest) * Number(lineHeight) + 2 * padding >= 44,
+    `${smallest}px x ${lineHeight} + 2 x ${padding}px reaches 44px`,
+  );
+  // The bottom margin takes the bottom padding back, so the line box keeps
+  // its depth below the baseline, and the address keeps its 8px gap above.
+  assert.equal(bottom, -padding);
+  assert.equal(top + padding, 8);
+  assert.doesNotMatch(email, /(?:^|[;\s])margin(?:-top|-bottom)?:/, "one margin declaration");
+  // Real hover deepens the underline; a press firms it on every device.
+  assert.match(
+    mediaBlock(styles, "(hover: hover)"),
+    /#panel-contact \.panel-body a:hover\s*\{\s*text-decoration-color:\s*currentColor;/,
+  );
+  assert.match(
+    cssRule(styles, "#panel-contact .panel-body a:active"),
+    /text-decoration-color:\s*currentColor;/,
+  );
+});
+
+test("controls tint on real hover, press deeper without lifting and share one paper focus ink", async () => {
+  const styles = await readStyles();
+  // Touch browsers keep :hover after a tap, so tints and lifts follow real
+  // hover; reduced motion may only cancel the lift.
+  const hover = mediaBlock(styles, "(hover: hover)");
+  const reduced = mediaBlock(styles, "(prefers-reduced-motion: reduce)");
+  // mediaBlock joins a query's blocks; each one leaves the sheet on its own.
+  const outside = [hover, reduced]
+    .flatMap((joined) => joined.split(/\n(?=@media )/))
+    .reduce((sheet, block) => sheet.replace(block, ""), styles);
+  for (const selector of [".panel-close:hover", ".not-found .back-link:hover"]) {
+    assert.ok(cssRules(hover, (list) => list.includes(selector)).length > 0, selector);
+    assert.ok(!outside.includes(selector), `${selector} only on real hover`);
+  }
+  assert.match(
+    cssRule(styles, ".panel-close:focus-visible"),
+    /background:[^;]+;[^}]*transform:\s*translateY\(-1px\);/,
+    "keyboard focus keeps the tint and lift",
+  );
+  for (const selector of [
+    ".panel-close:active",
+    ".not-found .back-link:active",
+    ".site-footer__link:active",
+  ]) {
+    const body = cssRule(styles, selector);
+    assert.ok(body, `${selector} has a pressed state`);
+    assert.doesNotMatch(body, /translate/, `${selector} does not lift`);
+  }
+  assert.match(cssRule(styles, ".panel-close:active"), /transform:\s*none;/);
+  assert.match(cssRule(styles, ".panel-estate .panel-close:active"), /background:/);
+  assert.match(cssRule(styles, ".not-found .back-link"), /transition:[^;]*\bcolor 180ms ease;/);
+  // Only the estate destinations' background ever changes on .bottom-btn.
+  assert.match(cssRule(styles, ".bottom-btn"), /transition:\s*background-color 180ms ease;/);
+  for (const selector of [
+    ".bottom-btn",
+    ".panel-close",
+    ".site-footer__link",
+    ".not-found .back-link",
+    "#panel-contact .panel-body a",
+  ]) {
+    assert.ok(
+      cssRules(reduced, (list) => list.split(",").some((part) => part.trim() === selector)).some(
+        ({ body }) => /transition:\s*none;/.test(body),
+      ),
+      `${selector} is immediate for reduced motion`,
+    );
+  }
+  // Every focus ring on paper or the estate map takes one ink.
+  const paperInks = cssRules(
+    styles,
+    (selector) =>
+      selector.includes("focus-visible") &&
+      /panel-parchment|panel-estate|estate-destination|not-found/.test(selector),
+  ).flatMap(({ body }) => [...body.matchAll(/#[0-9a-f]{6}/gi)].map(([ink]) => ink.toLowerCase()));
+  assert.ok(paperInks.length >= 4);
+  assert.deepEqual([...new Set(paperInks)], ["#59472f"]);
+});
+
+test("selected text takes a warm wash that keeps its ink legible on the night and on paper", async () => {
+  const styles = await readStyles();
+  // The wash composited over its ground, as #rrggbb.
+  const over = (wash, ground) => {
+    const [r, g, b, a] = wash
+      .match(/rgba\(([^)]+)\)/)[1]
+      .split(",")
+      .map(Number);
+    const base = ground.match(/[0-9a-f]{2}/gi).map((part) => parseInt(part, 16));
+    return `#${[r, g, b]
+      .map((channel, index) => Math.round(channel * a + base[index] * (1 - a)))
+      .map((channel) => channel.toString(16).padStart(2, "0"))
+      .join("")}`;
+  };
+  const night = cssRule(styles, "::selection");
+  const [paperRule] = cssRules(styles, (selector) =>
+    selector.split(",").some((part) => part.trim() === ".panel-parchment ::selection"),
+  );
+  assert.ok(paperRule, "paper has its own selection");
+  for (const scope of [".panel-estate ::selection", ".not-found .story-shell ::selection"])
+    assert.ok(paperRule.selector.includes(scope), scope);
+  const paper = cssRule(styles, ".panel-parchment__sheet::before").match(
+    /background-color:\s*(#[0-9a-f]{6});/i,
+  )[1];
+  for (const [body, ground] of [
+    [night, color(styles, "var(--night-900)")],
+    [night, color(styles, "var(--night-800)")],
+    [paperRule.body, paper],
+  ]) {
+    const wash = body.match(/background:\s*(rgba\([^)]+\));/)[1];
+    const ink = body.match(/(?:^|[;\s])color:\s*(#[0-9a-f]{6});/i)[1];
+    const selected = over(wash, ground);
+    assert.ok(
+      contrast(ink, selected) >= 4.5,
+      `${ink} on ${selected} is ${contrast(ink, selected).toFixed(2)}:1`,
+    );
+    // The sun's amber, never the system blue.
+    const [r, , b] = wash
+      .match(/rgba\(([^)]+)\)/)[1]
+      .split(",")
+      .map(Number);
+    assert.ok(r > b, `${wash} is warm`);
+  }
+});
+
+test("the 404 shares the homepage's icons, font preloads and description", async () => {
+  const home = flatHtml(await readIndexHtml());
+  const notFound = flatHtml(await readNotFoundHtml());
+  const links = (html, pattern) => (html.match(pattern) || []).sort();
+  for (const pattern of [
+    /<link rel="icon"[^>]*>/g,
+    /<link rel="apple-touch-icon"[^>]*>/g,
+    /<link rel="preload" href="\/fonts\/[^>]*>/g,
+  ]) {
+    const shared = links(home, pattern);
+    assert.ok(shared.length > 0, String(pattern));
+    assert.deepEqual(links(notFound, pattern), shared, String(pattern));
+  }
+  for (const preload of links(notFound, /<link rel="preload"[^>]*>/g)) {
+    assert.match(preload, /as="font" type="font\/woff2" crossorigin/);
+  }
+  const description = (html) => html.match(/<meta name="description" content="([^"]+)"/)[1];
+  assert.equal(description(notFound), description(home), "no new copy");
+});
+
+test("both pages declare their dark colour scheme", async () => {
+  for (const page of [await readIndexHtml(), await readNotFoundHtml()]) {
+    assert.match(flatHtml(page), /<meta name="color-scheme" content="dark" \/>/);
+  }
+});
+
 test("the 404 is a centered cotton-paper sheet with dark ink", async () => {
   const notFound = await readNotFoundHtml();
   const styles = await readStyles();
@@ -806,11 +1150,25 @@ test("the 404 is a centered cotton-paper sheet with dark ink", async () => {
   assert.match(cssRule(styles, ".not-found"), /display:\s*grid;\s*place-items:\s*center;/);
   const sheet = cssRule(styles, ".not-found .story-shell::before");
   const paper = sheet.match(/(#[0-9a-f]{6}) url\("\/images\/paper-grain\.webp"\)/i)[1];
+  // The dialogs' paper: their light layer first, over the same ivory.
+  const dialogLight = cssRule(styles, ".panel-parchment__sheet::before").match(
+    /linear-gradient\([^;]*?\)\)/,
+  )[0];
+  assert.match(sheet, /background:\s*linear-gradient\(/);
+  assert.ok(sheet.includes(dialogLight), "the 404 shares the dialogs' 115deg light");
+  assert.equal(
+    paper,
+    cssRule(styles, ".panel-parchment__sheet::before").match(
+      /background-color:\s*(#[0-9a-f]{6});/i,
+    )[1],
+  );
   assert.match(
     cssRule(styles, ".not-found .story-shell::after"),
     /border-image:\s*url\("\/images\/paper-edge\.webp"\)/,
   );
   assert.match(cssRule(styles, ".not-found .back-link"), /min-height:\s*44px;/);
+  // The pale line cursor vanishes on the paper, so the sheet takes the system one.
+  assert.match(cssRule(styles, ".not-found .story-shell"), /cursor:\s*auto;/);
   const inks = [".not-found .story-shell", ".not-found .story-shell .eyebrow"].map(
     (selector) => cssRule(styles, selector).match(/(?:^|[;\s])color:\s*(#[0-9a-f]{6});/i)[1],
   );

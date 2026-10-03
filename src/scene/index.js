@@ -8,6 +8,7 @@ import {
   chooseCinematicAngle,
   cinematicSafeArea,
   createCinematicCamera,
+  isStackedLayout,
   layoutRect,
 } from "./cinematic.js";
 import { configureGroundShading, createSlateContacts, filmGroundSurface } from "./mud-ground.js";
@@ -38,6 +39,7 @@ import { createSceneRendering } from "./rendering.js";
 import {
   createDeferredQualityStep,
   createPanelHold,
+  createPixelRatioWatcher,
   createSceneFrameScheduler,
   createSceneResizeController,
   createShaderWarmup,
@@ -307,9 +309,13 @@ const ORBIT_SPEED = 0.06;
       });
       subsystemRegistry.register(atmosphereSystem);
       applyActiveQualityProfile(qualityState.getProfile(), "initial");
+      // The slate's contact darkening (tree roots, lantern, rocks) and detail map
+      // slot: uniforms, so rocks arriving or shadows switching never recompile.
+      // Its text boxes also guard the sky's cloud banks (and the stars behind them).
+      const groundContacts = createSlateContacts(estateContacts());
       const skyShell = new Mesh(
         new SphereGeometry(WORLD.SKY_DOME_RADIUS, skyWidthSegments, skyHeightSegments),
-        createEstateSkyMaterial(skyConfig),
+        createEstateSkyMaterial(skyConfig, groundContacts),
       );
       skyShell.renderOrder = -1;
       skyShell.material.depthWrite = false;
@@ -324,11 +330,13 @@ const ORBIT_SPEED = 0.06;
         profile: state.profile,
       });
       subsystemRegistry.register(solarBody);
+      // The stars borrow the shell's uniforms, so they hide behind its cloud banks.
       const starfield = createStarfield({
         parent: atmosphereSystem.root,
         camera,
         profile: state.profile,
-        nebulaLayers: skyShell.material.uniforms.uNebulaLayers,
+        sky: skyShell.material.uniforms,
+        skyRadius: WORLD.SKY_DOME_RADIUS,
       });
       subsystemRegistry.register(starfield);
       const environmentSystem = createSceneEnvironment({
@@ -357,14 +365,12 @@ const ORBIT_SPEED = 0.06;
       // Set once the shader warm-up exists: a ground program that changes before
       // the reveal links through compileAsync instead of blocking the first draw.
       let warmGround = null;
-      // The slate's contact darkening (tree roots, lantern, rocks) and detail map
-      // slot: uniforms, so rocks arriving or shadows switching never recompile.
-      const groundContacts = createSlateContacts(estateContacts());
       // The name and intro, and About, on the canvas, in its UV (y up), where
       // the ground's water eases off (mud-ground.js SLATE_WATER.text), as the
       // light shafts' air does, and beside About the bark's lantern highlights
-      // pass the same knee (the tree takes these uniforms); measured on resize,
-      // on font loads and every 30th frame.
+      // pass the same knee (the tree takes these uniforms); the sky's reshaped
+      // banks ease out behind the name and intro too (estate-sky.js); measured
+      // on resize, on font loads and every 30th frame.
       function measureGroundText() {
         const canvas = renderer.domElement?.getBoundingClientRect?.();
         const box = (text, selectors) => {
@@ -795,6 +801,11 @@ const ORBIT_SPEED = 0.06;
           ? new ResizeObserver(() => resizeController.resize())
           : null;
       containerResizeObserver?.observe(container);
+      // Moving the window to a display of another scale changes the pixel
+      // ratio alone, which fires neither of those.
+      const pixelRatioWatcher = createPixelRatioWatcher({
+        onChange: () => resizeController.resize(),
+      });
       // viewport.height is refreshed inside applySceneSize (the resize handler)
       // on every resize, so reading it inside the scroll handler avoids a
       // layout-flushing window.innerHeight access per scroll event.
@@ -932,12 +943,16 @@ const ORBIT_SPEED = 0.06;
           visibilityScale,
           bloom: rendering.postprocessPipeline.passes?.bloom?.enabled === true,
         });
+        // The phone band shades the frame's top behind a name stacked above
+        // the subject; beside it (landscape phones) it would dim the subject.
         if (filmActive)
           filmScene.finishFrame(
             camera,
             lookTarget,
             cinematic.frame,
-            viewport.width < 900 && cinematic.shot?.arc === 2,
+            viewport.width < 900 &&
+              isStackedLayout(viewport.width, viewport.height) &&
+              cinematic.shot?.arc === 2,
             (cinematicArea?.top || 200) / viewport.height,
           );
         if (qualityDebug)
@@ -1062,6 +1077,7 @@ const ORBIT_SPEED = 0.06;
         panelObserver?.disconnect();
         panelHold.dispose();
         visitorHold.dispose();
+        pixelRatioWatcher.dispose();
         containerResizeObserver?.disconnect();
         resizeController.dispose();
         frameScheduler.dispose();

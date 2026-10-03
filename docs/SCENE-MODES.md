@@ -1,65 +1,93 @@
 # Scene modes
 
-URL parameters, shots, pauses and the status objects used for review and captures. They select what the live scene shows; none of them bypasses a release gate.
+URL parameters, shots, pauses and the status objects used for review and captures. They select what the live scene shows; none of them bypasses a release gate. Terms such as dwell, resolution step and film are defined in the [Glossary](GLOSSARY.md).
 
 ## Parameters
 
 Append them to the local preview, for example `http://127.0.0.1:4173/?view=tower&angle=1&tour=0`.
 
-| Parameter    | Values                                      | Effect                                           |
-| ------------ | ------------------------------------------- | ------------------------------------------------ |
-| `view`       | `tower` (default), `tree`                   | Opening subject                                  |
-| `angle`      | `1` to `4`                                  | Shot within the view                             |
-| `tour`       | absent, `3`, `5`, `20`, `0`                 | Per-shot holds, a fixed hold in seconds, or none |
-| `quality`    | `auto` (default), `high`, `balanced`, `low` | Startup tier                                     |
-| `sceneDebug` | `1` or `true`                               | Publishes `BabelSite.sceneDebug`                 |
+| Parameter    | Values                                      | Effect                                             |
+| ------------ | ------------------------------------------- | -------------------------------------------------- |
+| `view`       | `tower` (default), `tree`                   | Opening subject                                    |
+| `angle`      | `1` to `4`                                  | Shot within the view                               |
+| `tour`       | absent, `3`, `5`, `20`, `0`                 | Per-shot dwells, a fixed dwell in seconds, or none |
+| `quality`    | `auto` (default), `high`, `balanced`, `low` | Startup tier; an explicit tier pins the governor   |
+| `sceneDebug` | `1` or `true`                               | Publishes `BabelSite.sceneDebug`                   |
 
-- Any other `view` opens the tower, and a missing or invalid `angle` the first shot. A `tour` value other than 3, 5 or 20 holds the opening shot. At `tour=3` the dissolve takes 0.9 s.
-- `quality=high|balanced` and `sceneDebug` load the live scene past the reduced-motion, reduced-data and software-renderer gates, never without WebGL; `sceneDebug` keeps the detected tier. `quality=low` keeps the title card.
+- Any other `view` opens the tower, and a missing or invalid `angle` the first shot. A `tour` value other than 3, 5 or 20 stays on the opening shot. At `tour=3` the dissolve takes 0.9 s. Any other `quality` value reads as `auto`.
+- `quality=high|balanced` loads the live scene past the reduced-motion, reduced-data and software-renderer gates, never without WebGL, and pins the tier: the governor takes no adaptive step, not even the resolution step (pixel ratio only).
+- `sceneDebug` loads the live scene past the reduced-motion and software-renderer gates only: with a reduced-data preference the startup tier is still low, which keeps the title card (when the probe could not read the texture limits, main.js downloads the scene bundle first and `initHomeScene()` declines). It keeps the detected tier and the governor. With `sceneDebug`, main.js installs no preference listeners, so a title card kept by reduced data stays when the preference clears, until a reload.
+- `quality=low` keeps the title card, with or without `sceneDebug`.
 
 ## Shots
 
-| URL                  | Shot             | Hold | In the tour  |
-| -------------------- | ---------------- | ---- | ------------ |
-| `view=tower&angle=1` | The watch        | 9 s  | yes, first   |
-| `view=tower&angle=2` | Threshold        | 7 s  | yes          |
-| `view=tower&angle=3` | Masonry study    | 7 s  | no, URL only |
-| `view=tower&angle=4` | Gallery detail   | 7 s  | yes          |
-| `view=tree&angle=1`  | Portrait         | 9 s  | yes          |
-| `view=tree&angle=2`  | Lantern study    | 6 s  | yes          |
-| `view=tree&angle=3`  | Close-up         | 6 s  | yes          |
-| `view=tree&angle=4`  | Root and lantern | 6 s  | yes          |
+| URL                  | Shot             | Dwell | In the tour  |
+| -------------------- | ---------------- | ----- | ------------ |
+| `view=tower&angle=1` | The watch        | 9 s   | yes, first   |
+| `view=tower&angle=2` | Threshold        | 7 s   | yes          |
+| `view=tower&angle=3` | Masonry study    | 7 s   | no, URL only |
+| `view=tower&angle=4` | Gallery detail   | 7 s   | yes          |
+| `view=tree&angle=1`  | Portrait         | 9 s   | yes          |
+| `view=tree&angle=2`  | Lantern study    | 6 s   | yes          |
+| `view=tree&angle=3`  | Close-up         | 6 s   | yes          |
+| `view=tree&angle=4`  | Root and lantern | 6 s   | yes          |
 
-The tour runs in table order, about 50 s a loop. Each shot drifts and pushes in, then dissolves into the next over 1 s (or 30% of a shorter hold), staggered by depth. A missing subject's shots are skipped. Shot intent and holds live in [directed-shots.js](../src/scene/directed-shots.js), fitting and drift in [cinematic.js](../src/scene/cinematic.js), pacing in [camera-tour.js](../src/scene/camera-tour.js) and the dissolve in [postprocess.js](../src/scene/postprocess.js).
+The tour runs in table order, about 50 s a loop. Each shot drifts and pushes in, then dissolves into the next over 1 s (or 30% of a shorter dwell), staggered by depth. A missing subject's shots are skipped. Shot intent and dwells live in [directed-shots.js](../src/scene/directed-shots.js), fitting and drift in [cinematic.js](../src/scene/cinematic.js), pacing in [camera-tour.js](../src/scene/camera-tour.js) and the dissolve in [postprocess.js](../src/scene/postprocess.js).
+
+### Viewport variants
+
+The scene's size picks each shot's variant (directed-shots.js `resolveDirectedShot`), so set the window size before a capture. Each variant overrides some of the shot's framing; a shot without the chosen variant keeps its own.
+
+| Scene size (CSS px)                                                                                                                          | Variant                     |
+| -------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
+| Taller than wide, or a stacked layout (`isStackedLayout`: portrait or square up to 1024 wide, or landscape under 600 wide and over 500 tall) | `portrait`                  |
+| Landscape up to 500 tall and narrower than 1.55:1 (`SQUAT_LANDSCAPE`), such as 599×499 or 700×480                                            | `portrait`                  |
+| Landscape up to 500 tall, at least 1.55:1 and under 600 wide, such as 568×320                                                                | `compact`, else `landscape` |
+| Landscape up to 500 tall, at least 1.55:1, from 600 wide, such as 844×390                                                                    | `landscape`                 |
+| Anything else, such as 1600×900 or a square over 1024                                                                                        | None: the shot itself       |
+
+The four tower shots, Close-up and Root and lantern have a `portrait` variant; Portrait and Lantern study have none. Only The watch has `landscape` (lower and further round, so the snowy range runs between the intro and the tower) and `compact` (lower again, below the intro). The `compact` variant is unrelated to the `compact` composition profile in `sceneDebug.composition`. The safe area the shot is fitted in follows the hero's layout too ([Contracts](CONTRACTS.md#hero-breakpoints)).
 
 ## Tour and pauses
 
-- An open dialog holds the tour at once; 450 ms later, after the dim overlay has faded in, rendering stops until the last dialog closes.
-- A hidden tab or an off-screen canvas renders nothing. Reduced motion holds camera motion when the live scene runs at all (only with `quality` or `sceneDebug`).
+- An open dialog holds the tour at once; 450 ms later, after the dim overlay has faded in, rendering stops until the last dialog closes (a render hold).
+- A hidden tab or an off-screen canvas renders nothing. Reduced motion holds camera motion whenever the live scene runs with it: forced by `quality=high|balanced` or `sceneDebug`, or turned on after the scene loaded.
 - `BabelSite.scene.setVisitorPaused(true)` holds the tour on its current shot, ends a dissolve in progress on its incoming shot, stops drift and cloud motion, and then stops rendering. `setVisitorPaused(false)` continues the same shot without a time jump. `BabelSite.scene.isVisitorPaused()` reads the state.
 - A script may set `BabelSite.scene.visitorPausedPreference = true` before the scene loads; the pause applies at the reveal and keeps the first revealed frame.
-- While paused or held, a resize, context restore or content change (model, map, shader, font) draws one still frame; scroll does not.
+- While paused, a resize, context restore or content change (model, map, shader, font) draws one still frame. Behind an open dialog only a resize does. Scroll never does.
 
 ## sceneDebug
 
 With `sceneDebug=1`, `window.BabelSite.sceneDebug` is a plain, read-only status object. It adds no controls and loads no extra code.
 
-| Field                                     | Meaning                                                                                    |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `tier`, `initialTier`, `assetTier`        | Current profile tier, startup tier, and the tier models and maps were loaded for           |
-| `requestedTier`, `overrideTier`           | From `quality`                                                                             |
-| `governorTier`, `reason`                  | Governor tier (`low`: pixel ratio only) and last change                                    |
-| `pixelRatio`, `caps`                      | Pixel ratio; the probe's limits                                                            |
-| `composition`, `compositionReason`        | Composition profile and why it was chosen                                                  |
-| `architecture.tower`, `.tree`, `.lantern` | Each with `status`: `loading`, `ready` or `fallback`                                       |
-| `lanternCommitted`                        | `true` once the supplied lantern is in the scene                                           |
-| `ground`, `groundTreatment`               | Slate map status (`status` field); `slate` or `baseline`                                   |
-| `rocks`, `mountains`                      | Rock status (`status` field); `loading`, `ready` or `fallback`                             |
-| `shaders`                                 | Warm-up per label (`scene`, `ground`, `tower`, `tree`, `lantern`): `ready` or `unwarmed`   |
-| `cinematic`                               | `shot`, `selected`, `angle` (1-based), `current`, `film` and `tour` (state and transition) |
-| `programs`, `renderFps`                   | Linked program count; frames drawn per second                                              |
-| `environment`                             | The film sky's capture: `status` (`none`, `ready` or `failed`) and `ms`, its time          |
-| `failure`                                 | `{ stage, message }` when the scene stopped for the title card                             |
+| Field                                     | Meaning                                                                                                                |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `tier`, `initialTier`, `assetTier`        | Current profile tier, startup tier, and the tier models and maps were loaded for                                       |
+| `requestedTier`, `overrideTier`           | From `quality`: the value read (`auto` when absent) and the fixed tier, or `null`                                      |
+| `governorTier`, `reason`                  | Governor tier (its `low` is the resolution step) and why the profile last applied: `initial`, `resize` or `adaptive`   |
+| `pixelRatio`, `caps`                      | Pixel ratio; the texture limits the startup tier was chosen from                                                       |
+| `composition`, `compositionReason`        | Composition profile (`desktop`, `compact`, `tabletPortrait`, `portraitPhone`, `landscapePhone`); `resize`              |
+| `architecture.tower`, `.tree`, `.lantern` | `{ kind, status, tier }`, plus `reason: "asset-unavailable"` on a fallback                                             |
+| `lanternCommitted`                        | `true` once the supplied lantern is in the scene                                                                       |
+| `ground`                                  | The slate maps: `{ status, tier, material }`, `material` naming their source                                           |
+| `groundTreatment`                         | `slate` while the film is on, else `baseline`                                                                          |
+| `rocks`                                   | `{ status, tier }`                                                                                                     |
+| `mountains`                               | A plain string: `loading`, `ready` or `fallback`                                                                       |
+| `shaders`                                 | Warm-up per label (`scene`, `ground`, `tower`, `tree`, `lantern`): `ready` or `unwarmed`                               |
+| `cinematic`                               | `shot`, `selected`, `angle` (1-based), `current`, `film` and `tour`                                                    |
+| `programs`, `renderFps`                   | Linked program count; frames drawn per second                                                                          |
+| `environment`                             | The environment capture of the film sky: `status` (`none`, `ready` or `failed`) and `ms`, its time                     |
+| `failure`                                 | `{ stage, message }` when the scene stopped for the title card; `stage` is `architecture:tower` or `architecture:tree` |
+
+Status values:
+
+| Field                | `status`                                                                                                                            |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `architecture.*`     | `procedural` until the first frame selects the startup tier's models, then `loading`, then `ready` or `fallback`                    |
+| `ground`             | `procedural` (tier `low`) until the film starts, then `loading`, then `ready` or `fallback`; a fallback keeps the procedural ground |
+| `rocks`, `mountains` | `loading`, then `ready` or `fallback`                                                                                               |
+
+`rocks` appears once the rocks start loading (after the reveal, with the film on and the tree settled), and `mountains` once the film requests the ranges. In `cinematic`, `selected` is `tower` or `tree`, `current` is `tower`, `tree`, `orbit` or `null` (nothing ready yet), and `tour` holds the tour's state and transition, or `null` when there is no tour (`tour` present with any value other than 3, 5 or 20).
 
 ## sceneLoader.state
 
@@ -77,7 +105,7 @@ On the live path, with or without `sceneDebug`, `window.BabelSite.sceneLoader.st
 
 ## Capture recipe
 
-Open `?quality=high|balanced&view=…&angle=…&tour=0&sceneDebug=1` and wait until all of these hold:
+Size the window first: the scene's size picks the shot's [variant](#viewport-variants) and safe area. Open `?quality=high|balanced&view=…&angle=…&tour=0&sceneDebug=1` (the explicit tier keeps the governor from stepping mid-capture) and wait until all of these hold:
 
 - `#home-scene` has the `is-ready` class;
 - `sceneDebug.cinematic.shot` names the shot;
@@ -86,4 +114,4 @@ Open `?quality=high|balanced&view=…&angle=…&tour=0&sceneDebug=1` and wait un
 - `sceneDebug.shaders.lantern` is `ready` or `unwarmed`;
 - `sceneDebug.rocks.status` is `ready` or `fallback`.
 
-Then advance a fixed number of frames before capturing. The flame, drips and cloud drift run on scene time, so a deterministic capture drives the frame clock itself.
+Then advance a fixed number of frames before capturing. The flame and the cloud drift run on scene time. The drips keep their own clock, the `performance.now()` time between drawn ground frames ([terrain-build.js](../src/scene/terrain-build.js) `dripClock`). A deterministic capture therefore drives both the frame clock and `performance.now()` itself.

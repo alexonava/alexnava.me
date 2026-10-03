@@ -1,17 +1,22 @@
 <!doctype html>
 <!--
   Source for the 1200x630 social card /og.png. Not published; it reads the repo fonts and its
-  backdrop, tools/og-card-backdrop.webp (a 1600x900 still of the live scene, kept here only for this
-  card), through relative URLs. Regenerate from the repository root after a backdrop refresh
-  (msedge returns before the file is written, so wait for it, e.g. PowerShell Start-Process -Wait):
+  backdrop, tools/og-card-backdrop.webp (a 1600x900 still of the live scene's opening shot, The
+  watch, with every page layer but the canvas hidden, kept here only for this card), through
+  relative URLs. Regenerate from the repository root after a backdrop refresh (msedge returns
+  before the file is written, so wait for it, e.g. PowerShell Start-Process -Wait; any headless
+  Chromium with the same flags works):
     msedge --headless=new --disable-gpu --hide-scrollbars --allow-file-access-from-files
       --force-device-scale-factor=1 --window-size=1200,630 --virtual-time-budget=3000
       --user-data-dir=<scratch>\edge-profile --screenshot=<scratch>\og-raw.png
       file:///<repo>/tools/og-card.html
     magick <scratch>\og-raw.png -alpha off -kmeans 224 -unique-colors <scratch>\og-pal.png
-    magick <scratch>\og-raw.png -alpha off -dither FloydSteinberg -define dither:diffusion-amount=55%
+    magick <scratch>\og-raw.png -alpha off -dither FloydSteinberg -define dither:diffusion-amount=65%
       -remap <scratch>\og-pal.png -strip -define png:compression-level=9 PNG8:public/og.png
-  Keep public/og.png opaque, exactly 1200x630 and under 300 KB, then re-scrape it with LinkedIn Post Inspector.
+  The dither hides the palette's banding in the night's gradients: use the largest amount that
+  keeps the file at or under 300 KB (65% gave 297 KB; each 5% adds about 5 KB). test/hosting.test.mjs
+  holds public/og.png opaque, exactly 1200x630 and at most 300 KB. Re-scrape it with LinkedIn Post
+  Inspector after the release.
 -->
 <html lang="en">
   <head>

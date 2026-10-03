@@ -33,6 +33,14 @@ Both are self-hosted as variable woff2 subsets in `fonts/`. Their copyright
 notices and the license text are in `fonts/OFL.txt`, which the site publishes
 beside them at `/fonts/OFL.txt`.
 
+## Source archive
+
+Paths below that start with `Assets/` are in Alex Nava's private artwork
+archive, which holds the supplied originals and their preparation scripts,
+reports and QA renders. The archive is not part of this repository, and nothing
+in it is published. Sizes, formats and budgets of the delivered files are in
+[Assets](ASSETS.md).
+
 ## Supplied timber lookout tower
 
 The tower in `images/architecture/tower-{high,balanced}.glb` is a timber
@@ -53,9 +61,28 @@ published.
 
 The tree and lantern in `images/architecture/{tree,lantern}-{high,balanced}.glb`
 are Meshy models supplied by Alex Nava, optimized locally without new
-generation. Original files and preparation records are in the local artwork
-archive (`Assets/Architecture/tree-v2` and `Assets/Architecture/lantern`; the lantern's
-WebP and quantized packaging is in `Assets/Architecture/lantern/v2`).
+generation. Original files and preparation records are in
+`Assets/Architecture/tree-v2` and `Assets/Architecture/lantern`, and the
+lantern's packaging in `Assets/Architecture/lantern/v2`. Each GLB records its
+own preparation: the tree's `asset.generator` names a Blender reduction and
+the tree-v2 packaging; the lantern's `scenes[0].extras.packaging` names the
+Node script `package-lantern-v2.mjs`, which kept the first version's positions
+byte for byte and quantized its normals and texture coordinates. It encoded the
+colour and metal-roughness maps, and the balanced tier's normal map, as WebP
+from the supplied source; the emission map as lossless WebP of the first
+version's PNG pixels; and kept the first version's JPEG as the high tier's
+normal map.
+
+The tree ships at 39,827 (high) and 26,025 (balanced) triangles, with
+`KHR_mesh_quantization` geometry and embedded WebP colour, metal-roughness and
+normal maps. The lantern ships at 3,000 triangles on both tiers, with float
+positions, quantized normals and texture coordinates, and embedded colour,
+metal-roughness, normal and emission maps: WebP at 1024 on balanced; on high,
+WebP at 2048 except the normal map, an embedded 2048 JPEG.
+
+The stand-in lantern, the iron post lantern the scene shows until the
+supplied lantern commits and keeps if it fails, is built in code
+(`src/scene/architecture.js`) and is part of neither model.
 
 ## Supplied Meshy rocks
 
@@ -68,7 +95,9 @@ come from two Meshy models supplied by Alex Nava on 2026-09-23:
 
 Each was scaled to unit height, decimated in Blender to 2,990 (high) and 1,194
 (balanced) triangles with new UVs, and its color, normal and ambient occlusion
-re-baked by Cycles. Scripts, reports and QA renders are in
+re-baked by Cycles. Each GLB carries embedded WebP colour and normal maps (1024
+high, 512 balanced), stored tangents and `KHR_mesh_quantization` geometry; none
+has a separate occlusion map. Scripts, reports and QA renders are in
 `Assets/Architecture/rocks-v1`; none are published.
 
 ## Slate ground
@@ -83,17 +112,27 @@ commissioned.
 
 Tool: [Meshy](https://www.meshy.ai/).
 
-## Background hill silhouette elevation data
+## Baseline hill ring elevation data
 
-The distant hill silhouette (`src/scene/hill-silhouette.js`) is built from a
-48-sample circular elevation traverse (1.6 km radius, centered on the South
-Downs near Devil's Dyke, West Sussex, England), retrieved 2026-09-09 via the
-public [Open-Elevation API](https://api.open-elevation.com), which serves
-SRTM-derived public-domain elevation data. The samples are baked into source;
-there is no runtime fetch.
+The baseline hill ring (`HILL_PROFILE` in `src/scene/hill-silhouette.js`) is
+built from a 48-sample circular elevation traverse (1.6 km radius, centered on
+the South Downs near Devil's Dyke, West Sussex, England), retrieved 2026-09-09
+via the public [Open-Elevation API](https://api.open-elevation.com), which
+serves SRTM-derived public-domain elevation data. The samples are baked into
+source; there is no runtime fetch.
+
+The ring belongs only to the baseline, the scene as it stands before the film
+(both terms are in the [Glossary](GLOSSARY.md)). The film, which starts when
+the tower commits, takes the ring's place at once: it shows an empty stand-in
+until its own procedural ranges (the lazy `src/scene/mountain-build.js` chunk)
+are built, and keeps the stand-in if that chunk fails. The scene is revealed
+only after the tower loads, so visitors never see the ring.
 
 ## Cotton paper panel material
 
-The paper textures were generated with OpenAI's built-in image
-generation tool and prepared as local WebP assets. They are decorative; all
-panel wording remains selectable HTML.
+The paper textures, `images/paper-grain.webp` and `images/paper-edge.webp`,
+were generated with OpenAI's built-in image generation tool and prepared as
+local WebP assets. They are decorative; all panel wording remains selectable
+HTML. The repository records no source for the three paper vignettes
+(`images/paper-vignette-*.webp`) or the two estate maps
+(`images/estate-map-*.webp`).

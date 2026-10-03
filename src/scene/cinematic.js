@@ -1,6 +1,15 @@
 import { resolveSceneView } from "./scene-modes.js";
 import { Vector3 } from "three";
-import { DIRECTED_SHOTS, measureShot, fitShot, resolveDirectedShot } from "./directed-shots.js";
+import {
+  DIRECTED_SHOTS,
+  measureShot,
+  fitShot,
+  isStackedLayout,
+  resolveDirectedShot,
+} from "./directed-shots.js";
+
+// The bootstrap reads the page's layout from here too.
+export { isStackedLayout };
 
 export function chooseCinematicView(search = "") {
   return resolveSceneView(search);
@@ -13,13 +22,20 @@ export function chooseCinematicAngle(search = "", view = null) {
   // Every fresh visit opens The watch; subject and valid angle URLs remain reproducible.
   return 0;
 }
+// Stacked layouts frame the subject below the name. The others frame it beside
+// the name, right of the hero, from 32px under the top edge down to the bottom
+// bar, except portrait monitors: their name sits bottom-left, so the subject
+// takes the full width above it.
 export function cinematicSafeArea(width, height, hero, nav) {
-  const stacked = width < 600 || height > width;
+  const stacked = isStackedLayout(width, height),
+    above = !stacked && height > width;
   const top = stacked ? Math.max(24, (hero?.bottom || 180) + 24) : 32;
-  const bottom = Math.max(top + 120, Math.min(height - 32, (nav?.top || height - 120) - 28));
-  const left = stacked
-    ? 20
-    : Math.min(width * 0.48, Math.max(width * 0.34, (hero?.right || 300) + 36));
+  const floor = Math.min(height - 32, (nav?.top || height - 120) - 28);
+  const bottom = Math.max(top + 120, above ? Math.min(floor, (hero?.top || height) - 24) : floor);
+  const left =
+    stacked || above
+      ? 20
+      : Math.min(width * 0.48, Math.max(width * 0.34, (hero?.right || 300) + 36));
   return {
     left,
     top,

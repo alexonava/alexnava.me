@@ -244,9 +244,6 @@ function matchesSimpleSelector(element, selector) {
   if (selector === ".bottom-bar") {
     return element.classList.contains("bottom-bar");
   }
-  if (selector === ".site-copyright") {
-    return element.classList.contains("site-copyright");
-  }
   if (selector === ".panel-overlay") {
     return element.classList.contains("panel-overlay");
   }
@@ -374,9 +371,9 @@ function createSiteDom({ reduceMotion = true } = {}) {
     contactButton,
     new FakeElement(document, "span", { classNames: ["btn-icon-label"], textContent: "Contact" }),
   );
-  const copyright = append(
+  const footer = append(
     document.body,
-    new FakeElement(document, "p", { classNames: ["site-copyright"] }),
+    new FakeElement(document, "footer", { classNames: ["site-footer"] }),
   );
 
   const aboutOverlay = append(
@@ -454,7 +451,7 @@ function createSiteDom({ reduceMotion = true } = {}) {
       bottomBar,
       aboutButton,
       contactButton,
-      copyright,
+      footer,
       aboutOverlay,
       aboutCard,
       aboutClose,
@@ -492,7 +489,7 @@ test("modal open/close locks the page, marks background inert, and restores focu
   assert.equal(elements.siteShell.inert, true);
   assert.equal(elements.main.inert, true);
   assert.equal(elements.bottomBar.inert, true);
-  assert.equal(elements.copyright.inert, true);
+  assert.equal(elements.footer.inert, true);
 
   document.dispatchEvent(createEvent("keydown", { key: "Escape" }));
 
@@ -507,7 +504,26 @@ test("modal open/close locks the page, marks background inert, and restores focu
   assert.equal(elements.siteShell.inert, false);
   assert.equal(elements.main.inert, false);
   assert.equal(elements.bottomBar.inert, false);
-  assert.equal(elements.copyright.inert, false);
+  assert.equal(elements.footer.inert, false);
+});
+
+test("every background the dialogs make inert names an element of the homepage", async () => {
+  const source = await readFile(panelsSourcePath, "utf8");
+  const selectors = [
+    ...source.match(/const BACKGROUND_SELECTORS = \[([^\]]*)\]/)[1].matchAll(/"([^"]+)"/g),
+  ].map((match) => match[1]);
+  assert.ok(selectors.length > 0);
+  const html = await readFile(path.join(projectRoot, "index.html"), "utf8");
+  const classes = new Set(
+    [...html.matchAll(/\sclass="([^"]*)"/g)].flatMap((match) => match[1].split(/\s+/)),
+  );
+  for (const selector of selectors) {
+    if (selector.startsWith(".")) {
+      assert.ok(classes.has(selector.slice(1)), selector + " matches no element in index.html");
+    } else {
+      assert.match(html, new RegExp("<" + selector + "[\\s>]"), selector + " is not in index.html");
+    }
+  }
 });
 
 test("a closing dialog becomes inert and aria-hidden before its visual transition ends", async () => {
@@ -651,10 +667,10 @@ function createEstateDom({ reduceMotion = true } = {}) {
   );
   const main = append(document.body, new FakeElement(document, "main", { id: "main" }));
   const navigation = append(main, new FakeElement(document, "nav"));
-  const copyright = append(
+  const footer = append(
     document.body,
-    new FakeElement(document, "p", {
-      classNames: ["site-copyright"],
+    new FakeElement(document, "footer", {
+      classNames: ["site-footer"],
     }),
   );
   const destinations = {};
@@ -701,7 +717,7 @@ function createEstateDom({ reduceMotion = true } = {}) {
         : null;
     destinations[name] = { button, panel, card, close, copy, link };
   }
-  return { window, document, media, main, navigation, copyright, skipLink, destinations };
+  return { window, document, media, main, navigation, footer, skipLink, destinations };
 }
 
 function listenerCount(target) {
@@ -719,7 +735,7 @@ test("each estate destination returns directly to its own trigger on close, back
       assert.equal(document.activeElement, destination.close);
       assert.equal(destination.panel.hidden, false);
       assert.equal(destination.button.getAttribute("aria-expanded"), "true");
-      for (const node of [dom.main, dom.copyright, dom.skipLink]) assert.equal(node.inert, true);
+      for (const node of [dom.main, dom.footer, dom.skipLink]) assert.equal(node.inert, true);
       for (const other of Object.values(destinations).filter((item) => item !== destination)) {
         assert.equal(other.panel.hidden, true);
         assert.equal(other.button.getAttribute("aria-expanded"), "false");
@@ -738,7 +754,7 @@ test("each estate destination returns directly to its own trigger on close, back
       assert.equal(destination.button.getAttribute("aria-expanded"), "false");
       assert.equal(document.activeElement, destination.button);
       assert.equal(document.body.getAttribute("data-panel-open"), null);
-      for (const node of [dom.main, dom.copyright, dom.skipLink]) assert.equal(node.inert, false);
+      for (const node of [dom.main, dom.footer, dom.skipLink]) assert.equal(node.inert, false);
     }
   }
 });
@@ -974,7 +990,7 @@ function createSceneEstateDom(options = {}) {
     siteShell,
     bottomBar,
     about: { entry, panel, card, map, close },
-    backgrounds: [dom.skipLink, sceneShell, siteShell, main, bottomBar, dom.copyright],
+    backgrounds: [dom.skipLink, sceneShell, siteShell, main, bottomBar, dom.footer],
   };
 }
 

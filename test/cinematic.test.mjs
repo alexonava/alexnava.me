@@ -15,6 +15,7 @@ import {
   chooseCinematicAngle,
   cinematicSafeArea,
   createCinematicCamera,
+  isStackedLayout,
   layoutRect,
   PUSH_IN,
 } from "../src/scene/cinematic.js";
@@ -126,6 +127,87 @@ test("short landscape uses a side-by-side safe area instead of backing out below
   assert.equal(area.top, 32);
   assert.ok(area.top + area.height < 285);
   assert.ok(area.height >= 200);
+  // A landscape phone under 600px wide keeps its name top-left beside the subject.
+  // Its hero box (measured after the fonts load) is wider than the intro's
+  // glyphs; the 0.48w cap binds, still clear of the box.
+  const small = cinematicSafeArea(568, 320, { right: 253, bottom: 138 }, { top: 246 });
+  assert.equal(small.top, 32);
+  assert.equal(small.left, 568 * 0.48);
+  assert.ok(small.left >= 253 + 16);
+  assert.ok(small.top + small.height <= 246 - 28);
+  assert.ok(small.height >= 180);
+});
+
+test("the stacked layout follows the page's hero breakpoints", () => {
+  // styles.css tops the hero on portrait screens up to 1024px wide and landscape
+  // ones up to 760px wide or 500px tall; the landscape ones up to 500px tall or
+  // from 600px wide frame the subject beside it. Elsewhere it sits bottom-left.
+  for (const [width, height] of [
+    [390, 844],
+    [450, 800],
+    [375, 667],
+    [768, 1024],
+    [1024, 1366],
+    [599, 520],
+    [450, 450],
+    [800, 800],
+  ])
+    assert.equal(isStackedLayout(width, height), true, `${width}x${height}`);
+  for (const [width, height] of [
+    [844, 390],
+    [667, 375],
+    [568, 320],
+    [599, 500],
+    [1024, 768],
+    [1440, 900],
+    [1600, 900],
+    [2560, 1080],
+    [1080, 1920],
+    [1025, 1366],
+    [1200, 1200],
+  ])
+    assert.equal(isStackedLayout(width, height), false, `${width}x${height}`);
+  // Only narrow short landscapes, portrait monitors and mid-sized squares
+  // changed from the former rule (under 600px wide or taller than wide).
+  for (let width = 300; width <= 2600; width += 23)
+    for (let height = 280; height <= 2600; height += 29)
+      for (const [w, h] of [
+        [width, height],
+        [width, width],
+      ]) {
+        const former = w < 600 || h > w;
+        const moved =
+          (h < w && w < 600 && h <= 500) ||
+          (h > w && w > 1024) ||
+          (h === w && w >= 600 && w <= 1024);
+        assert.equal(isStackedLayout(w, h), moved ? !former : former, `${w}x${h}`);
+      }
+});
+
+test("a portrait monitor frames the subject above its bottom-left name, across the width", () => {
+  const hero = { left: 16, right: 283, top: 1496, bottom: 1726 },
+    nav = { top: 1838 };
+  assert.deepEqual(cinematicSafeArea(1080, 1920, hero, nav), {
+    left: 20,
+    top: 32,
+    width: 1036,
+    height: 1440,
+  });
+  // The bottom bar still bounds it when the hero is missing.
+  assert.equal(cinematicSafeArea(1080, 1920, undefined, nav).height, 1810 - 32);
+  // Reference layouts keep their areas.
+  assert.deepEqual(cinematicSafeArea(390, 844, { right: 299, bottom: 177 }, { top: 738 }), {
+    left: 20,
+    top: 201,
+    width: 346,
+    height: 509,
+  });
+  assert.deepEqual(cinematicSafeArea(1600, 900, { right: 527, bottom: 720 }, { top: 818 }), {
+    left: 563,
+    top: 32,
+    width: 1013,
+    height: 758,
+  });
 });
 
 test("hero layout rect ignores scroll and transforms so the safe area cannot drift", () => {
@@ -205,7 +287,7 @@ function terrainSetup(width, height) {
     selected: "tower",
     angle: 0,
     getSafeArea: (w, h) =>
-      cinematicSafeArea(w, h, w < 600 || h > w ? hero : { right: w * 0.33, bottom: 220 }, {
+      cinematicSafeArea(w, h, isStackedLayout(w, h) ? hero : { right: w * 0.33, bottom: 220 }, {
         top: h - 110,
       }),
     getGroundY(x, z) {

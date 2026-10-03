@@ -94,17 +94,32 @@ export function mountainBody(range, lit, { up = 0.6, elevation = 1, clear = 0.75
     rock = (moon * lit + ambient * (0.6 + 0.4 * up)) * albedo[range];
   return Math.min(rockMax, air + (rock - air) * seen);
 }
-// The mountain feet reach the shared dark terrain tone over this distance.
+// The mountain feet reach the far plain's air (HORIZON_AIR) over this distance.
 // Ground uses a later distance fade and an independent fade before its edge.
 export const HORIZON_HAZE = Object.freeze({ near: 150, far: 190 });
-// Linear-light slate shared by mountain feet and the finite terrain boundary.
-// The post chain writes it about 12/255 on screen, so the plain past the
-// foothills reads as distant slate, not a near-black band (about 9/255). It is
-// tuned against balanced, the phone default, whose lit slate is darker than
-// high's: the plain stays near 57% of the lit ground on high and 67-80% on
-// balanced, so the terrain edge still reads; near luma .08 it would match the
-// balanced slate at the frame edges.
+// Linear-light slate: the distant terrain's dark tone, which the puddles'
+// mirror takes for its horizon (terrain-build.js) and HORIZON_AIR lifts for the
+// far plain. The post chain writes it about 12/255 on screen. It is tuned
+// against balanced, the phone default, whose lit slate is darker than high's:
+// it stays near 57% of the lit ground on high and 67-80% on balanced; near luma
+// .08 it would match the balanced slate at the frame edges.
 export const TERRAIN_HORIZON = "vec3(.062,.065,.073)";
+// The far plain's air. Below eye level, past the terrain's edge, the frame
+// shows the near range's lower body, which reads as the plain itself; the bare
+// slate there (11/255) would lie darker than both the mountain feet and the lit
+// ground, a near-black band. So that body eases, within about a degree below
+// eye level, to the slate lifted by `horizon` at eye level, rising to `edge`
+// where the terrain's edge (TERRAIN_EDGE) meets the view: dark air that starts
+// from the range's own dark foot at eye level and lightens below it, to about
+// 18-22/255 on screen, still darker than the lit ground (about 33/255). The
+// slate's far edge darkens toward `ground` x the slate but
+// never lightens: the grade (postprocess.js) keeps the ground's cel step at
+// luma .1 (x0.76 below, lifted above), and this gain stays above it, so the
+// plain's edge never drops into the step.
+export const HORIZON_AIR = Object.freeze({ horizon: 1.65, edge: 1.9, ground: 1.75 });
+// The film terrain's half-width (filmic-earth.js EARTH, 384 units wide about the
+// world origin); a test holds them equal.
+export const TERRAIN_EDGE = 192;
 
 function sampleProfile(angle) {
   const n = HILL_PROFILE.length,
@@ -191,8 +206,9 @@ const perRange = (values) =>
 // orb, a soft cool rim about sky level faces the key and a faint warm one the orb,
 // and each crest draws its own ~1.4 px ink line: the post ink cannot find dark
 // ridges on a dark sky, and the grade exempts this layer from its ink and cel step
-// (postprocess.js uLayerRelief). Feet near the floor or below the horizon haze to
-// the shared TERRAIN_HORIZON slate over the ground's horizon distances
+// (postprocess.js uLayerRelief). Below eye level the body eases into the far
+// plain's air (HORIZON_AIR, the lifted TERRAIN_HORIZON slate), and feet near the
+// floor or below the horizon haze to it over the ground's horizon distances
 // (HORIZON_HAZE), which hides where the ranges meet the plane. Transparent with no
 // blending so it draws after the stars and covers them, writing its depth layer
 // (depth-layers.js) exactly. Noise hashes reach about 1100 cells: highp.
@@ -326,7 +342,15 @@ float cr=1.-smoothstep(.8,3.5,px);
 c+=cr*(1.-.8*slim)*(vec3(.55,.62,.8)*.12*max(dot(v,normalize(vec2(32,14))),0.)
 +vec3(.1,.07,.04)*pow(max(dot(v,toSun),0.),60.));
 #ifdef USE_FOG
-c=mix(c,${TERRAIN_HORIZON},max(smoothstep(fogNear,fogFar,vD),smoothstep(${HORIZON_HAZE.near}.,${HORIZON_HAZE.far}.,vD))*(1.-smoothstep(0.,${glslFloat(footHazeHeight)},vH)*smoothstep(-.05,-.008,vL.y/r)));
+// The far plain's air (HORIZON_AIR): from eye level to where the view meets the
+// terrain's edge (the ray's horizontal reach to its square, at the camera's height
+// above the datum, vH-vL.y). The body below eye level eases to it within .02 of slope,
+// and the feet haze to it.
+vec2 hz=vL.xz/r, ah=max(abs(hz),1e-4), eq=(${glslFloat(TERRAIN_EDGE)}-hz/ah*o.xz)/ah;
+vec3 pa=${TERRAIN_HORIZON}*mix(${glslFloat(HORIZON_AIR.horizon)},${glslFloat(HORIZON_AIR.edge)},clamp(vL.y/r*min(eq.x,eq.y)/(vL.y-vH),0.,1.));
+float fh=max(smoothstep(fogNear,fogFar,vD),smoothstep(${HORIZON_HAZE.near}.,${HORIZON_HAZE.far}.,vD));
+c=mix(c,pa,fh*(1.-smoothstep(-.02,0.,vL.y/r)));
+c=mix(c,pa,fh*(1.-smoothstep(0.,${glslFloat(footHazeHeight)},vH)*smoothstep(-.05,-.008,vL.y/r)));
 #endif
 c=mix(c,vec3(.012,.016,.03),(1.-smoothstep(.4,1.4,px))*(.7-.3*k));
 gl_FragColor=vec4(c,${DEPTH_LAYER.mountains});

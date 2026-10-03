@@ -22,7 +22,14 @@ import {
   writeRockContacts,
 } from "../src/scene/rock-build.js";
 import { SLATE_CONTACTS } from "../src/scene/mud-ground.js";
-import { TERRAIN_HORIZON } from "../src/scene/hill-silhouette.js";
+import {
+  createHillSilhouette,
+  HORIZON_AIR,
+  HORIZON_HAZE,
+  TERRAIN_EDGE,
+  TERRAIN_HORIZON,
+} from "../src/scene/hill-silhouette.js";
+import { EARTH } from "../src/scene/filmic-earth.js";
 import { createStoneDetailController } from "../src/scene/stone-detail.js";
 
 const flat = () => 0;
@@ -323,15 +330,21 @@ test("each ground shading has its own program cache key; the slate's shading nee
   });
   const contacts = createSlateContacts();
   const { fragment, uniforms } = compile(true, { detail, contacts });
-  const horizon = TERRAIN_HORIZON.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // The slate's far edge darkens toward the far plain's air, the shared slate
+  // lifted by HORIZON_AIR.ground, as the last colour the ground writes, and
+  // never lightens: slate already darker than that air keeps its tone.
+  const horizon = TERRAIN_HORIZON.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+    LUMA = "vec3\\(\\.2126,\\.7152,\\.0722\\)";
   assert.match(
     fragment,
     new RegExp(
-      `gl_FragColor\\.rgb = mix\\(gl_FragColor\\.rgb, ${horizon}, earthHorizon\\);\\s*#endif\\s*gl_FragColor\\.a = 0\\.6667;`,
+      `vec3 earthAir = ${horizon}\\*${String(HORIZON_AIR.ground).replace(".", "\\.")};\\s*` +
+        `earthHorizon \\*= smoothstep\\(1\\.0, 1\\.15, dot\\(gl_FragColor\\.rgb, ${LUMA}\\)/dot\\(earthAir, ${LUMA}\\)\\);\\s*` +
+        `gl_FragColor\\.rgb = mix\\(gl_FragColor\\.rgb, earthAir, earthHorizon\\);\\s*#endif\\s*gl_FragColor\\.a = 0\\.6667;`,
     ),
   );
   // Delay distance haze so the phone foreground retains texture; the outer
-  // 190-unit square boundary still reaches the shared mountain-foot tone.
+  // 190-unit square boundary still reaches the far plain's air.
   assert.match(
     fragment,
     /float earthHorizon = max\([^;]*,\s*smoothstep\(230\.0, 330\.0, vFogDepth\)\);/,
@@ -524,6 +537,95 @@ test("each ground shading has its own program cache key; the slate's shading nee
   contacts.slateRockContact.value = 1;
   assert.equal(material.customProgramCacheKey(), key);
   material.dispose();
+});
+
+// The film grade's contrast about mid-grey and the ground's cel step at graded
+// luma .1 (postprocess.js: applyProfile under film, GRADING_SHADER).
+const FILM_CONTRAST = 1.015,
+  CEL_STEP = 0.1;
+const smooth = (a, b, x) => {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+
+test("the far plain reads as dark air: the slate lifted toward the terrain's edge, above the ground's cel step", () => {
+  const slate = TERRAIN_HORIZON.match(/[\d.]+/g)
+    .slice(1)
+    .map(Number);
+  const luma = (gain) => (0.2126 * slate[0] + 0.7152 * slate[1] + 0.0722 * slate[2]) * gain;
+  const { horizon, edge, ground } = HORIZON_AIR;
+  // Past the terrain the bare slate (about 11/255 on screen) would lie darker
+  // than the mountain feet and the lit ground. The air lifts it 1.5 to 2
+  // times, lighter toward the terrain's edge and the lit ground, and stays a
+  // dark slate, far below the night sky at the horizon (luma about .2).
+  assert.ok(1.5 <= horizon && horizon < edge && edge <= 2, JSON.stringify(HORIZON_AIR));
+  assert.ok(luma(edge) < 0.13, `edge air luma ${luma(edge)}`);
+  // The slate's far edge only darkens toward its air, which the grade keeps
+  // above the cel step: a plain lit above the step never drops through it.
+  const graded = (luma(ground) - 0.5) * FILM_CONTRAST + 0.5;
+  assert.ok(graded > CEL_STEP + 0.003, `ground air grades to ${graded}`);
+  assert.equal(TERRAIN_EDGE, EARTH.width / 2);
+
+  const hill = createHillSilhouette({ groundHeight: flat });
+  hill.setFilmTreatment(true);
+  const shader = hill.mesh.material.fragmentShader;
+  hill.dispose();
+  // The air runs from eye level (0) to where the view meets the terrain's
+  // square edge at the datum (1); the body below eye level eases into it within
+  // .02 of slope (about a degree), and the feet haze to it as before.
+  assert.ok(
+    shader.includes(
+      `vec2 hz=vL.xz/r, ah=max(abs(hz),1e-4), eq=(${TERRAIN_EDGE}.0-hz/ah*o.xz)/ah;\n` +
+        `vec3 pa=${TERRAIN_HORIZON}*mix(${horizon},${edge},clamp(vL.y/r*min(eq.x,eq.y)/(vL.y-vH),0.,1.));`,
+    ),
+  );
+  assert.ok(
+    shader.includes(
+      `float fh=max(smoothstep(fogNear,fogFar,vD),smoothstep(${HORIZON_HAZE.near}.,${HORIZON_HAZE.far}.,vD));\n` +
+        "c=mix(c,pa,fh*(1.-smoothstep(-.02,0.,vL.y/r)));\n" +
+        "c=mix(c,pa,fh*(1.-smoothstep(0.,3.0,vH)*smoothstep(-.05,-.008,vL.y/r)));",
+    ),
+  );
+  // Nothing at or above eye level eases: the ranges keep their own shade there.
+  for (const slope of [0, 0.001, 0.05]) assert.equal(1 - smooth(-0.02, 0, slope), 0);
+  assert.equal(1 - smooth(-0.02, 0, -0.02), 1);
+
+  // The shader's reach, restated: for cameras about the estate and every
+  // azimuth, the slope where it reads 1 is the one that meets the square's
+  // edge (found here by bisection) at the datum, and half that slope reads .5.
+  const reach = ([ox, oy, oz], [x, y, z]) => {
+    const r = Math.hypot(x, z),
+      hx = x / r,
+      hz = z / r;
+    const ax = Math.max(Math.abs(hx), 1e-4),
+      az = Math.max(Math.abs(hz), 1e-4);
+    const ex = (TERRAIN_EDGE - (hx / ax) * ox) / ax,
+      ez = (TERRAIN_EDGE - (hz / az) * oz) / az;
+    // vL.y - vH is minus the camera's height above the datum (oy here).
+    return Math.min(1, Math.max(0, ((y / r) * Math.min(ex, ez)) / -oy));
+  };
+  for (const camera of [
+    [0, 25, 130],
+    [55, 6, 60],
+    [-40, 2.6, -90],
+  ])
+    for (let azimuth = 0; azimuth < 360; azimuth += 7.5) {
+      const a = (azimuth * Math.PI) / 180,
+        hx = Math.cos(a),
+        hz = Math.sin(a);
+      let lo = 0,
+        hi = 1000;
+      for (let i = 0; i < 60; i++) {
+        const mid = (lo + hi) / 2;
+        if (Math.max(Math.abs(camera[0] + hx * mid), Math.abs(camera[2] + hz * mid)) < TERRAIN_EDGE)
+          lo = mid;
+        else hi = mid;
+      }
+      const slope = -camera[1] / lo;
+      assert.ok(Math.abs(reach(camera, [hx, slope, hz]) - 1) < 1e-6, `${camera} ${azimuth}`);
+      assert.ok(Math.abs(reach(camera, [hx, slope / 2, hz]) - 0.5) < 1e-6);
+      assert.equal(reach(camera, [hx, 0.01, hz]), 0);
+    }
 });
 
 test("the film ground material follows the film, so loading and fallback surfaces match", async () => {
