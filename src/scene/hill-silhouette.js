@@ -63,8 +63,23 @@ export const SNOW = Object.freeze({
 // own snowline `line` (mountain-build.js RANGE_PLACEMENTS snow), so the
 // massifs carry real caps, the lower ones too; lit and shade are lower, as the
 // massifs' air is thinner than the far rings', so lit snow still reads about
-// 2.2 times the sky behind it.
-export const MASSIF_SNOW = Object.freeze({ ...SNOW, depth: 0.7, max: 3.4, lit: 2.7, shade: 1 });
+// 2.2 times the sky behind it. Snow lies smoother than the rock under it: it
+// holds on the relief `hold` mip levels down, takes its soft light from
+// `soft` levels down and its crisp terminator from `edge` levels down, so the
+// source's small bumps never punch round holes in it and its flutes never
+// stripe it; `rib` x the source's fine whiteness (the mask less its blur)
+// carves the bare ribs down the fall line.
+export const MASSIF_SNOW = Object.freeze({
+  ...SNOW,
+  depth: 0.7,
+  max: 3.4,
+  lit: 2.7,
+  shade: 1,
+  hold: 2,
+  soft: 3,
+  edge: 5,
+  rib: 2.5,
+});
 // JS mirror of the shader's snowline: whether snow can reach `elevation`
 // degrees on a massif `massif` degrees high, with the jitter and gully tongue
 // at their most generous (`snow`: SNOW for the rings, MASSIF_SNOW for the
@@ -422,8 +437,9 @@ export const MASSIFS = Object.freeze({
 // layers 0-1's, MASSIFS.sky). Snow (MASSIF_SNOW) keeps the ranges' level snowline per
 // massif, jittered by smooth noise and drawn down gullies (the source's white or
 // its occlusion) by up to `tongue` x the cap, never past snowReach(); above it the
-// snow holds on all but near-vertical rock and wherever the source is white. Only
-// copies with `snow` carry it.
+// snow holds on all but near-vertical rock (of the smoothed relief) and the
+// source's dark ribs, and is lit by a smoother relief still. Only copies with
+// `snow` carry it.
 function massifMaterial({ skyRadius, shellOpacity, sunPosition, normalMap, maskMap, nearerMap }) {
   const { texture: bins, floor, span } = MASSIFS.sky;
   const material = new ShaderMaterial({
@@ -469,6 +485,11 @@ ${FILM_SKY_GLSL}
 float vn(vec2 p){vec2 i=floor(p),f=fract(p),u=f*f*(3.-2.*f);
 vec4 h=fract(sin(vec4(dot(i,vec2(127.1,311.7)),dot(i+vec2(1,0),vec2(127.1,311.7)),dot(i+vec2(0,1),vec2(127.1,311.7)),dot(i+1.,vec2(127.1,311.7))))*43758.5453);
 return mix(mix(h.x,h.y,u.x),mix(h.z,h.w,u.x),u.y);}
+// The relief b mip levels down, turned by the copy's placement: mirror x, undo
+// the squash, turn about the vertical.
+vec3 relief(float b){vec3 m=texture2D(uNormal,vU,b).xyz*2.-1.;
+m.x*=vI.z; m.y/=vI.w;
+return normalize(vec3(m.x*vI.x-m.z*vI.y,m.y,m.x*vI.y+m.z*vI.x));}
 // The nearer layers' skyline at azimuth az (degrees): .x layer 0's, .y layers 0-1's.
 vec2 nearer(float az){float x=fract(az/360.)*${glslFloat(bins)}-.5, i=floor(x), f=x-i;
 vec4 p=texture2D(uNearer,vec2((mod(i,${glslFloat(bins)})+.5)/${glslFloat(bins)},.5)), q=texture2D(uNearer,vec2((mod(i+1.,${glslFloat(bins)})+.5)/${glslFloat(bins)},.5));
@@ -477,10 +498,7 @@ void main() {
 ${SKY_BEHIND_GLSL}
 float sL=max(dot(s,W),1e-4), far=step(.5,vT.y), k=vT.y*.25, px=vT.x/max(fwidth(vT.x),1e-5), r=length(vL.xz), slim=0.;
 float el=degrees(atan(vL.y,r)), az=degrees(atan(vL.z,vL.x)), ppd=1./max(fwidth(el),1e-4);
-// The relief, turned by the copy's placement: mirror x, undo the squash, turn about the vertical.
-vec3 m=texture2D(uNormal,vU).xyz*2.-1.;
-m.x*=vI.z; m.y/=vI.w;
-vec3 n=normalize(vec3(m.x*vI.x-m.z*vI.y,m.y,m.x*vI.y+m.z*vI.x));
+vec3 n=relief(0.);
 vec2 mk=texture2D(uMask,vU).rg;
 // Faceted moonlight, as the ranges': Lambert blended with a crisp, anti-aliased terminator.
 float nl=dot(n,K), te=max(.05,1.5*fwidth(nl)), crisp=smoothstep(.3-te,.3+te,nl);
@@ -498,11 +516,17 @@ vec2 mb=texture2D(uMask,vU,2.5).rg;
 float gully=max(smoothstep(.45,.85,mb.x),smoothstep(.95,.75,mb.y));
 float line=vT.w-cap*(1.+${glslFloat(MASSIF_SNOW.tongue)}*gully)-max(cap*${glslFloat(MASSIF_SNOW.jitter)},${glslFloat(MASSIF_SNOW.jitterMin)})*vn(vec2(az*1.7,el*.8));
 float se=el-line, sw=max(fwidth(se),.5/ppd);
-// Above the line it holds where the face is not near-vertical, a little steeper where the
-// source is white, with a crisp, anti-aliased edge to the bare rock.
-float hold=n.y+.3*(wv-.5), hw=max(1.5*fwidth(hold),.04);
-if(vT.z>.5&&cap>0.){float snow=smoothstep(0.,1.6*sw,se)*clamp((hold-.04)/hw+.5,0.,1.);
-float sk=mix(smoothstep(-.3,1.,nl),smoothstep(.3-te,.3+te,nl),.5);
+// Snow lies smoother than the rock under it. Above the line it holds where the smoothed
+// relief is not near-vertical, a little steeper where the source is white, and off the
+// source's fine dark ribs, which run down the fall line; with a crisp, anti-aliased edge
+// to the bare rock. Its light comes from smoother relief still, so the source's flutes
+// never stripe it.
+vec3 nh=relief(${glslFloat(MASSIF_SNOW.hold)}), ns=relief(${glslFloat(MASSIF_SNOW.soft)}), ne=relief(${glslFloat(MASSIF_SNOW.edge)});
+float rib=mk.x-texture2D(uMask,vU,3.).r;
+float hold=nh.y+.3*(wv-.5)+${glslFloat(MASSIF_SNOW.rib)}*rib, hw=max(1.5*fwidth(hold),.04);
+float ke=dot(ne,K), tk=max(.05,1.5*fwidth(ke));
+if(vT.z>.5&&cap>0.){float snow=smoothstep(0.,1.6*sw,se)*clamp((hold+.04)/hw+.5,0.,1.);
+float sk=mix(smoothstep(-.3,1.,dot(ns,K)),smoothstep(.3-tk,.3+tk,ke),.5);
 vec3 sn=mix(vec3(.8485,1.0027,1.4193)*${glslFloat(MASSIF_SNOW.shade)},vec3(.9691,1.0014,1.0768)*${glslFloat(MASSIF_SNOW.lit)},sk)*sL;
 sn=mix(air,sn,mix(1.,T,.55));
 c=mix(c,sn,snow*(1.-mist));}

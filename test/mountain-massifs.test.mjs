@@ -532,11 +532,15 @@ test("the massif shader is the ranges' moonlit style on the models' own relief",
   assert.match(vertexShader, /vec4 w=vec4\(cameraPosition\+position,1\.0\)/);
   assert.match(vertexShader, /gl_Position\.z=mix\(gl_Position\.z,gl_Position\.w,\.8\);/);
   assert.ok(fragmentShader.includes(`gl_FragColor=vec4(c,${DEPTH_LAYER.mountains});`));
-  // The object-space map turned by the placement.
+  // The object-space map turned by the placement, at any mip bias; the rock reads it whole.
+  assert.ok(
+    fragmentShader.includes("vec3 relief(float b){vec3 m=texture2D(uNormal,vU,b).xyz*2.-1.;"),
+  );
   assert.ok(fragmentShader.includes("m.x*=vI.z; m.y/=vI.w;"));
   assert.ok(
-    fragmentShader.includes("vec3 n=normalize(vec3(m.x*vI.x-m.z*vI.y,m.y,m.x*vI.y+m.z*vI.x));"),
+    fragmentShader.includes("return normalize(vec3(m.x*vI.x-m.z*vI.y,m.y,m.x*vI.y+m.z*vI.x));}"),
   );
+  assert.ok(fragmentShader.includes("vec3 n=relief(0.);"));
   // The rings' sky, far plain, rims and ink, verbatim; the rock one air farther out.
   for (const shared of [
     "float b=dot(o,d), t=-b+sqrt(max(b*b-dot(o,o)+uSky.x,0.)), a=(o.y+d.y*t)*inversesqrt(uSky.x);",
@@ -558,10 +562,23 @@ test("the massif shader is the ranges' moonlit style on the models' own relief",
   assert.ok(fragmentShader.includes("vec2 mb=texture2D(uMask,vU,2.5).rg;"));
   assert.ok(
     fragmentShader.includes(
-      "if(vT.z>.5&&cap>0.){float snow=smoothstep(0.,1.6*sw,se)*clamp((hold-.04)/hw+.5,0.,1.);",
+      "if(vT.z>.5&&cap>0.){float snow=smoothstep(0.,1.6*sw,se)*clamp((hold+.04)/hw+.5,0.,1.);",
     ),
   );
-  // Every derivative (and the biased, implicitly derived mask sample) runs outside the branch.
+  // Snow lies smoother than the rock under it: it holds on the relief a few mip levels down
+  // and off the source's fine dark ribs, and takes its light from smoother relief still,
+  // its crisp terminator from the smoothest, so neither bumps nor flutes mark it.
+  assert.ok(MASSIF_SNOW.hold > 0 && MASSIF_SNOW.hold < MASSIF_SNOW.soft);
+  assert.ok(MASSIF_SNOW.soft < MASSIF_SNOW.edge && MASSIF_SNOW.rib > 0);
+  const float = (v) => (Number.isInteger(v) ? v.toFixed(1) : String(v));
+  for (const pin of [
+    `vec3 nh=relief(${float(MASSIF_SNOW.hold)}), ns=relief(${float(MASSIF_SNOW.soft)}), ne=relief(${float(MASSIF_SNOW.edge)});`,
+    "float rib=mk.x-texture2D(uMask,vU,3.).r;",
+    `float hold=nh.y+.3*(wv-.5)+${float(MASSIF_SNOW.rib)}*rib,`,
+    "float sk=mix(smoothstep(-.3,1.,dot(ns,K)),smoothstep(.3-tk,.3+tk,ke),.5);",
+  ])
+    assert.ok(fragmentShader.includes(pin), pin);
+  // Every derivative (and the biased, implicitly derived samples) runs outside the branch.
   const branch = fragmentShader.indexOf("if(vT.z>.5&&cap>0.)"),
     close = fragmentShader.indexOf("c=mix(c,sn,snow*(1.-mist));}", branch);
   assert.ok(branch > 0 && close > branch);
@@ -569,7 +586,10 @@ test("the massif shader is the ranges' moonlit style on the models' own relief",
   for (const derived of [
     "vec2 mb=texture2D(uMask,vU,2.5)",
     "sw=max(fwidth(se)",
+    "vec3 nh=relief(",
+    "float rib=mk.x-texture2D(uMask,vU,3.)",
     "hw=max(1.5*fwidth(hold)",
+    "tk=max(.05,1.5*fwidth(ke))",
   ])
     assert.ok(fragmentShader.indexOf(derived) < branch, `${derived} before the branch`);
   assert.equal(MASSIFS.air, 1);
