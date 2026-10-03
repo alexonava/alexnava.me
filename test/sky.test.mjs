@@ -25,8 +25,11 @@ import {
   createSolarBody,
   createCelestialClock,
   makeLoopGeometry,
+  SOLAR_GLOW_RADIUS,
+  SOLAR_LOOK,
   SOLAR_RADIUS,
   SOLAR_QUALITY,
+  solarUnrest,
 } from "../src/scene/solar-body.js";
 import {
   createStarfield,
@@ -122,6 +125,89 @@ test("solar tiers, pixel ratio, motion, and resource ownership survive repeated 
   assert.ok(counts.every((n) => n === 1));
   assert.equal(controller.applyQuality({ tier: "high" }), false);
   assert.equal(controller.update({ elapsedSeconds: 20 }), false);
+});
+
+test("the star is hot and glows: a yellow core, a round halo inside its plane, no beaded loops", () => {
+  assert.ok(Object.isFrozen(SOLAR_LOOK) && Object.isFrozen(SOLAR_LOOK.halo));
+  // Hotter at the core than at the limb in every channel past red.
+  assert.ok(SOLAR_LOOK.core[1] > SOLAR_LOOK.rim[1] && SOLAR_LOOK.core[2] > SOLAR_LOOK.rim[2]);
+  const { halo, boil, plane } = SOLAR_LOOK;
+  // The glow's furthest reach, edge wobble and lean included, fits well inside the
+  // corona plane's own fade.
+  assert.equal(SOLAR_GLOW_RADIUS, SOLAR_RADIUS * (halo.reach + 4 * boil + 0.08 * halo.lean));
+  assert.ok(SOLAR_GLOW_RADIUS / SOLAR_RADIUS < plane / 2 - 0.6);
+  assert.ok(halo.glow < halo.aura && halo.reach > 1.5);
+  const parent = new Group(),
+    controller = createSolarBody({
+      parent,
+      camera: new PerspectiveCamera(),
+      position: new Vector3(0, 0, -60),
+      profile: { tier: "high" },
+    });
+  const mesh = (name) => controller.root.getObjectByName(name),
+    surface = mesh("solar-photosphere").material,
+    corona = mesh("solar-corona"),
+    loops = mesh("solar-prominences").material;
+  assert.equal(corona.geometry.parameters.width, SOLAR_RADIUS * plane);
+  const glsl = (v) => (Number.isInteger(v) ? v.toFixed(1) : String(v));
+  assert.ok(surface.fragmentShader.includes(`float t=uTime*${glsl(SOLAR_LOOK.churn)};`));
+  assert.ok(surface.fragmentShader.includes("*limb*(1.0-spot)*uBreath;"));
+  assert.ok(corona.material.fragmentShader.includes(`vec2 p=(vUv-.5)*${glsl(plane)};`));
+  // The glow's edge in the shader is the one SOLAR_GLOW_RADIUS mirrors.
+  assert.ok(
+    corona.material.fragmentShader.includes(
+      `smoothstep(${glsl(halo.reach - 0.22)},${glsl(halo.reach)},r-boil*4.0-.08*dot(p/max(r,1e-4),uLean))`,
+    ),
+  );
+  // Prominences are soft arcs that flare on irregular noise, faint across the disc.
+  assert.doesNotMatch(loops.fragmentShader, /threads|sin\(uTime/);
+  assert.match(loops.fragmentShader, /wander\(uTime\*\.07\+vPhase\*5\.3\)/);
+  assert.match(loops.vertexShader, /vOver=/);
+  controller.dispose();
+});
+
+test("the star's unrest is gentle, irregular and still under reduced motion", () => {
+  const { breath, breathRate, halo } = SOLAR_LOOK;
+  assert.deepEqual(solarUnrest(12.5), solarUnrest(12.5));
+  let low = Infinity,
+    high = -Infinity,
+    jump = 0,
+    previous = solarUnrest(0).breath;
+  for (let t = 1 / 60; t < 600; t += 1 / 60) {
+    const u = solarUnrest(t);
+    low = Math.min(low, u.breath);
+    high = Math.max(high, u.breath);
+    jump = Math.max(jump, Math.abs(u.breath - previous));
+    previous = u.breath;
+    assert.ok(Math.hypot(...u.lean) <= halo.lean + 1e-9);
+  }
+  // Within its bounds, using most of them, and never a frame-to-frame flicker.
+  assert.ok(low >= 1 - breath - 1e-9 && high <= 1 + breath + 1e-9);
+  assert.ok(high - low > breath);
+  assert.ok(jump < breath * 0.05, `breath jumps ${jump} in a frame`);
+  // Not a steady beat: one noise period on, it has moved on.
+  const period = 1 / breathRate;
+  assert.ok(
+    [3, 7, 11, 19].some(
+      (t) => Math.abs(solarUnrest(t).breath - solarUnrest(t + period).breath) > breath * 0.2,
+    ),
+  );
+  // The controller drives the uniforms from the celestial clock, so reduced motion holds them.
+  const controller = createSolarBody({
+    parent: new Group(),
+    camera: new PerspectiveCamera(),
+    position: new Vector3(0, 0, -60),
+    profile: { tier: "high" },
+  });
+  const uniforms = controller.root.getObjectByName("solar-corona").material.uniforms;
+  controller.update({ elapsedSeconds: 0 });
+  controller.update({ elapsedSeconds: 9 });
+  assert.equal(uniforms.uBreath.value, solarUnrest(9).breath);
+  assert.deepEqual(uniforms.uLean.value.toArray(), solarUnrest(9).lean);
+  const held = uniforms.uBreath.value;
+  controller.update({ elapsedSeconds: 15, reducedMotion: true });
+  assert.equal(uniforms.uBreath.value, held);
+  controller.dispose();
 });
 
 test("seeded stars preserve positions between tiers and remain distant while camera moves", () => {

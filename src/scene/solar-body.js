@@ -20,9 +20,68 @@ export const SOLAR_QUALITY = Object.freeze({
   balanced: Object.freeze({ detail: 2, loops: 6 }),
   low: Object.freeze({ detail: 1, loops: 0 }),
 });
+// The star's look: a hot, yellow-white core to a deep orange-red limb, kept in
+// one band of the grade's cel step so the surface never posterises; a bright
+// aura close to the limb (aura x exp(-auraFalloff x radii past it)) over a
+// round glow out to `reach` radii (glow, easing by `falloff`), bright enough
+// throughout to clear the night sky's first cel band, so the band's edge is a
+// clean circle rather than a ragged plateau; both lean `lean` toward a
+// slowly wandering side; and a slight unrest: its light breathes by
+// up to `breath` on irregular noise (`breathRate` per second), its limb boils
+// by `boil` radii and its surface churns at `churn`. The corona plane is
+// `plane` radii across. All of it runs on the celestial clock, so reduced
+// motion holds it still.
+export const SOLAR_LOOK = Object.freeze({
+  core: Object.freeze([1, 0.97, 0.62]),
+  rim: Object.freeze([1, 0.36, 0.05]),
+  halo: Object.freeze({
+    aura: 0.4,
+    auraFalloff: 6,
+    glow: 0.18,
+    falloff: 1.5,
+    reach: 1.85,
+    lean: 0.25,
+  }),
+  breath: 0.1,
+  breathRate: 0.5,
+  leanRate: 0.03,
+  boil: 0.04,
+  churn: 0.07,
+  plane: 7,
+});
+// The glow's furthest reach in world units: its round edge, wobbled by the
+// boiling limb and shifted by the lean at their most (framing.test keeps it
+// clear of the text and of The watch's crests).
+export const SOLAR_GLOW_RADIUS =
+  SOLAR_RADIUS * (SOLAR_LOOK.halo.reach + 4 * SOLAR_LOOK.boil + 0.08 * SOLAR_LOOK.halo.lean);
 export function celestialTier(profile = {}) {
   return SOLAR_QUALITY[profile.tier] ? profile.tier : "high";
 }
+// Smooth 1D value noise, 0..1, from a seeded lattice: irregular, never periodic.
+function wander(x, seed) {
+  const i = Math.floor(x),
+    f = x - i,
+    u = f * f * (3 - 2 * f),
+    h = (n) => {
+      const v = Math.sin((n + seed * 17.13) * 127.1) * 43758.5453;
+      return v - Math.floor(v);
+    };
+  return h(i) + (h(i + 1) - h(i)) * u;
+}
+// The star's unrest at celestial time `time`: its light's factor (1 +- breath)
+// and the halo's lean, a vector up to `lean` long that slowly turns.
+export function solarUnrest(time = 0, look = SOLAR_LOOK) {
+  const b =
+      0.65 * wander(time * look.breathRate, 1) + 0.35 * wander(time * look.breathRate * 2.3, 2),
+    angle = Math.PI * 4 * wander(time * look.leanRate, 3),
+    reach = look.halo.lean * (0.5 + 0.5 * wander(time * look.leanRate * 1.7, 4));
+  return {
+    breath: 1 + look.breath * (2 * b - 1),
+    lean: [Math.cos(angle) * reach, Math.sin(angle) * reach],
+  };
+}
+const glsl = (value) => (Number.isInteger(value) ? value.toFixed(1) : String(value));
+const vec3 = (values) => `vec3(${values.map(glsl).join(",")})`;
 export function createCelestialClock() {
   let previous = null,
     time = 0,
@@ -86,29 +145,31 @@ void main() {
 const SURFACE_FRAGMENT = `
 uniform float uTime;
 uniform float uDetail;
+uniform float uBreath;
 varying vec3 vSurface;
 varying vec3 vViewNormal;
 varying vec3 vViewPosition;
 ${NOISE}
 void main() {
   vec3 p=normalize(vSurface);
-  float t=uTime*.022;
+  float t=uTime*${glsl(SOLAR_LOOK.churn)};
   vec3 flow=vec3(noise3(p*3.1+vec3(t,0,0)),
                  noise3(p*3.1+vec3(11,t*.7,0)),
                  noise3(p*3.1+vec3(0,23,t*.5)))-.5;
   vec3 q=p+flow*.09;
   float broad=noise3(q*8.0+vec3(0,t*.18,0));
   float footprint=length(fwidth(q))*18.0;
-  float resolved=1.0-smoothstep(.8,2.4,footprint);
+  // Granules only where a cell spans a few pixels: finer, they would only speckle.
+  float resolved=1.0-smoothstep(.25,.6,footprint);
   float granule=.5;
   if(uDetail>1.5 && resolved>.01) {
     float cell=cells(q*18.0);
     granule=mix(.5,1.0-smoothstep(.24,.78,cell),resolved);
   }
   float fine=.5;
-  if(uDetail>2.5) fine=mix(.5,noise3(q*95.0),1.0-smoothstep(.22,.8,footprint));
+  if(uDetail>2.5) fine=mix(.5,noise3(q*95.0),1.0-smoothstep(.04,.12,footprint));
   float network=noise3(q*17.0+vec3(t*.1,0,0));
-  float heat=.57+.24*granule+.23*broad+.06*fine;
+  float heat=.7+.12*granule+.1*broad+.03*fine;
   // Stable active regions rotate with the sphere, rather than sliding over it.
   float spot=0.0, facula=0.0;
   vec3 s1=normalize(vec3(.64,.24,.72));
@@ -117,17 +178,18 @@ void main() {
   float d1=length(p-s1)/.105, d2=length(p-s2)/.064, d3=length(p-s3)/.082;
   float d=min(d1,min(d2,d3));
   float umbra=1.0-smoothstep(.27,.53,d);
-  float penumbra=(1.0-smoothstep(.55,1.3,d))*(.62+.38*noise3(p*140.0));
-  spot=max(umbra*.79,penumbra*.45);
+  float penumbra=(1.0-smoothstep(.55,1.3,d))*(.62+.38*noise3(p*40.0));
+  spot=max(umbra*.5,penumbra*.22);
   facula=exp(-pow((d-1.7)*1.8,2.0))*.12;
   float mu=clamp(dot(normalize(vViewNormal),normalize(-vViewPosition)),0.0,1.0);
   float limb=.39+.61*pow(mu,.63);
-  vec3 color=mix(vec3(1.0,.25,.038),vec3(1.0,.85,.49),smoothstep(.35,1.04,heat));
-  color *= (heat*1.48+facula)*limb*(1.0-spot);
-  color += vec3(.16,.037,.004)*pow(network,7.0)*(1.0-spot);
+  // A hot, yellow-white core to a deep orange-red limb; the light breathes.
+  vec3 color=mix(${vec3(SOLAR_LOOK.rim)},${vec3(SOLAR_LOOK.core)},smoothstep(.42,1.0,heat)*(.55+.45*mu));
+  color *= (heat*1.5+facula)*limb*(1.0-spot)*uBreath;
+  color += vec3(.16,.037,.004)*pow(network,7.0)*.5*(1.0-spot);
   // Compress emission locally: the scene intentionally uses NoToneMapping.
-  // Leave headroom for the existing bloom and parchment highlight grade.
-  color *= .93*(1.0-exp(-color.r*2.1))/max(color.r,.001);
+  // Leave a little headroom for the existing bloom and parchment highlight grade.
+  color *= .99*(1.0-exp(-color.r*2.6))/max(color.r,.001);
   gl_FragColor=vec4(color,1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
@@ -135,21 +197,34 @@ void main() {
 `;
 const CORONA_FRAGMENT = `
 uniform float uTime;
+uniform float uBreath;
+uniform vec2 uLean;
 varying vec2 vUv;
 ${NOISE}
 void main() {
-  vec2 p=(vUv-.5)*3.6;
+  // p in solar radii across a plane SOLAR_LOOK.plane radii wide.
+  vec2 p=(vUv-.5)*${glsl(SOLAR_LOOK.plane)};
   float r=length(p), a=atan(p.y,p.x);
   float edge=max(fwidth(r),.003);
   float outside=smoothstep(1.0-edge,1.0+edge,r);
-  float h=max(0.0,r-1.0);
-  float weave=noise3(vec3(p*8.0,uTime*.022));
-  float rays=.46+.23*sin(a*7.0+.4)+.17*sin(a*13.0-1.4)+.10*sin(a*29.0+weave);
-  float inner=exp(-h*26.0)*.62;
-  float stream=exp(-h*(11.0-rays*5.0))*(.13+.28*pow(max(0.0,rays),3.0));
+  // The limb boils: the glow's inner edge wanders a little with angle and time.
+  float boil=${glsl(SOLAR_LOOK.boil)}*(2.0*noise3(vec3(cos(a)*3.0,sin(a)*3.0,uTime*.35))-1.0);
+  float h=max(0.0,r-1.0-boil);
+  float weave=noise3(vec3(p*8.0,uTime*.05));
+  // Streamers drift and flicker on time noise, never a steady beat.
+  float drift=2.0*noise3(vec3(uTime*.06,3.1,0.0));
+  float flick=.7+.6*noise3(vec3(cos(a)*2.0,sin(a)*2.0,uTime*.45));
+  float rays=.46+.23*sin(a*7.0+.4+drift)+.17*sin(a*13.0-1.4-drift*.7)+.10*sin(a*29.0+weave);
+  // A bright aura at the limb over a round amber glow whose soft edge wobbles a little, leaning
+  // toward a slowly wandering side.
+  float lean=1.0+dot(p/max(r,1e-4),uLean);
+  float glow=${glsl(SOLAR_LOOK.halo.glow)}*(.75+.25*exp(-h*${glsl(SOLAR_LOOK.halo.falloff)}))*(1.0-smoothstep(${glsl(SOLAR_LOOK.halo.reach - 0.22)},${glsl(SOLAR_LOOK.halo.reach)},r-boil*4.0-.08*dot(p/max(r,1e-4),uLean)));
+  float halo=(${glsl(SOLAR_LOOK.halo.aura)}*exp(-h*${glsl(SOLAR_LOOK.halo.auraFalloff)})+glow)*lean*uBreath;
+  float inner=exp(-h*20.0)*.62*uBreath;
+  float stream=exp(-h*(9.0-rays*5.0))*(.13+.28*pow(max(0.0,rays),3.0))*flick;
   float filaments=pow(.5+.5*sin(a*93.0+weave*3.0),9.0)*exp(-h*18.0)*.055;
-  float alpha=(inner+stream+filaments)*outside*(1.0-smoothstep(1.35,1.8,r));
-  gl_FragColor=vec4(mix(vec3(1.0,.39,.075),vec3(1.0,.68,.3),exp(-h*17.0)),alpha);
+  float alpha=(halo+inner+stream+filaments)*outside*(1.0-smoothstep(${glsl(SOLAR_LOOK.plane / 2 - 0.6)},${glsl(SOLAR_LOOK.plane / 2)},r));
+  gl_FragColor=vec4(mix(vec3(1.0,.46,.1),vec3(1.0,.76,.42),exp(-h*8.0)),alpha);
   #include <colorspace_fragment>
 }
 `;
@@ -166,8 +241,12 @@ uniform vec2 uResolution;
 varying float vSide;
 varying float vProgress;
 varying float vPhase;
+varying float vOver;
 void main() {
   vec4 view=modelViewMatrix*vec4(position,1.0);
+  // Across the disc a loop is a faint filament, not a bright scratch.
+  vec3 c=(modelViewMatrix*vec4(0.0,0.0,0.0,1.0)).xyz, v=normalize(c), d=view.xyz-c;
+  vOver=step(dot(d,v),0.0)*(1.0-smoothstep(${glsl(SOLAR_RADIUS * 0.92)},${glsl(SOLAR_RADIUS * 1.02)},length(d-dot(d,v)*v)));
   vec3 tangent=mat3(modelViewMatrix)*aTangent;
   vec2 side=normalize(vec2(-tangent.y,tangent.x)+vec2(.00001));
   gl_Position=projectionMatrix*view;
@@ -180,14 +259,20 @@ uniform float uTime;
 varying float vSide;
 varying float vProgress;
 varying float vPhase;
+varying float vOver;
+// Smooth 1D value noise, 0..1.
+float wander(float x) {
+  float i=floor(x), f=fract(x);
+  f=f*f*(3.0-2.0*f);
+  return mix(fract(sin(i*127.1)*43758.5453),fract(sin((i+1.0)*127.1)*43758.5453),f);
+}
 void main() {
-  float cycle=.5+.5*sin(uTime*.12+vPhase);
-  float envelope=.25+.75*smoothstep(.08,.9,cycle);
-  float threads=.62+.38*sin(vProgress*46.0-uTime*.8+vPhase);
+  // Each loop flares and fades on its own irregular clock: soft, continuous arcs.
+  float envelope=smoothstep(.45,.9,wander(uTime*.07+vPhase*5.3));
   float width=exp(-vSide*vSide*3.4);
   float ends=smoothstep(0.0,.035,vProgress)*(1.0-smoothstep(.965,1.0,vProgress));
-  vec3 color=mix(vec3(1.0,.74,.34),vec3(1.0,.19,.02),pow(abs(vSide),.6));
-  gl_FragColor=vec4(color,width*ends*envelope*threads*.94);
+  vec3 color=mix(vec3(1.0,.52,.2),vec3(1.0,.16,.02),pow(abs(vSide),.6));
+  gl_FragColor=vec4(color,width*ends*envelope*.7*(1.0-.8*vOver));
   #include <colorspace_fragment>
 }
 `;
@@ -267,10 +352,12 @@ export function createSolarBody({ parent, camera, position, profile = {} }) {
   root.add(rotating);
   parent.add(root);
   const uTime = { value: 0 },
-    uDetail = { value: 3 };
+    uDetail = { value: 3 },
+    uBreath = { value: 1 },
+    uLean = { value: new Vector2() };
   const surfaceMaterial = new ShaderMaterial({
     name: "SolarPhotosphere",
-    uniforms: { uTime, uDetail },
+    uniforms: { uTime, uDetail, uBreath },
     vertexShader: SURFACE_VERTEX,
     fragmentShader: SURFACE_FRAGMENT,
     transparent: true,
@@ -285,7 +372,7 @@ export function createSolarBody({ parent, camera, position, profile = {} }) {
   rotating.add(surface);
   const coronaMaterial = new ShaderMaterial({
     name: "SolarCorona",
-    uniforms: { uTime },
+    uniforms: { uTime, uBreath, uLean },
     vertexShader: CORONA_VERTEX,
     fragmentShader: CORONA_FRAGMENT,
     transparent: true,
@@ -296,7 +383,7 @@ export function createSolarBody({ parent, camera, position, profile = {} }) {
     extensions: { derivatives: true },
   });
   const corona = new Mesh(
-    new PlaneGeometry(SOLAR_RADIUS * 3.6, SOLAR_RADIUS * 3.6),
+    new PlaneGeometry(SOLAR_RADIUS * SOLAR_LOOK.plane, SOLAR_RADIUS * SOLAR_LOOK.plane),
     coronaMaterial,
   );
   corona.name = "solar-corona";
@@ -349,6 +436,9 @@ export function createSolarBody({ parent, camera, position, profile = {} }) {
     update({ elapsedSeconds = 0, reducedMotion = false } = {}) {
       if (disposed) return false;
       uTime.value = clock.tick(elapsedSeconds, reducedMotion);
+      const unrest = solarUnrest(uTime.value);
+      uBreath.value = unrest.breath;
+      uLean.value.set(...unrest.lean);
       rotating.rotation.set(0.2, uTime.value * 0.011, -0.12);
       if (camera) {
         camera.getWorldQuaternion(corona.quaternion);
