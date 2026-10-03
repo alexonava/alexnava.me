@@ -648,13 +648,21 @@ test("the clouds' reshaping never reaches the reference banks or the roof's lane
   // The banks lift only the open sky, and decisively: clear sky below the octave's [2]
   // and a bank above its [3], so no stray peak of the finer octaves stands alone in the
   // clear as an island; within a bank the next octave cuts darker lanes.
-  const bankOf = new Function("open", "NV", "mix", "smoothstep", `return ${line("bank")}`);
+  const bankOf = new Function(
+    "open",
+    "cloudText",
+    "NV",
+    "mix",
+    "smoothstep",
+    `return ${line("bank")}`,
+  );
   const mix = (a, b, t) => a + (b - a) * t;
-  const bank = (o, nv0, nv2 = 0.5) => bankOf(o, [nv0, 0, nv2], mix, smoothstep);
+  const bank = (o, nv0, nv2 = 0.5, text = 0) => bankOf(o, text, [nv0, 0, nv2], mix, smoothstep);
   const [clear, lift, from, to] = CLOUD_RESHAPE.banks;
   const lanes = CLOUD_RESHAPE.lanes;
   assert.ok(clear < 0 && lift > 0 && from < to && lanes > 0);
   assert.ok(bank(0, 1) === 0 && bank(0, 0) === 0, "none over the reference");
+  assert.ok(bank(0, 1, 0.5, 1) === 0, "nor behind the text there");
   for (const nv0 of [0, from / 2, from])
     for (const nv2 of [0, 0.5, 1])
       assert.ok(Math.abs(bank(1, nv0, nv2) - clear) < 1e-12, "the clear takes no lanes");
@@ -670,24 +678,17 @@ test("the clouds' reshaping never reaches the reference banks or the roof's lane
     assert.ok(bank(1, nv0) >= last - 1e-12, "the bank rises with the octave");
     last = bank(1, nv0);
   }
-  assert.doesNotMatch(line("bank"), /cloudText/, "the guard never cuts the banks' shapes");
-  // Behind the name and intro the banks thin instead, keeping their shapes (the stars there
-  // dim by the same cover): to 1 - [0] of their opacity at the text, over the open sky only,
-  // so the reference is untouched.
-  const [thinning, textReach] = CLOUD_RESHAPE.text;
-  const clearOf = new Function("cloudText", "open", `return ${line("cloudClear")}`);
-  assert.equal(clearOf(0, 1), 1);
-  assert.ok(Math.abs(clearOf(1, 1) - (1 - thinning)) < 1e-12);
-  assert.equal(clearOf(1, 0), 1, "the reference keeps its opacity behind the text");
-  assert.ok(thinning > 0 && thinning < 1);
-  assert.match(
-    shader,
-    /float cover=smoothstep\(\.548-w,\.548\+w,d\)\*horizonFade\*uClouds;\s*float cloudClear=[^;]+;\s*cover\*=cloudClear;/,
-  );
-  assert.match(
-    shader,
-    /col\+=vec3\(\.027,\.03,\.036\)\*smoothstep\(\.36,\.54,d\)\*horizonFade\*uClouds\*cloudClear;/,
-  );
+  // Behind the name and intro [0] comes off the reshaped density, so the banks there burn
+  // off along their own contours. The guard works on the density only, never the tone:
+  // the grade's cel step would turn a screen-space fade of tone into a hard ring.
+  const [clearing, textReach] = CLOUD_RESHAPE.text;
+  assert.ok(clearing > 0 && clearing < 0.5);
+  for (const nv0 of [0, 0.5, 1])
+    assert.ok(Math.abs(bank(1, nv0, 0.5, 1) - (bank(1, nv0) - clearing)) < 1e-12);
+  const field = cloudFieldGLSL("uTime");
+  assert.equal(field.match(/cloudText/g).length, 1, "the guard reaches only the bank");
+  assert.match(field, /float cover=smoothstep\(\.548-w,\.548\+w,d\)\*horizonFade\*uClouds;$/);
+  assert.ok(shader.includes("col+=vec3(.027,.03,.036)*smoothstep(.36,.54,d)*horizonFade*uClouds;"));
   assert.match(shader, /d\+=bank; da\+=bank;/);
   // NV[0] exists only on the high and balanced skies: its readers sit after the
   // octave's own `continue` for the low sky, or inside the >1.5 branch.
