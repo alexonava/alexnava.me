@@ -119,7 +119,7 @@ longest rushed slice … ms
 median rushed slice … ms
 ```
 
-Three tests time real work with `performance.now()` and fail when the machine is loaded, as when `npm test` runs files in parallel beside other work ([Testing](TESTING.md#timing-sensitive-tests)). Rerun the file alone (`node --test test/terrain-build.test.mjs` or `test/hill-silhouette.test.mjs`). A failure that repeats on an idle machine is a regression: a build step that no longer yields within its slice.
+Four tests time real work with `performance.now()` and fail when the machine is loaded, as when `npm test` runs files in parallel beside other work ([Testing](TESTING.md#timing-sensitive-tests)). Rerun the file alone (`node --test test/terrain-build.test.mjs`, `test/hill-silhouette.test.mjs` or `test/mountain-massifs.test.mjs`). A failure that repeats on an idle machine is a regression: a build step that no longer yields within its slice.
 
 ## The security.txt test fails
 

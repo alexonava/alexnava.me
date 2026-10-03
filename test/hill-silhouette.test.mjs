@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
+import { flat } from "./support/code.mjs";
 import {
   BufferGeometry,
   FrontSide,
@@ -942,14 +943,15 @@ test("hidden, on a cut or still the ranges land at once; otherwise they fade in 
     MOUNTAIN_ENTRANCE.fade > 0 && MOUNTAIN_ENTRANCE.fade <= 0.5,
     "under the canvas's own fade, a short one",
   );
-  // hill-silhouette.js hands the chunk its mesh.
-  const source = await readFile(
-    new URL("../src/scene/hill-silhouette.js", import.meta.url),
-    "utf8",
+  // hill-silhouette.js hands the chunk its mesh, and the massifs' models, meshes
+  // and skyline texels once it has loaded them.
+  const source = flat(
+    await readFile(new URL("../src/scene/hill-silhouette.js", import.meta.url), "utf8"),
   );
-  assert.match(
-    source,
-    /buildMountains\(\{ rendering, tour, cancelled: \(\) => disposed, mesh \}\)/,
+  assert.ok(
+    source.includes(
+      "buildMountains({ rendering, tour, cancelled: () => disposed, mesh, models: models?.models ?? null, massifs: models?.meshes ?? null, texels: models?.texels ?? null })",
+    ),
   );
 });
 

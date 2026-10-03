@@ -100,6 +100,27 @@ high, 512 balanced), stored tangents and `KHR_mesh_quantization` geometry; none
 has a separate occlusion map. Scripts, reports and QA renders are in
 `Assets/Architecture/rocks-v1`; none are published.
 
+## Supplied Meshy mountains
+
+The film's mountains in `images/architecture/{mountain-ridge,mountain-spine,mountain-summit}-{high,balanced}.glb`
+come from three Meshy models supplied by Alex Nava on 2026-10-03:
+`Meshy_AI_Snow_Mountain_Ridge_0925082630_texture.glb` (SHA-256
+`c4b99498a91cb8977ecd7ed0780a0a1c16aeffe94eb9747802f6f184c46948a5`, the
+ridge), `Meshy_AI_Snow_Mountain_Ridge_0925082622_texture.glb` (SHA-256
+`e5cca117aca1abe7ae01df606407ddd9800b266982e40e00922702ffc08402b4`, the
+spine) and `Meshy_AI_Snow_Mountain_Summit_0925031332_texture.glb` (SHA-256
+`a3773a9fc831ebc0f2129bffb17fe7094e559943bb36aca630f132fb49319dc8`, the
+summit).
+
+Each was normalized, culled in Blender to the faces an eye in its viewing
+envelope can see, collapse-decimated to 3,799 triangles with its skyline
+weighted, unwrapped, and its object-space normal, base colour and ambient
+occlusion baked by Cycles from the full source; the supplied emissive and
+metallic-roughness maps were dropped. Each GLB carries an object-space normal
+map and a whiteness and occlusion mask as WebP (512 and 256 high, 256 and 128
+balanced) and `KHR_mesh_quantization` geometry. Scripts, reports and QA
+renders are in `Assets/Architecture/mountains-v1`; none are published.
+
 ## Slate ground
 
 The ground maps `images/materials/slate-{color,normal}-{1024,512}.webp` and
@@ -124,8 +145,8 @@ source; there is no runtime fetch.
 The ring belongs only to the baseline, the scene as it stands before the film
 (both terms are in the [Glossary](GLOSSARY.md)). The film, which starts when
 the tower commits, takes the ring's place at once: it shows an empty stand-in
-until its own procedural ranges (the lazy `src/scene/mountain-build.js` chunk)
-are built, and keeps the stand-in if that chunk fails. The scene is revealed
+until its own ranges (the lazy `src/scene/mountain-build.js` chunk, with the
+Meshy mountains) are built, and keeps the stand-in if that chunk fails. The scene is revealed
 only after the tower loads, so visitors never see the ring.
 
 ## Cotton paper panel material

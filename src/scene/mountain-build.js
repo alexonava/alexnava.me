@@ -270,7 +270,9 @@ function summits(table, seed, cells) {
 // summits, varied by the ridged multifractal, notched by a finer summit lattice
 // and toothed in proportion to height. Authored peaks keep their exact apex and
 // get warped, shouldered flanks; the low windows keep their 2.6 degree ceiling.
-function* crestSteps(range) {
+// As the backdrop behind the Meshy massifs (RANGE_BACKDROP) a range has no
+// authored peaks and its noise rises to capScale of the background caps.
+function* crestSteps(range, backdrop = null) {
   const {
     columns,
     share,
@@ -279,9 +281,10 @@ function* crestSteps(range) {
     notch: notchDepth,
     teeth: tt,
     authored,
-    peaks,
     lowWindow,
   } = MOUNTAINS;
+  const peaks = backdrop ? [] : MOUNTAINS.peaks,
+    capScale = backdrop ? backdrop.capScale : 1;
   const part = share[range],
     far = range / (share.length - 1),
     rough = new Float64Array(columns),
@@ -341,7 +344,8 @@ function* crestSteps(range) {
       azimuth = u * 360,
       cap = caps[j],
       notch = notchDepth * (1 - fine[j]);
-    let value = cap * part * (0.3 + 0.7 * summitAt(u)) * (0.8 + 0.2 * rough[j]) * (1 - notch);
+    let value =
+      cap * capScale * part * (0.3 + 0.7 * summitAt(u)) * (0.8 + 0.2 * rough[j]) * (1 - notch);
     for (const { at, apex, hl, hr, e, shoulder, warp360, warp1080 } of own) {
       const signed = ((azimuth - at + 540) % 360) - 180,
         left = signed < 0,
@@ -374,9 +378,10 @@ function* crestSteps(range) {
   return crest;
 }
 
-// Crest elevation in degrees per range and column, near range first.
-export function mountainCrests() {
-  return MOUNTAINS.share.map((_, range) => run(crestSteps(range)));
+// Crest elevation in degrees per range and column, near range first; as the
+// Meshy massifs' backdrop (RANGE_BACKDROP) with `backdrop`.
+export function mountainCrests(backdrop = null) {
+  return MOUNTAINS.share.map((_, range) => run(crestSteps(range, backdrop)));
 }
 
 // Periodic box smooth and max filter over `radius` columns each way.
@@ -419,20 +424,24 @@ export function mountainRows(crest, smoothed = MOUNTAINS.smooth.map((r) => smoot
   return rows;
 }
 
-// The whole build, in steps. Five ranges x six rows x one ring of columns;
-// columns wrap, so there is no seam column at azimuth 0, and triangles face the
-// centre. Vertex attributes:
+// The whole build, in steps. Five ranges (or, as the Meshy massifs' backdrop,
+// RANGE_BACKDROP's two) x six rows x one ring of columns; columns wrap, so
+// there is no seam column at azimuth 0, and triangles face the centre. Vertex
+// attributes:
 // aTerrain = (degrees below this column's crest, range, coarse moonlight 0..1,
 //   massif height: the snowline's reference, 0 on the near range, which stays
 //   bare).
 // aForm = (face normal along the ring: minus the slope of the row's smoothed
 //   profile, clamped +-3; lean toward the viewer; fold, convex + and concave -,
 //   clamped +-1; the nearer ranges' skyline in degrees, -90 on the near range).
-function* geometrySteps() {
+// backdrop: build only its ranges, with its crests; nearer: the Meshy massifs'
+// skyline per column (degrees), which the backdrop's mist rises from too.
+function* geometrySteps({ backdrop = null, nearer = null } = {}) {
   const { radii, rows: rowRadius, columns, slope: slopeGain, lean, massif, smooth } = MOUNTAINS;
-  const crests = [];
-  for (let range = 0; range < radii.length; range++) crests.push(yield* crestSteps(range));
-  const R = radii.length,
+  const built = backdrop ? backdrop.ranges : radii.map((_, range) => range),
+    crests = [];
+  for (const range of built) crests[range] = yield* crestSteps(range, backdrop);
+  const R = built.length,
     nRows = rowRadius.length,
     perRange = nRows * columns,
     V = R * perRange;
@@ -444,10 +453,11 @@ function* geometrySteps() {
     step = (2 * Math.PI) / columns;
   let cursor = 0,
     farthest = 0;
-  for (let range = 0; range < R; range++) {
-    const crest = crests[range],
+  for (let slot = 0; slot < R; slot++) {
+    const range = built[slot],
+      crest = crests[range],
       radius = radii[range],
-      far = range / (R - 1);
+      far = range / (radii.length - 1);
     const smoothed = smooth.map((r) => smoothRing(crest, r));
     yield;
     const rows = mountainRows(crest, smoothed);
@@ -482,14 +492,14 @@ function* geometrySteps() {
         nx = cx * tx + lean[2] * ix,
         nz = cx * tz + lean[2] * iz,
         coarse = (nx * KEY[0] + KEY[1] + nz * KEY[2]) / Math.hypot(nx, 1, nz);
-      let nearer = -90;
+      let skyline = -90;
       if (range) {
-        nearer = -5;
-        for (let q = 0; q < range; q++) nearer = Math.max(nearer, crests[q][j]);
+        skyline = Math.max(-5, nearer ? nearer[j] : -90);
+        for (const q of built) if (q < range) skyline = Math.max(skyline, crests[q][j]);
       }
       for (let row = 0; row < nRows; row++) {
         const e = rows[row][j],
-          v = range * perRange + row * columns + j,
+          v = slot * perRange + row * columns + j,
           r = radius * rowRadius[row],
           y = r * Math.tan(e * rad),
           f = formRows[Math.min(row, formRows.length - 1)];
@@ -504,7 +514,7 @@ function* geometrySteps() {
         form[v * 4] = Math.max(-3, Math.min(3, -f.slope[j] * slopeGain));
         form[v * 4 + 1] = lean[row] * (1 - 0.25 * far);
         form[v * 4 + 2] = Math.max(-1, Math.min(1, -f.curve[j] * 0.06 * (1 + row)));
-        form[v * 4 + 3] = nearer;
+        form[v * 4 + 3] = skyline;
       }
       if (pace(range, j)) yield;
     }
@@ -516,12 +526,12 @@ function* geometrySteps() {
     span = columns / sectors,
     first = Math.round((seam / 360) * columns);
   for (let sector = 0; sector < sectors; sector++) {
-    for (let range = 0; range < R; range++)
+    for (let slot = 0; slot < R; slot++)
       for (let row = 0; row < nRows - 1; row++)
         for (let i = 0; i < span; i++) {
           const j = (first + sector * span + i) % columns,
-            s = range * perRange + row * columns + j,
-            n = range * perRange + row * columns + ((j + 1) % columns);
+            s = slot * perRange + row * columns + j,
+            n = slot * perRange + row * columns + ((j + 1) % columns);
           index[cursor] = s;
           index[cursor + 1] = s + columns;
           index[cursor + 2] = n;
@@ -550,9 +560,344 @@ function run(steps) {
   }
 }
 
-// The whole geometry at once (tests).
-export function createMountainGeometry() {
-  return run(geometrySteps());
+// The whole geometry at once (tests): the five rings, or with { backdrop,
+// nearer } the backdrop behind the Meshy massifs.
+export function createMountainGeometry(options) {
+  return run(geometrySteps(options));
+}
+
+// The Meshy massifs: the owner's three Meshy mountains (images/architecture/
+// mountain-ridge, mountain-spine and mountain-summit, prepared in
+// Assets/Architecture/mountains-v1), set as copies around the camera to form
+// the near ranges, with RANGE_BACKDROP's two farthest rings left behind them as
+// hazy depth. Each GLB is the part of its massif an eye in front of it can see
+// (front +Z; frame: bounding X/Z centred, base y = 0, largest horizontal
+// half-extent 1), its relief baked into an object-space normal map.
+//
+// A placement is one eye in the model's frame, and every transform below is
+// affine, which keeps what that eye sees: `distance` from the bounding centre
+// and `yaw` about the front (frame units, degrees), `sink` (the eye's height
+// above the base as a share of the model's height: how deep the massif stands
+// in the plain), `squash` (its vertical scale) and `mirror`. The eye's line to
+// the centre points at world `azimuth` (atan2(z, x), degrees), and each vertex
+// slides along its own sight line so the massif fills its `layer`'s shell
+// (RANGE_LAYERS, distances from the camera): the layers stay in order and
+// inside the far plane, and not a pixel of the view changes. Layer 0 stays
+// bare; `snow` is a copy's snowline (hill-silhouette.js MASSIF_SNOW line, in
+// degrees; 0 bare). The GLB's extras record the envelope of eyes its
+// shell was culled for, and every placement stays inside it.
+export const RANGE_LAYERS = Object.freeze([
+  Object.freeze([200, 218]),
+  Object.freeze([222, 240]),
+  Object.freeze([244, 258]),
+]);
+export const RANGE_BACKDROP = Object.freeze({ ranges: Object.freeze([3, 4]), capScale: 1 });
+// The watch's summit leads (about 9 degrees) with a smaller one right of the
+// tower; the broad ridge stands behind Portrait's tree; snowy massifs rise
+// behind the tree shots (up to about 4 degrees, an 8% band of open sky above
+// them); a mirrored summit makes the Close-up horn; bare low copies form the
+// near layer all round.
+// [id, role, layer, azimuth, distance, yaw, mirror, sink, squash, snow]
+export const RANGE_PLACEMENTS = Object.freeze(
+  [
+    ["watch", "mountain-summit", 2, 151, 3.8, 0, false, 0.28, 1, 2.4],
+    ["east", "mountain-summit", 1, 191, 5.5, -10, false, 0.35, 0.95, 2],
+    ["bridge", "mountain-summit", 2, 127, 5, 25, true, 0.4, 0.9, 2],
+    ["portrait", "mountain-ridge", 1, 108, 3.6, -5, false, 0.25, 1, 2],
+    ["lantern", "mountain-summit", 2, 62, 6, -10, false, 0.5, 0.8, 2.6],
+    ["closeup", "mountain-ridge", 2, 36, 5, 10, false, 0.35, 0.74, 2],
+    ["horn", "mountain-summit", 1, 13, 6, 15, true, 0.25, 1, 2.9],
+    ["threshold", "mountain-ridge", 2, 206, 4, 20, true, 0.35, 0.9, 2],
+    ["west", "mountain-summit", 2, 300, 5, -20, false, 0.45, 0.9, 2],
+    ["near-a", "mountain-spine", 0, -6, 4, 0, false, 0.25, 0.9, 0],
+    ["near-b", "mountain-ridge", 0, 30, 4.6, 25, true, 0.5, 0.45, 0],
+    ["near-c", "mountain-spine", 0, 66, 3.2, -20, false, 0.35, 0.7, 0],
+    ["near-d", "mountain-summit", 0, 96, 6, 20, true, 0.55, 0.6, 0],
+    ["near-e", "mountain-spine", 0, 128, 3, 25, true, 0.3, 0.72, 0],
+    ["near-f", "mountain-ridge", 0, 166, 4.2, -15, false, 0.5, 0.5, 0],
+    ["near-g", "mountain-spine", 0, 198, 3.8, -10, false, 0.3, 0.85, 0],
+    ["near-h", "mountain-ridge", 0, 232, 4, 10, true, 0.5, 0.5, 0],
+    ["near-i", "mountain-spine", 0, 265, 3.4, 15, true, 0.3, 0.85, 0],
+    ["near-j", "mountain-summit", 0, 296, 5.5, -15, false, 0.55, 0.6, 0],
+  ].map(([id, role, layer, azimuth, distance, yaw, mirror, sink, squash, snow]) =>
+    Object.freeze({ id, role, layer, azimuth, distance, yaw, mirror, sink, squash, snow }),
+  ),
+);
+// Skylines run in bins of RANGE_SKY.bin degrees; the nearer layers' skyline
+// reaches the shader as RANGE_SKY.texture bins around the ring (RGBA8: two
+// 16-bit values, layer 0's and layers 0-1's, over RANGE_SKY.span degrees from
+// RANGE_SKY.floor).
+export const RANGE_SKY = Object.freeze({ bin: 0.05, texture: 4096, floor: -10, span: 40 });
+const DEG = 180 / Math.PI;
+
+// One placement of a model ({ position, uv, index, height }: the GLB's
+// attributes, read through getX() so quantized ones decode): camera-relative
+// positions after the shell remap, each vertex's elevation and azimuth
+// (degrees, the azimuth unwrapped about the placement's), the triangle index
+// (wound for the mirror) and the placement's turn about the vertical (radians).
+export function placeRange(model, placement) {
+  const { position, index } = model,
+    n = position.count,
+    { azimuth, distance, yaw, mirror, sink, squash = 1, layer } = placement,
+    flip = mirror ? -1 : 1,
+    y0 = yaw / DEG,
+    ex = distance * Math.sin(y0),
+    ey = sink * model.height,
+    ez = distance * Math.cos(y0),
+    turn = azimuth / DEG - Math.atan2(-Math.cos(y0), -Math.sin(y0)),
+    c = Math.cos(turn),
+    s = Math.sin(turn);
+  const out = new Float32Array(n * 3),
+    elevation = new Float32Array(n),
+    azimuths = new Float32Array(n),
+    reach = new Float64Array(n);
+  let near = Infinity,
+    far = -Infinity;
+  for (let i = 0; i < n; i++) {
+    const x = flip * position.getX(i) - ex,
+      y = squash * (position.getY(i) - ey),
+      z = position.getZ(i) - ez,
+      px = x * c - z * s,
+      pz = x * s + z * c,
+      d = Math.hypot(px, y, pz);
+    out[i * 3] = px;
+    out[i * 3 + 1] = y;
+    out[i * 3 + 2] = pz;
+    reach[i] = d;
+    near = Math.min(near, d);
+    far = Math.max(far, d);
+    elevation[i] = Math.atan2(y, Math.hypot(px, pz)) * DEG;
+    azimuths[i] = azimuth + ((((Math.atan2(pz, px) * DEG - azimuth) % 360) + 540) % 360) - 180;
+  }
+  const [inner, outer] = RANGE_LAYERS[layer];
+  for (let i = 0; i < n; i++) {
+    const k = (inner + ((reach[i] - near) / (far - near)) * (outer - inner)) / reach[i];
+    out[i * 3] *= k;
+    out[i * 3 + 1] *= k;
+    out[i * 3 + 2] *= k;
+  }
+  const count = index.count ?? index.length,
+    at = index.getX ? (i) => index.getX(i) : (i) => index[i],
+    triangles = new Uint32Array(count);
+  for (let t = 0; t < count; t += 3) {
+    triangles[t] = at(t);
+    triangles[t + 1] = at(mirror ? t + 2 : t + 1);
+    triangles[t + 2] = at(mirror ? t + 1 : t + 2);
+  }
+  return { position: out, elevation, azimuth: azimuths, index: triangles, turn };
+}
+
+// A placed massif's skyline: the highest elevation per RANGE_SKY.bin of
+// azimuth, along every triangle edge (sampled under half a bin apart), so it
+// follows the crest between vertices. { from: the first bin's azimuth, values:
+// degrees, -90 where the massif does not reach }.
+export function rangeSkyline({ elevation, azimuth, index }) {
+  const { bin } = RANGE_SKY;
+  let lo = Infinity,
+    hi = -Infinity;
+  for (const a of azimuth) {
+    lo = Math.min(lo, a);
+    hi = Math.max(hi, a);
+  }
+  const from = Math.floor(lo / bin) * bin,
+    values = new Float32Array(Math.ceil((hi - from) / bin) + 1).fill(-90);
+  for (let t = 0; t < index.length; t += 3)
+    for (let k = 0; k < 3; k++) {
+      const a = index[t + k],
+        b = index[t + ((k + 1) % 3)],
+        a0 = azimuth[a],
+        da = azimuth[b] - a0,
+        e0 = elevation[a],
+        de = elevation[b] - e0,
+        steps = Math.max(1, Math.ceil((2 * Math.abs(da)) / bin));
+      for (let q = 0; q <= steps; q++) {
+        const f = q / steps,
+          j = Math.floor((a0 + da * f - from) / bin),
+          e = e0 + de * f;
+        if (e > values[j]) values[j] = e;
+      }
+    }
+  return { from, values };
+}
+
+// The snowline's reference along a massif, as the rings' (massif): its
+// skyline's maximum over 3 degrees each way, then averaged over 4.
+export function rangeMassif({ values }) {
+  const { bin } = RANGE_SKY,
+    n = values.length,
+    wide = Math.round(3 / bin),
+    even = Math.round(4 / bin),
+    peak = new Float32Array(n),
+    out = new Float32Array(n);
+  for (let j = 0; j < n; j++) {
+    let m = -90;
+    for (let k = Math.max(0, j - wide); k <= Math.min(n - 1, j + wide); k++)
+      m = Math.max(m, values[k]);
+    peak[j] = m;
+  }
+  for (let j = 0; j < n; j++) {
+    let sum = 0,
+      count = 0;
+    for (let k = Math.max(0, j - even); k <= Math.min(n - 1, j + even); k++)
+      if (peak[k] > -90) {
+        sum += peak[k];
+        count++;
+      }
+    out[j] = count ? sum / count : -90;
+  }
+  return out;
+}
+
+// The Meshy massifs in steps: each placement placed, its skyline and massif;
+// then one geometry per model with every copy of it, its triangles ordered
+// sector by sector from the seam (nearest layer first), as the rings'. Vertex
+// attributes:
+// aTerrain = (degrees below its own copy's crest, layer, snowline or 0, massif),
+// aInst = (cos and sin of the copy's turn, its mirror 1 or -1, its squash), with
+//   which the shader turns the object-space normal map into the world,
+// and the GLB's uv. Also returns the massifs' skyline per ring column (the
+// backdrop's nearer skyline) and the nearer layers' skyline texels (RANGE_SKY).
+function* rangeSteps(models, placements = RANGE_PLACEMENTS) {
+  const { bin } = RANGE_SKY,
+    { count: sectors, seam } = MOUNTAINS.sectors,
+    width = 360 / sectors;
+  const placed = [];
+  for (const placement of placements) {
+    const model = models[placement.role],
+      shape = placeRange(model, placement);
+    yield;
+    const sky = rangeSkyline(shape);
+    yield;
+    placed.push({ placement, model, shape, sky, massif: rangeMassif(sky) });
+    yield;
+  }
+  // Each layer's skyline around the ring (finest bins), for the mist and the backdrop.
+  const ring = Math.round(360 / bin),
+    layers = [0, 1, 2].map(() => new Float32Array(ring).fill(-90));
+  for (const { placement, sky } of placed) {
+    const line = layers[placement.layer];
+    sky.values.forEach((e, j) => {
+      const k = ((Math.round((sky.from + (j + 0.5) * bin) / bin) % ring) + ring) % ring;
+      if (e > line[k]) line[k] = e;
+    });
+  }
+  yield;
+  const { columns } = MOUNTAINS,
+    nearer = new Float64Array(columns).fill(-90),
+    per = ring / columns;
+  for (let j = 0; j < columns; j++)
+    for (let k = Math.floor(j * per - per / 2); k <= Math.ceil(j * per + per / 2); k++) {
+      const kk = ((k % ring) + ring) % ring;
+      nearer[j] = Math.max(nearer[j], layers[0][kk], layers[1][kk], layers[2][kk]);
+    }
+  const { texture: texels, floor, span } = RANGE_SKY,
+    texture = new Uint8Array(texels * 4),
+    pack = (e, at) => {
+      const v = Math.round(Math.min(1, Math.max(0, (e - floor) / span)) * 65535);
+      texture[at] = v >> 8;
+      texture[at + 1] = v & 255;
+    };
+  for (let t = 0; t < texels; t++) {
+    let near = -90,
+      both = -90;
+    for (let k = Math.floor((t * ring) / texels); k < Math.floor(((t + 1) * ring) / texels); k++) {
+      near = Math.max(near, layers[0][k]);
+      both = Math.max(both, layers[0][k], layers[1][k]);
+    }
+    pack(near, t * 4);
+    pack(both, t * 4 + 2);
+  }
+  yield;
+  const geometries = {};
+  for (const role of Object.keys(models)) {
+    const copies = placed.filter(({ placement }) => placement.role === role);
+    if (!copies.length) continue;
+    let vertices = 0,
+      triangles = 0;
+    for (const { shape } of copies) {
+      vertices += shape.elevation.length;
+      triangles += shape.index.length / 3;
+    }
+    const position = new Float32Array(vertices * 3),
+      uv = new Float32Array(vertices * 2),
+      terrain = new Float32Array(vertices * 4),
+      inst = new Float32Array(vertices * 4),
+      corners = new Uint32Array(triangles * 3),
+      keys = new Uint16Array(triangles);
+    let base = 0,
+      tri = 0,
+      farthest = 0;
+    for (const { placement, model, shape, sky, massif } of copies) {
+      const n = shape.elevation.length,
+        cos = Math.cos(shape.turn),
+        sin = Math.sin(shape.turn);
+      position.set(shape.position, base * 3);
+      for (let i = 0; i < n; i++) {
+        const v = base + i,
+          j = Math.min(sky.values.length - 1, Math.floor((shape.azimuth[i] - sky.from) / bin));
+        uv[v * 2] = model.uv.getX(i);
+        uv[v * 2 + 1] = model.uv.getY(i);
+        terrain[v * 4] = Math.max(0, sky.values[j] - shape.elevation[i]);
+        terrain[v * 4 + 1] = placement.layer;
+        terrain[v * 4 + 2] = placement.snow || 0;
+        terrain[v * 4 + 3] = massif[j];
+        inst[v * 4] = cos;
+        inst[v * 4 + 1] = sin;
+        inst[v * 4 + 2] = placement.mirror ? -1 : 1;
+        inst[v * 4 + 3] = placement.squash;
+        farthest = Math.max(farthest, Math.hypot(...shape.position.subarray(i * 3, i * 3 + 3)));
+      }
+      for (let t = 0; t < shape.index.length; t += 3, tri++) {
+        const a = shape.index[t],
+          b = shape.index[t + 1],
+          c = shape.index[t + 2],
+          centre = (shape.azimuth[a] + shape.azimuth[b] + shape.azimuth[c]) / 3,
+          sector = Math.floor(((((centre - seam) % 360) + 360) % 360) / width);
+        corners.set([base + a, base + b, base + c], tri * 3);
+        keys[tri] = sector * 3 + placement.layer;
+      }
+      base += n;
+      yield;
+    }
+    // Counting sort: sector by sector, the nearest layer first in each.
+    const counts = new Uint32Array(sectors * 3 + 1);
+    for (const key of keys) counts[key + 1]++;
+    for (let k = 1; k < counts.length; k++) counts[k] += counts[k - 1];
+    const index =
+        vertices < 65536 ? new Uint16Array(triangles * 3) : new Uint32Array(triangles * 3),
+      next = counts.slice(0, -1);
+    for (let t = 0; t < triangles; t++)
+      index.set(corners.subarray(t * 3, t * 3 + 3), next[keys[t]]++ * 3);
+    const starts = Array.from({ length: sectors + 1 }, (_, s) => counts[s * 3] * 3);
+    const geometry = new BufferGeometry();
+    geometry.setAttribute("position", new BufferAttribute(position, 3));
+    geometry.setAttribute("uv", new BufferAttribute(uv, 2));
+    geometry.setAttribute("aTerrain", new BufferAttribute(terrain, 4));
+    geometry.setAttribute("aInst", new BufferAttribute(inst, 4));
+    geometry.setIndex(new BufferAttribute(index, 1));
+    geometry.boundingSphere = new Sphere(new Vector3(), farthest);
+    // Large triangles reach a little past their centre's sector: one sector of padding.
+    geometry.userData.sectors = { count: sectors, starts, pad: 1 };
+    geometries[role] = geometry;
+    yield;
+  }
+  return { geometries, nearer, texture, placed };
+}
+
+// The Meshy massifs and their backdrop at once (tests): models as placeRange()
+// takes them, keyed by role.
+export function createRangeGeometry(models, placements = RANGE_PLACEMENTS) {
+  return run(rangeSteps(models, placements));
+}
+
+// The whole Meshy build: the massifs, then the backdrop rings behind them with
+// the massifs' skyline as their nearer one. `texels` (RANGE_SKY.texture x 4
+// bytes) receives the nearer layers' skyline.
+function* composedSteps(models, texels) {
+  const ranges = yield* rangeSteps(models);
+  const backdrop = yield* geometrySteps({ backdrop: RANGE_BACKDROP, nearer: ranges.nearer });
+  texels?.set(ranges.texture);
+  return { backdrop, massifs: ranges.geometries };
 }
 
 const nextFrame = (task) =>
@@ -647,8 +992,12 @@ export function sectorsInView(camera) {
 export function showRanges(mesh, ranges, seconds = 0) {
   const sectors = ranges?.userData.sectors;
   if (!mesh || !sectors) return false;
-  const shading = mesh.material,
-    whole = sectors.count * sectors.size,
+  // The rings' sectors are equal (size); the massifs' are not (starts, padded by
+  // `pad` sectors each side for triangles reaching past their centre's sector).
+  const { count, size, starts, pad = 0 } = sectors,
+    at = (sector) => (starts ? starts[sector] : sector * size),
+    shading = mesh.material,
+    whole = at(count),
     blending = shading?.blending;
   let fading = seconds > 0 && Boolean(shading?.isShaderMaterial),
     shown = 0,
@@ -668,11 +1017,11 @@ export function showRanges(mesh, ranges, seconds = 0) {
   mesh.onBeforeRender = function (_renderer, _scene, camera, geometry) {
     if (geometry !== ranges) return;
     const view = sectorsInView(camera);
-    if (view)
-      ranges.setDrawRange(
-        view[0] * sectors.size,
-        Math.min(view[1], sectors.count - view[0]) * sectors.size,
-      );
+    if (view) {
+      const first = Math.max(0, view[0] - pad),
+        last = Math.min(count, view[0] + view[1] + pad);
+      ranges.setDrawRange(at(first), at(last) - at(first));
+    }
     if (!fading) return;
     const now = performance.now();
     if (last !== null) shown += Math.min(0.1, Math.max(0, (now - last) / 1000));
@@ -730,9 +1079,34 @@ export function buildMountains({
   tour = null,
   cancelled = () => false,
   mesh = null,
+  models = null,
+  massifs = null,
+  texels = null,
 } = {}) {
-  const steps = geometrySteps();
-  if (!rendering) return Promise.resolve(cancelled() ? null : run(steps));
+  const steps = models ? composedSteps(models, texels) : geometrySteps();
+  // With models (placeRange()'s, by role) the build is the Meshy massifs and
+  // their backdrop: each massif's geometry lands on its mesh (massifs, by role)
+  // and shows as the rings do; the backdrop is what resolves, carrying the
+  // massifs' geometries in userData.massifs.
+  const settle = (built, seconds) => {
+    if (!models) return built;
+    for (const [role, geometry] of Object.entries(built.massifs)) {
+      const target = massifs?.[role];
+      if (!target) {
+        geometry.dispose();
+        continue;
+      }
+      target.geometry = geometry;
+      showRanges(target, geometry, seconds);
+    }
+    built.backdrop.userData.massifs = built.massifs;
+    return built.backdrop;
+  };
+  const free = (built) =>
+    models
+      ? [built.backdrop, ...Object.values(built.massifs)].forEach((g) => g.dispose())
+      : built.dispose();
+  if (!rendering) return Promise.resolve(cancelled() ? null : settle(run(steps), 0));
   const idle =
     typeof globalThis.requestIdleCallback === "function"
       ? (task) => globalThis.requestIdleCallback(task, { timeout: 100 })
@@ -751,12 +1125,14 @@ export function buildMountains({
       done();
       settle(value);
     };
-    const land = (geometry) => {
+    const land = (built) => {
       if (cancelled()) {
-        geometry.dispose();
+        free(built);
         return resolve(null);
       }
-      showRanges(mesh, geometry, (geometry.userData.fadeIn = enter()));
+      const seconds = enter(),
+        geometry = settle(built, seconds);
+      showRanges(mesh, geometry, (geometry.userData.fadeIn = seconds));
       resolve(geometry);
     };
     // One pending slice at a time: whichever of its waits fires first runs it.

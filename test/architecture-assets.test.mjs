@@ -845,7 +845,16 @@ test("the loading line counts the loader's own request once and never re-wraps a
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 // Every model the live scene loads, and the slate maps each tier requests.
-const ROLES = ["tower", "tree", "lantern", "lichen-rock", "weathered-stone"];
+const ROLES = [
+  "tower",
+  "tree",
+  "lantern",
+  "lichen-rock",
+  "weathered-stone",
+  "mountain-ridge",
+  "mountain-spine",
+  "mountain-summit",
+];
 
 test("every delivered model is one self-contained, static, triangle mesh", async () => {
   for (const tier of ["high", "balanced"])

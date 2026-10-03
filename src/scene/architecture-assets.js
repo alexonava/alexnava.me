@@ -2,9 +2,19 @@ import { LoadingManager } from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { measureScene, sceneNow } from "./perf-marks.js";
 
-// The tower, tree and optional lantern, and the film's scattered rocks
-// (rock-scatter.js), load through one manifest.
-const ROLES = ["tower", "tree", "lantern", "lichen-rock", "weathered-stone"];
+// The tower, tree and optional lantern, the film's scattered rocks
+// (rock-scatter.js) and its Meshy massifs (hill-silhouette.js) load through one
+// manifest.
+const ROLES = [
+  "tower",
+  "tree",
+  "lantern",
+  "lichen-rock",
+  "weathered-stone",
+  "mountain-ridge",
+  "mountain-spine",
+  "mountain-summit",
+];
 export const ARCHITECTURE_ASSET_BUDGETS = Object.freeze({
   high: 6 * 1024 * 1024,
   balanced: 3 * 1024 * 1024,
@@ -74,7 +84,7 @@ function releasePrefetchedResponses() {
   prefetched?.clear();
 }
 
-async function requestArchitectureAsset(url, signal) {
+async function requestArchitectureAsset(url, signal, priority) {
   const prefetched = prefetchedResponses();
   const entry = prefetched?.get(url);
   if (entry) {
@@ -93,14 +103,15 @@ async function requestArchitectureAsset(url, signal) {
   }
   // The title card's loading line (ui/scene-loader.js) counts this body too.
   // An early response arrives already counted, so it is never wrapped twice.
-  const response = await fetch(url, { signal });
+  const response = await fetch(url, priority ? { signal, priority } : { signal });
   return globalThis.BabelSite?.sceneLoader?.track?.(url, response) ?? response;
 }
 
-export async function loadArchitectureAsset(url, { signal, tier, role = "asset" }) {
+// priority: the fetch's priority hint ("low" for models that may land late).
+export async function loadArchitectureAsset(url, { signal, tier, role = "asset", priority }) {
   const maxBytes = ARCHITECTURE_ASSET_BUDGETS[tier];
   if (!maxBytes) throw new Error("Invalid architecture quality tier");
-  const response = await requestArchitectureAsset(url, signal);
+  const response = await requestArchitectureAsset(url, signal, priority);
   if (!response.ok) throw new Error(`Architecture asset response: ${response.status}`);
   if (Number(response.headers.get("content-length")) > maxBytes) {
     throw new Error("Architecture asset exceeds transfer budget");

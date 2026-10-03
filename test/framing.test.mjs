@@ -30,8 +30,15 @@ import {
 import { createCinematicCamera, cinematicSafeArea } from "../src/scene/cinematic.js";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
-import { snowReach } from "../src/scene/hill-silhouette.js";
-import { createMountainGeometry, MOUNTAINS } from "../src/scene/mountain-build.js";
+import { MASSIF_SNOW, MASSIFS, snowReach } from "../src/scene/hill-silhouette.js";
+import {
+  createMountainGeometry,
+  createRangeGeometry,
+  mountainCrests,
+  MOUNTAINS,
+  RANGE_BACKDROP,
+  RANGE_SKY,
+} from "../src/scene/mountain-build.js";
 
 const ground = (x, z) =>
   1.8 * Math.sin(0.055 * x) +
@@ -397,6 +404,8 @@ const PHASES = [0, 0.5, 1];
 
 // The film mountains follow the camera, so their framing depends only on where each
 // directed shot puts it: fit the real tower and tree, then project the crest line.
+// These are the five procedural rings, which land when a Meshy massif cannot load;
+// the massifs' own framing follows.
 test("the camera-centred ranges frame every tour shot: sun, roof lane, tree shots, phones and the name", async () => {
   const window = { BabelSite: {} };
   vm.runInNewContext(await readFile(new URL("../src/scene/world.js", import.meta.url), "utf8"), {
@@ -553,6 +562,213 @@ test("the camera-centred ranges frame every tour shot: sun, roof lane, tree shot
     }
   } finally {
     mountains.dispose();
+    scale.dispose();
+    tower.dispose();
+    tree.dispose();
+    for (const item of Object.values(assets))
+      item.scene.traverse((mesh) => {
+        mesh.geometry?.dispose();
+        mesh.material?.dispose();
+      });
+  }
+});
+
+// The Meshy massifs with their backdrop rings, through the same cameras: the
+// crest is the composed skyline (every copy's own, finest bins, and the
+// backdrop's), the snow every massif vertex snowReach() lets carry it. The tree
+// shots may rise higher than the rings did (owner, 2026-10-03), under a band of
+// open sky 8% of the frame tall; and in no frame does the same model show twice
+// from the same side in one layer.
+test("the Meshy massifs frame every tour shot: sun, roof lane, open sky over the tree, phones and the name", async () => {
+  const window = { BabelSite: {} };
+  vm.runInNewContext(await readFile(new URL("../src/scene/world.js", import.meta.url), "utf8"), {
+    window,
+  });
+  const { SUN_POSITION, CAMERA_FAR } = window.BabelSite.scene.WORLD,
+    sun = new Vector3(...SUN_POSITION);
+  const assets = { tower: await asset("tower"), tree: await asset("tree") };
+  const tower = createCompleteTowerArchitecture({
+    asset: assets.tower,
+    groundY: ground(0, 0),
+    footingOffset: -0.22,
+  });
+  const tree = createTreeArchitecture({
+    asset: assets.tree,
+    groundHeight: ground,
+    anchor: [55.1, 36.1],
+  });
+  const groundRoot = new Group();
+  groundRoot.add(tree.root);
+  const scale = createPropScale({ groundRoot, groundHeight: ground });
+  scale.setTree(tree);
+  scale.setActive(true);
+  tree.setFilmTreatment(true);
+  tree.applyQuality({ tier: "high" });
+  tower.root.updateMatrixWorld(true);
+  const towerPoints = [];
+  tower.root.traverse((o) => {
+    if (!o.isMesh) return;
+    const p = o.geometry.attributes.position;
+    for (let i = 0; i < p.count; i++)
+      towerPoints.push(new Vector3().fromBufferAttribute(p, i).applyMatrix4(o.matrixWorld));
+  });
+  const top = Math.max(...towerPoints.map((p) => p.y)),
+    bottom = Math.min(...towerPoints.map((p) => p.y));
+  const roof = towerPoints.filter((p) => p.y > top - 0.06 * (top - bottom));
+  // The composed ranges.
+  const models = {};
+  for (const role of MASSIFS.roles) {
+    const mesh = (await asset(role)).scene.children[0];
+    models[role] = {
+      position: mesh.geometry.attributes.position,
+      uv: mesh.geometry.attributes.uv,
+      index: mesh.geometry.index,
+      height: mesh.userData.height,
+    };
+  }
+  const composed = createRangeGeometry(models),
+    backdrop = mountainCrests(RANGE_BACKDROP),
+    rad = Math.PI / 180,
+    direction = (azimuth, elevation) =>
+      new Vector3(
+        Math.cos(azimuth * rad),
+        Math.tan(elevation * rad),
+        Math.sin(azimuth * rad),
+      ).multiplyScalar(300);
+  const skyline = [];
+  for (const { sky } of composed.placed)
+    sky.values.forEach((e, j) => {
+      if (e > -90) skyline.push(direction(sky.from + (j + 0.5) * RANGE_SKY.bin, e));
+    });
+  for (const range of RANGE_BACKDROP.ranges)
+    backdrop[range].forEach((e, j) => skyline.push(direction((j / MOUNTAINS.columns) * 360, e)));
+  // Every massif vertex that can carry snow, and each copy's azimuth span.
+  const snowy = [];
+  for (const geometry of Object.values(composed.geometries)) {
+    const p = geometry.attributes.position,
+      terrain = geometry.attributes.aTerrain;
+    for (let v = 0; v < p.count; v++) {
+      const line = terrain.getZ(v);
+      if (!line) continue;
+      const elevation = Math.atan2(p.getY(v), Math.hypot(p.getX(v), p.getZ(v))) / rad;
+      if (snowReach(elevation, terrain.getW(v), { ...MASSIF_SNOW, line }))
+        snowy.push(new Vector3(p.getX(v), p.getY(v), p.getZ(v)));
+    }
+  }
+  try {
+    for (const layout of LAYOUTS) {
+      const { width, height, hero, nav } = layout,
+        desktop = width >= 1000,
+        portrait = height > width;
+      for (const [kind, angle] of [
+        ["tower", 0],
+        ["tower", 1],
+        ["tower", 3],
+        ["tree", 0],
+        ["tree", 1],
+        ["tree", 2],
+        ["tree", 3],
+      ]) {
+        const name = DIRECTED_SHOTS[kind][angle].name;
+        const camera = new PerspectiveCamera(38, width / height, 0.1, CAMERA_FAR);
+        const controller = createCinematicCamera({
+          camera,
+          selected: kind,
+          angle,
+          getSafeArea: () => cinematicSafeArea(width, height, hero, nav),
+          getGroundY: ground,
+        });
+        for (const [subject, object] of [
+          ["tower", tower],
+          ["tree", tree],
+        ]) {
+          controller.setSubject(subject, object.root);
+          controller.setStatus({ kind: subject, status: "ready" });
+        }
+        for (const tourPhase of PHASES) {
+          controller.apply({ width, height, tourPhase });
+          camera.updateMatrixWorld(true);
+          const label = `${name} ${width}x${height} phase ${tourPhase}`;
+          const screen = (point) => {
+            const depth = -point.clone().applyMatrix4(camera.matrixWorldInverse).z,
+              p = point.clone().project(camera);
+            return { x: ((p.x + 1) * width) / 2, y: ((1 - p.y) * height) / 2, depth };
+          };
+          const crest = skyline
+            .map((d) => screen(d.clone().add(camera.position)))
+            .filter((p) => p.depth > 0 && p.x >= -2 && p.x <= width + 2);
+          assert.ok(crest.length > 0, label + " shows no mountains");
+          if (desktop || (name === "The watch" && height < 500))
+            for (const point of snowy) {
+              const p = screen(point.clone().add(camera.position));
+              assert.ok(
+                p.depth <= 0 ||
+                  p.x < hero.left ||
+                  p.x > hero.right ||
+                  p.y < hero.top ||
+                  p.y > hero.bottom,
+                label + " puts snow behind the name",
+              );
+            }
+          if (name === "The watch") {
+            const s = screen(sun),
+              radius = (((4.2 * camera.projectionMatrix.elements[5]) / s.depth) * height) / 2;
+            const nearest = Math.min(...crest.map((p) => Math.hypot(p.x - s.x, p.y - s.y)));
+            assert.ok(
+              nearest >= radius + 12,
+              `${label} crest ${(nearest - radius).toFixed(1)} px from the corona`,
+            );
+            const r = roof.map(screen),
+              left = Math.min(...r.map((p) => p.x)),
+              right = Math.max(...r.map((p) => p.x)),
+              roofTop = Math.min(...r.map((p) => p.y));
+            for (const p of crest)
+              if (p.x >= left && p.x <= right)
+                assert.ok(
+                  p.y >= roofTop + 15,
+                  `${label} crest ${(roofTop - p.y).toFixed(1)} px above the roof top`,
+                );
+            if (portrait) {
+              let clear = 0;
+              for (let x = 0; x < width; x++) {
+                const column = crest.filter((p) => Math.abs(p.x - x) <= 1);
+                if (column.length && Math.min(...column.map((p) => p.y)) < nav.top - 30) clear++;
+              }
+              assert.ok(
+                clear >= width / 2,
+                `${label} ranges clear the bottom bar over ${clear} px`,
+              );
+            }
+          }
+          if (name === "Lantern study" || name === "Root and lantern") {
+            const highest = Math.min(...crest.map((p) => p.y));
+            assert.ok(highest > 0.08 * height, `${label} crest at ${highest.toFixed(1)} px`);
+          }
+          // No model twice from one side in one layer within a frame.
+          const seen = new Map();
+          for (const { placement, sky } of composed.placed) {
+            const span = [sky.from, sky.from + sky.values.length * RANGE_SKY.bin];
+            const shown = [0.1, 0.3, 0.5, 0.7, 0.9].some((f) => {
+              const p = screen(
+                direction(span[0] + f * (span[1] - span[0]), 0.5).add(camera.position),
+              );
+              return p.depth > 0 && p.x >= 0 && p.x <= width;
+            });
+            if (!shown) continue;
+            const key = `${placement.layer} ${placement.role} ${placement.mirror}`;
+            for (const yaw of seen.get(key) ?? [])
+              assert.ok(
+                Math.abs(yaw - placement.yaw) >= 15,
+                `${label} shows ${placement.role} twice from one side in layer ${placement.layer}`,
+              );
+            seen.set(key, [...(seen.get(key) ?? []), placement.yaw]);
+          }
+        }
+        controller.dispose();
+      }
+    }
+  } finally {
+    Object.values(composed.geometries).forEach((geometry) => geometry.dispose());
     scale.dispose();
     tower.dispose();
     tree.dispose();
