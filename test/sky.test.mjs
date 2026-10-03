@@ -35,7 +35,13 @@ import {
   STAR_MIN_FOOTPRINT,
 } from "../src/scene/starfield.js";
 import { createSceneAtmosphere } from "../src/scene/atmosphere.js";
-import { cloudFieldGLSL, createEstateSkyMaterial, FILM_SKY_GLSL } from "../src/scene/estate-sky.js";
+import {
+  CLOUD_RESHAPE,
+  CLOUD_TEXT_GLSL,
+  cloudFieldGLSL,
+  createEstateSkyMaterial,
+  FILM_SKY_GLSL,
+} from "../src/scene/estate-sky.js";
 import { celestialClusterDirection, NEBULA_FRAME } from "../src/scene/celestial-field.js";
 import { createFilmScene } from "../src/scene/film-scene.js";
 import { flat, source } from "./support/code.mjs";
@@ -468,6 +474,113 @@ test("film clouds keep defined low-sky silhouettes while low quality retains its
   material.dispose();
 });
 
+test("the clouds' reshaping never reaches the reference banks or the roof's lane, and fills the open sky", () => {
+  const material = skyMaterial(),
+    shader = material.fragmentShader;
+  const smoothstep = (a, b, x) => {
+    const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+    return t * t * (3 - 2 * t);
+  };
+  const line = (name) => shader.match(new RegExp(`float ${name}=([^;]+);`))[1];
+  // The emitted scalar expressions, evaluated for a point b on the cloud plane.
+  const degrees = (r) => (r * 180) / Math.PI;
+  const azimuthOf = new Function("b", "atan", "degrees", `return ${line("cloudAz")}`);
+  assert.match(shader, /cloudAz\+=cloudAz<0\.\?360\.:0\.;/);
+  const openOf = new Function("cloudAz", "bl", "gapG", "smoothstep", `return ${line("open")}`);
+  const lane = shader.match(
+    /vec2 gapUV=\(b-vec2\(([-\d.]+),([-\d.]+)\)\)\/vec2\(([-\d.]+),([-\d.]+)\);/,
+  );
+  assert.ok(lane, "the roof's lane is the authored gaussian");
+  assert.match(shader, /float gapG=exp\(-dot\(gapUV,gapUV\)\);/);
+  const [cx, cy, rx, ry] = lane.slice(1).map(Number);
+  const open = (x, y) => {
+    const b = { x, y },
+      bl = Math.max(Math.hypot(x, y), 0.001);
+    let az = azimuthOf(b, Math.atan2, degrees);
+    if (az < 0) az += 360;
+    const gapG = Math.exp(-(((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2));
+    return openOf(az, bl, gapG, smoothstep);
+  };
+  // The reference: The watch's top-left 1100x440 at 1600x900 through its whole drift
+  // (corners, edges and inside), measured from the shot's camera on the shell.
+  for (const [x, y] of [
+    [-0.7, 1.15],
+    [-1.13, 0.12],
+    [-2.36, 0.25],
+    [-1.34, 2.04],
+    [-1.57, 0.2],
+    [-2.0, 1.3],
+    [-2.3, 0.6],
+    [-1.1, 0.5],
+    [-1.5, 0.9],
+    [-0.9, 0.8],
+  ])
+    assert.equal(open(x, y), 0, `reference banks at ${x},${y}`);
+  // The clear lane where the roof meets the sky.
+  assert.equal(open(cx, cy), 0, "the roof's lane");
+  assert.ok(open(-1.39, -0.17) < 0.1, "the lane keeps the sun clear");
+  // The open sky: Portrait, Lantern study, Close-up, Threshold, Gallery detail, the zenith.
+  for (const [x, y] of [
+    [1.5, 2],
+    [3.5, 3],
+    [3.5, 1],
+    [-0.7, -0.8],
+    [0.6, 0.9],
+    [0, 0],
+  ])
+    assert.ok(open(x, y) > 0.95, `open sky at ${x},${y}`);
+  // Below the sun, right of the tower, it reshapes too.
+  assert.ok(open(-1.8, -1.2) > 0.8);
+  // Bounded and finite across the plane, the zenith and the wedge's seams included.
+  for (let x = -5; x <= 5; x += 0.05)
+    for (let y = -5; y <= 5; y += 0.25) {
+      const value = open(x, y);
+      assert.ok(Number.isFinite(value) && value >= 0 && value <= 1, `${x},${y}`);
+    }
+  // Past the horizon's knee the noise radius grows slower but never folds back, and
+  // nearer the zenith it is the plane's own.
+  const outer = new Function("bl", `return ${line("cloudOut")}`);
+  const radiusOf = new Function("bl", "cloudOut", "sqrt", `return ${line("cloudR")}`);
+  const [knee, rate] = CLOUD_RESHAPE.horizon;
+  let previous = 0;
+  for (let bl = 0.001; bl <= 6; bl += 0.01) {
+    const r = radiusOf(bl, outer(bl), Math.sqrt);
+    assert.ok(r > previous && r <= bl + 1e-12);
+    if (bl < knee - 0.5) assert.ok(Math.abs(r - bl) < 0.01);
+    previous = r;
+  }
+  assert.ok(Math.abs(radiusOf(4, outer(4), Math.sqrt) - (knee + rate * (4 - knee))) < 0.01);
+  assert.match(shader, /vec2 bn=b\*mix\(1\.,cloudR\/bl,open\);/);
+  // The sky draws the reshaping; the environment's capture turns it off.
+  assert.match(shader, /\*\(1\.-gapG\);\s*open\*=uCloudReshape;/);
+  assert.equal(material.uniforms.uCloudReshape.value, 1);
+  assert.match(shader, /vec2 p=bn\+2\.98\*\(/);
+  // The banks lift only the open sky, and ease out behind the name and intro.
+  const bankOf = new Function("open", "cloudText", "NV", `return ${line("bank")}`);
+  const [lift, spread] = CLOUD_RESHAPE.banks;
+  assert.equal(bankOf(0, 0, [1]), 0);
+  assert.ok(Math.abs(bankOf(1, 0, [0.5]) - lift) < 1e-12);
+  assert.ok(Math.abs(bankOf(1, 0, [1]) - (lift + spread / 2)) < 1e-12);
+  assert.ok(
+    Math.abs(bankOf(1, 1, [1]) - (1 - CLOUD_RESHAPE.text[0]) * (lift + spread / 2)) < 1e-12,
+  );
+  assert.match(shader, /d\+=bank; da\+=bank;/);
+  assert.match(shader, /wo\+=open\*0\.45\*vec2\(cos\(turn\),sin\(turn\)\);/);
+  // The guard reads the clip position the shell's vertex shader hands on, and the
+  // ground's box and aspect (nothing behind the text without them).
+  assert.ok(shader.includes(CLOUD_TEXT_GLSL));
+  assert.match(shader, /float cloudText=cloudTextAt\(vCloudClip\);/);
+  assert.match(material.vertexShader, /vCloudClip = gl_Position;/);
+  assert.match(CLOUD_TEXT_GLSL, /smoothstep\(0\.,0\.4,length\(f\)\)/);
+  assert.deepEqual(material.uniforms.slateText.value, { x: 2, y: 2, z: -1, w: -1 });
+  const guard = { slateText: { value: {} }, slateAspect: { value: 1 } };
+  const guarded = createEstateSkyMaterial({ sunDirection: new Vector3(0, 1, 0) }, guard);
+  assert.equal(guarded.uniforms.slateText, guard.slateText);
+  assert.equal(guarded.uniforms.slateAspect, guard.slateAspect);
+  guarded.dispose();
+  material.dispose();
+});
+
 test("sky drift follows the scheduler clock, freezes for reduced motion and stops on disposal", () => {
   const atmosphere = createSceneAtmosphere({ parent: new Group(), profile });
   const sky = { uniforms: { uTime: { value: 0 } } };
@@ -502,19 +615,37 @@ test("film stars hide behind the sky's cloud banks, on the sky's own clock and s
   assert.equal(uniforms.uClouds, sky.uniforms.uClouds);
   assert.equal(uniforms.uNebulaLayers, sky.uniforms.uNebulaLayers);
   assert.equal(uniforms.uSkyRadius.value, 130);
+  // The banks' text guard reads the sky's own box and aspect objects too.
+  assert.equal(uniforms.uCloudReshape, sky.uniforms.uCloudReshape);
+  assert.equal(uniforms.slateText, sky.uniforms.slateText);
+  assert.equal(uniforms.slateAspect, sky.uniforms.slateAspect);
   // The stars evaluate the sky's own cloud field where their view ray leaves the
   // shell, and dim by the bank's opacity in the sky (.94).
   assert.ok(sky.fragmentShader.includes(cloudFieldGLSL("uTime")));
   assert.ok(vertexShader.includes(cloudFieldGLSL("uSkyTime")));
   assert.match(sky.fragmentShader, /col=mix\(col,cloudCol,cover\*\.94\);/);
   const shader = flat(vertexShader);
-  assert.ok(shader.includes("float skyCloudCover(vec3 direction){ float altitude=direction.y;"));
+  assert.ok(
+    shader.includes(
+      "float skyCloudCover(vec3 direction,float cloudText){ float altitude=direction.y;",
+    ),
+  );
+  assert.ok(vertexShader.includes(CLOUD_TEXT_GLSL));
   assert.ok(
     shader.includes(
       "if(uFilm>.5 && uClouds>.001){ vec3 ray=normalize((modelMatrix*vec4(starPosition,1.0)).xyz-cameraPosition);",
     ),
   );
-  assert.ok(shader.includes("vColor*=1.0-.94*skyCloudCover(normalize(cameraPosition+ray*reach));"));
+  // The guard is read where the star lands on screen, so its clip position comes first.
+  assert.ok(
+    shader.includes(
+      "vColor*=1.0-.94*skyCloudCover(normalize(cameraPosition+ray*reach),cloudTextAt(gl_Position));",
+    ),
+  );
+  assert.ok(
+    shader.indexOf("gl_Position=projectionMatrix*modelViewMatrix*vec4(starPosition,1.0);") <
+      shader.indexOf("cloudTextAt(gl_Position)"),
+  );
   // The emitted ray-shell distance lands on the shell from anywhere inside it.
   const reach = new Function(
     "along",
@@ -575,11 +706,13 @@ test("film stars hide behind the sky's cloud banks, on the sky's own clock and s
 
 test("the bootstrap hands the stars the sky shell's uniforms and radius", () => {
   const index = flat(source("src/scene/index.js"));
-  // The shell is a sphere of that radius about the world origin, as the stars assume.
+  // The shell is a sphere of that radius about the world origin, as the stars assume,
+  // and its banks' text guard borrows the ground's text boxes, made just before it.
   assert.match(
     index,
-    /const skyShell = new Mesh\(new SphereGeometry\(WORLD\.SKY_DOME_RADIUS, skyWidthSegments, skyHeightSegments\), createEstateSkyMaterial\(skyConfig\)\);/,
+    /const groundContacts = createSlateContacts\(estateContacts\(\)\); const skyShell = new Mesh\(new SphereGeometry\(WORLD\.SKY_DOME_RADIUS, skyWidthSegments, skyHeightSegments\), createEstateSkyMaterial\(skyConfig, groundContacts\)\);/,
   );
+  assert.equal(index.match(/createSlateContacts\(/g).length, 1);
   assert.doesNotMatch(index, /skyShell\.position/);
   assert.match(
     index,

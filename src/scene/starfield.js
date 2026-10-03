@@ -8,7 +8,7 @@ import {
 } from "three";
 import { celestialTier, createCelestialClock, seededRandom } from "./solar-body.js";
 import { CELESTIAL_FIELD_GLSL, celestialClusterDirection } from "./celestial-field.js";
-import { cloudFieldGLSL } from "./estate-sky.js";
+import { CLOUD_TEXT_GLSL, cloudFieldGLSL } from "./estate-sky.js";
 export const STAR_COUNTS = Object.freeze({ high: 4200, balanced: 2600, low: 1200 });
 // The smallest star sprite in device pixels (the faint stars are 1.25-1.9 CSS px).
 export const STAR_MIN_FOOTPRINT = 2;
@@ -58,7 +58,8 @@ export function makeStarGeometry(seed = 92717) {
 // `sky` is the sky shell material's uniforms and `skyRadius` the shell's radius
 // (WORLD.SKY_DOME_RADIUS): in film each star dims behind the cloud bank its view ray
 // meets on the shell, on the sky's own drift clock, so stars show only between the
-// banks. Without them the stars draw over a clear sky.
+// banks, and the banks' text guard reads the same name and intro box (slateText,
+// slateAspect). Without them the stars draw over a clear sky.
 export function createStarfield({
   parent,
   camera,
@@ -90,6 +91,9 @@ export function createStarfield({
       uFilm: sky.uFilm ?? { value: 0 },
       uClouds: sky.uClouds ?? { value: 0 },
       uSkyRadius: { value: skyRadius },
+      uCloudReshape: sky.uCloudReshape ?? { value: 0 },
+      slateText: sky.slateText ?? { value: { x: 2, y: 2, z: -1, w: -1 } },
+      slateAspect: sky.slateAspect ?? { value: 1 },
     },
     vertexShader: `
       attribute float aSize;attribute float aPhase;
@@ -97,10 +101,13 @@ export function createStarfield({
       uniform float uTime;uniform float uPixelRatio;uniform float uVisibility;
       uniform float uNebulaLayers;uniform float uCelestialTier;
       uniform float uSkyTime;uniform float uFilm;uniform float uClouds;uniform float uSkyRadius;
+      uniform float uCloudReshape;uniform vec4 slateText;uniform float slateAspect;
       varying vec3 vColor;
       ${CELESTIAL_FIELD_GLSL}
-      // The sky's cloud cover at a shell direction (estate-sky.js).
-      float skyCloudCover(vec3 direction){
+      ${CLOUD_TEXT_GLSL}
+      // The sky's cloud cover at a shell direction, with the text guard where the
+      // star lands on screen (estate-sky.js).
+      float skyCloudCover(vec3 direction,float cloudText){
         float altitude=direction.y;
         ${cloudFieldGLSL("uSkyTime")}
         return cover;
@@ -120,6 +127,7 @@ export function createStarfield({
         float twinkle=1.0+.075*sin(uTime*(.65+.24*sin(aPhase))+aPhase)
                           +.035*sin(uTime*1.17+aPhase*7.0);
         vColor=color*extinction*twinkle*uVisibility;
+        gl_Position=projectionMatrix*modelViewMatrix*vec4(starPosition,1.0);
         if(uFilm>.5 && uClouds>.001){
           // Where this star's view ray leaves the sky shell (centred on the world
           // origin): the bank there covers the star as it covers the sky (.94).
@@ -127,9 +135,8 @@ export function createStarfield({
           float along=dot(cameraPosition,ray);
           float reach=-along+sqrt(max(along*along-dot(cameraPosition,cameraPosition)
                                       +uSkyRadius*uSkyRadius,0.0));
-          vColor*=1.0-.94*skyCloudCover(normalize(cameraPosition+ray*reach));
+          vColor*=1.0-.94*skyCloudCover(normalize(cameraPosition+ray*reach),cloudTextAt(gl_Position));
         }
-        gl_Position=projectionMatrix*modelViewMatrix*vec4(starPosition,1.0);
         // No star draws under STAR_MIN_FOOTPRINT device px: a smaller sprite falls
         // between pixel centres and shimmers as the camera drifts. The wider sprite
         // keeps the star's light (colour scales by the area ratio).

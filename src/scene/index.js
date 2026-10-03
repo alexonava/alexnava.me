@@ -309,9 +309,13 @@ const ORBIT_SPEED = 0.06;
       });
       subsystemRegistry.register(atmosphereSystem);
       applyActiveQualityProfile(qualityState.getProfile(), "initial");
+      // The slate's contact darkening (tree roots, lantern, rocks) and detail map
+      // slot: uniforms, so rocks arriving or shadows switching never recompile.
+      // Its text boxes also guard the sky's cloud banks (and the stars behind them).
+      const groundContacts = createSlateContacts(estateContacts());
       const skyShell = new Mesh(
         new SphereGeometry(WORLD.SKY_DOME_RADIUS, skyWidthSegments, skyHeightSegments),
-        createEstateSkyMaterial(skyConfig),
+        createEstateSkyMaterial(skyConfig, groundContacts),
       );
       skyShell.renderOrder = -1;
       skyShell.material.depthWrite = false;
@@ -361,14 +365,12 @@ const ORBIT_SPEED = 0.06;
       // Set once the shader warm-up exists: a ground program that changes before
       // the reveal links through compileAsync instead of blocking the first draw.
       let warmGround = null;
-      // The slate's contact darkening (tree roots, lantern, rocks) and detail map
-      // slot: uniforms, so rocks arriving or shadows switching never recompile.
-      const groundContacts = createSlateContacts(estateContacts());
       // The name and intro, and About, on the canvas, in its UV (y up), where
       // the ground's water eases off (mud-ground.js SLATE_WATER.text), as the
       // light shafts' air does, and beside About the bark's lantern highlights
-      // pass the same knee (the tree takes these uniforms); measured on resize,
-      // on font loads and every 30th frame.
+      // pass the same knee (the tree takes these uniforms); the sky's reshaped
+      // banks ease out behind the name and intro too (estate-sky.js); measured
+      // on resize, on font loads and every 30th frame.
       function measureGroundText() {
         const canvas = renderer.domElement?.getBoundingClientRect?.();
         const box = (text, selectors) => {
