@@ -77,10 +77,15 @@ function headingSlugs(markdown) {
   const slugs = new Set(),
     occurrences = new Map();
   for (const [, text] of withoutFences(markdown).matchAll(/^ {0,3}#{1,6}[ \t]+(.+?)[ \t]*$/gm)) {
-    const base = text
-      .replace(/[ \t]+#+$/, "")
-      .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
-      .replace(/<[^>]+>/g, "")
+    // Inline HTML drops out of the id; strip until nothing is left to strip, so a
+    // tag rebuilt by an earlier pass is stripped too.
+    let plain = text.replace(/[ \t]+#+$/, "").replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1"),
+      previous;
+    do {
+      previous = plain;
+      plain = plain.replace(/<[^>]*>/g, "");
+    } while (plain !== previous);
+    const base = plain
       .trim()
       .toLowerCase()
       .replace(/[^\p{L}\p{M}\p{N}\p{Pc} -]/gu, "")
