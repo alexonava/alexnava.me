@@ -8,17 +8,17 @@ The intended conformance target is WCAG 2.2 level AA. This file is where that ta
 
 What the repository checks:
 
-| Check                                                                                                     | Where                                |
-| --------------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| Lighthouse accessibility score 1.00 (median of three runs) on the homepage's title card                   | `lighthouserc.json`, CI `audit` job  |
-| No `font-size` below 12px in styles.css; the footer at 12px or more                                       | `markup-accessibility`               |
-| 4.5:1 for the paper ink of the dialogs' eyebrow and body and of the 404, and the no-JS links on the night | `markup-accessibility`               |
-| 44 px minimum height for the footer About control and the 404's Home link                                 | `markup-accessibility`               |
-| Every `aria-controls` and `aria-labelledby` target exists; the skip link's target exists                  | `markup-accessibility`               |
-| Dialogs declare `role="dialog"`, `aria-modal="true"` and `aria-labelledby`, and start hidden              | `markup-accessibility`               |
-| Landmarks and heading levels; one decorative, unlabelled vignette per category dialog                     | `markup-accessibility`               |
-| No `forced-color-adjust: none`; forced-colors and increased-contrast modes keep the system cursor         | `markup-accessibility`               |
-| Focus trap, focus restoration, Back, Escape and backdrop dismissal, `aria-expanded`, background `inert`   | `panels`, `scene-menu`, `deep-links` |
+| Check                                                                                                                                                                              | Where                                |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| Lighthouse accessibility score 1.00 (median of three runs) on the homepage's title card                                                                                            | `lighthouserc.json`, CI `audit` job  |
+| No `font-size` below 12px in styles.css; the footer at 12px or more                                                                                                                | `markup-accessibility`               |
+| 4.5:1 for the paper ink of the dialogs' eyebrow and body and of the 404, and the no-JS links on the night                                                                          | `markup-accessibility`               |
+| 44 px targets: the skip link, the no-JS links, the footer's About (link and button), the Contact address (its 8 px block padding around its smallest line) and the 404's Home link | `markup-accessibility`               |
+| Every `aria-controls` and `aria-labelledby` target exists; the skip link's target exists                                                                                           | `markup-accessibility`               |
+| Dialogs declare `role="dialog"`, `aria-modal="true"` and `aria-labelledby`, and start hidden                                                                                       | `markup-accessibility`               |
+| Landmarks and heading levels; one decorative, unlabelled vignette per category dialog                                                                                              | `markup-accessibility`               |
+| No `forced-color-adjust: none`; forced-colors and increased-contrast modes keep the system cursor                                                                                  | `markup-accessibility`               |
+| Focus trap, focus restoration, Back, Escape and backdrop dismissal, `aria-expanded`, background `inert`                                                                            | `panels`, `scene-menu`, `deep-links` |
 
 GitHub's runners have no GPU, so Lighthouse audits the static title card, not the live scene. The 404 page is not audited.
 
@@ -29,7 +29,7 @@ GitHub's runners have no GPU, so Lighthouse audits the static title card, not th
 3. A destination opens its category dialog and focuses Back. In a category dialog, Back, Escape or a click on the backdrop return to About with focus on the destination that opened it. About has no Back: its Close (×), Escape or a click on the backdrop close the menu and return focus to the footer button.
 4. While a dialog is open, Tab and Shift+Tab cycle within it, and everything behind it (the skip link, `main`, the footer and the decorative layers) is `inert` and cannot scroll.
 
-[panels.js](../src/ui/panels.js) owns the dialogs: focus, the trap, the Back stack and `aria-expanded`. A backdrop dismisses only when both the press and the release land on it, so a drag-select across the paper never closes a dialog. Close and Back are 44 px high.
+[panels.js](../src/ui/panels.js) owns the dialogs: focus, the trap, the Back stack and `aria-expanded`. A backdrop dismisses only when both the press and the release land on it, so a drag-select across the paper never closes a dialog. Close and Back are 44 px high and each estate map destination at least 44 px square; no test checks these sizes. On small landscape phones (landscape, up to 700 px wide and 500 px tall) the category papers set the vignette beside a shorter sheet, so the paper fits the screen and the backdrop around it stays tappable. [UI](UI.md#dialogs) describes the dialogs in full.
 
 ### Deep links
 
@@ -46,7 +46,7 @@ GitHub's runners have no GPU, so Lighthouse audits the static title card, not th
 
 ## Without JavaScript
 
-The page is complete without scripts. The footer's About link points at `#about-text`, a section in `main` with the three categories and links to each; the sections take focus (`tabindex="-1"`). [scene-menu.js](../src/ui/scene-menu.js) swaps that fallback for the About button only after `initPanels()` succeeds, and not while focus is inside the fallback. A browser that cannot run the UI bundle keeps the no-JS fallback, and the title card never depends on the scene.
+The page is complete without scripts. The footer's About link points at `#about-text`, a section in `main` with the three categories and links to each; the sections take focus (`tabindex="-1"`). The section starts at the fold on every screen, so the title card shows alone until the visitor scrolls: 90 px below the desktop hero, which ends 90 px above the fold, and directly under the full-height hero on phones (up to 820 px wide, or landscape up to 500 px tall). [scene-menu.js](../src/ui/scene-menu.js) swaps that fallback for the About button only after `initPanels()` succeeds, and not while focus is inside the fallback. A browser that cannot run the UI bundle keeps the no-JS fallback, and the title card never depends on the scene.
 
 ## Preferences
 
@@ -54,9 +54,9 @@ The page is complete without scripts. The footer's About link points at `#about-
 
 - No live scene: [main.js](../src/main.js) requests no scene script unless `?quality=high|balanced` or `?sceneDebug=1|true` forces it; `?quality=auto` or an unknown value forces nothing, and `?quality=low` keeps the title card. main.js loads the scene if the preference later clears, except when the address carries `?quality=high|balanced|low` or `?sceneDebug=1|true`: then it installs no listener (`forcesLiveScene`).
 - Dialogs open and close at once: styles.css drops their transitions, and [panels.js](../src/ui/panels.js) hides a closing dialog immediately, finishing any close in progress when the preference turns on.
-- The entrance animations stop: the hero's rise (`hero-reveal`) and the footer's (`hero-rise`). The loading line's glint, a highlight that sweeps along its fill (`scene-loader-glint`), is hidden. The hero's scroll fade ([hero.js](../src/ui/hero.js)) stops and the hero stays in place.
-- Transitions are removed from the skip link, the footer links and the About button, the estate map's destinations, the dialogs and their paper surface, Close and Back, the dim overlay behind an open dialog (`body::after`), the canvas fade-in and the loading line.
-- Close and Back lose their hover lift, the paper surface opens without its rise and tilt, and in-page scrolling is instant (`scroll-behavior: auto` replaces `smooth`).
+- The entrance animations stop: the hero's and the footer's rise, both `hero-reveal`. The hero's scroll fade ([hero.js](../src/ui/hero.js)) stops and the hero stays in place.
+- Transitions are removed from the skip link, the footer links and the About button, the estate map's destinations, the dialogs and their paper surface, Close and Back, the Contact address, the 404's Home link, the dim overlay behind an open dialog (`body::after`), the canvas fade-in, the title card's grain and the loading line. The loading line has no animation of its own: its bar moves only with real progress.
+- Close and Back lose their hover and focus lift, the paper surface opens without its rise and tilt, and in-page scrolling is instant (`scroll-behavior: auto` replaces `smooth`).
 - A live scene, forced or running when the preference turns on, holds the tour and the drift, freezes scene time with the flame and the drips, and draws only when something changes.
 
 **Reduced data** (`prefers-reduced-data: reduce`, or Save-Data from `navigator.connection`, which only Chromium browsers have)
@@ -66,22 +66,30 @@ The page is complete without scripts. The footer's About link points at `#about-
 
 **Reduced transparency** (`prefers-reduced-transparency: reduce`)
 
-- The hero's and the bottom bar's soft backdrops are removed.
+- The bottom bar's soft backdrop is removed. The hero's stays: it is the scrim that keeps the name legible over the scene.
 - The loading line's track turns solid and its fill loses its shadow.
 - The scene's post-process vignette is off ([postprocess.js](../src/scene/postprocess.js)).
 
 **Forced colours** (`forced-colors: active`)
 
-- The decorative layers are removed: the scene shell with its canvas, the vignette, the site shell, and the hero and bottom-bar backdrops. So is the loading line.
+- The decorative layers are removed: the scene shell with its canvas, the vignette with the title card's grain, the site shell, and the hero and bottom-bar backdrops. So is the loading line.
 - Only CSS reacts: no script reads this mode, so on the live path main.js still requests the scene bundle and the early tower and tree, and initializes the scene behind the hidden shell.
 - Controls, dialogs, the estate map and the 404 sheet use system colours (Canvas, CanvasText, ButtonFace, ButtonText, LinkText, Highlight and HighlightText; no others), without paper textures or vignettes.
 - The cursor is the system's.
 
 **Increased contrast** (`prefers-contrast: more`)
 
-- The system cursor replaces the pale line cursor. Nothing else changes.
+- The system cursor replaces the pale line cursor, and the title card's grain is removed. Nothing else changes.
 
-**Hover.** Three hover rules are limited to `(hover: hover)`: `.site-footer__link:hover` brightens the footer's About (the no-JS link and the button, the footer's only controls), `.site-footer__about:hover` underlines it, and `.estate-destination:hover span` underlines an estate map label. The hover styles of Close and Back, the estate map's destinations and the 404's Home link have no such guard, so a touch screen can keep them after a tap.
+**Hover.** Touch browsers keep `:hover` after a tap, so every hover style is limited to `(hover: hover)`:
+
+- `.site-footer__link:hover` brightens the footer's About (the no-JS link and the button, the footer's only controls), and `.site-footer__about:hover` underlines it.
+- `.estate-destination:hover` tints an estate map destination, and `.estate-destination:hover span` underlines its label.
+- `.panel-close:hover` tints Close and Back and lifts them 1 px.
+- `#panel-contact .panel-body a:hover` darkens the Contact address's underline.
+- `.not-found .back-link:hover` tints the 404's Home link.
+
+The only `:hover` selectors outside that query set `transform: none` and change nothing on a tap. On touch screens, `(hover: none), (pointer: coarse)` gives the map labels a resting underline and a pressed destination a tint. The other pressed (`:active`) styles apply on every device.
 
 ## Browser support
 
@@ -107,7 +115,7 @@ Shader warm-up needs `renderer.compileAsync` and `KHR_parallel_shader_compile`. 
 | `PerformanceObserver`           | The loading line's build share and the reveal mark                                                                                                                                                                   | The build share waits for the reveal                                                                                                                                                                                                                |
 | `MutationObserver`              | Ending the loading line; the render hold behind dialogs                                                                                                                                                              | The loading line's 2 s watchdog sees the reveal, but not a host the scene hides after a failed tower or tree, so the line then retires only as stalled, about 16 s later; the tour still holds for dialogs, but rendering does not stop behind them |
 | `IntersectionObserver`          | Not rendering an off-screen canvas                                                                                                                                                                                   | The canvas counts as visible                                                                                                                                                                                                                        |
-| `ResizeObserver`                | Resizes of the scene host without a window resize                                                                                                                                                                    | Window resizes only                                                                                                                                                                                                                                 |
+| `ResizeObserver`                | Resizes of the scene host without a window resize                                                                                                                                                                    | Window resizes and pixel-ratio changes only                                                                                                                                                                                                         |
 | `document.fonts`                | Re-measuring the text the scene frames around after fonts load                                                                                                                                                       | Re-measured on the next resize                                                                                                                                                                                                                      |
 | `CustomEvent`                   | `babel:panelchange`, which keeps the address in step                                                                                                                                                                 | Dialogs work; the address does not follow them                                                                                                                                                                                                      |
 | `history.replaceState`          | Writing the open dialog to the address                                                                                                                                                                               | Dialogs work; the address stays as it was                                                                                                                                                                                                           |
@@ -117,7 +125,7 @@ Shader warm-up needs `renderer.compileAsync` and `KHR_parallel_shader_compile`. 
 ### CSS
 
 - `svh` sizes the page and hero, after a `vh` fallback. On touch WebKit (`@supports (-webkit-touch-callout: none)`) the decorative layers use `lvh`, after a `vh` fallback.
-- `text-wrap: balance` balances the intro and, inside `@supports`, the name and the 404 heading, which otherwise break with `overflow-wrap: anywhere`.
-- `env(safe-area-inset-*)` keeps the hero, the footer, the loading line and the dialogs (the overlay, Close and the estate map) clear of notches and the home indicator, and the bottom bar follows the same insets; `main` clips horizontal overflow with `overflow-x: clip`.
-- Focus rings use `:focus-visible`. The stylesheet uses no `:has()`.
+- `text-wrap: balance` balances the intro and the dialog headings and, inside `@supports`, the name and the 404 heading, which otherwise break with `overflow-wrap: anywhere`.
+- `env(safe-area-inset-*)` keeps the skip link, the hero, the footer, the loading line and the dialogs (the overlay, Close and the estate map) clear of notches and the home indicator, and the bottom bar follows the same insets; `main` clips horizontal overflow with `overflow-x: clip`.
+- Focus rings use `:focus-visible`. The stylesheet uses no `:has()`: the title card's grain fades at the reveal through a sibling selector, `.scene-canvas.is-ready + .scene-vignette::before`.
 - The pages carry no inline styles: the Content Security Policy forbids them, and scripts change styles only through the CSSOM.

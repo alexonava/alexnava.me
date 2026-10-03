@@ -130,6 +130,9 @@ only after the tower loads, so visitors never see the ring.
 
 ## Cotton paper panel material
 
-The paper textures were generated with OpenAI's built-in image
-generation tool and prepared as local WebP assets. They are decorative; all
-panel wording remains selectable HTML.
+The paper textures, `images/paper-grain.webp` and `images/paper-edge.webp`,
+were generated with OpenAI's built-in image generation tool and prepared as
+local WebP assets. They are decorative; all panel wording remains selectable
+HTML. The repository records no source for the three paper vignettes
+(`images/paper-vignette-*.webp`) or the two estate maps
+(`images/estate-map-*.webp`).

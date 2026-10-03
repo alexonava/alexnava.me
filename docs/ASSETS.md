@@ -52,15 +52,15 @@ The tower and tree are required: without either the scene returns to the title c
 
 `images/`, lossy WebP, used by [styles.css](../styles.css).
 
-| File                             |  Bytes | Pixels  | Alpha | Use                                     |
-| -------------------------------- | -----: | ------- | ----- | --------------------------------------- |
-| `paper-grain.webp`               |  1,996 | 384×384 | no    | Paper fill, tiled (dialogs and the 404) |
-| `paper-edge.webp`                | 89,244 | 768×768 | yes   | Paper edge, `border-image` slice 96     |
-| `paper-vignette-profile.webp`    | 28,356 | 420×420 | yes   | Profile dialog                          |
-| `paper-vignette-experience.webp` | 35,420 | 420×420 | yes   | Experience dialog                       |
-| `paper-vignette-contact.webp`    | 27,978 | 420×420 | yes   | Contact dialog                          |
-| `estate-map-desktop.webp`        | 99,920 | 960×640 | yes   | About map (3:2)                         |
-| `estate-map-portrait.webp`       | 93,690 | 600×900 | yes   | About map at 600 px wide or less (2:3)  |
+| File                             |  Bytes | Pixels  | Alpha | Use                                                                                                                          |
+| -------------------------------- | -----: | ------- | ----- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `paper-grain.webp`               |  1,996 | 384×384 | no    | Paper fill, tiled (dialogs and the 404)                                                                                      |
+| `paper-edge.webp`                | 89,244 | 768×768 | yes   | Paper edge, `border-image` slice 96                                                                                          |
+| `paper-vignette-profile.webp`    | 28,356 | 420×420 | yes   | Profile dialog                                                                                                               |
+| `paper-vignette-experience.webp` | 35,420 | 420×420 | yes   | Experience dialog                                                                                                            |
+| `paper-vignette-contact.webp`    | 27,978 | 420×420 | yes   | Contact dialog                                                                                                               |
+| `estate-map-desktop.webp`        | 99,920 | 960×640 | yes   | About map (3:2)                                                                                                              |
+| `estate-map-portrait.webp`       | 93,690 | 600×900 | yes   | About map on portrait viewports (squares included) up to 600 px wide, `(max-width: 600px) and (orientation: portrait)` (2:3) |
 
 ## Fonts
 
@@ -76,19 +76,19 @@ The tower and tree are required: without either the scene returns to the title c
 
 `public/`, copied to the site root under stable names.
 
-| File                    |   Bytes | Pixels    | Notes                                    |
-| ----------------------- | ------: | --------- | ---------------------------------------- |
-| `favicon.ico`           |   5,430 | 16 and 32 | Homepage fallback, listed before the SVG |
-| `favicon.svg`           |     258 | vector    | Page icon on both pages                  |
-| `icon.svg`              |     266 | vector    | Manifest, `any`                          |
-| `icon-maskable.svg`     |     256 | vector    | Manifest, `maskable`                     |
-| `apple-touch-icon.png`  |   2,498 | 180×180   | Opaque, palette                          |
-| `icon-192.png`          |   9,005 | 192×192   | RGBA                                     |
-| `icon-512.png`          |  26,321 | 512×512   | RGBA                                     |
-| `icon-maskable-512.png` |  13,398 | 512×512   | Opaque RGB                               |
-| `og.png`                | 274,486 | 1200×630  | Share card; opaque, 223-colour palette   |
+| File                    |   Bytes | Pixels    | Notes                                         |
+| ----------------------- | ------: | --------- | --------------------------------------------- |
+| `favicon.ico`           |   5,430 | 16 and 32 | Fallback on both pages, listed before the SVG |
+| `favicon.svg`           |     258 | vector    | Page icon on both pages                       |
+| `icon.svg`              |     266 | vector    | Manifest, `any`                               |
+| `icon-maskable.svg`     |     256 | vector    | Manifest, `maskable`                          |
+| `apple-touch-icon.png`  |   2,498 | 180×180   | Opaque, palette                               |
+| `icon-192.png`          |   9,005 | 192×192   | RGBA                                          |
+| `icon-512.png`          |  26,321 | 512×512   | RGBA                                          |
+| `icon-maskable-512.png` |  13,398 | 512×512   | Opaque RGB                                    |
+| `og.png`                | 296,943 | 1200×630  | Share card; opaque, 224-colour palette        |
 
-`tools/og-card-backdrop.webp` (37,742 bytes, 1600×900, opaque) is the share card's backdrop, a still of the live scene. It is never published (`test/hosting.test.mjs`, `test/bundle-output.test.mjs`).
+`tools/og-card-backdrop.webp` (66,322 bytes, 1600×900, opaque) is the share card's backdrop: a still of the live scene's opening shot, The watch, with every page layer but the canvas hidden. It is never published (`test/hosting.test.mjs`, `test/bundle-output.test.mjs`).
 
 ## Sources
 
@@ -105,21 +105,21 @@ Only the share card is generated in the repository. Everything else is committed
 | Fonts                         | Variable woff2 subsets of the two OFL fonts; the subsetting is not in the repository                                                                                                                                                                                                                                                                                               |
 | Icons                         | No generator in the repository                                                                                                                                                                                                                                                                                                                                                     |
 | `public/og.png`               | Rendered from `tools/og-card.html` over the backdrop ([below](#refresh-the-share-card))                                                                                                                                                                                                                                                                                            |
-| `tools/og-card-backdrop.webp` | A 1600×900 still of the accepted live scene                                                                                                                                                                                                                                                                                                                                        |
+| `tools/og-card-backdrop.webp` | A 1600×900 still of the accepted live scene's opening shot, The watch                                                                                                                                                                                                                                                                                                              |
 
 ## Budgets
 
-| Budget                                                 | Limit                                  | Now              | Enforced by                                                                                                 |
-| ------------------------------------------------------ | -------------------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------- |
-| Any one model, high                                    | 6 MiB (6,291,456)                      | 2,028,412 (tree) | The loader (`ARCHITECTURE_ASSET_BUDGETS`) and `bundle-output`                                               |
-| Any one model, balanced                                | 3 MiB (3,145,728)                      | 920,408 (tower)  | The same                                                                                                    |
-| Complete scene, high: five models and three slate maps | 6 MiB                                  | 5,892,910        | `bundle-output`: "the complete scene fits 6 MiB on high and 3 MiB on balanced…"                             |
-| Complete scene, balanced                               | 3 MiB                                  | 2,704,700        | The same                                                                                                    |
-| UI bundle (`app.HASH.js`)                              | under 30 KiB                           |                  | `bundle-output`: "UI bundle stays under the LCP budget"                                                     |
-| Scene entry and the chunks it imports statically       | under 820 KiB, exactly two files       |                  | `bundle-output`: "scene bundle stays under the deferred-payload budget"                                     |
-| Paper grain, paper edge and the three vignettes        | 200 KiB (204,800)                      | 182,994          | `markup-accessibility`: "three distinct transparent paper vignettes share the 200 KiB section-paper budget" |
-| Both estate maps                                       | 200 KiB (204,800)                      | 193,610          | `bundle-output`: "estate map artwork is hashed, responsive and under 200 KiB combined"                      |
-| `public/og.png`                                        | opaque, exactly 1200×630, under 300 KB | 274,486          | Only the comment in `tools/og-card.html`; `test/hosting.test.mjs` checks only that the file exists          |
+| Budget                                                 | Limit                                              | Now              | Enforced by                                                                                                 |
+| ------------------------------------------------------ | -------------------------------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------- |
+| Any one model, high                                    | 6 MiB (6,291,456)                                  | 2,028,412 (tree) | The loader (`ARCHITECTURE_ASSET_BUDGETS`) and `bundle-output`                                               |
+| Any one model, balanced                                | 3 MiB (3,145,728)                                  | 920,408 (tower)  | The same                                                                                                    |
+| Complete scene, high: five models and three slate maps | 6 MiB                                              | 5,892,910        | `bundle-output`: "the complete scene fits 6 MiB on high and 3 MiB on balanced…"                             |
+| Complete scene, balanced                               | 3 MiB                                              | 2,704,700        | The same                                                                                                    |
+| UI bundle (`app.HASH.js`)                              | under 30 KiB                                       |                  | `bundle-output`: "UI bundle stays under the LCP budget"                                                     |
+| Scene entry and the chunks it imports statically       | under 820 KiB, exactly two files                   |                  | `bundle-output`: "scene bundle stays under the deferred-payload budget"                                     |
+| Paper grain, paper edge and the three vignettes        | 200 KiB (204,800)                                  | 182,994          | `markup-accessibility`: "three distinct transparent paper vignettes share the 200 KiB section-paper budget" |
+| Both estate maps                                       | 200 KiB (204,800)                                  | 193,610          | `bundle-output`: "estate map artwork is hashed, responsive and under 200 KiB combined"                      |
+| `public/og.png`                                        | opaque, exactly 1200×630, at most 300 KB (300,000) | 296,943          | `hosting`: "the share image is an opaque 1200x630 PNG of at most 300 KB, as its tags say"                   |
 
 Lazy scene chunks are outside the script budget. Script sizes change with every build; `npm run build:dist` prints them.
 
@@ -127,7 +127,7 @@ Lazy scene chunks are outside the script budget. Script sizes change with every 
 
 The build publishes these sources only as `name.HASH.ext`, eight hex digits of the file's SHA-256, cached immutably for a year: the paper and estate-map artwork, every model, the slate maps and the fonts ([build.mjs](../build.mjs) `isFingerprintedSource`), besides the scripts and the stylesheet. Pages, the stylesheet and the scene name only the hashed copies. `public/` files and `fonts/OFL.txt` keep stable names and revalidate after seven days; after a release that changes one, purge its URL ([Operations](OPERATIONS.md#headers-and-caching)). Nothing in `tools/` is published.
 
-`test/bundle-output.test.mjs` fails when a file in `images/` is published under its plain name or is missing under its hashed name, and `test/hosting.test.mjs` expects exactly 22 fingerprinted files in `images/` (5 paper textures, 2 estate maps, 10 models and 5 slate maps); a new file there means updating that count. `.gitignore` ignores `*.png` except `og.png`, `apple-touch-icon.png`, `icon-192.png`, `icon-512.png` and `icon-maskable-512.png`, so a new PNG must be added there as an exception before Git sees it.
+`test/bundle-output.test.mjs` fails when a file in `images/` is published under its plain name or is missing under its hashed name, and `test/hosting.test.mjs` expects exactly 22 fingerprinted files in `images/` (2 paper textures, 3 vignettes, 2 estate maps, 10 models and 5 slate maps); a new file there means updating that count. `.gitignore` ignores `*.png` except `og.png`, `apple-touch-icon.png`, `icon-192.png`, `icon-512.png` and `icon-maskable-512.png`, so a new PNG must be added there as an exception before Git sees it.
 
 ## How to
 
@@ -155,15 +155,15 @@ Keep the file names, the vignettes at 420×420 with alpha and each distinct, and
 
 ### Replace an icon
 
-Keep the names and sizes: `apple-touch-icon.png` 180×180 and `icon-maskable-512.png` 512×512 opaque (launchers crop them), `icon-192.png` and `icon-512.png` at their sizes, `favicon.ico` with 16 and 32 px images. `test/hosting.test.mjs` checks each, the manifest's icon list and the page's icon links. Purge the changed URLs after the release.
+Keep the names and sizes: `apple-touch-icon.png` 180×180 and `icon-maskable-512.png` 512×512 opaque (launchers crop them), `icon-192.png` and `icon-512.png` at their sizes, `favicon.ico` with 16 and 32 px images. `test/hosting.test.mjs` checks each, the manifest's icon list and the homepage's icon links; `test/markup-accessibility.test.mjs` holds the 404's icon links equal to the homepage's. Purge the changed URLs after the release.
 
 ### Change a font
 
-The two variable fonts are the only ones the design allows ([Style](STYLE.md#palette-and-type)). To replace one, keep its file name or update every reference: the `@font-face` rule in [styles.css](../styles.css), the `<link rel="preload">` in [index.html](../index.html), the share card's own `@font-face` URLs in [tools/og-card.html](../tools/og-card.html), and `fonts/OFL.txt`'s copyright lines. `test/bundle-output.test.mjs` requires every `fonts/*.woff2` to be in the stylesheet and preloaded, the preloads to name exactly the stylesheet's fonts, and the two copyright lines. `test/markup-accessibility.test.mjs` finds the two `@font-face` rules by file name (`cormorant-garamond-variable.woff2`, `instrument-sans-variable.woff2`) and expects weight ranges 300–700 and 400–700, so a renamed file changes that test too.
+The two variable fonts are the only ones the design allows ([Style](STYLE.md#palette-and-type)). To replace one, keep its file name or update every reference: the `@font-face` rule in [styles.css](../styles.css), the `<link rel="preload">`s in [index.html](../index.html) and [404.html](../404.html), the share card's own `@font-face` URLs in [tools/og-card.html](../tools/og-card.html), and `fonts/OFL.txt`'s copyright lines. `test/bundle-output.test.mjs` requires every `fonts/*.woff2` to be in the stylesheet and preloaded, each page's preloads to name exactly the stylesheet's fonts, and the two copyright lines; `test/markup-accessibility.test.mjs` holds the 404's preloads equal to the homepage's. `test/markup-accessibility.test.mjs` finds the two `@font-face` rules by file name (`cormorant-garamond-variable.woff2`, `instrument-sans-variable.woff2`) and expects weight ranges 300–700 and 400–700, so a renamed file changes that test too.
 
 ### Refresh the share card
 
-1. Refresh `tools/og-card-backdrop.webp` only from an accepted live view (1600×900), and edit `tools/og-card.html` when the card's text changes.
+1. Refresh `tools/og-card-backdrop.webp` only from an accepted live view: a 1600×900 still of The watch with every page layer but the canvas hidden. Edit `tools/og-card.html` when the card's text changes.
 2. Render and quantize the card with the commands in `tools/og-card.html`'s header comment (headless Edge, then ImageMagick to a palette PNG).
-3. Check that `public/og.png` is opaque, exactly 1200×630 and under 300 KB; no test does.
+3. Use the largest dither amount that keeps `public/og.png` at or under 300 KB (the header comment gives the steps), then run `node --test test/hosting.test.mjs`, which holds it opaque, exactly 1200×630 and at most 300 KB.
 4. After the release, purge `/og.png` ([Operations](OPERATIONS.md#headers-and-caching)) and re-scrape it with LinkedIn Post Inspector.

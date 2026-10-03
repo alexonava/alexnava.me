@@ -26,7 +26,7 @@ npm test
 npm run build:dist
 ```
 
-`audit:ci` fails on high or critical advisories, and `format:check` on any file Prettier would change (`npm run format` fixes them). [Assets](ASSETS.md#budgets) lists every byte and script budget and what holds it: the tests hold all of them except the share card's, which only `tools/og-card.html` records, and the model loader also refuses a model over its tier's limit at runtime.
+`audit:ci` fails on high or critical advisories, and `format:check` on any file Prettier would change (`npm run format` fixes them). [Assets](ASSETS.md#budgets) lists every byte and script budget and the test that holds it; the model loader also refuses a model over its tier's limit at runtime.
 
 Lighthouse (`lighthouserc.json`) audits the homepage from the built `dist/` three times and asserts the median: performance at least 0.80, accessibility 1.00, best practices 0.95 and SEO 1.00; LCP at most 2500 ms, CLS 0.10 and TBT 200 ms. GitHub's runners have no GPU, so CI audits the static title card. For each release, also run three default Lighthouse passes of the live scene on GPU hardware and hold its median to the same performance and TBT gates.
 

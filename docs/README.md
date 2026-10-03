@@ -4,21 +4,21 @@ The documents that describe alexnava.me, and where to start for a task. They des
 
 ## Index
 
-| Document                              | Covers                                                                                                                                      |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| [Architecture](ARCHITECTURE.md)       | Startup, the module map, the scene lifecycle, quality tiers, assets and budgets, the build pipeline                                         |
-| [Contracts](CONTRACTS.md)             | The interface between the pages, the UI bundle and the scene bundle: `window.BabelSite`, DOM hooks, events, meta tags, User Timing, defines |
-| [Scene modes](SCENE-MODES.md)         | URL parameters, shots, pauses, the `sceneDebug` and `sceneLoader.state` fields, the capture recipe                                          |
-| [Style](STYLE.md)                     | Visual, motion and typographic rules                                                                                                        |
-| [UI](UI.md)                           | The page's interface: title card, footer, About menu, dialogs and the 404 page                                                              |
-| [Content](CONTENT.md)                 | The site's words and where each piece lives                                                                                                 |
-| [Assets](ASSETS.md)                   | Models, maps, artwork, fonts, icons and the share card                                                                                      |
-| [Accessibility](ACCESSIBILITY.md)     | How the page meets its accessibility rules                                                                                                  |
-| [Testing](TESTING.md)                 | Running the suite, what each test file guards, locked values, visual review, Lighthouse                                                     |
-| [Troubleshooting](TROUBLESHOOTING.md) | Symptom, cause and fix for recurring failures                                                                                               |
-| [Operations](OPERATIONS.md)           | Release gates, CI, deploy, rollback, headers, Cloudflare                                                                                    |
-| [Glossary](GLOSSARY.md)               | The terms the code and docs use, and the preferred word for each                                                                            |
-| [Credits](CREDITS.md)                 | Rights, third-party code, fonts and the provenance of the supplied artwork                                                                  |
+| Document                              | Covers                                                                                                                                              |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Architecture](ARCHITECTURE.md)       | Startup, the module map, the scene lifecycle, quality tiers, assets and budgets, the build pipeline                                                 |
+| [Contracts](CONTRACTS.md)             | The interface between the pages, the UI bundle and the scene bundle: `window.BabelSite`, DOM hooks, events, meta tags, User Timing, defines         |
+| [Scene modes](SCENE-MODES.md)         | URL parameters, shots, pauses, the `sceneDebug` and `sceneLoader.state` fields, the capture recipe                                                  |
+| [Style](STYLE.md)                     | Visual, motion and typographic rules                                                                                                                |
+| [UI](UI.md)                           | The page's interface: tokens, breakpoints and the scene framing that mirrors them, layers, components, motion, dialogs, deep links and the 404 page |
+| [Content](CONTENT.md)                 | The site's words and where each piece lives                                                                                                         |
+| [Assets](ASSETS.md)                   | Models, maps, artwork, fonts, icons and the share card                                                                                              |
+| [Accessibility](ACCESSIBILITY.md)     | How the page meets its accessibility rules                                                                                                          |
+| [Testing](TESTING.md)                 | Running the suite, what each test file guards, locked values, visual review, Lighthouse                                                             |
+| [Troubleshooting](TROUBLESHOOTING.md) | Symptom, cause and fix for recurring failures                                                                                                       |
+| [Operations](OPERATIONS.md)           | Release gates, CI, deploy, rollback, headers, Cloudflare                                                                                            |
+| [Glossary](GLOSSARY.md)               | The terms the code and docs use, and the preferred word for each                                                                                    |
+| [Credits](CREDITS.md)                 | Rights, third-party code, fonts and the provenance of the supplied artwork                                                                          |
 
 Outside `docs/`:
 
@@ -32,13 +32,13 @@ Outside `docs/`:
 
 **Changing the look.** Read [Style](STYLE.md) first, then [UI](UI.md) for the page and [Assets](ASSETS.md) for artwork and models. Review the scene with the [capture recipe](SCENE-MODES.md#capture-recipe) and the [visual review](TESTING.md#visual-review) protocol. Changes that would pop mid-shot land on a tour cut.
 
-**Working on the scene.** [Architecture](ARCHITECTURE.md) for ownership and lifecycle, [Contracts](CONTRACTS.md) for what the bundles promise each other, [Scene modes](SCENE-MODES.md) for URLs and status objects, and the [Glossary](GLOSSARY.md) for the vocabulary. Keep to the subsystem hooks and restore borrowed resources before freeing derived ones (AGENTS.md rule 2).
+**Working on the scene.** [Architecture](ARCHITECTURE.md) for ownership and lifecycle, [Contracts](CONTRACTS.md) for what the bundles promise each other, [Scene modes](SCENE-MODES.md) for URLs and status objects, [UI](UI.md#scene-framing) for the page breakpoints the framing mirrors, and the [Glossary](GLOSSARY.md) for the vocabulary. Keep to the subsystem hooks and restore borrowed resources before freeing derived ones (AGENTS.md rule 2).
 
 **Releasing.** [Operations](OPERATIONS.md) for the gates, CI, deploy and rollback; [Testing](TESTING.md) for the suite and the per-release Lighthouse passes on GPU hardware; [Troubleshooting](TROUBLESHOOTING.md) when a gate fails.
 
 **Reviewing a pull request.**
 
-- CI is green: build, audit and, for a same-repository branch, the preview.
+- CI and CodeQL are green: `build`, `audit`, CodeQL's two analyses and, for a same-repository branch, `preview`.
 - The diff holds no `dist/` output, no new dependency and no workflow or secret change without the owner's authorization (AGENTS.md rule 6).
 - Every changed test value is a deliberate lock change with its reason ([Testing](TESTING.md#locked-values)).
 - Docs that state a changed behaviour, value or command are updated in the same pull request.

@@ -34,6 +34,20 @@ Append them to the local preview, for example `http://127.0.0.1:4173/?view=tower
 
 The tour runs in table order, about 50 s a loop. Each shot drifts and pushes in, then dissolves into the next over 1 s (or 30% of a shorter dwell), staggered by depth. A missing subject's shots are skipped. Shot intent and dwells live in [directed-shots.js](../src/scene/directed-shots.js), fitting and drift in [cinematic.js](../src/scene/cinematic.js), pacing in [camera-tour.js](../src/scene/camera-tour.js) and the dissolve in [postprocess.js](../src/scene/postprocess.js).
 
+### Viewport variants
+
+The scene's size picks each shot's variant (directed-shots.js `resolveDirectedShot`), so set the window size before a capture. Each variant overrides some of the shot's framing; a shot without the chosen variant keeps its own.
+
+| Scene size (CSS px)                                                                                                                          | Variant                     |
+| -------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
+| Taller than wide, or a stacked layout (`isStackedLayout`: portrait or square up to 1024 wide, or landscape under 600 wide and over 500 tall) | `portrait`                  |
+| Landscape up to 500 tall and narrower than 1.55:1 (`SQUAT_LANDSCAPE`), such as 599×499 or 700×480                                            | `portrait`                  |
+| Landscape up to 500 tall, at least 1.55:1 and under 600 wide, such as 568×320                                                                | `compact`, else `landscape` |
+| Landscape up to 500 tall, at least 1.55:1, from 600 wide, such as 844×390                                                                    | `landscape`                 |
+| Anything else, such as 1600×900 or a square over 1024                                                                                        | None: the shot itself       |
+
+The four tower shots, Close-up and Root and lantern have a `portrait` variant; Portrait and Lantern study have none. Only The watch has `landscape` (lower and further round, so the snowy range runs between the intro and the tower) and `compact` (lower again, below the intro). The `compact` variant is unrelated to the `compact` composition profile in `sceneDebug.composition`. The safe area the shot is fitted in follows the hero's layout too ([Contracts](CONTRACTS.md#hero-breakpoints)).
+
 ## Tour and pauses
 
 - An open dialog holds the tour at once; 450 ms later, after the dim overlay has faded in, rendering stops until the last dialog closes (a render hold).
@@ -91,7 +105,7 @@ On the live path, with or without `sceneDebug`, `window.BabelSite.sceneLoader.st
 
 ## Capture recipe
 
-Open `?quality=high|balanced&view=…&angle=…&tour=0&sceneDebug=1` (the explicit tier keeps the governor from stepping mid-capture) and wait until all of these hold:
+Size the window first: the scene's size picks the shot's [variant](#viewport-variants) and safe area. Open `?quality=high|balanced&view=…&angle=…&tour=0&sceneDebug=1` (the explicit tier keeps the governor from stepping mid-capture) and wait until all of these hold:
 
 - `#home-scene` has the `is-ready` class;
 - `sceneDebug.cinematic.shot` names the shot;
@@ -100,4 +114,4 @@ Open `?quality=high|balanced&view=…&angle=…&tour=0&sceneDebug=1` (the explic
 - `sceneDebug.shaders.lantern` is `ready` or `unwarmed`;
 - `sceneDebug.rocks.status` is `ready` or `fallback`.
 
-Then advance a fixed number of frames before capturing. The flame, drips and cloud drift run on scene time, so a deterministic capture drives the frame clock itself.
+Then advance a fixed number of frames before capturing. The flame and the cloud drift run on scene time. The drips keep their own clock, the `performance.now()` time between drawn ground frames ([terrain-build.js](../src/scene/terrain-build.js) `dripClock`). A deterministic capture therefore drives both the frame clock and `performance.now()` itself.

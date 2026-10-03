@@ -10,7 +10,7 @@ Use Node.js 22 (`.nvmrc`) and restore dependencies with `npm ci`, then:
 npm run dev
 ```
 
-Open [http://127.0.0.1:4173/](http://127.0.0.1:4173/). Development mode builds the site, watches its inputs and serves `dist/` through Wrangler; refresh after a rebuild. `npm run dev -- --port 4180` starts a second preview.
+Open [http://127.0.0.1:4173/](http://127.0.0.1:4173/). Development mode builds the site, watches its inputs and serves `dist/` through Wrangler; refresh after a rebuild. `npm run dev -- --port 4180` serves on another port when 4173 is taken, for example by another worktree's dev server; each checkout's dev server builds and serves its own `dist/`.
 
 | Command                  | Purpose                                                                    |
 | ------------------------ | -------------------------------------------------------------------------- |
@@ -36,7 +36,7 @@ Add `?view=tree&angle=2&tour=0` to stay on one shot; the [scene-mode guide](docs
 ## Layout
 
 - `index.html`, `404.html`, `styles.css`: the pages and their styles.
-- `src/`: the UI bundle (`app.js`, `main.js`, `ui/`, `shared/`) and the deferred scene (`scene-entry.js`, `scene/`).
+- `src/`: the UI bundle (`app.js`, `main.js`, `ui/`) and the deferred scene (`scene-entry.js`, `scene/`); each bundle carries its own copy of `shared/` and `scene/quality.js`.
 - `images/`, `fonts/`: runtime artwork, models, slate maps and fonts, published under content hashes.
 - `public/`: hosting, icon and discovery files copied to the site root.
 - `tools/`: `build-output.mjs` (staged publication of the payload), `watch.mjs` and `dev.mjs` (rebuilds and the dev server), `owned-process.mjs` (starting and stopping their child processes), `shader-compact.mjs` (the GLSL compactor), `bake-root-shade.mjs` (the tree's baked root tables) and the share card's source, `og-card.html` and `og-card-backdrop.webp`.
@@ -52,6 +52,7 @@ The [documentation index](docs/README.md) lists every document. The main ones:
 - [Architecture](docs/ARCHITECTURE.md): startup, modules, tools, scene lifecycle, quality, build and tests
 - [Contracts](docs/CONTRACTS.md): the names, events and attributes the UI and scene share
 - [Style](docs/STYLE.md): visual, motion and accessibility rules
+- [UI](docs/UI.md): the page's tokens, breakpoints and the scene framing that mirrors them, layers, components, motion, dialogs, deep links and the 404 page
 - [Scene modes](docs/SCENE-MODES.md): URL parameters, shots, pauses and status objects
 - [Content](docs/CONTENT.md): where the site's words live and how to change them
 - [Assets](docs/ASSETS.md): models, maps, artwork, fonts and icons, with every budget
@@ -65,4 +66,4 @@ Local work never publishes production: `npm run deploy:preview` publishes only t
 
 ## License
 
-The code (`build.mjs`, `src/`, `tools/`, the tests, the workflows and the HTML and CSS markup) is released under the [MIT License](LICENSE). The artwork, 3D models and textures as prepared for the site, the images, icons and share card, the writing and the visual design are © 2026 Alex Nava, all rights reserved. The fonts are licensed under the SIL Open Font License 1.1 ([fonts/OFL.txt](fonts/OFL.txt)), and Three.js under the MIT License. [Credits](docs/CREDITS.md) has the details.
+The code (`build.mjs`, `src/`, `tools/` except `og-card-backdrop.webp`, the tests, the GitHub workflows and scripts, and the HTML and CSS markup) is released under the [MIT License](LICENSE). The artwork, 3D models and textures as prepared for the site, the images, icons and share card (`public/og.png` and `tools/og-card-backdrop.webp`), the writing and the visual design are © 2026 Alex Nava, all rights reserved. The fonts are licensed under the SIL Open Font License 1.1 ([fonts/OFL.txt](fonts/OFL.txt)), and Three.js under the MIT License. [Credits](docs/CREDITS.md) has the details.
