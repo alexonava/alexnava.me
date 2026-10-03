@@ -27,12 +27,14 @@ vec3 filmBand(float a) { return vec3(.03,.036,.048)*exp(-pow((a-.03)*6.0,2.0)); 
 //   the reference's breadth;
 // - `banks`: the half-frequency octave decides, broadly, bank or clear sky: across its
 //   values [2]-[3] the density goes from [0] (clear, so no stray peak becomes an island)
-//   to [1] (a bank, layered by the finer octaves within it);
+//   to [1] (a bank, layered by the finer octaves within it), and `lanes` lets the next
+//   octave cut darker lanes through the banks (+-[lanes]/2), never into the clear;
 // - `swirl`: the same octave turns the noise a further `swirl` along a half turn of its
 //   own value, gently enough never to fold it;
 // - `text`: behind the name and intro (the ground's text boxes, mud-ground.js), easing
-//   out over [1] of the screen's smaller side, the lift gives way to a clearing of [0], so
-//   the sky about the name stays open.
+//   out over [1] of the screen's smaller side, the banks there thin to 1 - [0] of their
+//   opacity (the stars dim by the same cover), keeping their shapes, so the sky about the
+//   name stays open without cutting banks into fragments.
 // The uCloudReshape uniform scales both weights: 1 for the sky and the stars, 0 for the
 // environment's one capture (night-environment.js), so the ground's and the bark's
 // approved sky light and reflections keep the authored clouds' brightness.
@@ -42,13 +44,14 @@ export const CLOUD_RESHAPE = Object.freeze({
   bend: Object.freeze([99, 196, 0.6]),
   horizon: Object.freeze([1.5, 0.6]),
   scale: 0.85,
-  banks: Object.freeze([-0.15, 0.12, 0.3, 0.7]),
+  banks: Object.freeze([-0.22, 0.2, 0.4, 0.6]),
+  lanes: 0.1,
   swirl: 0.25,
-  text: Object.freeze([0.12, 0.3]),
+  text: Object.freeze([0.85, 0.3]),
 });
 
 const glslFloat = (value) => (Number.isInteger(value) ? value.toFixed(1) : String(value));
-const { wedge, radius, bend, horizon, scale, banks, swirl, text } = CLOUD_RESHAPE;
+const { wedge, radius, bend, horizon, scale, banks, lanes, swirl, text } = CLOUD_RESHAPE;
 // The soft knee's own offset at the zenith, so the noise radius starts at 0 there.
 const horizonZero = (Math.sqrt(horizon[0] ** 2 + 0.04) - horizon[0]).toFixed(6);
 
@@ -117,7 +120,7 @@ float fine=.5;
 if(uNebulaLayers>2.5) fine=NV[7]*.65+NV[8]*.35;
 d=n0*.5+n1*.27+g2*.16+fine*.07;
 da=a0*.5+a1*.27+h2*.16+fine*.07;
-float bank=open*((1.-cloudText)*mix(${glslFloat(banks[0])},${glslFloat(banks[1])},smoothstep(${glslFloat(banks[2])},${glslFloat(banks[3])},NV[0]))-${glslFloat(text[0])}*cloudText);
+float bank=open*mix(${glslFloat(banks[0])},${glslFloat(banks[1])}+${glslFloat(lanes)}*(NV[2]-.5),smoothstep(${glslFloat(banks[2])},${glslFloat(banks[3])},NV[0]));
 d+=bank; da+=bank;
 }
 vec2 bankUV=(b-vec2(-.98,.42))/vec2(.42,.34);
@@ -131,7 +134,9 @@ float shape=exp(-dot(bankUV,bankUV))*.24+exp(-dot(sunBankUV,sunBankUV))*.30-gapG
 d+=shape; da+=shape;
 float horizonFade=uNebulaLayers>1.5?smoothstep(0.,.045,altitude):smoothstep(-.03,.17,altitude);
 float w=uNebulaLayers>1.5?.034:mix(.05,.034,smoothstep(.45,.8,altitude));
-float cover=smoothstep(.548-w,.548+w,d)*horizonFade*uClouds;`;
+float cover=smoothstep(.548-w,.548+w,d)*horizonFade*uClouds;
+float cloudClear=1.-${glslFloat(text[0])}*cloudText*open;
+cover*=cloudClear;`;
 }
 
 // The cloud field's text guard, `cloudText`: 1 behind the name and intro (slateText,
@@ -241,7 +246,7 @@ cloudCol*=(1.0+.4*smoothstep(.55,.85,altitude))*(.86+.26*smoothstep(-.35,.45,dir
 *(1.0-.14*thin)*(1.0-.3*max(gapG,eaveG));
 vec3 kn=vec3(.64,.62,.66), cap=vec3(.88,.86,.91);
 cloudCol=min(cloudCol,kn)+(cap-kn)*(1.-exp(-max(cloudCol-kn,0.)/(cap-kn)));
-col+=vec3(.027,.03,.036)*smoothstep(.36,.54,d)*horizonFade*uClouds;
+col+=vec3(.027,.03,.036)*smoothstep(.36,.54,d)*horizonFade*uClouds*cloudClear;
 col=mix(col,cloudCol,cover*.94);
 }
 col+=filmBand(altitude);

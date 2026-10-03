@@ -645,33 +645,49 @@ test("the clouds' reshaping never reaches the reference banks or the roof's lane
       const det = ((dx[0] - a[0]) * (dy[1] - a[1]) - (dy[0] - a[0]) * (dx[1] - a[1])) / (h * h);
       assert.ok(det > 0.1, `the noise folds at ${x.toFixed(2)},${y.toFixed(2)}`);
     }
-  // The banks lift only the open sky; behind the name and intro they give way to a
-  // clearing, so the sky about the name stays open.
-  const bankOf = new Function(
-    "open",
-    "cloudText",
-    "NV",
-    "mix",
-    "smoothstep",
-    `return ${line("bank")}`,
-  );
+  // The banks lift only the open sky, and decisively: clear sky below the octave's [2]
+  // and a bank above its [3], so no stray peak of the finer octaves stands alone in the
+  // clear as an island; within a bank the next octave cuts darker lanes.
+  const bankOf = new Function("open", "NV", "mix", "smoothstep", `return ${line("bank")}`);
   const mix = (a, b, t) => a + (b - a) * t;
-  const bank = (o, t, nv) => bankOf(o, t, [nv], mix, smoothstep);
+  const bank = (o, nv0, nv2 = 0.5) => bankOf(o, [nv0, 0, nv2], mix, smoothstep);
   const [clear, lift, from, to] = CLOUD_RESHAPE.banks;
-  const [clearing, textReach] = CLOUD_RESHAPE.text;
-  assert.ok(clear < 0 && lift > 0 && from < to);
-  assert.ok(bank(0, 0, 1) === 0 && bank(0, 1, 1) === 0, "none over the reference");
-  // Decisive: clear sky below the octave's [2], a bank above its [3], so no stray peak
-  // of the finer octaves stands alone in the clear as an island.
-  for (const nv of [0, from / 2, from]) assert.ok(Math.abs(bank(1, 0, nv) - clear) < 1e-12);
-  for (const nv of [to, (to + 1) / 2, 1]) assert.ok(Math.abs(bank(1, 0, nv) - lift) < 1e-12);
-  let last = -Infinity;
-  for (let nv = 0; nv <= 1; nv += 0.01) {
-    assert.ok(bank(1, 0, nv) >= last - 1e-12, "the bank rises with the octave");
-    last = bank(1, 0, nv);
+  const lanes = CLOUD_RESHAPE.lanes;
+  assert.ok(clear < 0 && lift > 0 && from < to && lanes > 0);
+  assert.ok(bank(0, 1) === 0 && bank(0, 0) === 0, "none over the reference");
+  for (const nv0 of [0, from / 2, from])
+    for (const nv2 of [0, 0.5, 1])
+      assert.ok(Math.abs(bank(1, nv0, nv2) - clear) < 1e-12, "the clear takes no lanes");
+  for (const nv0 of [to, (to + 1) / 2, 1]) {
+    assert.ok(Math.abs(bank(1, nv0) - lift) < 1e-12);
+    assert.ok(Math.abs(bank(1, nv0, 1) - (lift + lanes / 2)) < 1e-12);
+    assert.ok(Math.abs(bank(1, nv0, 0) - (lift - lanes / 2)) < 1e-12);
   }
-  // Behind the name and intro, a clearing whatever the octave.
-  for (const nv of [0, 0.5, 1]) assert.ok(Math.abs(bank(1, 1, nv) + clearing) < 1e-12);
+  // Even the darkest lane keeps a bank above the clear.
+  assert.ok(lift - lanes / 2 > clear);
+  let last = -Infinity;
+  for (let nv0 = 0; nv0 <= 1; nv0 += 0.01) {
+    assert.ok(bank(1, nv0) >= last - 1e-12, "the bank rises with the octave");
+    last = bank(1, nv0);
+  }
+  assert.doesNotMatch(line("bank"), /cloudText/, "the guard never cuts the banks' shapes");
+  // Behind the name and intro the banks thin instead, keeping their shapes (the stars there
+  // dim by the same cover): to 1 - [0] of their opacity at the text, over the open sky only,
+  // so the reference is untouched.
+  const [thinning, textReach] = CLOUD_RESHAPE.text;
+  const clearOf = new Function("cloudText", "open", `return ${line("cloudClear")}`);
+  assert.equal(clearOf(0, 1), 1);
+  assert.ok(Math.abs(clearOf(1, 1) - (1 - thinning)) < 1e-12);
+  assert.equal(clearOf(1, 0), 1, "the reference keeps its opacity behind the text");
+  assert.ok(thinning > 0 && thinning < 1);
+  assert.match(
+    shader,
+    /float cover=smoothstep\(\.548-w,\.548\+w,d\)\*horizonFade\*uClouds;\s*float cloudClear=[^;]+;\s*cover\*=cloudClear;/,
+  );
+  assert.match(
+    shader,
+    /col\+=vec3\(\.027,\.03,\.036\)\*smoothstep\(\.36,\.54,d\)\*horizonFade\*uClouds\*cloudClear;/,
+  );
   assert.match(shader, /d\+=bank; da\+=bank;/);
   // NV[0] exists only on the high and balanced skies: its readers sit after the
   // octave's own `continue` for the low sky, or inside the >1.5 branch.
