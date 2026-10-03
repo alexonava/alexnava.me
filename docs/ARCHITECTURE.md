@@ -96,7 +96,7 @@ _lazy_ marks a chunk loaded on demand.
 | `estate-sky.js`      | Film sky gradient, horizon band, the cloud field (`cloudFieldGLSL`) and its reshaping (`CLOUD_RESHAPE`)                              |
 | `celestial-field.js` | Shared nebula frame and dust                                                                                                         |
 | `starfield.js`       | Stars (`STAR_COUNTS`), hidden behind the cloud banks                                                                                 |
-| `solar-body.js`      | The star and its prominences                                                                                                         |
+| `solar-body.js`      | The star, its glow and prominences, and their unrest (`SOLAR_LOOK`)                                                                  |
 | `hill-silhouette.js` | Baseline hill ring, the rings' and the Meshy massifs' materials, loading the massifs, ranges stand-in, far plain air (`HORIZON_AIR`) |
 | `mountain-build.js`  | _lazy_ Film mountain geometry: the massifs' placements (`RANGE_PLACEMENTS`), the backdrop rings, the five-ring fallback              |
 | `light-shafts.js`    | _lazy_ Star rays and moonbeams (WebGL2)                                                                                              |
