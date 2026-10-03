@@ -331,10 +331,17 @@ test("a faint, zero-mean grain dithers the title card and fades with the reveal"
   // never in forced colours or increased contrast.
   const canvasFade = cssRule(styles, ".scene-canvas").match(/transition:\s*opacity (\d+ms) /)[1];
   assert.match(grain, new RegExp(`transition:\\s*opacity ${canvasFade} ease-out;`));
+  // A sibling selector (the vignette follows the canvas), so browsers without
+  // :has() fade it too.
   assert.match(
-    cssRule(styles, ".scene-home:has(.scene-canvas.is-ready) .scene-vignette::before"),
+    cssRule(styles, ".scene-canvas.is-ready + .scene-vignette::before"),
     /opacity:\s*0;/,
   );
+  assert.match(
+    flatHtml(await readIndexHtml()),
+    /<div id="home-scene" class="scene-canvas"><\/div>\s*<div class="scene-vignette"><\/div>/,
+  );
+  assert.doesNotMatch(styles, /:has\(/);
   assert.match(
     mediaBlock(styles, "(prefers-reduced-motion: reduce)"),
     /\.scene-vignette::before\s*\{\s*transition:\s*none;/,
@@ -472,12 +479,20 @@ test("the first-paint hero, action cursors, microcopy and paper copy stay legibl
     /font-size:\s*(?:[0-9](?:\.[0-9]+)?|1[01](?:\.[0-9]+)?)px/,
     "user-facing microcopy must not fall below 12px",
   );
-  // The one top-level sheet rule holds every paper's height at all widths.
+  // The one top-level sheet rule holds every paper's height at all widths but
+  // on small landscape phones, whose screens are shorter than it: there the
+  // vignette goes back beside the copy and the sheet keeps its content's height.
   assert.match(cssRule(styles, ".panel-parchment__sheet"), /min-height:\s*\d+px;/);
+  const shortLandscape = mediaBlock(
+    styles,
+    "(orientation: landscape) and (max-height: 500px) and (max-width: 700px)",
+  );
+  assert.match(shortLandscape, /\.panel-parchment__sheet\s*\{[^}]*min-height:\s*0;/);
+  assert.match(shortLandscape, /\.panel-vignette\s*\{[^}]*grid-column:\s*2;/);
   assert.doesNotMatch(
-    styles.replace(/\n\.panel-parchment__sheet\s*\{[^}]*\}/, ""),
+    styles.replace(/\n\.panel-parchment__sheet\s*\{[^}]*\}/, "").replace(shortLandscape, ""),
     /\.panel-parchment__sheet\s*\{[^}]*min-height/,
-    "no later or media rule overrides the paper height",
+    "no other later or media rule overrides the paper height",
   );
   // The eyebrow and body ink that render read on the paper.
   const paper = cssRule(styles, ".panel-parchment__sheet::before").match(
@@ -943,10 +958,18 @@ test("dialog polish keeps readable ink, touch cues and paper-safe controls", asy
     baseLabel >= 0 && touchLabel > baseLabel,
     "the touch underline follows the base label rule",
   );
-  const unscopedHover = styles
-    .replace(/@media \(hover: hover\)\s*\{[^{}]*\{[^}]*\}\s*\}/g, "")
-    .match(/\.estate-destination:hover span/);
-  assert.equal(unscopedHover, null, "the map underline follows real hover only");
+  const unscoped = styles.replace(/@media \(hover: hover\)\s*\{(?:[^{}]*\{[^}]*\})*\s*\}/g, "");
+  assert.equal(
+    unscoped.match(/\.estate-destination:hover span/),
+    null,
+    "the map underline follows real hover only",
+  );
+  // So does the destination's tint, so a tap leaves none behind.
+  assert.doesNotMatch(unscoped, /\.estate-destination:hover[^{]*\{[^}]*background/);
+  assert.match(
+    styles,
+    /@media \(hover: hover\)\s*\{\s*\.estate-destination:hover\s*\{\s*background:/,
+  );
 
   // Back clears the paper's 24px deckled edge, so it sits wholly on the paper.
   const back = Number(

@@ -259,7 +259,9 @@ main:focus {
    balance on the night (no mean shift near code value 23), so 8-bit screens
    see the gradients dithered instead of stepped. It lies above the canvas
    and beneath all text, and fades with the canvas's 480ms reveal, so the
-   live scene never shows it. */
+   live scene never shows it. The vignette follows the canvas in the markup,
+   so a sibling selector fades it in every browser, relational pseudo-class
+   or not. */
 .scene-vignette::before {
   position: absolute;
   inset: 0;
@@ -270,7 +272,7 @@ main:focus {
   transition: opacity 480ms ease-out;
 }
 
-.scene-home:has(.scene-canvas.is-ready) .scene-vignette::before {
+.scene-canvas.is-ready + .scene-vignette::before {
   opacity: 0;
 }
 
@@ -865,6 +867,23 @@ body[data-panel-open]::after {
   }
 }
 
+/* Small landscape phones: the stacked sheet is taller than the screen, so the
+   vignette goes back beside a shorter sheet and the paper fits. */
+@media (orientation: landscape) and (max-height: 500px) and (max-width: 700px) {
+  .panel-parchment__sheet {
+    grid-template-columns: minmax(0, 1fr) 120px;
+    row-gap: 0;
+    min-height: 0;
+    padding: 40px 48px;
+  }
+
+  .panel-vignette {
+    grid-column: 2;
+    grid-row: 1;
+    width: 120px;
+  }
+}
+
 @media (forced-colors: active) {
   .panel-parchment {
     border: 1px solid CanvasText;
@@ -1335,6 +1354,8 @@ body[data-panel-open]::after {
 .estate-destination:hover,
 .estate-destination:focus-visible {
   transform: none;
+}
+.estate-destination:focus-visible {
   background: rgba(78, 54, 26, 0.035);
 }
 /* Without hover, map labels keep a resting underline and taps tint. This sits
@@ -1351,6 +1372,9 @@ body[data-panel-open]::after {
 }
 /* Touch browsers keep :hover after a tap; the underline follows real hover only. */
 @media (hover: hover) {
+  .estate-destination:hover {
+    background: rgba(78, 54, 26, 0.035);
+  }
   .estate-destination:hover span {
     text-decoration: underline;
     text-decoration-color: rgba(72, 53, 30, 0.55);
@@ -1463,6 +1487,12 @@ body[data-panel-open]::after {
   margin: 90px auto 0;
   padding: 48px 24px 160px;
 }
+/* Phones' heroes already fill the screen. */
+@media (max-width: 820px), (orientation: landscape) and (max-height: 500px) {
+  .scene-fallback-content {
+    margin-top: 0;
+  }
+}
 .scene-fallback-content :is(h2, h3) {
   margin: 0;
   color: #f7f1ea;
@@ -1472,6 +1502,8 @@ body[data-panel-open]::after {
   letter-spacing: -0.01em;
 }
 .scene-fallback-content h2 {
+  max-width: 640px;
+  margin-inline: auto;
   font-size: 40px;
 }
 .scene-fallback-content h3 {
