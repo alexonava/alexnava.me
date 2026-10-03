@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
-import { PerspectiveCamera, Texture } from "three";
+import { BufferGeometry, PerspectiveCamera, Texture } from "three";
 import { glbAsset, modelBytes, parseGlb } from "./support/glb.mjs";
 import {
   createHillSilhouette,
@@ -128,25 +128,43 @@ test("every placement is one eye inside its model's culled envelope, in its laye
   }
 });
 
-test("a placement keeps what its eye sees: affine, mirrored winding, the azimuth it names", () => {
-  const p = RANGE_PLACEMENTS.find((item) => item.mirror),
-    plain = { ...p, mirror: false },
-    a = placeRange(models[p.role], plain),
-    b = placeRange(models[p.role], p);
-  // The mirror swaps each triangle's winding, so the faces still face the camera.
-  for (let t = 0; t < a.index.length; t += 3) {
-    assert.equal(b.index[t], a.index[t]);
-    assert.equal(b.index[t + 1], a.index[t + 2]);
-    assert.equal(b.index[t + 2], a.index[t + 1]);
+// The share of a placed shape's triangles that wind counter-clockwise for the
+// camera at the origin (what FrontSide draws).
+function facing({ position: p, index }) {
+  let front = 0;
+  for (let t = 0; t < index.length; t += 3) {
+    const [a, b, c] = [index[t], index[t + 1], index[t + 2]],
+      u = [0, 1, 2].map((k) => p[b * 3 + k] - p[a * 3 + k]),
+      v = [0, 1, 2].map((k) => p[c * 3 + k] - p[a * 3 + k]),
+      n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+    if (n[0] * p[a * 3] + n[1] * p[a * 3 + 1] + n[2] * p[a * 3 + 2] < 0) front++;
   }
-  // The eye's line to the bounding centre points at the placement's azimuth.
+  return front / (index.length / 3);
+}
+
+test("a placement keeps what its eye sees: the azimuth it names, its faces toward the camera, mirrored too", () => {
+  // The model's bounding centre (its frame's origin) lies exactly on the placement's azimuth.
+  const probe = {
+    position: { count: 3, getX: (i) => [0, 0.5, 0][i], getY: (i) => [0, 0, 0.5][i], getZ: () => 0 },
+    index: [0, 1, 2],
+    height: 0.5,
+  };
   for (const q of RANGE_PLACEMENTS) {
+    const shape = placeRange(probe, q),
+      centre = (Math.atan2(shape.position[2], shape.position[0]) * 180) / Math.PI;
+    near(((centre - q.azimuth + 540) % 360) - 180, 0, 1e-4);
+    // Every copy's skyline is continuous over its span.
     const sky = rangeSkyline(placeRange(models[q.role], q)),
       reach = sky.values.reduce((n, v) => n + (v > -90), 0);
-    const from = sky.from,
-      span = sky.values.length * RANGE_SKY.bin;
-    assert.ok(q.azimuth > from && q.azimuth < from + span, `${q.id} sits in its own span`);
     assert.ok(reach > 0.9 * sky.values.length, `${q.id} skyline is continuous`);
+  }
+  // The culled shells face the camera from inside their envelopes, and a mirror (which
+  // rewinds each triangle) faces it just as much.
+  for (const q of RANGE_PLACEMENTS) {
+    const plain = facing(placeRange(models[q.role], { ...q, mirror: false })),
+      mirrored = facing(placeRange(models[q.role], { ...q, mirror: true }));
+    assert.ok(plain > 0.5, `${q.id} faces the camera (${plain.toFixed(2)})`);
+    near(mirrored, plain, 0.05);
   }
 });
 
@@ -226,6 +244,12 @@ test("each massif's mesh runs sector by sector from the seam, nearest layer firs
           Math.floor(((((mean - seam) % 360) + 360) % 360) / width),
           s,
           `${role} sector ${s}`,
+        );
+        // One sector of padding covers any reach past the centroid's sector.
+        const reach = Math.max(...az.map((a) => Math.abs(((a - mean + 540) % 360) - 180)));
+        assert.ok(
+          reach < width * pad,
+          `${role} sector ${s}: a triangle reaches ${reach.toFixed(2)}°`,
         );
         const l = terrain.getY(index[t]);
         assert.ok(l >= layer, `${role} sector ${s}: nearest layer first`);
@@ -426,6 +450,71 @@ test("a failed massif GLB lands the five rings instead; low and baseline never l
   }
 });
 
+test("a stalled massif GLB never holds the ranges back: past the deadline the five rings land", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const statuses = [],
+    aborted = [];
+  // Every request hangs until it is aborted.
+  const stalled = (url, { signal, role }) =>
+    new Promise((resolve, reject) =>
+      signal.addEventListener("abort", () => {
+        aborted.push(role);
+        reject(new DOMException("aborted", "AbortError"));
+      }),
+    );
+  const hill = createHillSilhouette({
+    groundHeight: () => 0,
+    tier: "high",
+    urls: URLS,
+    loadAsset: stalled,
+    onStatus: (status) => statuses.push(status),
+  });
+  hill.applyQuality({ tier: "high" });
+  hill.setFilmTreatment(true);
+  const ready = hill.ready;
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(statuses, ["loading"], "still waiting before the deadline");
+  t.mock.timers.tick(MASSIFS.deadline);
+  await ready;
+  assert.deepEqual(aborted.sort(), [...MASSIFS.roles].sort(), "every request aborted");
+  assert.deepEqual(statuses, ["loading", "fallback"]);
+  assert.equal(
+    hill.mesh.geometry.attributes.position.count,
+    MOUNTAINS.radii.length * MOUNTAINS.rows.length * MOUNTAINS.columns,
+    "the five rings",
+  );
+  hill.dispose();
+});
+
+test("a failed ranges chunk frees the massifs that arrive after it", async () => {
+  const log = [],
+    statuses = [];
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const hill = createHillSilhouette({
+    groundHeight: () => 0,
+    tier: "balanced",
+    urls: URLS,
+    load: () => Promise.reject(new Error("chunk")),
+    loadAsset: (url, options) => gate.then(() => deliver(log)(url, options)),
+    onStatus: (status) => statuses.push(status),
+  });
+  hill.applyQuality({ tier: "balanced" });
+  hill.setFilmTreatment(true);
+  await hill.ready;
+  assert.deepEqual(statuses, ["loading", "fallback"]);
+  release();
+  for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve));
+  const root = hill.mesh.children.find((child) => child.name === "film-massifs");
+  assert.equal(root.children.length, 0, "no massif mesh kept");
+  for (const role of MASSIFS.roles)
+    for (const kind of ["normalMap", "map"])
+      assert.ok(log.includes(`close ${role} ${kind}`), `${role} ${kind} freed`);
+  hill.dispose();
+});
+
 test("the massif shader is the ranges' moonlit style on the models' own relief", async () => {
   const hill = createHillSilhouette({
     groundHeight: () => 0,
@@ -451,13 +540,38 @@ test("the massif shader is the ranges' moonlit style on the models' own relief",
   // The rings' sky, far plain, rims and ink, verbatim; the rock one air farther out.
   for (const shared of [
     "float b=dot(o,d), t=-b+sqrt(max(b*b-dot(o,o)+uSky.x,0.)), a=(o.y+d.y*t)*inversesqrt(uSky.x);",
-    "c=mix(c,vec3(.012,.016,.03),(1.-smoothstep(.4,1.4,px))*(.7-.3*k));",
     "c=mix(c,pa,fh*(1.-smoothstep(-.02,0.,vL.y/r)));",
     "+vec3(.1,.07,.04)*pow(max(dot(v,toSun),0.),60.));",
   ]) {
     assert.ok(ranges.includes(shared), `the rings keep: ${shared}`);
     assert.ok(fragmentShader.includes(shared), `the massifs share: ${shared}`);
   }
+  // The crest's ink is the rings', fading out below eye level where the plain's air took the rock.
+  assert.ok(ranges.includes("c=mix(c,vec3(.012,.016,.03),(1.-smoothstep(.4,1.4,px))*(.7-.3*k));"));
+  // None on a sliver lying wholly on the crest, where vT.x does not vary.
+  assert.ok(
+    fragmentShader.includes(
+      "c=mix(c,vec3(.012,.016,.03),(1.-smoothstep(.4,1.4,px))*(.7-.3*k)*smoothstep(-.6,.15,el)*step(1e-6,fwidth(vT.x)));",
+    ),
+  );
+  // Snow holds off near-vertical rock with an anti-aliased edge; its tongues read a blurred mask.
+  assert.ok(fragmentShader.includes("vec2 mb=texture2D(uMask,vU,2.5).rg;"));
+  assert.ok(
+    fragmentShader.includes(
+      "if(vT.z>.5&&cap>0.){float snow=smoothstep(0.,1.6*sw,se)*clamp((hold-.04)/hw+.5,0.,1.);",
+    ),
+  );
+  // Every derivative (and the biased, implicitly derived mask sample) runs outside the branch.
+  const branch = fragmentShader.indexOf("if(vT.z>.5&&cap>0.)"),
+    close = fragmentShader.indexOf("c=mix(c,sn,snow*(1.-mist));}", branch);
+  assert.ok(branch > 0 && close > branch);
+  assert.doesNotMatch(fragmentShader.slice(branch, close), /fwidth|texture2D/);
+  for (const derived of [
+    "vec2 mb=texture2D(uMask,vU,2.5)",
+    "sw=max(fwidth(se)",
+    "hw=max(1.5*fwidth(hold)",
+  ])
+    assert.ok(fragmentShader.indexOf(derived) < branch, `${derived} before the branch`);
   assert.equal(MASSIFS.air, 1);
   assert.ok(
     fragmentShader.includes(
@@ -467,7 +581,7 @@ test("the massif shader is the ranges' moonlit style on the models' own relief",
   // Snow from each copy's own snowline (aTerrain.z), only where it has one.
   assert.ok(
     fragmentShader.includes(
-      `float cap=clamp((vT.w-vT.z)*${MASSIF_SNOW.depth},0.,${MASSIF_SNOW.max});`,
+      `float cap=clamp((vT.w-vT.z)*${MASSIF_SNOW.depth},0.,${MASSIF_SNOW.max}),`,
     ),
   );
   assert.ok(fragmentShader.includes("if(vT.z>.5&&cap>0.)"));
@@ -537,6 +651,7 @@ test("the composed build lands in short slices and frees itself when cancelled",
     );
     built.dispose();
     Object.values(built.userData.massifs).forEach((geometry) => geometry.dispose());
+    // Disposed mid-build: the build stops and resolves to nothing.
     let gone = false;
     assert.equal(
       await buildMountains({
@@ -547,6 +662,36 @@ test("the composed build lands in short slices and frees itself when cancelled",
       }),
       null,
     );
+    // Disposed just as it lands (the skyline texels are written last): every geometry is
+    // freed and none reaches a mesh.
+    const late = Object.fromEntries(MASSIFS.roles.map((role) => [role, { material: null }])),
+      written = new Uint8Array(RANGE_SKY.texture * 4),
+      freed = [];
+    const dispose = BufferGeometry.prototype.dispose;
+    BufferGeometry.prototype.dispose = function () {
+      freed.push(this);
+      return dispose.call(this);
+    };
+    try {
+      assert.equal(
+        await buildMountains({
+          rendering,
+          models,
+          massifs: late,
+          texels: written,
+          cancelled: () => written.some((byte) => byte),
+        }),
+        null,
+      );
+    } finally {
+      BufferGeometry.prototype.dispose = dispose;
+    }
+    assert.ok(
+      written.some((byte) => byte),
+      "the build ran to its end",
+    );
+    assert.equal(freed.length, 1 + MASSIFS.roles.length, "the backdrop and each massif freed");
+    for (const role of MASSIFS.roles) assert.equal(late[role].geometry, undefined);
   } finally {
     if (raf) globalThis.requestAnimationFrame = raf;
     else delete globalThis.requestAnimationFrame;

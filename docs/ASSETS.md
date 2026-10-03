@@ -25,9 +25,9 @@ Every binary file the site ships or builds from: what it is, its size and limits
 | `mountain-summit-high.glb`     |   119,896 |     3,799 | object-space normal WebP 512, mask WebP 256                         |
 | `mountain-summit-balanced.glb` |    92,720 |     3,799 | object-space normal WebP 256, mask WebP 128                         |
 
-Every model is a binary glTF 2.0 with one mesh of one indexed triangle primitive, all buffers and images embedded, and `KHR_mesh_quantization` and `EXT_texture_webp` required. Positions are normalized 16-bit integers except the lantern's, which are floats. The tower and both rocks store tangents; the tree, lantern and mountains do not. No model carries an occlusion map. The lantern's scene `extras.lantern` holds its `authoredHeight` (2.48) and its `luminousCenter`, where [lantern.js](../src/scene/lantern.js) places the light; the tree's `extras.tree` records `foliage: false`. The mountains are the parts of their massifs an eye in front can see (front +Z; bounding X/Z centred, base y = 0, largest horizontal half-extent 1), the same geometry on both tiers; their node `extras.mountain` records `normalSpace: "object"` and the viewing `envelope` their culling assumed, which every placement stays inside (`test/mountain-massifs.test.mjs`). Their `normalTexture` is an object-space normal map in glTF axes, and their `baseColorTexture` is no colour but a mask: red the source's whiteness (its snow), green its ambient occlusion.
+Every model is a binary glTF 2.0 with one mesh of one indexed triangle primitive, all buffers and images embedded, and `KHR_mesh_quantization` and `EXT_texture_webp` required. Positions are normalized 16-bit integers except the lantern's, which are floats. The tower and both rocks store tangents; the tree, lantern and mountains do not. No model carries an occlusion map. The lantern's scene `extras.lantern` holds its `authoredHeight` (2.48) and its `luminousCenter`, where [lantern.js](../src/scene/lantern.js) places the light; the tree's `extras.tree` records `foliage: false`. The mountains are the parts of their massifs an eye in front can see, in their whole massif's frame (front +Z, the source's bounding X/Z centred, base y = 0, largest horizontal half-extent 1), the same geometry on both tiers; their node `extras.mountain` records `normalSpace: "object"` and the viewing `envelope` their culling assumed, which every placement stays inside (`test/mountain-massifs.test.mjs`). Their `normalTexture` is an object-space normal map in glTF axes, and their `baseColorTexture` is no colour but a mask: red the source's whiteness (its snow), green its ambient occlusion.
 
-The tower and tree are required: without either the scene returns to the title card. The lantern, rocks and mountains are optional. If the lantern fails, the tree keeps the stand-in lantern, an iron post lantern [architecture.js](../src/scene/architecture.js) builds in code; if a rock fails, there are no rocks; if a mountain fails, the five procedural rings stand in for all three.
+The tower and tree are required: without either the scene returns to the title card. The lantern, rocks and mountains are optional. If the lantern fails, the tree keeps the stand-in lantern, an iron post lantern [architecture.js](../src/scene/architecture.js) builds in code; if a rock fails, there are no rocks; if a mountain fails or misses its 12 s deadline, the five procedural rings stand in for all three.
 
 ### What the loader accepts
 
@@ -92,9 +92,9 @@ The tower and tree are required: without either the scene returns to the title c
 | `icon-192.png`          |   9,005 | 192×192   | RGBA                                          |
 | `icon-512.png`          |  26,321 | 512×512   | RGBA                                          |
 | `icon-maskable-512.png` |  13,398 | 512×512   | Opaque RGB                                    |
-| `og.png`                | 298,263 | 1200×630  | Share card; opaque, 224-colour palette        |
+| `og.png`                | 296,795 | 1200×630  | Share card; opaque, 224-colour palette        |
 
-`tools/og-card-backdrop.webp` (71,560 bytes, 1600×900, opaque) is the share card's backdrop: a still of the live scene's opening shot, The watch, with every page layer but the canvas hidden. It is never published (`test/hosting.test.mjs`, `test/bundle-output.test.mjs`).
+`tools/og-card-backdrop.webp` (67,298 bytes, 1600×900, opaque) is the share card's backdrop: a still of the live scene's opening shot, The watch, with every page layer but the canvas hidden. It is never published (`test/hosting.test.mjs`, `test/bundle-output.test.mjs`).
 
 ## Sources
 
@@ -126,7 +126,7 @@ Only the share card is generated in the repository. Everything else is committed
 | Scene entry and the chunks it imports statically        | under 820 KiB, exactly two files                   |                  | `bundle-output`: "scene bundle stays under the deferred-payload budget"                                     |
 | Paper grain, paper edge and the three vignettes         | 200 KiB (204,800)                                  | 182,994          | `markup-accessibility`: "three distinct transparent paper vignettes share the 200 KiB section-paper budget" |
 | Both estate maps                                        | 200 KiB (204,800)                                  | 193,610          | `bundle-output`: "estate map artwork is hashed, responsive and under 200 KiB combined"                      |
-| `public/og.png`                                         | opaque, exactly 1200×630, at most 300 KB (300,000) | 298,263          | `hosting`: "the share image is an opaque 1200x630 PNG of at most 300 KB, as its tags say"                   |
+| `public/og.png`                                         | opaque, exactly 1200×630, at most 300 KB (300,000) | 296,795          | `hosting`: "the share image is an opaque 1200x630 PNG of at most 300 KB, as its tags say"                   |
 
 Lazy scene chunks are outside the script budget. Script sizes change with every build; `npm run build:dist` prints them.
 

@@ -578,7 +578,7 @@ test("the camera-centred ranges frame every tour shot: sun, roof lane, tree shot
 // backdrop's), the snow every massif vertex snowReach() lets carry it. The tree
 // shots may rise higher than the rings did (owner, 2026-10-03), under a band of
 // open sky 8% of the frame tall; and in no frame does the same model show twice
-// from the same side in one layer.
+// from the same side, in any layers.
 test("the Meshy massifs frame every tour shot: sun, roof lane, open sky over the tree, phones and the name", async () => {
   const window = { BabelSite: {} };
   vm.runInNewContext(await readFile(new URL("../src/scene/world.js", import.meta.url), "utf8"), {
@@ -744,7 +744,7 @@ test("the Meshy massifs frame every tour shot: sun, roof lane, open sky over the
             const highest = Math.min(...crest.map((p) => p.y));
             assert.ok(highest > 0.08 * height, `${label} crest at ${highest.toFixed(1)} px`);
           }
-          // No model twice from one side in one layer within a frame.
+          // No model twice from one side within a frame, in any layers.
           const seen = new Map();
           for (const { placement, sky } of composed.placed) {
             const span = [sky.from, sky.from + sky.values.length * RANGE_SKY.bin];
@@ -755,11 +755,11 @@ test("the Meshy massifs frame every tour shot: sun, roof lane, open sky over the
               return p.depth > 0 && p.x >= 0 && p.x <= width;
             });
             if (!shown) continue;
-            const key = `${placement.layer} ${placement.role} ${placement.mirror}`;
+            const key = `${placement.role} ${placement.mirror}`;
             for (const yaw of seen.get(key) ?? [])
               assert.ok(
                 Math.abs(yaw - placement.yaw) >= 15,
-                `${label} shows ${placement.role} twice from one side in layer ${placement.layer}`,
+                `${label} shows ${placement.role} twice from one side`,
               );
             seen.set(key, [...(seen.get(key) ?? []), placement.yaw]);
           }

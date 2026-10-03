@@ -594,16 +594,17 @@ export const RANGE_LAYERS = Object.freeze([
 export const RANGE_BACKDROP = Object.freeze({ ranges: Object.freeze([3, 4]), capScale: 1 });
 // The watch's summit leads (about 9 degrees) with a smaller one right of the
 // tower; the broad ridge stands behind Portrait's tree; snowy massifs rise
-// behind the tree shots (up to about 4 degrees, an 8% band of open sky above
+// behind the tree shots (up to about 3.3 degrees, an 8% band of open sky above
 // them); a mirrored summit makes the Close-up horn; bare low copies form the
-// near layer all round.
+// near layer across every tour view (none from about 305 to 340 degrees,
+// which no shot faces).
 // [id, role, layer, azimuth, distance, yaw, mirror, sink, squash, snow]
 export const RANGE_PLACEMENTS = Object.freeze(
   [
-    ["watch", "mountain-summit", 2, 151, 3.8, 0, false, 0.28, 1, 2.4],
-    ["east", "mountain-summit", 1, 191, 5.5, -10, false, 0.35, 0.95, 2],
+    ["watch", "mountain-summit", 2, 155, 3.8, 0, false, 0.28, 1, 2.4],
+    ["east", "mountain-ridge", 1, 196, 4.8, -25, true, 0.4, 0.85, 2.2],
     ["bridge", "mountain-summit", 2, 127, 5, 25, true, 0.4, 0.9, 2],
-    ["portrait", "mountain-ridge", 1, 108, 3.6, -5, false, 0.25, 1, 2],
+    ["portrait", "mountain-ridge", 1, 108, 3.6, -5, false, 0.25, 1, 2.4],
     ["lantern", "mountain-summit", 2, 62, 6, -10, false, 0.5, 0.8, 2.6],
     ["closeup", "mountain-ridge", 2, 36, 5, 10, false, 0.35, 0.74, 2],
     ["horn", "mountain-summit", 1, 13, 6, 15, true, 0.25, 1, 2.9],
@@ -612,7 +613,7 @@ export const RANGE_PLACEMENTS = Object.freeze(
     ["near-a", "mountain-spine", 0, -6, 4, 0, false, 0.25, 0.9, 0],
     ["near-b", "mountain-ridge", 0, 30, 4.6, 25, true, 0.5, 0.45, 0],
     ["near-c", "mountain-spine", 0, 66, 3.2, -20, false, 0.35, 0.7, 0],
-    ["near-d", "mountain-summit", 0, 96, 6, 20, true, 0.55, 0.6, 0],
+    ["near-d", "mountain-summit", 0, 96, 6, 20, false, 0.55, 0.6, 0],
     ["near-e", "mountain-spine", 0, 128, 3, 25, true, 0.3, 0.72, 0],
     ["near-f", "mountain-ridge", 0, 166, 4.2, -15, false, 0.5, 0.5, 0],
     ["near-g", "mountain-spine", 0, 198, 3.8, -10, false, 0.3, 0.85, 0],
@@ -689,9 +690,10 @@ export function placeRange(model, placement) {
 
 // A placed massif's skyline: the highest elevation per RANGE_SKY.bin of
 // azimuth, along every triangle edge (sampled under half a bin apart), so it
-// follows the crest between vertices. { from: the first bin's azimuth, values:
-// degrees, -90 where the massif does not reach }.
-export function rangeSkyline({ elevation, azimuth, index }) {
+// follows the crest between vertices. { from: the first bin's azimuth, start:
+// its index (from / bin, exact), values: degrees, -90 where the massif does not
+// reach }.
+export function rangeSkyline({ position, elevation, azimuth, index }) {
   const { bin } = RANGE_SKY;
   let lo = Infinity,
     hi = -Infinity;
@@ -699,9 +701,13 @@ export function rangeSkyline({ elevation, azimuth, index }) {
     lo = Math.min(lo, a);
     hi = Math.max(hi, a);
   }
-  const from = Math.floor(lo / bin) * bin,
+  const start = Math.floor(lo / bin),
+    from = start * bin,
     values = new Float32Array(Math.ceil((hi - from) / bin) + 1).fill(-90);
-  for (let t = 0; t < index.length; t += 3)
+  for (let t = 0; t < index.length; t += 3) {
+    // Only the faces the camera sees (FrontSide): a culled back face never draws, so it
+    // must not raise the crest above what shows.
+    if (position && !facesCamera(position, index[t], index[t + 1], index[t + 2])) continue;
     for (let k = 0; k < 3; k++) {
       const a = index[t + k],
         b = index[t + ((k + 1) % 3)],
@@ -717,7 +723,23 @@ export function rangeSkyline({ elevation, azimuth, index }) {
         if (e > values[j]) values[j] = e;
       }
     }
-  return { from, values };
+  }
+  return { from, start, values };
+}
+
+// Whether triangle a, b, c (camera-relative positions) winds counter-clockwise as the
+// camera at the origin sees it: its normal points back toward the camera.
+function facesCamera(p, a, b, c) {
+  const ax = p[a * 3],
+    ay = p[a * 3 + 1],
+    az = p[a * 3 + 2],
+    ux = p[b * 3] - ax,
+    uy = p[b * 3 + 1] - ay,
+    uz = p[b * 3 + 2] - az,
+    vx = p[c * 3] - ax,
+    vy = p[c * 3 + 1] - ay,
+    vz = p[c * 3 + 2] - az;
+  return (uy * vz - uz * vy) * ax + (uz * vx - ux * vz) * ay + (ux * vy - uy * vx) * az < 0;
 }
 
 // The snowline's reference along a massif, as the rings' (massif): its
@@ -776,8 +798,10 @@ function* rangeSteps(models, placements = RANGE_PLACEMENTS) {
     layers = [0, 1, 2].map(() => new Float32Array(ring).fill(-90));
   for (const { placement, sky } of placed) {
     const line = layers[placement.layer];
+    // By the skyline's integer start: from / bin in floating point could round
+    // either way and skip a bin, a hole in the mist.
     sky.values.forEach((e, j) => {
-      const k = ((Math.round((sky.from + (j + 0.5) * bin) / bin) % ring) + ring) % ring;
+      const k = (((sky.start + j) % ring) + ring) % ring;
       if (e > line[k]) line[k] = e;
     });
   }

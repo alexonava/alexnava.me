@@ -61,8 +61,10 @@ export const SNOW = Object.freeze({
 });
 // The Meshy massifs' snow (MASSIFS): the rings' rule, deeper, with each copy's
 // own snowline `line` (mountain-build.js RANGE_PLACEMENTS snow), so the
-// massifs carry real caps, the lower ones too.
-export const MASSIF_SNOW = Object.freeze({ ...SNOW, depth: 0.7, max: 3.4 });
+// massifs carry real caps, the lower ones too; lit and shade are lower, as the
+// massifs' air is thinner than the far rings', so lit snow still reads about
+// 2.2 times the sky behind it.
+export const MASSIF_SNOW = Object.freeze({ ...SNOW, depth: 0.7, max: 3.4, lit: 2.7, shade: 1 });
 // JS mirror of the shader's snowline: whether snow can reach `elevation`
 // degrees on a massif `massif` degrees high, with the jitter and gully tongue
 // at their most generous (`snow`: SNOW for the rings, MASSIF_SNOW for the
@@ -120,7 +122,7 @@ export const HORIZON_HAZE = Object.freeze({ near: 150, far: 190 });
 // .08 it would match the balanced slate at the frame edges.
 export const TERRAIN_HORIZON = "vec3(.062,.065,.073)";
 // The far plain's air. Below eye level, past the terrain's edge, the frame
-// shows the near range's lower body, which reads as the plain itself; the bare
+// shows the ranges' lower bodies, which read as the plain itself; the bare
 // slate there (11/255) would lie darker than both the mountain feet and the lit
 // ground, a near-black band. So that body eases, within about a degree below
 // eye level, to the slate lifted by `horizon` at eye level, rising to `edge`
@@ -400,6 +402,8 @@ gl_FragColor=vec4(c,${DEPTH_LAYER.mountains});
 export const MASSIFS = Object.freeze({
   roles: Object.freeze(["mountain-ridge", "mountain-spine", "mountain-summit"]),
   renderOrder: -0.6,
+  // Milliseconds the ranges wait for the massifs' GLBs before the five rings land instead.
+  deadline: 12000,
   sky: Object.freeze({ texture: 4096, floor: -10, span: 40 }),
   // Layer n sees through range n + air's air (MOUNTAIN_AIR): big massifs far off,
   // hazier than the procedural rings at their layer's distance.
@@ -487,18 +491,26 @@ vec2 nr=nearer(az);
 float under=mix(nr.x,nr.y,step(1.5,vT.y)), rise=el+vT.x-under;
 float mist=(1.-smoothstep(0.,min(.9,.6*max(rise,.05)),el-under))*far*.7;
 c=mix(c,mix(air,s,.9),mist);
-float cap=clamp((vT.w-vT.z)*${glslFloat(MASSIF_SNOW.depth)},0.,${glslFloat(MASSIF_SNOW.max)});
-if(vT.z>.5&&cap>0.){float wv=smoothstep(.45,.85,mk.x), gully=max(wv,smoothstep(.95,.75,mk.y));
+float cap=clamp((vT.w-vT.z)*${glslFloat(MASSIF_SNOW.depth)},0.,${glslFloat(MASSIF_SNOW.max)}), wv=smoothstep(.45,.85,mk.x);
+// The tongues follow the mask a few mip levels down, so they never step with its texels.
+// The snowline, its edge and the hold are derived outside the branch below.
+vec2 mb=texture2D(uMask,vU,2.5).rg;
+float gully=max(smoothstep(.45,.85,mb.x),smoothstep(.95,.75,mb.y));
 float line=vT.w-cap*(1.+${glslFloat(MASSIF_SNOW.tongue)}*gully)-max(cap*${glslFloat(MASSIF_SNOW.jitter)},${glslFloat(MASSIF_SNOW.jitterMin)})*vn(vec2(az*1.7,el*.8));
 float se=el-line, sw=max(fwidth(se),.5/ppd);
-float snow=smoothstep(0.,1.6*sw,se)*max(wv,smoothstep(.05,.4,n.y));
+// Above the line it holds where the face is not near-vertical, a little steeper where the
+// source is white, with a crisp, anti-aliased edge to the bare rock.
+float hold=n.y+.3*(wv-.5), hw=max(1.5*fwidth(hold),.04);
+if(vT.z>.5&&cap>0.){float snow=smoothstep(0.,1.6*sw,se)*clamp((hold-.04)/hw+.5,0.,1.);
 float sk=mix(smoothstep(-.3,1.,nl),smoothstep(.3-te,.3+te,nl),.5);
 vec3 sn=mix(vec3(.8485,1.0027,1.4193)*${glslFloat(MASSIF_SNOW.shade)},vec3(.9691,1.0014,1.0768)*${glslFloat(MASSIF_SNOW.lit)},sk)*sL;
 sn=mix(air,sn,mix(1.,T,.55));
 c=mix(c,sn,snow*(1.-mist));}
 ${GLOW_RIM_GLSL}
 ${FAR_PLAIN_GLSL}
-${CREST_INK_GLSL}
+// The crest's ink, as the rings', fading out below eye level, where the far plain's air
+// has taken the rock; none on a sliver lying wholly on the crest (vT.x 0 at every corner).
+c=mix(c,vec3(.012,.016,.03),(1.-smoothstep(.4,1.4,px))*(.7-.3*k)*smoothstep(-.6,.15,el)*step(1e-6,fwidth(vT.x)));
 gl_FragColor=vec4(c,${DEPTH_LAYER.mountains});
 }`,
   });
@@ -572,7 +584,8 @@ export function createHillSilhouette({
     pending = null,
     mountainShading = null,
     massifs = null,
-    abort = null;
+    abort = null,
+    failed = false;
   // The massifs' GLBs, their meshes and materials. Their maps stay for the
   // meshes; the rest of each parsed asset (its geometry once the build has read
   // it, its standard material) is freed by release(). Resolves to null if any
@@ -581,11 +594,23 @@ export function createHillSilhouette({
     if (!["high", "balanced"].includes(tier)) return Promise.resolve(null);
     abort = new AbortController();
     const { signal } = abort;
-    return Promise.allSettled(
+    let late = false,
+      timer = null;
+    // A stalled request must not hold the ranges back: past the deadline the
+    // requests abort and the five rings land.
+    const deadline = new Promise((resolve) => {
+      timer = setTimeout(() => {
+        late = true;
+        abort.abort();
+        resolve();
+      }, MASSIFS.deadline);
+    });
+    const settled = Promise.allSettled(
       MASSIFS.roles.map((role) =>
         loadAsset(urls[tier]?.[role], { signal, tier, role, priority: "low" }),
       ),
-    ).then((results) => {
+    ).finally(() => clearTimeout(timer));
+    return Promise.race([settled, deadline.then(() => settled)]).then((results) => {
       const assets = results.map((result) => (result.status === "fulfilled" ? result.value : null)),
         parts = assets.map((asset) => {
           let found = null;
@@ -614,7 +639,7 @@ export function createHillSilhouette({
           part.material.map &&
           part.userData?.height > 0,
       );
-      if (disposed || !usable) {
+      if (disposed || failed || late || !usable) {
         free();
         return null;
       }
@@ -686,7 +711,8 @@ export function createHillSilhouette({
     onStatus("loading");
     const wanted = ["high", "balanced"].includes(tier);
     let loaded = null;
-    pending = Promise.all([load(), loadMassifs()])
+    const models = loadMassifs();
+    pending = Promise.all([load(), models])
       .then(([{ buildMountains }, models]) => {
         loaded = models;
         return buildMountains({
@@ -717,8 +743,15 @@ export function createHillSilhouette({
         invalidate();
       })
       .catch(() => {
+        // The chunk failed: the massifs, loaded or still loading, are freed too.
+        failed = true;
+        abort?.abort();
         loaded?.release();
         freeMassifs();
+        models.then((late) => {
+          late?.release();
+          freeMassifs();
+        });
         onStatus("fallback"); // Keep the empty stand-in.
       });
   }
