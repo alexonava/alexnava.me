@@ -92,9 +92,9 @@ The tower and tree are required: without either the scene returns to the title c
 | `icon-192.png`          |   9,005 | 192×192   | RGBA                                          |
 | `icon-512.png`          |  26,321 | 512×512   | RGBA                                          |
 | `icon-maskable-512.png` |  13,398 | 512×512   | Opaque RGB                                    |
-| `og.png`                | 296,546 | 1200×630  | Share card; opaque, 224-colour palette        |
+| `og.png`                | 298,263 | 1200×630  | Share card; opaque, 224-colour palette        |
 
-`tools/og-card-backdrop.webp` (66,370 bytes, 1600×900, opaque) is the share card's backdrop: a still of the live scene's opening shot, The watch, with every page layer but the canvas hidden. It is never published (`test/hosting.test.mjs`, `test/bundle-output.test.mjs`).
+`tools/og-card-backdrop.webp` (71,560 bytes, 1600×900, opaque) is the share card's backdrop: a still of the live scene's opening shot, The watch, with every page layer but the canvas hidden. It is never published (`test/hosting.test.mjs`, `test/bundle-output.test.mjs`).
 
 ## Sources
 
@@ -126,7 +126,7 @@ Only the share card is generated in the repository. Everything else is committed
 | Scene entry and the chunks it imports statically        | under 820 KiB, exactly two files                   |                  | `bundle-output`: "scene bundle stays under the deferred-payload budget"                                     |
 | Paper grain, paper edge and the three vignettes         | 200 KiB (204,800)                                  | 182,994          | `markup-accessibility`: "three distinct transparent paper vignettes share the 200 KiB section-paper budget" |
 | Both estate maps                                        | 200 KiB (204,800)                                  | 193,610          | `bundle-output`: "estate map artwork is hashed, responsive and under 200 KiB combined"                      |
-| `public/og.png`                                         | opaque, exactly 1200×630, at most 300 KB (300,000) | 296,546          | `hosting`: "the share image is an opaque 1200x630 PNG of at most 300 KB, as its tags say"                   |
+| `public/og.png`                                         | opaque, exactly 1200×630, at most 300 KB (300,000) | 298,263          | `hosting`: "the share image is an opaque 1200x630 PNG of at most 300 KB, as its tags say"                   |
 
 Lazy scene chunks are outside the script budget. Script sizes change with every build; `npm run build:dist` prints them.
 
