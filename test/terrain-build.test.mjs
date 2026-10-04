@@ -43,6 +43,10 @@ import {
   pondCarve,
   pondRadius,
   pondShapeAt,
+  plantRushes,
+  RUSHES,
+  STREAMS,
+  streamDistance,
   POOL_FIELD,
   poolField,
   PUDDLE_MIRROR,
@@ -92,7 +96,12 @@ import {
   treeMesh,
 } from "../tools/bake-root-shade.mjs";
 import { ESTATE, estateLantern, estatePoint } from "../src/scene/estate-layout.js";
-import { configureGroundShading, DOOR_HEIGHT, SLATE_PUDDLES } from "../src/scene/mud-ground.js";
+import {
+  configureGroundShading,
+  DOOR_HEIGHT,
+  SLATE_PUDDLES,
+  SLATE_STREAMS,
+} from "../src/scene/mud-ground.js";
 import { TERRAIN_HORIZON } from "../src/scene/hill-silhouette.js";
 import { LANTERN_AUTHORING_HEIGHT } from "../src/scene/lantern.js";
 import { createEstateGroundDetail } from "../src/scene/estate-ground-detail.js";
@@ -288,9 +297,9 @@ test("the pond lowers only its basin and bank: the lantern's footing and the pin
   assert.deepEqual(zone, {
     anchor: "lantern",
     deg: -115,
-    dist: 1.75,
-    radius: 1.6,
-    stretch: 0.53,
+    dist: 2.1,
+    radius: 2.2,
+    stretch: 0.47,
     along: -115,
   });
   const base = groundBase(),
@@ -1124,17 +1133,22 @@ test("settling the roots seats the tufts at once and never holds the reveal for 
     // Each blade either rises with the plate, berms and banks (darker in the
     // tree's shade), or, under a root or in the trunk's deep cavity,
     // collapses to a point just under the ground.
+    const stride = tufts.mesh.geometry.userData.bladeVertices,
+      grass = tufts.mesh.geometry.attributes.aGrass;
+    assert.equal(stride, 8);
     let raised = 0,
       culled = 0,
       shaded = 0;
-    for (let i = 0; i < p.count; i += 4) {
+    for (let i = 0; i < p.count; i += stride) {
       const x = (before[i * 3] + before[i * 3 + 3]) / 2,
         z = (before[i * 3 + 2] + before[i * 3 + 5]) / 2,
         dy = lift(x, z);
       const [sky] = rootOcclusion(x, z);
       if (rootCovered(x, z) || sky > TUFTS.cull) {
-        for (let k = i; k < i + 4; k++) {
+        for (let k = i; k < i + stride; k++) {
           assert.deepEqual([p.getX(k), p.getZ(k)], [Math.fround(x), Math.fround(z)]);
+          // A collapsed blade never sways back out of the ground.
+          assert.equal(grass.getX(k), 0);
           assert.ok(
             Math.abs(p.getY(k) - ((before[i * 3 + 1] + before[i * 3 + 4]) / 2 + dy - 0.05)) < 1e-4,
           );
@@ -1142,7 +1156,7 @@ test("settling the roots seats the tufts at once and never holds the reveal for 
         culled++;
         continue;
       }
-      for (let k = i; k < i + 4; k++) {
+      for (let k = i; k < i + stride; k++) {
         assert.ok(Math.abs(p.getY(k) - before[k * 3 + 1] - dy) < 1e-4);
         assert.ok(
           Math.abs(color.getX(k) - tone[k * 3] * (sky > 0.02 ? 1 - TUFTS.shade * sky : 1)) < 1e-6,
@@ -1153,7 +1167,7 @@ test("settling the roots seats the tufts at once and never holds the reveal for 
     }
     assert.ok(raised > 10, `${raised} blades stand on the raised plate`);
     assert.ok(
-      culled > 5 && culled < p.count / 16,
+      culled > 5 && culled < p.count / stride / 4,
       `${culled} blades collapse under the roots and in the cavity`,
     );
     assert.ok(shaded > 10, `${shaded} blades darken in the tree's shade`);
@@ -1877,7 +1891,9 @@ test("sparse dark litter and small grey stones lie among the roots, clear of the
     stones = litter.userData.stones;
   assert.equal(stones.length, S.count);
   const mean = 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b;
-  const perStone = (p.count - litterVertices) / stones.length;
+  const [fineStart, fineEnd] = litter.userData.fine;
+  assert.equal(fineEnd, p.count);
+  const perStone = (fineStart - litterVertices) / stones.length;
   assert.equal(perStone, 240, "a smooth icosphere each");
   stones.forEach(([x, z, width], k) => {
     assert.ok(width >= S.size[0] && width <= S.size[1], `stone ${k} is ${width} wide`);
@@ -1906,9 +1922,95 @@ test("sparse dark litter and small grey stones lie among the roots, clear of the
     }
     assert.ok(below > 0 && above > below / 2, `stone ${k} sits part way in the soil`);
   });
+  // Nothing in the litter sways or leans its normal (the grass material's aGrass).
+  assert.ok(litter.attributes.aGrass.array.every((value) => value === 0));
+  assert.equal(litter.attributes.aGrass.count, p.count);
   // Deterministic.
   assert.deepEqual(scatterLitter(surface, color).attributes.position.array, p.array);
   litter.dispose();
+  terrain.dispose();
+});
+
+test("the fine litter (leaves, clods, grit) lies on the foreground soil, never under a root or in the water", () => {
+  const base = groundBase(),
+    terrain = createEarthGeometry(base),
+    surface = terrainHeight(terrain);
+  const color = new Color(0x5c5048),
+    litter = scatterLitter(surface, color),
+    F = LITTER.fine;
+  const [start, end] = litter.userData.fine,
+    p = litter.attributes.position,
+    c = litter.attributes.color;
+  // Every piece is 8 triangles; all of them found room.
+  const pieces = (end - start) / 24,
+    wanted = F.counts.leaves + F.counts.clods + F.counts.gravel;
+  assert.ok(Number.isInteger(pieces) && pieces === wanted, `${pieces} of ${wanted} pieces`);
+  const lift = Math.max(F.leafSize[1] * 0.4, F.clod[1]) + 0.02;
+  for (let i = start; i < end; i += 24) {
+    let x = 0,
+      z = 0;
+    for (let k = i; k < i + 24; k++) {
+      x += p.getX(k) / 24;
+      z += p.getZ(k) / 24;
+    }
+    assert.equal(rootCovered(x, z), false, `piece at ${x},${z} under a root`);
+    assert.ok(pondRadius(x, z) > 1, "never in the pond");
+    for (let k = i; k < i + 24; k++) {
+      const y = surface(p.getX(k), p.getZ(k));
+      if (Number.isFinite(y)) assert.ok(Math.abs(p.getY(k) - y) < lift, `vertex ${k} off the soil`);
+      // Never brighter than a dull, damp brown or a pale grain of grit.
+      assert.ok(Math.max(c.getX(k), c.getY(k), c.getZ(k)) < 0.25);
+    }
+  }
+  litter.dispose();
+  terrain.dispose();
+});
+
+test("the rain streams restate the ground shader's and run from the roots into the pond", () => {
+  assert.deepEqual(STREAMS.paths, SLATE_STREAMS.paths);
+  assert.ok(Math.abs(STREAMS.reach - (SLATE_STREAMS.width[1] / 2 + SLATE_STREAMS.meander)) < 1e-9);
+  for (const path of STREAMS.paths) {
+    const [mx, mz] = path.at(-1);
+    assert.ok(pondRadius(LANTERN_FOOT.x + mx, LANTERN_FOOT.z + mz) < 1, "its mouth is in the pond");
+    const [hx, hz] = path[0];
+    assert.ok(
+      pondRadius(LANTERN_FOOT.x + hx, LANTERN_FOOT.z + hz) > 1.5,
+      "its head is up by the roots",
+    );
+  }
+  assert.ok(streamDistance(LANTERN_FOOT.x, LANTERN_FOOT.z) > 0.3, "clear of the lantern's foot");
+});
+
+test("the pond's rushes stand in clumps on its bank, away from the lantern, and sway from their feet", () => {
+  const base = groundBase(),
+    terrain = createEarthGeometry(base),
+    surface = terrainHeight(terrain);
+  const rushes = plantRushes(surface),
+    p = rushes.attributes.position,
+    grass = rushes.attributes.aGrass;
+  assert.equal(rushes.userData.clumps, RUSHES.clumps);
+  assert.ok(p.count > RUSHES.clumps * RUSHES.stems[0] * 8);
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i),
+      z = p.getZ(i);
+    assert.ok(pondRadius(x, z) > 0.98, `rush vertex ${i} stands in the water`);
+    assert.ok(Math.hypot(x - LANTERN_FOOT.x, z - LANTERN_FOOT.z) > RUSHES.lantern - 0.4);
+    assert.ok(p.getY(i) >= surface(x, z) - 0.05 - 1e-6);
+    assert.ok(grass.getX(i) >= 0 && grass.getX(i) <= RUSHES.height[1] * RUSHES.sway + 1e-6);
+    // Only at the pond's ends: off the lantern's side and the camera's (a
+    // clump's spread and lean may turn a stem a few degrees).
+    const pond = PUDDLE_ZONES[0],
+      line = Math.atan2(LANTERN_FOOT.z - pond.z, LANTERN_FOOT.x - pond.x),
+      away =
+        (Math.abs(
+          ((Math.atan2(z - pond.z, x - pond.x) - line + 3 * Math.PI) % (2 * Math.PI)) - Math.PI,
+        ) *
+          180) /
+        Math.PI;
+    assert.ok(away > RUSHES.clear - 12 && away < 180 - RUSHES.clear + 12, `rush at ${away}°`);
+  }
+  assert.deepEqual(plantRushes(surface).attributes.position.array, p.array);
+  rushes.dispose();
   terrain.dispose();
 });
 

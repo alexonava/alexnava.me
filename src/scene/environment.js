@@ -27,6 +27,10 @@ export function createSceneEnvironment({ groundHeight, parent, profile }) {
       groundDetail?.dispose();
       return true;
     },
+    // The grass's wind clock (estate-ground-detail.js).
+    update(frame) {
+      return disposed ? false : (groundDetail?.update(frame) ?? false);
+    },
     resize({ composition } = {}) {
       if (disposed || !composition) return false;
       root.position.y = composition.sceneOffsetY;

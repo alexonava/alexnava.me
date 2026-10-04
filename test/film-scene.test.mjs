@@ -16,7 +16,13 @@ import {
 import { createEarthDetail, FILM_GROUND_PRESETS } from "../src/scene/filmic-earth.js";
 import { createFilmScene } from "../src/scene/film-scene.js";
 import { DEPTH_LAYER, stampDepthLayer } from "../src/scene/depth-layers.js";
-import { createEstateGroundDetail, estatePathDistance } from "../src/scene/estate-ground-detail.js";
+import {
+  BLADE_VERTICES,
+  GROWTH,
+  createEstateGroundDetail,
+  estatePathDistance,
+  streamDistance,
+} from "../src/scene/estate-ground-detail.js";
 import { rockKeepouts } from "../src/scene/rock-scatter.js";
 import { createSceneEnvironment } from "../src/scene/environment.js";
 
@@ -242,39 +248,94 @@ test("estate growth is seeded, terrain-seated and clear of both footprints and t
     b = createEstateGroundDetail(groundHeight);
   const keepouts = rockKeepouts();
   const p = a.mesh.geometry.attributes.position,
-    q = b.mesh.geometry.attributes.position;
+    q = b.mesh.geometry.attributes.position,
+    grass = a.mesh.geometry.attributes.aGrass;
   assert.deepEqual(p.array, q.array);
-  assert.equal(p.count, 360 * 12);
-  for (let i = 0; i < p.count; i += 12) {
+  assert.equal(a.mesh.geometry.userData.bladeVertices, BLADE_VERTICES);
+  assert.equal(p.count % BLADE_VERTICES, 0);
+  const blades = p.count / BLADE_VERTICES;
+  // Every clump: GROWTH.blades[0] to [1] blades.
+  assert.ok(blades >= GROWTH.tufts * GROWTH.blades[0] && blades <= GROWTH.tufts * GROWTH.blades[1]);
+  // A blade's foot may stand a little off its clump's centre.
+  const slack = GROWTH.size[1] * 1.25 * 0.05;
+  for (let i = 0; i < p.count; i += BLADE_VERTICES) {
     const x = (p.getX(i) + p.getX(i + 1)) / 2,
       z = (p.getZ(i) + p.getZ(i + 1)) / 2;
-    assert.ok(Math.abs(p.getY(i) - groundHeight(x, z) + 0.018) < 1e-5);
-    assert.ok(Math.hypot(x, z) > 10.4);
-    assert.ok(Math.hypot(x - 55.1, z - 36.1) > 5.8);
-    assert.ok(estatePathDistance(x, z) > 2.09);
-    assert.ok(p.getY(i + 3) > p.getY(i));
+    assert.ok(Math.abs(p.getY(i) - groundHeight(x, z) + 0.018) < 0.02);
+    assert.ok(Math.hypot(x, z) > 10.4 - slack);
+    assert.ok(Math.hypot(x - 55.1, z - 36.1) > 5.8 - slack);
+    assert.ok(estatePathDistance(x, z) > 2.09 - slack);
+    // It rises to its tip, which sways and its foot never does.
+    assert.ok(p.getY(i + BLADE_VERTICES - 1) > p.getY(i));
+    assert.equal(grass.getX(i), 0);
+    assert.ok(grass.getX(i + BLADE_VERTICES - 1) > 0);
     // No tuft stands in a scattered rock or the ring its pebble may take.
-    for (const rock of keepouts) assert.ok(Math.hypot(x - rock.x, z - rock.z) >= rock.radius);
+    for (const rock of keepouts)
+      assert.ok(Math.hypot(x - rock.x, z - rock.z) >= rock.radius - slack);
   }
   assert.equal(a.mesh.material.transparent, false);
+  assert.equal(a.mesh.receiveShadow, true);
   // Growth dissolves with the ground it stands on in the tour's staggered cut.
   assert.match(a.mesh.material.customProgramCacheKey(), /\|depth-layer-0\.6667$/);
-  const shader = { vertexShader: "", fragmentShader: "#include <dithering_fragment>\n}" };
+  const shader = {
+    uniforms: {},
+    vertexShader: "#include <common>\n#include <begin_vertex>",
+    fragmentShader:
+      "#include <common>\n#include <normal_fragment_begin>\n#include <dithering_fragment>\n}",
+  };
   a.mesh.material.onBeforeCompile(shader);
-  assert.equal(shader.fragmentShader, "#include <dithering_fragment>\ngl_FragColor.a = 0.6667;\n}");
+  assert.ok(
+    shader.fragmentShader.endsWith("#include <dithering_fragment>\ngl_FragColor.a = 0.6667;\n}"),
+  );
+  assert.match(shader.vertexShader, /attribute vec2 aGrass;[^]*transformed\.xz \+= aGrass\.x/);
+  assert.equal(shader.uniforms.grassTime, a.mesh.material.userData.grassTime);
   a.dispose();
   b.dispose();
+});
+
+test("the grass stays within its triangle budget on each tier and out of the water", () => {
+  const detail = createEstateGroundDetail(groundHeight),
+    geometry = detail.mesh.geometry,
+    p = geometry.attributes.position;
+  detail.setActive(true);
+  assert.ok(geometry.drawRange.count / 3 < 50000, `${geometry.drawRange.count / 3} on high`);
+  detail.applyQuality({ tier: "balanced" });
+  assert.ok(geometry.drawRange.count / 3 < 20000, `${geometry.drawRange.count / 3} on balanced`);
+  for (let i = 0; i < p.count; i += BLADE_VERTICES) {
+    const x = (p.getX(i) + p.getX(i + 1)) / 2,
+      z = (p.getZ(i) + p.getZ(i + 1)) / 2;
+    assert.ok(streamDistance(x, z) > -0.05, `a blade stands in a stream at ${x},${z}`);
+  }
+  detail.dispose();
+});
+
+test("the grass's wind runs with drawn frames and holds while motion is held", () => {
+  const detail = createEstateGroundDetail(groundHeight),
+    time = detail.mesh.material.userData.grassTime;
+  assert.equal(detail.update({ deltaSeconds: 0.5 }), false);
+  assert.equal(time.value, 0);
+  detail.setActive(true);
+  detail.update({ deltaSeconds: 0.05 });
+  detail.update({ deltaSeconds: 5 });
+  assert.ok(Math.abs(time.value - 0.15) < 1e-9);
+  detail.update({ deltaSeconds: 0.05, reducedMotion: true });
+  detail.update({ deltaSeconds: 0.05, motionPaused: true });
+  assert.ok(Math.abs(time.value - 0.15) < 1e-9);
+  detail.dispose();
 });
 
 test("ground-detail quality changes trim a shared geometry and restore original world positions", () => {
   const detail = createEstateGroundDetail(groundHeight),
     mesh = detail.mesh;
-  const original = mesh.geometry.attributes.position.array.slice();
+  const original = mesh.geometry.attributes.position.array.slice(),
+    indices = mesh.geometry.index.count;
   assert.equal(mesh.visible, false);
   detail.setActive(true);
-  assert.equal(mesh.geometry.drawRange.count, 360 * 18);
+  assert.equal(mesh.geometry.drawRange.count, indices);
   detail.applyQuality({ tier: "balanced" });
-  assert.equal(mesh.geometry.drawRange.count, 300 * 18);
+  const share = mesh.geometry.drawRange.count / indices;
+  assert.ok(share > GROWTH.balanced - 0.05 && share < GROWTH.balanced + 0.05, `${share}`);
+  assert.equal(mesh.geometry.drawRange.count % 6, 0);
   assert.equal(mesh.visible, true);
   detail.applyQuality({ tier: "low" });
   assert.equal(mesh.visible, false);

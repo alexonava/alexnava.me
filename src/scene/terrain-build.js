@@ -219,11 +219,53 @@ const zoneAt = ({ x, z }, deg, dist, radius, stretch = 1, along = 0) =>
     s: Math.sin((along * Math.PI) / 180),
   });
 export const PUDDLE_ZONES = Object.freeze([
-  zoneAt(LANTERN_FOOT, -115, 1.75, 1.6, 0.53, -115),
+  zoneAt(LANTERN_FOOT, -115, 2.1, 2.2, 0.47, -115),
   zoneAt(TREE_FOOTING, 185, 8, 1.6),
   zoneAt(TREE_FOOTING, 75, 9, 2.5),
   zoneAt(TREE_FOOTING, -100, 16, 1.5),
 ]);
+// The rain streams (mud-ground.js SLATE_STREAMS, restated): world polylines
+// from the lantern's foot offsets, and a point's distance outside them (at
+// their widest, meander included).
+export const STREAMS = Object.freeze({
+  paths: Object.freeze(
+    [
+      [
+        [5.28, 1.04],
+        [3.68, 0.04],
+        [2.28, -1.06],
+        [1.08, -1.56],
+        [0.08, -1.86],
+      ],
+      [
+        [2.28, 1.24],
+        [1.38, 0.64],
+        [0.98, -0.36],
+        [0.1, -1.7],
+      ],
+      [
+        [4.48, -2.36],
+        [3.08, -1.96],
+        [1.68, -2.06],
+        [0.48, -2.06],
+      ],
+    ].map((path) => Object.freeze(path.map(([dx, dz]) => Object.freeze([dx, dz])))),
+  ),
+  reach: 0.17 + 0.28,
+});
+export function streamDistance(x, z) {
+  let best = Infinity;
+  for (const path of STREAMS.paths)
+    for (let k = 1; k < path.length; k++) {
+      const ax = LANTERN_FOOT.x + path[k - 1][0],
+        az = LANTERN_FOOT.z + path[k - 1][1],
+        bx = path[k][0] - path[k - 1][0],
+        bz = path[k][1] - path[k - 1][1],
+        h = Math.min(1, Math.max(0, ((x - ax) * bx + (z - az) * bz) / (bx * bx + bz * bz)));
+      best = Math.min(best, Math.hypot(x - ax - bx * h, z - az - bz * h));
+    }
+  return best - STREAMS.reach;
+}
 // A zone's distance from its centre in its own stretched frame (units).
 export const zoneDistance = ({ x: cx, z: cz, stretch, c, s }, x, z) =>
   Math.hypot((c * (x - cx) + s * (z - cz)) / stretch, -s * (x - cx) + c * (z - cz));
@@ -239,7 +281,7 @@ export const POND = Object.freeze({
   depth: 0.18,
   rise: 0.15,
   level: -0.04,
-  reach: Object.freeze([1.35, 1.75]),
+  reach: Object.freeze([1.25, 1.55]),
   blend: 0.05,
 });
 // The normalised radius in the pond's footprint at a world x/z, 1 on its
@@ -339,8 +381,8 @@ export const ROOT_SHADE = Object.freeze({
     "0000000000114bmxBwlc7421000000000",
     "0000000001235bnBHDrga642100000000",
     "0000001112357bkxHFukeb85210000000",
-    "000001003469belwFFyqlid8421000000",
-    "0000000018cgilqzGHBvtqkc731000000",
+    "000000000469belwFFyqlid8421000000",
+    "0000000008cgilqzGHBvtqkc731000000",
     "0000000000bosuxEJJEBAyqh942100000",
     "00000000007lzEFJNMIGGExme84100000",
     "00000000006kzMNPRQMKLLFxpia510000",
@@ -373,8 +415,8 @@ export const ROOT_SHADE = Object.freeze({
     "0000000000015fsBxj721000000000000",
     "000000000125cnAHAma54210000000000",
     "00000001137eoAKMDofec720000000000",
-    "000001006cjtENTRFsnpne51000000000",
-    "0000000018juHUYTHwwBxj71000000000",
+    "0000000009jtENTRFsnpne51000000000",
+    "0000000008juHUYTHwwBxj71000000000",
     "0000000000boCPZTJDGKEpb3100000000",
     "00000000007lzNZUNLPRLxmc642100000",
     "00000000006kzNZWTSVWSIyrjd7410000",
@@ -405,11 +447,11 @@ export const ROOT_SHADE = Object.freeze({
     "0w_____________________________w0",
     "0w___________q00q______________w0",
     "0w___________O000m_____________w0",
-    "0w____________Q000_____________w0",
-    "0w___C000D_____L00_____________w0",
-    "0w_p000000______00_____________w0",
-    "0w3000000008____0______________w0",
-    "020000000000a___a______________w0",
+    "0w____XzzP____Q000_____________w0",
+    "0w__000000a____L00_____________w0",
+    "0wb00000003_____00_____________w0",
+    "010000000008____0______________w0",
+    "000000000000a___a______________w0",
     "0000000000W_0d_________________w0",
     "0000000000X____________________w0",
     "0000000000Z___________60000____w0",
@@ -1407,23 +1449,28 @@ export const SHADING_EARLY = 150;
 export const TUFTS = Object.freeze({ cull: 0.6, shade: 0.75 });
 function settleTufts(growth, liftAt) {
   const p = growth.geometry.attributes.position,
-    color = growth.geometry.attributes.color;
+    color = growth.geometry.attributes.color,
+    grass = growth.geometry.attributes.aGrass,
+    stride = growth.geometry.userData.bladeVertices ?? 4;
   let culled = 0;
-  // Four vertices per blade; the first two straddle the tuft's centre.
-  for (let i = 0; i + 3 < p.count; i += 4) {
+  // `stride` vertices per blade; the first two straddle its foot.
+  for (let i = 0; i + stride - 1 < p.count; i += stride) {
     const x = (p.getX(i) + p.getX(i + 1)) / 2,
       z = (p.getZ(i) + p.getZ(i + 1)) / 2,
       lift = liftAt(x, z);
     const [sky] = rootOcclusion(x, z);
     if (rootCovered(x, z) || sky > TUFTS.cull) {
       const y = (p.getY(i) + p.getY(i + 1)) / 2 + lift - 0.05;
-      for (let k = i; k < i + 4; k++) p.setXYZ(k, x, y, z);
+      for (let k = i; k < i + stride; k++) {
+        p.setXYZ(k, x, y, z);
+        grass?.setX(k, 0);
+      }
       culled++;
       continue;
     }
-    if (lift) for (let k = i; k < i + 4; k++) p.setY(k, p.getY(k) + lift);
+    if (lift) for (let k = i; k < i + stride; k++) p.setY(k, p.getY(k) + lift);
     if (color && sky > 0.02)
-      for (let k = i; k < i + 4; k++)
+      for (let k = i; k < i + stride; k++)
         color.setXYZ(
           k,
           color.getX(k) * (1 - TUFTS.shade * sky),
@@ -1433,6 +1480,7 @@ function settleTufts(growth, liftAt) {
   }
   p.needsUpdate = true;
   if (color) color.needsUpdate = true;
+  if (grass) grass.needsUpdate = true;
   growth.geometry.computeBoundingSphere();
   return culled;
 }
@@ -1445,7 +1493,8 @@ function settleTufts(growth, liftAt) {
 // it reads dark. One draw with the tufts' material.
 export const LITTER = Object.freeze({
   count: 50,
-  twigs: 8,
+  twigs: 16,
+  twigChance: 0.3,
   seed: 40127,
   pebbleShare: 0.62,
   beside: Object.freeze([0.05, 0.75]),
@@ -1481,6 +1530,31 @@ export const LITTER = Object.freeze({
     spacing: 0.5,
     tone: Object.freeze([1.1, 2.3]),
     tint: Object.freeze([0.94, 1, 1.1]),
+  }),
+  // The fine pieces on their own seed, after the stones: fallen leaves (curled,
+  // cupped ovals, `leafSize` long, dull brown `leafTone` rgb, darker in the
+  // shade), soil clods (flattened lumps, `clodTone` times the litter's base)
+  // and grit (tiny flattened octahedra, `gravelTone` times its grey, a few
+  // `pale` ones lighter). They lie in the tree shots' foreground: `arc` degrees
+  // about the tree (atan2(z, x)), `reach` units out, on the soil (never under a
+  // root, at the lantern's foot or in the water). Leaves keep near the roots
+  // (`leafNear`: acceptance in the open). Balanced draws GROWTH.balanced of
+  // them (estate-ground-detail.js).
+  fine: Object.freeze({
+    seed: 61331,
+    counts: Object.freeze({ leaves: 90, clods: 70, gravel: 650 }),
+    arc: Object.freeze([-175, -55]),
+    reach: Object.freeze([2.8, 12.5]),
+    lantern: 0.45,
+    puddle: 0.15,
+    leafNear: 0.45,
+    leafSize: Object.freeze([0.12, 0.22]),
+    leafTone: Object.freeze([0.17, 0.14, 0.1]),
+    clod: Object.freeze([0.035, 0.09]),
+    clodTone: Object.freeze([0.85, 1.3]),
+    grit: Object.freeze([0.012, 0.036]),
+    gravelTone: Object.freeze([0.5, 1.3]),
+    pale: Object.freeze([0.03, 1.8]),
   }),
 });
 // A unit icosphere (one subdivision: 42 vertices, 80 faces), the stones' shape.
@@ -1603,6 +1677,7 @@ export function scatterLitter(surface, groundColor) {
       continue;
     if (Math.hypot(x - LANTERN_FOOT.x, z - LANTERN_FOOT.z) < L.lantern) continue;
     if (PUDDLE_ZONES.some((zone) => zoneDistance(zone, x, z) < zone.radius + L.puddle)) continue;
+    if (streamDistance(x, z) < 0) continue;
     // Beside a real root, never under one.
     const near = rootCovered(x, z) ? 0 : coverDistance(x, z, L.near[1]);
     if (!(near >= L.near[0] && near <= L.near[1])) continue;
@@ -1612,7 +1687,11 @@ export function scatterLitter(surface, groundColor) {
     const y = surface(x, z);
     if (!Number.isFinite(y)) continue;
     const kind =
-      twigs < L.twigs && random() < 0.16 ? "twig" : random() < L.pebbleShare ? "pebble" : "flake";
+      twigs < L.twigs && random() < L.twigChance
+        ? "twig"
+        : random() < L.pebbleShare
+          ? "pebble"
+          : "flake";
     const yaw = random() * Math.PI * 2,
       cy = Math.cos(yaw),
       sy = Math.sin(yaw),
@@ -1790,6 +1869,7 @@ export function scatterLitter(surface, groundColor) {
       continue;
     if (Math.hypot(x - LANTERN_FOOT.x, z - LANTERN_FOOT.z) < L.lantern) continue;
     if (PUDDLE_ZONES.some((zone) => zoneDistance(zone, x, z) < zone.radius + L.puddle)) continue;
+    if (streamDistance(x, z) < 0) continue;
     // Clear of every root and arch above it (the stone's own reach), yet among them.
     if (rootCovered(x, z)) continue;
     const near = coverDistance(x, z, S.among);
@@ -1845,9 +1925,16 @@ export function scatterLitter(surface, groundColor) {
       }
     stones.push([x, z, width]);
   }
+  const fineStart = positions.length / 3;
+  scatterFine(surface, base, stones, triangle);
   const geometry = new BufferGeometry();
   geometry.setAttribute("position", new BufferAttribute(new Float32Array(positions), 3));
   geometry.setAttribute("color", new BufferAttribute(new Float32Array(colors), 3));
+  // The growth material's wind and sky lean (estate-ground-detail.js): none here.
+  geometry.setAttribute(
+    "aGrass",
+    new BufferAttribute(new Float32Array((positions.length / 3) * 2), 2),
+  );
   geometry.computeVertexNormals();
   geometry.attributes.normal.array.set(stoneNormals, litterVertices * 3);
   geometry.computeBoundingSphere();
@@ -1855,6 +1942,260 @@ export function scatterLitter(surface, groundColor) {
   // The stones' vertices follow the litter's.
   geometry.userData.stones = stones;
   geometry.userData.litterVertices = litterVertices;
+  // The fine pieces' vertices [first, end): balanced draws a share of them.
+  geometry.userData.fine = [fineStart, positions.length / 3];
+  return geometry;
+}
+
+// The fine litter (LITTER.fine), appended through `triangle(a, b, c, rgb)`:
+// leaves, clods and grit interleaved, so a draw range cut thins all three.
+function scatterFine(surface, base, stones, triangle) {
+  const F = LITTER.fine;
+  let seed = F.seed;
+  const random = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296;
+  const between = ([a, b]) => a + random() * (b - a);
+  const left = { ...F.counts },
+    grey = 0.2126 * base[0] + 0.7152 * base[1] + 0.0722 * base[2];
+  const { x: lx, z: lz, pitch, cols, rows } = ROOT_LATTICE;
+  for (let attempt = 0; attempt < 30000 && left.leaves + left.clods + left.gravel > 0; attempt++) {
+    let pick = random() * (left.leaves + left.clods + left.gravel);
+    const kind = (pick -= left.gravel) < 0 ? "gravel" : pick < left.clods ? "clod" : "leaf";
+    const turn = (between(F.arc) * Math.PI) / 180,
+      r = Math.sqrt(between([F.reach[0] ** 2, F.reach[1] ** 2]));
+    const x = TREE_FOOTING.x + TRUNK[0] + Math.cos(turn) * r,
+      z = TREE_FOOTING.z + TRUNK[1] + Math.sin(turn) * r;
+    if (
+      x < lx + 1 ||
+      z < lz + 1 ||
+      x > lx + (cols - 1) * pitch - 1 ||
+      z > lz + (rows - 1) * pitch - 1
+    )
+      continue;
+    if (Math.hypot(x - LANTERN_FOOT.x, z - LANTERN_FOOT.z) < F.lantern) continue;
+    if (PUDDLE_ZONES.some((zone) => zoneDistance(zone, x, z) < zone.radius + F.puddle)) continue;
+    // Clear of a root by a quarter unit, so no piece reaches under its edge.
+    if (pondRadius(x, z) < 1.05 || coverDistance(x, z, 0.25) <= 0.25 || streamDistance(x, z) < 0)
+      continue;
+    if (stones.some(([px, pz, w]) => Math.hypot(px - x, pz - z) < w * 0.6)) continue;
+    if (kind === "leaf" && coverDistance(x, z, 0.8) > 0.8 && random() > F.leafNear) continue;
+    const y = surface(x, z);
+    if (!Number.isFinite(y)) continue;
+    const ground = (px, pz) => {
+      const h = surface(px, pz);
+      return Number.isFinite(h) ? h : y;
+    };
+    const [sky] = rootOcclusion(x, z),
+      dim = 1 - LITTER.shade * sky,
+      yaw = random() * Math.PI * 2,
+      cy = Math.cos(yaw),
+      sy = Math.sin(yaw);
+    const at = (u, w, lift) => {
+      const tx = u * cy - w * sy,
+        tz = u * sy + w * cy;
+      return [x + tx, ground(x + tx, z + tz) + lift, z + tz];
+    };
+    if (kind === "leaf") {
+      // A cupped oval on a midrib, curled along its length.
+      const length = between(F.leafSize),
+        width = length * between([0.45, 0.62]),
+        cup = width * between([0.12, 0.3]),
+        curl = length * between([0.05, 0.22]),
+        lift = (u) => 0.008 + curl * (2 * u - 1) ** 2;
+      const [[, A], [L1, M1, R1], [L2, M2, R2], [, T]] = [
+        [0, 0],
+        [0.3, 0.46],
+        [0.65, 0.4],
+        [1, 0],
+      ].map(([u, half]) => [
+        at((u - 0.5) * length, -half * width, lift(u) + cup),
+        at((u - 0.5) * length, 0, lift(u)),
+        at((u - 0.5) * length, half * width, lift(u) + cup),
+      ]);
+      const age = random(),
+        rgb = F.leafTone.map(
+          (c, k) => c * (0.6 + 0.6 * age) * dim * (k === 1 ? 1 - 0.15 * age : 1),
+        );
+      for (const [a, b, c] of [
+        [A, M1, L1],
+        [A, R1, M1],
+        [L1, M1, M2],
+        [L1, M2, L2],
+        [M1, R1, R2],
+        [M1, R2, M2],
+        [L2, M2, T],
+        [M2, R2, T],
+      ])
+        triangle(a, b, c, rgb);
+      left.leaves--;
+    } else {
+      // A flattened, jittered octahedron: a soil clod or a grain of grit.
+      const clod = kind === "clod",
+        a = between(clod ? F.clod : F.grit),
+        b = a * between([0.6, 1]),
+        h = a * between(clod ? [0.35, 0.55] : [0.4, 0.75]);
+      const corners = [
+        [a, 0, 0],
+        [-a, 0, b * 0.3],
+        [0, 0, b],
+        [a * 0.2, 0, -b],
+        [0, h, 0],
+        [0, -h * 0.5, 0],
+      ].map(([px, py, pz]) => {
+        const j = 0.75 + 0.5 * random();
+        return at(px * j, pz * j, py + h * 0.15);
+      });
+      let rgb;
+      if (clod) {
+        const k = between(F.clodTone) * dim;
+        rgb = base.map((c) => c * k);
+      } else {
+        const k = (random() < F.pale[0] ? F.pale[1] : between(F.gravelTone)) * grey * dim,
+          warm = random() * 0.2;
+        rgb = [k * (1 + warm), k, k * (1 - warm)];
+      }
+      for (const [i, j, k] of [
+        [4, 0, 2],
+        [4, 2, 1],
+        [4, 1, 3],
+        [4, 3, 0],
+        [5, 2, 0],
+        [5, 1, 2],
+        [5, 3, 1],
+        [5, 0, 3],
+      ])
+        triangle(
+          corners[i],
+          corners[j],
+          corners[k],
+          rgb.map((c) => c * (i === 4 ? 1 : 0.7)),
+        );
+      left[clod ? "clods" : "gravel"]--;
+    }
+  }
+}
+
+// The pond's rushes (drawn with the grass material, estate-ground-detail.js,
+// so they sway): a few clumps of thin, bowed stems on its bank, `bank`
+// normalised radii out, at its two ends: never within `clear` degrees of the
+// pond-to-lantern line on the lantern's side or the camera's. Each stem is a tapering 4-row strip as a
+// grass blade; `heads` of them carry a slim brown seed head near the top.
+export const RUSHES = Object.freeze({
+  seed: 90417,
+  clumps: 6,
+  stems: Object.freeze([18, 32]),
+  bank: Object.freeze([1.08, 1.45]),
+  clear: 62,
+  lantern: 0.7,
+  height: Object.freeze([0.35, 0.9]),
+  width: Object.freeze([0.008, 0.013]),
+  heads: 0.12,
+  base: Object.freeze([0.045, 0.06, 0.04]),
+  tip: Object.freeze([0.12, 0.13, 0.085]),
+  head: Object.freeze([0.075, 0.055, 0.04]),
+  sway: 0.08,
+  up: 0.35,
+});
+export function plantRushes(surface) {
+  const R = RUSHES,
+    pond = PUDDLE_ZONES[0];
+  let seed = R.seed;
+  const random = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296;
+  const between = ([a, b]) => a + random() * (b - a);
+  const positions = [],
+    colors = [],
+    grass = [],
+    indices = [];
+  const toLantern = Math.atan2(LANTERN_FOOT.z - pond.z, LANTERN_FOOT.x - pond.x);
+  // Rows of [x, y, z, across x, across z], widths, colours and sway per row.
+  // Each stem and head is two crossed strips, so it never reads as a plank.
+  const strip = (points, widths, rgbs, sways) => {
+    flat(points, widths, rgbs, sways);
+    flat(
+      points.map(([px, py, pz, ax, az]) => [px, py, pz, -az, ax]),
+      widths,
+      rgbs,
+      sways,
+    );
+  };
+  const flat = (points, widths, rgbs, sways) => {
+    const start = positions.length / 3;
+    points.forEach(([px, py, pz, ax, az], row) => {
+      const w = widths[row] / 2;
+      positions.push(px - ax * w, py, pz - az * w, px + ax * w, py, pz + az * w);
+      colors.push(...rgbs[row], ...rgbs[row].map((c) => c * 0.9));
+      grass.push(sways[row], R.up, sways[row], R.up);
+    });
+    for (let row = 0; row + 1 < points.length; row++) {
+      const a = start + row * 2;
+      indices.push(a, a + 1, a + 3, a, a + 3, a + 2);
+    }
+  };
+  const T = [0, 0.35, 0.7, 1];
+  let clumps = 0;
+  for (let attempt = 0; clumps < R.clumps && attempt < 400; attempt++) {
+    // A point on the bank, in the pond's stretched frame.
+    const turn = random() * Math.PI * 2;
+    const reach = between(R.bank) * pond.radius,
+      u = Math.cos(turn) * reach * pond.stretch,
+      v = Math.sin(turn) * reach,
+      cx = pond.x + pond.c * u - pond.s * v,
+      cz = pond.z + pond.s * u + pond.c * v;
+    // Off the lantern's side: its world bearing from the pond, against the lantern's.
+    const away = Math.abs(
+      ((Math.atan2(cz - pond.z, cx - pond.x) - toLantern + 3 * Math.PI) % (2 * Math.PI)) - Math.PI,
+    );
+    // Nor on the camera's side (the lantern shots look across the pond at it):
+    // only at the pond's two ends.
+    if (away < (R.clear * Math.PI) / 180 || Math.PI - away < (R.clear * Math.PI) / 180) continue;
+    if (pondRadius(cx, cz) < 1.05 || rootCovered(cx, cz)) continue;
+    if (Math.hypot(cx - LANTERN_FOOT.x, cz - LANTERN_FOOT.z) < R.lantern) continue;
+    const stems = Math.round(between(R.stems));
+    for (let n = 0; n < stems; n++) {
+      const spread = 0.12 * Math.sqrt(random()),
+        at = random() * Math.PI * 2,
+        x = cx + Math.cos(at) * spread,
+        z = cz + Math.sin(at) * spread,
+        y = surface(x, z);
+      if (!Number.isFinite(y) || pondRadius(x, z) < 1.02) continue;
+      const height = between(R.height),
+        width = between(R.width),
+        lean = height * between([0.05, 0.3]),
+        // They lean off the water, give or take a radian.
+        outward = Math.atan2(z - pond.z, x - pond.x) + (random() - 0.5) * 2,
+        lx = Math.cos(outward),
+        lz = Math.sin(outward),
+        tone = 0.8 + 0.4 * random();
+      const rows = T.map((t) => {
+        const bend = lean * t * t;
+        return [x + lx * bend, y - 0.02 + height * t - bend * bend * 0.4, z + lz * bend, -lz, lx];
+      });
+      strip(
+        rows,
+        [1, 0.9, 0.7, 0.15].map((k) => width * k),
+        T.map((t) => R.base.map((b, k) => (b + (R.tip[k] - b) * t) * tone)),
+        T.map((t) => t * t * height * R.sway),
+      );
+      if (random() < R.heads) {
+        const lerp = (k) => rows[2].map((c, e) => (e < 3 ? c + (rows[3][e] - c) * k : c));
+        const sway = 0.8 * 0.8 * height * R.sway;
+        strip(
+          [lerp(0.15), lerp(0.85)],
+          [width * 1.7, width * 1.5],
+          [R.head, R.head.map((c) => c * 0.8)],
+          [sway, sway * 1.2],
+        );
+      }
+    }
+    clumps++;
+  }
+  const geometry = new BufferGeometry();
+  geometry.setAttribute("position", new BufferAttribute(new Float32Array(positions), 3));
+  geometry.setAttribute("color", new BufferAttribute(new Float32Array(colors), 3));
+  geometry.setAttribute("aGrass", new BufferAttribute(new Float32Array(grass), 2));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  geometry.computeBoundingSphere();
+  geometry.userData.clumps = clumps;
   return geometry;
 }
 
@@ -1884,7 +2225,8 @@ export function settleRoots(
     material = ground.material;
   const height = (x, z) => groundHeight(x, z) + liftAt(x, z);
   const growth = ground.parent?.getObjectByName("estate-ground-growth");
-  let litter = null;
+  let litter = null,
+    rushes = null;
   if (growth?.geometry.attributes.position) {
     settleTufts(growth, liftAt);
     litter = new Mesh(
@@ -1897,6 +2239,14 @@ export function settleRoots(
     litter.matrixAutoUpdate = false;
     litter.updateMatrix();
     growth.add(litter);
+    rushes = new Mesh(plantRushes(terrainHeight(terrain)), growth.material);
+    rushes.name = "estate-pond-rushes";
+    rushes.receiveShadow = true;
+    rushes.castShadow = false;
+    rushes.matrixAutoUpdate = false;
+    rushes.updateMatrix();
+    growth.add(rushes);
+    growth.userData.retier?.();
   }
   const renderer = rendering.renderer,
     scene = rendering.homeScene,
@@ -1996,6 +2346,10 @@ export function settleRoots(
     if (litter) {
       litter.removeFromParent();
       litter.geometry.dispose();
+    }
+    if (rushes) {
+      rushes.removeFromParent();
+      rushes.geometry.dispose();
     }
   });
   const shadedKey = () => {

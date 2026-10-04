@@ -22,6 +22,7 @@ import {
   ENVIRONMENT_ROLES,
   LANTERN_REACH,
   WET_BARK,
+  ROOT_MOSS,
 } from "../src/scene/architecture.js";
 import { ESTATE } from "../src/scene/estate-layout.js";
 import { smoothTreeNormals } from "../src/scene/tree-normals.js";
@@ -377,6 +378,19 @@ test("the bare tree takes no procedural film extras and the rocks darken above t
   assert.ok(WET_BARK.mud[1] < WET_BARK.band[0], "the mud stays below the wet band's edge");
   assert.ok(WET_BARK.mudTone.every((v) => v >= 0.5 && v < 1));
   assert.ok(WET_BARK.mudRoughness < WET_BARK.roughness);
+  // Damp moss on the roots' sky-facing tops above the mud, in film only,
+  // under the role's tint, matte; the rocks and the tower take none.
+  assert.ok(treeShader.fragmentShader.includes("float babelMoss = babelFilm*"));
+  assert.ok(treeShader.fragmentShader.includes(")*babelTint*(.65+.7*babelMossFine)"));
+  assert.ok(
+    treeShader.fragmentShader.includes(
+      `roughnessFactor = mix(roughnessFactor, ${ROOT_MOSS.roughness.toFixed(2)}, babelMoss);`,
+    ),
+  );
+  assert.ok(treeShader.vertexShader.includes("babelLocalN = objectNormal;"));
+  assert.ok(ROOT_MOSS.band[0] >= WET_BARK.mud[0] && ROOT_MOSS.band[3] > ROOT_MOSS.band[2]);
+  const [r, g, b] = ROOT_MOSS.tone;
+  assert.ok(g > r && g > b && (g - Math.min(r, b)) / g < 0.5, "a dull grey-green");
   tree.dispose();
   source.resources.forEach((resource) => resource.dispose());
   const stone = sourceAsset(false),
