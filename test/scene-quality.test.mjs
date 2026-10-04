@@ -770,8 +770,8 @@ test("adaptive quality steps change cost settings without refetching models or t
   await flush();
   await flush();
   const settled = requests.length;
-  // Models (tower, tree) and the slate (color, normal, detail).
-  assert.equal(settled, 2 + 3);
+  // Models (tower, tree) and the slate (color, normal, detail, grit, relief).
+  assert.equal(settled, 2 + 5);
   restores.length = 0;
 
   // Mirrors updateSceneFrame after the reveal.

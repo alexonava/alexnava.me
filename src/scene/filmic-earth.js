@@ -10,11 +10,12 @@ export const EARTH = Object.freeze({ width: 384, subdivisions: 128 });
 
 // The film terrain's map set, "slate": the seamless slate v2 tile, repeated
 // every 22 units at the classic ground's normal strength, with no roughness
-// map, plus a 512 detail map shared by both tiers (mud-ground.js samples it at
-// its own scale).
+// map, plus a 512 detail map shared by both tiers and the close soil's grit and
+// relief maps at the tier's size (mud-ground.js samples these at their own
+// scales).
 export const FILM_GROUND_PRESETS = Object.freeze({
   slate: Object.freeze({
-    kinds: Object.freeze(["color", "normal", "detail"]),
+    kinds: Object.freeze(["color", "normal", "detail", "grit", "relief"]),
     urlFor: slateMaterialUrl,
     sizeFor: (kind, size) => (kind === "detail" ? 512 : size),
     tile: SLATE_TILING.tile,
@@ -84,6 +85,8 @@ export function createEarthDetail({
           normalMap: maps.normal,
           roughnessMap: maps.roughness ?? null,
           detailMap: maps.detail ?? null,
+          gritMap: maps.grit ?? null,
+          reliefMap: maps.relief ?? null,
           bumpMap: null,
           normalScale: preset.normalScale,
           filmTiled: true,

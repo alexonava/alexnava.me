@@ -133,6 +133,15 @@ commissioned.
 
 Tool: [Meshy](https://www.meshy.ai/).
 
+The close soil maps `images/materials/slate-{grit,relief}-{1024,512}.webp` are
+derived from ["Dirt"](https://polyhaven.com/a/dirt) by Charlotte Baglioni on
+Poly Haven, released under [CC0](https://polyhaven.com/license): the grit map is
+its colour's luminance against its own local mean, the relief map is a height
+integrated from its normal map, both greyscale and tiling
+(`Assets/Materials/dirt-close-v1/scripts/make-dirt-close.py`; the source and its
+provenance are in `Assets/Materials/PolyHaven-Dirt`). Credit is not required
+under CC0; it is given here.
+
 ## Baseline hill ring elevation data
 
 The baseline hill ring (`HILL_PROFILE` in `src/scene/hill-silhouette.js`) is

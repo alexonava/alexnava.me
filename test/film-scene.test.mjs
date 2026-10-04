@@ -87,31 +87,43 @@ test("the default film slate binds its seamless maps and shared detail map at th
       "/images/materials/slate-color-1024.webp",
       "/images/materials/slate-normal-1024.webp",
       "/images/materials/slate-detail-512.webp",
+      "/images/materials/slate-grit-1024.webp",
+      "/images/materials/slate-relief-1024.webp",
     ],
   );
   slate.applyQuality({ tier: "balanced" });
-  assert.ok(pending.slice(0, 3).every(({ signal }) => signal.aborted));
-  // Both tiers share the one 512 detail map.
+  assert.ok(pending.slice(0, 5).every(({ signal }) => signal.aborted));
+  // Both tiers share the one 512 detail map; the close soil's maps follow the tier.
   assert.deepEqual(
-    pending.slice(3).map(({ url }) => url),
+    pending.slice(5).map(({ url }) => url),
     [
       "/images/materials/slate-color-512.webp",
       "/images/materials/slate-normal-512.webp",
       "/images/materials/slate-detail-512.webp",
+      "/images/materials/slate-grit-512.webp",
+      "/images/materials/slate-relief-512.webp",
     ],
   );
   pending.forEach((r, i) => {
-    const size = i < 2 ? 1024 : 512;
+    const size = i < 5 && !r.url.includes("detail") ? 1024 : 512;
     r.resolve({ width: size, height: size, close: () => closed.push(i) });
   });
   await tick();
   await tick();
   assert.equal(published.length, 1);
-  assert.equal(closed.length, 6);
+  assert.equal(closed.length, 10);
   // The seamless v2 tile repeats every 22 world units (the classic ground's
   // tile), so 384 / 22 across the film terrain, without mirroring.
   close(FILM_GROUND_PRESETS.slate.tile, 22);
-  for (const map of [bound.colorMap, bound.normalMap, bound.detailMap]) {
+  assert.notEqual(bound.gritMap.colorSpace, SRGBColorSpace, "the grit holds linear albedo detail");
+  assert.notEqual(bound.reliefMap.colorSpace, SRGBColorSpace, "the relief holds linear height");
+  for (const map of [
+    bound.colorMap,
+    bound.normalMap,
+    bound.detailMap,
+    bound.gritMap,
+    bound.reliefMap,
+  ]) {
     close(map.repeat.x, 384 / 22);
     close(map.repeat.y, 384 / 22);
     assert.equal(map.wrapS, RepeatWrapping);
@@ -126,13 +138,19 @@ test("the default film slate binds its seamless maps and shared detail map at th
   assert.equal(bound.bumpMap, null);
   assert.equal(bound.filmTiled, true, "index.js keeps the film tiling as published");
   let disposals = 0;
-  for (const m of [bound.colorMap, bound.normalMap, bound.detailMap])
+  for (const m of [
+    bound.colorMap,
+    bound.normalMap,
+    bound.detailMap,
+    bound.gritMap,
+    bound.reliefMap,
+  ])
     m.addEventListener("dispose", () => {
       assert.equal(bound, null, "bindings are restored before the maps are freed");
       disposals++;
     });
   slate.setActive(false);
-  assert.equal(disposals, 3);
+  assert.equal(disposals, 5);
   slate.dispose();
   assert.equal(slate.dispose(), false);
 });
@@ -159,7 +177,7 @@ test("a failed slate map reports a fallback, and the slate is the only preset", 
   await tick();
   await tick();
   assert.equal(published, 0);
-  assert.equal(closed, 2, "the color and detail maps that did load are closed");
+  assert.equal(closed, 4, "the color, detail, grit and relief maps that did load are closed");
   assert.deepEqual(statuses.slice(-1), ["fallback"]);
   slate.dispose();
   assert.deepEqual(Object.keys(FILM_GROUND_PRESETS), ["slate"]);
@@ -171,7 +189,7 @@ test("a failed slate map reports a fallback, and the slate is the only preset", 
 });
 
 test("the slate keeps its loaded maps through adaptive profile changes with a pinned asset tier", async () => {
-  for (const [create, kinds] of [[createEarthDetail, 3]]) {
+  for (const [create, kinds] of [[createEarthDetail, 5]]) {
     const pending = [];
     let published = 0,
       restored = 0;

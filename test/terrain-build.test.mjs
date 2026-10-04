@@ -37,6 +37,12 @@ import {
   MIRROR_FLAME,
   PIN_KEEP,
   pinKeep,
+  POND,
+  POND_STEPS,
+  pondBounds,
+  pondCarve,
+  pondRadius,
+  pondShapeAt,
   POOL_FIELD,
   poolField,
   PUDDLE_MIRROR,
@@ -195,9 +201,13 @@ test("root supports preserve coarse terrain vertices, map scale and bounded mesh
   }
   assert.ok(hills.boundingBox.max.z < 9);
   assert.ok(foothillHeight(106.8, 106.8) < 1.5, "keep the lantern's north-east horizon low");
+  // The root rectangle and the pond's sub-grid (each of its 0.75 cells cut
+  // POND_STEPS x POND_STEPS, each cell beside it a fan) and their stitching.
+  const [px0, px1, pz0, pz1] = pondBounds(),
+    cells = (Math.ceil((px1 - px0) / 0.75) + 1) * (Math.ceil((pz1 - pz0) / 0.75) + 1);
   assert.ok(
-    hills.index.count < original.index.count * 1.15,
-    "only the root rectangle and its stitched boundary are refined",
+    hills.index.count < original.index.count * 1.15 + cells * (POND_STEPS * POND_STEPS + 1) * 6,
+    "only the root rectangle, the pond and their stitched boundaries are refined",
   );
   assert.equal(hills.groups.length, 0, "one ground material and draw");
   const repeat = createEarthGeometry(base);
@@ -269,7 +279,7 @@ function surface(geometry) {
   };
 }
 
-test("triangulated lantern clearing and full puddle blend retain baseline heights and shading normals", () => {
+test("the pond lowers only its basin and bank: the lantern's footing and the pinned ground beyond keep their heights and shading", () => {
   assert.deepEqual(TREE_FOOTING, { x: ESTATE.tree.x, z: ESTATE.tree.z });
   // The sink prop-scale.js seats the tree with, restated for the bake.
   assert.equal(TREE_SINK, ESTATE.tree.sink);
@@ -278,10 +288,10 @@ test("triangulated lantern clearing and full puddle blend retain baseline height
   assert.deepEqual(zone, {
     anchor: "lantern",
     deg: -115,
-    dist: 3,
-    radius: 2.8,
-    stretch: 1.4,
-    along: 33,
+    dist: 1.75,
+    radius: 1.6,
+    stretch: 0.53,
+    along: -115,
   });
   const base = groundBase(),
     original = plainDunes(base),
@@ -290,34 +300,51 @@ test("triangulated lantern clearing and full puddle blend retain baseline height
   // Include that step before interpolating them across the rendered triangles.
   restored.normalizeNormals();
   const a = surface(original),
-    b = surface(restored);
+    b = surface(restored),
+    height = terrainHeight(restored);
   const lamp = estateLantern(),
-    puddle = estatePoint(zone.anchor, zone.deg, zone.dist);
-  const c = Math.cos((zone.along * Math.PI) / 180),
-    s = Math.sin((zone.along * Math.PI) / 180);
-  let checked = 0;
-  for (let x = puddle.x - 6; x < puddle.x + 6; x += 0.3)
-    for (let z = puddle.z - 5; z < puddle.z + 6; z += 0.3) {
-      const dx = x - puddle.x,
-        dz = z - puddle.z;
-      const r = Math.hypot((c * dx + s * dz) / zone.stretch, -s * dx + c * dz);
-      if (r > zone.radius + 0.75 && Math.hypot(x - lamp.x, z - lamp.z) > 1.4) continue;
-      const before = a.at(x, z),
+    pond = estatePoint(zone.anchor, zone.deg, zone.dist),
+    foot = a.at(lamp.x, lamp.z).point.y,
+    water = foot + POND.level;
+  let footing = 0,
+    beyond = 0,
+    basin = 0;
+  for (let x = pond.x - 5; x < pond.x + 5; x += 0.13)
+    for (let z = pond.z - 5; z < pond.z + 5; z += 0.13) {
+      const r = pondRadius(x, z),
+        before = a.at(x, z),
         after = b.at(x, z);
-      assert.ok(
-        Math.abs(before.point.y - after.point.y) < 0.000002,
-        `puddle height changed at ${x},${z}`,
-      );
-      assert.ok(before.normal.angleTo(after.normal) < 0.0001, `puddle shading tilted at ${x},${z}`);
-      assert.ok(
-        before.face.normal.angleTo(after.face.normal) < 0.00002,
-        "puddle surface plane changed",
-      );
-      checked++;
+      // The pinned ground a sub-grid cell (0.25, up to 0.35 radii) beyond the pond's reach,
+      // all the triangles about it pinned too.
+      const pinned =
+        r > POND.reach[1] + 0.35 &&
+        [-0.8, 0, 0.8].every((u) => [-0.8, 0, 0.8].every((v) => pinKeep(x + u, z + v) === 0));
+      if (Math.hypot(x - lamp.x, z - lamp.z) < 0.6 || pinned) {
+        // The lantern's footing, and the pinned ground beyond the pond.
+        assert.ok(
+          Math.abs(before.point.y - after.point.y) < 0.000002,
+          `height changed at ${x},${z}`,
+        );
+        assert.ok(before.normal.angleTo(after.normal) < 0.0001, `shading tilted at ${x},${z}`);
+        if (Math.hypot(x - lamp.x, z - lamp.z) < 0.6) footing++;
+        else beyond++;
+      } else if (r < 0.95) {
+        // In the water: the basin's shape (to the sub-grid's linear pieces), below the water.
+        const expected = before.point.y + pondCarve(x, z, before.point.y, foot);
+        assert.ok(Math.abs(after.point.y - expected) < 0.012, `basin at ${x},${z}`);
+        assert.ok(after.point.y < water, `the pond's floor lies under its water at ${x},${z}`);
+        assert.ok(
+          Math.abs(height(x, z) - after.point.y) < 1e-5,
+          "the height sampler reads the basin",
+        );
+        basin++;
+      }
     }
+  assert.ok(footing > 40 && beyond > 150 && basin > 150, `${footing} ${beyond} ${basin}`);
+  // Deep at the centre, as deep as the shape says.
   assert.ok(
-    checked > 600,
-    "cover the full puddle, feather and lantern clearing, not just the foot",
+    Math.abs(b.at(pond.x, pond.z).point.y - (water + pondShapeAt(pondRadius(pond.x, pond.z)))) <
+      0.015,
   );
   a.dispose();
   b.dispose();
@@ -448,9 +475,11 @@ test("the knoll: soil rises toward the footing where the roots touch down, with 
   const supports = (x, z) => rootSupportHeight(x, z, base, false);
   for (let x = 35; x < 80; x += 0.25)
     for (let z = 15; z < 60; z += 0.25) {
-      const [b, knoll, shape, lip] = rootSupportLifts(x, z, base);
+      const [b, knoll, shape, lip, pond] = rootSupportLifts(x, z, base);
       assert.equal(b, base(x, z));
-      assert.ok(Math.abs(height(x, z) - (b + knoll + shape + lip)) < 1e-12);
+      assert.ok(Math.abs(height(x, z) - (b + knoll + shape + lip + pond)) < 1e-12);
+      // The pond only lowers, and only within its reach.
+      assert.ok(pond <= 0 && (pond === 0 || pondRadius(x, z) < POND.reach[1]), `${x},${z}`);
       // The knoll only fills: up to the footing, a little more toward the
       // trunk collar (its dome), never above.
       assert.ok(knoll >= 0, `${x},${z}`);
@@ -531,28 +560,37 @@ test("the knoll: soil rises toward the footing where the roots touch down, with 
     assert.ok(
       knollWeight(x - TRUNK[0], z - TRUNK[1], TREE_FOOTING.x + x, TREE_FOOTING.z + z) < 0.5,
     );
-  // The pinned ground takes nothing: within PIN_KEEP of the lantern and the
-  // front puddle, and beyond each drip-line puddle's radius.
+  // The pinned ground takes nothing of the knoll, the relief or the lips:
+  // within PIN_KEEP of the lantern and the pond, and beyond each drip-line
+  // puddle's radius. Only the pond's own basin lowers it.
   for (let a = 0; a < 6.3; a += 0.1)
     for (const r of [0, 1, 2, PIN_KEEP.lantern]) {
       const x = LANTERN_FOOT.x + r * Math.cos(a),
         z = LANTERN_FOOT.z + r * Math.sin(a);
-      assert.equal(supports(x, z), base(x, z), `lantern clearing raised at ${x},${z}`);
+      const [b, knoll, relief, lip, pond] = rootSupportLifts(x, z, base, false);
+      assert.ok(
+        Math.abs(knoll) + Math.abs(relief) + Math.abs(lip) < 1e-12,
+        `lantern clearing raised at ${x},${z}`,
+      );
+      assert.equal(supports(x, z), b + pond);
     }
   // The drip-line puddles and Portrait's foreground puddle keep their ground
   // and gain no rim: untouched to half a unit beyond their edge, at most a
-  // trace at three quarters.
+  // trace at three quarters. Where the pond's own bank reaches that margin
+  // (the west puddle's, beside the lantern) only the pond lowers it.
   for (const zone of SLATE_PUDDLES.zones.slice(1)) {
     const p = estatePoint(zone.anchor, zone.deg, zone.dist);
     for (let a = 0; a < 6.3; a += 0.05)
       for (const r of [0, zone.radius / 2, zone.radius, zone.radius + 0.5, zone.radius + 0.75]) {
         const x = p.x + r * Math.cos(a),
-          z = p.z + r * Math.sin(a);
+          z = p.z + r * Math.sin(a),
+          pond = rootSupportLifts(x, z, base)[4];
+        assert.ok(pond === 0 || r > zone.radius, `the pond reaches into a puddle at ${x},${z}`);
         if (r <= zone.radius + 0.5)
-          assert.equal(height(x, z), base(x, z), `drip-line puddle raised at ${x},${z}`);
+          assert.equal(height(x, z), base(x, z) + pond, `drip-line puddle raised at ${x},${z}`);
         else
           assert.ok(
-            Math.abs(height(x, z) - base(x, z)) < 0.005,
+            Math.abs(height(x, z) - pond - base(x, z)) < 0.005,
             `drip-line puddle rim at ${x},${z}`,
           );
       }
@@ -710,7 +748,7 @@ test("the lazy ground shading extends only the slate's program, under its own ke
     );
     // Rain in the soil's low spots: standing water (a puddle, before the lantern
     // puddle is taken), wet mud about it and drier crests, clear of the clearing;
-    // the trunk darkens the water's mirror; grit only near the lens.
+    // the trunk darkens the water's mirror.
     const P = SLATE_SOIL.pool;
     assert.ok(
       fragment.includes(
@@ -723,10 +761,8 @@ test("the lazy ground shading extends only the slate's program, under its own ke
     );
     assert.match(fragment, /slateWet = max\(slateWet\*\(1\.0-[\d.]+\*slateCrest\), slateMud\);/);
     assert.match(fragment, /slateWaterVeil = max\(/);
-    assert.match(
-      fragment,
-      /float slateGritN = \(1\.0-smoothstep\([\d.]+, [\d.]+, length\(vViewPosition\)\)\)\*\(1\.0-slatePuddle\)\*\(1\.0-slateKeep\);/,
-    );
+    // The square grit is gone: the close soil's grit map (mud-ground.js SLATE_CLOSE) holds it.
+    assert.doesNotMatch(fragment, /slateGrit[N1-9C]/);
     assert.match(
       fragment,
       /roughnessFactor = mix\(roughnessFactor, [\d.]+, slateMud\*\(1\.0-slatePuddle\)\);/,
@@ -832,7 +868,7 @@ test("the lazy ground shading extends only the slate's program, under its own ke
     // and the old horizon, fog and zenith sky only without it.
     assert.match(
       fragment,
-      /#ifdef USE_ENVMAP\s*vec3 slateSkyW = textureCubeUV\(envMap, slateR, 0\.0\)\.rgb\*envMapIntensity;\s*#else\s*vec3 slateSkyW = mix\(/,
+      /#ifdef USE_ENVMAP\s*vec3 slateSkyW = textureCubeUV\(envMap, slateR, 0\.0\)\.rgb\*envMapIntensity\*[\d.]+;\s*#else\s*vec3 slateSkyW = mix\(/,
     );
     assert.match(fragment, /slatePuddle = mix\(slatePuddle, smoothstep\([^;]*\), slateZoneW\);/);
     assert.match(
@@ -1512,12 +1548,22 @@ test("the root shading keeps full float precision beside a 16-bit index", () => 
   );
   assert.equal(occlusion.count, geometry.attributes.position.count);
   assert.ok(geometry.index.array instanceof Uint16Array, "the index stays 16-bit");
-  const p = geometry.attributes.position;
+  const p = geometry.attributes.position,
+    [px0, px1, pz0, pz1] = pondBounds(),
+    inPond = (x, z) => x > px0 - 0.75 && x < px1 + 0.75 && z > pz0 - 0.75 && z < pz1 + 0.75;
   let checked = 0,
     occluded = 0;
   for (let i = 0; i < p.count; i++) {
     const x = p.getX(i) - TREE_FOOTING.x,
       z = -p.getY(i) - TREE_FOOTING.z;
+    // The pond's sub-grid points carry the lattice's occlusion where they lie
+    // (as the GPU interpolates it between the fine vertices).
+    if ((p.getX(i) % 0.75 || p.getY(i) % 0.75) && inPond(p.getX(i), -p.getY(i))) {
+      const lattice = rootOcclusion(p.getX(i), -p.getY(i));
+      assert.ok(Math.abs(occlusion.getX(i) - lattice[0]) < 1e-6, `pond ${x},${z}`);
+      assert.ok(Math.abs(occlusion.getY(i) - lattice[1]) < 1e-6, `pond ${x},${z}`);
+      continue;
+    }
     // Grid vertices near the roots (stitching fan centres stay open soil).
     if (Math.abs(x - 3) >= 15 || Math.abs(z) >= 15 || p.getX(i) % 0.75 || p.getY(i) % 0.75) {
       assert.deepEqual([occlusion.getX(i), occlusion.getY(i)], [0, 0]);

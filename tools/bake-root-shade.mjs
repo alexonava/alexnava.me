@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import {
   KEY_LIGHT,
   LANTERN_FOOT,
+  POND,
   PUDDLE_ZONES,
   ROOT_LATTICE,
   ROOT_LINES,
@@ -33,15 +34,19 @@ const ease = (a, b, value) => {
 
 // The ground the root tables must leave exactly as it was (the terrain
 // regression pins it): the lantern clearing (2 units about the lantern, where
-// the clearing is measured, beyond the 1.4 pin), the front puddle and its
-// 0.75 margin, and each drip-line puddle to 0.8 beyond its radius. Distance
+// the clearing is measured, beyond its pin), the pond out to its reach (its
+// basin and bank), and each drip-line puddle to 0.8 beyond its radius. Distance
 // from x/z (world) to that ground; negative inside. A zone's stretched-frame
 // distance never exceeds the world distance, so this is a lower bound. The
 // occlusion tables pin the puddles closer (SHADE_PIN): the shader already
 // keeps root occlusion off the water (slateGuard), and the wider margin left
 // pale ground under the roots beside the puddles.
 export const SHADE_PIN = Object.freeze([0, 0.05]);
-export function pinDistance(x, z, [front, drip] = [0.75, 0.8]) {
+export function pinDistance(
+  x,
+  z,
+  [front, drip] = [PUDDLE_ZONES[0].radius * (POND.reach[1] - 1), 0.8],
+) {
   let d = Math.hypot(x - LANTERN_FOOT.x, z - LANTERN_FOOT.z) - 2;
   PUDDLE_ZONES.forEach((zone, i) => {
     d = Math.min(d, zoneDistance(zone, x, z) - zone.radius - (i ? drip : front));

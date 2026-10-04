@@ -219,14 +219,80 @@ const zoneAt = ({ x, z }, deg, dist, radius, stretch = 1, along = 0) =>
     s: Math.sin((along * Math.PI) / 180),
   });
 export const PUDDLE_ZONES = Object.freeze([
-  zoneAt(LANTERN_FOOT, -115, 3, 2.8, 1.4, 33),
-  zoneAt(TREE_FOOTING, 185, 8, 2.2),
+  zoneAt(LANTERN_FOOT, -115, 1.75, 1.6, 0.53, -115),
+  zoneAt(TREE_FOOTING, 185, 8, 1.6),
   zoneAt(TREE_FOOTING, 75, 9, 2.5),
-  zoneAt(TREE_FOOTING, -100, 16, 2),
+  zoneAt(TREE_FOOTING, -100, 16, 1.5),
 ]);
 // A zone's distance from its centre in its own stretched frame (units).
 export const zoneDistance = ({ x: cx, z: cz, stretch, c, s }, x, z) =>
   Math.hypot((c * (x - cx) + s * (z - cz)) / stretch, -s * (x - cx) + c * (z - cz));
+
+// The pond (mud-ground.js SLATE_POND, restated): PUDDLE_ZONES[0] is its
+// footprint. Its water lies `level` below the lantern's foot; its floor falls
+// to `depth` below the water at the centre and its bank rises toward `rise`
+// above it, until it meets the ground: the surface is the smooth minimum
+// (`blend` units) of the ground and that shape, eased back to the ground from
+// reach[0] to reach[1] radii, so the lantern's footing stays level.
+export const POND = Object.freeze({
+  wobble: Object.freeze([0.08, 0.05]),
+  depth: 0.18,
+  rise: 0.15,
+  level: -0.04,
+  reach: Object.freeze([1.35, 1.75]),
+  blend: 0.05,
+});
+// The normalised radius in the pond's footprint at a world x/z, 1 on its
+// wobbled shore (as the ground shader's slatePondR()).
+export function pondRadius(x, z) {
+  const { x: cx, z: cz, radius, stretch, c, s } = PUDDLE_ZONES[0];
+  const u = (c * (x - cx) + s * (z - cz)) / stretch / radius,
+    v = (-s * (x - cx) + c * (z - cz)) / radius,
+    a = Math.atan2(v, u);
+  return (
+    Math.hypot(u, v) /
+    (1 + POND.wobble[0] * Math.sin(3 * a + 1.3) + POND.wobble[1] * Math.sin(5 * a + 0.4))
+  );
+}
+// Its height above the water at normalised radius r (mud-ground.js pondShape()).
+export function pondShapeAt(r) {
+  const { depth, rise } = POND;
+  return r < 1 ? -depth * (1 - r * r) : rise * (1 - Math.exp((-(r - 1) * 2 * depth) / rise));
+}
+// The fine grid's 0.75 cells under the pond are cut POND_STEPS x POND_STEPS
+// (0.25 units), so its floor and bank are smooth curves.
+export const POND_STEPS = 3;
+// The world box [x0, x1, z0, z1] the pond reaches (its wobble at its most).
+export function pondBounds() {
+  const { x, z, radius, stretch, c, s } = PUDDLE_ZONES[0],
+    r = POND.reach[1] * (1 + POND.wobble[0] + POND.wobble[1]);
+  let x0 = Infinity,
+    x1 = -Infinity,
+    z0 = Infinity,
+    z1 = -Infinity;
+  for (let k = 0; k < 64; k++) {
+    const t = (k / 64) * 2 * Math.PI,
+      u = Math.cos(t) * stretch * radius * r,
+      v = Math.sin(t) * radius * r,
+      px = x + c * u - s * v,
+      pz = z + s * u + c * v;
+    x0 = Math.min(x0, px);
+    x1 = Math.max(x1, px);
+    z0 = Math.min(z0, pz);
+    z1 = Math.max(z1, pz);
+  }
+  return [x0, x1, z0, z1];
+}
+// How far the pond lowers the ground at x/z (0 or less), over the base height
+// `base` there and the lantern's foot `foot`.
+export function pondCarve(x, z, base, foot) {
+  const r = pondRadius(x, z);
+  if (r >= POND.reach[1]) return 0;
+  const shape = foot + POND.level + pondShapeAt(r),
+    k = POND.blend,
+    h = Math.max(k - Math.abs(base - shape), 0) / k;
+  return (Math.min(base, shape) - (h * h * k) / 4 - base) * (1 - ease(...POND.reach, r));
+}
 
 // The moon key light's direction (toward it), as rendering.js places it
 // (index.js directionalPosition 32, 28, 14 over its target): the direction
@@ -243,7 +309,7 @@ export const KEY_LIGHT = Object.freeze([32, 28, 14].map((v, _, all) => v / Math.
 // lantern clearing, the front puddle or a drip-line puddle takes any.
 // prettier-ignore
 export const ROOT_RESTS = Object.freeze([
-  [12,11,0.072], [27,15,0.134], [26,16,0.105], [22,20,0.09], [20,22,0.016], [21,25,0.052],
+  [12,11,0.08], [27,15,0.134], [26,16,0.105], [22,20,0.09], [20,22,0.016], [21,25,0.052],
 ]);
 const BANKS = new Float32Array(ROOT_LATTICE.cols * ROOT_LATTICE.rows);
 for (const [col, row, lift] of ROOT_RESTS) BANKS[row * ROOT_LATTICE.cols + col] = lift;
@@ -272,19 +338,19 @@ export const ROOT_SHADE = Object.freeze({
     "00000000000127flnlf84210000000000",
     "0000000000114bmxBwlc7421000000000",
     "0000000001235bnBHDrga642100000000",
-    "0000000000357bkxHFukeb85210000000",
-    "000000000029belwFFyqlid8421000000",
-    "00000000000bilqzGHBvtqkc731000000",
-    "00000000000bmuxEJJEBAyqh942100000",
-    "00000000001bmxFJNMIGGExme84100000",
-    "00000000005eoyIPRQMKLLFxpia510000",
-    "00000000007jsBKUUTRPPQPLEwod41000",
-    "0000000000boyGOWWVTSRSTTSKzl82000",
-    "0000000009jvFMUVWVUSQPQRRODo92000",
+    "0000001112357bkxHFukeb85210000000",
+    "000001003469belwFFyqlid8421000000",
+    "0000000018cgilqzGHBvtqkc731000000",
+    "0000000000bosuxEJJEBAyqh942100000",
+    "00000000007lzEFJNMIGGExme84100000",
+    "00000000006kzMNPRQMKLLFxpia510000",
+    "00000000007lzNTUUTRPPQPLEwod41000",
+    "0000000000boCPVWWVTSRSTTSKzl82000",
+    "0000000009jvHQUVWVUSQPQRRODo92000",
     "000000019jtAFLPSTUTRNJGFFCuh72000",
-    "000008adhmqvAGKORSSQMFyspmg931000",
-    "000068acfjnsyDHLNQRROIyogb7410000",
-    "0004579beimsxCFIJMPRQMDqf84210000",
+    "000068adhmqvAGKORSSQMFyspmg931000",
+    "000468acfjnsyDHLNQRROIyogb7410000",
+    "0134579beimsxCFIJMPRQMDqf84210000",
     "0134578bdhmsyDFFFHMQPMEsf73200000",
     "0124568adhmtAAxxxzEKNIApd63100000",
     "00234579chovsmjjjmrzIEvka52100000",
@@ -305,18 +371,18 @@ export const ROOT_SHADE = Object.freeze({
     "00000000000015bhhb410000000000000",
     "0000000000003aksqg610000000000000",
     "0000000000015fsBxj721000000000000",
-    "000000000025cnAHAma54210000000000",
-    "00000000006eoAKMDofec720000000000",
-    "00000000002dpAMRFsnpne51000000000",
-    "00000000000bmxJTHwwBxj71000000000",
-    "00000000000bmxHTJDGKEpb3100000000",
-    "00000000001bmxHSNLPRLxmc642100000",
-    "00000000005eoyITTSVWSIyrjd7410000",
-    "00000000007jsBKUYWWWVSNFzria41000",
-    "0000000000boyGOYZVQOQRQOKDsg62000",
-    "0000000009jvFMU-XQIDDFFFFCuh72000",
-    "000000019jtDMT-ZVNDvsqppqqlc51000",
-    "000007cfktDNUYYYUNEwqlgcbba620000",
+    "000000000125cnAHAma54210000000000",
+    "00000001137eoAKMDofec720000000000",
+    "000001006cjtENTRFsnpne51000000000",
+    "0000000018juHUYTHwwBxj71000000000",
+    "0000000000boCPZTJDGKEpb3100000000",
+    "00000000007lzNZUNLPRLxmc642100000",
+    "00000000006kzNZWTSVWSIyrjd7410000",
+    "00000000007lzN-ZYWWWVSNFzria41000",
+    "0000000000boCP_-ZVQOQRQOKDsg62000",
+    "0000000009jvHU_-XQIDDFFFFCuh72000",
+    "000000019jtDO-_ZVNDvsqppqqlc51000",
+    "000027cfktDNXYYYUNEwqlgcbba620000",
     "000013bqxENXWTSUUQKDwqia533110000",
     "0000015ixNXYTNJLQSQJCvmd510000000",
     "0000003csHVYSKBAFNRNDume620000000",
@@ -335,25 +401,25 @@ export const ROOT_SHADE = Object.freeze({
   cut: [
     "000000000000000000000000000000000",
     "0wwwwwwwwwwwwwwwwwwwwwwwwwwwwwww0",
-    "0sJJO__________________________w0",
-    "0000000D_______________________w0",
-    "000000000-___q00q______________w0",
-    "0000000000___O000m_____________w0",
-    "00000000000___Q000_____________w0",
-    "00000000000z___L00_____________w0",
-    "000000000000____00_____________w0",
-    "000000000000____0______________w0",
-    "0000000000008___a______________w0",
-    "0000000000000d_________________w0",
-    "000000000000___________________w0",
-    "00000000000P__________60000____w0",
-    "000000000020____U______t0000B__w0",
+    "0w_____________________________w0",
+    "0w_____________________________w0",
+    "0w___________q00q______________w0",
+    "0w___________O000m_____________w0",
+    "0w____________Q000_____________w0",
+    "0w___C000D_____L00_____________w0",
+    "0w_p000000______00_____________w0",
+    "0w3000000008____0______________w0",
+    "020000000000a___a______________w0",
+    "0000000000W_0d_________________w0",
+    "0000000000X____________________w0",
+    "0000000000Z___________60000____w0",
+    "000000000040____U______t0000B__w0",
     "0000000000000008______X88000v__w0",
     "00000003ST__qhUR_______0000v___w0",
-    "000000U________________________w0",
-    "00000s______________U__________w0",
-    "0000r_____________60_00________w0",
-    "000A______________2___00O______w0",
+    "00000J_________________________w0",
+    "0000H_______________U__________w0",
+    "000L______________60_00________w0",
+    "0v________________2___00O______w0",
     "0w___________80E___00__00______w0",
     "0w__________Y00eN-_00___I______w0",
     "0w_________d0000002_0__________w0",
@@ -533,9 +599,10 @@ export function rootSupportLifts(x, z, baseHeight, banks = true) {
     tz = dz - TRUNK[1];
   const base = baseHeight(x, z),
     bank = banks ? rootBankLift(x, z) : 0,
-    r = Math.hypot(tx, tz);
+    r = Math.hypot(tx, tz),
+    pond = pondCarve(x, z, base, baseHeight(LANTERN_FOOT.x, LANTERN_FOOT.z));
   const keep = Math.hypot(dx, dz) < SUPPORT_REACH ? pinKeep(x, z) : 0;
-  if (!keep) return [base, 0, 0, bank];
+  if (!keep) return [base, 0, 0, bank, pond];
   const knollKeep = pinKeep(x, z, ROOT_KNOLL.feather);
   const floor = baseHeight(TREE_FOOTING.x, TREE_FOOTING.z),
     spur = underSpur(dx, dz);
@@ -547,14 +614,14 @@ export function rootSupportLifts(x, z, baseHeight, banks = true) {
   if (fade > 0) relief = reliefNoise(x, z) * fade * (1 - spur) * restingKeep(dx, dz);
   for (const [hx, hz, radius, depth] of ROOT_HOLLOWS)
     relief -= depth * (1 - ease(0.2 * radius, radius, Math.hypot(dx - hx, dz - hz)));
-  return [base, knoll * knollKeep, relief * keep, bank];
+  return [base, knoll * knollKeep, relief * keep, bank, pond];
 }
 
-// The supported ground at x/z; banks false leaves out the soil banks (what
-// tools/bake-root-shade.mjs measures them against).
+// The supported ground at x/z, the pond's basin included; banks false leaves
+// out the soil banks (what tools/bake-root-shade.mjs measures them against).
 export function rootSupportHeight(x, z, baseHeight, banks = true) {
-  const [base, knoll, relief, bank] = rootSupportLifts(x, z, baseHeight, banks);
-  return base + knoll + relief + bank;
+  const [base, knoll, relief, bank, pond] = rootSupportLifts(x, z, baseHeight, banks);
+  return base + knoll + relief + bank + pond;
 }
 
 // What the entry lips add: where the soil settles (the knoll, its relief and
@@ -661,15 +728,6 @@ export const SLATE_SOIL = Object.freeze({
     wet: 0.9,
     mud: 0.8, // its share of the pools' mud (pool.tone, .saturation) where the roots enter the soil
   }),
-  // Grit and dark organic flecks in the soil near the lens (within near[0],
-  // gone by near[1]): cells of 1/frequency units, `share` of them lit or dark,
-  // by up to `amount` of the albedo.
-  grit: Object.freeze({
-    frequency: 11,
-    share: 0.12,
-    amount: 0.45,
-    near: Object.freeze([4, 14]),
-  }),
   keep: Object.freeze([1.9, 2.4]),
   // Rain in the soil's low spots (POOL_FIELD's cavity, in units; the detail
   // map's high texels raise the soil by up to `texel`, so shores follow the
@@ -722,7 +780,7 @@ function applyEdits(shader, edits, prefix = {}) {
 // The moon key's view-space direction, so the root shading finds that light
 // among the direct lights (settleRoots() keeps it current per draw).
 const KEY_VIEW = { value: new Vector3(...KEY_LIGHT) };
-const { settle: SETTLE, grain: GRAIN, occlusion: OCCLUSION, damp: DAMP, grit: GRIT } = SLATE_SOIL;
+const { settle: SETTLE, grain: GRAIN, occlusion: OCCLUSION, damp: DAMP } = SLATE_SOIL;
 // Each direct light is dimmed by the root occlusion: the moon key by its baked
 // term (found among the directional lights by direction, mud-ground.js
 // slateDirectional), the lantern (the one warm light) and the cool fills (the
@@ -758,12 +816,6 @@ float slateMud = smoothstep(${glsl(POOL.mud[0])}, ${glsl(POOL.mud[1])}, slatePoo
 float slateCrest = smoothstep(${glsl(POOL.crest[0])}, ${glsl(POOL.crest[1])}, -slatePoolDepth)*(1.0-slateKeep);
 slatePuddle = max(slatePuddle, slatePoolW);
 slateWet = max(slateWet*(1.0-${glsl(POOL.dry)}*slateCrest), slateMud);
-float slateGritN = (1.0-smoothstep(${glsl(GRIT.near[0])}, ${glsl(GRIT.near[1])}, length(vViewPosition)))*(1.0-slatePuddle)*(1.0-slateKeep);
-if (slateGritN > 0.0) {
-  vec2 slateGC = floor(vMudWorld.xz*${glsl(GRIT.frequency)});
-  float slateG1 = slateHash(slateGC), slateG2 = slateHash(slateGC+17.31);
-  diffuseColor.rgb *= 1.0+${glsl(GRIT.amount)}*slateGritN*(step(${glsl(1 - GRIT.share)}, slateG1)-step(${glsl(1 - GRIT.share)}, slateG2));
-}
 vec3 slateMudC = diffuseColor.rgb*${glslVec(...POOL.tone)};
 diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(dot(slateMudC, vec3(.2126,.7152,.0722))), slateMudC, ${glsl(POOL.saturation)}), slateMud)*(1.0+${glsl(POOL.lift)}*slateCrest);
 `;
@@ -883,7 +935,7 @@ sampledDiffuseColor.rgb = mix(sampledDiffuseColor.rgb, slateSoilTone, mix(${glsl
 
 // The lantern puddle's mirror (plan P3): still, clear water. SLATE_PUDDLES'
 // grazing sky sheen gives way to a water Fresnel (F0 .02) mirror of the
-// terrain horizon, the fog and the zenith, with the tree's trunk as a dark
+// terrain horizon, the fog and the zenith (the pond's water since the pond), with the tree's trunk as a dark
 // occluder and the lantern upside down in it, lit by the lantern light's own
 // (flickering) colour and compressed to a luminance knee; the flame's image
 // (MIRROR_FLAME) keeps the knee's peak, so it stays well under the flame, but
@@ -892,6 +944,9 @@ sampledDiffuseColor.rgb = mix(sampledDiffuseColor.rgb, slateSoilTone, mix(${glsl
 // and a static micro-undulation near the lens; rare drips ruffle it. The
 // drip-line puddles keep SLATE_PUDDLES' roughness .12 and specular gain 4.
 export const PUDDLE_MIRROR = Object.freeze({
+  // The sky in the water, times the sky as shown: the night's dim sky and its
+  // moonlit clouds read in it at a glance.
+  sky: 2.4,
   undulation: 0.006,
   undulationFade: Object.freeze([12, 34]),
   imageSoft: 0.45,
@@ -903,7 +958,8 @@ export const PUDDLE_MIRROR = Object.freeze({
   marginAlbedo: 0.08,
   coat: 0.15,
   darken: Object.freeze([0.3, 0.75]),
-  water: 0.02,
+  // The level water plane, relative to the lantern's foot: the pond's (POND.level).
+  water: -0.04,
   cloud: 0.22,
   // hill-silhouette.js TERRAIN_HORIZON and SLATE_PUDDLES.zenith (mud-ground.js).
   horizon: Object.freeze([0.062, 0.065, 0.073]),
@@ -1085,7 +1141,7 @@ if (slateWater > 0.0) {
     slateP = cameraPosition+(vMudWorld-cameraPosition)*((cameraPosition.y-slateLampW.y+${glsl(LAMP_FOOT - M.water)})/max(cameraPosition.y-vMudWorld.y, .01));
   // The night sky (the film's environment, night-environment.js) at its sharpest; without it, a sky from the horizon, fog and zenith colours.
   #ifdef USE_ENVMAP
-  vec3 slateSkyW = textureCubeUV(envMap, slateR, 0.0).rgb*envMapIntensity;
+  vec3 slateSkyW = textureCubeUV(envMap, slateR, 0.0).rgb*envMapIntensity*${glsl(M.sky)};
   #else
   vec3 slateSkyW = mix(mix(${glslVec(...M.horizon)}, fogColor, smoothstep(0.0, .1, slateR.y)), ${glslVec(...M.zenith)}, smoothstep(.12, .6, slateR.y));
   slateSkyW *= 1.0+${glsl(2 * M.cloud)}*(slateNoise((slateP.xz+slateR.xz*(60.0/max(slateR.y, .05)))/45.0)-.5)*smoothstep(.02, .12, slateR.y);
@@ -2253,6 +2309,17 @@ function* earthSteps(groundHeight, EARTH) {
     zs.indexOf(-EARTH.width / 2 + i * step * 2),
   );
   const refined = (i, j) => coarseX[i + 1] - coarseX[i] > 1 && coarseZ[j + 1] - coarseZ[j] > 1;
+  // The pond's own refinement: the fine cells within its reach, fine-grid
+  // columns [c0, c1) and rows [r0, r1), each cut into POND_STEPS x POND_STEPS.
+  const S = POND_STEPS,
+    [px0, px1, pz0, pz1] = pondBounds();
+  const c0 = fineX + Math.floor((px0 - xs[fineX]) / pitch),
+    c1 = fineX + Math.ceil((px1 - xs[fineX]) / pitch),
+    r0 = fineZ + Math.floor((pz0 - zs[fineZ]) / pitch),
+    r1 = fineZ + Math.ceil((pz1 - zs[fineZ]) / pitch);
+  const nc = c1 - c0,
+    nr = r1 - r0,
+    pondCols = S * nc + 1;
   // Size every array once: a coarse triangle beside a refined neighbour is a
   // fan about one added centre point.
   const grid = xs.length * zs.length;
@@ -2275,7 +2342,17 @@ function* earthSteps(groundHeight, EARTH) {
         if (corners > 3) fans++;
       }
     }
-  const count = grid + fans,
+  // The pond's cells take S x S quads each, and each fine cell beside them a
+  // fan of S + 1 triangles about its far corner, through the shared edge's
+  // added points; the sub-grid's points that are not fine-grid vertices follow
+  // the centres.
+  size += nc * nr * (S * S - 1) * 6 + 2 * (nc + nr) * (S - 1) * 3;
+  const pondExtra = new Int32Array(pondCols * (S * nr + 1)).fill(-1);
+  let extra = 0;
+  for (let gj = 0; gj <= S * nr; gj++)
+    for (let gi = 0; gi <= S * nc; gi++)
+      if (gi % S || gj % S) pondExtra[gj * pondCols + gi] = extra++;
+  const count = grid + fans + extra,
     positions = new Float32Array(count * 3),
     normalArray = new Float32Array(count * 3);
   const uvs = new Float32Array(count * 2),
@@ -2327,6 +2404,70 @@ function* earthSteps(groundHeight, EARTH) {
     if (near) occlusion.set(rootOcclusion(x, z), i * 2);
     if (i % 8 === 7) yield;
   }
+  // The pond's added points, raised (lowered) and shaded as the grid's; its
+  // sub-grid's lifts and heights, for the samplers.
+  const pondBase = grid + fans,
+    pondLifts = new Float32Array(pondExtra.length),
+    pondSurface = new Float32Array(pondExtra.length);
+  for (let gj = 0; gj <= S * nr; gj += S)
+    for (let gi = 0; gi <= S * nc; gi += S) {
+      const at = (r0 + gj / S - fineZ) * (cols + 1) + c0 + gi / S - fineX;
+      pondLifts[gj * pondCols + gi] = lifts[at];
+      pondSurface[gj * pondCols + gi] = surface[at];
+    }
+  const gridVertex = (i, j) => j * xs.length + i;
+  for (let gj = 0; gj <= S * nr; gj++) {
+    for (let gi = 0; gi <= S * nc; gi++) {
+      const k = pondExtra[gj * pondCols + gi];
+      if (k < 0) continue;
+      const x = xs[c0] + (gi * pitch) / S,
+        z = zs[r0] + (gj * pitch) / S,
+        dx = x - TREE_FOOTING.x,
+        dz = z - TREE_FOOTING.z,
+        at = pondBase + k;
+      // A point on the sub-grid's border lies on its fine edge, between that
+      // edge's two vertices (as a stitching fan's centre lies in its triangle's
+      // plane), so the cells beside it keep their surface exactly.
+      if (gi === 0 || gi === S * nc || gj === 0 || gj === S * nr) {
+        const across = gj === 0 || gj === S * nr,
+          from = across ? gi - (gi % S) : gj - (gj % S),
+          t = ((across ? gi : gj) - from) / S;
+        const [i0, i1] = across
+          ? [gridVertex(c0 + from / S, r0 + gj / S), gridVertex(c0 + from / S + 1, r0 + gj / S)]
+          : [gridVertex(c0 + gi / S, r0 + from / S), gridVertex(c0 + gi / S, r0 + from / S + 1)];
+        const mix = (array, size, j) =>
+          array[i0 * size + j] + (array[i1 * size + j] - array[i0 * size + j]) * t;
+        for (let j = 0; j < 3; j++) {
+          positions[at * 3 + j] = mix(positions, 3, j);
+          normalArray[at * 3 + j] = mix(normalArray, 3, j);
+        }
+        for (let j = 0; j < 2; j++) {
+          uvs[at * 2 + j] = mix(uvs, 2, j);
+          occlusion[at * 2 + j] = mix(occlusion, 2, j);
+        }
+        for (let j = 0; j < 4; j++) shading[at * 4 + j] = mix(shading, 4, j);
+        const l0 = pondLifts[across ? gj * pondCols + from : from * pondCols + gi],
+          l1 = pondLifts[across ? gj * pondCols + from + S : (from + S) * pondCols + gi];
+        pondLifts[gj * pondCols + gi] = l0 + (l1 - l0) * t;
+        pondSurface[gj * pondCols + gi] = positions[at * 3 + 2];
+        continue;
+      }
+      const raised = lift(x, z),
+        y = sample(x, z, normal) + raised;
+      if (raised) {
+        const h = step / 8;
+        const sx = (lift(x + h, z) - lift(x - h, z)) / (2 * h);
+        const sz = (lift(x, z + h) - lift(x, z - h)) / (2 * h);
+        normal.set(normal.x / normal.z - sx, normal.y / normal.z + sz, 1).normalize();
+      }
+      pondLifts[gj * pondCols + gi] = raised;
+      pondSurface[gj * pondCols + gi] = y;
+      point(at, x, z, y);
+      shade(at, rootShade(dx, dz, raised && rootBermExcess(x, z, sample)));
+      occlusion.set(rootOcclusion(x, z), at * 2);
+    }
+    yield;
+  }
   const pools = poolField(surface, cols + 1, rows + 1, (i, j) => [xs[fineX + i], zs[fineZ + j]]);
   const pool = new Float32Array(count);
   for (let j = 0; j <= rows; j++)
@@ -2335,6 +2476,47 @@ function* earthSteps(groundHeight, EARTH) {
   let cursor = 0,
     center = grid;
   const vertex = (i, j) => j * xs.length + i;
+  // A point of the pond's sub-grid (gi, gj from its first corner): a fine-grid
+  // vertex where it lies on one, else an added point.
+  const pondPoint = (gi, gj) =>
+    gi % S || gj % S ? pondBase + pondExtra[gj * pondCols + gi] : vertex(c0 + gi / S, r0 + gj / S);
+  // A pond cell's S x S quads, split as the grid's (a, b, d and b, c, d).
+  const pondCell = (col, row) => {
+    for (let sj = 0; sj < S; sj++)
+      for (let si = 0; si < S; si++) {
+        const gi = (col - c0) * S + si,
+          gj = (row - r0) * S + sj;
+        const a = pondPoint(gi, gj),
+          b = pondPoint(gi, gj + 1),
+          c = pondPoint(gi + 1, gj + 1),
+          d = pondPoint(gi + 1, gj);
+        indices[cursor++] = a;
+        indices[cursor++] = b;
+        indices[cursor++] = d;
+        indices[cursor++] = b;
+        indices[cursor++] = c;
+        indices[cursor++] = d;
+      }
+  };
+  // A fine cell sharing an edge with the pond's: its corners in the grid's
+  // winding (a, b, c, d) with that edge's added points between, starting from
+  // the end of the cell's own b-d diagonal off that edge, so the fan keeps the
+  // diagonal and every triangle lies in one of the cell's two planes; null for
+  // any other cell.
+  const pondBeside = (col, row, a, b, c, d) => {
+    const inRows = row >= r0 && row < r1,
+      inCols = col >= c0 && col < c1,
+      along = (at) => Array.from({ length: S - 1 }, (_, k) => at(k + 1));
+    if (inRows && col === c1)
+      return [d, a, ...along((k) => pondPoint(nc * S, (row - r0) * S + k)), b, c];
+    if (inRows && col === c0 - 1)
+      return [b, c, ...along((k) => pondPoint(0, (row - r0) * S + S - k)), d, a];
+    if (inCols && row === r1)
+      return [b, c, d, ...along((k) => pondPoint((col - c0) * S + S - k, nr * S)), a];
+    if (inCols && row === r0 - 1)
+      return [d, a, b, ...along((k) => pondPoint((col - c0) * S + k, 0)), c];
+    return null;
+  };
   const triangle = (corners, polygon, x, z) => {
     if (polygon.length === 3) {
       for (const corner of corners) indices[cursor++] = corner;
@@ -2361,10 +2543,25 @@ function* earthSteps(groundHeight, EARTH) {
       if (refined(i, j)) {
         for (let row = z0; row < z1; row++)
           for (let col = x0; col < x1; col++) {
+            if (col >= c0 && col < c1 && row >= r0 && row < r1) {
+              pondCell(col, row);
+              continue;
+            }
             const a = vertex(col, row),
               b = vertex(col, row + 1),
               c = vertex(col + 1, row + 1),
               d = vertex(col + 1, row);
+            const polygon = pondBeside(col, row, a, b, c, d);
+            if (polygon) {
+              // A fine cell beside the pond: a fan from its far corner through
+              // the shared edge's points (no T-junction).
+              for (let k = 1; k < polygon.length - 1; k++) {
+                indices[cursor++] = polygon[0];
+                indices[cursor++] = polygon[k];
+                indices[cursor++] = polygon[k + 1];
+              }
+              continue;
+            }
             indices[cursor++] = a;
             indices[cursor++] = b;
             indices[cursor++] = d;
@@ -2402,8 +2599,25 @@ function* earthSteps(groundHeight, EARTH) {
   geometry.setIndex(new BufferAttribute(indices, 1));
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
-  LIFTS.set(geometry, liftSampler(lifts, xs[fineX], zs[fineZ], cols, rows, pitch));
-  SURFACES.set(geometry, liftSampler(surface, xs[fineX], zs[fineZ], cols, rows, pitch, NaN));
+  // Inside the pond's sub-grid, its own (finer) triangles.
+  const within = (outer, inner) => (x, z) => {
+    const value = inner(x, z);
+    return Number.isNaN(value) ? outer(x, z) : value;
+  };
+  LIFTS.set(
+    geometry,
+    within(
+      liftSampler(lifts, xs[fineX], zs[fineZ], cols, rows, pitch),
+      liftSampler(pondLifts, xs[c0], zs[r0], S * nc, S * nr, pitch / S, NaN),
+    ),
+  );
+  SURFACES.set(
+    geometry,
+    within(
+      liftSampler(surface, xs[fineX], zs[fineZ], cols, rows, pitch, NaN),
+      liftSampler(pondSurface, xs[c0], zs[r0], S * nc, S * nr, pitch / S, NaN),
+    ),
+  );
   return geometry;
 }
 

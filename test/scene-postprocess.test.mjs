@@ -477,7 +477,7 @@ test("in film the grade leaves the mountains' relief to their own shading and ha
   );
   assert.match(
     shader,
-    /color = mix\(color, celColor, uCelMix \* \(1\.0 - relief \* smoothstep\(0\.05, 0\.1, gradedLuma\)\) \* \(1\.0 - groundLayer \* \(1\.0 - smoothstep\(0\.03, 0\.08, gradedLuma\)\)\)\);/,
+    /color = mix\(color, celColor, uCelMix \* \(1\.0 - relief \* smoothstep\(0\.05, 0\.1, gradedLuma\)\) \* \(1\.0 - groundLayer\)\);/,
   );
   // The post ink skips the mountains and the sky pixel beside a crest, which
   // draws its own hairline; it still reads the same four neighbours.

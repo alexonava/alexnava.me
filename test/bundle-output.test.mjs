@@ -44,7 +44,13 @@ const ROLES = [
 
 const slateMaps = (tier) => {
   const size = tier === "high" ? 1024 : 512;
-  return [`slate-color-${size}.webp`, `slate-normal-${size}.webp`, "slate-detail-512.webp"];
+  return [
+    `slate-color-${size}.webp`,
+    `slate-normal-${size}.webp`,
+    "slate-detail-512.webp",
+    `slate-grit-${size}.webp`,
+    `slate-relief-${size}.webp`,
+  ];
 };
 
 after(async () => {
@@ -604,11 +610,13 @@ test("models and slate maps are deferred: the scene entry names their hashed cop
   }
 });
 
-test("the complete scene fits 6 MiB on high and 3 MiB on balanced, and each model the loader's limit", async () => {
+test("the complete scene fits 6.25 MiB on high and 3 MiB on balanced, and each model the loader's limit", async () => {
   // A live scene downloads the tower, tree, lantern, both rocks, the three
-  // Meshy massifs and the slate's color, normal and detail maps.
+  // Meshy massifs and the slate's color, normal, detail, grit and relief maps.
+  // High holds a quarter MiB more than its old 6 MiB, the owner's allowance
+  // for the close soil's maps (2026-10-03).
   for (const [tier, budget] of [
-    ["high", 6 * 1024 * 1024],
+    ["high", 6.25 * 1024 * 1024],
     ["balanced", 3 * 1024 * 1024],
   ]) {
     let total = 0;

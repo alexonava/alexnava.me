@@ -84,10 +84,10 @@ void main() {
   float relief = uLayerRelief * (1.0 - smoothstep(0.04, 0.12, abs(texel.a - 0.3333)));
   float tonalBand = floor(gradedLuma * 5.0 + 0.5) / 5.0;
   vec3 celColor = color * (tonalBand / gradedLuma);
-  // The ground (depth code 2/3) keeps the band, but not in its deepest shade:
-  // below luma .03–.08 the step fades out, so shadowed soil keeps its detail.
+  // The ground (depth code 2/3) takes no band: its soil, cracks and water stay
+  // continuous, close up and far.
   float groundLayer = uLayerRelief * (1.0 - smoothstep(0.04, 0.12, abs(texel.a - 0.6667)));
-  color = mix(color, celColor, uCelMix * (1.0 - relief * smoothstep(0.05, 0.1, gradedLuma)) * (1.0 - groundLayer * (1.0 - smoothstep(0.03, 0.08, gradedLuma))));
+  color = mix(color, celColor, uCelMix * (1.0 - relief * smoothstep(0.05, 0.1, gradedLuma)) * (1.0 - groundLayer));
   color = saturateColor(color, 1.04);
 
   if (uInkMix > 0.0) {

@@ -516,8 +516,10 @@ test("the film ground starts from a flat preview and paints in full in the next 
       "/images/materials/slate-color-1024.webp",
       "/images/materials/slate-normal-1024.webp",
       "/images/materials/slate-detail-512.webp",
+      "/images/materials/slate-grit-1024.webp",
+      "/images/materials/slate-relief-1024.webp",
     ],
-    "the film slate requests only its own three maps",
+    "the film slate requests only its own five maps",
   );
   assert.ok(
     film.statuses.some(
@@ -554,6 +556,8 @@ test("the film ground starts from a flat preview and paints in full in the next 
     "/images/materials/slate-color-512.webp",
     "/images/materials/slate-normal-512.webp",
     "/images/materials/slate-detail-512.webp",
+    "/images/materials/slate-grit-512.webp",
+    "/images/materials/slate-relief-512.webp",
   ]);
   balanced.ground.dispose();
   await nextTask();
