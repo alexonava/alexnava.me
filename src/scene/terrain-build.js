@@ -252,6 +252,7 @@ export const STREAMS = Object.freeze({
     ].map((path) => Object.freeze(path.map(([dx, dz]) => Object.freeze([dx, dz])))),
   ),
   reach: 0.17 + 0.28,
+  flow: Object.freeze({ speed: 0.55, scale: 3.4, stretch: 1.8, tilt: 0.11 }),
 });
 export function streamDistance(x, z) {
   let best = Infinity;
@@ -1166,6 +1167,19 @@ if (slateWater > 0.0) {
     }
     if (slateDrip.w > 0.0) slateG += slateRipples(vMudWorld.xz, slatePx*slateView/max(abs(dot(normal, normalize(vViewPosition))), .3));
     slateN = normalize(mix(slateN, normalize(vec3(-slateG.x, 1.0, -slateG.y)), slateDeep));
+  }
+  // The streams' flow (mud-ground.js slateStreamFlow()): wavelets drifting
+  // downstream along each stream, two octaves, tilting only the mirror; finer
+  // than about three pixels of ground footprint they fade instead of aliasing.
+  vec4 slateFl = slateStreamFlow(vMudWorld.xz);
+  if (slateFl.w > 0.0) {
+    vec2 slateFp = vec2(-slateFl.y, slateFl.x);
+    float slateFs = ${glsl(STREAMS.flow.scale)}, slateFt = slateFlowTime*${glsl(STREAMS.flow.speed)};
+    vec2 slateFu = vec2((slateFl.z-slateFt)*slateFs, slateNoise(vMudWorld.xz*1.3)*${glsl(STREAMS.flow.stretch)}+slateFl.z*.35);
+    vec3 slateF1 = slateNoiseD(slateFu), slateF2 = slateNoiseD(vec2(slateFu.x*2.3-slateFt*slateFs*.6, slateFu.y*2.3+5.1));
+    vec2 slateFg = (slateF1.yz+.5*slateF2.yz)*${glsl(STREAMS.flow.tilt)}*smoothstep(1.5, 3.0, 1.0/(slateFs*2.3)/(slatePx*slateView/max(abs(dot(normal, normalize(vViewPosition))), .3)));
+    vec2 slateGw = slateFg.x*slateFl.xy+slateFg.y*slateFp;
+    slateN = normalize(mix(slateN, normalize(vec3(-slateGw.x, 1.0, -slateGw.y)), slateFl.w));
   }
   vec3 slateV = normalize(cameraPosition-vMudWorld), slateR = reflect(-slateV, slateN);
   float slateF = ${glsl(M.f0)}+${glsl(1 - M.f0)}*pow(1.0-saturate(dot(slateN, slateV)), 5.0), slateRA = max(dot(slateR.xz, slateR.xz), 1e-4);

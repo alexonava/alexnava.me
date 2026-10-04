@@ -8,7 +8,7 @@ import {
 import { DEPTH_LAYER, stampDepthLayer } from "./depth-layers.js";
 import { ESTATE, estateLantern, estatePathDistance, estatePoint } from "./estate-layout.js";
 import { rockKeepouts } from "./rock-scatter.js";
-import { SLATE_PUDDLES, SLATE_STREAMS } from "./mud-ground.js";
+import { SLATE_PUDDLES, SLATE_STREAMS, STREAM_FLOW } from "./mud-ground.js";
 
 // The same winding approach stays clear in every camera and quality tier.
 // Its centerline joins the tower's entrance side to the tree's lantern clearing.
@@ -253,10 +253,13 @@ export function createEstateGroundDetail(groundHeight) {
     // holds under reduced motion, a visitor pause or an open panel.
     update({ deltaSeconds = 0, reducedMotion = false, motionPaused = false } = {}) {
       if (disposed || !active) return false;
-      if (!reducedMotion && !motionPaused && Number.isFinite(deltaSeconds))
+      if (!reducedMotion && !motionPaused && Number.isFinite(deltaSeconds)) {
+        const step = Math.max(0, Math.min(0.1, deltaSeconds));
         material.userData.grassTime.value =
-          (material.userData.grassTime.value + Math.max(0, Math.min(0.1, deltaSeconds))) %
-          WIND_PERIOD;
+          (material.userData.grassTime.value + step) % WIND_PERIOD;
+        // The streams flow on the same held clock (wrapping hourly).
+        STREAM_FLOW.value = (STREAM_FLOW.value + step) % 3600;
+      }
       return true;
     },
     dispose() {

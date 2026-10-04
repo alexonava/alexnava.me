@@ -1968,6 +1968,7 @@ test("the fine litter (leaves, clods, grit) lies on the foreground soil, never u
 
 test("the rain streams restate the ground shader's and run from the roots into the pond", () => {
   assert.deepEqual(STREAMS.paths, SLATE_STREAMS.paths);
+  assert.deepEqual(STREAMS.flow, SLATE_STREAMS.flow);
   assert.ok(Math.abs(STREAMS.reach - (SLATE_STREAMS.width[1] / 2 + SLATE_STREAMS.meander)) < 1e-9);
   for (const path of STREAMS.paths) {
     const [mx, mz] = path.at(-1);

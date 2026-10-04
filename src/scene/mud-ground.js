@@ -197,7 +197,14 @@ export const SLATE_STREAMS = Object.freeze({
   meander: 0.28,
   wobble: 1.6,
   fill: 1.25,
+  // The flow: wavelets drifting downstream at `speed` units a second, `scale`
+  // cycles per unit along the stream (`stretch` times finer across it, so they
+  // read as ripples, not blobs), tilting the water up to `tilt`, in two octaves.
+  flow: Object.freeze({ speed: 0.55, scale: 3.4, stretch: 1.8, tilt: 0.11 }),
 });
+// The streams' flow clock: estate-ground-detail.js advances it with the
+// drawn frames (held under reduced motion, a visitor pause or an open panel).
+export const STREAM_FLOW = { value: 0 };
 // The pond's height above its water at normalised radius r (1 on the shore).
 export function pondShape(r) {
   const { depth, rise } = SLATE_POND;
@@ -374,10 +381,11 @@ const POND_ZONE = SLATE_PUDDLES.zones[0],
   POND_CENTRE = glslPoint(estatePoint(POND_ZONE.anchor, POND_ZONE.deg, POND_ZONE.dist)),
   POND_C = +Math.cos((POND_ZONE.along * Math.PI) / 180).toFixed(4),
   POND_S = +Math.sin((POND_ZONE.along * Math.PI) / 180).toFixed(4);
-// slatePondR(): the normalised radius in the pond's footprint, 1 on its
-// wobbled shore; slatePondShape(): its height above the water there.
 // The streams' weight at a world point: 1 within their middle, easing to 0
-// at their edge (SLATE_STREAMS), times their fill.
+// at their edge (SLATE_STREAMS), times their fill. slateStreamFlow(): the
+// strongest segment's downstream direction (xy), the distance along its
+// stream (z, units from its head) and its weight (w), for the flow's tilt of
+// the water (terrain-build.js); slateFlowTime is the flow's clock (STREAM_FLOW).
 const LANTERN_AT = estateLantern();
 const STREAM_GLSL = (() => {
   const { paths, width, meander, wobble, fill } = SLATE_STREAMS;
@@ -394,10 +402,32 @@ const STREAM_GLSL = (() => {
       }),
     )
     .join("");
+  const flow = paths
+    .flatMap((path) => {
+      let along = 0;
+      return path.slice(1).map((end, k) => {
+        const [ax, az] = path[k],
+          [bx, bz] = end,
+          length = Math.hypot(bx - ax, bz - az),
+          w0 = width[0] + ((width[1] - width[0]) * k) / (path.length - 1),
+          w1 = width[0] + ((width[1] - width[0]) * (k + 1)) / (path.length - 1);
+        const a = `vec2(${glslNumber(+(LANTERN_AT.x + ax).toFixed(3))},${glslNumber(+(LANTERN_AT.z + az).toFixed(3))})`,
+          b = `vec2(${glslNumber(+(LANTERN_AT.x + bx).toFixed(3))},${glslNumber(+(LANTERN_AT.z + bz).toFixed(3))})`,
+          dir = `vec2(${glslNumber(+((bx - ax) / length).toFixed(4))},${glslNumber(+((bz - az) / length).toFixed(4))})`;
+        const code = `q=slateSeg(p,${a},${b});k=1.-smoothstep(.3,.5,q.x/mix(${glslNumber(w0)},${glslNumber(w1)},q.y));if(k>f.w)f=vec4(${dir},${glslNumber(+along.toFixed(3))}+q.y*${glslNumber(+length.toFixed(3))},k);`;
+        along += length;
+        return code;
+      });
+    })
+    .join("");
   return `vec2 slateSeg(vec2 p,vec2 a,vec2 b){vec2 pa=p-a,ba=b-a;float h=clamp(dot(pa,ba)/dot(ba,ba),0.,1.);return vec2(length(pa-ba*h),h);}
 float slateStreams(vec2 p){p+=(vec2(slateNoise(p*${glslNumber(wobble)}),slateNoise(p*${glslNumber(wobble)}+7.3))-.5)*${glslNumber(meander * 2)};vec2 q;float w=0.;${body}return w*${glslNumber(fill)};}
+uniform float slateFlowTime;
+vec4 slateStreamFlow(vec2 p){p+=(vec2(slateNoise(p*${glslNumber(wobble)}),slateNoise(p*${glslNumber(wobble)}+7.3))-.5)*${glslNumber(meander * 2)};vec2 q;float k;vec4 f=vec4(0.);${flow}return f;}
 `;
 })();
+// slatePondR(): the normalised radius in the pond's footprint, 1 on its
+// wobbled shore; slatePondShape(): its height above the water there.
 const POND_GLSL = `float slatePondR(vec2 p){vec2 q=mat2(${[POND_C, -POND_S, POND_S, POND_C].map(glslNumber)})*(p-${POND_CENTRE})/vec2(${glslNumber(POND_ZONE.stretch)},1.)/${glslNumber(POND_ZONE.radius)};float a=atan(q.y,q.x);return length(q)/(1.+${glslNumber(SLATE_POND.wobble[0])}*sin(3.*a+1.3)+${glslNumber(SLATE_POND.wobble[1])}*sin(5.*a+.4));}
 float slatePondShape(float r){return r<1.?${glslNumber(-SLATE_POND.depth)}*(1.-r*r):${glslNumber(SLATE_POND.rise)}*(1.-exp(-(r-1.)*${glslNumber(+((2 * SLATE_POND.depth) / SLATE_POND.rise).toFixed(4))}));}
 `;
@@ -533,6 +563,7 @@ export function configureGroundShading(
   material.onBeforeCompile = (shader) => {
     if (!useWet) return;
     Object.assign(shader.uniforms, uniforms);
+    shader.uniforms.slateFlowTime = STREAM_FLOW;
     // The dune field varies over 100+ world units; the film terrain's 3-unit
     // quads carry it per vertex, so fragments only read the interpolated height.
     const wetVarying = useWet ? "varying float vSlateDune;\nvarying vec4 vSlateClip;\n" : "";

@@ -351,6 +351,7 @@ test("the pond's water lies only below its shore, as the terrain carves it, and 
   assert.doesNotMatch(soil.fragment, /slateKO = fract\(sin/);
   // The rain streams fill like the puddles, in the detail map's low texels.
   assert.ok(soil.fragment.includes("float slateStreams(vec2 p)"));
+  assert.ok(soil.fragment.includes("vec4 slateStreamFlow(vec2 p)"));
   assert.ok(soil.fragment.includes("max(max("));
 });
 

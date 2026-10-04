@@ -24,6 +24,7 @@ import {
   streamDistance,
 } from "../src/scene/estate-ground-detail.js";
 import { rockKeepouts } from "../src/scene/rock-scatter.js";
+import { STREAM_FLOW } from "../src/scene/mud-ground.js";
 import { createSceneEnvironment } from "../src/scene/environment.js";
 
 const close = (a, b) => assert.ok(Math.abs(a - b) < 1e-5, `${a} != ${b}`);
@@ -311,16 +312,20 @@ test("the grass stays within its triangle budget on each tier and out of the wat
 
 test("the grass's wind runs with drawn frames and holds while motion is held", () => {
   const detail = createEstateGroundDetail(groundHeight),
-    time = detail.mesh.material.userData.grassTime;
+    time = detail.mesh.material.userData.grassTime,
+    flow = STREAM_FLOW.value;
   assert.equal(detail.update({ deltaSeconds: 0.5 }), false);
   assert.equal(time.value, 0);
   detail.setActive(true);
   detail.update({ deltaSeconds: 0.05 });
   detail.update({ deltaSeconds: 5 });
   assert.ok(Math.abs(time.value - 0.15) < 1e-9);
+  // The streams flow on the same held clock.
+  assert.ok(Math.abs(STREAM_FLOW.value - flow - 0.15) < 1e-9);
   detail.update({ deltaSeconds: 0.05, reducedMotion: true });
   detail.update({ deltaSeconds: 0.05, motionPaused: true });
   assert.ok(Math.abs(time.value - 0.15) < 1e-9);
+  assert.ok(Math.abs(STREAM_FLOW.value - flow - 0.15) < 1e-9);
   detail.dispose();
 });
 
