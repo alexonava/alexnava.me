@@ -1964,7 +1964,7 @@ test("the fine litter (leaves, clods, grit) lies on the foreground soil, never u
       z += p.getZ(i) / count;
       // Smooth-shaded: unit normals, none pointing into the soil.
       assert.ok(Math.abs(Math.hypot(n.getX(i), n.getY(i), n.getZ(i)) - 1) < 1e-4);
-      assert.ok(n.getY(i) > -0.5, `vertex ${i} faces into the soil`);
+      assert.ok(n.getY(i) >= 0, `vertex ${i} faces into the soil`);
     }
     assert.equal(rootCovered(x, z), false, `piece at ${x},${z} under a root`);
     assert.ok(pondRadius(x, z) > 1, "never in the pond");

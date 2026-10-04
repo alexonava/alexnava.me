@@ -229,9 +229,13 @@ export function createEstateGroundDetail(groundHeight) {
     geometry.setDrawRange(0, ends[Math.max(0, Math.ceil(count * share) - 1)] ?? 0);
     // The litter's fine pieces (gravel, clods, leaves) thin out the same way.
     for (const child of mesh.children) {
-      const fine = child.geometry?.userData.fine;
-      if (fine)
-        child.geometry.setDrawRange(0, fine[0] + Math.floor(((fine[1] - fine[0]) * share) / 3) * 3);
+      // Cut only at a whole piece (finePieces: each piece's first vertex), so
+      // no pebble is ever drawn half-built.
+      const { fine, finePieces: pieces } = child.geometry?.userData ?? {};
+      if (fine) {
+        const kept = Math.floor((pieces?.length ?? 0) * share);
+        child.geometry.setDrawRange(0, share < 1 && pieces ? (pieces[kept] ?? fine[1]) : fine[1]);
+      }
     }
   }
   mesh.userData.retier = apply;
