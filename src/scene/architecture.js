@@ -69,6 +69,28 @@ export const WET_BARK = Object.freeze({
   mudTone: Object.freeze([0.55, 0.52, 0.5]),
   mudRoughness: 0.35,
 });
+// Damp moss on the roots where they meet the soil (film only): on the faces
+// that turn to the sky (`up`: object normal y), between local heights `band`
+// (tree units: rising from just above the mud line, fading out between about
+// 1.6 and 2.7 world units above the tree's lowest point), in patches of a
+// two-scale value noise (`patch`, `scale` per tree unit). It is a dark
+// grey-green (`tone`, never saturated, under the role's tint like the bark),
+// mottled by the fine noise, and matte (`roughness`).
+export const ROOT_MOSS = Object.freeze({
+  band: Object.freeze([0.5, 0.8, 1.6, 2.5]),
+  up: Object.freeze([0.12, 0.55]),
+  patch: Object.freeze([0.38, 0.66]),
+  scale: Object.freeze([2.2, 11]),
+  tone: Object.freeze([0.062, 0.078, 0.042]),
+  cover: 0.9,
+  roughness: 0.92,
+});
+const ROOT_MOSS_GLSL = `float babelHash(vec3 p){p=fract(p*.3183099+.1);p*=17.;return fract(p.x*p.y*p.z*(p.x+p.y+p.z));}
+float babelNoise(vec3 x){vec3 i=floor(x),f=fract(x);f=f*f*(3.-2.*f);return mix(mix(mix(babelHash(i),babelHash(i+vec3(1,0,0)),f.x),mix(babelHash(i+vec3(0,1,0)),babelHash(i+vec3(1,1,0)),f.x),f.y),mix(mix(babelHash(i+vec3(0,0,1)),babelHash(i+vec3(1,0,1)),f.x),mix(babelHash(i+vec3(0,1,1)),babelHash(i+vec3(1,1,1)),f.x),f.y),f.z);}`;
+const f2 = (v) => v.toFixed(3);
+const ROOT_MOSS_MAP = `float babelMossFine = babelNoise(babelLocal*${f2(ROOT_MOSS.scale[1])});
+float babelMoss = babelFilm*smoothstep(${f2(ROOT_MOSS.band[0])}, ${f2(ROOT_MOSS.band[1])}, babelLocal.y)*(1.0-smoothstep(${f2(ROOT_MOSS.band[2])}, ${f2(ROOT_MOSS.band[3])}, babelLocal.y))*smoothstep(${f2(ROOT_MOSS.up[0])}, ${f2(ROOT_MOSS.up[1])}, normalize(babelLocalN).y)*smoothstep(${f2(ROOT_MOSS.patch[0])}, ${f2(ROOT_MOSS.patch[1])}, .7*babelNoise(babelLocal*${f2(ROOT_MOSS.scale[0])})+.3*babelMossFine);
+diffuseColor.rgb = mix(diffuseColor.rgb, vec3(${ROOT_MOSS.tone.map(f2).join(", ")})*babelTint*(.65+.7*babelMossFine), babelMoss*${f2(ROOT_MOSS.cover)});`;
 
 // How each film material takes the night sky (night-environment.js) once the
 // film sets it as the scene's environment: [the share of the flat ambient and
@@ -231,7 +253,8 @@ export function materialFor(asset, anisotropy, role, textGuard = null) {
         ? ""
         : `\nroughnessFactor = mix(${roughnessFloor.toFixed(3)}, ${roughnessCeiling.toFixed(3)}, roughnessFactor);`) +
       (role === "tree"
-        ? `\nfloat babelWet = babelFilm*(1.0-smoothstep(${WET_BARK.band[0].toFixed(2)}, ${WET_BARK.band[1].toFixed(2)}, babelLocal.y));\nroughnessFactor = mix(roughnessFactor, ${WET_BARK.roughness.toFixed(2)}, babelWet);\nfloat babelMud = babelFilm*(1.0-smoothstep(${WET_BARK.mud[0].toFixed(2)}, ${WET_BARK.mud[1].toFixed(2)}, babelLocal.y));\nroughnessFactor = mix(roughnessFactor, ${WET_BARK.mudRoughness.toFixed(2)}, babelMud);`
+        ? `\nfloat babelWet = babelFilm*(1.0-smoothstep(${WET_BARK.band[0].toFixed(2)}, ${WET_BARK.band[1].toFixed(2)}, babelLocal.y));\nroughnessFactor = mix(roughnessFactor, ${WET_BARK.roughness.toFixed(2)}, babelWet);\nfloat babelMud = babelFilm*(1.0-smoothstep(${WET_BARK.mud[0].toFixed(2)}, ${WET_BARK.mud[1].toFixed(2)}, babelLocal.y));\nroughnessFactor = mix(roughnessFactor, ${WET_BARK.mudRoughness.toFixed(2)}, babelMud);
+roughnessFactor = mix(roughnessFactor, ${ROOT_MOSS.roughness.toFixed(2)}, babelMoss);`
         : "");
     const guarded = role === "tree" && Boolean(textGuard);
     const uniforms = {
@@ -245,12 +268,18 @@ export function materialFor(asset, anisotropy, role, textGuard = null) {
     };
     material.userData.babelGrade = { role, uniforms };
     material.customProgramCacheKey = () =>
-      `babel-estate-material-v6-${role}-${roughnessFloor}-${roughnessCeiling}-${directRoughness}${guarded ? "-text" : ""}`;
+      `babel-estate-material-v7-${role}-${roughnessFloor}-${roughnessCeiling}-${directRoughness}${guarded ? "-text" : ""}`;
     material.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, uniforms);
       shader.vertexShader = shader.vertexShader
-        .replace("#include <common>", "#include <common>\nvarying vec3 babelLocal;")
-        .replace("#include <begin_vertex>", "#include <begin_vertex>\nbabelLocal = position;");
+        .replace(
+          "#include <common>",
+          "#include <common>\nvarying vec3 babelLocal;\nvarying vec3 babelLocalN;",
+        )
+        .replace(
+          "#include <begin_vertex>",
+          "#include <begin_vertex>\nbabelLocal = position;\nbabelLocalN = objectNormal;",
+        );
       shader.fragmentShader = shader.fragmentShader
         .replace(
           "#include <common>",
@@ -262,7 +291,9 @@ export function materialFor(asset, anisotropy, role, textGuard = null) {
           uniform float babelLift;
           uniform float babelFilm;
           uniform vec3 babelEnvironment;
-          varying vec3 babelLocal;`,
+          varying vec3 babelLocal;
+          varying vec3 babelLocalN;
+          ${role === "tree" ? ROOT_MOSS_GLSL : ""}`,
         )
         // The role's share of the flat ambient and of the sky's light; without an
         // environment (the film off, or a failed capture) the ambient stays whole.
@@ -285,7 +316,12 @@ export function materialFor(asset, anisotropy, role, textGuard = null) {
           diffuseColor.rgb = mix(diffuseColor.rgb, babelShadowTint, babelLift * (1.0 - smoothstep(0.02, 0.22, babelLuma)));
           diffuseColor.rgb *= babelTint;
           ${role === "rock" ? "diffuseColor.rgb *= mix(.62, 1., smoothstep(.1, .5, babelLocal.y));" : ""}
-          ${role === "tree" ? `diffuseColor.rgb *= mix(vec3(1.0), vec3(${WET_BARK.mudTone.map((v) => v.toFixed(2)).join(", ")}), babelFilm*(1.0-smoothstep(${WET_BARK.mud[0].toFixed(2)}, ${WET_BARK.mud[1].toFixed(2)}, babelLocal.y)));` : ""}`,
+          ${
+            role === "tree"
+              ? `diffuseColor.rgb *= mix(vec3(1.0), vec3(${WET_BARK.mudTone.map((v) => v.toFixed(2)).join(", ")}), babelFilm*(1.0-smoothstep(${WET_BARK.mud[0].toFixed(2)}, ${WET_BARK.mud[1].toFixed(2)}, babelLocal.y)));
+${ROOT_MOSS_MAP}`
+              : ""
+          }`,
         );
       // Without the environment, the wet bark's faint grazing sheen.
       if (role === "tree")

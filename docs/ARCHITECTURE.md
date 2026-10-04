@@ -111,8 +111,8 @@ _lazy_ marks a chunk loaded on demand.
 | `filmic-earth.js`         | Slate map preset and terrain size                                        |
 | `stone-detail.js`         | Slate maps by asset tier                                                 |
 | `mud-ground.js`           | Slate, wetness, puddles, contacts and text boxes (`createSlateContacts`) |
-| `estate-ground-detail.js` | Tufts and the winding path                                               |
-| `terrain-build.js`        | _lazy_ Terrain, root supports, puddle mirror, litter                     |
+| `estate-ground-detail.js` | Grass clumps, their wind and the winding path                            |
+| `terrain-build.js`        | _lazy_ Terrain, root supports, puddle mirror, litter, rushes             |
 | `rock-scatter.js`         | Rock clusters and contacts                                               |
 | `rock-build.js`           | _lazy_ Rock placement and instancing                                     |
 
@@ -131,7 +131,7 @@ Build, development and authoring helpers in `tools/`. None is published.
 | `og-card.html`          | Source of the share card, `public/og.png`                                                           |
 | `og-card-backdrop.webp` | The share card's backdrop, a still of the live scene                                                |
 
-`node tools/bake-root-shade.mjs` prints the three constants from both tree variants, deterministically; paste them over the ones in [terrain-build.js](../src/scene/terrain-build.js) whenever one of its inputs changes: the tree models, the tree's seating (`TREE_FOOTING`, `TREE_SINK`), the root lines and lattice, the key-light direction (`KEY_LIGHT`), the terrain, or the ground the tables must leave untouched (the lantern clearing about `LANTERN_FOOT`, the pond to its reach (`POND`) and the puddles in `PUDDLE_ZONES`). `test/terrain-build.test.mjs` re-bakes and fails on any difference.
+`node tools/bake-root-shade.mjs` prints the three constants from both tree variants, deterministically; paste them over the ones in [terrain-build.js](../src/scene/terrain-build.js) whenever one of its inputs changes: the tree models, the tree's seating (`TREE_FOOTING`, `TREE_SINK`), the root lines and lattice, the key-light direction (`KEY_LIGHT`), the terrain, or the ground the tables must leave untouched (the lantern clearing about `LANTERN_FOOT`, the pond to its reach (`POND`, and `SLATE_PUDDLES.zones[0]` in mud-ground.js) and the puddles in `PUDDLE_ZONES`). `test/terrain-build.test.mjs` re-bakes and fails on any difference.
 
 ## Scene lifecycle
 

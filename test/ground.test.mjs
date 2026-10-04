@@ -344,6 +344,14 @@ test("the pond's water lies only below its shore, as the terrain carves it, and 
   // Near the lens the slate's blotches give way to its blurred tone.
   assert.ok(soil.fragment.includes(`texture2D(map, vMapUv, ${SLATE_CLOSE.blur}.0)`));
   assert.ok(SLATE_CLOSE.calm > 0 && SLATE_CLOSE.calm < 1);
+  // Crumbs: a cellular noise on the close soil's relief and grit, worked out
+  // only where they show (near the lens, a cell over a few pixels).
+  assert.match(soil.fragment, /if \(slateKW > 0\.\) \{\s*for \(int j = -1; j <= 1; j\+\+\)/);
+  assert.ok(soil.fragment.includes(`slateCH += slateCrumb*${SLATE_CLOSE.crumb.height}*slateKW;`));
+  assert.doesNotMatch(soil.fragment, /slateKO = fract\(sin/);
+  // The rain streams fill like the puddles, in the detail map's low texels.
+  assert.ok(soil.fragment.includes("float slateStreams(vec2 p)"));
+  assert.ok(soil.fragment.includes("max(max("));
 });
 
 test("each ground shading has its own program cache key; the slate's shading needs film", async () => {
