@@ -466,7 +466,17 @@ test("CSS asset URLs and bytes are portable across checkout line endings", async
         await writeFile(path.join(fixture, "images", "architecture", `${role}-${tier}.glb`), paper);
       }
     }
-    for (const map of ["color-1024", "normal-1024", "color-512", "normal-512", "detail-512"]) {
+    for (const map of [
+      "color-1024",
+      "normal-1024",
+      "grit-1024",
+      "relief-1024",
+      "color-512",
+      "normal-512",
+      "grit-512",
+      "relief-512",
+      "detail-512",
+    ]) {
       await writeFile(path.join(fixture, "images", "materials", `slate-${map}.webp`), paper);
     }
     // The stylesheet's fonts, under their source names.

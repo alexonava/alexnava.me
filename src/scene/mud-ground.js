@@ -81,8 +81,37 @@ export const SLATE_TILING = Object.freeze({
   }),
 });
 
-// Moonlit puddles where the lantern's reflection lands in both lantern shots,
-// along the tree's drip line and in Portrait's right foreground: zone anchors
+// The close soil near the lens (Assets/Materials/dirt-close-v1, from CC0
+// PolyHaven "Dirt"): its grit (albedo detail about 0.5) and relief (height)
+// maps tile every `tile` units, a second lookup `scale` times larger, turned
+// (a 7-24-25 turn) and offset, blended in by a `blendCell` noise so no repeat
+// reads. Near the lens the slate's own mid-scale blotches, enlarged there, give
+// way to its broad tone (`calm` of it: the tile `blur` mip levels down, and
+// its relief calmed alike). The grit moves the soil's albedo by up to `albedo` about it; the
+// relief, `relief` units high, tilts its normal through its screen
+// derivatives. Both are full within near[0] of the lens and gone by near[1],
+// and the relief fades where a texel shrinks below `footprint` pixels and
+// under water.
+export const SLATE_CLOSE = Object.freeze({
+  tile: 6.6,
+  second: Object.freeze({
+    scale: 0.83,
+    turn: Object.freeze([0.28, 0.96, -0.96, 0.28]),
+    offset: Object.freeze([0.41, 0.17]),
+  }),
+  blendCell: 2.6,
+  albedo: 1.5,
+  relief: 0.07,
+  blur: 5,
+  calm: 0.9,
+  near: Object.freeze([5, 16]),
+  footprint: Object.freeze([0.8, 2]),
+});
+
+// The small pond in front of the lantern, where its reflection lands in both
+// lantern shots (SLATE_PUDDLES.zones[0] is its footprint, SLATE_POND its
+// basin), and moonlit puddles along the tree's drip line and in Portrait's
+// right foreground: zone anchors
 // and angles as estatePoint() takes them, radius in units, stretched along a
 // world angle. Water fills the detail map's low texels first (fill: the zone's
 // level over them), so edges follow the cracks. Puddles are glassy, darker and
@@ -94,14 +123,14 @@ export const SLATE_PUDDLES = Object.freeze({
     Object.freeze({
       anchor: "lantern",
       deg: -115,
-      dist: 3.0,
-      radius: 2.8,
-      stretch: 1.4,
-      along: 33,
+      dist: 1.75,
+      radius: 1.6,
+      stretch: 0.53,
+      along: -115,
     }),
-    Object.freeze({ anchor: "tree", deg: 185, dist: 8.0, radius: 2.2 }),
+    Object.freeze({ anchor: "tree", deg: 185, dist: 8.0, radius: 1.6 }),
     Object.freeze({ anchor: "tree", deg: 75, dist: 9.0, radius: 2.5 }),
-    Object.freeze({ anchor: "tree", deg: -100, dist: 16.0, radius: 2.0 }),
+    Object.freeze({ anchor: "tree", deg: -100, dist: 16.0, radius: 1.5 }),
   ]),
   fill: 0.62,
   roughness: 0.12,
@@ -111,6 +140,32 @@ export const SLATE_PUDDLES = Object.freeze({
   lantern: Object.freeze({ roughness: 0.2, specular: 0.8 }),
   zenith: Object.freeze([0.07, 0.085, 0.13]),
 });
+
+// The pond (SLATE_PUDDLES.zones[0]): a shallow basin whose shore is the
+// footprint's ellipse (1.6 across the lantern shots' view, 0.85 along it),
+// wobbled by three and five lobes (wobble) so it never reads as a drawn
+// ellipse. Its water lies `level` below the lantern's foot; the floor falls to
+// `depth` below the water at its centre (a parabola in the footprint's
+// normalised radius) and the bank rises toward `rise` above it, smoothly from
+// the shore, until it meets the ground (terrain-build.js carves it, within
+// reach[1] radii; the lantern's footing stays level). The shader finds the
+// water from the same shape: its level is the depth times `shore` (the
+// puddles' level units), the detail map's texels moving the shore a little
+// (`texel`), and it is no zone beyond reach[0] to reach[1] radii.
+export const SLATE_POND = Object.freeze({
+  wobble: Object.freeze([0.08, 0.05]),
+  depth: 0.18,
+  rise: 0.15,
+  level: -0.04,
+  shore: 3,
+  texel: 0.06,
+  reach: Object.freeze([1.35, 1.75]),
+});
+// The pond's height above its water at normalised radius r (1 on the shore).
+export function pondShape(r) {
+  const { depth, rise } = SLATE_POND;
+  return r < 1 ? -depth * (1 - r * r) : rise * (1 - Math.exp((-(r - 1) * 2 * depth) / rise));
+}
 
 // The moon key and the cool back-fill, world directions toward each light
 // (index.js directionalPosition and world.js FILL_LIGHT_POSITION, restated: a
@@ -169,9 +224,9 @@ export const SLATE_WATER = Object.freeze({
   f0: 0.02,
   text: Object.freeze([0.3, 0.035]),
   level: 0.7,
-  film: Object.freeze([0.5, 0.45]),
+  film: Object.freeze([0.12, 0.18]),
   patch: Object.freeze([9, 0.55]),
-  roughness: Object.freeze([0.12, 0.02]),
+  roughness: Object.freeze([0.3, 0.02]),
   gain: Object.freeze([1.5, 1.8]),
   far: Object.freeze([70.0, 130.0]),
   moon: Object.freeze({ roughness: 0.25, gain: 1, knee: 0.06 }),
@@ -207,6 +262,8 @@ export function createSlateContacts(values = new Float32Array(SLATE_CONTACTS * 4
     slateRockContact: { value: 0 },
     slateContactGain: { value: 1 },
     slateDetail: { value: null },
+    slateGrit: { value: null },
+    slateRelief: { value: null },
     // The name and intro, and About, on the canvas (x0, y0, x1, y1 in its UV,
     // y up; empty beyond it) and the canvas's aspect, for the water to ease off
     // behind them.
@@ -223,7 +280,28 @@ const PATH_LENGTH = glslNumber(
   +Math.hypot(ESTATE.tree.x - ESTATE.tower.x, ESTATE.tree.z - ESTATE.tower.z).toFixed(2),
 );
 const SECOND = SLATE_TILING.second,
-  DETAIL = SLATE_TILING.detail;
+  DETAIL = SLATE_TILING.detail,
+  CLOSE = SLATE_CLOSE;
+// Near the lens the slate's mid-scale blotches, enlarged there, give way to its
+// broad tone (the tile blend `blur` mip levels down, `calm` of it), and the close
+// soil's two lookups, blended by a noise, carry the detail: its grit on the
+// albedo after the map and the settled soil.
+const CLOSE_PRE = `
+      vec2 slateCU = vMudWorld.xz/${glslNumber(CLOSE.tile)}, slateCV = mat2(${CLOSE.second.turn.map(glslNumber)})*slateCU*${glslNumber(CLOSE.second.scale)}+${glslVec(CLOSE.second.offset)};
+      float slateCW = smoothstep(.3, .7, slateNoise(vMudWorld.xz/${glslNumber(CLOSE.blendCell)})), slateCN = 1.-smoothstep(${CLOSE.near.map(glslNumber)}, length(vViewPosition));
+      float slateCG = mix(texture2D(slateGrit, slateCU).r, texture2D(slateGrit, slateCV).r, slateCW), slateCH = mix(texture2D(slateRelief, slateCU).r, texture2D(slateRelief, slateCV).r, slateCW);
+      sampledDiffuseColor.rgb = mix(sampledDiffuseColor.rgb, mix(texture2D(map, vMapUv, ${glslNumber(CLOSE.blur)}).rgb, texture2D(map, slateUvB, ${glslNumber(CLOSE.blur)}).rgb, slateW)*(.93+.14*slateNoise(vMudWorld.xz/${glslNumber(SLATE_TILING.macroCell)})), ${glslNumber(CLOSE.calm)}*slateCN);
+      `;
+const CLOSE_MAP = `
+      diffuseColor.rgb *= 1.+(slateCG-.5)*${glslNumber(CLOSE.albedo)}*slateCN;`;
+// Its relief on the normal, from the height's screen derivatives (as three's
+// perturbNormalArb()), faded where a texel shrinks below a pixel and under water.
+const CLOSE_NORMAL = `
+      float slateCF = slateCN*smoothstep(${CLOSE.footprint.map(glslNumber)}, 1./max(length(fwidth(slateCU))*1024., 1e-4))*(1.-slatePuddle);
+      vec3 slateSX = dFdx(-vViewPosition), slateSY = dFdy(-vViewPosition), slateR1 = cross(slateSY, normal), slateR2 = cross(normal, slateSX);
+      float slateDet = dot(slateSX, slateR1);
+      vec2 slateDH = vec2(dFdx(slateCH), dFdy(slateCH))*${glslNumber(CLOSE.relief)}*slateCF;
+      normal = normalize(abs(slateDet)*normal-sign(slateDet)*(slateDH.x*slateR1+slateDH.y*slateR2));`;
 // Each zone: 1 inside half its radius, 0 at its radius.
 const PUDDLE_ZONES_GLSL = SLATE_PUDDLES.zones.map(
   ({ anchor, deg, dist, radius, stretch = 1, along = 0 }) => {
@@ -237,7 +315,19 @@ const PUDDLE_ZONES_GLSL = SLATE_PUDDLES.zones.map(
     return `1.-smoothstep(.5,1.,length(${local})/${glslNumber(radius)})`;
   },
 );
-const PUDDLE_GLSL = PUDDLE_ZONES_GLSL.reduce((all, zone) => `max(${all},${zone})`);
+// The drip-line and Portrait puddles' zones; the pond (zones[0]) takes its own
+// level and mask from its shape (SLATE_POND).
+const PUDDLE_GLSL = PUDDLE_ZONES_GLSL.slice(1).reduce((all, zone) => `max(${all},${zone})`);
+const POND_ZONE = SLATE_PUDDLES.zones[0],
+  POND_CENTRE = glslPoint(estatePoint(POND_ZONE.anchor, POND_ZONE.deg, POND_ZONE.dist)),
+  POND_C = +Math.cos((POND_ZONE.along * Math.PI) / 180).toFixed(4),
+  POND_S = +Math.sin((POND_ZONE.along * Math.PI) / 180).toFixed(4);
+// slatePondR(): the normalised radius in the pond's footprint, 1 on its
+// wobbled shore; slatePondShape(): its height above the water there.
+const POND_GLSL = `float slatePondR(vec2 p){vec2 q=mat2(${[POND_C, -POND_S, POND_S, POND_C].map(glslNumber)})*(p-${POND_CENTRE})/vec2(${glslNumber(POND_ZONE.stretch)},1.)/${glslNumber(POND_ZONE.radius)};float a=atan(q.y,q.x);return length(q)/(1.+${glslNumber(SLATE_POND.wobble[0])}*sin(3.*a+1.3)+${glslNumber(SLATE_POND.wobble[1])}*sin(5.*a+.4));}
+float slatePondShape(float r){return r<1.?${glslNumber(-SLATE_POND.depth)}*(1.-r*r):${glslNumber(SLATE_POND.rise)}*(1.-exp(-(r-1.)*${glslNumber(+((2 * SLATE_POND.depth) / SLATE_POND.rise).toFixed(4))}));}
+`;
+const POND_LEVEL = `mix(-slatePondShape(slatePondR(vMudWorld.xz))*${glslNumber(SLATE_POND.shore)}-(slateH-.5)*${glslNumber(SLATE_POND.texel)},-1.,smoothstep(${SLATE_POND.reach.map(glslNumber)},slatePondR(vMudWorld.xz)))`;
 const unitGlsl = (values) => {
   const length = Math.hypot(...values);
   return glslVec(values.map((value) => +(value / length).toFixed(4)));
@@ -347,17 +437,24 @@ export function filmGroundSurface({ film = false, surface }) {
 export function configureGroundShading(
   material,
   film = false,
-  { detail = null, contacts = null } = {},
+  { detail = null, grit = null, relief = null, contacts = null } = {},
 ) {
   const useWet = Boolean(film);
   const authored = Boolean(useWet && detail);
+  // The close soil comes with the authored maps' grit and relief (SLATE_CLOSE).
+  const close = Boolean(authored && grit && relief);
   const uniforms = contacts ?? createSlateContacts();
   if (authored) uniforms.slateDetail.value = detail;
+  if (close) {
+    uniforms.slateGrit.value = grit;
+    uniforms.slateRelief.value = relief;
+  }
   // terrain-build.js settleRoots() sets material.userData.slateRoot once the film
   // terrain and its root attribute arrive; the slate then applies it last
   // (the roots' contact shade and settled soil) under a "+root" key.
   material.customProgramCacheKey = () =>
     (useWet ? (authored ? "moonlit-slate-v3" : "moonlit-slate-v3-p") : "ground-baseline") +
+    (close ? "+soil" : "") +
     (useWet && material.userData.slateRoot ? "+root" : "");
   material.onBeforeCompile = (shader) => {
     if (!useWet) return;
@@ -382,7 +479,7 @@ export function configureGroundShading(
 uniform float slateRockContact, slateContactGain, slateAspect;
 #define SLATE_TEXT_KNEE ${glslNumber(WATER.text[1])}
 uniform vec4 slateText, slateAbout;
-${authored ? "uniform sampler2D slateDetail;\n" : ""}float slateHash(vec2 p){vec3 q=fract(p.xyx*.1031);q+=dot(q,q.yzx+33.33);return fract((q.x+q.y)*q.z);}
+${authored ? "uniform sampler2D slateDetail;\n" : ""}${close ? "uniform sampler2D slateGrit, slateRelief;\n" : ""}${POND_GLSL}float slateHash(vec2 p){vec3 q=fract(p.xyx*.1031);q+=dot(q,q.yzx+33.33);return fract((q.x+q.y)*q.z);}
 float slateNoise(vec2 p){vec2 i=floor(p),f=fract(p);f*=f*(3.-2.*f);return mix(mix(slateHash(i),slateHash(i+vec2(1,0)),f.x),mix(slateHash(i+vec2(0,1)),slateHash(i+1.),f.x),f.y);}
 ${SLATE_TEXT_GLSL}`
         : "") +
@@ -398,7 +495,7 @@ ${SLATE_TEXT_GLSL}`
       float slateH = texture2D(slateDetail, slateUvD).r, slateNear = 1.-smoothstep(${DETAIL.near.map(glslNumber)},length(vViewPosition));
       vec3 slateMean = ${glslVec(SLATE_TILING.mean)};
       vec4 sampledDiffuseColor = vec4(max(slateMean+(mix(slateA.rgb,slateB.rgb,slateW)-slateMean)/length(vec2(slateW,1.-slateW)),0.)*(1.+(slateH-.5)*${glslNumber(DETAIL.albedo)}*slateNear)*(.93+.14*slateNoise(vMudWorld.xz/${glslNumber(SLATE_TILING.macroCell)})),1.);
-      diffuseColor *= sampledDiffuseColor;
+      ${close ? CLOSE_PRE : ""}diffuseColor *= sampledDiffuseColor;${close ? CLOSE_MAP : ""}
       #endif`,
       );
     shader.fragmentShader = shader.fragmentShader.replace(
@@ -437,8 +534,8 @@ ${SLATE_TEXT_GLSL}`
       float slateTree = length(vMudWorld.xz-${TREE_GLSL});
       float slateDry = footingDry;
       float slateWet = clamp(max(slateHollow, slateCrack*${glslNumber(SLATE_WET.crackWeight)}) + (1.0-smoothstep(${SLATE_WET.halo.map(glslNumber)}, slateTree))*${glslNumber(SLATE_WET.haloWeight)}, 0.0, 1.0)*(1.0-slateDry);
-      float slatePuddle = smoothstep(-.04, .04, ${PUDDLE_GLSL}*(${glslNumber(SLATE_PUDDLES.fill)}+.4*slateNoise(vMudWorld.xz*.9))-slateH)*(1.0-slateDry);
-      float slateLanternPuddle = slatePuddle*(${PUDDLE_ZONES_GLSL[0]});
+      float slatePuddle = smoothstep(-.04, .04, max(${PUDDLE_GLSL}*(${glslNumber(SLATE_PUDDLES.fill)}+.4*slateNoise(vMudWorld.xz*.9))-slateH, ${POND_LEVEL}))*(1.0-slateDry);
+      float slateLanternPuddle = slatePuddle*(1.0-smoothstep(1.0, 1.4, slatePondR(vMudWorld.xz)));
       slateWet = max(slateWet, slatePuddle);
       roughnessFactor = mix(mix(roughnessFactor, ${glslNumber(SLATE_WET.roughness)}, slateWet*${glslNumber(SLATE_WET.roughnessWeight)}), ${glslNumber(SLATE_PUDDLES.roughness)}, slatePuddle);
       roughnessFactor = mix(roughnessFactor, ${glslNumber(SLATE_PUDDLES.lantern.roughness)}, slateLanternPuddle);
@@ -463,8 +560,8 @@ ${SLATE_TEXT_GLSL}`
         `#ifdef USE_NORMALMAP_TANGENTSPACE
       vec3 slateNA = texture2D(normalMap, vNormalMapUv).xyz*2.-1., slateNB = texture2D(normalMap, slateUvB).xyz*2.-1.;
       vec2 slateHx = vec2(texture2D(slateDetail, slateUvD+vec2(1./512.,0.)).r, texture2D(slateDetail, slateUvD+vec2(0.,1./512.)).r);
-      vec3 mapN = vec3((mix(slateNA.xy, slateNB.xy*slateTurnB, slateW)/length(vec2(slateW,1.-slateW))*normalScale+(slateH-slateHx)*slateTurnD*(${glslNumber(DETAIL.strength)}*slateNear))*(1.-${glslNumber(SLATE_PUDDLES.flatten)}*slatePuddle), mix(slateNA.z, slateNB.z, slateW));
-      normal = normalize(tbn*mapN);
+      vec3 mapN = vec3((mix(slateNA.xy, slateNB.xy*slateTurnB, slateW)/length(vec2(slateW,1.-slateW))*normalScale+(slateH-slateHx)*slateTurnD*(${glslNumber(DETAIL.strength)}*slateNear))${close ? `*(1.-${glslNumber(CLOSE.calm)}*slateCN)` : ""}*(1.-${glslNumber(SLATE_PUDDLES.flatten)}*slatePuddle), mix(slateNA.z, slateNB.z, slateW));
+      normal = normalize(tbn*mapN);${close ? CLOSE_NORMAL : ""}
       #endif`,
       );
     // The film ground's own lights, the sky's light and the water's mirror

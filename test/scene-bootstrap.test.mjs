@@ -232,7 +232,7 @@ test("the ground shading has one call site, which takes the tint and shading fro
   assert.equal((index.match(/configureGroundShading\(/g) || []).length, 1);
   assert.match(
     index,
-    /const surface = filmGroundSurface\(\{ film: filmActive, surface: GROUND_SURFACE_MATERIAL \}\);[^]*?configureGroundShading\(material, filmActive, \{ detail: detailMap, contacts: groundContacts \}\);[^]*?material\.roughness = surface\.roughness; material\.metalness = surface\.metalness; material\.color\.setHex\(surface\.color\);/,
+    /const surface = filmGroundSurface\(\{ film: filmActive, surface: GROUND_SURFACE_MATERIAL \}\);[^]*?configureGroundShading\(material, filmActive, \{\s*detail: detailMap,\s*grit: gritMap,\s*relief: reliefMap,\s*contacts: groundContacts,?\s*\}\);[^]*?material\.roughness = surface\.roughness; material\.metalness = surface\.metalness; material\.color\.setHex\(surface\.color\);/,
   );
 });
 

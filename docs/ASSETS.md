@@ -50,9 +50,15 @@ The tower and tree are required: without either the scene returns to the title c
 | ------------------------ | ------: | ---- | -------- |
 | `slate-color-1024.webp`  | 193,482 | 1024 | high     |
 | `slate-normal-1024.webp` | 361,594 | 1024 | high     |
+| `slate-grit-1024.webp`   | 131,758 | 1024 | high     |
+| `slate-relief-1024.webp` |  94,770 | 1024 | high     |
 | `slate-color-512.webp`   |  65,168 | 512  | balanced |
 | `slate-normal-512.webp`  | 111,126 | 512  | balanced |
+| `slate-grit-512.webp`    |  56,578 | 512  | balanced |
+| `slate-relief-512.webp`  |  39,862 | 512  | balanced |
 | `slate-detail-512.webp`  |  24,542 | 512  | both     |
+
+The grit and relief maps are the close soil near the lens (mud-ground.js `SLATE_CLOSE`): greyscale albedo detail and height from CC0 PolyHaven "Dirt" ([Credits](CREDITS.md)), made by `Assets/Materials/dirt-close-v1/scripts/make-dirt-close.py`.
 
 ## Page artwork
 
@@ -116,17 +122,17 @@ Only the share card is generated in the repository. Everything else is committed
 
 ## Budgets
 
-| Budget                                                  | Limit                                              | Now              | Enforced by                                                                                                 |
-| ------------------------------------------------------- | -------------------------------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------- |
-| Any one model, high                                     | 6 MiB (6,291,456)                                  | 2,028,412 (tree) | The loader (`ARCHITECTURE_ASSET_BUDGETS`) and `bundle-output`                                               |
-| Any one model, balanced                                 | 3 MiB (3,145,728)                                  | 920,408 (tower)  | The same                                                                                                    |
-| Complete scene, high: eight models and three slate maps | 6 MiB                                              | 6,251,430        | `bundle-output`: "the complete scene fits 6 MiB on high and 3 MiB on balanced…"                             |
-| Complete scene, balanced                                | 3 MiB                                              | 2,966,700        | The same                                                                                                    |
-| UI bundle (`app.HASH.js`)                               | under 30 KiB                                       |                  | `bundle-output`: "UI bundle stays under the LCP budget"                                                     |
-| Scene entry and the chunks it imports statically        | under 820 KiB, exactly two files                   |                  | `bundle-output`: "scene bundle stays under the deferred-payload budget"                                     |
-| Paper grain, paper edge and the three vignettes         | 200 KiB (204,800)                                  | 182,994          | `markup-accessibility`: "three distinct transparent paper vignettes share the 200 KiB section-paper budget" |
-| Both estate maps                                        | 200 KiB (204,800)                                  | 193,610          | `bundle-output`: "estate map artwork is hashed, responsive and under 200 KiB combined"                      |
-| `public/og.png`                                         | opaque, exactly 1200×630, at most 300 KB (300,000) | 298,375          | `hosting`: "the share image is an opaque 1200x630 PNG of at most 300 KB, as its tags say"                   |
+| Budget                                                 | Limit                                              | Now              | Enforced by                                                                                                 |
+| ------------------------------------------------------ | -------------------------------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------- |
+| Any one model, high                                    | 6 MiB (6,291,456)                                  | 2,028,412 (tree) | The loader (`ARCHITECTURE_ASSET_BUDGETS`) and `bundle-output`                                               |
+| Any one model, balanced                                | 3 MiB (3,145,728)                                  | 920,408 (tower)  | The same                                                                                                    |
+| Complete scene, high: eight models and five slate maps | 6.25 MiB (6,553,600)                               | 6,477,958        | `bundle-output`: "the complete scene fits 6.25 MiB on high and 3 MiB on balanced…"                          |
+| Complete scene, balanced                               | 3 MiB                                              | 3,063,140        | The same                                                                                                    |
+| UI bundle (`app.HASH.js`)                              | under 30 KiB                                       |                  | `bundle-output`: "UI bundle stays under the LCP budget"                                                     |
+| Scene entry and the chunks it imports statically       | under 820 KiB, exactly two files                   |                  | `bundle-output`: "scene bundle stays under the deferred-payload budget"                                     |
+| Paper grain, paper edge and the three vignettes        | 200 KiB (204,800)                                  | 182,994          | `markup-accessibility`: "three distinct transparent paper vignettes share the 200 KiB section-paper budget" |
+| Both estate maps                                       | 200 KiB (204,800)                                  | 193,610          | `bundle-output`: "estate map artwork is hashed, responsive and under 200 KiB combined"                      |
+| `public/og.png`                                        | opaque, exactly 1200×630, at most 300 KB (300,000) | 298,375          | `hosting`: "the share image is an opaque 1200x630 PNG of at most 300 KB, as its tags say"                   |
 
 Lazy scene chunks are outside the script budget. Script sizes change with every build; `npm run build:dist` prints them.
 
@@ -134,7 +140,7 @@ Lazy scene chunks are outside the script budget. Script sizes change with every 
 
 The build publishes these sources only as `name.HASH.ext`, eight hex digits of the file's SHA-256, cached immutably for a year: the paper and estate-map artwork, every model, the slate maps and the fonts ([build.mjs](../build.mjs) `isFingerprintedSource`), besides the scripts and the stylesheet. Pages, the stylesheet and the scene name only the hashed copies. `public/` files and `fonts/OFL.txt` keep stable names and revalidate after seven days; after a release that changes one, purge its URL ([Operations](OPERATIONS.md#headers-and-caching)). Nothing in `tools/` is published.
 
-`test/bundle-output.test.mjs` fails when a file in `images/` is published under its plain name or is missing under its hashed name, and `test/hosting.test.mjs` expects exactly 28 fingerprinted files in `images/` (2 paper textures, 3 vignettes, 2 estate maps, 16 models and 5 slate maps); a new file there means updating that count. `.gitignore` ignores `*.png` except `og.png`, `apple-touch-icon.png`, `icon-192.png`, `icon-512.png` and `icon-maskable-512.png`, so a new PNG must be added there as an exception before Git sees it.
+`test/bundle-output.test.mjs` fails when a file in `images/` is published under its plain name or is missing under its hashed name, and `test/hosting.test.mjs` expects exactly 32 fingerprinted files in `images/` (2 paper textures, 3 vignettes, 2 estate maps, 16 models and 9 slate maps); a new file there means updating that count. `.gitignore` ignores `*.png` except `og.png`, `apple-touch-icon.png`, `icon-192.png`, `icon-512.png` and `icon-maskable-512.png`, so a new PNG must be added there as an exception before Git sees it.
 
 ## How to
 
@@ -154,7 +160,7 @@ Name the role in [build.mjs](../build.mjs) `architectureAssetManifest` and in [a
 
 ### Replace the slate maps
 
-Keep the five names and exact pixel sizes (1024 or 512; the detail map 512 on both tiers), seamless tiles, and the complete-scene budgets. stone-detail.js rejects any other size at runtime.
+Keep the nine names and exact pixel sizes (1024 or 512; the detail map 512 on both tiers), seamless tiles, and the complete-scene budgets. stone-detail.js rejects any other size at runtime.
 
 ### Replace the paper, vignettes or estate maps
 

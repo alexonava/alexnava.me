@@ -172,7 +172,17 @@ async function fontAssetManifest() {
 
 // The film slate's maps (images/materials/slate-*.webp) are hashed too:
 // { source name: hashed URL }, which the scene entry reads (stone-detail.js).
-const SLATE_MAPS = ["color-1024", "normal-1024", "color-512", "normal-512", "detail-512"];
+const SLATE_MAPS = [
+  "color-1024",
+  "normal-1024",
+  "grit-1024",
+  "relief-1024",
+  "color-512",
+  "normal-512",
+  "grit-512",
+  "relief-512",
+  "detail-512",
+];
 async function materialAssetManifest() {
   const urls = {};
   const files = [];

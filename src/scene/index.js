@@ -424,6 +424,8 @@ const ORBIT_SPEED = 0.06;
             bumpMap,
             roughnessMap = null,
             detailMap = null,
+            gritMap = null,
+            reliefMap = null,
             filmTiled = false,
           }) {
             const material = groundSurface?.material;
@@ -437,6 +439,8 @@ const ORBIT_SPEED = 0.06;
             if (qualityDebug) qualityDebug.groundTreatment = filmActive ? "slate" : "baseline";
             configureGroundShading(material, filmActive, {
               detail: detailMap,
+              grit: gritMap,
+              relief: reliefMap,
               contacts: groundContacts,
             });
             warmGround?.();

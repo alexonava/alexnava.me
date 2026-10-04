@@ -271,6 +271,81 @@ const FILM_CHUNKS = [
   "#include <fog_fragment>",
 ].join("\n");
 
+test("the pond's water lies only below its shore, as the terrain carves it, and the close soil comes with its maps", async () => {
+  const { configureGroundShading, SLATE_POND, SLATE_CLOSE, SLATE_PUDDLES, pondShape } =
+    await import("../src/scene/mud-ground.js");
+  const { POND, PUDDLE_ZONES, pondShapeAt, pondRadius } =
+    await import("../src/scene/terrain-build.js");
+  // The shader's pond and the terrain's agree: the same footprint, wobble, depth, bank and water.
+  for (const key of ["wobble", "depth", "rise", "level", "reach"])
+    assert.deepEqual(SLATE_POND[key], POND[key], key);
+  const zone = SLATE_PUDDLES.zones[0],
+    centre = estatePoint(zone.anchor, zone.deg, zone.dist);
+  assert.ok(Math.hypot(centre.x - PUDDLE_ZONES[0].x, centre.z - PUDDLE_ZONES[0].z) < 1e-9);
+  assert.ok(Math.abs(pondRadius(PUDDLE_ZONES[0].x, PUDDLE_ZONES[0].z)) < 1e-9);
+  // Below the water inside its shore, level with it on the shore, above it on the bank.
+  for (const r of [0, 0.3, 0.6, 0.9, 1, 1.2, 1.5, 2, 3]) {
+    assert.equal(pondShape(r), pondShapeAt(r));
+    assert.ok(r < 1 ? pondShape(r) < 0 : pondShape(r) >= 0, `${r}`);
+  }
+  assert.equal(pondShape(0), -SLATE_POND.depth);
+  assert.ok(pondShape(3) < SLATE_POND.rise);
+  // The shore and the shape in the shader are the JS shape's.
+  const material = new MeshStandardMaterial();
+  const compile = (maps) => {
+    configureGroundShading(material, true, { detail: { isTexture: true }, ...maps });
+    const shader = {
+      uniforms: {},
+      vertexShader: "#include <begin_vertex>",
+      fragmentShader: FILM_CHUNKS,
+    };
+    material.onBeforeCompile(shader);
+    return {
+      key: material.customProgramCacheKey(),
+      fragment: shader.fragmentShader,
+      uniforms: shader.uniforms,
+    };
+  };
+  const plain = compile({});
+  assert.ok(
+    plain.fragment.includes(
+      `float slatePondShape(float r){return r<1.?-${SLATE_POND.depth}*(1.-r*r):`,
+    ),
+  );
+  assert.ok(
+    plain.fragment.includes(
+      "float slateLanternPuddle = slatePuddle*(1.0-smoothstep(1.0, 1.4, slatePondR(vMudWorld.xz)));",
+    ),
+  );
+  assert.doesNotMatch(plain.fragment, /slateGrit|slateRelief/, "no close soil without its maps");
+  assert.ok(!plain.key.includes("+soil"));
+  // With its grit and relief maps the close soil fades in near the lens, and its relief fades
+  // where a texel shrinks under a pixel and under water.
+  const grit = { isTexture: true },
+    relief = { isTexture: true };
+  const soil = compile({ grit, relief });
+  assert.ok(soil.key.includes("+soil"));
+  assert.equal(soil.uniforms.slateGrit.value, grit);
+  assert.equal(soil.uniforms.slateRelief.value, relief);
+  assert.ok(soil.fragment.includes("uniform sampler2D slateGrit, slateRelief;"));
+  assert.ok(
+    soil.fragment.includes(
+      `slateCN = 1.-smoothstep(${SLATE_CLOSE.near.map((v) => v.toFixed(1)).join(",")}, length(vViewPosition));`,
+    ),
+  );
+  assert.ok(
+    soil.fragment.includes(`diffuseColor.rgb *= 1.+(slateCG-.5)*${SLATE_CLOSE.albedo}*slateCN;`),
+  );
+  assert.ok(soil.fragment.includes("*(1.-slatePuddle);"));
+  assert.match(
+    soil.fragment,
+    /slateDH = vec2\(dFdx\(slateCH\), dFdy\(slateCH\)\)\*[\d.]+\*slateCF;/,
+  );
+  // Near the lens the slate's blotches give way to its blurred tone.
+  assert.ok(soil.fragment.includes(`texture2D(map, vMapUv, ${SLATE_CLOSE.blur}.0)`));
+  assert.ok(SLATE_CLOSE.calm > 0 && SLATE_CLOSE.calm < 1);
+});
+
 test("each ground shading has its own program cache key; the slate's shading needs film", async () => {
   const {
     configureGroundShading,
@@ -365,7 +440,7 @@ test("each ground shading has its own program cache key; the slate's shading nee
   // receiving the lantern override; parentheses preserve the 1 - fade mask.
   assert.match(
     fragment,
-    /float slateLanternPuddle = slatePuddle\*\(1\.-smoothstep\(\.5,1\.,length\([^;]*\)\/2\.8\)\);/,
+    /float slateLanternPuddle = slatePuddle\*\(1\.0-smoothstep\(1\.0, 1\.4, slatePondR\(vMudWorld\.xz\)\)\);/,
   );
   assert.equal(SLATE_PUDDLES.lantern.specular, 0.8);
   assert.equal(SLATE_PUDDLES.lantern.roughness, 0.2);
@@ -492,15 +567,19 @@ test("each ground shading has its own program cache key; the slate's shading nee
   // clearing are wet.
   assert.match(fragment, /float slateDry = footingDry;/);
   assert.match(fragment, /float slateWet = clamp\([^;]*\)\*\(1\.0-slateDry\);/);
-  // The puddles fill fuller, Portrait's foreground puddle among them.
+  // The puddles fill fuller, Portrait's foreground puddle among them; the
+  // pond (zones[0]) takes its own level from its shape beside theirs.
   assert.equal(SLATE_PUDDLES.zones.length, 4);
-  assert.match(fragment, /\*\(0\.62\+\.4\*slateNoise\(vMudWorld\.xz\*\.9\)\)-slateH\)/);
-  assert.match(fragment, /length\(\(vMudWorld\.xz-vec2\(52\.32,20\.34\)\)\)\/2\.0\)/);
+  assert.match(
+    fragment,
+    /\*\(0\.62\+\.4\*slateNoise\(vMudWorld\.xz\*\.9\)\)-slateH, mix\(-slatePondShape\(slatePondR\(vMudWorld\.xz\)\)\*3\.0/,
+  );
+  assert.match(fragment, /length\(\(vMudWorld\.xz-vec2\(52\.32,20\.34\)\)\)\/1\.5\)/);
   // Puddles fill the detail map's low texels, glassy and darker, and mirror
   // the night sky as standing water (SLATE_WATER above), no fog-colour sheen.
   assert.match(
     fragment,
-    /float slatePuddle = smoothstep\(-\.04, \.04, [^;]*-slateH\)\*\(1\.0-slateDry\);/,
+    /float slatePuddle = smoothstep\(-\.04, \.04, max\([^;]*-slateH, [^;]*\)\)\*\(1\.0-slateDry\);/,
   );
   assert.equal(fragment.includes("slateSheen"), false);
   assert.equal(fragment.includes("mix(fogColor,"), false);
