@@ -437,9 +437,20 @@ test("each ground shading has its own program cache key; the slate's shading nee
   assert.match(fragment, /reflectedLight\.directSpecular \*= mix\(\.12, \.22, damp\);/);
   assert.match(
     fragment,
-    /reflectedLight\.directSpecular \*= \(1\.0 \+ 1\.6\*slateWet\)\*\(1\.0 \+ 4\.0\*slatePuddle - 3\.2\*slateLanternPuddle\);/,
+    /reflectedLight\.directSpecular \*= mix\(1\.0, 0\.45, slateMatte\)\*\(1\.0 \+ 1\.6\*slateWet\)\*\(1\.0 \+ 4\.0\*slatePuddle - 3\.2\*slateLanternPuddle\);/,
   );
   assert.match(fragment, /roughnessFactor = mix\(roughnessFactor, 0\.2, slateLanternPuddle\);/);
+  // Up close the damp soil is matte (never the water): rougher, a thinner
+  // film and smaller highlights within SLATE_WET.close.near of the lens.
+  assert.match(
+    fragment,
+    /float slateMatte = \(1\.0-smoothstep\(6\.0,18\.0, length\(vViewPosition\)\)\)\*\(1\.0-slatePuddle\);/,
+  );
+  assert.match(
+    fragment,
+    /roughnessFactor = mix\(roughnessFactor, max\(roughnessFactor, 0\.8\), slateMatte\);/,
+  );
+  assert.match(fragment, /\*\(1\.0-0\.7\*slateMatte\);/);
   assert.match(
     fragment,
     /reflectedLight\.directSpecular \/= 1\.0 \+ 2\.5\*dot\(reflectedLight\.directSpecular,vec3\(\.2126,\.7152,\.0722\)\)\*slateLanternPuddle;/,
@@ -467,7 +478,7 @@ test("each ground shading has its own program cache key; the slate's shading nee
   assert.ok(SLATE_WET.indirect[1] > SLATE_WET.indirect[0] && SLATE_WET.indirect[1] <= 1);
   assert.ok(
     fragment.includes(
-      `reflectedLight.indirectSpecular *= mix(1.0, ${+(SLATE_WET.indirect[1] / SLATE_WET.indirect[0]).toFixed(4)}, slateWet*slateShow);`,
+      `reflectedLight.indirectSpecular *= mix(1.0, ${+(SLATE_WET.indirect[1] / SLATE_WET.indirect[0]).toFixed(4)}, slateWet*slateShow)*mix(1.0, ${SLATE_WET.close.sky}, slateMatte);`,
     ),
   );
   // The water: water's Fresnel (f0 .02) on a normal levelled by the water
@@ -492,7 +503,7 @@ test("each ground shading has its own program cache key; the slate's shading nee
   );
   assert.ok(
     fragment.includes(
-      `*(1.0-slatePuddle)*(1.0-smoothstep(${SLATE_WATER.far.map((v) => (Number.isInteger(v) ? v.toFixed(1) : String(v))).join(",")}, length(vViewPosition)));`,
+      `*(1.0-slatePuddle)*(1.0-smoothstep(${SLATE_WATER.far.map((v) => (Number.isInteger(v) ? v.toFixed(1) : String(v))).join(",")}, length(vViewPosition)))*(1.0-0.7*slateMatte);`,
     ),
   );
   assert.match(
