@@ -1643,9 +1643,14 @@ export function scatterLitter(surface, groundColor) {
     base[1] * k,
     base[2] * k * (1 - 0.15 * warm),
   ];
-  const triangle = (a, b, c, color) => {
+  // `normals` (one per corner) keeps a piece smooth-shaded; without them its
+  // faces take their own flat normals. `color` is one rgb or one per corner.
+  const smooth = [];
+  const triangle = (a, b, c, color, normals = null) => {
     positions.push(...a, ...b, ...c);
-    colors.push(...color, ...color, ...color);
+    if (Array.isArray(color[0])) colors.push(...color[0], ...color[1], ...color[2]);
+    else colors.push(...color, ...color, ...color);
+    if (normals) smooth.push([positions.length / 3 - 3, normals]);
   };
   const ground = (x, z, fallback) => {
     const y = surface(x, z);
@@ -1700,38 +1705,24 @@ export function scatterLitter(surface, groundColor) {
       const a = L.pebble[0] + random() * (L.pebble[1] - L.pebble[0]),
         b = a * (0.65 + 0.35 * random()),
         h = a * (0.35 + 0.25 * random());
-      const corners = [
-        [a, 0, 0],
-        [-a, 0, 0],
-        [0, 0, b],
-        [0, 0, -b],
-        [0, h, 0],
-        [0, -h * 0.4, 0],
-      ].map(([px, py, pz]) => {
-        const tx = px * cy - pz * sy,
-          tz = px * sy + pz * cy;
-        return [x + tx, Math.max(ground(x + tx, z + tz, y), y) + py + h * 0.12, z + tz];
-      });
       const color = tone(
         (L.tone.pebble[0] + random() * (L.tone.pebble[1] - L.tone.pebble[0])) * dim,
         random() * 0.6,
       );
-      for (const [i, j, k] of [
-        [4, 0, 2],
-        [4, 2, 1],
-        [4, 1, 3],
-        [4, 3, 0],
-        [5, 2, 0],
-        [5, 1, 2],
-        [5, 3, 1],
-        [5, 0, 3],
-      ])
-        triangle(
-          corners[i],
-          corners[j],
-          corners[k],
-          color.map((value) => value * (i === 4 ? 1 : 0.8)),
-        );
+      pebbleDome(
+        a,
+        b,
+        h,
+        random,
+        (u, w, lift) => {
+          const tx = u * cy - w * sy,
+            tz = u * sy + w * cy;
+          return [x + tx, Math.max(ground(x + tx, z + tz, y), y) + lift, z + tz];
+        },
+        [cy, sy],
+        color,
+        triangle,
+      );
     } else if (kind === "flake") {
       const length = L.flake[0] + random() * (L.flake[1] - L.flake[0]),
         width = length * (0.35 + 0.25 * random()),
@@ -1926,7 +1917,7 @@ export function scatterLitter(surface, groundColor) {
     stones.push([x, z, width]);
   }
   const fineStart = positions.length / 3;
-  scatterFine(surface, base, stones, triangle);
+  const pieces = scatterFine(surface, base, stones, triangle, () => positions.length / 3);
   const geometry = new BufferGeometry();
   geometry.setAttribute("position", new BufferAttribute(new Float32Array(positions), 3));
   geometry.setAttribute("color", new BufferAttribute(new Float32Array(colors), 3));
@@ -1937,6 +1928,8 @@ export function scatterLitter(surface, groundColor) {
   );
   geometry.computeVertexNormals();
   geometry.attributes.normal.array.set(stoneNormals, litterVertices * 3);
+  for (const [first, normals] of smooth)
+    geometry.attributes.normal.array.set(normals.flat(), first * 3);
   geometry.computeBoundingSphere();
   geometry.userData.litter = placed;
   // The stones' vertices follow the litter's.
@@ -1944,12 +1937,56 @@ export function scatterLitter(surface, groundColor) {
   geometry.userData.litterVertices = litterVertices;
   // The fine pieces' vertices [first, end): balanced draws a share of them.
   geometry.userData.fine = [fineStart, positions.length / 3];
+  // Each fine piece's first vertex, in order.
+  geometry.userData.finePieces = pieces;
   return geometry;
+}
+
+// A rounded pebble or clod, half-width `a` by `b`, `h` high: a top, a ring
+// at PEBBLE_DOME.ring of its width and a ring sunk into the soil, each ring of
+// PEBBLE_DOME.sides jittered points, smooth-shaded from its ellipsoid's normals
+// and a little darker toward the soil. `at(u, w, lift)` places a local point
+// (u along its yaw) on the ground; `turn` is [cos, sin] of that yaw.
+export const PEBBLE_DOME = Object.freeze({ sides: 6, ring: 0.62, jitter: 0.18 });
+function pebbleDome(a, b, h, random, at, [cy, sy], rgb, triangle) {
+  const { sides, ring, jitter } = PEBBLE_DOME,
+    spin = random() * Math.PI;
+  const point = (r, y, k) => {
+    const t = spin + (k * 2 * Math.PI) / sides,
+      j = 1 + jitter * (random() * 2 - 1),
+      u = Math.cos(t) * a * r * j,
+      w = Math.sin(t) * b * r * j;
+    // The ellipsoid's normal (its centre at the sunk ring), turned to the world.
+    const nu = u / (a * a),
+      ny = (y + h * 0.15) / (h * h),
+      nw = w / (b * b),
+      l = Math.hypot(nu, ny, nw) || 1;
+    return [at(u, w, y), [(nu * cy - nw * sy) / l, ny / l, (nu * sy + nw * cy) / l]];
+  };
+  const top = [at(0, 0, h), [0, 1, 0]],
+    upper = Array.from({ length: sides }, (_, k) => point(ring, h * 0.8, k + 0.5)),
+    lower = Array.from({ length: sides }, (_, k) => point(1, -h * 0.15, k));
+  const shade = (n) => rgb.map((c) => c * (0.68 + 0.32 * Math.max(0, n[1])));
+  const face = (...vertices) =>
+    triangle(
+      vertices.map(([p]) => p).at(0),
+      vertices[1][0],
+      vertices[2][0],
+      vertices.map(([, n]) => shade(n)),
+      vertices.map(([, n]) => n),
+    );
+  for (let k = 0; k < sides; k++) {
+    const k1 = (k + 1) % sides;
+    face(top, upper[k1], upper[k]);
+    face(upper[k], upper[k1], lower[k1]);
+    face(upper[k], lower[k1], lower[k]);
+  }
 }
 
 // The fine litter (LITTER.fine), appended through `triangle(a, b, c, rgb)`:
 // leaves, clods and grit interleaved, so a draw range cut thins all three.
-function scatterFine(surface, base, stones, triangle) {
+function scatterFine(surface, base, stones, triangle, vertices) {
+  const pieces = [];
   const F = LITTER.fine;
   let seed = F.seed;
   const random = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296;
@@ -1994,6 +2031,7 @@ function scatterFine(surface, base, stones, triangle) {
         tz = u * sy + w * cy;
       return [x + tx, ground(x + tx, z + tz) + lift, z + tz];
     };
+    pieces.push(vertices());
     if (kind === "leaf") {
       // A cupped oval on a midrib, curled along its length.
       const length = between(F.leafSize),
@@ -2011,6 +2049,12 @@ function scatterFine(surface, base, stones, triangle) {
         at((u - 0.5) * length, 0, lift(u)),
         at((u - 0.5) * length, half * width, lift(u) + cup),
       ]);
+      const centre = M1.map((v, k) => (v + M2[k]) / 2),
+        leafNormal = ([px, , pz]) => {
+          const n = [(px - centre[0]) * 0.8, 1, (pz - centre[2]) * 0.8],
+            l = Math.hypot(...n);
+          return n.map((v) => v / l);
+        };
       const age = random(),
         rgb = F.leafTone.map(
           (c, k) => c * (0.6 + 0.6 * age) * dim * (k === 1 ? 1 - 0.15 * age : 1),
@@ -2025,25 +2069,21 @@ function scatterFine(surface, base, stones, triangle) {
         [L2, M2, T],
         [M2, R2, T],
       ])
-        triangle(a, b, c, rgb);
+        // Soft, mostly upward normals: a curled leaf, not a folded card.
+        triangle(
+          a,
+          b,
+          c,
+          rgb,
+          [a, b, c].map((v) => leafNormal(v)),
+        );
       left.leaves--;
     } else {
-      // A flattened, jittered octahedron: a soil clod or a grain of grit.
+      // A rounded, jittered dome: a soil clod or a grain of grit.
       const clod = kind === "clod",
         a = between(clod ? F.clod : F.grit),
         b = a * between([0.6, 1]),
         h = a * between(clod ? [0.35, 0.55] : [0.4, 0.75]);
-      const corners = [
-        [a, 0, 0],
-        [-a, 0, b * 0.3],
-        [0, 0, b],
-        [a * 0.2, 0, -b],
-        [0, h, 0],
-        [0, -h * 0.5, 0],
-      ].map(([px, py, pz]) => {
-        const j = 0.75 + 0.5 * random();
-        return at(px * j, pz * j, py + h * 0.15);
-      });
       let rgb;
       if (clod) {
         const k = between(F.clodTone) * dim;
@@ -2053,25 +2093,11 @@ function scatterFine(surface, base, stones, triangle) {
           warm = random() * 0.2;
         rgb = [k * (1 + warm), k, k * (1 - warm)];
       }
-      for (const [i, j, k] of [
-        [4, 0, 2],
-        [4, 2, 1],
-        [4, 1, 3],
-        [4, 3, 0],
-        [5, 2, 0],
-        [5, 1, 2],
-        [5, 3, 1],
-        [5, 0, 3],
-      ])
-        triangle(
-          corners[i],
-          corners[j],
-          corners[k],
-          rgb.map((c) => c * (i === 4 ? 1 : 0.7)),
-        );
+      pebbleDome(a, b, h, random, at, [cy, sy], rgb, triangle);
       left[clod ? "clods" : "gravel"]--;
     }
   }
+  return pieces;
 }
 
 // The pond's rushes (drawn with the grass material, estate-ground-detail.js,
