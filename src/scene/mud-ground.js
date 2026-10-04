@@ -50,6 +50,18 @@ export const SLATE_WET = Object.freeze({
   darken: 0.04,
   specular: 1.6, // direct specular clamp relaxed by up to 1 + 1.6 (the cap)
   indirect: Object.freeze([0.18, 0.6]), // the soil's own sky reflection kept: dry, wet
+  // Up close damp soil reads matte (the owner's note of 2026-10-04: "too
+  // glossy"): fully within near[0] of the lens and gone by near[1], the soil
+  // (never the pond, puddles or streams) eases to `roughness`, keeps `film`
+  // of its water film, `specular` of its direct highlights and `sky` of its
+  // own sky reflection.
+  close: Object.freeze({
+    near: Object.freeze([6, 18]),
+    roughness: 0.8,
+    film: 0.3,
+    specular: 0.45,
+    sky: 0.45,
+  }),
 });
 
 // The seamless slate v2 tile (Assets/Materials/slate-v2), repeated every 22
@@ -469,7 +481,7 @@ void RE_Direct_Moonlit(const in IncidentLight directLight, const in vec3 geometr
 // water's level: the world's up) and the water film's share
 // of the wet soil (none in a puddle, which mirrors the lights on its own).
 const WATER_BEFORE_LIGHTS = `slateWaterN = normalize(mix(mix(normal, nonPerturbedNormal, ${glslNumber(WATER.level)}), mat3(viewMatrix)[1], slatePuddle)+slateWaterTilt);
-      slateWetFilm = (${glslNumber(WATER.film[0])}*(1.0-slateDry)+${glslNumber(WATER.film[1])}*slateWet)*mix(${glslNumber(WATER.patch[1])}, 1.0, smoothstep(.3, .7, slateNoise(vMudWorld.xz/${glslNumber(WATER.patch[0])})))*(1.0-slatePuddle)*(1.0-smoothstep(${WATER.far.map(glslNumber)}, length(vViewPosition)));
+      slateWetFilm = (${glslNumber(WATER.film[0])}*(1.0-slateDry)+${glslNumber(WATER.film[1])}*slateWet)*mix(${glslNumber(WATER.patch[1])}, 1.0, smoothstep(.3, .7, slateNoise(vMudWorld.xz/${glslNumber(WATER.patch[0])})))*(1.0-slatePuddle)*(1.0-smoothstep(${WATER.far.map(glslNumber)}, length(vViewPosition)))*(1.0-${glslNumber(1 - SLATE_WET.close.film)}*slateMatte);
       #include <lights_fragment_begin>`;
 // After the light maps: the ambient's share and the night sky's light, and the
 // sky the water mirrors, at the film's or a puddle's roughness.
@@ -614,6 +626,8 @@ ${SLATE_TEXT_GLSL}`
       slateWet = max(slateWet, slatePuddle);
       roughnessFactor = mix(mix(roughnessFactor, ${glslNumber(SLATE_WET.roughness)}, slateWet*${glslNumber(SLATE_WET.roughnessWeight)}), ${glslNumber(SLATE_PUDDLES.roughness)}, slatePuddle);
       roughnessFactor = mix(roughnessFactor, ${glslNumber(SLATE_PUDDLES.lantern.roughness)}, slateLanternPuddle);
+      float slateMatte = (1.0-smoothstep(${SLATE_WET.close.near.map(glslNumber)}, length(vViewPosition)))*(1.0-slatePuddle);
+      roughnessFactor = mix(roughnessFactor, max(roughnessFactor, ${glslNumber(SLATE_WET.close.roughness)}), slateMatte);
       diffuseColor.rgb *= (1.0 - ${glslNumber(SLATE_WET.darken)}*slateWet)*(1.0 - ${glslNumber(SLATE_PUDDLES.darken)}*slatePuddle);
       float slateAo = 0.0;
       for (int i = 0; i < ${SLATE_CONTACTS}; i++) slateAo = max(slateAo, (1.0-smoothstep(.55, 1.35, length(vMudWorld.xz-slateContacts[i].xy)/max(slateContacts[i].z, .001)))*slateContacts[i].w*(i < 2 ? 1.0 : slateRockContact));
@@ -660,10 +674,10 @@ ${SLATE_TEXT_GLSL}`
       ${
         useWet
           ? `
-      reflectedLight.directSpecular *= (1.0 + ${glslNumber(SLATE_WET.specular)}*slateWet)*(1.0 + ${glslNumber(SLATE_PUDDLES.specular)}*slatePuddle - ${glslNumber(SLATE_PUDDLES.specular - SLATE_PUDDLES.lantern.specular)}*slateLanternPuddle);
+      reflectedLight.directSpecular *= mix(1.0, ${glslNumber(SLATE_WET.close.specular)}, slateMatte)*(1.0 + ${glslNumber(SLATE_WET.specular)}*slateWet)*(1.0 + ${glslNumber(SLATE_PUDDLES.specular)}*slatePuddle - ${glslNumber(SLATE_PUDDLES.specular - SLATE_PUDDLES.lantern.specular)}*slateLanternPuddle);
       reflectedLight.directSpecular /= 1.0 + 2.5*dot(reflectedLight.directSpecular,vec3(.2126,.7152,.0722))*slateLanternPuddle;
       float slateBehind = slateBehindText(), slateShow = 1.0-${glslNumber(WATER.text[0])}*slateBehind;
-      reflectedLight.indirectSpecular *= mix(1.0, ${glslNumber(+(SLATE_WET.indirect[1] / SLATE_WET.indirect[0]).toFixed(4))}, slateWet*slateShow);${WATER_AFTER_LIGHTS}
+      reflectedLight.indirectSpecular *= mix(1.0, ${glslNumber(+(SLATE_WET.indirect[1] / SLATE_WET.indirect[0]).toFixed(4))}, slateWet*slateShow)*mix(1.0, ${glslNumber(SLATE_WET.close.sky)}, slateMatte);${WATER_AFTER_LIGHTS}
       reflectedLight.directSpecular /= 1.0+slateBehind*dot(reflectedLight.directSpecular,vec3(.2126,.7152,.0722))/SLATE_TEXT_KNEE;
       reflectedLight.indirectSpecular /= 1.0+slateBehind*dot(reflectedLight.indirectSpecular,vec3(.2126,.7152,.0722))/SLATE_TEXT_KNEE;
       `
