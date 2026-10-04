@@ -44,6 +44,7 @@ import {
   pondRadius,
   pondShapeAt,
   plantRushes,
+  PEBBLE_DOME,
   RUSHES,
   STREAMS,
   streamDistance,
@@ -1880,7 +1881,7 @@ test("sparse dark litter and small grey stones lie among the roots, clear of the
     );
   }
   assert.ok(
-    litterVertices / 3 > 300 && litterVertices / 3 < 900,
+    litterVertices / 3 > 300 && litterVertices / 3 < 1400,
     `${litterVertices / 3} triangles`,
   );
   // The small stones: among the roots and about the trunk's base, clear of
@@ -1941,27 +1942,40 @@ test("the fine litter (leaves, clods, grit) lies on the foreground soil, never u
   const [start, end] = litter.userData.fine,
     p = litter.attributes.position,
     c = litter.attributes.color;
-  // Every piece is 8 triangles; all of them found room.
-  const pieces = (end - start) / 24,
+  // All of them found room; every piece is a leaf (8 triangles) or a rounded
+  // dome (PEBBLE_DOME: 3 triangles a side), smooth-shaded so none reads as a
+  // faceted pyramid.
+  const pieces = litter.userData.finePieces,
     wanted = F.counts.leaves + F.counts.clods + F.counts.gravel;
-  assert.ok(Number.isInteger(pieces) && pieces === wanted, `${pieces} of ${wanted} pieces`);
-  const lift = Math.max(F.leafSize[1] * 0.4, F.clod[1]) + 0.02;
-  for (let i = start; i < end; i += 24) {
+  assert.equal(pieces.length, wanted);
+  assert.equal(pieces[0], start);
+  const lift = Math.max(F.leafSize[1] * 0.4, F.clod[1]) + 0.02,
+    n = litter.attributes.normal;
+  let domes = 0;
+  pieces.forEach((first, k) => {
+    const end = pieces[k + 1] ?? litter.userData.fine[1],
+      count = end - first;
+    assert.ok(count === 24 || count === PEBBLE_DOME.sides * 9, `piece ${k} has ${count} vertices`);
+    if (count !== 24) domes++;
     let x = 0,
       z = 0;
-    for (let k = i; k < i + 24; k++) {
-      x += p.getX(k) / 24;
-      z += p.getZ(k) / 24;
+    for (let i = first; i < end; i++) {
+      x += p.getX(i) / count;
+      z += p.getZ(i) / count;
+      // Smooth-shaded: unit normals, none pointing into the soil.
+      assert.ok(Math.abs(Math.hypot(n.getX(i), n.getY(i), n.getZ(i)) - 1) < 1e-4);
+      assert.ok(n.getY(i) >= 0, `vertex ${i} faces into the soil`);
     }
     assert.equal(rootCovered(x, z), false, `piece at ${x},${z} under a root`);
     assert.ok(pondRadius(x, z) > 1, "never in the pond");
-    for (let k = i; k < i + 24; k++) {
-      const y = surface(p.getX(k), p.getZ(k));
-      if (Number.isFinite(y)) assert.ok(Math.abs(p.getY(k) - y) < lift, `vertex ${k} off the soil`);
+    for (let i = first; i < end; i++) {
+      const y = surface(p.getX(i), p.getZ(i));
+      if (Number.isFinite(y)) assert.ok(Math.abs(p.getY(i) - y) < lift, `vertex ${i} off the soil`);
       // Never brighter than a dull, damp brown or a pale grain of grit.
-      assert.ok(Math.max(c.getX(k), c.getY(k), c.getZ(k)) < 0.25);
+      assert.ok(Math.max(c.getX(i), c.getY(i), c.getZ(i)) < 0.25);
     }
-  }
+  });
+  assert.equal(domes, F.counts.clods + F.counts.gravel);
   litter.dispose();
   terrain.dispose();
 });

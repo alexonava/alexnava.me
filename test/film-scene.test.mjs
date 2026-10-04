@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   BoxGeometry,
+  BufferGeometry,
   Color,
   Group,
   Mesh,
@@ -306,6 +307,25 @@ test("the grass stays within its triangle budget on each tier and out of the wat
       z = (p.getZ(i) + p.getZ(i + 1)) / 2;
     assert.ok(streamDistance(x, z) > -0.05, `a blade stands in a stream at ${x},${z}`);
   }
+  detail.dispose();
+});
+
+test("balanced trims the fine litter only at whole pieces", () => {
+  const detail = createEstateGroundDetail(groundHeight),
+    // Leaves (24 vertices) and domes (54) alternating from vertex 100.
+    pieces = [100];
+  for (let k = 1; k < 10; k++) pieces.push(pieces[k - 1] + (k % 2 ? 24 : 54));
+  const end = pieces.at(-1) + 24,
+    litter = new Mesh(new BufferGeometry());
+  litter.geometry.userData.fine = [100, end];
+  litter.geometry.userData.finePieces = pieces;
+  detail.mesh.add(litter);
+  detail.setActive(true);
+  assert.equal(litter.geometry.drawRange.count, end);
+  detail.applyQuality({ tier: "balanced" });
+  assert.equal(litter.geometry.drawRange.count, pieces[Math.floor(10 * GROWTH.balanced)]);
+  detail.applyQuality({ tier: "high" });
+  assert.equal(litter.geometry.drawRange.count, end);
   detail.dispose();
 });
 
