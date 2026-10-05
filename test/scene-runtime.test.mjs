@@ -18,6 +18,17 @@ import {
   runSceneInitialization,
 } from "../src/scene/subsystem.js";
 import { createSceneRendering } from "../src/scene/rendering.js";
+import {
+  FILM_LIGHT,
+  LANTERN_MOOD,
+  RIM,
+  RIM_UNIFORMS,
+  SHOT_LIGHT_DEFAULT,
+  setRim,
+  shotLight,
+} from "../src/scene/film-light.js";
+import { DIRECTED_SHOTS } from "../src/scene/directed-shots.js";
+import { flat, source } from "./support/code.mjs";
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 
@@ -1178,8 +1189,15 @@ test("scene rendering owns quality, sizing, rendering, and disposal lifecycle", 
   );
   assert.equal(rendering.lights.sun.shadow.camera.left, -32);
   rendering.applyQuality(profile);
-  assert.equal(rendering.lights.fill.intensity, 0.31 * 1.66);
+  // The film's moonlight balance (film-light.js) over the profile's rig.
+  assert.equal(rendering.lights.sun.intensity, 2.9 * FILM_LIGHT.key);
+  assert.equal(rendering.lights.fill.intensity, 0.31 * FILM_LIGHT.fill);
+  assert.equal(rendering.lights.hemisphere.intensity, 0.71 * FILM_LIGHT.hemisphere);
+  assert.equal(rendering.lights.ambient.intensity, 0.22 * FILM_LIGHT.ambient);
   rendering.setFilmTreatment(false);
+  assert.equal(rendering.lights.sun.intensity, 2.9);
+  assert.equal(rendering.lights.hemisphere.intensity, 0.71);
+  assert.equal(rendering.lights.ambient.intensity, 0.22);
   assert.deepEqual(rendering.lights.sun.position.toArray(), beforePosition.toArray());
   assert.deepEqual(rendering.lights.sun.target.position.toArray(), beforeTarget.toArray());
   assert.equal(rendering.lights.sun.shadow.camera.left, -34);
@@ -1404,4 +1422,178 @@ test("a lost context ends a tour crossfade before the scene hears of it", () => 
   assert.deepEqual(calls, ["prevented", "cancel", "invalidate", "lost"]);
   rendering.dispose();
   assert.equal(listeners.webglcontextlost, undefined);
+});
+
+test("a shot's light mood scales only the film key and fill, without redrawing the shadow map", () => {
+  const renderer = {
+    capabilities: { getMaxAnisotropy: () => 8 },
+    domElement: { addEventListener() {}, removeEventListener() {} },
+    shadowMap: {},
+    setClearColor() {},
+    setPixelRatio() {},
+    setSize() {},
+  };
+  const pipeline = {
+    composer: { addPass() {}, render() {}, setPixelRatio() {}, setSize() {} },
+    setQualityProfile() {},
+  };
+  const profile = createProfile();
+  const rendering = createSceneRendering({
+    container: { appendChild() {} },
+    createPipeline: () => pipeline,
+    createRenderer: () => renderer,
+    disposeResources: () => ({}),
+    height: 600,
+    lighting: {
+      ambientColor: 0xffffff,
+      ambientIntensity: 0.22,
+      directionalColor: 0xffffff,
+      directionalIntensity: 2.9,
+      directionalPosition: { x: 21, y: 29, z: 23 },
+      fogColor: 0x222222,
+      fogFar: 150,
+      fogNear: 62,
+      hemisphereGroundColor: 0x111111,
+      hemisphereIntensity: 0.71,
+      hemisphereSkyColor: 0x888888,
+    },
+    profile,
+    threeExports: {},
+    width: 800,
+    world: {
+      CAMERA_FAR: 210,
+      CAMERA_FOV: 48,
+      CAMERA_NEAR: 0.5,
+      FILL_LIGHT_POSITION: [-20, 14, -18],
+      SHADOW_CAMERA_FAR: 120,
+      SHADOW_CAMERA_HALF_EXTENT: 34,
+      SHADOW_CAMERA_NEAR: 0.5,
+    },
+  });
+  rendering.applyQuality(profile);
+  const { sun, fill, hemisphere, ambient } = rendering.lights,
+    shadow = sun.shadow;
+  rendering.setStaticShadows(true);
+  rendering.setFilmTreatment(true);
+  const close = (a, b) => assert.ok(Math.abs(a - b) < 1e-9, `${a} != ${b}`);
+  const film = () => [sun.intensity, fill.intensity, hemisphere.intensity, ambient.intensity];
+  close(sun.intensity, 2.9 * FILM_LIGHT.key);
+  close(fill.intensity, 0.31 * FILM_LIGHT.fill);
+  const bias = [shadow.bias, shadow.normalBias];
+
+  shadow.needsUpdate = false;
+  assert.equal(rendering.setShotLight({ key: 1.2, fill: 0.45, lantern: 1.4, rim: 2 }), true);
+  close(sun.intensity, 2.9 * FILM_LIGHT.key * 1.2);
+  close(fill.intensity, 0.31 * FILM_LIGHT.fill * 0.45);
+  close(hemisphere.intensity, 0.71 * FILM_LIGHT.hemisphere);
+  close(ambient.intensity, 0.22 * FILM_LIGHT.ambient);
+  assert.deepEqual([shadow.bias, shadow.normalBias], bias);
+  assert.equal(shadow.needsUpdate, false, "a mood never redraws the static shadow map");
+  const moody = film();
+  assert.equal(rendering.setShotLight({ key: 1.2, fill: 0.45 }), false, "an unchanged mood");
+  assert.deepEqual(film(), moody);
+  // The mood survives a quality step.
+  rendering.applyQuality(profile);
+  close(sun.intensity, 2.9 * FILM_LIGHT.key * 1.2);
+  // A missing key or fill is 1; null restores the plain film balance.
+  assert.equal(rendering.setShotLight({ fill: 0.8 }), true);
+  close(sun.intensity, 2.9 * FILM_LIGHT.key);
+  close(fill.intensity, 0.31 * FILM_LIGHT.fill * 0.8);
+  rendering.setShotLight({ key: 0.6, fill: 0.75 });
+  shadow.needsUpdate = false;
+  assert.equal(rendering.setShotLight(null), true);
+  close(sun.intensity, 2.9 * FILM_LIGHT.key);
+  close(fill.intensity, 0.31 * FILM_LIGHT.fill);
+  assert.equal(shadow.needsUpdate, false);
+
+  // Outside film the mood is held but leaves the rig untouched.
+  rendering.setShotLight({ key: 0.5, fill: 2 });
+  rendering.setFilmTreatment(false);
+  close(sun.intensity, 2.9);
+  close(fill.intensity, 0.31);
+  rendering.setFilmTreatment(true);
+  close(sun.intensity, 2.9 * FILM_LIGHT.key * 0.5);
+  rendering.dispose();
+  assert.equal(rendering.setShotLight({ key: 2 }), false, "a disposed rig ignores moods");
+});
+
+test("the film's moonlight balance keeps a strong key over a dimmer sky and ambient", () => {
+  assert.ok(Object.isFrozen(FILM_LIGHT));
+  assert.deepEqual(FILM_LIGHT, { key: 1.12, fill: 1.15, hemisphere: 0.88, ambient: 0.72 });
+  assert.ok(FILM_LIGHT.key > FILM_LIGHT.hemisphere && FILM_LIGHT.key > FILM_LIGHT.ambient);
+});
+
+test("a shot's light mood merges over the neutral default and never shares it", () => {
+  assert.ok(Object.isFrozen(SHOT_LIGHT_DEFAULT));
+  assert.deepEqual(SHOT_LIGHT_DEFAULT, { key: 1, fill: 1, lantern: 1, rim: 1 });
+  for (const shot of [null, undefined, {}, { light: null }])
+    assert.deepEqual(shotLight(shot), SHOT_LIGHT_DEFAULT);
+  const mood = shotLight({ light: { fill: 0.8, rim: 1.8 } });
+  assert.deepEqual(mood, { key: 1, fill: 0.8, lantern: 1, rim: 1.8 });
+  assert.notEqual(shotLight(null), SHOT_LIGHT_DEFAULT, "a fresh object each time");
+  mood.key = 3;
+  assert.equal(SHOT_LIGHT_DEFAULT.key, 1);
+  // Every directed mood names only known parts with positive strengths.
+  for (const shot of [...DIRECTED_SHOTS.tower, ...DIRECTED_SHOTS.tree]) {
+    if (!shot.light) continue;
+    for (const [part, value] of Object.entries(shot.light)) {
+      assert.ok(part in SHOT_LIGHT_DEFAULT, `${shot.name}: ${part}`);
+      assert.ok(value > 0 && value < 3, `${shot.name}: ${part} ${value}`);
+    }
+  }
+  // The lantern shots raise the practical; the rest leave it at 1.
+  assert.ok(shotLight(DIRECTED_SHOTS.tree[1]).lantern > 1);
+  assert.ok(shotLight(DIRECTED_SHOTS.tree[3]).lantern > 1);
+  assert.equal(shotLight(DIRECTED_SHOTS.tower[0]).lantern, 1);
+});
+
+test("setRim scales the cool rim colour and keeps the moon-facing floor", () => {
+  assert.ok(Object.isFrozen(RIM) && Object.isFrozen(RIM.color));
+  const light = RIM_UNIFORMS.babelRimLight.value,
+    close = (a, b) => assert.ok(Math.abs(a - b) < 1e-6, `${a} != ${b}`);
+  try {
+    setRim(2);
+    RIM.color.forEach((c, i) => close(light.getComponent(i), c * 2));
+    close(light.w, RIM.floor);
+    // Cool: blue over green over red.
+    assert.ok(light.z > light.y && light.y > light.x);
+    setRim(0.5);
+    RIM.color.forEach((c, i) => close(light.getComponent(i), c * 0.5));
+    setRim();
+    assert.deepEqual(light.toArray(), [0, 0, 0, RIM.floor], "no strength, no rim");
+    assert.equal(RIM_UNIFORMS.babelRimLight.value, light, "the uniform object is shared");
+  } finally {
+    setRim(0);
+  }
+  assert.equal(LANTERN_MOOD.value, 1);
+});
+
+test("each frame applies the shot's light, lens, bars and grain, holding the grain while still", () => {
+  const index = flat(source("src/scene/index.js"));
+  // The mood follows the shot on screen in film only.
+  assert.ok(
+    index.includes(
+      "const mood = shotLight(filmActive && cinematicApplied ? cinematic.shot : null); rendering.setShotLight?.(mood); LANTERN_MOOD.value = mood.lantern; setRim(filmActive ? mood.rim : 0);",
+    ),
+  );
+  assert.ok(
+    index.includes(
+      "RIM_UNIFORMS.babelKeyView.value .set(...WORLD.SUN_DIRECTION) .transformDirection(camera.matrixWorldInverse);",
+    ),
+  );
+  assert.ok(index.includes("post.setLens?.(cinematicApplied ? cinematic.shot?.lens : null);"));
+  assert.ok(
+    index.includes(
+      "post.setBars?.(filmActive && cinematicApplied ? letterboxShare(viewport.width, viewport.height) : 0);",
+    ),
+  );
+  // The grain's frame advances only while the scene moves: never under reduced
+  // motion, a visitor pause or an open panel.
+  const calls = index.match(/setFilmTime\?\.\(/g) || [];
+  assert.equal(calls.length, 1, "one call site");
+  assert.ok(
+    index.includes(
+      'if (!reducedMotion && !visitorHold?.paused && !document.body.hasAttribute("data-panel-open")) post.setFilmTime?.(elapsedTime);',
+    ),
+  );
 });

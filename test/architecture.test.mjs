@@ -21,6 +21,8 @@ import {
   BARK_TEXT_LIGHTS,
   ENVIRONMENT_ROLES,
   LANTERN_REACH,
+  LANTERN_FILM_INTENSITY,
+  FLAME_STREAK,
   WET_BARK,
   ROOT_MOSS,
 } from "../src/scene/architecture.js";
@@ -34,6 +36,7 @@ import {
 } from "../src/scene/mud-ground.js";
 import { goboHook } from "../src/scene/light-shafts.js";
 import { createPropScale } from "../src/scene/prop-scale.js";
+import { LANTERN_MOOD } from "../src/scene/film-light.js";
 
 const asset = () => {
   const scene = new Group();
@@ -66,12 +69,20 @@ test("tree retains its anchor and height with a quality-scaled non-shadow lanter
   replacement.fillLight.distance = 37.8;
   replacement.setFilmTreatment(true);
   replacement.applyQuality({ lighting: { practicalIntensityScale: 1 } });
-  assert.equal(replacement.light.intensity, 4.8);
-  // A candle's warm pool on the wet soil out to about six units (LANTERN_REACH).
+  // The film lantern: a hot core at its foot, brighter than the 4.0 practical.
+  assert.equal(replacement.light.intensity, LANTERN_FILM_INTENSITY);
+  assert.ok(LANTERN_FILM_INTENSITY > 4 && LANTERN_FILM_INTENSITY <= 10);
+  // A candle's warm pool on the wet soil out to about six units (LANTERN_REACH):
+  // a short reach with a fast falloff, so the pool stays at the lantern's foot.
   assert.equal(replacement.light.distance, LANTERN_REACH.distance);
   assert.equal(replacement.light.decay, LANTERN_REACH.decay);
-  assert.ok(LANTERN_REACH.distance >= 10.5 && LANTERN_REACH.distance <= 16);
-  assert.ok(LANTERN_REACH.decay >= 1 && LANTERN_REACH.decay <= 1.2);
+  assert.ok(LANTERN_REACH.distance >= 8 && LANTERN_REACH.distance <= 12);
+  assert.ok(LANTERN_REACH.decay >= 1.5 && LANTERN_REACH.decay <= 2);
+  // At six units the pool keeps under a tenth of its one-unit strength.
+  const falloff = (d) =>
+    Math.pow(Math.max(0, 1 - Math.pow(d / LANTERN_REACH.distance, 4)), 2) /
+    Math.pow(d, LANTERN_REACH.decay);
+  assert.ok(falloff(6) / falloff(1) < 0.1);
   assert.equal(replacement.fillLight.intensity, 2.4 * 0.95);
   assert.equal(replacement.fillLight.color.getHex(), 0xc2d2ec);
   assert.equal(tree.material.emissiveIntensity, 0.04);
@@ -686,8 +697,18 @@ test("the lantern is an iron post lantern with glass, candle and flame, authored
   let disposed = 0;
   for (const resource of [...geometries, ...materials])
     resource.addEventListener("dispose", () => disposed++);
+  // The film's anamorphic flame streak rides on the practical inside the
+  // lantern, so the tree owns its geometry and material too.
+  const streak = lantern.getObjectByName("lantern-streak");
+  assert.ok(streak?.isMesh, "the flame streak hangs from the lantern's practical");
+  assert.equal(streak.parent, tree.light);
+  assert.ok(geometries.has(streak.geometry) && materials.has(streak.material));
   assert.equal(tree.dispose(), true);
-  assert.equal(disposed, geometries.size + materials.size);
+  assert.equal(
+    disposed,
+    geometries.size + materials.size,
+    "every lantern resource, the flame streak included, is disposed",
+  );
 });
 
 const size = (o) => new Box3().setFromObject(o).getSize(new Vector3());
@@ -796,4 +817,30 @@ test("decorative canopy bounds cannot change authored tree scale, footing or fit
     mesh.geometry.dispose();
     mesh.material.dispose();
   }
+});
+
+test("the flame streak shows in film only and follows the flicker and the shot's lantern mood", () => {
+  const tree = createTreeArchitecture({ asset: boxAsset(), groundHeight: () => 0 });
+  const streak = tree.root.getObjectByName("lantern-streak"),
+    strength = streak.material.uniforms.uStrength;
+  assert.equal(streak.userData.excludeFromShot, true, "the streak never enters a fit");
+  assert.equal(streak.material.depthWrite, false);
+  assert.equal(strength.value, 0, "outside film there is no streak");
+  tree.setLanternFlicker(1.1);
+  assert.equal(strength.value, 0);
+  try {
+    tree.setFilmTreatment(true);
+    closeTo(strength.value, FLAME_STREAK.strength * 1.1);
+    closeTo(tree.light.intensity, LANTERN_FILM_INTENSITY * 1.1);
+    LANTERN_MOOD.value = 1.4;
+    tree.setLanternFlicker(0.9);
+    closeTo(strength.value, FLAME_STREAK.strength * 0.9 * 1.4);
+    closeTo(tree.light.intensity, LANTERN_FILM_INTENSITY * 0.9 * 1.4);
+    tree.setFilmTreatment(false);
+    assert.equal(strength.value, 0);
+    closeTo(tree.light.intensity, 4 * 0.9, 1e-9);
+  } finally {
+    LANTERN_MOOD.value = 1;
+  }
+  tree.dispose();
 });

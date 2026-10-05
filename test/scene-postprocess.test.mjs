@@ -8,8 +8,9 @@ import {
   UnsignedByteType,
   ZeroFactor,
 } from "three";
-import { DEPTH_LAYER } from "../src/scene/depth-layers.js";
+import { DEPTH_LAYER, STAR_LAYER } from "../src/scene/depth-layers.js";
 import { createPostprocessPipeline, LAYER_STAGGER } from "../src/scene/postprocess.js";
+import { compactShaderSource } from "../tools/shader-compact.mjs";
 
 function createRendererMock() {
   return {
@@ -442,7 +443,8 @@ test("film grading survives quality changes and restores the current profile wit
   // The owner restored the cel banding and ink contour on the default film look.
   assert.equal(g.uCelMix.value, 0.24);
   assert.equal(g.uInkMix.value, 0.14);
-  assert.equal(g.uContrast.value, 1.015);
+  // A firmer film contrast over the soft highlight shoulder.
+  assert.equal(g.uContrast.value, 1.06);
   assert.equal(g.uHighlightWarmMix.value, 0.12);
   assert.equal(g.uShadowCoolMix.value, 0.16);
   assert.equal(pipeline.passes.bloom.strength, 0.2);
@@ -475,9 +477,23 @@ test("in film the grade leaves the mountains' relief to their own shading and ha
     shader,
     /float relief = uLayerRelief \* \(1\.0 - smoothstep\(0\.04, 0\.12, abs\(texel\.a - 0\.3333\)\)\);/,
   );
+  // The ground and the star (depth-layers.js STAR_LAYER, 0.0005-0.28 over
+  // the sky's 0) take no band either.
   assert.match(
     shader,
-    /color = mix\(color, celColor, uCelMix \* \(1\.0 - relief \* smoothstep\(0\.05, 0\.1, gradedLuma\)\) \* \(1\.0 - groundLayer\)\);/,
+    /float starLayer = uLayerRelief \* smoothstep\(0\.0005, 0\.006, texel\.a\) \* \(1\.0 - smoothstep\(0\.22, 0\.28, texel\.a\)\);/,
+  );
+  assert.match(
+    shader,
+    /color = mix\(color, celColor, uCelMix \* \(1\.0 - relief \* smoothstep\(0\.05, 0\.1, gradedLuma\)\) \* \(1\.0 - groundLayer\) \* \(1\.0 - starLayer\)\);/,
+  );
+  // The star's mask, STAR_LAYER from each of its four parts, stays inside the
+  // exemption's plateau.
+  assert.ok(4 * STAR_LAYER <= 0.22);
+  // A soft highlight shoulder from 0.75 rolls off toward white before the clamp.
+  assert.match(
+    shader,
+    /vec3 over = max\(color - 0\.75, 0\.0\);\s*color = min\(color, 0\.75\) \+ 0\.25 \* \(1\.0 - exp\(-over \/ 0\.25\)\);\s*gl_FragColor = vec4\(clamp\(color, 0\.0, 1\.0\), texel\.a\);/,
   );
   // The post ink skips the mountains and the sky pixel beside a crest, which
   // draws its own hairline; it still reads the same four neighbours.
@@ -827,9 +843,14 @@ test("the final pass decodes each frame's layer from a 5-tap cross and mixes by 
     shader,
     /start = 3\.0 \* uStagger\.x \* clamp\(max\(layerCode\(tPrev, prevUv\), layerCode\(tDiffuse, vUv\)\), 0\.0, 1\.0\);\s*span = uStagger\.y;/,
   );
+  // In film the kept frame dissolves through the outgoing shot's lens.
   assert.match(
     shader,
-    /w = smoothstep\(start, start \+ span, uProgress\);\s*texel = mix\(texture2D\(tPrev, prevUv\), texel, w\);\s*protection = mix\(uTextProtectionFrom, uTextProtection, w\);/,
+    /w = smoothstep\(start, start \+ span, uProgress\);\s*texel = mix\(uLayered > 0\.5 \? lensBlur\(tPrev, prevUv, uBlurPrev\) : texture2D\(tPrev, prevUv\), texel, w\);\s*protection = mix\(uTextProtectionFrom, uTextProtection, w\);/,
+  );
+  assert.match(
+    shader,
+    /vec4 texel = uLayered > 0\.5 \? lensBlur\(tDiffuse, vUv, uBlur\) : texture2D\(tDiffuse, vUv\);/,
   );
   assert.match(
     shader,
@@ -837,10 +858,89 @@ test("the final pass decodes each frame's layer from a 5-tap cross and mixes by 
     "unlayered: smoothstep(0, 1, progress)",
   );
   assert.match(shader, /if \(uProgress < 1\.0\)/);
-  assert.doesNotMatch(
+  assert.doesNotMatch(shader, /uBlend/, "no old uniform");
+  // Its comments never ship: the build's GLSL compaction strips them.
+  const shipped = compactShaderSource("const s = `" + shader + "`;");
+  assert.doesNotMatch(shipped, /\/\//, "no comments in the shipped GLSL");
+  assert.match(shipped, /vec4 lensBlur\(/);
+  pipeline.dispose();
+});
+
+test("the shot's lens blurs only in film, the bars cut the frame and the grain steps at 24 a second", () => {
+  const { capture, frame, pipeline } = createRecordedPipeline({
+    postprocessGrading: true,
+    postprocessVignette: true,
+    postprocessGrain: true,
+  });
+  const final = pipeline.passes.vignetteGrain.uniforms;
+  for (const name of ["uBlur", "uBlurPrev", "uBars", "uGrainTime"])
+    assert.equal(final[name].value, 0, name + " starts at 0");
+  // Lens blur radii are CSS pixels: one texel of the CSS viewport.
+  assert.deepEqual(final.uCssTexel.value.toArray(), [1 / 800, 1 / 600]);
+  pipeline.resize(1600, 900);
+  assert.deepEqual(final.uCssTexel.value.toArray(), [1 / 1600, 1 / 900]);
+
+  // Outside film a lens never blurs.
+  pipeline.setLens({ blur: 8 });
+  assert.equal(final.uBlur.value, 0);
+  pipeline.setFilmTreatment(true);
+  pipeline.setLens({ blur: 8 });
+  assert.equal(final.uBlur.value, 8);
+  pipeline.setLens({});
+  assert.equal(final.uBlur.value, 0, "a lens without blur is sharp");
+  pipeline.setLens({ blur: 10 });
+  pipeline.setLens(null);
+  assert.equal(final.uBlur.value, 0, "no lens is sharp");
+
+  // The capture keeps the outgoing shot's focus for the kept frame; the next
+  // shot's lens then changes only the live frame.
+  pipeline.setLens({ blur: 5 });
+  frame();
+  assert.equal(final.uBlurPrev.value, 0, "an ordinary frame leaves the kept focus");
+  capture();
+  assert.equal(final.uBlurPrev.value, 5);
+  pipeline.setLens({ blur: 10 });
+  pipeline.setTransition({ capture: false, cut: true, progress: 0.4, zoom: 0.01 });
+  assert.equal(final.uBlur.value, 10);
+  assert.equal(final.uBlurPrev.value, 5, "the dissolve keeps the outgoing focus");
+
+  // Bars: a share of the height at each edge, never negative.
+  pipeline.setBars(0.165);
+  assert.equal(final.uBars.value, 0.165);
+  pipeline.setBars(-0.1);
+  assert.equal(final.uBars.value, 0);
+  pipeline.setBars();
+  assert.equal(final.uBars.value, 0);
+
+  // Grain frames: 24 a second, wrapping at 997 so the hash input stays small.
+  pipeline.setFilmTime(0);
+  assert.equal(final.uGrainTime.value, 0);
+  pipeline.setFilmTime(1.02);
+  assert.equal(final.uGrainTime.value, 24);
+  pipeline.setFilmTime(1.04);
+  assert.equal(final.uGrainTime.value, 24, "held within a frame");
+  pipeline.setFilmTime(1.05);
+  assert.equal(final.uGrainTime.value, 25);
+  pipeline.setFilmTime(997 / 24 + 0.01);
+  assert.equal(final.uGrainTime.value, 0);
+  pipeline.setFilmTime(100);
+  assert.equal(final.uGrainTime.value, 2400 % 997);
+
+  const shader = pipeline.passes.vignetteGrain.material.fragmentShader;
+  assert.match(
     shader,
-    /uBlend|\/\//,
-    "no old uniform, and no comments in the unminified GLSL",
+    /hash\(floor\(vUv \* vec2\(1280\.0, 720\.0\)\) \+ uGrainTime \* vec2\(17\.0, 29\.0\)\)/,
   );
+  assert.match(
+    shader,
+    /color = mix\(color, vec3\(\.012, \.014, \.022\), step\(min\(vUv\.y, 1\.0 - vUv\.y\), uBars\)\);/,
+  );
+  // The bars come after the text shade, so nothing draws over them.
+  const shade = shader.indexOf("protection * textShade;");
+  assert.ok(shade > 0 && shader.indexOf("uBars));") > shade);
+  // The blur skips the ground and the subject (layer codes 0.5 and up) and
+  // takes no tap from a nearer layer.
+  assert.match(shader, /float w = step\(tap\.a, centre\.a \+ 0\.1\);/);
+  assert.match(shader, /mix\(sum \/ weight, centre\.rgb, step\(0\.5, centre\.a\)\)/);
   pipeline.dispose();
 });

@@ -130,6 +130,7 @@ export const DIRECTED_SHOTS = {
   tree: [
     {
       name: "Portrait",
+      portrait: { move: { dolly: [1.06, 0.94], crane: [0, 0.08], ease: 0.6 } },
       light: { fill: 0.85, rim: 1.3 },
       move: { truck: [-0.07, 0.07], crane: [0, 0.13], dolly: [1.05, 0.92], ease: 0.6 },
       // Low (0.12), so the plain ahead is foreshortened under the ranges, and

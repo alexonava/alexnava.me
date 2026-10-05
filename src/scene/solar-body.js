@@ -482,7 +482,7 @@ gl_FragColor=vec4(vec3(1.,.62,.32)*line*uStrength*uBreath,1.);
       if (disposed) return false;
       disposed = true;
       root.removeFromParent();
-      for (const object of [surface, loops, corona]) {
+      for (const object of [surface, loops, corona, streak]) {
         object.geometry.dispose();
         object.material.dispose();
       }

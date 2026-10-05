@@ -627,11 +627,12 @@ export function createTreeArchitecture({
     // glass and cage, yet still behind any root in front.
     const streakUniforms = { uStrength: { value: 0 } };
     const streak = new Mesh(
-      new PlaneGeometry(1, 1),
-      new ShaderMaterial({
-        name: "LanternStreak",
-        uniforms: streakUniforms,
-        vertexShader: `varying vec2 vUv;
+      ownGeometry(new PlaneGeometry(1, 1)),
+      ownMaterial(
+        new ShaderMaterial({
+          name: "LanternStreak",
+          uniforms: streakUniforms,
+          vertexShader: `varying vec2 vUv;
 void main(){
 vUv=uv*2.-1.;
 vec4 mv=modelViewMatrix*vec4(0.,0.,0.,1.);
@@ -639,23 +640,24 @@ mv.xy+=position.xy*vec2(${FLAME_STREAK.length.toFixed(2)},${FLAME_STREAK.height.
 mv.xyz+=normalize(-mv.xyz)*${FLAME_STREAK.near.toFixed(2)};
 gl_Position=projectionMatrix*mv;
 }`,
-        fragmentShader: `uniform float uStrength;
+          fragmentShader: `uniform float uStrength;
 varying vec2 vUv;
 void main(){
 float x=abs(vUv.x), y=abs(vUv.y);
 float line=exp(-y*y*30.)*(.7*exp(-x*3.6)+.5*exp(-x*x*45.))*(1.-smoothstep(.8,1.,x));
 gl_FragColor=vec4(vec3(1.,.66,.34)*line*uStrength,1.);
 }`,
-        // Added light that keeps the film's depth layer in alpha.
-        blending: CustomBlending,
-        blendSrc: SrcAlphaFactor,
-        blendDst: OneFactor,
-        blendSrcAlpha: ZeroFactor,
-        blendDstAlpha: OneFactor,
-        depthWrite: false,
-        transparent: true,
-        fog: false,
-      }),
+          // Added light that keeps the film's depth layer in alpha.
+          blending: CustomBlending,
+          blendSrc: SrcAlphaFactor,
+          blendDst: OneFactor,
+          blendSrcAlpha: ZeroFactor,
+          blendDstAlpha: OneFactor,
+          depthWrite: false,
+          transparent: true,
+          fog: false,
+        }),
+      ),
     );
     streak.name = "lantern-streak";
     streak.frustumCulled = false;

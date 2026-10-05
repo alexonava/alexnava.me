@@ -307,14 +307,29 @@ test("The watch resolves its landscape variant only for short landscape viewport
     assert.equal(shot.height, 0.55);
     assert.equal(shot.azimuth, -12);
     assert.equal(shot.region, watch.region);
+    // No room about the name for a move: landscape phones keep the drift.
+    assert.equal(shot.move, null);
+    assert.equal(shot.fov, watch.fov);
     assert.equal(resolveDirectedShot(watch, width, height), shot, "each variant is built once");
   }
+  // Taller desktops are cut to 2.39:1 and take the letterbox variant; one too
+  // wide for bars keeps the base shot.
   for (const [width, height] of [
-    [1440, 900],
     [1440, 501],
-    [1024, 768],
+    [2560, 1080],
   ])
     assert.equal(resolveDirectedShot(watch, width, height), watch);
+  for (const [width, height] of [
+    [1440, 900],
+    [1024, 768],
+  ]) {
+    const shot = resolveDirectedShot(watch, width, height);
+    assert.ok(letterboxShare(width, height) > 0);
+    assert.equal(shot.height, watch.letterbox.height);
+    assert.equal(shot.targetHeight, watch.letterbox.targetHeight);
+    assert.equal(shot.move, watch.move, "the letterbox keeps the dolly zoom");
+    assert.equal(resolveDirectedShot(watch, width, height), shot);
+  }
   // Squarish short windows (narrower than SQUAT_LANDSCAPE) take the portrait
   // variant, which keeps the sun in frame; every landscape phone is wider.
   assert.equal(SQUAT_LANDSCAPE, 1.55);
@@ -346,10 +361,61 @@ test("The watch resolves its landscape variant only for short landscape viewport
     const shot = resolveDirectedShot(watch, width, height);
     assert.equal(shot.height, 0.4);
     assert.equal(shot.azimuth, -12);
+    assert.equal(shot.move, null);
     assert.equal(resolveDirectedShot(watch, width, height), shot);
   }
-  assert.equal(resolveDirectedShot(DIRECTED_SHOTS.tree[0], 568, 320), DIRECTED_SHOTS.tree[0]);
-  assert.equal(resolveDirectedShot(DIRECTED_SHOTS.tower[1], 844, 390), DIRECTED_SHOTS.tower[1]);
+  // Shots with a move give landscape phones a drift-only variant: Portrait and
+  // Threshold; under 600px wide, without a compact variant, Portrait keeps its own.
+  for (const [shot, width, height] of [
+    [DIRECTED_SHOTS.tree[0], 568, 320],
+    [DIRECTED_SHOTS.tower[1], 844, 390],
+  ]) {
+    const resolved = resolveDirectedShot(shot, width, height);
+    assert.equal(resolved, shot.landscape ? resolveDirectedShot(shot, 932, 430) : shot);
+    assert.equal(resolved.move, null, `${shot.name} ${width}x${height}`);
+  }
+  assert.equal(resolveDirectedShot(DIRECTED_SHOTS.tower[1], 844, 390).azimuth, 82);
+});
+
+test("every moving shot holds still on landscape phones and keeps a move on desktops and portrait", () => {
+  for (const shot of [...DIRECTED_SHOTS.tower, ...DIRECTED_SHOTS.tree]) {
+    if (!shot.move) {
+      // Shots outside the tour keep the old drift everywhere.
+      assert.equal(shot.tour, false, `${shot.name} is in the tour without a move`);
+      continue;
+    }
+    for (const [width, height] of [
+      [844, 390],
+      [932, 430],
+      [667, 375],
+      [568, 320],
+    ])
+      assert.equal(
+        resolveDirectedShot(shot, width, height).move,
+        null,
+        `${shot.name} ${width}x${height}`,
+      );
+    for (const [width, height] of [
+      [1440, 900],
+      [2560, 1080],
+      [1440, 501],
+      [390, 844],
+      [1080, 1920],
+    ])
+      assert.ok(resolveDirectedShot(shot, width, height).move, `${shot.name} ${width}x${height}`);
+  }
+  // Phones and portrait monitors take moves without a sideways truck: this
+  // close, a truck takes the lens into the trunk.
+  for (const shot of DIRECTED_SHOTS.tree.filter((s) => s.move))
+    for (const [width, height] of [
+      [390, 844],
+      [1080, 1920],
+    ])
+      assert.equal(
+        resolveDirectedShot(shot, width, height).move.truck,
+        undefined,
+        `${shot.name} ${width}x${height}`,
+      );
 });
 
 // Hero text and bottom bar measured from the live page at each size.
