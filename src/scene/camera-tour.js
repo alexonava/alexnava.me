@@ -6,10 +6,23 @@ export const TOUR_PER_SHOT = "shot";
 export const DEFAULT_TOUR_INTERVAL = TOUR_PER_SHOT;
 const TOUR_INTERVALS = Object.freeze([3, 5, 20]);
 export const TOUR_HOLD_FALLBACK = 7;
+// The tour alternates the lookout and the tree, opening on The watch. Three
+// lookout shots and four of the tree leave one pair of tree shots together:
+// Close-up then Root and lantern, which differ in height and bearing (Lantern
+// study and Root and lantern share both, so they are kept apart).
+export const TOUR_ORDER = Object.freeze([
+  "The watch",
+  "Portrait",
+  "Threshold",
+  "Lantern study",
+  "Watch and tree",
+  "Close-up",
+  "Root and lantern",
+]);
 const directedViews = Object.entries(DIRECTED_SHOTS).flatMap(([subject, shots]) =>
   shots.map((shot, angle) => ({ subject, angle, shot })),
 );
-const tourViews = directedViews.filter(({ shot }) => shot.tour !== false);
+const tourViews = TOUR_ORDER.map((name) => directedViews.find(({ shot }) => shot.name === name));
 
 export function readTourInterval(search = "") {
   const query = new URLSearchParams(search);
@@ -70,13 +83,14 @@ export function createCameraTour({
     zoom = 0,
     prepared = false;
   const running = () => !disposed && ready && !paused && !reduced && !held;
+  // A shot outside the tour (a URL's) is followed by the tour's first.
   function findNext(accept) {
-    const start = directedViews.findIndex(
+    const start = tourViews.findIndex(
       ({ subject, angle }) => subject === camera.current && angle === camera.angle,
     );
-    for (let offset = 1; offset <= directedViews.length; offset++) {
-      const view = directedViews[(start + offset) % directedViews.length];
-      if (view.shot.tour !== false && accept(view)) return view;
+    for (let offset = 1; offset <= tourViews.length; offset++) {
+      const view = tourViews[(start + offset) % tourViews.length];
+      if (accept(view)) return view;
     }
     return null;
   }

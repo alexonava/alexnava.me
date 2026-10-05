@@ -176,7 +176,7 @@ const dissolving = ({ transition }) => transition.progress > 0.2 && transition.p
 test("a visitor pause settles a tour dissolve in one frame, then stops rendering", () => {
   const scene = createSceneHarness();
   const blend = scene.runUntil(dissolving);
-  assert.equal(blend.shot, "Threshold");
+  assert.equal(blend.shot, "Portrait");
   assertHandshakes(scene.drawn);
 
   assert.equal(scene.setVisitorPaused(true), true);
@@ -186,7 +186,7 @@ test("a visitor pause settles a tour dissolve in one frame, then stops rendering
   scene.run(100);
   assert.equal(scene.drawn.length, count + 1);
   clear(scene.drawn.at(-1));
-  assert.equal(scene.drawn.at(-1).shot, "Threshold", "the incoming shot shows clear");
+  assert.equal(scene.drawn.at(-1).shot, "Portrait", "the incoming shot shows clear");
   assert.equal(scene.visitorHold.held, true);
   assert.equal(scene.scheduler.getState().held, true);
   assert.equal(scene.frames.pending, 0, "drift, clouds and the tour stop drawing");
@@ -211,15 +211,15 @@ test("unpausing resumes the same shot from the clear paused frame without a time
   const resumed = scene.drawn.at(-1);
   assert.equal(resumed.deltaSeconds, 0, "no giant delta after a long pause");
   assert.equal(resumed.elapsedSeconds, paused.elapsedSeconds);
-  assert.equal(resumed.shot, "Threshold");
+  assert.equal(resumed.shot, "Portrait");
   clear(resumed);
   scene.run(2);
   // The interrupted dissolve does not replay.
   for (const frame of scene.drawn.slice(-2)) clear(frame);
   const capture = scene.runUntil(({ transition }) => transition.capture);
-  assert.equal(capture.shot, "Threshold");
+  assert.equal(capture.shot, "Portrait");
   scene.run(1);
-  assert.equal(scene.drawn.at(-1).shot, "Gallery detail", "the next cut completes");
+  assert.equal(scene.drawn.at(-1).shot, "Threshold", "the next cut completes");
   assertHandshakes(scene.drawn);
   assert.equal(scene.frames.pending, 1, "animation continues");
 
@@ -246,7 +246,7 @@ test("a pause on the capture frame keeps the outgoing shot, then captures again 
   assert.equal(resumed.deltaSeconds, 0);
   assert.equal(resumed.transition.capture, true, "the resumed frame captures again");
   scene.run(1);
-  assert.equal(scene.drawn.at(-1).shot, "Threshold");
+  assert.equal(scene.drawn.at(-1).shot, "Portrait");
   assert.equal(scene.drawn.at(-1).transition.cut, true);
   assertHandshakes(scene.drawn.slice(scene.drawn.indexOf(resumed)));
   scene.scheduler.dispose();

@@ -319,7 +319,36 @@ export function createSlateContacts(values = new Float32Array(SLATE_CONTACTS * 4
     slateText: { value: { x: 2, y: 2, z: -1, w: -1 } },
     slateAbout: { value: { x: 2, y: 2, z: -1, w: -1 } },
     slateAspect: { value: 1 },
+    // The shot's calm (slateCalmFor()): off until a shot asks for it.
+    slateCalm: { value: { x: 0, y: 1, z: 2, w: 0 } },
+    slateCalmAt: { value: { x: 0, y: 0, z: 0, w: 1 } },
   };
+}
+
+// How much of its glints and sky reflection a calmed slate eases (slateCalmFor()).
+export const SLATE_CALM_GLINT = 0.7;
+
+// A shot's `ground` calm: the plain about the subject quietens so the subject,
+// the ranges and the sky carry the frame. Within burn.reach (fractions of the
+// camera's distance to the subject: full at [0], gone by [1]) the slate,
+// its water included, is darkened by up to burn.amount; beyond keep (world
+// units from the subject: kept within [0], calm by [1]) its tone and relief
+// are pulled `flatten` of the way to the tile's mean, and its glints and sky
+// reflection eased alike. It never lightens. Uniforms, so a cut never recompiles.
+export function slateCalmFor(contacts, shot, distance, at) {
+  const calm = shot?.ground,
+    v = contacts.slateCalm.value,
+    a = contacts.slateCalmAt.value;
+  if (!calm || !(distance > 0) || !at) return Object.assign(v, { x: 0, y: 1, z: 2, w: 0 });
+  const reach = calm.burn?.reach ?? [0, 1];
+  Object.assign(v, {
+    x: calm.burn?.amount ?? 0,
+    y: reach[0] * distance,
+    z: Math.max(reach[1], reach[0] + 0.01) * distance,
+    w: calm.flatten ?? 0,
+  });
+  const keep = calm.keep ?? [0, 1];
+  return Object.assign(a, { x: at.x, y: at.z, z: keep[0], w: Math.max(keep[1], keep[0] + 0.01) });
 }
 
 const glslVec = (values) => `vec${values.length}(${values.map(glslNumber).join(",")})`;
@@ -562,6 +591,8 @@ export function configureGroundShading(
       wetVarying +
       (useWet
         ? `uniform vec4 slateContacts[${SLATE_CONTACTS}];
+uniform vec4 slateCalm, slateCalmAt;
+float slateFlatAt(vec2 p){return slateCalm.w*smoothstep(slateCalmAt.z,slateCalmAt.w,length(p-slateCalmAt.xy));}
 uniform float slateRockContact, slateContactGain, slateAspect;
 #define SLATE_TEXT_KNEE ${glslNumber(WATER.text[1])}
 uniform vec4 slateText, slateAbout;
@@ -582,7 +613,8 @@ ${SLATE_TEXT_GLSL}`
       float slateH = texture2D(slateDetail, slateUvD).r, slateNear = 1.-smoothstep(${DETAIL.near.map(glslNumber)},length(vViewPosition));
       vec3 slateMean = ${glslVec(SLATE_TILING.mean)};
       vec4 sampledDiffuseColor = vec4(max(slateMean+(mix(slateA.rgb,slateB.rgb,slateW)-slateMean)/length(vec2(slateW,1.-slateW)),0.)*(1.+(slateH-.5)*${glslNumber(DETAIL.albedo)}*slateNear)*(.93+.14*slateNoise(vMudWorld.xz/${glslNumber(SLATE_TILING.macroCell)})),1.);
-      ${close ? CLOSE_PRE : ""}diffuseColor *= sampledDiffuseColor;${close ? CLOSE_MAP : ""}
+      ${close ? CLOSE_PRE : ""}sampledDiffuseColor.rgb = mix(sampledDiffuseColor.rgb, slateMean, slateFlatAt(vMudWorld.xz));
+      diffuseColor *= sampledDiffuseColor;${close ? CLOSE_MAP : ""}
       #endif`,
       );
     shader.fragmentShader = shader.fragmentShader.replace(
@@ -649,7 +681,7 @@ ${SLATE_TEXT_GLSL}`
         `#ifdef USE_NORMALMAP_TANGENTSPACE
       vec3 slateNA = texture2D(normalMap, vNormalMapUv).xyz*2.-1., slateNB = texture2D(normalMap, slateUvB).xyz*2.-1.;
       vec2 slateHx = vec2(texture2D(slateDetail, slateUvD+vec2(1./512.,0.)).r, texture2D(slateDetail, slateUvD+vec2(0.,1./512.)).r);
-      vec3 mapN = vec3((mix(slateNA.xy, slateNB.xy*slateTurnB, slateW)/length(vec2(slateW,1.-slateW))*normalScale+(slateH-slateHx)*slateTurnD*(${glslNumber(DETAIL.strength)}*slateNear))${close ? `*(1.-${glslNumber(CLOSE.calm)}*slateCN)` : ""}*(1.-${glslNumber(SLATE_PUDDLES.flatten)}*slatePuddle), mix(slateNA.z, slateNB.z, slateW));
+      vec3 mapN = vec3((mix(slateNA.xy, slateNB.xy*slateTurnB, slateW)/length(vec2(slateW,1.-slateW))*normalScale+(slateH-slateHx)*slateTurnD*(${glslNumber(DETAIL.strength)}*slateNear))${close ? `*(1.-${glslNumber(CLOSE.calm)}*slateCN)` : ""}*(1.-slateFlatAt(vMudWorld.xz))*(1.-${glslNumber(SLATE_PUDDLES.flatten)}*slatePuddle), mix(slateNA.z, slateNB.z, slateW));
       normal = normalize(tbn*mapN);${close ? CLOSE_NORMAL : ""}
       #endif`,
       );
@@ -678,6 +710,9 @@ ${SLATE_TEXT_GLSL}`
       reflectedLight.directSpecular /= 1.0 + 2.5*dot(reflectedLight.directSpecular,vec3(.2126,.7152,.0722))*slateLanternPuddle;
       float slateBehind = slateBehindText(), slateShow = 1.0-${glslNumber(WATER.text[0])}*slateBehind;
       reflectedLight.indirectSpecular *= mix(1.0, ${glslNumber(+(SLATE_WET.indirect[1] / SLATE_WET.indirect[0]).toFixed(4))}, slateWet*slateShow)*mix(1.0, ${glslNumber(SLATE_WET.close.sky)}, slateMatte);${WATER_AFTER_LIGHTS}
+      float slateQuiet = 1.0-${glslNumber(SLATE_CALM_GLINT)}*slateFlatAt(vMudWorld.xz)*(1.0-slatePuddle);
+      reflectedLight.directSpecular *= slateQuiet;
+      reflectedLight.indirectSpecular *= slateQuiet;
       reflectedLight.directSpecular /= 1.0+slateBehind*dot(reflectedLight.directSpecular,vec3(.2126,.7152,.0722))/SLATE_TEXT_KNEE;
       reflectedLight.indirectSpecular /= 1.0+slateBehind*dot(reflectedLight.indirectSpecular,vec3(.2126,.7152,.0722))/SLATE_TEXT_KNEE;
       `
@@ -693,6 +728,7 @@ ${SLATE_TEXT_GLSL}`
         .replace(
           "#include <fog_fragment>",
           `
+      gl_FragColor.rgb *= 1.0-slateCalm.x*(1.0-smoothstep(slateCalm.y, slateCalm.z, length(vViewPosition)));
       #ifdef USE_FOG
       float earthHorizon = max(smoothstep(155.0, 190.0, max(abs(vMudWorld.x),abs(vMudWorld.z))),
         smoothstep(230.0, 330.0, vFogDepth));

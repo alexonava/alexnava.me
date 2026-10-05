@@ -65,6 +65,7 @@ export const DIRECTED_SHOTS = {
     },
     {
       name: "Gallery detail",
+      tour: false, // Too near Threshold's view to follow it; its URL is retained.
       // Gallery floor (0.77) to eave (0.93), seen across the corner between the
       // cabin's local +X plank panel and its back gable; the sun is about 60-85
       // degrees off the view axis. Facing that panel (azimuth -30) centred the
@@ -83,17 +84,43 @@ export const DIRECTED_SHOTS = {
       margin: 0.91,
       portrait: { azimuth: -90, focus: { width: 0.2, depth: [0.13, 0.41] } },
     },
+    {
+      name: "Watch and tree",
+      // The whole lookout from beyond the tree, the star beside it: the one
+      // shot with both landmarks. Small in a wide frame, so the plain is calmed
+      // (as Portrait's) and the camera tilts up through the hold from the
+      // roots to the sky (tilt: degrees of pitch at the cut and at the next).
+      region: [0, 1],
+      fov: 34,
+      azimuth: 45,
+      height: 0.2,
+      arc: 2,
+      hold: 7,
+      margin: 0.5,
+      tilt: [-5, 0],
+      // Phones and portrait monitors further round: the star stays out past
+      // the left edge, and the tree off the lookout. Squat windows keep the
+      // star whole beside the name.
+      portrait: { azimuth: 20, tilt: [0, 2] },
+      squat: { azimuth: 40 },
+      landscape: { tilt: [-3, 0] },
+      ground: { burn: { amount: 0.45, reach: [0.3, 0.9] }, flatten: 0.6, keep: [9, 20] },
+    },
   ],
   tree: [
     {
       name: "Portrait",
+      // Low (0.12), so the plain ahead is foreshortened under the ranges, and
+      // calmed: the near slate burned down, its texture and glints quietened
+      // beyond the tree's knoll (slateCalmFor()).
       region: [0, 1],
       fov: 36,
-      azimuth: -77,
-      height: 0.24,
+      azimuth: -72,
+      height: 0.12,
       arc: 4,
       hold: 9,
       margin: 0.93,
+      ground: { burn: { amount: 0.45, reach: [0.4, 0.95] }, flatten: 0.65, keep: [7, 16] },
     },
     {
       name: "Lantern study",
@@ -151,15 +178,19 @@ export function isStackedLayout(width, height) {
 // 500px tall (the hero's own short-landscape breakpoint) narrower than
 // SQUAT_LANDSCAPE: on those squarish windows the wide variants push the sun out
 // past the right edge. Wider ones up to 500px tall, every landscape phone among
-// them, take the landscape variant, or the compact one under 600px wide.
+// them, take the landscape variant, or the compact one under 600px wide. A
+// shot may give those squat windows a `squat` variant of their own instead.
 export const SQUAT_LANDSCAPE = 1.55;
 const variantShots = new WeakMap();
 export function resolveDirectedShot(shot, width, height) {
-  const short = height <= 500;
+  const short = height <= 500,
+    squat = short && width > height && width < SQUAT_LANDSCAPE * height;
   const variant =
-    height > width || isStackedLayout(width, height) || (short && width < SQUAT_LANDSCAPE * height)
-      ? shot.portrait
-      : short && ((width < 600 && shot.compact) || shot.landscape);
+    squat && shot.squat
+      ? shot.squat
+      : height > width || isStackedLayout(width, height) || squat
+        ? shot.portrait
+        : short && ((width < 600 && shot.compact) || shot.landscape);
   if (!variant) return shot;
   let resolved = variantShots.get(variant);
   if (!resolved) variantShots.set(variant, (resolved = { ...shot, ...variant }));

@@ -28,6 +28,7 @@ import {
   SQUAT_LANDSCAPE,
 } from "../src/scene/directed-shots.js";
 import { createCinematicCamera, cinematicSafeArea } from "../src/scene/cinematic.js";
+import { TOUR_ORDER } from "../src/scene/camera-tour.js";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import { MASSIF_SNOW, MASSIFS, snowReach } from "../src/scene/hill-silhouette.js";
@@ -456,16 +457,9 @@ test("the camera-centred ranges frame every tour shot: sun, roof lane, tree shot
       const { width, height, hero, nav } = layout,
         desktop = width >= 1000,
         portrait = height > width;
-      for (const [kind, angle] of [
-        ["tower", 0],
-        ["tower", 1],
-        ["tower", 3],
-        ["tree", 0],
-        ["tree", 1],
-        ["tree", 2],
-        ["tree", 3],
-      ]) {
-        const name = DIRECTED_SHOTS[kind][angle].name;
+      for (const name of TOUR_ORDER) {
+        const kind = DIRECTED_SHOTS.tower.some((shot) => shot.name === name) ? "tower" : "tree",
+          angle = DIRECTED_SHOTS[kind].findIndex((shot) => shot.name === name);
         const camera = new PerspectiveCamera(38, width / height, 0.1, CAMERA_FAR);
         const controller = createCinematicCamera({
           camera,
@@ -663,16 +657,9 @@ test("the Meshy massifs frame every tour shot: sun, roof lane, open sky over the
       const { width, height, hero, nav } = layout,
         desktop = width >= 1000,
         portrait = height > width;
-      for (const [kind, angle] of [
-        ["tower", 0],
-        ["tower", 1],
-        ["tower", 3],
-        ["tree", 0],
-        ["tree", 1],
-        ["tree", 2],
-        ["tree", 3],
-      ]) {
-        const name = DIRECTED_SHOTS[kind][angle].name;
+      for (const name of TOUR_ORDER) {
+        const kind = DIRECTED_SHOTS.tower.some((shot) => shot.name === name) ? "tower" : "tree",
+          angle = DIRECTED_SHOTS[kind].findIndex((shot) => shot.name === name);
         const camera = new PerspectiveCamera(38, width / height, 0.1, CAMERA_FAR);
         const controller = createCinematicCamera({
           camera,

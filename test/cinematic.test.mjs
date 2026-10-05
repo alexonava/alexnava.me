@@ -103,18 +103,22 @@ test("valid angle overrides remain reproducible and missing or invalid angles se
   const unexpectedRandom = () => {
     throw new Error("opening angle must not use RNG");
   };
-  for (const view of ["tower", "tree"])
-    for (const angle of [1, 2, 3, 4])
+  // The tower has five angles (Watch and tree is ?angle=5), the tree four.
+  const counts = { tower: 5, tree: 4 };
+  for (const [view, count] of Object.entries(counts)) {
+    assert.equal(DIRECTED_SHOTS[view].length, count);
+    for (let angle = 1; angle <= count; angle++)
       assert.equal(
         chooseCinematicAngle(`?view=${view}&angle=${angle}`, view, unexpectedRandom),
         angle - 1,
       );
-  for (const view of ["tower", "tree"])
+  }
+  for (const [view, count] of Object.entries(counts))
     for (const query of [
       "",
       `?view=${view}`,
       "?angle=0",
-      "?angle=5",
+      `?angle=${count + 1}`,
       "?angle=2.5",
       "?angle=invalid",
     ])
@@ -696,7 +700,58 @@ test("tour shots drift at a constant rate between unchanged start, middle and en
   f.controller.dispose();
 });
 
-test("the eight directed shots keep their names and distinct viewpoints", () => {
+test("a shot's tilt pitches the camera from its cut to the next, and holds the midpoint with reduced motion", () => {
+  const f = tourSetup(5);
+  const forward = new Vector3(),
+    look = new Vector3();
+  const elevation = (v) => (Math.asin(v.y) * 180) / Math.PI;
+  // The pose after a frame: the forward vector, the direction straight at the
+  // target, and the pitch between them in degrees (positive is up).
+  const pose = () => {
+    f.camera.getWorldDirection(forward);
+    look.copy(f.controller.target).sub(f.camera.position).normalize();
+    return {
+      forward: forward.clone(),
+      look: look.clone(),
+      pitch: elevation(forward) - elevation(look),
+    };
+  };
+  const at = (flags) => {
+    f.controller.apply({ width: 1440, height: 900, elapsedSeconds: 0, ...flags });
+    return pose();
+  };
+  // A shot without a tilt looks straight at its target.
+  const watch = at({ tourPhase: 0 });
+  assert.equal(f.controller.shot.name, "The watch");
+  assert.equal(f.controller.shot.tilt, undefined);
+  closeTo(watch.forward.angleTo(watch.look), 0, 1e-6);
+
+  assert.equal(f.controller.setPreviewShot("tower", 4), true);
+  // Driven by the tour: the cut opens at tilt[0].
+  assert.equal(f.render(0), 0);
+  assert.equal(f.controller.shot.name, "Watch and tree");
+  assert.deepEqual(f.controller.shot.tilt, [-5, 0]);
+  closeTo(pose().pitch, -5, 1e-6);
+  assert.equal(f.render(2.5), 0.5);
+  closeTo(pose().pitch, -2.5, 1e-6);
+
+  const start = at({ tourPhase: 0 }),
+    middle = at({ tourPhase: 0.5 }),
+    end = at({ tourPhase: 1 });
+  closeTo(start.pitch, -5, 1e-6);
+  closeTo(middle.pitch, -2.5, 1e-6);
+  closeTo(end.pitch, 0, 1e-6);
+  assert.ok(start.forward.y < end.forward.y, "the cut looks lower than the next cut");
+  closeTo(end.forward.angleTo(end.look), 0, 1e-6);
+
+  // Reduced motion holds the midpoint, with or without a tour phase.
+  for (const tourPhase of [0, 1, null])
+    closeTo(at({ tourPhase, reducedMotion: true }).pitch, -2.5, 1e-6);
+  f.tour.dispose();
+  f.controller.dispose();
+});
+
+test("the nine directed shots keep their names and distinct viewpoints", () => {
   const all = [...DIRECTED_SHOTS.tower, ...DIRECTED_SHOTS.tree];
   assert.deepEqual(
     all.map((s) => s.name),
@@ -705,6 +760,7 @@ test("the eight directed shots keep their names and distinct viewpoints", () => 
       "Threshold",
       "Masonry study",
       "Gallery detail",
+      "Watch and tree",
       "Portrait",
       "Lantern study",
       "Close-up",
@@ -712,7 +768,7 @@ test("the eight directed shots keep their names and distinct viewpoints", () => 
     ],
   );
   const keys = new Set(all.map((s) => `${s.azimuth}/${s.height}/${s.region.join()}`));
-  assert.equal(keys.size, 8);
+  assert.equal(keys.size, 9);
   for (const shot of all) {
     assert.ok(shot.height >= 0.1 && shot.height <= 0.7);
     assert.ok(shot.fov >= 30 && shot.fov <= 46);
