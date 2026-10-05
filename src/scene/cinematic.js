@@ -9,10 +9,12 @@ import {
   fitPoses,
   shotPose,
   PUSH_IN,
+  LETTERBOX,
+  letterboxShare,
 } from "./directed-shots.js";
 
 // The bootstrap reads the page's layout from here too.
-export { isStackedLayout, PUSH_IN };
+export { isStackedLayout, PUSH_IN, LETTERBOX, letterboxShare };
 
 export function chooseCinematicView(search = "") {
   return resolveSceneView(search);
@@ -29,13 +31,6 @@ export function chooseCinematicAngle(search = "", view = null) {
 // the name, right of the hero, from 32px under the top edge down to the bottom
 // bar, except portrait monitors: their name sits bottom-left, so the subject
 // takes the full width above it.
-// Widescreen bars on desktop-size landscape screens wider than 1000px:
-// the frame is cut to LETTERBOX.ratio, each bar a share of the height.
-export const LETTERBOX = Object.freeze({ ratio: 2.39, minWidth: 1000 });
-export function letterboxShare(width, height) {
-  if (isStackedLayout(width, height) || height > width || width < LETTERBOX.minWidth) return 0;
-  return Math.max(0, (height - width / LETTERBOX.ratio) / (2 * height));
-}
 export function cinematicSafeArea(width, height, hero, nav) {
   const stacked = isStackedLayout(width, height),
     above = !stacked && height > width,

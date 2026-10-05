@@ -8,8 +8,9 @@ export const DIRECTED_SHOTS = {
   tower: [
     {
       name: "The watch",
+      letterbox: { height: 0.8 },
+      move: { zoom: [32, 26], dollyZoom: true, ease: 0.6 },
       light: { key: 1.2, fill: 0.85, rim: 1 },
-      move: { zoom: [34, 25], dollyZoom: true, ease: 0.6 },
       // The slimmer timber lookout fits closer than the stone tower did, so its roof
       // reached the fixed sun on desktop. A wider, slightly higher view three
       // degrees round restores the camera distance and sky gap. Higher than 0.68
@@ -25,16 +26,24 @@ export const DIRECTED_SHOTS = {
       portrait: { region: [0.62, 1], targetHeight: 1.11, azimuth: -4, height: 0.66 },
       // Landscape phones hold the intro over the upper third, where the snowy
       // range projected; lower and further round, it runs between text and tower.
-      landscape: { height: 0.55, azimuth: -12 },
+      landscape: {
+        height: 0.55,
+        azimuth: -12,
+        move: null,
+      },
       // Under 600px wide the intro spans nearly half the screen and the range
       // still met its last line at 0.55; lower again, it runs below the intro.
-      compact: { height: 0.4, azimuth: -12 },
+      compact: {
+        height: 0.4,
+        azimuth: -12,
+        move: null,
+      },
     },
     {
       name: "Threshold",
+      move: { crane: [-0.18, 0.1], dolly: [1.06, 0.94], ease: 0.6 },
       light: { fill: 0.8, rim: 1.8 },
       lens: { blur: 5 },
-      move: { crane: [-0.24, 0.16], dolly: [1.06, 0.94], ease: 0.6 },
       // The lookout's threshold: the ladder on its +Z access side arriving
       // through the gap in the gallery railing. Nearer the ladder's face than 82
       // degrees brings the sun behind the name on landscape phones. The region
@@ -43,13 +52,15 @@ export const DIRECTED_SHOTS = {
       // portrait phones, which had that headroom, keep 0.62-0.90.
       region: [0.64, 0.93],
       fov: 36,
-      azimuth: 82,
+      azimuth: 86,
       height: 0.5,
       arc: 2,
       hold: 7,
       focus: { width: 0.3, depth: [0.06, 0.34] },
       margin: 0.91,
       portrait: { region: [0.62, 0.9], focus: { width: 0.22, depth: [0.06, 0.34] } },
+      // Landscape phones keep the drift: no room about the name for a move.
+      landscape: { move: null, azimuth: 82 },
     },
     {
       // The name and URL are retained; for the timber lookout it is a
@@ -60,7 +71,7 @@ export const DIRECTED_SHOTS = {
       tour: false, // Retain its URL without including it in the tour.
       region: [0.3, 0.6],
       fov: 32,
-      azimuth: -20,
+      azimuth: -26,
       height: 0.4,
       arc: 1,
       focus: { width: 0.2, depth: [0.13, 0.36] },
@@ -111,7 +122,7 @@ export const DIRECTED_SHOTS = {
       // beside the subject, keep the star whole to the name's right.
       portrait: { azimuth: 20, tilt: [0, 2] },
       squat: { azimuth: 40 },
-      landscape: { tilt: [-3, 0] },
+      landscape: { tilt: [-3, 0], move: null },
       ground: { burn: { amount: 0.45, reach: [0.3, 0.9] }, flatten: 0.6, keep: [9, 20] },
     },
   ],
@@ -131,6 +142,8 @@ export const DIRECTED_SHOTS = {
       hold: 9,
       margin: 0.93,
       ground: { burn: { amount: 0.45, reach: [0.4, 0.95] }, flatten: 0.65, keep: [7, 16] },
+      // Landscape phones keep the drift: no room about the name for a move.
+      landscape: { move: null },
     },
     {
       name: "Lantern study",
@@ -145,12 +158,15 @@ export const DIRECTED_SHOTS = {
       arc: 2,
       hold: 6,
       margin: 0.7,
+      landscape: { move: null },
+      portrait: { move: { dolly: [1.1, 0.9], ease: 0.6 } },
     },
     {
       name: "Close-up",
+      letterbox: { azimuth: -160 },
       light: { fill: 0.7, rim: 2 },
       lens: { blur: 10 },
-      move: { truck: [-0.16, 0.16], ease: 0.5 },
+      move: { truck: [-0.1, 0.1], ease: 0.5 },
       // The twisted tree's fork sits high on the trunk.
       region: [0.38, 0.56],
       fov: 30,
@@ -159,18 +175,20 @@ export const DIRECTED_SHOTS = {
       arc: 2,
       hold: 6,
       focus: { width: 0.23, depth: [-0.09, 0.14] },
-      margin: 0.83,
+      margin: 0.95,
       // Phones push in: a sideways truck this close takes the lens into the trunk.
       portrait: {
         focus: { width: 0.16, depth: [-0.09, 0.14] },
         move: { dolly: [1.1, 0.94], ease: 0.5 },
       },
+      // Landscape phones keep the drift: no room about the name for a move.
+      landscape: { move: null, margin: 0.83 },
     },
     {
       name: "Root and lantern",
+      move: { dolly: [0.86, 1.05], crane: [0, 0.03], ease: 0.6 },
       light: { key: 0.6, fill: 0.75, lantern: 1.4, rim: 0.9 },
       lens: { blur: 8 },
-      move: { dolly: [0.82, 1.16], crane: [0, 0.08], ease: 0.6 },
       region: [0, 0.16],
       fov: 32,
       azimuth: -115,
@@ -179,7 +197,12 @@ export const DIRECTED_SHOTS = {
       hold: 6,
       focus: { width: 0.3, depth: [-0.1, 0.32] },
       margin: 0.91,
-      portrait: { focus: { width: 0.25, depth: [-0.1, 0.32] } },
+      portrait: {
+        focus: { width: 0.25, depth: [-0.1, 0.32] },
+        move: { dolly: [0.92, 1.06], ease: 0.6 },
+      },
+      // Landscape phones keep the drift: no room about the name for a move.
+      landscape: { move: null },
     },
   ],
 };
@@ -204,16 +227,26 @@ export function isStackedLayout(width, height) {
 // them, take the landscape variant, or the compact one under 600px wide. A
 // shot may give those squat windows a `squat` variant of their own instead.
 export const SQUAT_LANDSCAPE = 1.55;
+// Widescreen bars on desktop-size landscape screens wider than 1000px:
+// the frame is cut to LETTERBOX.ratio, each bar a share of the height.
+export const LETTERBOX = Object.freeze({ ratio: 2.39, minWidth: 1000 });
+export function letterboxShare(width, height) {
+  if (isStackedLayout(width, height) || height > width || width < LETTERBOX.minWidth) return 0;
+  const share = (height - width / LETTERBOX.ratio) / (2 * height);
+  return share > 0.02 ? share : 0;
+}
 const variantShots = new WeakMap();
 export function resolveDirectedShot(shot, width, height) {
   const short = height <= 500,
     squat = short && width > height && width < SQUAT_LANDSCAPE * height;
   const variant =
-    squat && shot.squat
-      ? shot.squat
-      : height > width || isStackedLayout(width, height) || squat
-        ? shot.portrait
-        : short && ((width < 600 && shot.compact) || shot.landscape);
+    shot.letterbox && letterboxShare(width, height) > 0
+      ? shot.letterbox
+      : squat && shot.squat
+        ? shot.squat
+        : height > width || isStackedLayout(width, height) || squat
+          ? shot.portrait
+          : short && ((width < 600 && shot.compact) || shot.landscape);
   if (!variant) return shot;
   let resolved = variantShots.get(variant);
   if (!resolved) variantShots.set(variant, (resolved = { ...shot, ...variant }));
