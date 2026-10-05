@@ -262,6 +262,7 @@ test("each directed shot takes its hybrid treatment: warm star, cool moon or non
     Threshold: "moon",
     "Masonry study": "moon",
     "Gallery detail": "moon",
+    "Watch and tree": "moon",
     Portrait: "moon",
     "Lantern study": null,
     "Close-up": "moon",

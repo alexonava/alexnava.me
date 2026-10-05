@@ -349,6 +349,18 @@ export function createCinematicCamera({
         target.z + Math.sin(yaw) * distance,
       );
       camera.lookAt(target);
+      // A shot's tilt pitches the camera from tilt[0] at its cut to tilt[1] at
+      // the next; without a tour it breathes between them over the 48-second arc.
+      if (shot.tilt) {
+        const [from, to] = shot.tilt;
+        const pitch = reducedMotion
+          ? (from + to) / 2
+          : tourPhase !== null
+            ? from + (to - from) * phase
+            : (from + to) / 2 +
+              ((to - from) / 2) * Math.sin(((elapsedSeconds - started) * Math.PI * 2) / 48);
+        camera.rotateX((pitch * Math.PI) / 180);
+      }
       // A kept fit becomes a crop anchored to the top of the canvas: the pixel
       // scale and the subject's distance from the top edge stay constant.
       const centerX = lock.area.left + lock.area.width / 2,

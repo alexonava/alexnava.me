@@ -11,7 +11,12 @@ import {
   isStackedLayout,
   layoutRect,
 } from "./cinematic.js";
-import { configureGroundShading, createSlateContacts, filmGroundSurface } from "./mud-ground.js";
+import {
+  configureGroundShading,
+  createSlateContacts,
+  filmGroundSurface,
+  slateCalmFor,
+} from "./mud-ground.js";
 import { ESTATE } from "./estate-layout.js";
 import { createRockScatter, estateContacts } from "./rock-scatter.js";
 import { createHillSilhouette } from "./hill-silhouette.js";
@@ -940,6 +945,13 @@ const ORBIT_SPEED = 0.06;
         }
         if (cinematicApplied) lookTarget.copy(cinematic.target);
         else lookTarget.set(0, lookAtHeight, 0);
+        // The shot's ground calm follows the shot on screen, so it changes on a cut.
+        slateCalmFor(
+          groundContacts,
+          cinematicApplied ? cinematic.shot : null,
+          cinematic.frame?.distance,
+          cinematic.target,
+        );
         subsystemRegistry.update({
           deltaSeconds,
           elapsedSeconds: elapsedTime,

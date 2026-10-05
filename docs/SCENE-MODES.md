@@ -9,7 +9,7 @@ Append them to the local preview, for example `http://127.0.0.1:4173/?view=tower
 | Parameter    | Values                                      | Effect                                             |
 | ------------ | ------------------------------------------- | -------------------------------------------------- |
 | `view`       | `tower` (default), `tree`                   | Opening subject                                    |
-| `angle`      | `1` to `4`                                  | Shot within the view                               |
+| `angle`      | `1` to `5` (tower), `1` to `4` (tree)       | Shot within the view                               |
 | `tour`       | absent, `3`, `5`, `20`, `0`                 | Per-shot dwells, a fixed dwell in seconds, or none |
 | `quality`    | `auto` (default), `high`, `balanced`, `low` | Startup tier; an explicit tier pins the governor   |
 | `sceneDebug` | `1` or `true`                               | Publishes `BabelSite.sceneDebug`                   |
@@ -23,16 +23,17 @@ Append them to the local preview, for example `http://127.0.0.1:4173/?view=tower
 
 | URL                  | Shot             | Dwell | In the tour  |
 | -------------------- | ---------------- | ----- | ------------ |
-| `view=tower&angle=1` | The watch        | 9 s   | yes, first   |
-| `view=tower&angle=2` | Threshold        | 7 s   | yes          |
+| `view=tower&angle=1` | The watch        | 9 s   | 1st          |
+| `view=tower&angle=2` | Threshold        | 7 s   | 3rd          |
 | `view=tower&angle=3` | Masonry study    | 7 s   | no, URL only |
-| `view=tower&angle=4` | Gallery detail   | 7 s   | yes          |
-| `view=tree&angle=1`  | Portrait         | 9 s   | yes          |
-| `view=tree&angle=2`  | Lantern study    | 6 s   | yes          |
-| `view=tree&angle=3`  | Close-up         | 6 s   | yes          |
-| `view=tree&angle=4`  | Root and lantern | 6 s   | yes          |
+| `view=tower&angle=4` | Gallery detail   | 7 s   | no, URL only |
+| `view=tower&angle=5` | Watch and tree   | 7 s   | 5th          |
+| `view=tree&angle=1`  | Portrait         | 9 s   | 2nd          |
+| `view=tree&angle=2`  | Lantern study    | 6 s   | 4th          |
+| `view=tree&angle=3`  | Close-up         | 6 s   | 6th          |
+| `view=tree&angle=4`  | Root and lantern | 6 s   | 7th          |
 
-The tour runs in table order, about 50 s a loop. Each shot drifts and pushes in, then dissolves into the next over 1 s (or 30% of a shorter dwell), staggered by depth. A missing subject's shots are skipped. Shot intent and dwells live in [directed-shots.js](../src/scene/directed-shots.js), fitting and drift in [cinematic.js](../src/scene/cinematic.js), pacing in [camera-tour.js](../src/scene/camera-tour.js) and the dissolve in [postprocess.js](../src/scene/postprocess.js).
+The tour alternates the lookout and the tree in the order of the last column (camera-tour.js `TOUR_ORDER`), about 50 s a loop; Close-up and Root and lantern are the one pair of tree shots together. A shot outside the tour, opened by URL, is followed by The watch. Watch and tree tilts up 5 degrees through its dwell, rising into its composition (the shot's `tilt`). Portrait and Watch and tree calm the plain about their subject (the shot's `ground`, mud-ground.js `slateCalmFor`). Each shot drifts and pushes in, then dissolves into the next over 1 s (or 30% of a shorter dwell), staggered by depth. A missing subject's shots are skipped. Shot intent and dwells live in [directed-shots.js](../src/scene/directed-shots.js), fitting and drift in [cinematic.js](../src/scene/cinematic.js), pacing in [camera-tour.js](../src/scene/camera-tour.js) and the dissolve in [postprocess.js](../src/scene/postprocess.js).
 
 ### Viewport variants
 
@@ -41,12 +42,12 @@ The scene's size picks each shot's variant (directed-shots.js `resolveDirectedSh
 | Scene size (CSS px)                                                                                                                          | Variant                     |
 | -------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
 | Taller than wide, or a stacked layout (`isStackedLayout`: portrait or square up to 1024 wide, or landscape under 600 wide and over 500 tall) | `portrait`                  |
-| Landscape up to 500 tall and narrower than 1.55:1 (`SQUAT_LANDSCAPE`), such as 599×499 or 700×480                                            | `portrait`                  |
+| Landscape up to 500 tall and narrower than 1.55:1 (`SQUAT_LANDSCAPE`), such as 599×499 or 700×480                                            | `squat`, else `portrait`    |
 | Landscape up to 500 tall, at least 1.55:1 and under 600 wide, such as 568×320                                                                | `compact`, else `landscape` |
 | Landscape up to 500 tall, at least 1.55:1, from 600 wide, such as 844×390                                                                    | `landscape`                 |
 | Anything else, such as 1600×900 or a square over 1024                                                                                        | None: the shot itself       |
 
-The four tower shots, Close-up and Root and lantern have a `portrait` variant; Portrait and Lantern study have none. Only The watch has `landscape` (lower and further round, so the snowy range runs between the intro and the tower) and `compact` (lower again, below the intro). The `compact` variant is unrelated to the `compact` composition profile in `sceneDebug.composition`. The safe area the shot is fitted in follows the hero's layout too ([Contracts](CONTRACTS.md#hero-breakpoints)).
+The tower shots, Close-up and Root and lantern have a `portrait` variant; Portrait and Lantern study have none. Watch and tree's `portrait` comes round the tree's other side (20 degrees), so the tree stands left of the lookout and the star shows whole, and tilts 0 to 2 degrees; its `landscape` tilts 3 degrees, and only it has `squat` (40 degrees: the star beside the name). The watch has `landscape` (lower and further round, so the snowy range runs between the intro and the tower) and `compact` (lower again, below the intro). The `compact` variant is unrelated to the `compact` composition profile in `sceneDebug.composition`. The safe area the shot is fitted in follows the hero's layout too ([Contracts](CONTRACTS.md#hero-breakpoints)).
 
 ## Tour and pauses
 
