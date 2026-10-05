@@ -325,7 +325,8 @@ export function createSlateContacts(values = new Float32Array(SLATE_CONTACTS * 4
   };
 }
 
-// How much of its glints and sky reflection a calmed slate eases (slateCalmFor()).
+// A calmed slate's glints and sky reflection ease by this share of its flatten
+// (slateCalmFor()): 0.7 x 0.65 = about 45% in Portrait.
 export const SLATE_CALM_GLINT = 0.7;
 
 // A shot's `ground` calm: the plain about the subject quietens so the subject,
@@ -333,22 +334,32 @@ export const SLATE_CALM_GLINT = 0.7;
 // camera's distance to the subject: full at [0], gone by [1]) the slate,
 // its water included, is darkened by up to burn.amount; beyond keep (world
 // units from the subject: kept within [0], calm by [1]) its tone and relief
-// are pulled `flatten` of the way to the tile's mean, and its glints and sky
-// reflection eased alike. It never lightens. Uniforms, so a cut never recompiles.
+// are pulled `flatten` of the way to the tile's mean (lifting its darkest
+// cracks a little, so fewer hold water), and its glints and sky reflection
+// ease with it (SLATE_CALM_GLINT). The burn never lightens. Uniforms, written in
+// place every frame, so a cut never recompiles.
 export function slateCalmFor(contacts, shot, distance, at) {
   const calm = shot?.ground,
     v = contacts.slateCalm.value,
     a = contacts.slateCalmAt.value;
-  if (!calm || !(distance > 0) || !at) return Object.assign(v, { x: 0, y: 1, z: 2, w: 0 });
-  const reach = calm.burn?.reach ?? [0, 1];
-  Object.assign(v, {
-    x: calm.burn?.amount ?? 0,
-    y: reach[0] * distance,
-    z: Math.max(reach[1], reach[0] + 0.01) * distance,
-    w: calm.flatten ?? 0,
-  });
-  const keep = calm.keep ?? [0, 1];
-  return Object.assign(a, { x: at.x, y: at.z, z: keep[0], w: Math.max(keep[1], keep[0] + 0.01) });
+  if (!calm || !(distance > 0) || !at) {
+    v.x = 0;
+    v.y = 1;
+    v.z = 2;
+    v.w = 0;
+    return v;
+  }
+  const reach = calm.burn?.reach ?? [0, 1],
+    keep = calm.keep ?? [0, 1];
+  v.x = calm.burn?.amount ?? 0;
+  v.y = reach[0] * distance;
+  v.z = Math.max(reach[1], reach[0] + 0.01) * distance;
+  v.w = calm.flatten ?? 0;
+  a.x = at.x;
+  a.y = at.z;
+  a.z = keep[0];
+  a.w = Math.max(keep[1], keep[0] + 0.01);
+  return v;
 }
 
 const glslVec = (values) => `vec${values.length}(${values.map(glslNumber).join(",")})`;

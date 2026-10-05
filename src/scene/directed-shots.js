@@ -98,9 +98,10 @@ export const DIRECTED_SHOTS = {
       hold: 7,
       margin: 0.5,
       tilt: [-5, 0],
-      // Phones and portrait monitors further round: the star stays out past
-      // the left edge, and the tree off the lookout. Squat windows keep the
-      // star whole beside the name.
+      // Phones and portrait monitors come round the tree's other side: the
+      // tree stands left of the lookout and the star shows whole below the
+      // name, tilting gently (the frame is tall). Squat windows, with the name
+      // beside the subject, keep the star whole to the name's right.
       portrait: { azimuth: 20, tilt: [0, 2] },
       squat: { azimuth: 40 },
       landscape: { tilt: [-3, 0] },

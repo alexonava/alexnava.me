@@ -6,6 +6,7 @@ import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import { BoxGeometry, Group, Mesh, MeshStandardMaterial, Box3, Vector3 } from "three";
 import { ESTATE, estatePathDistance, estatePoint } from "../src/scene/estate-layout.js";
+import { DIRECTED_SHOTS } from "../src/scene/directed-shots.js";
 import {
   createRockScatter,
   estateContacts,
@@ -21,7 +22,12 @@ import {
   rockFootprints,
   writeRockContacts,
 } from "../src/scene/rock-build.js";
-import { SLATE_CONTACTS } from "../src/scene/mud-ground.js";
+import {
+  configureGroundShading,
+  createSlateContacts,
+  SLATE_CONTACTS,
+  slateCalmFor,
+} from "../src/scene/mud-ground.js";
 import {
   createHillSilhouette,
   HORIZON_AIR,
@@ -987,4 +993,66 @@ test("disposing an in-flight layer prevents late canvas mutation and closes both
   assert.equal(h.applied.length, 0);
   assert.equal(h.resets.length, 0);
   assert.ok(images.every((image) => image.closed === 1));
+});
+
+test("only the wide shots calm the plain, written in place, and the calm is off without a frame", () => {
+  const contacts = createSlateContacts(),
+    calm = contacts.slateCalm.value,
+    at = contacts.slateCalmAt.value,
+    target = { x: 55.1, y: 9, z: 36.1 };
+  const off = { x: 0, y: 1, z: 2, w: 0 };
+  const calmed = Object.values(DIRECTED_SHOTS)
+    .flat()
+    .filter((shot) => shot.ground)
+    .map((shot) => shot.name);
+  assert.deepEqual(calmed, ["Watch and tree", "Portrait"]);
+  for (const shot of Object.values(DIRECTED_SHOTS).flat()) {
+    assert.equal(slateCalmFor(contacts, shot, 60, target), calm, "the same object, in place");
+    if (shot.ground) {
+      assert.ok(calm.x > 0 && calm.x < 1, shot.name + " burns part way");
+      assert.ok(calm.y < calm.z && calm.z <= 60, shot.name + " burn fades by the subject");
+      assert.ok(calm.w > 0 && calm.w < 1, shot.name + " flattens part way");
+      assert.deepEqual(
+        { ...at },
+        {
+          x: target.x,
+          y: target.z,
+          z: shot.ground.keep[0],
+          w: shot.ground.keep[1],
+        },
+      );
+    } else assert.deepEqual({ ...calm }, off, shot.name + " leaves the slate as it is");
+  }
+  const portrait = DIRECTED_SHOTS.tree.find((shot) => shot.name === "Portrait");
+  for (const [distance, point] of [
+    [undefined, target],
+    [0, target],
+    [60, null],
+  ]) {
+    slateCalmFor(contacts, portrait, 60, target);
+    slateCalmFor(contacts, portrait, distance, point);
+    assert.deepEqual({ ...calm }, off);
+  }
+  slateCalmFor(contacts, null, 60, target);
+  assert.deepEqual({ ...calm }, off);
+  // The film slate's program reads them; the baseline ground keeps three's own.
+  for (const film of [true, false]) {
+    const material = new MeshStandardMaterial(),
+      shader = {
+        uniforms: {},
+        vertexShader: ["#include <begin_vertex>", "#include <project_vertex>"].join("\n"),
+        fragmentShader: [
+          "#include <map_fragment>",
+          "#include <roughnessmap_fragment>",
+          "#include <lights_fragment_end>",
+          "#include <fog_fragment>",
+        ].join("\n"),
+      };
+    configureGroundShading(material, film, { contacts });
+    material.onBeforeCompile(shader);
+    assert.equal(shader.uniforms.slateCalm === contacts.slateCalm, film);
+    assert.equal(/uniform vec4 slateCalm, slateCalmAt;/.test(shader.fragmentShader), film);
+    assert.equal(shader.fragmentShader.includes("gl_FragColor.rgb *= 1.0-slateCalm.x"), film);
+    material.dispose();
+  }
 });
