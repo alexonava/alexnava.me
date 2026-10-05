@@ -27,7 +27,11 @@ import {
   resolveDirectedShot,
   SQUAT_LANDSCAPE,
 } from "../src/scene/directed-shots.js";
-import { createCinematicCamera, cinematicSafeArea } from "../src/scene/cinematic.js";
+import {
+  createCinematicCamera,
+  cinematicSafeArea,
+  letterboxShare,
+} from "../src/scene/cinematic.js";
 import { TOUR_ORDER } from "../src/scene/camera-tour.js";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
@@ -917,19 +921,22 @@ for (const tier of ["high", "balanced"])
               height +
               " " +
               JSON.stringify(sample);
+            // Widescreen bars cover the frame's top and bottom: the star must sit
+            // whole between them, or wholly behind them.
+            const bar = letterboxShare(width, height) * height;
             const outOfFrame =
               depth <= 0 ||
               x + radius < 0 ||
               x - radius > width ||
-              y + radius < 0 ||
-              y - radius > height;
+              y + radius < bar ||
+              y - radius > height - bar;
             if (angle > 0 && outOfFrame) continue;
             assert.ok(depth > 0 && depth < camera.far, label + " depth");
             assert.ok(
               x - radius > 10 &&
                 x + radius < width - 10 &&
-                y - radius > 10 &&
-                y + radius < nav.top - 10,
+                y - radius > bar + 10 &&
+                y + radius < Math.min(nav.top, height - bar) - 10,
               label + " corona cropped",
             );
             const textDistance = Math.hypot(

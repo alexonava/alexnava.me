@@ -1,5 +1,4 @@
 import {
-  AdditiveBlending,
   BufferGeometry,
   DoubleSide,
   Float32BufferAttribute,
@@ -12,6 +11,7 @@ import {
   Vector2,
   Vector3,
 } from "three";
+import { starBlending } from "./depth-layers.js";
 
 // The released disc: 6.5 sprite width * 1.15 group scale * 0.81 photosphere.
 export const SOLAR_RADIUS = (6.5 * 1.15 * 0.81) / 2;
@@ -363,6 +363,7 @@ export function createSolarBody({ parent, camera, position, profile = {} }) {
     vertexShader: SURFACE_VERTEX,
     fragmentShader: SURFACE_FRAGMENT,
     transparent: true,
+    ...starBlending(true),
     depthWrite: true,
     depthTest: true,
     fog: false,
@@ -381,7 +382,7 @@ export function createSolarBody({ parent, camera, position, profile = {} }) {
     depthWrite: false,
     depthTest: true,
     fog: false,
-    blending: AdditiveBlending,
+    ...starBlending(),
     extensions: { derivatives: true },
   });
   const corona = new Mesh(
@@ -409,7 +410,7 @@ gl_FragColor=vec4(vec3(1.,.62,.32)*line*uStrength*uBreath,1.);
     depthWrite: false,
     depthTest: true,
     fog: false,
-    blending: AdditiveBlending,
+    ...starBlending(),
   });
   const streak = new Mesh(
     new PlaneGeometry(SOLAR_RADIUS * SOLAR_STREAK.length, SOLAR_RADIUS * SOLAR_STREAK.height),
@@ -432,7 +433,7 @@ gl_FragColor=vec4(vec3(1.,.62,.32)*line*uStrength*uBreath,1.);
     depthWrite: false,
     depthTest: true,
     fog: false,
-    blending: AdditiveBlending,
+    ...starBlending(),
   });
   const loops = new Mesh(makeLoopGeometry(), loopMaterial);
   loops.name = "solar-prominences";

@@ -87,7 +87,10 @@ void main() {
   // The ground (depth code 2/3) takes no band: its soil, cracks and water stay
   // continuous, close up and far.
   float groundLayer = uLayerRelief * (1.0 - smoothstep(0.04, 0.12, abs(texel.a - 0.6667)));
-  color = mix(color, celColor, uCelMix * (1.0 - relief * smoothstep(0.05, 0.1, gradedLuma)) * (1.0 - groundLayer));
+  // The star and its glow (depth-layers.js STAR_LAYER over the sky's 0) stay
+  // continuous: the cloud banks' steps never ring them.
+  float starLayer = uLayerRelief * smoothstep(0.0005, 0.006, texel.a) * (1.0 - smoothstep(0.22, 0.28, texel.a));
+  color = mix(color, celColor, uCelMix * (1.0 - relief * smoothstep(0.05, 0.1, gradedLuma)) * (1.0 - groundLayer) * (1.0 - starLayer));
   color = saturateColor(color, 1.04);
 
   if (uInkMix > 0.0) {

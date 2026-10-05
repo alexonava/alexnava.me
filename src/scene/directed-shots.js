@@ -8,7 +8,7 @@ export const DIRECTED_SHOTS = {
   tower: [
     {
       name: "The watch",
-      letterbox: { height: 0.8 },
+      letterbox: { height: 0.8, targetHeight: 0.82 },
       move: { zoom: [32, 26], dollyZoom: true, ease: 0.6 },
       light: { key: 1.2, fill: 0.85, rim: 1 },
       // The slimmer timber lookout fits closer than the stone tower did, so its roof
@@ -102,6 +102,7 @@ export const DIRECTED_SHOTS = {
     },
     {
       name: "Watch and tree",
+      letterbox: { tilt: [-3, 0] },
       light: { key: 1.15, fill: 0.45, rim: 2.4 },
       move: { dolly: [1.08, 0.94], ease: 0.5 },
       // The whole lookout from beyond the tree, the star beside it: the one
