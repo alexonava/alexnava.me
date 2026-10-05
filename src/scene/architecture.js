@@ -711,6 +711,15 @@ gl_FragColor=vec4(vec3(1.,.66,.34)*line*uStrength,1.);
       fillLight,
       // Per-frame flicker changes only the existing practical. Reapplying the
       // whole tree treatment here would upload its normals every frame.
+      // Reapplies the lantern's mood (film-light.js LANTERN_MOOD) at the
+      // current flicker, for a lantern with no flame module driving it.
+      refreshLantern() {
+        if (disposed) return;
+        light.intensity = lanternBaseIntensity * lanternFlicker * (film ? LANTERN_MOOD.value : 1);
+        streakUniforms.uStrength.value = film
+          ? FLAME_STREAK.strength * lanternFlicker * LANTERN_MOOD.value
+          : 0;
+      },
       setLanternFlicker(value = 1) {
         if (disposed) return;
         lanternFlicker = Math.max(0.88, Math.min(1.12, Number.isFinite(value) ? value : 1));

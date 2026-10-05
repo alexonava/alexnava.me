@@ -224,7 +224,7 @@ void main() {
   float stream=exp(-h*(9.0-rays*5.0))*(.13+.28*pow(max(0.0,rays),3.0))*flick;
   float filaments=pow(.5+.5*sin(a*93.0+weave*3.0),9.0)*exp(-h*18.0)*.055;
   float alpha=(halo+inner+stream+filaments)*outside*(1.0-smoothstep(${glsl(SOLAR_LOOK.plane / 2 - 0.6)},${glsl(SOLAR_LOOK.plane / 2)},r));
-  gl_FragColor=vec4(mix(vec3(1.0,.46,.1),vec3(1.0,.76,.42),exp(-h*8.0)),alpha);
+  gl_FragColor=vec4(mix(vec3(1.0,.46,.1),vec3(1.0,.76,.42),exp(-h*8.0))*alpha,min(alpha,1.0));
   #include <colorspace_fragment>
 }
 `;
@@ -272,7 +272,8 @@ void main() {
   float width=exp(-vSide*vSide*3.4);
   float ends=smoothstep(0.0,.035,vProgress)*(1.0-smoothstep(.965,1.0,vProgress));
   vec3 color=mix(vec3(1.0,.52,.2),vec3(1.0,.16,.02),pow(abs(vSide),.6));
-  gl_FragColor=vec4(color,width*ends*envelope*.7*(1.0-.8*vOver));
+  float cover=width*ends*envelope*.7*(1.0-.8*vOver);
+  gl_FragColor=vec4(color*cover,cover);
   #include <colorspace_fragment>
 }
 `;
@@ -404,7 +405,7 @@ varying vec2 vUv;
 void main(){
 float x=abs(vUv.x), y=abs(vUv.y);
 float line=exp(-y*y*28.)*(exp(-x*3.2)*.8+exp(-x*x*40.)*.6)*(1.-smoothstep(.85,1.,x));
-gl_FragColor=vec4(vec3(1.,.62,.32)*line*uStrength*uBreath,1.);
+gl_FragColor=vec4(vec3(1.,.62,.32)*line*uStrength*uBreath,min(line,1.));
 }`,
     transparent: true,
     depthWrite: false,

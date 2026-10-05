@@ -493,7 +493,7 @@ test("in film the grade leaves the mountains' relief to their own shading and ha
   // A soft highlight shoulder from 0.75 rolls off toward white before the clamp.
   assert.match(
     shader,
-    /vec3 over = max\(color - 0\.75, 0\.0\);\s*color = min\(color, 0\.75\) \+ 0\.25 \* \(1\.0 - exp\(-over \/ 0\.25\)\);\s*gl_FragColor = vec4\(clamp\(color, 0\.0, 1\.0\), texel\.a\);/,
+    /vec3 over = max\(color - 0\.75, 0\.0\);\s*color = mix\(color, min\(color, 0\.75\) \+ 0\.25 \* \(1\.0 - exp\(-over \/ 0\.25\)\), uLayerRelief\);\s*gl_FragColor = vec4\(clamp\(color, 0\.0, 1\.0\), texel\.a\);/,
   );
   // The post ink skips the mountains and the sky pixel beside a crest, which
   // draws its own hairline; it still reads the same four neighbours.
@@ -929,7 +929,7 @@ test("the shot's lens blurs only in film, the bars cut the frame and the grain s
   const shader = pipeline.passes.vignetteGrain.material.fragmentShader;
   assert.match(
     shader,
-    /hash\(floor\(vUv \* vec2\(1280\.0, 720\.0\)\) \+ uGrainTime \* vec2\(17\.0, 29\.0\)\)/,
+    /hash\(floor\(vUv \* vec2\(1280\.0, 720\.0\)\) \+ floor\(fract\(uGrainTime \* vec2\(0\.618034, 0\.414214\)\) \* 97\.0\)\)/,
   );
   assert.match(
     shader,
@@ -941,6 +941,12 @@ test("the shot's lens blurs only in film, the bars cut the frame and the grain s
   // The blur skips the ground and the subject (layer codes 0.5 and up) and
   // takes no tap from a nearer layer.
   assert.match(shader, /float w = step\(tap\.a, centre\.a \+ 0\.1\);/);
-  assert.match(shader, /mix\(sum \/ weight, centre\.rgb, step\(0\.5, centre\.a\)\)/);
+  // The subject's anti-aliased edge stays sharp: the nearest layer over a 1px
+  // cross decides, not the edge pixel's own blended code.
+  assert.match(
+    shader,
+    /float near = max\(max\(centre\.a, texture2D\(map, uv \+ vec2\(uCssTexel\.x, 0\.0\)\)\.a\)/,
+  );
+  assert.match(shader, /mix\(sum \/ weight, centre\.rgb, step\(0\.5, near\)\)/);
   pipeline.dispose();
 });

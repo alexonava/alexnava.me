@@ -97,6 +97,14 @@ function keepsFit(lock, shot, measured, area, width, height, defer) {
   const extent = (Math.min(1, (shot.margin ?? 0.85) / (1 - PUSH_IN)) * a.height) / 2;
   return a.top + a.height / 2 + extent <= height - 16;
 }
+// A move's nearest pose, as a share of its fitted distance (for the fog).
+const nearestScales = new WeakMap();
+function nearestScale(shot) {
+  let scale = nearestScales.get(shot);
+  if (scale === undefined)
+    nearestScales.set(shot, (scale = Math.min(...fitPoses(shot).map((pose) => pose.scale))));
+  return scale;
+}
 export function createCinematicCamera({
   camera,
   fog,
@@ -346,9 +354,10 @@ export function createCinematicCamera({
       const { fitted } = lock;
       currentShot = shot;
       target.copy(measured.target);
-      // Tour shots drift at a constant rate so the camera never settles before
-      // a cut; a 2.5% breath follows the 48-second arc without a tour. A tour
-      // shot's dolly-in reaches 4.5% at its cut; the fit keeps a 15% margin.
+      // A shot with a move travels its path (below). Others drift at a constant
+      // rate so the camera never settles before a cut; a 2.5% breath follows the
+      // 48-second arc without a tour. A tour shot's dolly-in reaches 4.5% at its
+      // cut; the fit keeps a 15% margin.
       const phase = Math.min(1, Math.max(0, tourPhase ?? 0));
       let fov = shot.fov,
         nearest = fitted.distance;
@@ -377,7 +386,7 @@ export function createCinematicCamera({
         aim.set(target.x + rightX, target.y, target.z + rightZ);
         camera.lookAt(aim);
         fov = pose.fov;
-        nearest = fitted.distance * Math.min(...fitPoses(shot).map((p) => p.scale));
+        nearest = fitted.distance * nearestScale(shot);
       } else {
         const arc = reducedMotion
           ? 0

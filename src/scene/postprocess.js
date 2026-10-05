@@ -106,7 +106,7 @@ void main() {
   }
   // A soft shoulder: highlights past the knee roll off toward white, not clip.
   vec3 over = max(color - 0.75, 0.0);
-  color = min(color, 0.75) + 0.25 * (1.0 - exp(-over / 0.25));
+  color = mix(color, min(color, 0.75) + 0.25 * (1.0 - exp(-over / 0.25)), uLayerRelief);
 
   gl_FragColor = vec4(clamp(color, 0.0, 1.0), texel.a);
 }
@@ -186,8 +186,10 @@ vec4 lensBlur(sampler2D map, vec2 uv, float radius) {
     sum += tap.rgb * w;
     weight += w;
   }
-  // The ground and the subject stay sharp.
-  return vec4(mix(sum / weight, centre.rgb, step(0.5, centre.a)), centre.a);
+  // The ground and the subject stay sharp, their anti-aliased edges too: the
+  // nearest layer over a 1px cross decides.
+  float near = max(max(centre.a, texture2D(map, uv + vec2(uCssTexel.x, 0.0)).a), max(texture2D(map, uv - vec2(uCssTexel.x, 0.0)).a, max(texture2D(map, uv + vec2(0.0, uCssTexel.y)).a, texture2D(map, uv - vec2(0.0, uCssTexel.y)).a)));
+  return vec4(mix(sum / weight, centre.rgb, step(0.5, near)), centre.a);
 }
 
 float hash(vec2 p) {
@@ -223,7 +225,7 @@ void main() {
   }
 
   if (uGrainEnabled == 1) {
-    float grain = hash(floor(vUv * vec2(1280.0, 720.0)) + uGrainTime * vec2(17.0, 29.0)) - 0.5;
+    float grain = hash(floor(vUv * vec2(1280.0, 720.0)) + floor(fract(uGrainTime * vec2(0.618034, 0.414214)) * 97.0)) - 0.5;
     color += grain * uGrainStrength;
   }
 
@@ -561,9 +563,11 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
       const zoom = Math.min(0.02, Math.max(0, Number(transition?.zoom) || 0));
       const wasIdle = phase === IDLE;
       if (transition?.capture === true) {
-        if (phase !== BLENDING) phase = ARMED;
         // The kept frame dissolves with the outgoing shot's focus.
-        finalUniforms.uBlurPrev.value = finalUniforms.uBlur.value;
+        if (phase !== BLENDING) {
+          phase = ARMED;
+          finalUniforms.uBlurPrev.value = finalUniforms.uBlur.value;
+        }
       } else if (progress >= 1 || phase === ARMED) {
         phase = IDLE;
       } else if (phase === CAPTURED) {

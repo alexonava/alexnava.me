@@ -1573,7 +1573,7 @@ test("each frame applies the shot's light, lens, bars and grain, holding the gra
   // The mood follows the shot on screen in film only.
   assert.ok(
     index.includes(
-      "const mood = shotLight(filmActive && cinematicApplied ? cinematic.shot : null); rendering.setShotLight?.(mood); LANTERN_MOOD.value = mood.lantern; setRim(filmActive ? mood.rim : 0);",
+      "const mood = shotLight(filmActive && cinematicApplied ? cinematic.shot : null); rendering.setShotLight?.(mood); if (LANTERN_MOOD.value !== mood.lantern) { LANTERN_MOOD.value = mood.lantern; treeArchitecture?.refreshLantern?.(); } setRim(filmActive ? mood.rim : 0);",
     ),
   );
   assert.ok(

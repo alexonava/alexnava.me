@@ -1,4 +1,4 @@
-import { DIRECTED_SHOTS } from "./directed-shots.js";
+import { DIRECTED_SHOTS, shotPose } from "./directed-shots.js";
 import { PUSH_IN } from "./cinematic.js";
 
 // Visitors get each shot's own hold; ?tour=3, 5 and 20 are fixed cadences for review.
@@ -63,6 +63,17 @@ export function createCameraTour({
     cadence === TOUR_PER_SHOT
       ? (DIRECTED_SHOTS[camera.current]?.[camera.angle]?.hold ?? TOUR_HOLD_FALLBACK)
       : cadence;
+  // The outgoing shot's push at its cut, per hold: how fast the subject grows
+  // there (a dolly-in, a narrowing lens), so the kept frame carries it on; a
+  // pull-out or a dolly-zoom's steady subject keeps the minimum.
+  const closingPush = () => {
+    const shot = DIRECTED_SHOTS[camera.current]?.[camera.angle];
+    if (!shot?.move) return PUSH_IN;
+    const a = shotPose(shot, 0.98),
+      b = shotPose(shot, 1),
+      size = (pose) => 1 / (pose.scale * Math.tan((pose.fov * Math.PI) / 360));
+    return Math.max(0, (size(b) / size(a) - 1) / 0.02);
+  };
   const dissolve = () => Math.min(TOUR_TRANSITION.dissolve, TOUR_TRANSITION.maxShare * hold());
   const transition = { ...TOUR_IDLE };
   let elapsed = 0,
@@ -177,7 +188,7 @@ export function createCameraTour({
           elapsed = seconds;
           capturing = true;
           dissolveSeconds = dissolve();
-          zoom = Math.max(TOUR_TRANSITION.minZoom, (PUSH_IN * dissolveSeconds) / seconds);
+          zoom = Math.max(TOUR_TRANSITION.minZoom, (closingPush() * dissolveSeconds) / seconds);
         } else if (!cut && prepareDue()) prepareUpcoming();
       }
       lastTime = elapsedSeconds;

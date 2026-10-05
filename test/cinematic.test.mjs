@@ -217,6 +217,13 @@ test("a portrait monitor frames the subject above its bottom-left name, across t
   });
   // Too wide for bars (2560x1080 is 2.37:1), a desktop keeps its 32px edges.
   assert.equal(letterboxShare(2560, 1080), 0);
+  // Short landscapes, up to 500px tall, keep their own variants and no bars.
+  for (const [width, height] of [
+    [1000, 437],
+    [1100, 480],
+    [1147, 500],
+  ])
+    assert.equal(letterboxShare(width, height), 0, `${width}x${height}`);
   assert.deepEqual(cinematicSafeArea(2560, 1080, { right: 840, bottom: 900 }, { top: 998 }), {
     left: 876,
     top: 32,
@@ -1097,7 +1104,6 @@ test("widescreen bars cut desktops to 2.39:1, never phones, portrait, narrow or 
     [1920, 1080],
     [1280, 800],
     [1024, 768],
-    [1000, 437],
   ]) {
     const share = letterboxShare(width, height);
     near(share, (height - width / 2.39) / (2 * height));

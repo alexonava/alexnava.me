@@ -951,7 +951,10 @@ const ORBIT_SPEED = 0.06;
         {
           const mood = shotLight(filmActive && cinematicApplied ? cinematic.shot : null);
           rendering.setShotLight?.(mood);
-          LANTERN_MOOD.value = mood.lantern;
+          if (LANTERN_MOOD.value !== mood.lantern) {
+            LANTERN_MOOD.value = mood.lantern;
+            treeArchitecture?.refreshLantern?.();
+          }
           setRim(filmActive ? mood.rim : 0);
           camera.updateMatrixWorld();
           RIM_UNIFORMS.babelKeyView.value

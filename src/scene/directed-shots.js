@@ -229,11 +229,18 @@ export function isStackedLayout(width, height) {
 // them, take the landscape variant, or the compact one under 600px wide. A
 // shot may give those squat windows a `squat` variant of their own instead.
 export const SQUAT_LANDSCAPE = 1.55;
-// Widescreen bars on desktop-size landscape screens wider than 1000px:
-// the frame is cut to LETTERBOX.ratio, each bar a share of the height.
+// Widescreen bars on landscape screens from 1000px wide and over 500px tall
+// (short landscapes keep their own variants): the frame is cut to
+// LETTERBOX.ratio, each bar a share of the height, none under 2% of it.
 export const LETTERBOX = Object.freeze({ ratio: 2.39, minWidth: 1000 });
 export function letterboxShare(width, height) {
-  if (isStackedLayout(width, height) || height > width || width < LETTERBOX.minWidth) return 0;
+  if (
+    isStackedLayout(width, height) ||
+    height > width ||
+    height <= 500 ||
+    width < LETTERBOX.minWidth
+  )
+    return 0;
   const share = (height - width / LETTERBOX.ratio) / (2 * height);
   return share > 0.02 ? share : 0;
 }
@@ -360,7 +367,7 @@ export const PUSH_IN = 0.045;
 // A shot's `move`: its camera travels through the hold, each part a [from, to]
 // pair from the cut to the next. `dolly` scales the fitted distance, `crane`
 // raises the camera by a share of the subject's height, `truck` slides camera
-// and aim sideways by a share of the distance (to the camera's right), and
+// and aim sideways by a share of the distance (positive to the camera's left), and
 // `zoom` sets the lens in degrees; with `dollyZoom` the distance follows the
 // lens so the subject keeps its size while the background swells or sinks.
 // `ease` (0-1) eases the travel in and out, keeping 1 - ease of the mean speed
