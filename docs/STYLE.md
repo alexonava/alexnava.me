@@ -47,7 +47,7 @@ The rules for visual, motion and typographic changes. Read them before changing 
 
 ## Camera and tour
 
-- The tour opens on The watch and alternates the lookout and the tree so no two like shots meet (the owner's choice of 2026-10-04): The watch, Portrait, Threshold, Lantern study, Watch and tree, Close-up, Root and lantern. The watch and Portrait hold 9 s, Threshold and Watch and tree 7 s, Lantern study, Close-up and Root and lantern 6 s. Masonry study and Gallery detail (too like Threshold) open only from their URLs.
+- The tour opens on The watch and alternates the lookout and the tree (the owner's choice of 2026-10-04), with Close-up and Root and lantern the one pair of tree shots together: The watch, Portrait, Threshold, Lantern study, Watch and tree, Close-up, Root and lantern. The watch and Portrait hold 9 s, Threshold and Watch and tree 7 s, Lantern study, Close-up and Root and lantern 6 s. Masonry study and Gallery detail (too like Threshold) open only from their URLs.
 - Watch and tree shows both landmarks: the whole lookout from beyond the tree, the star beside it, and pans up through its hold, rising into the composition (5 degrees on desktop and squat windows, 3 on landscape phones, 2 on portrait screens, where it comes round the tree's other side so the tree stands left of the lookout and the star shows whole).
 - Portrait looks up from low (camera height 0.12, 72 degrees round), so the plain is foreshortened under the ranges and the crown stands against the snow and sky.
 - Shots join by a 1 s dissolve staggered by depth (sky, mountains, ground, subject) with no dip to black. Drift never stops before a cut. No shot label, control strip or visible pause control.
