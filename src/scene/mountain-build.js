@@ -619,7 +619,7 @@ export const RANGE_PLACEMENTS = Object.freeze(
     ["near-g", "mountain-spine", 0, 198, 3.8, -10, false, 0.3, 0.85, 0],
     ["near-h", "mountain-ridge", 0, 232, 4, -5, true, 0.5, 0.5, 0],
     ["near-i", "mountain-spine", 0, 265, 3.4, 15, true, 0.3, 0.85, 0],
-    ["near-j", "mountain-summit", 0, 296, 5.5, -15, false, 0.55, 0.6, 0],
+    ["near-j", "mountain-summit", 0, 296, 5.5, 5, false, 0.55, 0.6, 0],
   ].map(([id, role, layer, azimuth, distance, yaw, mirror, sink, squash, snow]) =>
     Object.freeze({ id, role, layer, azimuth, distance, yaw, mirror, sink, squash, snow }),
   ),

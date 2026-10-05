@@ -29,8 +29,10 @@ import {
   SOLAR_LOOK,
   SOLAR_RADIUS,
   SOLAR_QUALITY,
+  SOLAR_STREAK,
   solarUnrest,
 } from "../src/scene/solar-body.js";
+import { STAR_LAYER } from "../src/scene/depth-layers.js";
 import {
   createStarfield,
   makeStarGeometry,
@@ -97,7 +99,13 @@ test("solar tiers, pixel ratio, motion, and resource ownership survive repeated 
   });
   const loops = objects.find((o) => o.name === "solar-prominences"),
     surface = objects.find((o) => o.name === "solar-photosphere");
-  assert.equal(objects.length, 3);
+  // Photosphere, corona, prominences and the lens's anamorphic streak.
+  assert.deepEqual(objects.map((o) => o.name).sort(), [
+    "solar-corona",
+    "solar-photosphere",
+    "solar-prominences",
+    "solar-streak",
+  ]);
   assert.equal(loops.material.forceSinglePass, true);
   assert.deepEqual(controller.root.position.toArray(), [-85, 55, -29]);
   assert.equal(surface.geometry.parameters.radius, SOLAR_RADIUS);
@@ -122,7 +130,11 @@ test("solar tiers, pixel ratio, motion, and resource ownership survive repeated 
   assert.equal(controller.dispose(), true);
   assert.equal(controller.dispose(), false);
   assert.equal(parent.children.length, 0);
-  assert.ok(counts.every((n) => n === 1));
+  assert.deepEqual(
+    objects.flatMap((o, i) => (counts[2 * i] === 1 && counts[2 * i + 1] === 1 ? [] : [o.name])),
+    [],
+    "every solar mesh's geometry and material, the streak's included, is disposed once",
+  );
   assert.equal(controller.applyQuality({ tier: "high" }), false);
   assert.equal(controller.update({ elapsedSeconds: 20 }), false);
 });
@@ -1058,4 +1070,41 @@ test("film makes the sky shell opaque before the overlays switch, so the sky is 
   geometry.dispose();
   ground.geometry.dispose();
   ground.material.dispose();
+});
+
+test("the star's lens streak breathes with it and every part writes the star's layer mask", () => {
+  const parent = new Group(),
+    camera = new PerspectiveCamera();
+  camera.position.set(0, 2, 20);
+  const controller = createSolarBody({
+    parent,
+    camera,
+    position: new Vector3(0, 0, -60),
+    profile: { tier: "high" },
+  });
+  const mesh = (name) => controller.root.getObjectByName(name),
+    streak = mesh("solar-streak"),
+    corona = mesh("solar-corona");
+  assert.equal(streak.geometry.parameters.width, SOLAR_RADIUS * SOLAR_STREAK.length);
+  assert.equal(streak.geometry.parameters.height, SOLAR_RADIUS * SOLAR_STREAK.height);
+  assert.equal(streak.material.uniforms.uStrength.value, SOLAR_STREAK.strength);
+  assert.equal(streak.material.uniforms.uBreath, corona.material.uniforms.uBreath);
+  assert.ok(streak.renderOrder > corona.renderOrder, "drawn over the glow");
+  assert.equal(streak.material.depthWrite, false);
+  // Each part's alpha adds STAR_LAYER times its coverage (constant-alpha), so
+  // the grade keeps the star out of the cloud banks' cel step.
+  for (const name of ["solar-photosphere", "solar-corona", "solar-prominences", "solar-streak"]) {
+    const material = mesh(name).material;
+    assert.equal(material.blending, 5, name);
+    assert.equal(material.blendSrcAlpha, 213, name);
+    assert.equal(material.blendDstAlpha, 201, name);
+    assert.equal(material.blendAlpha, STAR_LAYER, name);
+  }
+  assert.equal(mesh("solar-photosphere").material.blendDst, 205, "the disc draws over");
+  for (const name of ["solar-corona", "solar-prominences", "solar-streak"])
+    assert.equal(mesh(name).material.blendDst, 201, name + " adds light");
+  // The streak faces the lens with the corona.
+  controller.update({ elapsedSeconds: 1 });
+  assert.ok(streak.quaternion.angleTo(corona.quaternion) < 1e-9);
+  controller.dispose();
 });

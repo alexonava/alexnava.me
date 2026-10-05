@@ -9,11 +9,14 @@ export const DOOR_HEIGHT = 6.6;
 // The terrain's dune field, helpers.js dune(): amplitude * wave(frequency *
 // (sx * x + sz * z)) in world x/z. Restated here so the slate's wet sheen can
 // find the hollows in the shader; a test holds it to scene.groundHeight.
+// The plain's level (the first, constant term) and its faint swell.
+export const TERRAIN_BASE = 1.25;
 export const TERRAIN_DUNE_TERMS = Object.freeze([
-  Object.freeze({ amplitude: 1.8, wave: "sin", frequency: 0.055, sx: 1, sz: 0 }),
-  Object.freeze({ amplitude: 1.35, wave: "cos", frequency: 0.052, sx: 0, sz: 1 }),
-  Object.freeze({ amplitude: 0.9, wave: "sin", frequency: 0.031, sx: 1, sz: 1 }),
-  Object.freeze({ amplitude: 0.55, wave: "cos", frequency: 0.018, sx: 1, sz: -1 }),
+  Object.freeze({ amplitude: TERRAIN_BASE, wave: "cos", frequency: 0, sx: 0, sz: 0 }),
+  Object.freeze({ amplitude: 0.27, wave: "sin", frequency: 0.055, sx: 1, sz: 0 }),
+  Object.freeze({ amplitude: 0.2025, wave: "cos", frequency: 0.052, sx: 0, sz: 1 }),
+  Object.freeze({ amplitude: 0.135, wave: "sin", frequency: 0.031, sx: 1, sz: 1 }),
+  Object.freeze({ amplitude: 0.0825, wave: "cos", frequency: 0.018, sx: 1, sz: -1 }),
 ]);
 export function terrainDune(x, z) {
   return TERRAIN_DUNE_TERMS.reduce(
@@ -37,7 +40,7 @@ const TERRAIN_DUNE_GLSL = TERRAIN_DUNE_TERMS.map(
 // night sky (SLATE_WATER), fading with view distance, so the far plain behind
 // the intro text stays calm.
 export const SLATE_WET = Object.freeze({
-  hollow: Object.freeze([-3.2, -1.0]), // dune height: fully wet below, dry above
+  hollow: Object.freeze([0.77, 1.1]), // plain height: fully wet below, dry above
   crack: Object.freeze([0.07, 0.24]), // linear map luminance: dark cracks hold water
   crackWeight: 0.8,
   halo: Object.freeze([8.0, 40.0]), // distance from the tree: wet within, drier beyond

@@ -75,6 +75,9 @@ export const ROOT_KNOLL = Object.freeze({
 // and how far below the footing the knoll keeps there (no relief either): it
 // stays an open aerial root, its underside 0.9 or more above the soil.
 export const SPUR = Object.freeze([5.4, -2.8, 8.2, -6.2, 1.1, 1.4, 0.35]);
+// On the level plain the soil under the spur settles into a soft hollow this
+// far below the footing, so the root still arches clear of it.
+export const SPUR_HOLLOW = 0.6;
 
 // The micro-relief that keeps the soil under the tree from reading as a level
 // plate: three octaves of seeded value noise ([wavelength, amplitude, turn in
@@ -351,7 +354,7 @@ export const KEY_LIGHT = Object.freeze([32, 28, 14].map((v, _, all) => v / Math.
 // lantern clearing, the front puddle or a drip-line puddle takes any.
 // prettier-ignore
 export const ROOT_RESTS = Object.freeze([
-  [12,11,0.08], [27,15,0.134], [26,16,0.105], [22,20,0.09], [20,22,0.016], [21,25,0.052],
+  [12,11,0.08], [27,15,0.134], [26,16,0.099], [22,20,0.09], [20,22,0.016], [21,25,0.05],
 ]);
 const BANKS = new Float32Array(ROOT_LATTICE.cols * ROOT_LATTICE.rows);
 for (const [col, row, lift] of ROOT_RESTS) BANKS[row * ROOT_LATTICE.cols + col] = lift;
@@ -375,68 +378,68 @@ export const ROOT_SHADE = Object.freeze({
   sky: [
     "000000000000000000000000000000000",
     "000000000000000000000000000000000",
-    "000000000000001233211000000000000",
-    "0000000000001368aa742100000000000",
-    "00000000000127flnlf84210000000000",
-    "0000000000114bmxBwlc7421000000000",
-    "0000000001235bnBHDrga642100000000",
-    "0000001112357bkxHFukeb85210000000",
-    "000000000469belwFFyqlid8421000000",
-    "0000000008cgilqzGHBvtqkc731000000",
-    "0000000000bosuxEJJEBAyqh942100000",
-    "00000000007lzEFJNMIGGExme84100000",
-    "00000000006kzMNPRQMKLLFxpia510000",
-    "00000000007lzNTUUTRPPQPLEwod41000",
-    "0000000000boCPVWWVTSRSTTSKzl82000",
-    "0000000009jvHQUVWVUSQPQRRODo92000",
-    "000000019jtAFLPSTUTRNJGFFCuh72000",
-    "000068adhmqvAGKORSSQMFyspmg931000",
+    "000000000000001233210000000000000",
+    "0000000000001368aa741000000000000",
+    "00000000000027elnlf83100000000000",
+    "0000000000113amxBwmb6321000000000",
+    "0000000001125bnBIDrf9643100000000",
+    "0000001112347bkyHFvkeb85310000000",
+    "000000000469belwFFyqlie9521000000",
+    "0000000008cgilqzGGAvspjc731000000",
+    "0000000000bosuxDIIDAywpg952100000",
+    "00000000007lzEFJMKGEECvme84100000",
+    "00000000006kzMNOPNKJJIExpia510000",
+    "00000000007lzNTTTQNMNPOKEwod41000",
+    "0000000000boCPVWVTRQQRTTRKzl82000",
+    "0000000009jvHQUVVUTRPPPRRODo92000",
+    "000000019jtAFLPSTUTRNJGFFBth71000",
+    "000068adhmqvAGKORSSQMFyspmg831000",
     "000468acfjnsyDHLNQRROIyogb7410000",
     "0134579beimsxCFIJMPRQMDqf84210000",
-    "0134578bdhmsyDFFFHMQPMEsf73200000",
+    "0134578bdhmsyDFFFHMQPMEsf73100000",
     "0124568adhmtAAxxxzEKNIApd63100000",
     "00234579chovsmjjjmrzIEvka52100000",
     "00123468cjrpg95558foyCui831000000",
-    "00012359fnpf5000004epAuh621000000",
-    "00011259hqf500000006jsod410000000",
-    "00000148el8000000001egd7200000000",
-    "000001248c30000000006652100000000",
-    "000000012420000000012211000000000",
-    "000000000120000000000100000000000",
+    "00012358empf5000004epAuh621000000",
+    "00011248fnf500000006jsod410000000",
+    "00000136ci8000000001dfd7200000000",
+    "000000136930000000005642100000000",
+    "000000012320000000012210000000000",
+    "000000000110000000011000000000000",
     "000000000000000000000000000000000",
     "000000000000000000000000000000000",
   ].join(""),
   key: [
     "000000000000000000000000000000000",
     "000000000000000111000000000000000",
-    "000000000000024786200000000000000",
-    "00000000000015bhhb410000000000000",
-    "0000000000003aksqg610000000000000",
-    "0000000000015fsBxj721000000000000",
-    "000000000125cnAHAma54210000000000",
-    "00000001137eoAKMDofec720000000000",
-    "0000000009jtENTRFsnpne51000000000",
-    "0000000008juHUYTHwwBxj71000000000",
-    "0000000000boCPZTJDGKEpb3100000000",
-    "00000000007lzNZUNLPRLxmc642100000",
-    "00000000006kzNZWTSVWSIyrjd7410000",
-    "00000000007lzN-ZYWWWVSNFzria41000",
-    "0000000000boCP_-ZVQOQRQOKDsg62000",
-    "0000000009jvHU_-XQIDDFFFFCuh72000",
-    "000000019jtDO-_ZVNDvsqppqqlc51000",
+    "000000000000024896310000000000000",
+    "00000000000015bhic510000000000000",
+    "0000000000003aktrh710000000000000",
+    "0000000000015fsBxk821100000000000",
+    "000000000125bnAHBnb65310000000000",
+    "00000001137eozKMEpfdb720000000000",
+    "0000000009jtDNTRGsmnkb30000000000",
+    "0000000008juHUYTIywxrf51000000000",
+    "0000000000boCPZUMGHIAma3100000000",
+    "00000000007lzNZVRPRRIwlc642100000",
+    "00000000006kzN-YVVXXSHyqjd7410000",
+    "00000000007lzN_-YXWWVSMFzria41000",
+    "0000000000boCP_-YUPNOQQNKDsg62000",
+    "0000000009jvHU_-XPHBBDEFFCuh72000",
+    "000000019jtDO-_ZVNCuqpppqqlc51000",
     "000027cfktDNXYYYUNEwqlgcbba620000",
     "000013bqxENXWTSUUQKDwqia533110000",
     "0000015ixNXYTNJLQSQJCvmd510000000",
     "0000003csHVYSKBAFNRNDume620000000",
     "00000019pEULFAwoszEKEsia510000000",
     "00000018oDJAsmjfgmrzEsf7310000000",
-    "00000029pEzpg95558foytg6200000000",
-    "0000003brzpf5000004eppf6100000000",
-    "0000014dqrf500000006hhb5100000000",
-    "0000014akl80000000017862000000000",
-    "00000126ae30000000002221000000000",
-    "000000123420000000000000000000000",
-    "000000000110000000000000000000000",
+    "00000029oEzpg95558foytg6200000000",
+    "0000003apzpf5000004eppf6100000000",
+    "0000014cnrf500000006hhb5100000000",
+    "0000014ahk80000000017862000000000",
+    "000001258930000000002221000000000",
+    "000000122220000000000000000000000",
+    "000000000000000000000000000000000",
     "000000000000000000000000000000000",
     "000000000000000000000000000000000",
   ].join(""),
@@ -496,11 +499,11 @@ export const ROOT_COVER = Object.freeze({ cols: 97, rows: 94, bits: [
     "AAAAAAAAAAAAAAAAAMAAAAAAAAAAAAAAAMABAAAAAAAAAAAA4IMBAAAAAAAAAAAAwJ8DAAAAAAAA",
     "AAAAAP8HAAAAAAAAAAAAAPwHAAAAAAAAAAAAAPgPAAAAAAAAAAAAAMAfAAAAAAAAAAAAAAB/AAAA",
     "AAAAAAAAAAD8AAAAAAAAAAAAAAD4AQAAAAAAAAAAAADwBwAAAAAAAAAAAADgDwAAAAAAAAAAAADA",
-    "HwAAAAAAAAAAAACAPwAAAAAAAAAAAAAAfwAYAAAAAAAAAAAA/wAfAAAAAAAAAAYA/gE/AAAAAAAA",
-    "ABwA/AM8AAAAAAAAAHgA/Ac4AAAAAAAAAOAB+A9wAAAAAAAAAMAH8B/gAQAAAAAAAAAf4D/AAwAA",
-    "AAAAAAB84H/ADwAAAAAAAADwwX+AHwAAAAAAAADgh/8APwAAAAAAAACAH/8BfAAAAAAAAAAAP/8b",
-    "4AAAAAAAAAAAfP5/wA8AAAAAAAAA+P//AP8PAAAAAAAA8P9/AP5/AAAAAAAAwP9/APj/AQAAAAAA",
-    "8P//APD/DwAAAOAH/v//AcD/PwAAAID/////B4D//wAAAADwH/z/D8D/fwAAAACAAfj/H4D/fwAA",
+    "HwAAAAAAAAAAAACAPwAAAAAAAAAAAAAAfwAAAAAAAAAAAAAA/wAAAAAAAAAAAAYA/gECAAAAAAAA",
+    "ABwA/AMMAAAAAAAAAHgA/AMYAAAAAAAAAOAB+AdwAAAAAAAAAMAH8B/gAQAAAAAAAAAf4B8AAwAA",
+    "AAAAAAB84B8ADAAAAAAAAADwwT8AGAAAAAAAAADghz8AMAAAAAAAAACAH38AYAAAAAAAAAAAP/8A",
+    "wAAAAAAAAAAAfP4BgA8AAAAAAAAA+P8DAP8PAAAAAAAA8P8HAP5/AAAAAAAAwP8fAPj/AQAAAAAA",
+    "8P8/APD/DwAAAOAH/v9/AMD/PwAAAID/////AYD//wAAAADwH/z/B8D/fwAAAACAAfj/H4D/fwAA",
     "AAAAAID/PwD/fwAAAAAAAAD/fwCAfwAAAAAAAADs/wAAAAAAAAAAAACA/wEAAAAAAAAAAAAA/4MA",
     "AAAAAAAAAAAA/g8DAAAAAAAAAAAA/B8OAAAAAAAAAAAA8H8wAAAAAAAAAAAAIP/BAAAAAAAAAAAA",
     "APgHAwAAAAAAAAAAAPAfBgAAAAAAAAAAAMB/GAAAAAAAAAAAAID/YQAAAAAAAAAAAAD+hwMAAAAA",
@@ -656,6 +659,7 @@ export function rootSupportLifts(x, z, baseHeight, banks = true) {
   if (fade > 0) relief = reliefNoise(x, z) * fade * (1 - spur) * restingKeep(dx, dz);
   for (const [hx, hz, radius, depth] of ROOT_HOLLOWS)
     relief -= depth * (1 - ease(0.2 * radius, radius, Math.hypot(dx - hx, dz - hz)));
+  relief -= Math.max(0, base + knoll - (floor - SPUR_HOLLOW)) * spur;
   return [base, knoll * knollKeep, relief * keep, bank, pond];
 }
 
@@ -2555,14 +2559,23 @@ const SUPPORT_REACH =
   ) + 0.5;
 const OPEN_SOIL = [3, 0, 0, 1];
 
+// The plain's level, restating mud-ground.js TERRAIN_BASE (a test holds them
+// equal): this chunk imports no first-party code.
+export const TERRAIN_BASE = 1.25;
+
 // The film terrain's surface before the root supports (the dunes blended out
 // beyond 88 units, and the foothills), a few rows at a time. Returns its
 // sampler: height, and optionally the shading normal, at x/z.
 function* coarseSurface(baseHeight, EARTH) {
-  // Beyond the blend the base term is exactly zero; it is not evaluated there.
+  // Beyond the blend the base term is exactly the plain's level; its swell is
+  // not evaluated there.
   const groundHeight = (x, z) => {
     const t = Math.min(1, Math.max(0, (Math.hypot(x, z) - 88) / 25));
-    return (t < 1 ? baseHeight(x, z) * (1 - t * t * (3 - 2 * t)) : 0) + foothillHeight(x, z);
+    return (
+      TERRAIN_BASE +
+      (t < 1 ? (baseHeight(x, z) - TERRAIN_BASE) * (1 - t * t * (3 - 2 * t)) : 0) +
+      foothillHeight(x, z)
+    );
   };
   // First reconstruct the pre-support surface, including its triangle planes
   // and normals, at the float precision the coarse grid stores. Re-sampling

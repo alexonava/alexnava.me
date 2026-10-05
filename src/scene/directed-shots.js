@@ -8,6 +8,9 @@ export const DIRECTED_SHOTS = {
   tower: [
     {
       name: "The watch",
+      letterbox: { height: 0.8, targetHeight: 0.82 },
+      move: { zoom: [32, 26], dollyZoom: true, ease: 0.6 },
+      light: { key: 1.2, fill: 0.85, rim: 1 },
       // The slimmer timber lookout fits closer than the stone tower did, so its roof
       // reached the fixed sun on desktop. A wider, slightly higher view three
       // degrees round restores the camera distance and sky gap. Higher than 0.68
@@ -23,13 +26,24 @@ export const DIRECTED_SHOTS = {
       portrait: { region: [0.62, 1], targetHeight: 1.11, azimuth: -4, height: 0.66 },
       // Landscape phones hold the intro over the upper third, where the snowy
       // range projected; lower and further round, it runs between text and tower.
-      landscape: { height: 0.55, azimuth: -12 },
+      landscape: {
+        height: 0.55,
+        azimuth: -12,
+        move: null,
+      },
       // Under 600px wide the intro spans nearly half the screen and the range
       // still met its last line at 0.55; lower again, it runs below the intro.
-      compact: { height: 0.4, azimuth: -12 },
+      compact: {
+        height: 0.4,
+        azimuth: -12,
+        move: null,
+      },
     },
     {
       name: "Threshold",
+      move: { crane: [-0.18, 0.1], dolly: [1.06, 0.94], ease: 0.6 },
+      light: { fill: 0.8, rim: 1.8 },
+      lens: { blur: 5 },
       // The lookout's threshold: the ladder on its +Z access side arriving
       // through the gap in the gallery railing. Nearer the ladder's face than 82
       // degrees brings the sun behind the name on landscape phones. The region
@@ -38,13 +52,15 @@ export const DIRECTED_SHOTS = {
       // portrait phones, which had that headroom, keep 0.62-0.90.
       region: [0.64, 0.93],
       fov: 36,
-      azimuth: 82,
+      azimuth: 86,
       height: 0.5,
       arc: 2,
       hold: 7,
       focus: { width: 0.3, depth: [0.06, 0.34] },
       margin: 0.91,
       portrait: { region: [0.62, 0.9], focus: { width: 0.22, depth: [0.06, 0.34] } },
+      // Landscape phones keep the drift: no room about the name for a move.
+      landscape: { move: null, azimuth: 82 },
     },
     {
       // The name and URL are retained; for the timber lookout it is a
@@ -55,7 +71,7 @@ export const DIRECTED_SHOTS = {
       tour: false, // Retain its URL without including it in the tour.
       region: [0.3, 0.6],
       fov: 32,
-      azimuth: -20,
+      azimuth: -26,
       height: 0.4,
       arc: 1,
       focus: { width: 0.2, depth: [0.13, 0.36] },
@@ -86,6 +102,9 @@ export const DIRECTED_SHOTS = {
     },
     {
       name: "Watch and tree",
+      letterbox: { tilt: [-4, -1], height: 0.35 },
+      light: { key: 1.15, fill: 0.45, rim: 2.4 },
+      move: { dolly: [1.08, 0.94], ease: 0.5 },
       // The whole lookout from beyond the tree, the star beside it: the one
       // shot with both landmarks. Small in a wide frame, so the plain is calmed
       // (as Portrait's) and the camera tilts up through the hold from the
@@ -104,13 +123,16 @@ export const DIRECTED_SHOTS = {
       // beside the subject, keep the star whole to the name's right.
       portrait: { azimuth: 20, tilt: [0, 2] },
       squat: { azimuth: 40 },
-      landscape: { tilt: [-3, 0] },
+      landscape: { tilt: [-3, 0], move: null },
       ground: { burn: { amount: 0.45, reach: [0.3, 0.9] }, flatten: 0.6, keep: [9, 20] },
     },
   ],
   tree: [
     {
       name: "Portrait",
+      portrait: { move: { dolly: [1.06, 0.94], crane: [0, 0.08], ease: 0.6 } },
+      light: { fill: 0.85, rim: 1.3 },
+      move: { truck: [-0.07, 0.07], crane: [0, 0.13], dolly: [1.05, 0.92], ease: 0.6 },
       // Low (0.12), so the plain ahead is foreshortened under the ranges, and
       // calmed: the near slate burned down, its texture and glints quietened
       // beyond the tree's knoll (slateCalmFor()).
@@ -122,9 +144,14 @@ export const DIRECTED_SHOTS = {
       hold: 9,
       margin: 0.93,
       ground: { burn: { amount: 0.45, reach: [0.4, 0.95] }, flatten: 0.65, keep: [7, 16] },
+      // Landscape phones keep the drift: no room about the name for a move.
+      landscape: { move: null },
     },
     {
       name: "Lantern study",
+      light: { key: 0.55, fill: 0.65, lantern: 1.45, rim: 0.7 },
+      lens: { blur: 8 },
+      move: { dolly: [1.2, 0.85], ease: 0.6 },
       subject: "tree-lantern",
       region: [0, 1],
       fov: 34,
@@ -133,9 +160,15 @@ export const DIRECTED_SHOTS = {
       arc: 2,
       hold: 6,
       margin: 0.7,
+      landscape: { move: null },
+      portrait: { move: { dolly: [1.1, 0.9], ease: 0.6 } },
     },
     {
       name: "Close-up",
+      letterbox: { azimuth: -160 },
+      light: { fill: 0.7, rim: 2 },
+      lens: { blur: 10 },
+      move: { truck: [-0.1, 0.1], ease: 0.5 },
       // The twisted tree's fork sits high on the trunk.
       region: [0.38, 0.56],
       fov: 30,
@@ -144,11 +177,20 @@ export const DIRECTED_SHOTS = {
       arc: 2,
       hold: 6,
       focus: { width: 0.23, depth: [-0.09, 0.14] },
-      margin: 0.83,
-      portrait: { focus: { width: 0.16, depth: [-0.09, 0.14] } },
+      margin: 0.95,
+      // Phones push in: a sideways truck this close takes the lens into the trunk.
+      portrait: {
+        focus: { width: 0.16, depth: [-0.09, 0.14] },
+        move: { dolly: [1.1, 0.94], ease: 0.5 },
+      },
+      // Landscape phones keep the drift: no room about the name for a move.
+      landscape: { move: null, margin: 0.83 },
     },
     {
       name: "Root and lantern",
+      move: { dolly: [0.86, 1.05], crane: [0, 0.03], ease: 0.6 },
+      light: { key: 0.6, fill: 0.75, lantern: 1.4, rim: 0.9 },
+      lens: { blur: 8 },
       region: [0, 0.16],
       fov: 32,
       azimuth: -115,
@@ -157,7 +199,12 @@ export const DIRECTED_SHOTS = {
       hold: 6,
       focus: { width: 0.3, depth: [-0.1, 0.32] },
       margin: 0.91,
-      portrait: { focus: { width: 0.25, depth: [-0.1, 0.32] } },
+      portrait: {
+        focus: { width: 0.25, depth: [-0.1, 0.32] },
+        move: { dolly: [0.92, 1.06], ease: 0.6 },
+      },
+      // Landscape phones keep the drift: no room about the name for a move.
+      landscape: { move: null },
     },
   ],
 };
@@ -182,16 +229,33 @@ export function isStackedLayout(width, height) {
 // them, take the landscape variant, or the compact one under 600px wide. A
 // shot may give those squat windows a `squat` variant of their own instead.
 export const SQUAT_LANDSCAPE = 1.55;
+// Widescreen bars on landscape screens from 1000px wide and over 500px tall
+// (short landscapes keep their own variants): the frame is cut to
+// LETTERBOX.ratio, each bar a share of the height, none under 2% of it.
+export const LETTERBOX = Object.freeze({ ratio: 2.39, minWidth: 1000 });
+export function letterboxShare(width, height) {
+  if (
+    isStackedLayout(width, height) ||
+    height > width ||
+    height <= 500 ||
+    width < LETTERBOX.minWidth
+  )
+    return 0;
+  const share = (height - width / LETTERBOX.ratio) / (2 * height);
+  return share > 0.02 ? share : 0;
+}
 const variantShots = new WeakMap();
 export function resolveDirectedShot(shot, width, height) {
   const short = height <= 500,
     squat = short && width > height && width < SQUAT_LANDSCAPE * height;
   const variant =
-    squat && shot.squat
-      ? shot.squat
-      : height > width || isStackedLayout(width, height) || squat
-        ? shot.portrait
-        : short && ((width < 600 && shot.compact) || shot.landscape);
+    shot.letterbox && letterboxShare(width, height) > 0
+      ? shot.letterbox
+      : squat && shot.squat
+        ? shot.squat
+        : height > width || isStackedLayout(width, height) || squat
+          ? shot.portrait
+          : short && ((width < 600 && shot.compact) || shot.landscape);
   if (!variant) return shot;
   let resolved = variantShots.get(variant);
   if (!resolved) variantShots.set(variant, (resolved = { ...shot, ...variant }));
@@ -297,15 +361,66 @@ export function measureShot(root, shot) {
   };
 }
 
+// Largest dolly-in fraction of the fitted distance within one shot.
+export const PUSH_IN = 0.045;
+
+// A shot's `move`: its camera travels through the hold, each part a [from, to]
+// pair from the cut to the next. `dolly` scales the fitted distance, `crane`
+// raises the camera by a share of the subject's height, `truck` slides camera
+// and aim sideways by a share of the distance (positive to the camera's left), and
+// `zoom` sets the lens in degrees; with `dollyZoom` the distance follows the
+// lens so the subject keeps its size while the background swells or sinks.
+// `ease` (0-1) eases the travel in and out, keeping 1 - ease of the mean speed
+// at the cuts, so the camera never stops. Shots without a move keep the
+// constant drift and the PUSH_IN dolly.
+export const MOVE_PHASES = Object.freeze([0, 0.25, 0.5, 0.75, 1]);
+export function shotPose(shot, phase) {
+  const move = shot.move;
+  if (!move)
+    return {
+      yaw: (phase - 0.5) * shot.arc,
+      scale: 1 - PUSH_IN * phase,
+      crane: 0,
+      truck: 0,
+      fov: shot.fov,
+    };
+  const ease = move.ease ?? 0,
+    e = phase + ease * (phase * phase * (3 - 2 * phase) - phase),
+    along = (pair, rest) => (pair ? pair[0] + (pair[1] - pair[0]) * e : rest);
+  const fov = along(move.zoom, shot.fov);
+  let scale = along(move.dolly, 1);
+  if (move.dollyZoom && move.zoom)
+    scale *= Math.tan((move.zoom[0] * Math.PI) / 360) / Math.tan((fov * Math.PI) / 360);
+  return {
+    yaw: (e - 0.5) * shot.arc,
+    scale,
+    crane: along(move.crane, 0),
+    truck: along(move.truck, 0),
+    fov,
+  };
+}
+// The poses a fit must hold: a move's sampled phases, or the drift's extremes
+// (the 48-second breath without a tour swings the full arc either way).
+export function fitPoses(shot) {
+  return shot.move
+    ? MOVE_PHASES.map((phase) => shotPose(shot, phase))
+    : [-shot.arc, 0, shot.arc].map((yaw) => ({ yaw, scale: 1, crane: 0, truck: 0, fov: shot.fov }));
+}
+
 export function fitShot(measured, shot, area, width, height) {
-  const tan = Math.tan((shot.fov * Math.PI) / 360),
-    aspect = width / height,
-    margin = shot.margin ?? 0.85;
-  const maxX = ((tan * aspect * area.width) / width) * margin;
-  const maxY = ((tan * area.height) / height) * margin;
+  const aspect = width / height,
+    margin = shot.margin ?? 0.85,
+    poses = fitPoses(shot);
+  const limits = poses.map(({ fov }) => {
+    const tan = Math.tan((fov * Math.PI) / 360);
+    return [
+      ((tan * aspect * area.width) / width) * margin,
+      ((tan * area.height) / height) * margin,
+    ];
+  });
   const dy = measured.cameraY - measured.target.y;
   const projected = [];
-  for (const offset of [-shot.arc, 0, shot.arc]) {
+  for (const { yaw: offset } of poses) {
     const yaw = ((shot.azimuth + offset) * Math.PI) / 180,
       co = Math.cos(yaw),
       si = Math.sin(yaw);
@@ -321,19 +436,26 @@ export function fitShot(measured, shot, area, width, height) {
     projected.push(data);
   }
   const fits = (distance) => {
-    const length = Math.hypot(distance, dy),
-      c = distance / length,
-      s = dy / length;
-    for (const points of projected)
+    for (let k = 0; k < poses.length; k++) {
+      const { scale, crane, truck } = poses[k],
+        [maxX, maxY] = limits[k],
+        reach = distance * scale,
+        rise = dy + crane * measured.height,
+        side = truck * reach,
+        length = Math.hypot(reach, rise),
+        c = reach / length,
+        s = rise / length,
+        points = projected[k];
       for (let i = 0; i < points.length; i += 3) {
         const depth = length - points[i + 2] * c - points[i + 1] * s;
         if (
           depth <= 0.1 ||
-          Math.abs(points[i]) > maxX * depth ||
+          Math.abs(points[i] - side) > maxX * depth ||
           Math.abs(points[i + 1] * c - points[i + 2] * s) > maxY * depth
         )
           return false;
       }
+    }
     return true;
   };
   let lo = 0.1,

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { sceneGround } from "./support/ground.mjs";
 import {
   BoxGeometry,
   Mesh,
@@ -17,9 +18,18 @@ import {
   createCinematicCamera,
   isStackedLayout,
   layoutRect,
+  letterboxShare,
+  LETTERBOX,
   PUSH_IN,
 } from "../src/scene/cinematic.js";
-import { DIRECTED_SHOTS, measureShot, resolveDirectedShot } from "../src/scene/directed-shots.js";
+import {
+  DIRECTED_SHOTS,
+  fitPoses,
+  measureShot,
+  MOVE_PHASES,
+  resolveDirectedShot,
+  shotPose,
+} from "../src/scene/directed-shots.js";
 import { createCameraTour } from "../src/scene/camera-tour.js";
 
 const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-6, `${a} != ${b}`);
@@ -206,12 +216,29 @@ test("a portrait monitor frames the subject above its bottom-left name, across t
     width: 346,
     height: 509,
   });
-  assert.deepEqual(cinematicSafeArea(1600, 900, { right: 527, bottom: 720 }, { top: 818 }), {
-    left: 563,
+  // Too wide for bars (2560x1080 is 2.37:1), a desktop keeps its 32px edges.
+  assert.equal(letterboxShare(2560, 1080), 0);
+  // Short landscapes, up to 500px tall, keep their own variants and no bars.
+  for (const [width, height] of [
+    [1000, 437],
+    [1100, 480],
+    [1147, 500],
+  ])
+    assert.equal(letterboxShare(width, height), 0, `${width}x${height}`);
+  assert.deepEqual(cinematicSafeArea(2560, 1080, { right: 840, bottom: 900 }, { top: 998 }), {
+    left: 876,
     top: 32,
-    width: 1013,
-    height: 758,
+    width: 1660,
+    height: 938,
   });
+  // A 16:9 desktop is cut to 2.39:1: the subject keeps 16px inside each bar.
+  const bar = ((900 - 1600 / 2.39) / 2 / 900) * 900;
+  near(letterboxShare(1600, 900) * 900, bar);
+  const desktop = cinematicSafeArea(1600, 900, { right: 527, bottom: 720 }, { top: 818 });
+  assert.equal(desktop.left, 563);
+  assert.equal(desktop.width, 1013);
+  near(desktop.top, bar + 16);
+  near(desktop.top + desktop.height, 900 - bar - 16);
 });
 
 test("hero layout rect ignores scroll and transforms so the safe area cannot drift", () => {
@@ -251,12 +278,8 @@ test("hero layout rect ignores scroll and transforms so the safe area cannot dri
   );
 });
 
-const ground = (x, z) =>
-  1.8 * Math.sin(0.055 * x) +
-  1.35 * Math.cos(0.052 * z) +
-  0.9 * Math.sin(0.031 * (x + z)) +
-  0.55 * Math.cos(0.018 * (x - z)) -
-  6.8;
+// The live scene's level plain and terraces.
+const ground = sceneGround;
 
 // A tower and tree on the test terrain, with the fit's heavy steps counted:
 // measuring computes bounding boxes and the clearance loop samples the ground.
@@ -387,8 +410,11 @@ test("an address-bar resize keeps a tour shot's fit as a top-anchored crop until
   f.apply(390, 844);
   const locked = f.controller.frame,
     shot = f.controller.shot,
-    before = f.projected(390, 844);
-  assert.equal(f.camera.fov, shot.fov);
+    before = f.projected(390, 844),
+    // The watch zooms through its hold (a dolly zoom): the lens at phase 0.3.
+    fov = shotPose(shot, 0.3).fov;
+  assert.ok(shot.move?.zoom, "a move that changes the lens");
+  assert.equal(f.camera.fov, fov);
 
   // The address bar shows: same width, 80px shorter, same hero.
   f.apply(390, 764);
@@ -396,11 +422,11 @@ test("an address-bar resize keeps a tour shot's fit as a top-anchored crop until
   const after = f.projected(390, 764);
   assert.ok(Math.abs(after.y - before.y) < 0.5, `target row ${before.y} -> ${after.y}`);
   assert.ok(Math.abs(after.scale - before.scale) < 0.5, `scale ${before.scale} -> ${after.scale}`);
-  const tan = Math.tan((shot.fov * Math.PI) / 360);
+  const tan = Math.tan((fov * Math.PI) / 360);
   assert.ok(Math.abs(f.camera.fov - (360 / Math.PI) * Math.atan((tan * 764) / 844)) < 1e-9);
   f.apply(390, 844);
   assert.equal(f.controller.frame, locked);
-  assert.equal(f.camera.fov, shot.fov, "an unchanged view keeps the exact shot fov");
+  assert.equal(f.camera.fov, fov, "an unchanged view keeps the exact shot fov");
 
   // The next cut, even to the same shot, fits the current viewport afresh.
   f.apply(390, 764);
@@ -410,7 +436,7 @@ test("an address-bar resize keeps a tour shot's fit as a top-anchored crop until
   fresh.apply(390, 764);
   assert.notEqual(f.controller.frame, locked);
   assert.deepEqual(f.controller.frame, fresh.controller.frame);
-  assert.equal(f.camera.fov, shot.fov);
+  assert.equal(f.camera.fov, fov);
   fresh.dispose();
   f.dispose();
 });
@@ -422,7 +448,11 @@ test("large height changes, rotation, a moved hero and still framing refit at on
     const locked = f.controller.frame;
     const [w, h, tourPhase] = resize(f);
     f.apply(w, h, tourPhase);
-    const refit = f.controller.frame !== locked && f.camera.fov === f.controller.shot.fov;
+    // A refit shows the move's own lens (without a tour, the breath's phase 0
+    // on its first frame), never one scaled to a kept fit.
+    const refit =
+      f.controller.frame !== locked &&
+      f.camera.fov === shotPose(f.controller.shot, tourPhase === null ? 0 : (tourPhase ?? 0.3)).fov;
     f.dispose();
     return refit;
   };
@@ -470,9 +500,12 @@ test("directed framing clips actual geometry and includes the entire lantern", (
   close(measured.region.min.x, 6.5);
 });
 
-test("all directed framing regions fit desktop and phone through both movement extremes with fixed camera height", () => {
+test("all directed framing regions fit desktop and phone through both movement extremes and every move's phases", () => {
+  // Without a tour a shot breathes over 48 seconds: phase 0, 0.5, 0.5 and 1.
+  const breath = (t) => 0.5 - 0.5 * Math.cos((t * Math.PI * 2) / 48);
   for (const [w, h] of [
     [1440, 900],
+    [2560, 1080],
     [390, 844],
     [844, 390],
   ])
@@ -500,15 +533,15 @@ test("all directed framing regions fit desktop and phone through both movement e
         controller.setStatus({ kind: "tree", status: "ready" });
         const shot = resolveDirectedShot(DIRECTED_SHOTS[subject][angle], w, h);
         const measured = measureShot(root, shot);
-        let frame;
-        for (const t of [0, 12, 36, 48]) {
-          assert.equal(controller.apply({ width: w, height: h, elapsedSeconds: t }), true);
-          if (frame)
-            assert.equal(controller.frame, frame, "framing is cached between animation frames");
-          frame = controller.frame;
+        const label = `${shot.name} ${w}x${h}`;
+        // The camera height and lens follow the pose: fixed for a drift, raised
+        // by a move's crane and set by its zoom.
+        const check = (phase) => {
+          const pose = shotPose(shot, phase);
           camera.updateMatrixWorld();
-          close(camera.position.y, -6 + 34 * shot.height);
-          assert.equal(camera.fov, shot.fov);
+          close(camera.position.y, -6 + 34 * shot.height + pose.crane * measured.height);
+          close(camera.fov, pose.fov);
+          if (!shot.move) assert.equal(camera.fov, shot.fov, label);
           for (let i = 0; i < measured.points.length; i += 3) {
             const v = new Vector3(...measured.points.slice(i, i + 3)).project(camera),
               x = ((v.x + 1) * w) / 2,
@@ -518,13 +551,38 @@ test("all directed framing regions fit desktop and phone through both movement e
                 x <= area.left + area.width &&
                 y >= area.top &&
                 y <= area.top + area.height,
-              `${shot.name} region escaped safe area`,
+              `${label} region escaped safe area at phase ${phase}`,
             );
           }
+        };
+        let frame;
+        for (const t of [0, 12, 36, 48]) {
+          assert.equal(controller.apply({ width: w, height: h, elapsedSeconds: t }), true);
+          if (frame)
+            assert.equal(controller.frame, frame, "framing is cached between animation frames");
+          frame = controller.frame;
+          check(shot.move ? breath(t) : 0);
         }
-        const center = camera.position.clone();
-        controller.apply({ width: w, height: h, elapsedSeconds: 17, reducedMotion: true });
-        close(camera.position.distanceTo(center), 0);
+        // A tour carries a move through each of its sampled phases.
+        if (shot.move)
+          for (const tourPhase of MOVE_PHASES) {
+            controller.apply({ width: w, height: h, elapsedSeconds: 50, tourPhase });
+            assert.equal(controller.frame, frame, "a tour keeps the fit");
+            check(tourPhase);
+          }
+        // Reduced motion holds one pose: the drift's centre, or a move's middle.
+        controller.apply({
+          width: w,
+          height: h,
+          elapsedSeconds: 0,
+          tourPhase: shot.move ? 0.5 : null,
+        });
+        const held = camera.position.clone();
+        for (const t of [17, 31]) {
+          controller.apply({ width: w, height: h, elapsedSeconds: t, reducedMotion: true });
+          close(camera.position.distanceTo(held), 0);
+          check(0.5);
+        }
         controller.apply({ width: w + 5, height: h, elapsedSeconds: 18 });
         assert.notEqual(frame, controller.frame, "resize invalidates cached fit");
         controller.dispose();
@@ -607,16 +665,24 @@ test("a foreground ridge cannot hide the roots in a low tree composition", () =>
 
 const closeTo = (a, b, eps = 1e-3) => assert.ok(Math.abs(a - b) < eps, `${a} != ${b}`);
 
-function tourSetup(interval = 5) {
+function tourSetup(interval = 5, { props = false } = {}) {
   const camera = new PerspectiveCamera(),
     tower = new Group(),
     tree = new Group();
   const material = new MeshBasicMaterial(),
     geometry = new BoxGeometry(10, 20, 10);
   for (const root of [tower, tree]) {
-    const mesh = new Mesh(geometry, material);
+    // With props, a slim trunk whose surface meets the detail shots' focal
+    // slabs, and a lantern for Lantern study, inside the trunk's bounds.
+    const mesh = new Mesh(props && root === tree ? new BoxGeometry(3, 20, 3) : geometry, material);
     mesh.position.y = 10;
     root.add(mesh);
+  }
+  if (props) {
+    const post = new Mesh(new BoxGeometry(0.8, 2.5, 0.8), material);
+    post.name = "tree-lantern";
+    post.position.set(1, 1.25, 1);
+    tree.add(post);
   }
   tree.position.set(55.1, 0, 36.1);
   const controller = createCinematicCamera({
@@ -633,6 +699,7 @@ function tourSetup(interval = 5) {
     controller.setStatus({ kind, status: "ready" });
   }
   const tour = createCameraTour({ camera: controller, interval });
+  const roots = { tower, tree };
   const render = (time, flags = {}) => {
     const phase = tour.update({ elapsedSeconds: time, ...flags });
     controller.apply({
@@ -644,25 +711,40 @@ function tourSetup(interval = 5) {
     });
     return phase;
   };
-  return { camera, controller, tour, render };
+  return { camera, controller, tour, render, roots };
 }
 
-test("each shot dollies in slowly within its fitted margin and holds still with reduced motion", () => {
+// Gallery detail keeps the old constant drift: it has no move.
+const DRIFT_SHOT = 3;
+
+test("a shot without a move dollies in slowly within its fitted margin and holds still with reduced motion", () => {
   const f = tourSetup(5);
+  assert.equal(f.controller.setPreviewShot("tower", DRIFT_SHOT), true);
   const phase0 = f.render(0);
   assert.equal(phase0, 0);
-  const start = f.camera.position.distanceTo(f.controller.target);
+  assert.equal(f.controller.shot.name, "Gallery detail");
+  assert.equal(f.controller.shot.move, undefined);
+  // The ground distance: the drift never changes the camera's height.
+  const reach = () =>
+    Math.hypot(
+      f.camera.position.x - f.controller.target.x,
+      f.camera.position.z - f.controller.target.z,
+    );
+  const start = reach(),
+    height = f.camera.position.y;
   f.render(4.99);
-  const end = f.camera.position.distanceTo(f.controller.target);
+  const end = reach();
   assert.ok(end < start * (1 - PUSH_IN * 0.9) && end > start * (1 - PUSH_IN * 1.01));
+  assert.equal(f.camera.position.y, height);
   f.render(2.5, { reducedMotion: true });
-  closeTo(f.camera.position.distanceTo(f.controller.target), start, 1e-6);
+  closeTo(reach(), start, 1e-6);
   f.tour.dispose();
   f.controller.dispose();
 });
 
-test("tour shots drift at a constant rate between unchanged start, middle and end poses", () => {
+test("shots without a move drift at a constant rate between unchanged start, middle and end poses", () => {
   const f = tourSetup(5);
+  assert.equal(f.controller.setPreviewShot("tower", DRIFT_SHOT), true);
   const pose = (tourPhase) => {
     f.controller.apply({ width: 1440, height: 900, elapsedSeconds: 0, tourPhase });
     const x = f.camera.position.x - f.controller.target.x,
@@ -671,6 +753,7 @@ test("tour shots drift at a constant rate between unchanged start, middle and en
   };
   const start = pose(0);
   const { shot, frame } = f.controller;
+  assert.equal(shot.move, undefined);
   const middle = pose(0.5),
     end = pose(1);
   closeTo(start.yaw, shot.azimuth - shot.arc / 2, 1e-6);
@@ -696,6 +779,74 @@ test("tour shots drift at a constant rate between unchanged start, middle and en
     closeTo(yaw, midYaw, 1e-6);
     closeTo(push, midPush, 1e-6);
   }
+  // The same drift is shotPose's pose for a shot without a move.
+  for (const phase of [0, 0.3, 1]) {
+    const expected = shotPose(shot, phase);
+    closeTo(expected.yaw, (phase - 0.5) * shot.arc, 1e-12);
+    closeTo(expected.scale, 1 - PUSH_IN * phase, 1e-12);
+    assert.equal(expected.fov, shot.fov);
+    assert.equal(expected.crane + expected.truck, 0);
+  }
+  f.tour.dispose();
+  f.controller.dispose();
+});
+
+test("a move carries the camera along shotPose's path through a tour hold, and holds its middle with reduced motion", () => {
+  const f = tourSetup(5, { props: true });
+  const right = new Vector3(),
+    along = new Vector3(),
+    forward = new Vector3(),
+    offset = new Vector3();
+  let moves = 0;
+  for (const [subject, shots] of Object.entries(DIRECTED_SHOTS))
+    for (const angle of shots.keys()) {
+      assert.equal(f.controller.setPreviewShot(subject, angle), true);
+      f.controller.apply({ width: 1440, height: 900, elapsedSeconds: 0, tourPhase: 0 });
+      const { shot, frame } = f.controller;
+      if (!shot.move) continue;
+      moves++;
+      const measured = measureShot(f.roots[subject], shot);
+      // Where the camera stands for a phase: its reach along the shot's yaw,
+      // slid sideways with its aim by the truck, raised by the crane.
+      const pose = (flags) => {
+        f.controller.apply({ width: 1440, height: 900, elapsedSeconds: 0, ...flags });
+        f.camera.updateMatrixWorld();
+        offset.copy(f.camera.position).sub(f.controller.target);
+        return {
+          y: f.camera.position.y,
+          fov: f.camera.fov,
+          position: f.camera.position.clone(),
+          forward: f.camera.getWorldDirection(forward).clone(),
+        };
+      };
+      for (const phase of [...MOVE_PHASES, 0.01, 0.99]) {
+        const expected = shotPose(shot, phase),
+          got = pose({ tourPhase: phase }),
+          yaw = ((shot.azimuth + expected.yaw) * Math.PI) / 180,
+          reach = frame.distance * expected.scale;
+        along.set(Math.cos(yaw), 0, Math.sin(yaw));
+        right.set(-Math.sin(yaw), 0, Math.cos(yaw));
+        const label = `${shot.name} at ${phase}`;
+        closeTo(offset.dot(along), reach, 1e-6);
+        closeTo(offset.dot(right), expected.truck * reach, 1e-6);
+        closeTo(got.y, frame.cameraY + expected.crane * measured.height, 1e-6);
+        closeTo(got.fov, expected.fov, 1e-9);
+        // The camera looks back along its yaw: a truck slides its aim with it.
+        if (!shot.tilt) {
+          const aim = f.controller.target.clone().addScaledVector(right, expected.truck * reach);
+          closeTo(got.forward.angleTo(aim.sub(got.position).normalize()), 0, 1e-6);
+        }
+        assert.ok(Number.isFinite(got.y), label);
+      }
+      // Reduced motion holds the middle pose, with or without a tour.
+      const middle = pose({ tourPhase: 0.5 });
+      for (const tourPhase of [0, 1, null]) {
+        const held = pose({ tourPhase, reducedMotion: true, elapsedSeconds: 7 });
+        closeTo(held.position.distanceTo(middle.position), 0, 1e-6);
+        closeTo(held.fov, middle.fov, 1e-9);
+      }
+    }
+  assert.ok(moves >= 7, "every tour shot moves on a desktop");
   f.tour.dispose();
   f.controller.dispose();
 });
@@ -727,26 +878,32 @@ test("a shot's tilt pitches the camera from its cut to the next, and holds the m
   closeTo(watch.forward.angleTo(watch.look), 0, 1e-6);
 
   assert.equal(f.controller.setPreviewShot("tower", 4), true);
-  // Driven by the tour: the cut opens at tilt[0].
+  // Driven by the tour: the cut opens at tilt[0]. A 1440x900 desktop is cut to
+  // 2.39:1, and its letterbox variant tilts from -4 to -1 (the base shot -5 to 0).
   assert.equal(f.render(0), 0);
   assert.equal(f.controller.shot.name, "Watch and tree");
-  assert.deepEqual(f.controller.shot.tilt, [-5, 0]);
-  closeTo(pose().pitch, -5, 1e-6);
+  assert.deepEqual(DIRECTED_SHOTS.tower[4].tilt, [-5, 0]);
+  assert.equal(f.controller.shot, resolveDirectedShot(DIRECTED_SHOTS.tower[4], 1440, 900));
+  assert.deepEqual(f.controller.shot.tilt, [-4, -1]);
+  const [from, to] = f.controller.shot.tilt,
+    half = (from + to) / 2;
+  closeTo(pose().pitch, from, 1e-6);
   assert.equal(f.render(2.5), 0.5);
-  closeTo(pose().pitch, -2.5, 1e-6);
+  closeTo(pose().pitch, half, 1e-6);
 
   const start = at({ tourPhase: 0 }),
     middle = at({ tourPhase: 0.5 }),
     end = at({ tourPhase: 1 });
-  closeTo(start.pitch, -5, 1e-6);
-  closeTo(middle.pitch, -2.5, 1e-6);
-  closeTo(end.pitch, 0, 1e-6);
+  closeTo(start.pitch, from, 1e-6);
+  closeTo(middle.pitch, half, 1e-6);
+  closeTo(end.pitch, to, 1e-6);
   assert.ok(start.forward.y < end.forward.y, "the cut looks lower than the next cut");
-  closeTo(end.forward.angleTo(end.look), 0, 1e-6);
+  // At the next cut the lens sits `to` degrees off its aim.
+  closeTo(end.forward.angleTo(end.look), (Math.abs(to) * Math.PI) / 180, 1e-6);
 
   // Reduced motion holds the midpoint, with or without a tour phase.
   for (const tourPhase of [0, 1, null])
-    closeTo(at({ tourPhase, reducedMotion: true }).pitch, -2.5, 1e-6);
+    closeTo(at({ tourPhase, reducedMotion: true }).pitch, half, 1e-6);
   f.tour.dispose();
   f.controller.dispose();
 });
@@ -773,4 +930,220 @@ test("the nine directed shots keep their names and distinct viewpoints", () => {
     assert.ok(shot.height >= 0.1 && shot.height <= 0.7);
     assert.ok(shot.fov >= 30 && shot.fov <= 46);
   }
+});
+
+// Every resolved form of the shots with a move: base, letterbox, portrait,
+// squat, landscape and compact variants.
+function movingShots() {
+  const shots = new Set();
+  for (const base of [...DIRECTED_SHOTS.tower, ...DIRECTED_SHOTS.tree])
+    for (const [w, h] of [
+      [1440, 900],
+      [2560, 1080],
+      [1440, 501],
+      [390, 844],
+      [1080, 1920],
+      [700, 480],
+      [932, 430],
+      [568, 320],
+    ]) {
+      const shot = resolveDirectedShot(base, w, h);
+      if (shot.move) shots.add(shot);
+    }
+  return [...shots];
+}
+
+test("a move eases in and out yet keeps (1 - ease) of its mean speed at each cut", () => {
+  const shots = movingShots();
+  assert.ok(shots.length >= 10);
+  for (const shot of shots) {
+    const ease = shot.move.ease ?? 0;
+    assert.ok(ease >= 0 && ease < 1, `${shot.name}: the camera never stops`);
+    // The travelled share of the path, read back from the pose's yaw.
+    const travelled = (phase) => shotPose(shot, phase).yaw / shot.arc + 0.5;
+    near(travelled(0), 0);
+    near(travelled(0.5), 0.5);
+    near(travelled(1), 1);
+    const step = 1e-4,
+      speed = (phase) => (travelled(phase + step) - travelled(phase)) / step;
+    // The mean speed is 1 (the whole path over the whole hold).
+    for (const phase of [0, 1 - step]) {
+      assert.ok(speed(phase) >= (1 - ease) * (1 - 1e-3), `${shot.name} at ${phase}`);
+      assert.ok(speed(phase) > 0);
+    }
+    assert.ok(speed(0.5 - step / 2) > 1, `${shot.name}: faster mid-hold than on average`);
+    let previous = -Infinity;
+    for (let k = 0; k <= 100; k++) {
+      const value = travelled(k / 100);
+      assert.ok(value > previous, `${shot.name}: forward only`);
+      previous = value;
+    }
+  }
+});
+
+test("a move's truck, crane, dolly and zoom run from their first value at the cut to the second at the next", () => {
+  for (const shot of movingShots()) {
+    const { move } = shot,
+      start = shotPose(shot, 0),
+      end = shotPose(shot, 1),
+      dollyZoom = (fov) =>
+        move.dollyZoom && move.zoom
+          ? Math.tan((move.zoom[0] * Math.PI) / 360) / Math.tan((fov * Math.PI) / 360)
+          : 1;
+    near(start.yaw, -shot.arc / 2);
+    near(end.yaw, shot.arc / 2);
+    near(start.truck, move.truck?.[0] ?? 0);
+    near(end.truck, move.truck?.[1] ?? 0);
+    near(start.crane, move.crane?.[0] ?? 0);
+    near(end.crane, move.crane?.[1] ?? 0);
+    near(start.fov, move.zoom?.[0] ?? shot.fov);
+    near(end.fov, move.zoom?.[1] ?? shot.fov);
+    near(start.scale, (move.dolly?.[0] ?? 1) * dollyZoom(start.fov));
+    near(end.scale, (move.dolly?.[1] ?? 1) * dollyZoom(end.fov));
+    // The fit holds the move's sampled phases.
+    const poses = fitPoses(shot);
+    assert.equal(poses.length, MOVE_PHASES.length);
+    poses.forEach((pose, i) => assert.deepEqual(pose, shotPose(shot, MOVE_PHASES[i])));
+  }
+  assert.deepEqual(MOVE_PHASES, [0, 0.25, 0.5, 0.75, 1]);
+  assert.ok(Object.isFrozen(MOVE_PHASES));
+  // The spec'd moves: Portrait trucks left to right and cranes up while pushing in.
+  const portrait = DIRECTED_SHOTS.tree[0];
+  near(shotPose(portrait, 0).truck, -0.07);
+  near(shotPose(portrait, 1).truck, 0.07);
+  near(shotPose(portrait, 1).crane, 0.13);
+  near(shotPose(portrait, 1).scale, 0.92);
+  // Threshold starts below its fitted height and rises above it.
+  near(shotPose(DIRECTED_SHOTS.tower[1], 0).crane, -0.18);
+  near(shotPose(DIRECTED_SHOTS.tower[1], 1).crane, 0.1);
+  // Root and lantern pulls back.
+  const root = DIRECTED_SHOTS.tree[3];
+  assert.ok(shotPose(root, 1).scale > shotPose(root, 0).scale);
+  // A drift's fit holds the arc's extremes either way at the fitted distance.
+  const drift = DIRECTED_SHOTS.tower[DRIFT_SHOT];
+  assert.deepEqual(
+    fitPoses(drift).map((pose) => pose.yaw),
+    [-drift.arc, 0, drift.arc],
+  );
+  assert.ok(fitPoses(drift).every((pose) => pose.scale === 1 && pose.fov === drift.fov));
+});
+
+test("The watch's dolly zoom keeps the lookout's size while the ranges behind it swell", () => {
+  const f = setup("tower", 1440, 900);
+  f.apply(0, { tourPhase: 0 });
+  const shot = f.controller.shot;
+  assert.equal(shot.name, "The watch");
+  assert.equal(shot.move.dollyZoom, true);
+  assert.ok(shot.move.zoom[1] < shot.move.zoom[0], "it narrows the lens as it pulls back");
+  const row = (point) => ((1 - point.clone().project(f.camera).y) * 900) / 2;
+  // Pixels per world unit of height at the target, and at a point 200 units
+  // behind it along the view.
+  const scales = (tourPhase) => {
+    f.apply(0, { tourPhase });
+    f.camera.updateMatrixWorld(true);
+    const target = f.controller.target,
+      back = target
+        .clone()
+        .sub(f.camera.position)
+        .setY(0)
+        .normalize()
+        .multiplyScalar(200)
+        .add(target);
+    const up = new Vector3(0, 1, 0);
+    return {
+      subject: row(target) - row(target.clone().add(up)),
+      far: row(back) - row(back.clone().add(up)),
+    };
+  };
+  const first = scales(0);
+  for (const phase of MOVE_PHASES) {
+    const { subject, far } = scales(phase);
+    assert.ok(Math.abs(subject / first.subject - 1) < 0.02, `subject at ${phase}: ${subject}`);
+    if (phase > 0) assert.ok(far > first.far, `the background swells by ${phase}`);
+  }
+  const last = scales(1);
+  assert.ok(last.far / first.far > 1.1, "the background swells by over a tenth");
+  // And the camera really travels: it pulls back as the lens narrows.
+  f.apply(0, { tourPhase: 0 });
+  const start = f.camera.position.distanceTo(f.controller.target);
+  f.apply(0, { tourPhase: 1 });
+  assert.ok(f.camera.position.distanceTo(f.controller.target) > start * 1.15);
+  // The fog clears from the move's nearest pose, wherever the camera is now.
+  const nearest = Math.min(...fitPoses(shot).map((pose) => pose.scale));
+  near(f.fog.near, Math.max(62, f.controller.frame.distance * nearest * 0.88));
+  assert.ok(f.fog.near < f.controller.frame.distance * shotPose(shot, 1).scale);
+  f.controller.dispose();
+});
+
+test("widescreen bars cut desktops to 2.39:1, never phones, portrait, narrow or ultrawide screens", () => {
+  assert.ok(Object.isFrozen(LETTERBOX));
+  assert.deepEqual(LETTERBOX, { ratio: 2.39, minWidth: 1000 });
+  for (const [width, height] of [
+    // Phones, both ways round.
+    [390, 844],
+    [844, 390],
+    [932, 430],
+    [568, 320],
+    // Portrait screens and tablets.
+    [1080, 1920],
+    [768, 1024],
+    [1024, 1366],
+    // Narrow landscape windows.
+    [999, 700],
+    [800, 600],
+    // Ultrawide: 2560x1080 and 3440x1440 are within 2% of 2.39:1.
+    [2560, 1080],
+    [3440, 1440],
+    [1000, 435],
+  ])
+    assert.equal(letterboxShare(width, height), 0, `${width}x${height}`);
+  for (const [width, height] of [
+    [1440, 900],
+    [1920, 1080],
+    [1280, 800],
+    [1024, 768],
+  ]) {
+    const share = letterboxShare(width, height);
+    near(share, (height - width / 2.39) / (2 * height));
+    assert.ok(share > 0.02, `${width}x${height}`);
+    // What is left between the bars is 2.39:1.
+    near(width / (height * (1 - 2 * share)), 2.39);
+  }
+  near(letterboxShare(1440, 900), (900 - 1440 / 2.39) / 1800);
+
+  // The safe area keeps 16px inside each bar on desktops (32px edges without).
+  const bar = letterboxShare(1440, 900) * 900,
+    area = cinematicSafeArea(1440, 900, { right: 420, bottom: 220 }, { top: 900 - 40 });
+  near(area.top, bar + 16);
+  near(area.top + area.height, 900 - bar - 16);
+  const open = cinematicSafeArea(1440, 501, { right: 420, bottom: 220 }, { top: 501 });
+  assert.equal(open.top, 32);
+  assert.equal(open.top + open.height, 501 - 32);
+  // Phones and stacked layouts keep their own edges.
+  const phone = cinematicSafeArea(390, 844, { right: 299, bottom: 177 }, { top: 738 });
+  assert.equal(phone.top, 201);
+
+  // The bars pick each shot's letterbox variant, built once; shots without one
+  // keep their base form.
+  for (const base of [...DIRECTED_SHOTS.tower, ...DIRECTED_SHOTS.tree]) {
+    const boxed = resolveDirectedShot(base, 1440, 900);
+    if (base.letterbox) {
+      assert.notEqual(boxed, base);
+      assert.deepEqual({ ...boxed }, { ...base, ...base.letterbox });
+      assert.equal(resolveDirectedShot(base, 1920, 1080), boxed, `${base.name}: built once`);
+    } else assert.equal(boxed, base, base.name);
+    // Without bars the base shot shows on a wide desktop.
+    assert.equal(resolveDirectedShot(base, 2560, 1080), base);
+  }
+  assert.deepEqual(
+    [...DIRECTED_SHOTS.tower, ...DIRECTED_SHOTS.tree].filter((s) => s.letterbox).map((s) => s.name),
+    ["The watch", "Watch and tree", "Close-up"],
+  );
+  // A letterboxed window is never short, so the bars' variant never displaces a
+  // landscape phone's.
+  for (const [width, height] of [
+    [1440, 900],
+    [1024, 768],
+  ])
+    assert.ok(height > 500 && letterboxShare(width, height) > 0);
 });

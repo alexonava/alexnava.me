@@ -7,11 +7,11 @@
 // (rock-scatter.js estateContacts()). sink: how far prop-scale.js sets the tree
 // into the soil below its lowest vertex (terrain-build.js TREE_SINK restates it).
 export const ESTATE = Object.freeze({
-  tower: Object.freeze({ x: 0, z: 0, lift: 1, flat: 9, blend: 20, clear: 16 }),
+  tower: Object.freeze({ x: 0, z: 0, lift: 1.36, flat: 9, blend: 20, clear: 16 }),
   tree: Object.freeze({
     x: 55.1,
     z: 36.1,
-    lift: 0.75,
+    lift: 0,
     flat: 6,
     blend: 14,
     root: 3.2,

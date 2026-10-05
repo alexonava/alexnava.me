@@ -7,10 +7,12 @@ import {
   chooseCinematicView,
   chooseCinematicAngle,
   cinematicSafeArea,
+  letterboxShare,
   createCinematicCamera,
   isStackedLayout,
   layoutRect,
 } from "./cinematic.js";
+import { LANTERN_MOOD, RIM_UNIFORMS, setRim, shotLight } from "./film-light.js";
 import {
   configureGroundShading,
   createSlateContacts,
@@ -945,6 +947,32 @@ const ORBIT_SPEED = 0.06;
         }
         if (cinematicApplied) lookTarget.copy(cinematic.target);
         else lookTarget.set(0, lookAtHeight, 0);
+        // The shot's light mood, and the rim's moon direction from this lens.
+        {
+          const mood = shotLight(filmActive && cinematicApplied ? cinematic.shot : null);
+          rendering.setShotLight?.(mood);
+          if (LANTERN_MOOD.value !== mood.lantern) {
+            LANTERN_MOOD.value = mood.lantern;
+            treeArchitecture?.refreshLantern?.();
+          }
+          setRim(filmActive ? mood.rim : 0);
+          camera.updateMatrixWorld();
+          RIM_UNIFORMS.babelKeyView.value
+            .set(...WORLD.SUN_DIRECTION)
+            .transformDirection(camera.matrixWorldInverse);
+        }
+        // The shot's lens and the film's bars and grain follow the shot on screen.
+        const post = rendering.postprocessPipeline;
+        post.setLens?.(cinematicApplied ? cinematic.shot?.lens : null);
+        post.setBars?.(
+          filmActive && cinematicApplied ? letterboxShare(viewport.width, viewport.height) : 0,
+        );
+        if (
+          !reducedMotion &&
+          !visitorHold?.paused &&
+          !document.body.hasAttribute("data-panel-open")
+        )
+          post.setFilmTime?.(elapsedTime);
         // The shot's ground calm follows the shot on screen, so it changes on a cut.
         slateCalmFor(
           groundContacts,

@@ -200,15 +200,16 @@ test("a capture frame keeps the outgoing shot, then the cut dissolves in from th
   assert.equal(f.name, "The watch");
   const { zoom, ...capture } = f.transition;
   assert.deepEqual(capture, { capture: true, cut: false, progress: 1 });
-  // The kept frame pushes in at the outgoing shot's drift rate: PUSH_IN over its 9 s hold.
-  close(zoom, PUSH_IN / 9);
+  // The watch's dolly-zoom keeps its subject's size at the cut, so the kept
+  // frame takes only the minimum push.
+  close(zoom, TOUR_TRANSITION.minZoom);
   close(f.render(9.016), 0.016 / 9, 1e-6);
   assert.equal(f.name, "Portrait");
   const cut = f.transition;
   assert.equal(cut.cut, true);
   assert.equal(cut.capture, false);
   close(cut.progress, 0.016, 1e-6);
-  close(cut.zoom, PUSH_IN / 9);
+  close(cut.zoom, TOUR_TRANSITION.minZoom);
   f.render(9.5);
   close(f.transition.progress, 0.5, 1e-6);
   assert.equal(f.transition.cut, false);
@@ -223,12 +224,13 @@ test("a capture frame keeps the outgoing shot, then the cut dissolves in from th
   assert.equal(f.name, "Portrait");
   f.dispose();
 
-  // tour=3 dissolves over 30% of its hold, and its kept frame pushes in faster.
+  // tour=3 dissolves over 30% of its hold; The watch's dolly-zoom still keeps
+  // its subject's size, so its kept frame takes the minimum push.
   const quick = setup(3);
   quick.render(0);
   quick.render(3);
   assert.equal(quick.transition.capture, true);
-  close(quick.transition.zoom, (PUSH_IN * 0.9) / 3);
+  close(quick.transition.zoom, TOUR_TRANSITION.minZoom);
   quick.render(3.45);
   assert.equal(quick.name, "Portrait");
   close(quick.transition.progress, 0.5, 1e-6);

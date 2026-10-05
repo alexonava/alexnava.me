@@ -6,10 +6,15 @@ import {
   fitShot,
   isStackedLayout,
   resolveDirectedShot,
+  fitPoses,
+  shotPose,
+  PUSH_IN,
+  LETTERBOX,
+  letterboxShare,
 } from "./directed-shots.js";
 
 // The bootstrap reads the page's layout from here too.
-export { isStackedLayout };
+export { isStackedLayout, PUSH_IN, LETTERBOX, letterboxShare };
 
 export function chooseCinematicView(search = "") {
   return resolveSceneView(search);
@@ -28,9 +33,10 @@ export function chooseCinematicAngle(search = "", view = null) {
 // takes the full width above it.
 export function cinematicSafeArea(width, height, hero, nav) {
   const stacked = isStackedLayout(width, height),
-    above = !stacked && height > width;
-  const top = stacked ? Math.max(24, (hero?.bottom || 180) + 24) : 32;
-  const floor = Math.min(height - 32, (nav?.top || height - 120) - 28);
+    above = !stacked && height > width,
+    bar = letterboxShare(width, height) * height;
+  const top = stacked ? Math.max(24, (hero?.bottom || 180) + 24) : Math.max(32, bar + 16);
+  const floor = Math.min(height - Math.max(32, bar + 16), (nav?.top || height - 120) - 28);
   const bottom = Math.max(top + 120, above ? Math.min(floor, (hero?.top || height) - 24) : floor);
   const left =
     stacked || above
@@ -58,8 +64,6 @@ export function layoutRect(element) {
     height = element.offsetHeight || 0;
   return { left, top, right: left + width, bottom: top + height, width, height, x: left, y: top };
 }
-// Largest dolly-in fraction of the fitted distance within one shot.
-export const PUSH_IN = 0.045;
 // A tour shot keeps its fit through height-only resizes up to this share (a
 // phone's address bar) until the next cut.
 const DEFER_HEIGHT_SHARE = 0.2;
@@ -93,6 +97,14 @@ function keepsFit(lock, shot, measured, area, width, height, defer) {
   const extent = (Math.min(1, (shot.margin ?? 0.85) / (1 - PUSH_IN)) * a.height) / 2;
   return a.top + a.height / 2 + extent <= height - 16;
 }
+// A move's nearest pose, as a share of its fitted distance (for the fog).
+const nearestScales = new WeakMap();
+function nearestScale(shot) {
+  let scale = nearestScales.get(shot);
+  if (scale === undefined)
+    nearestScales.set(shot, (scale = Math.min(...fitPoses(shot).map((pose) => pose.scale))));
+  return scale;
+}
 export function createCinematicCamera({
   camera,
   fog,
@@ -107,7 +119,8 @@ export function createCinematicCamera({
     started = null,
     applied = false;
   let status = { tower: "pending", tree: "pending" };
-  const target = new Vector3();
+  const target = new Vector3(),
+    aim = new Vector3();
   // The fit in use: { shot, measured, fitted, width, height, area, areaKey }.
   let lock = null;
   let currentShot = null;
@@ -159,13 +172,27 @@ export function createCinematicCamera({
       fitted.cameraY = cameraY;
       if (!getGroundY) break;
       let clearanceY = cameraY;
-      // Sample the whole sweep and the dolly-in range (up to PUSH_IN).
-      for (let step = -4; step <= 4; step++) {
-        const yaw = ((shot.azimuth + (step * shot.arc) / 4) * Math.PI) / 180;
-        for (const reach of [1, 1 - PUSH_IN]) {
-          const x = measured.target.x + Math.cos(yaw) * fitted.distance * reach,
-            z = measured.target.z + Math.sin(yaw) * fitted.distance * reach;
-          clearanceY = Math.max(clearanceY, getGroundY(x, z) + 0.8);
+      // Sample the whole sweep and the dolly-in range (up to PUSH_IN), or a
+      // move's path: its camera, raised by its crane, keeps the clearance.
+      const path = shot.move
+        ? Array.from({ length: 9 }, (_, i) => shotPose(shot, i / 8))
+        : [-4, -3, -2, -1, 0, 1, 2, 3, 4].flatMap((step) =>
+            [1, 1 - PUSH_IN].map((scale) => ({
+              yaw: (step * shot.arc) / 4,
+              scale,
+              crane: 0,
+              truck: 0,
+            })),
+          );
+      for (const pose of path) {
+        const yaw = ((shot.azimuth + pose.yaw) * Math.PI) / 180,
+          reach = fitted.distance * pose.scale,
+          side = pose.truck * reach,
+          lift = pose.crane * measured.height;
+        {
+          const x = measured.target.x + Math.cos(yaw) * reach - Math.sin(yaw) * side,
+            z = measured.target.z + Math.sin(yaw) * reach + Math.cos(yaw) * side;
+          clearanceY = Math.max(clearanceY, getGroundY(x, z) + 0.8 - lift);
           // A low camera can be above the earth yet look through a hill.
           // Keep footing views clear without moving or resizing the subject.
           if (shot.region[0] === 0) {
@@ -176,7 +203,7 @@ export function createCinematicCamera({
                 x * (1 - t) + targetFoot.x * t,
                 z * (1 - t) + targetFoot.z * t,
               );
-              clearanceY = Math.max(clearanceY, (groundY + 0.08 - footY * t) / (1 - t));
+              clearanceY = Math.max(clearanceY, (groundY + 0.08 - footY * t) / (1 - t) - lift);
             }
           }
         }
@@ -327,28 +354,59 @@ export function createCinematicCamera({
       const { fitted } = lock;
       currentShot = shot;
       target.copy(measured.target);
-      // Tour shots drift at a constant rate so the camera never settles before
-      // a cut; a 2.5% breath follows the 48-second arc without a tour. A tour
-      // shot's dolly-in reaches 4.5% at its cut; the fit keeps a 15% margin.
+      // A shot with a move travels its path (below). Others drift at a constant
+      // rate so the camera never settles before a cut; a 2.5% breath follows the
+      // 48-second arc without a tour. A tour shot's dolly-in reaches 4.5% at its
+      // cut; the fit keeps a 15% margin.
       const phase = Math.min(1, Math.max(0, tourPhase ?? 0));
-      const arc = reducedMotion
-        ? 0
-        : tourPhase !== null
-          ? (phase - 0.5) * shot.arc
-          : Math.sin(((elapsedSeconds - started) * Math.PI * 2) / 48) * shot.arc;
-      const push = reducedMotion
-        ? 0
-        : tourPhase !== null
-          ? PUSH_IN * phase
-          : 0.025 * (0.5 - 0.5 * Math.cos(((elapsedSeconds - started) * Math.PI * 2) / 48));
-      const distance = fitted.distance * (1 - push);
-      const yaw = ((shot.azimuth + arc) * Math.PI) / 180;
-      camera.position.set(
-        target.x + Math.cos(yaw) * distance,
-        fitted.cameraY,
-        target.z + Math.sin(yaw) * distance,
-      );
-      camera.lookAt(target);
+      let fov = shot.fov,
+        nearest = fitted.distance;
+      if (shot.move) {
+        // A move travels its path through a tour hold; without a tour it
+        // breathes out and back over the 48-second arc; reduced motion holds
+        // its middle pose.
+        const pose = shotPose(
+          shot,
+          reducedMotion
+            ? 0.5
+            : tourPhase !== null
+              ? phase
+              : 0.5 - 0.5 * Math.cos(((elapsedSeconds - started) * Math.PI * 2) / 48),
+        );
+        const yaw = ((shot.azimuth + pose.yaw) * Math.PI) / 180,
+          reach = fitted.distance * pose.scale,
+          side = pose.truck * reach,
+          rightX = -Math.sin(yaw) * side,
+          rightZ = Math.cos(yaw) * side;
+        camera.position.set(
+          target.x + Math.cos(yaw) * reach + rightX,
+          fitted.cameraY + pose.crane * measured.height,
+          target.z + Math.sin(yaw) * reach + rightZ,
+        );
+        aim.set(target.x + rightX, target.y, target.z + rightZ);
+        camera.lookAt(aim);
+        fov = pose.fov;
+        nearest = fitted.distance * nearestScale(shot);
+      } else {
+        const arc = reducedMotion
+          ? 0
+          : tourPhase !== null
+            ? (phase - 0.5) * shot.arc
+            : Math.sin(((elapsedSeconds - started) * Math.PI * 2) / 48) * shot.arc;
+        const push = reducedMotion
+          ? 0
+          : tourPhase !== null
+            ? PUSH_IN * phase
+            : 0.025 * (0.5 - 0.5 * Math.cos(((elapsedSeconds - started) * Math.PI * 2) / 48));
+        const distance = fitted.distance * (1 - push);
+        const yaw = ((shot.azimuth + arc) * Math.PI) / 180;
+        camera.position.set(
+          target.x + Math.cos(yaw) * distance,
+          fitted.cameraY,
+          target.z + Math.sin(yaw) * distance,
+        );
+        camera.lookAt(target);
+      }
       // A shot's tilt pitches the camera from tilt[0] at its cut to tilt[1] at
       // the next; without a tour it breathes between them over the 48-second arc.
       if (shot.tilt) {
@@ -367,16 +425,15 @@ export function createCinematicCamera({
         centerY = lock.area.top + lock.area.height / 2;
       camera.fov =
         height === lock.height
-          ? shot.fov
-          : (360 / Math.PI) *
-            Math.atan((Math.tan((shot.fov * Math.PI) / 360) * height) / lock.height);
+          ? fov
+          : (360 / Math.PI) * Math.atan((Math.tan((fov * Math.PI) / 360) * height) / lock.height);
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
       camera.projectionMatrix.elements[8] = -((2 * centerX) / width - 1);
       camera.projectionMatrix.elements[9] = -(1 - (2 * centerY) / height);
       camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
       if (fog) {
-        fog.near = Math.max(originalFog.near, fitted.distance * 0.88);
+        fog.near = Math.max(originalFog.near, nearest * 0.88);
         fog.far = Math.max(originalFog.far, fitted.distance + 85);
       }
       applied = true;

@@ -13,12 +13,15 @@
     return xx * xx * (3 - 2 * xx);
   };
 
+  // A nearly level plain (the owner's note of 2026-10-04: one level, two at
+  // most): a faint swell, 15% of the old dunes, about the tree's footing height.
   function dune(xx, yy) {
     return (
-      1.8 * Math.sin(0.055 * xx) +
-      1.35 * Math.cos(0.052 * yy) +
-      0.9 * Math.sin(0.031 * (xx + yy)) +
-      0.55 * Math.cos(0.018 * (xx - yy))
+      1.25 +
+      0.27 * Math.sin(0.055 * xx) +
+      0.2025 * Math.cos(0.052 * yy) +
+      0.135 * Math.sin(0.031 * (xx + yy)) +
+      0.0825 * Math.cos(0.018 * (xx - yy))
     );
   }
 
@@ -41,8 +44,8 @@
   // flat, blend): this file runs without imports, and a test holds them equal.
   scene.groundHeight = function (xx, yy) {
     let height = dune(xx, yy);
-    height = terrace(xx, yy, height, 0, 0, 1.0, 9, 20);
-    height = terrace(xx, yy, height, 55.1, 36.1, 0.75, 6, 14);
+    height = terrace(xx, yy, height, 0, 0, 1.36, 9, 20);
+    height = terrace(xx, yy, height, 55.1, 36.1, 0.0, 6, 14);
     return height;
   };
 

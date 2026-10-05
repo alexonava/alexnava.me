@@ -1,4 +1,8 @@
 import {
+  CustomBlending,
+  OneFactor,
+  SrcAlphaFactor,
+  ZeroFactor,
   BoxGeometry,
   Color,
   CylinderGeometry,
@@ -7,7 +11,9 @@ import {
   Group,
   Mesh,
   MeshStandardMaterial,
+  PlaneGeometry,
   PointLight,
+  ShaderMaterial,
   SphereGeometry,
   TorusGeometry,
   Vector3,
@@ -16,6 +22,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import { smoothTreeNormals } from "./tree-normals.js";
 import { ESTATE } from "./estate-layout.js";
 import { SLATE_TEXT_GUARD } from "./mud-ground.js";
+import { LANTERN_MOOD, RIM_UNIFORMS } from "./film-light.js";
 
 export const ARCHITECTURE = Object.freeze({
   treeHeight: 22,
@@ -188,7 +195,12 @@ const COMPLETE_TOWER_RADIUS_CAP = 20.4;
 const TREE_LANTERN_INTENSITY = 4.0;
 // The film lantern's reach: a candle's warm pool about its foot on the wet
 // soil, the near roots and stones, out to about six units.
-export const LANTERN_REACH = Object.freeze({ distance: 14, decay: 1 });
+export const LANTERN_REACH = Object.freeze({ distance: 10, decay: 1.7 });
+// The film lantern's strength: a hot core at its foot falling off fast.
+export const LANTERN_FILM_INTENSITY = 8.2;
+// The flame's anamorphic streak: world length and height, peak opacity.
+export const FLAME_STREAK = Object.freeze({ length: 4.2, height: 0.3, strength: 0.75, near: 0.9 });
+
 const TREE_FILL_INTENSITY = 2.4;
 
 export function sourceMesh(asset) {
@@ -268,9 +280,11 @@ roughnessFactor = mix(roughnessFactor, ${ROOT_MOSS.roughness.toFixed(2)}, babelM
     };
     material.userData.babelGrade = { role, uniforms };
     material.customProgramCacheKey = () =>
-      `babel-estate-material-v7-${role}-${roughnessFloor}-${roughnessCeiling}-${directRoughness}${guarded ? "-text" : ""}`;
+      `babel-estate-material-v8-${role}-${roughnessFloor}-${roughnessCeiling}-${directRoughness}${guarded ? "-text" : ""}`;
+    const rimmed = role === "tower" || role === "tree";
     material.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, uniforms);
+      if (rimmed) Object.assign(shader.uniforms, RIM_UNIFORMS);
       shader.vertexShader = shader.vertexShader
         .replace(
           "#include <common>",
@@ -291,6 +305,7 @@ roughnessFactor = mix(roughnessFactor, ${ROOT_MOSS.roughness.toFixed(2)}, babelM
           uniform float babelLift;
           uniform float babelFilm;
           uniform vec3 babelEnvironment;
+          ${rimmed ? "uniform vec4 babelRimLight;\n          uniform vec3 babelKeyView;" : ""}
           varying vec3 babelLocal;
           varying vec3 babelLocalN;
           ${role === "tree" ? ROOT_MOSS_GLSL : ""}`,
@@ -322,6 +337,15 @@ roughnessFactor = mix(roughnessFactor, ${ROOT_MOSS.roughness.toFixed(2)}, babelM
 ${ROOT_MOSS_MAP}`
               : ""
           }`,
+        );
+      // The moon rim (film-light.js): a cool edge where the surface turns from
+      // the lens, strongest with the moon behind the subject.
+      if (rimmed)
+        shader.fragmentShader = shader.fragmentShader.replace(
+          "#include <lights_fragment_end>",
+          `#include <lights_fragment_end>
+          float babelRim = pow(1.0-saturate(dot(geometryNormal, geometryViewDir)), 4.0);
+          reflectedLight.directDiffuse += babelRimLight.rgb*babelFilm*babelRim*mix(babelRimLight.w, 1.0, saturate(dot(-geometryViewDir, babelKeyView)));`,
         );
       // Without the environment, the wet bark's faint grazing sheen.
       if (role === "tree")
@@ -597,6 +621,49 @@ export function createTreeArchitecture({
     light.position.y = 1.665;
     light.castShadow = false;
     lantern.add(light);
+    // The lens's anamorphic streak across the flame (film only), riding on the
+    // practical, so it follows the supplied lantern's flame and its flicker. A
+    // billboard drawn `near` units toward the lens, clear of the lantern's own
+    // glass and cage, yet still behind any root in front.
+    const streakUniforms = { uStrength: { value: 0 } };
+    const streak = new Mesh(
+      ownGeometry(new PlaneGeometry(1, 1)),
+      ownMaterial(
+        new ShaderMaterial({
+          name: "LanternStreak",
+          uniforms: streakUniforms,
+          vertexShader: `varying vec2 vUv;
+void main(){
+vUv=uv*2.-1.;
+vec4 mv=modelViewMatrix*vec4(0.,0.,0.,1.);
+mv.xy+=position.xy*vec2(${FLAME_STREAK.length.toFixed(2)},${FLAME_STREAK.height.toFixed(2)});
+mv.xyz+=normalize(-mv.xyz)*${FLAME_STREAK.near.toFixed(2)};
+gl_Position=projectionMatrix*mv;
+}`,
+          fragmentShader: `uniform float uStrength;
+varying vec2 vUv;
+void main(){
+float x=abs(vUv.x), y=abs(vUv.y);
+float line=exp(-y*y*30.)*(.7*exp(-x*3.6)+.5*exp(-x*x*45.))*(1.-smoothstep(.8,1.,x));
+gl_FragColor=vec4(vec3(1.,.66,.34)*line*uStrength,1.);
+}`,
+          // Added light that keeps the film's depth layer in alpha.
+          blending: CustomBlending,
+          blendSrc: SrcAlphaFactor,
+          blendDst: OneFactor,
+          blendSrcAlpha: ZeroFactor,
+          blendDstAlpha: OneFactor,
+          depthWrite: false,
+          transparent: true,
+          fog: false,
+        }),
+      ),
+    );
+    streak.name = "lantern-streak";
+    streak.frustumCulled = false;
+    streak.renderOrder = 5;
+    streak.userData.excludeFromShot = true;
+    light.add(streak);
     root.add(lantern);
     const fillLight = new PointLight(0xffd49a, TREE_FILL_INTENSITY, 30, 1.25);
     fillLight.name = "tree-fill-light";
@@ -614,8 +681,12 @@ export function createTreeArchitecture({
       originalEmission = material.emissiveIntensity;
     function applyTreeLighting() {
       const intensityScale = currentProfile.lighting?.practicalIntensityScale ?? 1;
-      lanternBaseIntensity = (film ? 4.8 : TREE_LANTERN_INTENSITY) * intensityScale;
-      light.intensity = lanternBaseIntensity * lanternFlicker;
+      lanternBaseIntensity =
+        (film ? LANTERN_FILM_INTENSITY : TREE_LANTERN_INTENSITY) * intensityScale;
+      light.intensity = lanternBaseIntensity * lanternFlicker * (film ? LANTERN_MOOD.value : 1);
+      streakUniforms.uStrength.value = film
+        ? FLAME_STREAK.strength * lanternFlicker * LANTERN_MOOD.value
+        : 0;
       fillLight.intensity = TREE_FILL_INTENSITY * (film ? 0.95 : 1) * intensityScale;
       fillLight.color.copy(originalFillColor);
       if (film) fillLight.color.setHex(0xc2d2ec);
@@ -640,10 +711,22 @@ export function createTreeArchitecture({
       fillLight,
       // Per-frame flicker changes only the existing practical. Reapplying the
       // whole tree treatment here would upload its normals every frame.
+      // Reapplies the lantern's mood (film-light.js LANTERN_MOOD) at the
+      // current flicker, for a lantern with no flame module driving it.
+      refreshLantern() {
+        if (disposed) return;
+        light.intensity = lanternBaseIntensity * lanternFlicker * (film ? LANTERN_MOOD.value : 1);
+        streakUniforms.uStrength.value = film
+          ? FLAME_STREAK.strength * lanternFlicker * LANTERN_MOOD.value
+          : 0;
+      },
       setLanternFlicker(value = 1) {
         if (disposed) return;
         lanternFlicker = Math.max(0.88, Math.min(1.12, Number.isFinite(value) ? value : 1));
-        light.intensity = lanternBaseIntensity * lanternFlicker;
+        light.intensity = lanternBaseIntensity * lanternFlicker * (film ? LANTERN_MOOD.value : 1);
+        streakUniforms.uStrength.value = film
+          ? FLAME_STREAK.strength * lanternFlicker * LANTERN_MOOD.value
+          : 0;
       },
       setFilmTreatment(active) {
         const next = Boolean(active);

@@ -12,6 +12,7 @@ import {
   WebGLRenderer,
 } from "three";
 import { createNightEnvironment } from "./night-environment.js";
+import { FILM_LIGHT } from "./film-light.js";
 import { createPostprocessPipeline } from "./postprocess.js";
 import { disposeSceneRuntimeResources } from "./runtime.js";
 
@@ -157,18 +158,20 @@ export function createSceneRendering({
   let baselineAmbientIntensity = ambientLight.intensity;
   // Film: the supplied maps already carry daylight, so the key drops and cools
   // while fill, sky and ambient rise to open eaves, brackets and shadow ground.
+  let shotMood = { key: 1, fill: 1 };
   function applyLightingTreatment() {
     sunLight.color.copy(baselineKeyColor);
     if (groundedLighting) sunLight.color.setHex(0xd9e2f2);
     if (filmLighting) sunLight.color.setHex(0xd9def0);
+    const film = filmLighting ? FILM_LIGHT : null;
     sunLight.intensity =
-      baselineKeyIntensity * (groundedLighting ? 0.8 : 1) * (filmLighting ? 0.64 : 1);
+      baselineKeyIntensity * (groundedLighting ? 0.8 : 1) * (film ? film.key * shotMood.key : 1);
     fillLight.intensity =
-      baselineFillIntensity * (groundedLighting ? 1.5 : 1) * (filmLighting ? 1.66 : 1);
-    hemisphereLight.intensity = baselineHemisphereIntensity * (filmLighting ? 1.25 : 1);
+      baselineFillIntensity * (groundedLighting ? 1.5 : 1) * (film ? film.fill * shotMood.fill : 1);
+    hemisphereLight.intensity = baselineHemisphereIntensity * (film ? film.hemisphere : 1);
     hemisphereLight.groundColor.copy(baselineGroundColor);
     if (filmLighting) hemisphereLight.groundColor.setHex(0x37404a);
-    ambientLight.intensity = baselineAmbientIntensity;
+    ambientLight.intensity = baselineAmbientIntensity * (film ? film.ambient : 1);
     // Lit, relief-mapped earth shows acne bands at grazing moonlight; bias more.
     sunLight.shadow.bias = filmLighting ? -0.0016 : baselineShadowBias;
     sunLight.shadow.normalBias = filmLighting ? 0.09 : baselineNormalBias;
@@ -261,6 +264,16 @@ export function createSceneRendering({
       shadow.right = shadow.top = extent;
       shadow.updateProjectionMatrix();
       sunLight.shadow.needsUpdate = true;
+    },
+    // The shot's mood over the film balance (film-light.js); intensities only,
+    // so a cut never recompiles or redraws the shadow map.
+    setShotLight(mood = null) {
+      const key = mood?.key ?? 1,
+        fill = mood?.fill ?? 1;
+      if (disposed || (key === shotMood.key && fill === shotMood.fill)) return false;
+      shotMood = { key, fill };
+      applyLightingTreatment();
+      return true;
     },
     setGroundedLighting(active) {
       if (disposed) return false;
