@@ -342,6 +342,8 @@ export function makeLoopGeometry(radius = SOLAR_RADIUS, seed = 7143) {
   return geometry;
 }
 
+// The anamorphic streak across the star: SOLAR_RADIUS times length and height.
+export const SOLAR_STREAK = Object.freeze({ length: 26, height: 1.4, strength: 0.32 });
 export function createSolarBody({ parent, camera, position, profile = {} }) {
   const root = new Group(),
     rotating = new Group(),
@@ -389,6 +391,33 @@ export function createSolarBody({ parent, camera, position, profile = {} }) {
   corona.name = "solar-corona";
   corona.renderOrder = 102;
   root.add(corona);
+  // The lens's anamorphic streak: a thin warm line across the star, breathing
+  // with it (SOLAR_STREAK: length and height in radii, strength).
+  const streakMaterial = new ShaderMaterial({
+    name: "SolarStreak",
+    uniforms: { uBreath, uStrength: { value: SOLAR_STREAK.strength } },
+    vertexShader: `varying vec2 vUv;
+void main(){vUv=uv*2.-1.;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
+    fragmentShader: `uniform float uBreath, uStrength;
+varying vec2 vUv;
+void main(){
+float x=abs(vUv.x), y=abs(vUv.y);
+float line=exp(-y*y*28.)*(exp(-x*3.2)*.8+exp(-x*x*40.)*.6)*(1.-smoothstep(.85,1.,x));
+gl_FragColor=vec4(vec3(1.,.62,.32)*line*uStrength*uBreath,1.);
+}`,
+    transparent: true,
+    depthWrite: false,
+    depthTest: true,
+    fog: false,
+    blending: AdditiveBlending,
+  });
+  const streak = new Mesh(
+    new PlaneGeometry(SOLAR_RADIUS * SOLAR_STREAK.length, SOLAR_RADIUS * SOLAR_STREAK.height),
+    streakMaterial,
+  );
+  streak.name = "solar-streak";
+  streak.renderOrder = 103;
+  root.add(streak);
   // Prominences keep a 2.2 CSS-pixel width, tuned at DPR 1. Their offset
   // is in NDC, so the CSS viewport sets it whatever the target's pixel ratio.
   const resolution = new Vector2(1, 1);
@@ -444,6 +473,7 @@ export function createSolarBody({ parent, camera, position, profile = {} }) {
         camera.getWorldQuaternion(corona.quaternion);
         root.getWorldQuaternion(parentQuaternion).invert();
         corona.quaternion.premultiply(parentQuaternion);
+        streak.quaternion.copy(corona.quaternion);
       }
       return true;
     },

@@ -101,6 +101,9 @@ void main() {
   float skySide = uLayerRelief * step(texel.a, 0.02) * step(0.2, nearest) * step(nearest, 0.5);
   color = mix(color, vec3(0.035, 0.055, 0.095), inkContour * uInkMix * (1.0 - max(relief, skySide)));
   }
+  // A soft shoulder: highlights past the knee roll off toward white, not clip.
+  vec3 over = max(color - 0.75, 0.0);
+  color = min(color, 0.75) + 0.25 * (1.0 - exp(-over / 0.25));
 
   gl_FragColor = vec4(clamp(color, 0.0, 1.0), texel.a);
 }
@@ -135,6 +138,11 @@ const VIGNETTE_GRAIN_SHADER = {
     uCodeTexel: { value: new Vector2(1, 1) },
     uPrevScale: { value: 1 },
     uPrevOrigin: { value: new Vector2(0.5, 0.5) },
+    uCssTexel: { value: new Vector2(1, 1) },
+    uBlur: { value: 0 },
+    uBlurPrev: { value: 0 },
+    uBars: { value: 0 },
+    uGrainTime: { value: 0 },
   },
   vertexShader: PASS_VERTEX_SHADER,
   fragmentShader: `
@@ -153,7 +161,31 @@ uniform vec2 uStagger;
 uniform vec2 uCodeTexel;
 uniform float uPrevScale;
 uniform vec2 uPrevOrigin;
+uniform vec2 uCssTexel;
+uniform float uBlur;
+uniform float uBlurPrev;
+uniform float uBars;
+uniform float uGrainTime;
 varying vec2 vUv;
+
+// The lens's shallow focus: the sky and the ranges (film depth layers below
+// the ground's) soften over a disc of radius CSS px. Only taps from the same
+// layer or a farther one count, so the subject never bleeds into the sky.
+vec4 lensBlur(sampler2D map, vec2 uv, float radius) {
+  vec4 centre = texture2D(map, uv);
+  if (radius <= 0.0) return centre;
+  vec3 sum = centre.rgb;
+  float weight = 1.0;
+  for (int i = 1; i < 13; i++) {
+    float r = sqrt(float(i) / 12.0) * radius, a = float(i) * 2.39996;
+    vec4 tap = texture2D(map, uv + vec2(cos(a), sin(a)) * r * uCssTexel);
+    float w = step(tap.a, centre.a + 0.1);
+    sum += tap.rgb * w;
+    weight += w;
+  }
+  // The ground and the subject stay sharp.
+  return vec4(mix(sum / weight, centre.rgb, step(0.5, centre.a)), centre.a);
+}
 
 float hash(vec2 p) {
   return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
@@ -166,7 +198,7 @@ float layerCode(sampler2D map, vec2 uv) {
 }
 
 void main() {
-  vec4 texel = texture2D(tDiffuse, vUv);
+  vec4 texel = uLayered > 0.5 ? lensBlur(tDiffuse, vUv, uBlur) : texture2D(tDiffuse, vUv);
   float protection = uTextProtection, w = 1.0;
   if (uProgress < 1.0) {
     vec2 prevUv = uPrevOrigin + (vUv - uPrevOrigin) * uPrevScale;
@@ -176,7 +208,7 @@ void main() {
       span = uStagger.y;
     }
     w = smoothstep(start, start + span, uProgress);
-    texel = mix(texture2D(tPrev, prevUv), texel, w);
+    texel = mix(uLayered > 0.5 ? lensBlur(tPrev, prevUv, uBlurPrev) : texture2D(tPrev, prevUv), texel, w);
     protection = mix(uTextProtectionFrom, uTextProtection, w);
   }
   vec3 color = texel.rgb;
@@ -188,12 +220,14 @@ void main() {
   }
 
   if (uGrainEnabled == 1) {
-    float grain = hash(floor(vUv * vec2(1280.0, 720.0))) - 0.5;
+    float grain = hash(floor(vUv * vec2(1280.0, 720.0)) + uGrainTime * vec2(17.0, 29.0)) - 0.5;
     color += grain * uGrainStrength;
   }
 
   float textShade = smoothstep(1.0 - uTextBottom - .12, 1.0 - uTextBottom + .10, vUv.y);
   color *= 1.0 - .28 * protection * textShade;
+  // Widescreen bars: uBars of the height at the top and the bottom.
+  color = mix(color, vec3(.012, .014, .022), step(min(vUv.y, 1.0 - vUv.y), uBars));
   gl_FragColor = vec4(clamp(color, 0.0, 1.0), uLayered > 0.5 ? 1.0 : texel.a);
 }
 `,
@@ -387,7 +421,7 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
       ? {
           ...baseline,
           bloomStrength: 0.2,
-          contrast: 1.015,
+          contrast: 1.06,
           grainStrength: 0.008,
           highlightWarmMix: 0.12,
           shadowCoolMix: 0.16,
@@ -459,6 +493,7 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
     cssWidth = width;
     cssHeight = height;
     gradingPass.uniforms.uTexelSize.value.set(1 / Math.max(1, width), 1 / Math.max(1, height));
+    finalUniforms.uCssTexel.value.set(1 / Math.max(1, width), 1 / Math.max(1, height));
   }
 
   resize(size.width, size.height);
@@ -524,6 +559,8 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
       const wasIdle = phase === IDLE;
       if (transition?.capture === true) {
         if (phase !== BLENDING) phase = ARMED;
+        // The kept frame dissolves with the outgoing shot's focus.
+        finalUniforms.uBlurPrev.value = finalUniforms.uBlur.value;
       } else if (progress >= 1 || phase === ARMED) {
         phase = IDLE;
       } else if (phase === CAPTURED) {
@@ -533,6 +570,19 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
       finalUniforms.uPrevScale.value = 1 / (1 + zoom * progress);
       syncProtection();
       if (wasIdle !== (phase === IDLE)) applyProfile(currentProfile);
+    },
+    // The shot's lens: background blur in CSS px, set with the shot (on a cut).
+    setLens(lens = null) {
+      const blur = lens?.blur ?? 0;
+      finalUniforms.uBlur.value = film ? blur : 0;
+    },
+    // Widescreen bars as a share of the height at each edge.
+    setBars(share = 0) {
+      finalUniforms.uBars.value = Math.max(0, share);
+    },
+    // The grain's frame, 24 a second; held while the scene holds still.
+    setFilmTime(seconds = 0) {
+      finalUniforms.uGrainTime.value = Math.floor(seconds * 24) % 997;
     },
     setTextProtection(active, bottom = 0.25) {
       protectionTarget = film && active ? 1 : 0;
