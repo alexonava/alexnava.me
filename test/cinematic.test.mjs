@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { sceneGround } from "./support/ground.mjs";
 import {
   BoxGeometry,
   Mesh,
@@ -277,12 +278,8 @@ test("hero layout rect ignores scroll and transforms so the safe area cannot dri
   );
 });
 
-const ground = (x, z) =>
-  1.8 * Math.sin(0.055 * x) +
-  1.35 * Math.cos(0.052 * z) +
-  0.9 * Math.sin(0.031 * (x + z)) +
-  0.55 * Math.cos(0.018 * (x - z)) -
-  6.8;
+// The live scene's level plain and terraces.
+const ground = sceneGround;
 
 // A tower and tree on the test terrain, with the fit's heavy steps counted:
 // measuring computes bounding boxes and the clearance loop samples the ground.
@@ -882,12 +879,12 @@ test("a shot's tilt pitches the camera from its cut to the next, and holds the m
 
   assert.equal(f.controller.setPreviewShot("tower", 4), true);
   // Driven by the tour: the cut opens at tilt[0]. A 1440x900 desktop is cut to
-  // 2.39:1, and its letterbox variant tilts from -3 (the base shot from -5).
+  // 2.39:1, and its letterbox variant tilts from -4 to -1 (the base shot -5 to 0).
   assert.equal(f.render(0), 0);
   assert.equal(f.controller.shot.name, "Watch and tree");
   assert.deepEqual(DIRECTED_SHOTS.tower[4].tilt, [-5, 0]);
   assert.equal(f.controller.shot, resolveDirectedShot(DIRECTED_SHOTS.tower[4], 1440, 900));
-  assert.deepEqual(f.controller.shot.tilt, [-3, 0]);
+  assert.deepEqual(f.controller.shot.tilt, [-4, -1]);
   const [from, to] = f.controller.shot.tilt,
     half = (from + to) / 2;
   closeTo(pose().pitch, from, 1e-6);
@@ -901,7 +898,8 @@ test("a shot's tilt pitches the camera from its cut to the next, and holds the m
   closeTo(middle.pitch, half, 1e-6);
   closeTo(end.pitch, to, 1e-6);
   assert.ok(start.forward.y < end.forward.y, "the cut looks lower than the next cut");
-  closeTo(end.forward.angleTo(end.look), 0, 1e-6);
+  // At the next cut the lens sits `to` degrees off its aim.
+  closeTo(end.forward.angleTo(end.look), (Math.abs(to) * Math.PI) / 180, 1e-6);
 
   // Reduced motion holds the midpoint, with or without a tour phase.
   for (const tourPhase of [0, 1, null])

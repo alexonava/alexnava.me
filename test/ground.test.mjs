@@ -802,7 +802,7 @@ test("the wet hollows restate the terrain dune field exactly", async () => {
   const dune = shader.vertexShader.match(/vSlateDune = (.*);/)[1];
   assert.match(
     shader.fragmentShader,
-    /varying float vSlateDune;[^]*float slateHollow = 1\.0 - smoothstep\(-3\.2, -1\.0, vSlateDune\);/,
+    /varying float vSlateDune;[^]*float slateHollow = 1\.0 - smoothstep\(0\.77, 1\.1, vSlateDune\);/,
   );
   assert.equal(dune.split(" + ").length, TERRAIN_DUNE_TERMS.length);
   const glsl = new Function(
@@ -1055,4 +1055,18 @@ test("only the wide shots calm the plain, written in place, and the calm is off 
     assert.equal(shader.fragmentShader.includes("gl_FragColor.rgb *= 1.0-slateCalm.x"), film);
     material.dispose();
   }
+});
+
+test("the terrain chunk restates the plain's level", async () => {
+  const { TERRAIN_BASE: chunk } = await import("../src/scene/terrain-build.js");
+  const { TERRAIN_BASE, TERRAIN_DUNE_TERMS } = await import("../src/scene/mud-ground.js");
+  assert.equal(chunk, TERRAIN_BASE);
+  // The plain's level is the dune field's constant term.
+  assert.deepEqual(TERRAIN_DUNE_TERMS[0], {
+    amplitude: TERRAIN_BASE,
+    wave: "cos",
+    frequency: 0,
+    sx: 0,
+    sz: 0,
+  });
 });

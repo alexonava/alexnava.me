@@ -3,6 +3,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
+import { sceneGround } from "./support/ground.mjs";
 import { glbAsset, modelBytes } from "./support/glb.mjs";
 import {
   Group,
@@ -46,12 +47,8 @@ import {
   RANGE_SKY,
 } from "../src/scene/mountain-build.js";
 
-const ground = (x, z) =>
-  1.8 * Math.sin(0.055 * x) +
-  1.35 * Math.cos(0.052 * z) +
-  0.9 * Math.sin(0.031 * (x + z)) +
-  0.55 * Math.cos(0.018 * (x - z)) -
-  6.8;
+// The live scene's level plain and terraces.
+const ground = sceneGround;
 
 // The delivered models' actual normalized, quantized vertices: texture
 // decoding is irrelevant to projection; component types and normalization are not.

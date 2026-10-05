@@ -102,7 +102,7 @@ export const DIRECTED_SHOTS = {
     },
     {
       name: "Watch and tree",
-      letterbox: { tilt: [-3, 0] },
+      letterbox: { tilt: [-4, -1], height: 0.35 },
       light: { key: 1.15, fill: 0.45, rim: 2.4 },
       move: { dolly: [1.08, 0.94], ease: 0.5 },
       // The whole lookout from beyond the tree, the star beside it: the one

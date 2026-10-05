@@ -77,6 +77,7 @@ import {
   shadeSlateRoots,
   SLATE_SOIL,
   SPUR,
+  TERRAIN_BASE,
   terrainHeight,
   terrainLift,
   TREE_FOOTING,
@@ -199,7 +200,8 @@ test("root supports preserve coarse terrain vertices, map scale and bounded mesh
     // Nothing of the knoll reaches a coarse vertex beyond the fine grid.
     if (r < 88 && x % 3 === 0 && z % 3 === 0 && !refined(x, z))
       assert.equal(b.getZ(i), Math.fround(base(x, z)));
-    if (r > 184) assert.equal(b.getZ(i), 0);
+    // Past the foothills the terrain lies at the plain's level.
+    if (r > 184) assert.equal(b.getZ(i), Math.fround(TERRAIN_BASE));
     assert.ok(Math.abs(hills.attributes.normal.getZ(i)) <= 1);
     assert.ok(Math.abs(hills.attributes.uv.getX(i) - (x / 384 + 0.5)) < 1e-7);
     assert.ok(Math.abs(hills.attributes.uv.getY(i) - (0.5 - z / 384)) < 1e-7);
@@ -209,7 +211,7 @@ test("root supports preserve coarse terrain vertices, map scale and bounded mesh
     assert.ok(foothillHeight(88 * Math.cos(a), 88 * Math.sin(a)) < 1e-20);
     assert.ok(foothillHeight(88.001 * Math.cos(a), 88.001 * Math.sin(a)) < 0.001);
   }
-  assert.ok(hills.boundingBox.max.z < 9);
+  assert.ok(hills.boundingBox.max.z < 9 + TERRAIN_BASE);
   assert.ok(foothillHeight(106.8, 106.8) < 1.5, "keep the lantern's north-east horizon low");
   // The root rectangle and the pond's sub-grid (each of its 0.75 cells cut
   // POND_STEPS x POND_STEPS, each cell beside it a fan) and their stitching.
@@ -1128,9 +1130,10 @@ test("settling the roots seats the tufts at once and never holds the reveal for 
       [TREE_FOOTING.x - 6, TREE_FOOTING.z + 4],
     ])
       assert.ok(Math.abs(height(x, z) - base(x, z) - lift(x, z)) < 1e-9);
-    assert.ok(
-      height(TREE_FOOTING.x + 10, TREE_FOOTING.z) > base(TREE_FOOTING.x + 10, TREE_FOOTING.z) + 0.5,
-    );
+    // On the level plain the knoll beside the tree is a low base, never a step.
+    const knoll =
+      height(TREE_FOOTING.x + 10, TREE_FOOTING.z) - base(TREE_FOOTING.x + 10, TREE_FOOTING.z);
+    assert.ok(knoll >= 0 && knoll < 0.3, `knoll ${knoll}`);
     // Each blade either rises with the plate, berms and banks (darker in the
     // tree's shade), or, under a root or in the trunk's deep cavity,
     // collapses to a point just under the ground.
