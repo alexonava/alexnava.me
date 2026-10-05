@@ -399,7 +399,7 @@ export function createSolarBody({ parent, camera, position, profile = {} }) {
     name: "SolarStreak",
     uniforms: { uBreath, uStrength: { value: SOLAR_STREAK.strength } },
     vertexShader: `varying vec2 vUv;
-void main(){vUv=uv*2.-1.;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
+void main(){vUv=uv*2.-1.;vec4 mv=modelViewMatrix*vec4(position,1.);mv.xyz+=normalize(-mv.xyz)*${glsl(SOLAR_RADIUS * 1.1)};gl_Position=projectionMatrix*mv;}`,
     fragmentShader: `uniform float uBreath, uStrength;
 varying vec2 vUv;
 void main(){

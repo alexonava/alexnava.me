@@ -67,7 +67,7 @@ export function createCameraTour({
   // there (a dolly-in, a narrowing lens), so the kept frame carries it on; a
   // pull-out or a dolly-zoom's steady subject keeps the minimum.
   const closingPush = () => {
-    const shot = DIRECTED_SHOTS[camera.current]?.[camera.angle];
+    const shot = camera.shot ?? DIRECTED_SHOTS[camera.current]?.[camera.angle];
     if (!shot?.move) return PUSH_IN;
     const a = shotPose(shot, 0.98),
       b = shotPose(shot, 1),
