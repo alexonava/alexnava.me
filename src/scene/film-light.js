@@ -24,14 +24,15 @@ export function shotLight(shot) {
 // The moon rim on the lookout and the tree (architecture.js): a cool Fresnel
 // edge, strongest where the moon is behind the subject from the lens.
 // light: rgb strength and, in w, the share it keeps facing the moon; key: the
-// moon's direction in view space, kept current per frame; text: the share of
-// the tree's rim taken off behind the name, the intro and About, easing out
-// over RIM.text of the screen's smaller side (only the bark has the text's
-// boxes; the lookout's rim is whole).
+// moon's direction in view space, kept current per frame; textReach: how far
+// past the name, the intro and About (a share of the screen's smaller side)
+// the tree's rim eases back in where a shot takes it off the text (its mood's
+// rimText, the uniform babelRimText; only the bark has the text's boxes, so
+// the lookout's rim is whole).
 export const RIM = Object.freeze({
   color: Object.freeze([0.19, 0.24, 0.36]),
   floor: 0.2,
-  text: 0.2,
+  textReach: 0.2,
 });
 export const RIM_UNIFORMS = Object.freeze({
   babelRimLight: { value: new Vector4(0, 0, 0, RIM.floor) },

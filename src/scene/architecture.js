@@ -137,13 +137,14 @@ if (babelBehind > 0.0) {
 }
 `;
 
-// The bark's moon rim behind the text, a factor on the rim (film-light.js
-// RIM.text): the shot's share (babelRimText) comes off behind the name and
-// intro and behind About, easing out over a fifth of the screen's smaller side.
+// The bark's moon rim behind the text, a factor on the rim: the shot's share
+// (babelRimText, its mood's rimText) comes off behind the name and intro and
+// behind About, easing out over a fifth of the screen's smaller side
+// (film-light.js RIM.textReach).
 // Close-up's rim-led crown (rim 2) put its cool lit branch edges behind the
 // name and the trunk's lit edge behind About, the brightest pixels of their
 // backdrops; at 0 the factor is exactly 1.
-export const BARK_RIM_TEXT = `*(1.0-babelRimText*max(slateBehind(slateText, vSlateClip.xy/vSlateClip.w*.5+.5, ${RIM.text.toFixed(2)}), slateBehind(slateAbout, vSlateClip.xy/vSlateClip.w*.5+.5, ${RIM.text.toFixed(2)})))`;
+export const BARK_RIM_TEXT = `*(1.0-babelRimText*max(slateBehind(slateText, vSlateClip.xy/vSlateClip.w*.5+.5, ${RIM.textReach.toFixed(2)}), slateBehind(slateAbout, vSlateClip.xy/vSlateClip.w*.5+.5, ${RIM.textReach.toFixed(2)})))`;
 
 // Moonlight grade for the supplied maps, which carry baked daylight and
 // ambient occlusion: cooler, less saturated, compressed sunlit highlights and
@@ -246,13 +247,15 @@ export function editableGeometry(source) {
   return geometry;
 }
 
-// textGuard: the ground's createSlateContacts() uniforms, for the bark's guard
-// beside About (BARK_TEXT_LIGHTS); the tree takes it, the tower and the rocks never.
 // The pale wood's cool grey under a shot's `pale` (film-light.js PALE), first,
 // on the map's own colour.
 const PALE_GLSL = `
           float babelPaleLuma = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(babelPaleLuma)*vec3(${PALE.tint.map((v) => v.toFixed(3)).join(", ")}), babelPale*smoothstep(${PALE.luma.map((v) => v.toFixed(3)).join(", ")}, babelPaleLuma));`;
+
+// textGuard: the ground's createSlateContacts() uniforms, for the bark's guards
+// beside About (BARK_TEXT_LIGHTS) and, by the shot's share, its moon rim behind
+// all the text (BARK_RIM_TEXT); the tree takes it, the tower and the rocks never.
 export function materialFor(asset, anisotropy, role, textGuard = null) {
   const material = sourceMesh(asset).material.clone();
   const profile = MATERIAL_PROFILES[role] || {};

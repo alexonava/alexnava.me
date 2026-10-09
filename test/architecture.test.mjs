@@ -667,7 +667,7 @@ test("beside About the bark's highlights from the lantern and the crown's fill p
   );
   assert.doesNotMatch(BARK_TEXT_LIGHTS, /\bslateText\b|directionalLights|spotLights/);
   // The moon rim comes off behind the name, the intro and About by the shot's
-  // share (Close-up's), easing out over RIM.text; at 0 the factor is 1.
+  // share (Close-up's), easing out over RIM.textReach; at 0 the factor is 1.
   assert.equal(shader.uniforms.babelRimText, RIM_UNIFORMS.babelRimText);
   assert.match(shader.fragmentShader, /uniform float babelRimText;/);
   assert.ok(
@@ -675,7 +675,7 @@ test("beside About the bark's highlights from the lantern and the crown's fill p
       `reflectedLight.directDiffuse += babelRimLight.rgb*babelFilm*babelRim${BARK_RIM_TEXT}*mix(babelRimLight.w, 1.0,`,
     ),
   );
-  const reach = RIM.text.toFixed(2);
+  const reach = RIM.textReach.toFixed(2);
   assert.equal(
     BARK_RIM_TEXT,
     `*(1.0-babelRimText*max(slateBehind(slateText, vSlateClip.xy/vSlateClip.w*.5+.5, ${reach}), slateBehind(slateAbout, vSlateClip.xy/vSlateClip.w*.5+.5, ${reach})))`,
@@ -687,6 +687,18 @@ test("beside About the bark's highlights from the lantern and the crown's fill p
   material.onBeforeCompile(composed);
   assert.ok(composed.fragmentShader.includes("if(shaftGoboGain>0.){"));
   assert.ok(composed.fragmentShader.includes(BARK_TEXT_LIGHTS));
+  assert.ok(composed.fragmentShader.includes(BARK_RIM_TEXT));
+  // Everything the rim's factor reads is declared before main().
+  const main = composed.fragmentShader.indexOf("void main");
+  for (const declared of [
+    "uniform float babelRimText;",
+    "varying vec4 vSlateClip;",
+    "uniform vec4 slateText, slateAbout;",
+    "float slateBehind(vec4 r,vec2 v,float d)",
+  ]) {
+    const at = composed.fragmentShader.indexOf(declared);
+    assert.ok(at >= 0 && at < main, declared);
+  }
   gobo.restore();
   // Without the ground's uniforms the bark is as it was, on its own program.
   const plain = createTreeArchitecture({ asset: boxAsset(), groundHeight: () => 0 }),
