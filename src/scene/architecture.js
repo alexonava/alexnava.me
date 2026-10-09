@@ -22,7 +22,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import { smoothTreeNormals } from "./tree-normals.js";
 import { ESTATE } from "./estate-layout.js";
 import { SLATE_TEXT_GUARD } from "./mud-ground.js";
-import { LANTERN_MOOD, PALE, PALE_MOOD, RIM_UNIFORMS } from "./film-light.js";
+import { LANTERN_MOOD, PALE, PALE_MOOD, RIM, RIM_UNIFORMS } from "./film-light.js";
 
 export const ARCHITECTURE = Object.freeze({
   treeHeight: 22,
@@ -137,6 +137,15 @@ if (babelBehind > 0.0) {
 }
 `;
 
+// The bark's moon rim behind the text, a factor on the rim: the shot's share
+// (babelRimText, its mood's rimText) comes off behind the name and intro and
+// behind About, easing out over a fifth of the screen's smaller side
+// (film-light.js RIM.textReach).
+// Close-up's rim-led crown (rim 2) put its cool lit branch edges behind the
+// name and the trunk's lit edge behind About, the brightest pixels of their
+// backdrops; at 0 the factor is exactly 1.
+export const BARK_RIM_TEXT = `*(1.0-babelRimText*max(slateBehind(slateText, vSlateClip.xy/vSlateClip.w*.5+.5, ${RIM.textReach.toFixed(2)}), slateBehind(slateAbout, vSlateClip.xy/vSlateClip.w*.5+.5, ${RIM.textReach.toFixed(2)})))`;
+
 // Moonlight grade for the supplied maps, which carry baked daylight and
 // ambient occlusion: cooler, less saturated, compressed sunlit highlights and
 // lifted black undersides. Uniform values switch without a shader rebuild.
@@ -238,13 +247,15 @@ export function editableGeometry(source) {
   return geometry;
 }
 
-// textGuard: the ground's createSlateContacts() uniforms, for the bark's guard
-// beside About (BARK_TEXT_LIGHTS); the tree takes it, the tower and the rocks never.
 // The pale wood's cool grey under a shot's `pale` (film-light.js PALE), first,
 // on the map's own colour.
 const PALE_GLSL = `
           float babelPaleLuma = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(babelPaleLuma)*vec3(${PALE.tint.map((v) => v.toFixed(3)).join(", ")}), babelPale*smoothstep(${PALE.luma.map((v) => v.toFixed(3)).join(", ")}, babelPaleLuma));`;
+
+// textGuard: the ground's createSlateContacts() uniforms, for the bark's guards
+// beside About (BARK_TEXT_LIGHTS) and, by the shot's share, its moon rim behind
+// all the text (BARK_RIM_TEXT); the tree takes it, the tower and the rocks never.
 export function materialFor(asset, anisotropy, role, textGuard = null) {
   const material = sourceMesh(asset).material.clone();
   const profile = MATERIAL_PROFILES[role] || {};
@@ -312,6 +323,7 @@ roughnessFactor = mix(roughnessFactor, ${ROOT_MOSS.roughness.toFixed(2)}, babelM
           uniform float babelFilm;
           uniform vec3 babelEnvironment;
           ${rimmed ? "uniform vec4 babelRimLight;\n          uniform vec3 babelKeyView;" : ""}
+          ${guarded ? "uniform float babelRimText;" : ""}
           varying vec3 babelLocal;
           varying vec3 babelLocalN;
           ${
@@ -350,13 +362,15 @@ ${ROOT_MOSS_MAP}`
           }`,
         );
       // The moon rim (film-light.js): a cool edge where the surface turns from
-      // the lens, strongest with the moon behind the subject.
+      // the lens, strongest with the moon behind the subject. On the guarded
+      // bark the shot's babelRimText takes it off behind the text's boxes
+      // (BARK_RIM_TEXT); at 0, every shot but Close-up, the rim is whole.
       if (rimmed)
         shader.fragmentShader = shader.fragmentShader.replace(
           "#include <lights_fragment_end>",
           `#include <lights_fragment_end>
           float babelRim = pow(1.0-saturate(dot(geometryNormal, geometryViewDir)), 4.0);
-          reflectedLight.directDiffuse += babelRimLight.rgb*babelFilm*babelRim*mix(babelRimLight.w, 1.0, saturate(dot(-geometryViewDir, babelKeyView)));`,
+          reflectedLight.directDiffuse += babelRimLight.rgb*babelFilm*babelRim${guarded ? BARK_RIM_TEXT : ""}*mix(babelRimLight.w, 1.0, saturate(dot(-geometryViewDir, babelKeyView)));`,
         );
       // Without the environment, the wet bark's faint grazing sheen.
       if (role === "tree")

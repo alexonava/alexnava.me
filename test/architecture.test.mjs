@@ -19,6 +19,7 @@ import {
   materialFor,
   applyFilmGrade,
   BARK_TEXT_LIGHTS,
+  BARK_RIM_TEXT,
   ENVIRONMENT_ROLES,
   LANTERN_REACH,
   LANTERN_FILM_INTENSITY,
@@ -36,7 +37,7 @@ import {
 } from "../src/scene/mud-ground.js";
 import { goboHook } from "../src/scene/light-shafts.js";
 import { createPropScale } from "../src/scene/prop-scale.js";
-import { LANTERN_MOOD, PALE, PALE_MOOD } from "../src/scene/film-light.js";
+import { LANTERN_MOOD, PALE, PALE_MOOD, RIM, RIM_UNIFORMS } from "../src/scene/film-light.js";
 
 const asset = () => {
   const scene = new Group();
@@ -665,6 +666,20 @@ test("beside About the bark's highlights from the lantern and the crown's fill p
       guardAt("float slateBehindAbout(vec2 v){") >= 0,
   );
   assert.doesNotMatch(BARK_TEXT_LIGHTS, /\bslateText\b|directionalLights|spotLights/);
+  // The moon rim comes off behind the name, the intro and About by the shot's
+  // share (Close-up's), easing out over RIM.textReach; at 0 the factor is 1.
+  assert.equal(shader.uniforms.babelRimText, RIM_UNIFORMS.babelRimText);
+  assert.match(shader.fragmentShader, /uniform float babelRimText;/);
+  assert.ok(
+    shader.fragmentShader.includes(
+      `reflectedLight.directDiffuse += babelRimLight.rgb*babelFilm*babelRim${BARK_RIM_TEXT}*mix(babelRimLight.w, 1.0,`,
+    ),
+  );
+  const reach = RIM.textReach.toFixed(2);
+  assert.equal(
+    BARK_RIM_TEXT,
+    `*(1.0-babelRimText*max(slateBehind(slateText, vSlateClip.xy/vSlateClip.w*.5+.5, ${reach}), slateBehind(slateAbout, vSlateClip.xy/vSlateClip.w*.5+.5, ${reach})))`,
+  );
   // The light shafts' gobo still lands after the light chunk, on its own hook.
   const gobo = goboHook(material, {}, 0),
     composed = physical();
@@ -672,6 +687,18 @@ test("beside About the bark's highlights from the lantern and the crown's fill p
   material.onBeforeCompile(composed);
   assert.ok(composed.fragmentShader.includes("if(shaftGoboGain>0.){"));
   assert.ok(composed.fragmentShader.includes(BARK_TEXT_LIGHTS));
+  assert.ok(composed.fragmentShader.includes(BARK_RIM_TEXT));
+  // Everything the rim's factor reads is declared before main().
+  const main = composed.fragmentShader.indexOf("void main");
+  for (const declared of [
+    "uniform float babelRimText;",
+    "varying vec4 vSlateClip;",
+    "uniform vec4 slateText, slateAbout;",
+    "float slateBehind(vec4 r,vec2 v,float d)",
+  ]) {
+    const at = composed.fragmentShader.indexOf(declared);
+    assert.ok(at >= 0 && at < main, declared);
+  }
   gobo.restore();
   // Without the ground's uniforms the bark is as it was, on its own program.
   const plain = createTreeArchitecture({ asset: boxAsset(), groundHeight: () => 0 }),
@@ -680,6 +707,8 @@ test("beside About the bark's highlights from the lantern and the crown's fill p
   plainMaterial.onBeforeCompile(unguarded);
   assert.doesNotMatch(unguarded.fragmentShader + unguarded.vertexShader, /slateBehind|vSlateClip/);
   assert.equal(unguarded.uniforms.slateText, undefined);
+  assert.doesNotMatch(unguarded.fragmentShader, /babelRimText/);
+  assert.match(unguarded.fragmentShader, /babelRimLight\.rgb\*babelFilm\*babelRim\*mix\(/);
   assert.notEqual(material.customProgramCacheKey(), plainMaterial.customProgramCacheKey());
   // The tower and the rocks never take it.
   const rock = materialFor(boxAsset(), 1, "rock", contacts),
@@ -687,6 +716,13 @@ test("beside About the bark's highlights from the lantern and the crown's fill p
   rock.onBeforeCompile(rockShader);
   assert.doesNotMatch(rockShader.fragmentShader, /slateBehind/);
   rock.dispose();
+  // The lookout's rim stays whole.
+  const tower = materialFor(boxAsset(), 1, "tower", contacts),
+    towerShader = physical();
+  tower.onBeforeCompile(towerShader);
+  assert.match(towerShader.fragmentShader, /babelRimLight\.rgb\*babelFilm\*babelRim\*mix\(/);
+  assert.doesNotMatch(towerShader.fragmentShader, /babelRimText|slateBehind/);
+  tower.dispose();
   tree.dispose();
   plain.dispose();
 });
