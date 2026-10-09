@@ -197,7 +197,8 @@ test("the composed skyline keeps the sun saddle, Close-up and Threshold clear an
     // The tree shots: taller than the rings' 2.1 degrees (owner, 2026-10-03), with
     // an open band of sky kept above them (framing.test.mjs).
     [22, 86, 4.5],
-    // Portrait's crown meets open cloud: no massif rises behind it (owner, 2026-10-08).
+    // Portrait's crown meets open cloud: only bare, low ranges stand behind it, no
+    // snowy massif (owner, 2026-10-08).
     [96, 120, 3.5],
   ])
     assert.ok(highest(from, to) <= cap, `${from}-${to} rises to ${highest(from, to)}`);
