@@ -127,12 +127,14 @@ export const DIRECTED_SHOTS = {
       anchor: [0.36, 0.62],
       tilt: [-6, -3],
       // Phones and portrait monitors keep the lookout on the left third and the
-      // tree whole to its right, both clear of the edges; the star is out of
-      // their view. Landscape phones turn a little further round. Squat and the
+      // tree whole to its right (portrait monitors crop its farthest twigs); the
+      // star is out of their view. Further out (margin 0.52) the cut opens on
+      // the cloud cover's edge behind the lookout. Landscape phones turn a little
+      // further round. Squat and the
       // smallest landscape windows, the name above the subject's left, see the
       // pair mirrored from across the plain: the tree left, the lookout right,
       // the star whole beyond it.
-      portrait: { azimuth: 55, margin: 0.52, anchor: [0.2, 0.62], tilt: [-1, 2] },
+      portrait: { azimuth: 55, margin: 0.56, anchor: [0.21, 0.62], tilt: [-1, 2] },
       landscape: { azimuth: 75, margin: 0.6, anchor: [0.5, 0.55], tilt: [-3, 0], move: null },
       compact: { azimuth: -15, margin: 0.6, anchor: [0.6, 0.55], tilt: [-3, 0], move: null },
       squat: {
