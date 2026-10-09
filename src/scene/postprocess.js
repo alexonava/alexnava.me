@@ -32,7 +32,6 @@ const GRADING_SHADER = {
   uniforms: {
     tDiffuse: { value: null },
     uCelMix: { value: 0.24 },
-    uSubjectCel: { value: 1 },
     uInkMix: { value: 0.14 },
     uContrast: { value: 1.1 },
     uHighlightWarmMix: { value: 0.2 },
@@ -44,7 +43,6 @@ const GRADING_SHADER = {
   fragmentShader: `
 uniform sampler2D tDiffuse;
 uniform float uCelMix;
-uniform float uSubjectCel;
 uniform float uInkMix;
 uniform float uContrast;
 uniform float uHighlightWarmMix;
@@ -92,10 +90,12 @@ void main() {
   // The star and its glow (depth-layers.js STAR_LAYER over the sky's 0) stay
   // continuous: the cloud banks' steps never ring them.
   float starLayer = uLayerRelief * smoothstep(0.0005, 0.006, texel.a) * (1.0 - smoothstep(0.22, 0.28, texel.a));
-  // A shot's grade scales the step on the subjects (alpha 1): uSubjectCel,
-  // easing in over their multisampled edges (above the ground's window), so
-  // no stepped fringe rings a smooth crown.
-  color = mix(color, celColor, uCelMix * (1.0 - relief * smoothstep(0.05, 0.1, gradedLuma)) * (1.0 - groundLayer) * (1.0 - starLayer) * mix(1.0, uSubjectCel, smoothstep(0.8, 1.0, texel.a)));
+  // In film the step and the ink are the sky's alone (the owner's direction of
+  // 2026-10-09: the clouds are the artistic part, everything else realistic):
+  // only depth code 0, so the subjects, the mountains, the ground and the light
+  // shafts' air shade continuously and take no outline.
+  float skyLayer = mix(1.0, 1.0 - smoothstep(0.0, 0.006, texel.a), uLayerRelief);
+  color = mix(color, celColor, uCelMix * skyLayer * (1.0 - relief * smoothstep(0.05, 0.1, gradedLuma)) * (1.0 - groundLayer) * (1.0 - starLayer));
   color = saturateColor(color, 1.04);
 
   if (uInkMix > 0.0) {
@@ -107,7 +107,9 @@ void main() {
   float inkContour = smoothstep(0.2, 0.48, max(horizontalEdge, verticalEdge));
   float nearest = max(max(e1.a, e2.a), max(e3.a, e4.a));
   float skySide = uLayerRelief * step(texel.a, 0.02) * step(0.2, nearest) * step(nearest, 0.5);
-  color = mix(color, vec3(0.035, 0.055, 0.095), inkContour * uInkMix * (1.0 - max(relief, skySide)));
+  // Only where the pixel and its four neighbours are all sky: the clouds' own edges.
+  float skyInk = mix(1.0, (1.0 - smoothstep(0.0, 0.006, texel.a)) * (1.0 - step(0.006, nearest)), uLayerRelief);
+  color = mix(color, vec3(0.035, 0.055, 0.095), inkContour * uInkMix * skyInk * (1.0 - max(relief, skySide)));
   }
   // A soft shoulder: highlights past the knee roll off toward white, not clip.
   vec3 over = max(color - 0.75, 0.0);
@@ -587,12 +589,6 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
     setLens(lens = null) {
       const blur = lens?.blur ?? 0;
       finalUniforms.uBlur.value = film ? blur : 0;
-    },
-    // The shot's grade: `subjects` scales the cel step on the subjects (the
-    // scene target's alpha 1: the lookout, the tree and the lantern),
-    // so their light shades smoothly; set with the shot (on a cut).
-    setGrade(grade = null) {
-      gradingPass.uniforms.uSubjectCel.value = film ? (grade?.subjects ?? 1) : 1;
     },
     // Widescreen bars as a share of the height at each edge.
     setBars(share = 0) {

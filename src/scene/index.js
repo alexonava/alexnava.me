@@ -973,7 +973,6 @@ const ORBIT_SPEED = 0.06;
         // The shot's lens and the film's bars and grain follow the shot on screen.
         const post = rendering.postprocessPipeline;
         post.setLens?.(cinematicApplied ? cinematic.shot?.lens : null);
-        post.setGrade?.(cinematicApplied ? cinematic.shot?.grade : null);
         post.setBars?.(
           filmActive && cinematicApplied ? letterboxShare(viewport.width, viewport.height) : 0,
         );

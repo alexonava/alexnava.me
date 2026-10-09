@@ -93,7 +93,8 @@ export function shaftTreatment(shotName) {
 // even); drift: the window's and the streaks' slow sway, [amplitude in map
 // units on each axis, period in seconds], bounded so the look holds however
 // long the page stays open; rays: the streaks by angle about the light's
-// place on screen, [contrast, period in the subject's screen height, noise
+// place on screen, [contrast (low: natural light through the gaps, the owner's
+// direction of 2026-10-09, not drawn bars), period in the subject's screen height, noise
 // levels where a streak starts and is full (sparse for slim shafts)]; jitter:
 // how far (in streaks) their spacing wanders, so no two read as even bars;
 // sparse: the streaks on balanced (phones), [contrast, noise levels, gain
@@ -167,8 +168,8 @@ export const SHAFTS = Object.freeze({
     steps: [12, 6],
     sub: 0.5,
     drift: [0.01, 130],
-    rays: [0.85, 0.036, 0.2, 0.8],
-    sparse: [0.95, 0.3, 0.8, 1.5],
+    rays: [0.3, 0.036, 0.2, 0.8],
+    sparse: [0.35, 0.3, 0.8, 1.5],
     jitter: 0,
     rise: 0,
     tie: 0,
@@ -216,7 +217,7 @@ export const SHAFTS = Object.freeze({
     steps: [9, 6],
     sub: 0.3,
     drift: [0.006, 100],
-    rays: [0.9, 0.04, 0.62, 0.84],
+    rays: [0.3, 0.04, 0.62, 0.84],
     jitter: 0,
     sparse: null,
     rise: 0,
@@ -271,7 +272,7 @@ export const SHAFTS = Object.freeze({
       air: Object.freeze({
         gain: 0.06,
         sky: [1, 3],
-        rays: [0.95, 0.014, 0.48, 0.82],
+        rays: [0.3, 0.014, 0.48, 0.82],
         jitter: 0.9,
         rise: 8,
         tie: 0.8,

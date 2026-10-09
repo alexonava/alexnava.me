@@ -464,7 +464,7 @@ test("film grading survives quality changes and restores the current profile wit
   pipeline.dispose();
 });
 
-test("in film the grade leaves the mountains' relief to their own shading and hairline", () => {
+test("in film the grade's cel step and ink are the sky's alone; everything else shades continuously", () => {
   const pipeline = createPipeline({ postprocessGrading: true });
   const shader = pipeline.passes.grading.material.fragmentShader,
     g = pipeline.passes.grading.uniforms;
@@ -483,10 +483,17 @@ test("in film the grade leaves the mountains' relief to their own shading and ha
     shader,
     /float starLayer = uLayerRelief \* smoothstep\(0\.0005, 0\.006, texel\.a\) \* \(1\.0 - smoothstep\(0\.22, 0\.28, texel\.a\)\);/,
   );
+  // In film only the sky (depth code 0) takes the step: the clouds are the
+  // artistic part; subjects, mountains, ground and the shafts' air stay continuous.
   assert.match(
     shader,
-    /color = mix\(color, celColor, uCelMix \* \(1\.0 - relief \* smoothstep\(0\.05, 0\.1, gradedLuma\)\) \* \(1\.0 - groundLayer\) \* \(1\.0 - starLayer\) \* mix\(1\.0, uSubjectCel, smoothstep\(0\.8, 1\.0, texel\.a\)\)\);/,
+    /float skyLayer = mix\(1\.0, 1\.0 - smoothstep\(0\.0, 0\.006, texel\.a\), uLayerRelief\);/,
   );
+  assert.match(
+    shader,
+    /color = mix\(color, celColor, uCelMix \* skyLayer \* \(1\.0 - relief \* smoothstep\(0\.05, 0\.1, gradedLuma\)\) \* \(1\.0 - groundLayer\) \* \(1\.0 - starLayer\)\);/,
+  );
+  assert.doesNotMatch(shader, /uSubjectCel/);
   // The star's mask, STAR_LAYER from each of its four parts, stays inside the
   // exemption's plateau.
   assert.ok(4 * STAR_LAYER <= 0.22);
@@ -495,10 +502,14 @@ test("in film the grade leaves the mountains' relief to their own shading and ha
     shader,
     /vec3 over = max\(color - 0\.75, 0\.0\);\s*color = mix\(color, min\(color, 0\.75\) \+ 0\.25 \* \(1\.0 - exp\(-over \/ 0\.25\)\), uLayerRelief\);\s*gl_FragColor = vec4\(clamp\(color, 0\.0, 1\.0\), texel\.a\);/,
   );
-  // The post ink skips the mountains and the sky pixel beside a crest, which
-  // draws its own hairline; it still reads the same four neighbours.
+  // The post ink, in film, only where the pixel and its four neighbours are all
+  // sky (the clouds' own edges): no outline on the subjects, mountains or ground.
   assert.equal((shader.match(/texture2D\(tDiffuse, vUv [+-] vec2\(/g) || []).length, 4);
-  assert.match(shader, /inkContour \* uInkMix \* \(1\.0 - max\(relief, skySide\)\)/);
+  assert.match(
+    shader,
+    /float skyInk = mix\(1\.0, \(1\.0 - smoothstep\(0\.0, 0\.006, texel\.a\)\) \* \(1\.0 - step\(0\.006, nearest\)\), uLayerRelief\);/,
+  );
+  assert.match(shader, /inkContour \* uInkMix \* skyInk \* \(1\.0 - max\(relief, skySide\)\)/);
   // With uLayerRelief 0 both factors vanish: the grade of every other view is unchanged.
   assert.match(shader, /float skySide = uLayerRelief \*/);
   pipeline.dispose();
@@ -892,21 +903,9 @@ test("the shot's lens blurs only in film, the bars cut the frame and the grain s
   pipeline.setLens(null);
   assert.equal(final.uBlur.value, 0, "no lens is sharp");
 
-  // A shot's grade scales the cel step on the subjects in film only; without
-  // one the step is whole.
-  const grading = pipeline.passes.grading.uniforms;
-  assert.equal(grading.uSubjectCel.value, 1);
-  pipeline.setGrade({ subjects: 0.3 });
-  assert.equal(grading.uSubjectCel.value, 0.3);
-  pipeline.setGrade({});
-  assert.equal(grading.uSubjectCel.value, 1, "a grade without subjects keeps the step");
-  pipeline.setGrade({ subjects: 0.3 });
-  pipeline.setGrade(null);
-  assert.equal(grading.uSubjectCel.value, 1, "no grade keeps the step");
-  pipeline.setFilmTreatment(false);
-  pipeline.setGrade({ subjects: 0.3 });
-  assert.equal(grading.uSubjectCel.value, 1, "outside film the step is whole");
-  pipeline.setFilmTreatment(true);
+  // No per-shot grade: in film the subjects take no cel step at all.
+  assert.equal(pipeline.setGrade, undefined);
+  assert.equal(pipeline.passes.grading.uniforms.uSubjectCel, undefined);
 
   // The capture keeps the outgoing shot's focus for the kept frame; the next
   // shot's lens then changes only the live frame.
