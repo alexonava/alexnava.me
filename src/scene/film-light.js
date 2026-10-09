@@ -6,9 +6,17 @@ import { Vector3, Vector4 } from "three";
 export const FILM_LIGHT = Object.freeze({ key: 1.12, fill: 1.15, hemisphere: 0.88, ambient: 0.72 });
 
 // A shot's `light` mood multiplies the film balance (key, fill), the lantern and
-// the rim, and sets how much of the tree's pale wood reads moonlit grey (pale);
-// it follows the shot on screen, so it changes on a cut.
-export const SHOT_LIGHT_DEFAULT = Object.freeze({ key: 1, fill: 1, lantern: 1, rim: 1, pale: 0 });
+// the rim, sets how much of the tree's pale wood reads moonlit grey (pale) and
+// the share of the tree's rim kept off the text (rimText, 0 by default); it
+// follows the shot on screen, so it changes on a cut.
+export const SHOT_LIGHT_DEFAULT = Object.freeze({
+  key: 1,
+  fill: 1,
+  lantern: 1,
+  rim: 1,
+  pale: 0,
+  rimText: 0,
+});
 export function shotLight(shot) {
   return { ...SHOT_LIGHT_DEFAULT, ...(shot?.light ?? {}) };
 }
@@ -16,15 +24,24 @@ export function shotLight(shot) {
 // The moon rim on the lookout and the tree (architecture.js): a cool Fresnel
 // edge, strongest where the moon is behind the subject from the lens.
 // light: rgb strength and, in w, the share it keeps facing the moon; key: the
-// moon's direction in view space, kept current per frame.
-export const RIM = Object.freeze({ color: Object.freeze([0.19, 0.24, 0.36]), floor: 0.2 });
+// moon's direction in view space, kept current per frame; text: the share of
+// the tree's rim taken off behind the name, the intro and About, easing out
+// over RIM.text of the screen's smaller side (only the bark has the text's
+// boxes; the lookout's rim is whole).
+export const RIM = Object.freeze({
+  color: Object.freeze([0.19, 0.24, 0.36]),
+  floor: 0.2,
+  text: 0.2,
+});
 export const RIM_UNIFORMS = Object.freeze({
   babelRimLight: { value: new Vector4(0, 0, 0, RIM.floor) },
   babelKeyView: { value: new Vector3(0, 0, 1) },
+  babelRimText: { value: 0 },
 });
-export function setRim(strength = 0) {
+export function setRim(strength = 0, text = 0) {
   const v = RIM_UNIFORMS.babelRimLight.value;
   v.set(RIM.color[0] * strength, RIM.color[1] * strength, RIM.color[2] * strength, RIM.floor);
+  RIM_UNIFORMS.babelRimText.value = text;
 }
 
 // A mutable lantern share the tree's practical multiplies (architecture.js).

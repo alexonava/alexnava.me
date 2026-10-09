@@ -223,7 +223,10 @@ export const DIRECTED_SHOTS = {
     },
     {
       name: "Close-up",
-      light: { fill: 0.7, rim: 2 },
+      // Rim-led, its rim off the text: at the start of the move the lit edges
+      // of the limbs reaching left stood behind the name (3.97:1 at 1440x900),
+      // and the trunk's behind About on phones and portrait monitors.
+      light: { fill: 0.7, rim: 2, rimText: 1 },
       lens: { blur: 10 },
       move: { truck: [-0.1, 0.1], ease: 0.5 },
       // The crown: low under the fork high on the trunk, looking up at the

@@ -22,7 +22,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import { smoothTreeNormals } from "./tree-normals.js";
 import { ESTATE } from "./estate-layout.js";
 import { SLATE_TEXT_GUARD } from "./mud-ground.js";
-import { LANTERN_MOOD, PALE, PALE_MOOD, RIM_UNIFORMS } from "./film-light.js";
+import { LANTERN_MOOD, PALE, PALE_MOOD, RIM, RIM_UNIFORMS } from "./film-light.js";
 
 export const ARCHITECTURE = Object.freeze({
   treeHeight: 22,
@@ -136,6 +136,14 @@ if (babelBehind > 0.0) {
   reflectedLight.directSpecular -= babelPoint-slateTextKnee(babelPoint, babelBehind);
 }
 `;
+
+// The bark's moon rim behind the text, a factor on the rim (film-light.js
+// RIM.text): the shot's share (babelRimText) comes off behind the name and
+// intro and behind About, easing out over a fifth of the screen's smaller side.
+// Close-up's rim-led crown (rim 2) put its cool lit branch edges behind the
+// name and the trunk's lit edge behind About, the brightest pixels of their
+// backdrops; at 0 the factor is exactly 1.
+export const BARK_RIM_TEXT = `*(1.0-babelRimText*max(slateBehind(slateText, vSlateClip.xy/vSlateClip.w*.5+.5, ${RIM.text.toFixed(2)}), slateBehind(slateAbout, vSlateClip.xy/vSlateClip.w*.5+.5, ${RIM.text.toFixed(2)})))`;
 
 // Moonlight grade for the supplied maps, which carry baked daylight and
 // ambient occlusion: cooler, less saturated, compressed sunlit highlights and
@@ -312,6 +320,7 @@ roughnessFactor = mix(roughnessFactor, ${ROOT_MOSS.roughness.toFixed(2)}, babelM
           uniform float babelFilm;
           uniform vec3 babelEnvironment;
           ${rimmed ? "uniform vec4 babelRimLight;\n          uniform vec3 babelKeyView;" : ""}
+          ${guarded ? "uniform float babelRimText;" : ""}
           varying vec3 babelLocal;
           varying vec3 babelLocalN;
           ${
@@ -350,13 +359,15 @@ ${ROOT_MOSS_MAP}`
           }`,
         );
       // The moon rim (film-light.js): a cool edge where the surface turns from
-      // the lens, strongest with the moon behind the subject.
+      // the lens, strongest with the moon behind the subject. On the guarded
+      // bark the shot's babelRimText takes it off behind the text's boxes
+      // (BARK_RIM_TEXT); at 0, every shot but Close-up, the rim is whole.
       if (rimmed)
         shader.fragmentShader = shader.fragmentShader.replace(
           "#include <lights_fragment_end>",
           `#include <lights_fragment_end>
           float babelRim = pow(1.0-saturate(dot(geometryNormal, geometryViewDir)), 4.0);
-          reflectedLight.directDiffuse += babelRimLight.rgb*babelFilm*babelRim*mix(babelRimLight.w, 1.0, saturate(dot(-geometryViewDir, babelKeyView)));`,
+          reflectedLight.directDiffuse += babelRimLight.rgb*babelFilm*babelRim${guarded ? BARK_RIM_TEXT : ""}*mix(babelRimLight.w, 1.0, saturate(dot(-geometryViewDir, babelKeyView)));`,
         );
       // Without the environment, the wet bark's faint grazing sheen.
       if (role === "tree")

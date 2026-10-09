@@ -1525,11 +1525,18 @@ test("the film's moonlight balance keeps a strong key over a dimmer sky and ambi
 
 test("a shot's light mood merges over the neutral default and never shares it", () => {
   assert.ok(Object.isFrozen(SHOT_LIGHT_DEFAULT));
-  assert.deepEqual(SHOT_LIGHT_DEFAULT, { key: 1, fill: 1, lantern: 1, rim: 1, pale: 0 });
+  assert.deepEqual(SHOT_LIGHT_DEFAULT, {
+    key: 1,
+    fill: 1,
+    lantern: 1,
+    rim: 1,
+    pale: 0,
+    rimText: 0,
+  });
   for (const shot of [null, undefined, {}, { light: null }])
     assert.deepEqual(shotLight(shot), SHOT_LIGHT_DEFAULT);
   const mood = shotLight({ light: { fill: 0.8, rim: 1.8 } });
-  assert.deepEqual(mood, { key: 1, fill: 0.8, lantern: 1, rim: 1.8, pale: 0 });
+  assert.deepEqual(mood, { key: 1, fill: 0.8, lantern: 1, rim: 1.8, pale: 0, rimText: 0 });
   assert.notEqual(shotLight(null), SHOT_LIGHT_DEFAULT, "a fresh object each time");
   mood.key = 3;
   assert.equal(SHOT_LIGHT_DEFAULT.key, 1);
@@ -1551,6 +1558,9 @@ test("a shot's light mood merges over the neutral default and never shares it", 
     .map((shot) => shot.name);
   assert.deepEqual(pale, ["Portrait"]);
   assert.ok(shotLight(DIRECTED_SHOTS.tree[0]).pale <= 1);
+  // Close-up alone takes its rim off the text; every other shot keeps it whole.
+  for (const shot of [...DIRECTED_SHOTS.tower, ...DIRECTED_SHOTS.tree])
+    assert.equal(shotLight(shot).rimText, shot.name === "Close-up" ? 1 : 0, shot.name);
 });
 
 test("setRim scales the cool rim colour and keeps the moon-facing floor", () => {
@@ -1565,8 +1575,14 @@ test("setRim scales the cool rim colour and keeps the moon-facing floor", () => 
     assert.ok(light.z > light.y && light.y > light.x);
     setRim(0.5);
     RIM.color.forEach((c, i) => close(light.getComponent(i), c * 0.5));
+    assert.equal(RIM_UNIFORMS.babelRimText.value, 0, "the rim stays on the text by default");
+    setRim(2, 1);
+    assert.equal(RIM_UNIFORMS.babelRimText.value, 1);
+    // Off the text over a fifth of the screen's smaller side, as the air light.
+    assert.equal(RIM.text, 0.2);
     setRim();
     assert.deepEqual(light.toArray(), [0, 0, 0, RIM.floor], "no strength, no rim");
+    assert.equal(RIM_UNIFORMS.babelRimText.value, 0);
     assert.equal(RIM_UNIFORMS.babelRimLight.value, light, "the uniform object is shared");
   } finally {
     setRim(0);
@@ -1579,7 +1595,7 @@ test("each frame applies the shot's light, lens, grade, bars and grain, holding 
   // The mood follows the shot on screen in film only.
   assert.ok(
     index.includes(
-      "const mood = shotLight(filmActive && cinematicApplied ? cinematic.shot : null); rendering.setShotLight?.(mood); if (LANTERN_MOOD.value !== mood.lantern) { LANTERN_MOOD.value = mood.lantern; treeArchitecture?.refreshLantern?.(); } setRim(filmActive ? mood.rim : 0); PALE_MOOD.value = filmActive ? mood.pale : 0;",
+      "const mood = shotLight(filmActive && cinematicApplied ? cinematic.shot : null); rendering.setShotLight?.(mood); if (LANTERN_MOOD.value !== mood.lantern) { LANTERN_MOOD.value = mood.lantern; treeArchitecture?.refreshLantern?.(); } setRim(filmActive ? mood.rim : 0, filmActive ? mood.rimText : 0); PALE_MOOD.value = filmActive ? mood.pale : 0;",
     ),
   );
   assert.ok(
