@@ -1652,12 +1652,27 @@ export function scatterLitter(surface, groundColor) {
   ];
   // `normals` (one per corner) keeps a piece smooth-shaded; without them its
   // faces take their own flat normals. `color` is one rgb or one per corner.
+  // Thousands of pieces go through here as the roots settle, under the reveal's
+  // fade-in: plain pushes, and `smooth` as flat (first vertex, normals) pairs.
   const smooth = [];
   const triangle = (a, b, c, color, normals = null) => {
-    positions.push(...a, ...b, ...c);
-    if (Array.isArray(color[0])) colors.push(...color[0], ...color[1], ...color[2]);
-    else colors.push(...color, ...color, ...color);
-    if (normals) smooth.push([positions.length / 3 - 3, normals]);
+    positions.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
+    if (Array.isArray(color[0])) {
+      const [p, q, r] = color;
+      colors.push(p[0], p[1], p[2], q[0], q[1], q[2], r[0], r[1], r[2]);
+    } else
+      colors.push(
+        color[0],
+        color[1],
+        color[2],
+        color[0],
+        color[1],
+        color[2],
+        color[0],
+        color[1],
+        color[2],
+      );
+    if (normals) smooth.push(positions.length / 3 - 3, normals);
   };
   const ground = (x, z, fallback) => {
     const y = surface(x, z);
@@ -1935,8 +1950,13 @@ export function scatterLitter(surface, groundColor) {
   );
   geometry.computeVertexNormals();
   geometry.attributes.normal.array.set(stoneNormals, litterVertices * 3);
-  for (const [first, normals] of smooth)
-    geometry.attributes.normal.array.set(normals.flat(), first * 3);
+  const normalArray = geometry.attributes.normal.array;
+  for (let i = 0; i < smooth.length; i += 2) {
+    const first = smooth[i] * 3,
+      normals = smooth[i + 1];
+    for (let k = 0; k < 3; k++)
+      for (let e = 0; e < 3; e++) normalArray[first + k * 3 + e] = normals[k][e];
+  }
   geometry.computeBoundingSphere();
   geometry.userData.litter = placed;
   // The stones' vertices follow the litter's.
@@ -1973,15 +1993,12 @@ function pebbleDome(a, b, h, random, at, [cy, sy], rgb, triangle) {
   const top = [at(0, 0, h), [0, 1, 0]],
     upper = Array.from({ length: sides }, (_, k) => point(ring, h * 0.8, k + 0.5)),
     lower = Array.from({ length: sides }, (_, k) => point(1, -h * 0.15, k));
-  const shade = (n) => rgb.map((c) => c * (0.68 + 0.32 * Math.max(0, n[1])));
-  const face = (...vertices) =>
-    triangle(
-      vertices.map(([p]) => p).at(0),
-      vertices[1][0],
-      vertices[2][0],
-      vertices.map(([, n]) => shade(n)),
-      vertices.map(([, n]) => n),
-    );
+  const shade = (n) => {
+    const k = 0.68 + 0.32 * Math.max(0, n[1]);
+    return [rgb[0] * k, rgb[1] * k, rgb[2] * k];
+  };
+  const face = (p, q, r) =>
+    triangle(p[0], q[0], r[0], [shade(p[1]), shade(q[1]), shade(r[1])], [p[1], q[1], r[1]]);
   for (let k = 0; k < sides; k++) {
     const k1 = (k + 1) % sides;
     face(top, upper[k1], upper[k]);
