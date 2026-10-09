@@ -121,7 +121,7 @@ export const ENVIRONMENT_ROLES = Object.freeze({
 // light-shafts.js) the point lights' highlight is taken again as
 // RE_Direct_Physical takes it, and only what the knee removes comes off; away
 // from About nothing runs. The moon's broad sheen stays as it is.
-export const BARK_TEXT_LIGHTS = `float babelBehind = slateBehind(slateAbout, vSlateClip.xy/vSlateClip.w*.5+.5);
+export const BARK_TEXT_LIGHTS = `float babelBehind = slateBehindAbout(vSlateClip.xy/vSlateClip.w*.5+.5);
 if (babelBehind > 0.0) {
   vec3 babelPoint = vec3(0.0);
   #if NUM_POINT_LIGHTS > 0

@@ -526,19 +526,28 @@ test("each ground shading has its own program cache key; the slate's shading nee
   }
   assert.ok(SLATE_WATER.moon.knee <= 0.08, "the moon's glints stay low behind the name and intro");
   // Like the light shafts' air, the water eases off behind the name and intro
-  // and behind About (over half the screen's smaller side, the clouds' reach),
-  // and there the soil's own highlights pass a knee: text stays at 5:1 over
-  // the wet ground. The reach is wide, so the moon's glare on the wet plain
-  // fades out along it instead of ending beside the name.
-  const [share, knee, reach] = SLATE_WATER.text;
+  // (over half the screen's smaller side, the clouds' reach) and behind About
+  // (a fifth), and there the soil's own highlights pass a knee: text stays at
+  // 5:1 over the wet ground. The name's reach is wide, so the moon's glare on
+  // the wet plain fades out along it instead of ending beside the name; the
+  // small label's stays short, clear of the pond's image of the lantern.
+  const [share, knee, reach, aboutReach] = SLATE_WATER.text;
   assert.ok(share > 0 && share < 1 && knee > 0 && knee <= 0.05);
   assert.ok(reach >= 0.4 && reach <= 0.6, "reach");
+  assert.ok(aboutReach > 0 && aboutReach <= 0.25, "About's reach");
   assert.ok(
     fragment.includes(
-      `float slateBehind(vec4 r,vec2 v){vec2 f=max(max(r.xy-v,v-r.zw),0.)*vec2(slateAspect,1.)/min(slateAspect,1.);return 1.-smoothstep(0.,${reach},length(f));}`,
+      "float slateBehind(vec4 r,vec2 v,float d){vec2 f=max(max(r.xy-v,v-r.zw),0.)*vec2(slateAspect,1.)/min(slateAspect,1.);return 1.-smoothstep(0.,d,length(f));}",
     ),
   );
-  assert.match(fragment, /return max\(slateBehind\(slateText,v\),slateBehind\(slateAbout,v\)\);/);
+  assert.ok(
+    fragment.includes(
+      `float slateBehindAbout(vec2 v){return slateBehind(slateAbout,v,${aboutReach});}`,
+    ),
+  );
+  assert.ok(
+    fragment.includes(`return max(slateBehind(slateText,v,${reach}),slateBehindAbout(v));`),
+  );
   assert.ok(fragment.includes(`#define SLATE_TEXT_KNEE ${knee}\n`));
   // The knee is blended in by 1-(1-b)^2 of the test's value b, never scaled
   // into its divisor, where a 0.035 knee crushed bright glare at the guard's
