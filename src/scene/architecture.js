@@ -133,7 +133,7 @@ if (babelBehind > 0.0) {
   }
   #pragma unroll_loop_end
   #endif
-  reflectedLight.directSpecular -= babelPoint*(1.0-1.0/(1.0+babelBehind*dot(babelPoint, vec3(.2126, .7152, .0722))/SLATE_TEXT_KNEE));
+  reflectedLight.directSpecular -= babelPoint-slateTextKnee(babelPoint, babelBehind);
 }
 `;
 

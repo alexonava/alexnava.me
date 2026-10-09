@@ -267,14 +267,19 @@ export const SLATE_LIGHT = Object.freeze({
 // toward the eye, while the soil's own highlight stays clamped. Like the light
 // shafts' air, the water's mirror and glints (and the soil's relaxed sky
 // reflection) ease off behind the name and intro and behind About, text[0] of
-// them, over a fifth of the screen's smaller side (index.js measures the text:
+// them, over text[2] of the screen's smaller side (index.js measures the text:
 // slateText, slateAbout); there all the ground reflects, the water and the
 // soil's own highlights (a puddle's moon glint among them), then passes a
 // luminance knee, text[1]; beside About so do the bark's highlights from the
 // lantern and the crown's fill (architecture.js, through SLATE_TEXT_GUARD).
+// The knee is blended in over the whole reach (slateTextKnee()), never scaled
+// into its divisor: a knee that low crushes bright glare at a few percent of
+// the guard, so the wet plain's moon glare used to end in a hard wall beside
+// the name. Half the screen's smaller side, the clouds' reach (estate-sky.js
+// CLOUD_RESHAPE.text), lets the glare fade out along the plain.
 export const SLATE_WATER = Object.freeze({
   f0: 0.02,
-  text: Object.freeze([0.3, 0.035]),
+  text: Object.freeze([0.3, 0.035, 0.5]),
   level: 0.7,
   film: Object.freeze([0.12, 0.18]),
   patch: Object.freeze([9, 0.55]),
@@ -288,10 +293,14 @@ export const SLATE_WATER = Object.freeze({
 // The text guard's screen test, shared by the ground and the bark
 // (architecture.js): slateBehindText() is 1 behind the name and intro
 // (slateText) or About (slateAbout), boxes in the canvas's UV, easing to 0
-// over a fifth of the screen's smaller side (slateAspect, the canvas's);
-// vSlateClip is the fragment's clip-space position.
-export const SLATE_TEXT_GLSL = `float slateBehind(vec4 r,vec2 v){vec2 f=max(max(r.xy-v,v-r.zw),0.)*vec2(slateAspect,1.)/min(slateAspect,1.);return 1.-smoothstep(0.,.2,length(f));}
+// over SLATE_WATER.text[2] of the screen's smaller side (slateAspect, the
+// canvas's); vSlateClip is the fragment's clip-space position.
+// slateTextKnee(c, b) takes the light c through the knee by b, the test's
+// value: the knee's share is 1-(1-b)^2, so with display gamma the light's
+// tone fades about evenly across the reach, without a dark rim at the text.
+export const SLATE_TEXT_GLSL = `float slateBehind(vec4 r,vec2 v){vec2 f=max(max(r.xy-v,v-r.zw),0.)*vec2(slateAspect,1.)/min(slateAspect,1.);return 1.-smoothstep(0.,${glslNumber(SLATE_WATER.text[2])},length(f));}
 float slateBehindText(){vec2 v=vSlateClip.xy/vSlateClip.w*.5+.5;return max(slateBehind(slateText,v),slateBehind(slateAbout,v));}
+vec3 slateTextKnee(vec3 c,float b){return c*mix(1.,1./(1.+dot(c,vec3(.2126,.7152,.0722))/SLATE_TEXT_KNEE),b*(2.-b));}
 `;
 // The guard for another material: the ground's box uniforms (share the
 // createSlateContacts() objects), its knee (SLATE_WATER.text[1]) and the test.
@@ -727,8 +736,8 @@ ${SLATE_TEXT_GLSL}`
       float slateQuiet = 1.0-${glslNumber(SLATE_CALM_GLINT)}*slateFlatAt(vMudWorld.xz)*(1.0-slatePuddle);
       reflectedLight.directSpecular *= slateQuiet;
       reflectedLight.indirectSpecular *= slateQuiet;
-      reflectedLight.directSpecular /= 1.0+slateBehind*dot(reflectedLight.directSpecular,vec3(.2126,.7152,.0722))/SLATE_TEXT_KNEE;
-      reflectedLight.indirectSpecular /= 1.0+slateBehind*dot(reflectedLight.indirectSpecular,vec3(.2126,.7152,.0722))/SLATE_TEXT_KNEE;
+      reflectedLight.directSpecular = slateTextKnee(reflectedLight.directSpecular, slateBehind);
+      reflectedLight.indirectSpecular = slateTextKnee(reflectedLight.indirectSpecular, slateBehind);
       `
           : ""
       }

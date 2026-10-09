@@ -628,10 +628,11 @@ test("beside About the bark's highlights from the lantern and the crown's fill p
   );
   assert.ok(
     BARK_TEXT_LIGHTS.includes(
-      "reflectedLight.directSpecular -= babelPoint*(1.0-1.0/(1.0+babelBehind*dot(babelPoint, vec3(.2126, .7152, .0722))/SLATE_TEXT_KNEE));",
+      "reflectedLight.directSpecular -= babelPoint-slateTextKnee(babelPoint, babelBehind);",
     ),
   );
-  assert.doesNotMatch(BARK_TEXT_LIGHTS, /slateText|directionalLights|spotLights/);
+  assert.ok(SLATE_TEXT_GUARD.includes("vec3 slateTextKnee(vec3 c,float b){"));
+  assert.doesNotMatch(BARK_TEXT_LIGHTS, /\bslateText\b|directionalLights|spotLights/);
   // The light shafts' gobo still lands after the light chunk, on its own hook.
   const gobo = goboHook(material, {}, 0),
     composed = physical();
