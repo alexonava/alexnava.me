@@ -8,9 +8,9 @@ import { BufferAttribute, BufferGeometry, Mesh, Vector3 } from "three";
 // rising toward the ranges (the owner's pick of 2026-10-09): radius, half-width
 // and lift. The outermost ends where the plain fades into the far air.
 const RIDGES = [
-  [120, 26, 2.2],
-  [139, 22, 3.6],
-  [156, 22, 5.2],
+  [120, 26, 3.2],
+  [139, 22, 5.2],
+  [156, 22, 7.4],
 ];
 export function foothillHeight(x, z) {
   const r = Math.hypot(x, z);
@@ -1525,7 +1525,7 @@ export const LITTER = Object.freeze({
   // in the crooks `crook` from the trunk, within `among` of a root. Never
   // under a root or an arch, nor at the lantern or a puddle.
   stones: Object.freeze({
-    count: 30,
+    count: 40,
     seed: 52817,
     rootShare: 0.6,
     size: Object.freeze([0.12, 0.3]),
@@ -1549,9 +1549,9 @@ export const LITTER = Object.freeze({
   // them (estate-ground-detail.js).
   fine: Object.freeze({
     seed: 61331,
-    counts: Object.freeze({ leaves: 170, clods: 150, gravel: 1400 }),
+    counts: Object.freeze({ leaves: 220, clods: 200, gravel: 2000 }),
     arc: Object.freeze([-175, -55]),
-    reach: Object.freeze([2.2, 16]),
+    reach: Object.freeze([2, 18]),
     lantern: 0.45,
     puddle: 0.15,
     leafNear: 0.45,

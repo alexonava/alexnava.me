@@ -4,12 +4,13 @@ import { Box3, Vector3 } from "three";
 // Detail shots intentionally crop incidental roof/canopy geometry; fitting the
 // entire horizontal slice would turn every portrait detail into a wide shot.
 // hold: seconds the tour stays on a shot, cut to cut; tour=3|5|20 overrides it.
-// After the rain (the owner's pick of 2026-10-09): every wide shot's plain
-// catches the sky (Portrait's gloss) and a light mist lies on the ranges' feet
-// (half Portrait's), so the plain meets them softly (mud-ground.js SLATE_LOOK).
+// After the rain (the owner's picks of 2026-10-09): every wide shot's plain
+// catches the sky (Portrait's gloss, but untinted, so the plain keeps main's
+// warmth) and a light, warm grey mist lies on the ranges' feet, so the plain
+// meets them softly (mud-ground.js SLATE_LOOK).
 const AFTER_RAIN = Object.freeze({
-  mist: Object.freeze({ color: Object.freeze([0.23, 0.26, 0.335]), amount: 0.5 }),
-  gloss: Object.freeze({ film: 0.32, gain: 1.9 }),
+  mist: Object.freeze({ color: Object.freeze([0.27, 0.26, 0.29]), amount: 0.45 }),
+  gloss: Object.freeze({ film: 0.32, gain: 1.9, cool: 0 }),
 });
 export const DIRECTED_SHOTS = {
   tower: [

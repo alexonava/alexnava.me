@@ -356,7 +356,10 @@ test("the pond's water lies only below its shore, as the terrain carves it, and 
   // Crumbs: a cellular noise on the close soil's relief and grit, worked out
   // only where they show (near the lens, a cell over a few pixels).
   assert.match(soil.fragment, /if \(slateKW > 0\.\) \{\s*for \(int j = -1; j <= 1; j\+\+\)/);
-  assert.ok(soil.fragment.includes(`slateCH += slateCrumb*${SLATE_CLOSE.crumb.height}*slateKW;`));
+  const crumbHeight = Number.isInteger(SLATE_CLOSE.crumb.height)
+    ? SLATE_CLOSE.crumb.height.toFixed(1)
+    : String(SLATE_CLOSE.crumb.height);
+  assert.ok(soil.fragment.includes(`slateCH += slateCrumb*${crumbHeight}*slateKW;`));
   assert.doesNotMatch(soil.fragment, /slateKO = fract\(sin/);
   // The rain streams fill like the puddles, in the detail map's low texels.
   assert.ok(soil.fragment.includes("float slateStreams(vec2 p)"));
@@ -755,7 +758,10 @@ test("the far plain reads as dark air: the slate lifted toward the terrain's edg
   // The skirt's waves keep its share within 0..1 along the ring; it rises at
   // most about a degree above eye level, and well below it the air is whole.
   assert.ok(Math.abs(waves.reduce((sum, [, weight]) => sum + weight, 0) - 0.5) < 1e-9);
-  assert.ok(lift / 2 + fade[1] < 0.025, "the skirt stays within about a degree above eye level");
+  assert.ok(
+    lift / 2 + fade[1] < 0.03,
+    "the skirt stays within about a degree and a half above eye level",
+  );
   for (const share of [0, 0.5, 1]) {
     const line = (slope) => 1 - smooth(fade[0], fade[1], slope - lift * (share - 0.5));
     assert.equal(line(lift / 2 + fade[1] + 0.001), 0);
@@ -1190,10 +1196,18 @@ test("Portrait takes the whole look on its plain (a moonlit clearing, low mist, 
       off();
       continue;
     }
-    // Half Portrait's mist, the same colour; Portrait's gloss.
-    assert.deepEqual([mist.x, mist.y, mist.z], look.mist.color);
+    // A lighter mist than Portrait's, warm grey where its is moonlit blue; Portrait's
+    // gloss, untinted, so the plain keeps its warmth.
+    assert.deepEqual([mist.x, mist.y, mist.z], rain.mist.color);
+    assert.ok(
+      mist.x / mist.z > look.mist.color[0] / look.mist.color[2],
+      shot.name + " mist warmer",
+    );
     assert.ok(mist.w > 0 && mist.w < look.mist.amount, shot.name + " mist " + mist.w);
-    assert.deepEqual([gloss.x, gloss.y, gloss.z], [look.gloss.film, look.gloss.gain, 1]);
+    assert.deepEqual(
+      [gloss.x, gloss.y, gloss.z, gloss.w],
+      [look.gloss.film, look.gloss.gain, 1, 0],
+    );
     assert.equal(rain.clearing, undefined);
   }
   slateCalmFor(contacts, portrait, 60, target);
@@ -1213,7 +1227,8 @@ test("Portrait takes the whole look on its plain (a moonlit clearing, low mist, 
   assert.ok(look.keep[1] >= look.clearing.radius[1], "the clearing keeps its texture");
   assert.deepEqual([mist.x, mist.y, mist.z, mist.w], [...look.mist.color, look.mist.amount]);
   assert.ok(look.mist.color[2] > look.mist.color[0], "the mist is moonlit, cool");
-  assert.deepEqual([gloss.x, gloss.y, gloss.z], [look.gloss.film, look.gloss.gain, 1]);
+  // Portrait's gloss is wholly the cool tint.
+  assert.deepEqual([gloss.x, gloss.y, gloss.z, gloss.w], [look.gloss.film, look.gloss.gain, 1, 1]);
   assert.deepEqual([shadow.x, shadow.y], look.shadow);
   // Without a frame the look goes with the calm.
   slateCalmFor(contacts, portrait, 0, target);
@@ -1267,7 +1282,7 @@ test("the look's shading changes nothing until a shot asks for it", () => {
   );
   assert.ok(
     fragment.includes(
-      "*mix(mix(1.5, slateGloss.y, slateGlossT)*mix(vec3(1.0), vec3(0.72,0.88,1.18), slateGlossT), vec3(1.8), slatePuddle)",
+      "*mix(mix(1.5, slateGloss.y, slateGlossT)*mix(vec3(1.0), mix(vec3(1.0,0.97,0.94), vec3(0.72,0.88,1.18), slateGloss.w), slateGlossT), vec3(1.8), slatePuddle)",
     ),
   );
   // The gloss's weights are set once, before the water's share and the lights,

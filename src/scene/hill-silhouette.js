@@ -261,8 +261,8 @@ export const HORIZON_SKIRT = Object.freeze({
     Object.freeze([61, 0.16, 1.7]),
     Object.freeze([137, 0.12, 0.3]),
   ]),
-  lift: 0.035,
-  tone: Object.freeze([0.78, 0.5]),
+  lift: 0.05,
+  tone: Object.freeze([0.7, 0.65]),
   fade: Object.freeze([-0.05, 0.004]),
 });
 const SKIRT_WAVES = HORIZON_SKIRT.waves
@@ -469,6 +469,30 @@ export const MASSIFS = Object.freeze({
   sharpen: -0.75,
 });
 
+// Rock strata on the massifs' bare rock (the owner's pick of 2026-10-09): broad
+// bands `spacing` to a degree of elevation, warped along the ring by two noises
+// (`warp`: [azimuth and elevation frequency, depth] each), every band's strength
+// its own (`amount`: base and spread). Each band is a moonlit ledge at its base
+// (`ledge`: rise, then fading from [0] to [1] of the band) lifting the face's
+// moonlight by up to `light` about `mean`, over a dark seam (`seam`: width and
+// depth, of the occlusion); both anti-aliased by the band's own gradient, before
+// the snow, so the snow lies over them.
+export const MASSIF_STRATA = Object.freeze({
+  spacing: 2.4,
+  warp: Object.freeze([Object.freeze([0.35, 0.5, 1.8]), Object.freeze([1.1, 1.7, 0.5])]),
+  amount: Object.freeze([0.4, 0.6]),
+  ledge: Object.freeze([0.12, 0.35, 1]),
+  light: 0.35,
+  mean: 0.35,
+  seam: Object.freeze([0.05, 0.22]),
+});
+const STRATA_GLSL = (() => {
+  const { spacing, warp, amount, ledge, light, mean, seam } = MASSIF_STRATA,
+    [[a1, e1, d1], [a2, e2, d2]] = warp,
+    g = glslFloat;
+  return `{float w1=vn(vec2(az*${g(a1)},el*${g(e1)})),w2=vn(vec2(az*${g(a2)},el*${g(e2)}));float sk=el*${g(spacing)}+${g(d1)}*w1+${g(d2)}*w2,sw=max(fwidth(sk),1e-3),f=fract(sk),amp=${g(amount[0])}+${g(amount[1])}*fract(sin(floor(sk)*12.9898)*43758.5453);float ledge=smoothstep(0.,${g(ledge[0])}+sw,f)*(1.-smoothstep(${g(ledge[1])},${g(ledge[2])},f));float seam=1.-smoothstep(0.,${g(seam[0])}+sw,f);ao*=1.-${g(seam[1])}*amp*seam;lit*=1.+${g(light)}*amp*(ledge-${g(mean)});}`;
+})();
+
 // The Meshy massifs' shading: the ranges' moonlit style on the models' own
 // relief. The object-space normal map (the GLB's normalTexture) is turned into
 // the world by each copy's placement (aInst: the turn's cos and sin, mirror,
@@ -548,6 +572,7 @@ vec2 mk=texture2D(uMask,vU).rg;
 // Faceted moonlight, as the ranges': Lambert blended with a crisp, anti-aliased terminator.
 float nl=dot(n,K), te=max(.05,1.5*fwidth(nl)), crisp=smoothstep(.3-te,.3+te,nl);
 float lit=mix(max(nl+.05,0.)/1.05,crisp*(.55+.45*nl),.5), ao=mix(1.,mk.y,.6);
+${STRATA_GLSL}
 ${rockBodyGLSL(`(vT.y+${glslFloat(MASSIFS.air)})`)}
 // Valley mist rising from the nearer layers' skyline: at most .9 degrees, 70% at its foot.
 vec2 nr=nearer(az);

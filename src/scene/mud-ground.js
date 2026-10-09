@@ -72,7 +72,7 @@ export const SLATE_WET = Object.freeze({
 // degrees (a 3-4-5 turn), is blended in by a 17-unit noise and by which sample
 // is higher (lighter), with the blend's lost contrast restored about the tile's
 // mean linear colour (delivery-report.json). The detail map, a 5.03-unit high
-// band turned 36.87 degrees, adds close relief and grain within 6-42 units of
+// band turned 36.87 degrees, adds close relief and grain within 6-55 units of
 // the lens, and a 53-unit noise varies the tone.
 export const SLATE_TILING = Object.freeze({
   tile: 22,
@@ -90,9 +90,9 @@ export const SLATE_TILING = Object.freeze({
   detail: Object.freeze({
     ratio: 4.37, // base tiles per detail tile: 22 / 4.37 = 5.03 units
     turn: Object.freeze([0.8, 0.6, -0.6, 0.8]),
-    strength: 3.4, // tangent slope per grey step of one texel (about the base map's relief)
-    albedo: 0.3,
-    near: Object.freeze([6.0, 42.0]), // view distance: full detail within, none beyond
+    strength: 4.2, // tangent slope per grey step of one texel (about the base map's relief)
+    albedo: 0.36,
+    near: Object.freeze([6.0, 55.0]), // view distance: full detail within, none beyond
   }),
 });
 
@@ -116,7 +116,7 @@ export const SLATE_CLOSE = Object.freeze({
   }),
   blendCell: 2.6,
   albedo: 1.5,
-  relief: 0.12,
+  relief: 0.16,
   blur: 5,
   calm: 0.9,
   near: Object.freeze([7, 24]),
@@ -124,7 +124,7 @@ export const SLATE_CLOSE = Object.freeze({
   // Crumbs: a cellular noise of `cell`-unit grains on the close soil's relief
   // (`height`, in relief-map units) and albedo (`albedo`), so it reads as
   // crumbly earth; gone where a cell shrinks under `fade` pixels.
-  crumb: Object.freeze({ cell: 0.075, height: 0.85, albedo: 0.5, fade: Object.freeze([1.6, 4]) }),
+  crumb: Object.freeze({ cell: 0.075, height: 1, albedo: 0.6, fade: Object.freeze([1.6, 4]) }),
 });
 
 // The far plain's own structure (the owner's pick of 2026-10-09, "detailed"):
@@ -132,7 +132,7 @@ export const SLATE_CLOSE = Object.freeze({
 // horizon. Broad noise swathes (`cells` units, `weights`, with offsets) move
 // the soil's tone by up to `amount` either way, drifting from cool to warm over
 // a `hueCell` noise; then two more lookups of the slate tile, `scale` times
-// its size (about 95 and 310 units) and turned and offset so neither lines up
+// its size (about 55 and 185 units) and turned and offset so neither lines up
 // with the base, carry its cracks and blotches far out: their luma about the
 // tile's mean, weighted, raised to `gain` and kept within `range`, scales the
 // albedo. Each eases in over its `near` view distances, so the close soil
@@ -145,22 +145,22 @@ export const SLATE_FAR = Object.freeze({
     amount: 0.22,
     hueCell: 89,
     hueOffset: 11.7,
-    cool: Object.freeze([0.93, 0.98, 1.07]),
-    warm: Object.freeze([1.07, 1, 0.92]),
+    cool: Object.freeze([0.98, 0.98, 1]),
+    warm: Object.freeze([1.1, 1.01, 0.9]),
     near: Object.freeze([16, 55]),
   }),
   tile: Object.freeze([
-    Object.freeze({ scale: 0.23, offset: Object.freeze([0.31, 0.17]), weight: 0.55 }),
+    Object.freeze({ scale: 0.4, offset: Object.freeze([0.31, 0.17]), weight: 0.55 }),
     Object.freeze({
-      scale: 0.071,
+      scale: 0.12,
       turn: Object.freeze([0.6, -0.8, 0.8, 0.6]), // column-major mat2
       offset: Object.freeze([0.57, 0.23]),
       weight: 0.45,
     }),
   ]),
-  gain: 1.6,
-  range: Object.freeze([0.4, 1.9]),
-  near: Object.freeze([14, 45]),
+  gain: 2.2,
+  range: Object.freeze([0.35, 2.2]),
+  near: Object.freeze([12, 40]),
 });
 
 // The small pond in front of the lantern, where its reflection lands in both
@@ -446,7 +446,9 @@ export function slateCalmFor(contacts, shot, distance, at) {
 //   hard line.
 // - gloss: the plain after rain catches the sky. Its water film takes `film`
 //   of the soil (SLATE_WATER.film[0] elsewhere) and its sky `gain` (gain[0]),
-//   cooled by gloss.tint, out to gloss.far units of view distance (the
+//   tinted from gloss.warm toward the cool gloss.tint by the shot's `cool`
+//   (Portrait's whole, by default; the other wide shots' none, so their plain
+//   keeps its warmth), out to gloss.far units of view distance (the
 //   puddles too); all of it away from the text only, eased over gloss.text ([name and
 //   intro, About] as shares of the screen's smaller side, as the text guard
 //   measures), and in broad wetter and drier patches (gloss.patch: [cell in
@@ -464,6 +466,7 @@ export const SLATE_LOOK = Object.freeze({
   gloss: Object.freeze({
     far: Object.freeze([400, 1100]),
     tint: Object.freeze([0.72, 0.88, 1.18]),
+    warm: Object.freeze([1, 0.97, 0.94]),
     text: Object.freeze([0.45, 0.25]),
     patch: Object.freeze([31, 0.35]),
   }),
@@ -496,6 +499,7 @@ function slateLookFor(contacts, look, azimuth = 0, at = null) {
     gloss.x = look.gloss.film;
     gloss.y = look.gloss.gain;
     gloss.z = 1;
+    gloss.w = look.gloss.cool ?? 1;
   } else gloss.z = 0;
   const fade = look?.shadow;
   shadow.x = fade ? fade[0] : 0;
@@ -727,7 +731,7 @@ const WATER_SKY = `#include <lights_fragment_maps>
       #ifdef USE_ENVMAP
       irradiance *= ${glslNumber(LIGHT.ambient)};
       iblIrradiance *= ${glslNumber(LIGHT.sky)};
-      vec3 slateWaterSky = mix(getIBLRadiance(geometryViewDir, slateWaterN, mix(${glslNumber(WATER.roughness[0])}, ${glslNumber(WATER.roughness[1])}, slatePuddle))*mix(mix(${glslNumber(WATER.gain[0])}, slateGloss.y, slateGlossT)*mix(vec3(1.0), ${glslVec(SLATE_LOOK.gloss.tint)}, slateGlossT), vec3(${glslNumber(WATER.gain[1])}), slatePuddle), slateWaterBark, slateWaterVeil*slatePuddle);
+      vec3 slateWaterSky = mix(getIBLRadiance(geometryViewDir, slateWaterN, mix(${glslNumber(WATER.roughness[0])}, ${glslNumber(WATER.roughness[1])}, slatePuddle))*mix(mix(${glslNumber(WATER.gain[0])}, slateGloss.y, slateGlossT)*mix(vec3(1.0), mix(${glslVec(SLATE_LOOK.gloss.warm)}, ${glslVec(SLATE_LOOK.gloss.tint)}, slateGloss.w), slateGlossT), vec3(${glslNumber(WATER.gain[1])}), slatePuddle), slateWaterBark, slateWaterVeil*slatePuddle);
       #endif`;
 // After the soil's own clamps: the water's mirror (water Fresnel, the film's
 // share or a puddle whole, fading with distance; slateSkyVis is the sky the

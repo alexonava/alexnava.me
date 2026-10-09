@@ -12,6 +12,7 @@ import {
   HORIZON_HAZE,
   MASSIF_SNOW,
   MASSIFS,
+  MASSIF_STRATA,
   MOUNTAIN_AIR,
   RANGE_MIST,
   snowReach,
@@ -558,6 +559,15 @@ test("the massif shader is the ranges' moonlit style on the models' own relief",
   // The relief read sharper than its footprint (MASSIFS.sharpen), so the moonlit faces keep their form.
   assert.ok(MASSIFS.sharpen < 0 && MASSIFS.sharpen >= -1);
   assert.ok(fragmentShader.includes(`vec3 n=relief(${MASSIFS.sharpen});`));
+  // Rock strata on the bare rock: broad warped bands (each its own strength) of a moonlit
+  // ledge over a dark seam, anti-aliased by the band's own gradient, before the snow.
+  const strataAt = fragmentShader.indexOf("{float w1=vn(vec2(az*");
+  assert.ok(strataAt > fragmentShader.indexOf("ao=mix(1.,mk.y,.6);"));
+  assert.ok(strataAt < fragmentShader.indexOf("float cap=clamp("));
+  assert.ok(fragmentShader.includes(`float sk=el*${MASSIF_STRATA.spacing}+`));
+  assert.ok(fragmentShader.includes("sw=max(fwidth(sk),1e-3),f=fract(sk)"));
+  assert.ok(MASSIF_STRATA.spacing > 1 && MASSIF_STRATA.spacing < 4, "bands broad, never a mesh");
+  assert.ok(MASSIF_STRATA.amount[0] + MASSIF_STRATA.amount[1] <= 1);
   // The rings' sky, far plain, rims and ink, verbatim; the rock one air farther out.
   for (const shared of [
     "float b=dot(o,d), t=-b+sqrt(max(b*b-dot(o,o)+uSky.x,0.)), a=(o.y+d.y*t)*inversesqrt(uSky.x);",
