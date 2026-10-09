@@ -111,7 +111,7 @@ test("tour defaults to per-shot holds even when a link chooses its opening compo
   f.dispose();
 });
 
-test("the seven tour views skip Masonry study and Gallery detail and wrap with small drift and cached repeat framing", () => {
+test("the six tour views skip Masonry study, Gallery detail and Watch and tree and wrap with small drift and cached repeat framing", () => {
   for (const interval of [3, 5]) {
     const f = setup(interval);
     f.render(0);
@@ -122,25 +122,24 @@ test("the seven tour views skip Masonry study and Gallery detail and wrap with s
     assert.ok(f.camera.position.distanceTo(firstPosition) > 0.1);
     assert.equal(f.camera.position.y, firstPosition.y);
     const names = [f.name];
-    assert.equal(f.tour.state.total, 7);
+    assert.equal(f.tour.state.total, 6);
     assert.equal(f.tour.state.index, 1);
     let captured = null;
-    f.run(interval * 0.5, interval * 7 + 0.5, () => {
+    f.run(interval * 0.5, interval * 6 + 0.5, () => {
       const { capture, cut } = f.transition;
       if (cut) {
         assert.ok(captured, "a capture frame precedes every cut");
         assert.notEqual(f.name, captured, "the cut changes the shot");
         names.push(f.name);
-        assert.equal(f.tour.state.index, ((names.length - 1) % 7) + 1);
+        assert.equal(f.tour.state.index, ((names.length - 1) % 6) + 1);
       }
       captured = capture ? f.name : null;
     });
     assert.deepEqual(names, [
       "The watch",
       "Portrait",
-      "Threshold",
       "Lantern study",
-      "Watch and tree",
+      "Threshold",
       "Close-up",
       "Root and lantern",
       "The watch",
@@ -151,10 +150,10 @@ test("the seven tour views skip Masonry study and Gallery detail and wrap with s
 });
 
 test("each tour shot holds for its own time, capture to capture, with no wildcard", () => {
-  assert.deepEqual(tourHolds, [9, 9, 7, 6, 7, 6, 6]);
+  assert.deepEqual(tourHolds, [9, 9, 6, 7, 6, 6]);
   assert.equal(
     tourHolds.reduce((sum, hold) => sum + hold, 0),
-    50,
+    43,
   );
   assert.equal(DIRECTED_SHOTS.tower[2].hold, undefined, "Masonry study uses the fallback");
   assert.equal(TOUR_HOLD_FALLBACK, 7);
@@ -170,19 +169,19 @@ test("each tour shot holds for its own time, capture to capture, with no wildcar
     f.render(0);
     const captures = [],
       dwells = [];
-    f.run(0, 50 * 2 + 1, (time) => {
+    f.run(0, 43 * 2 + 1, (time) => {
       if (f.transition.capture) captures.push([time, f.name]);
       if (f.transition.cut) dwells.push(f.tour.state.dwell);
     });
-    assert.equal(captures.length, 14);
+    assert.equal(captures.length, 12);
     let previous = 0;
     captures.forEach(([time, name], i) => {
-      const hold = tourHolds[i % 7];
-      assert.equal(name, tourNames[i % 7]);
+      const hold = tourHolds[i % 6];
+      assert.equal(name, tourNames[i % 6]);
       assert.ok(Math.abs(time - previous - hold) <= 0.06, `${name} held ${time - previous}s`);
       previous = time;
     });
-    assert.deepEqual(dwells.slice(0, 7), [...tourHolds.slice(1), tourHolds[0]]);
+    assert.deepEqual(dwells.slice(0, 6), [...tourHolds.slice(1), tourHolds[0]]);
   } finally {
     Math.random = random;
     f.dispose();
@@ -302,7 +301,7 @@ test("pause, panels and reduced motion hold the tour without catch-up cuts", () 
   f.render(37);
   assert.equal(f.transition.capture, true);
   f.render(37.05);
-  assert.equal(f.name, "Threshold");
+  assert.equal(f.name, "Lantern study");
   f.dispose();
 });
 
@@ -347,7 +346,7 @@ test("setPaused drops an interrupted dissolve, and a pause on the capture frame 
   f.render(125.55);
   assert.equal(f.transition.capture, true);
   f.render(125.6);
-  assert.equal(f.name, "Threshold");
+  assert.equal(f.name, "Lantern study");
   f.tour.dispose();
   f.tour.setPaused(true);
   assert.equal(f.tour.state.paused, false, "disposal blocks later pauses");
@@ -377,9 +376,9 @@ test("setInterval switches between fixed cadences and per-shot holds as a hard r
   assert.equal(f.tour.state.dwell, 5);
   f.tour.next();
   f.tour.setInterval(TOUR_PER_SHOT);
-  assert.equal(f.tour.state.dwell, 7, "Threshold's own hold");
-  f.tour.next();
   assert.equal(f.tour.state.dwell, 6, "Lantern study's own hold");
+  f.tour.next();
+  assert.equal(f.tour.state.dwell, 7, "Threshold's own hold");
   f.dispose();
 });
 
@@ -403,39 +402,44 @@ test("the upcoming shot is prepared once per shot, after its dissolve and never 
   f.run(9.1, 10.9, watch);
   assert.equal(calls.length, 1, "nothing is prepared during a dissolve");
   f.run(10.9, 11.15, watch);
-  assert.deepEqual(calls[1], ["tower", 1], "the tour order, not the array's, follows Portrait");
+  assert.deepEqual(calls[1], ["tree", 1], "Lantern study follows Portrait");
   f.tour.prepareNext();
-  assert.deepEqual(calls[2], ["tower", 1], "prepareNext re-issues the upcoming shot");
+  assert.deepEqual(calls[2], ["tree", 1], "prepareNext re-issues the upcoming shot");
   seen = calls.length;
 
   // A resize mid-dissolve is re-issued once, after the dissolve.
   f.run(11.15, 18.15, watch);
-  assert.equal(f.name, "Threshold");
+  assert.equal(f.name, "Lantern study");
   assert.ok(f.transition.progress < 1);
   f.tour.prepareNext();
   assert.equal(calls.length, 3);
   f.run(18.15, 21, watch);
-  assert.deepEqual(calls.slice(3), [["tree", 1]]);
+  assert.deepEqual(
+    calls.slice(3),
+    [["tower", 1]],
+    "the tour order, not the array's, follows Lantern study",
+  );
 
   // A paused tour prepares nothing; resuming prepares when due.
-  f.run(21, 25.2, watch);
-  assert.equal(f.name, "Lantern study");
-  f.run(25.2, 26, watch);
+  f.run(21, 24.2, watch);
+  assert.equal(f.name, "Threshold");
+  f.run(24.2, 25, watch);
   f.tour.setPaused(true);
   f.tour.prepareNext();
-  f.run(26, 49, watch);
+  f.run(25, 49, watch);
   assert.equal(calls.length, 4);
   f.tour.setPaused(false);
   f.run(49, 51, watch);
-  assert.deepEqual(calls.slice(4), [["tower", 4]]);
+  assert.deepEqual(calls.slice(4), [["tree", 2]]);
   f.dispose();
 
-  // Without the tree, Threshold is followed by Watch and tree, and Watch and
-  // tree by The watch; a URL's Gallery detail is followed by The watch.
+  // Without the tree, Threshold is followed by The watch; a URL's Gallery
+  // detail or Watch and tree is followed by The watch.
   assert.equal(DIRECTED_SHOTS.tower[2].tour, false);
   assert.equal(DIRECTED_SHOTS.tower[3].tour, false);
+  assert.equal(DIRECTED_SHOTS.tower[4].tour, false);
   for (const [angle, upcoming] of [
-    [1, ["tower", 4]],
+    [1, ["tower", 0]],
     [4, ["tower", 0]],
     [3, ["tower", 0]],
   ]) {
@@ -455,7 +459,7 @@ test("unavailable subjects are skipped, loading holds, and disposal blocks later
   const f = setup();
   f.controller.setSubject("tree", null);
   f.controller.setStatus({ kind: "tree", status: "fallback" });
-  for (const t of [0, 5, 5.05, 10.05, 10.1, 15.1, 15.15]) f.render(t);
+  for (const t of [0, 5, 5.05, 10.05, 10.1]) f.render(t);
   assert.equal(f.name, "The watch");
   f.controller.setStatus({ kind: "tower", status: "loading" });
   f.render(16);
@@ -499,20 +503,21 @@ test("a URL's Masonry study or Gallery detail is followed by The watch without r
     DIRECTED_SHOTS.tower.map((shot) => shot.name),
     ["The watch", "Threshold", "Masonry study", "Gallery detail", "Watch and tree"],
   );
+  // Out of the tour, it too is followed by The watch.
   const f = setup(TOUR_PER_SHOT);
   assert.equal(f.controller.setPreviewShot("tower", 4), true);
   f.render(0);
   assert.equal(f.name, "Watch and tree");
-  assert.equal(f.tour.state.index, 5);
+  assert.equal(f.tour.state.index, null);
   f.tour.next();
   f.render(1);
-  assert.equal(f.name, "Close-up");
-  assert.equal(f.tour.state.index, 6);
+  assert.equal(f.name, "The watch");
+  assert.equal(f.tour.state.index, 1);
   idle(f);
   f.dispose();
 });
 
-test("the tour order alternates subjects, opens on The watch and keeps Lantern study from Root and lantern", () => {
+test("the tour order alternates subjects while it can, opens on The watch and keeps Lantern study from Root and lantern", () => {
   assert.ok(Object.isFrozen(TOUR_ORDER));
   assert.equal(TOUR_ORDER[0], "The watch");
   assert.equal(new Set(TOUR_ORDER).size, TOUR_ORDER.length);
@@ -529,7 +534,10 @@ test("the tour order alternates subjects, opens on The watch and keeps Lantern s
     assert.equal(TOUR_ORDER.includes(name), shot.tour !== false, `${name} membership`);
   const pairs = TOUR_ORDER.map((name, i) => [name, TOUR_ORDER[(i + 1) % TOUR_ORDER.length]]);
   const together = pairs.filter(([a, b]) => subjects.get(a).subject === subjects.get(b).subject);
-  assert.deepEqual(together, [["Close-up", "Root and lantern"]]);
+  assert.deepEqual(together, [
+    ["Portrait", "Lantern study"],
+    ["Close-up", "Root and lantern"],
+  ]);
   assert.equal(subjects.get("Close-up").subject, "tree");
   for (const [a, b] of pairs)
     assert.notDeepEqual([a, b].sort(), ["Lantern study", "Root and lantern"]);
@@ -666,7 +674,7 @@ test("tour shots open without black and dissolve the kept outgoing frame into ea
   frame(10);
   assert.equal(f.tour.transition.capture, true);
   frame(10.3);
-  assert.equal(f.controller.shot.name, "Threshold");
+  assert.equal(f.controller.shot.name, "Lantern study");
   assert.ok(pass.uniforms.uProgress.value < 1);
   f.tour.toggle();
   frame(10.4);
