@@ -156,7 +156,16 @@ export const DIRECTED_SHOTS = {
         move: { dolly: [1.06, 0.94], crane: [0, 0.08], ease: 0.6 },
         anchor: [0.5, 0.66],
       },
-      light: { fill: 0.85, rim: 1.3 },
+      // The crown in moonlight (the owner's pick of 2026-10-09): its pale,
+      // bleached limbs read cool grey, not pink-beige (pale), and its bark
+      // shades smoothly with a third of the cel step (grade.subjects). The
+      // moon catches it its own way (shafts.gobo over the tree's,
+      // light-shafts.js): barely wrapped, so it falls on the faces turned to
+      // the moon and leaves the rest dark, with a strong cool silver catch on
+      // the edges toward it. Its rays are the tree's own.
+      light: { fill: 0.85, rim: 1.3, pale: 0.75 },
+      grade: { subjects: 0.3 },
+      shafts: { gobo: { color: [0.6, 0.78, 1.2], gain: 3.4, wrap: 0.1, rim: 5 } },
       move: { truck: [-0.07, 0.07], crane: [0, 0.13], dolly: [1.05, 0.92], ease: 0.6 },
       // Low (0.12), so the plain ahead is foreshortened under the ranges, and
       // calmed: the near slate burned down, its texture and glints quietened

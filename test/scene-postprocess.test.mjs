@@ -485,7 +485,7 @@ test("in film the grade leaves the mountains' relief to their own shading and ha
   );
   assert.match(
     shader,
-    /color = mix\(color, celColor, uCelMix \* \(1\.0 - relief \* smoothstep\(0\.05, 0\.1, gradedLuma\)\) \* \(1\.0 - groundLayer\) \* \(1\.0 - starLayer\)\);/,
+    /color = mix\(color, celColor, uCelMix \* \(1\.0 - relief \* smoothstep\(0\.05, 0\.1, gradedLuma\)\) \* \(1\.0 - groundLayer\) \* \(1\.0 - starLayer\) \* mix\(1\.0, uSubjectCel, smoothstep\(0\.8, 1\.0, texel\.a\)\)\);/,
   );
   // The star's mask, STAR_LAYER from each of its four parts, stays inside the
   // exemption's plateau.
@@ -891,6 +891,22 @@ test("the shot's lens blurs only in film, the bars cut the frame and the grain s
   pipeline.setLens({ blur: 10 });
   pipeline.setLens(null);
   assert.equal(final.uBlur.value, 0, "no lens is sharp");
+
+  // A shot's grade scales the cel step on the subjects in film only; without
+  // one the step is whole.
+  const grading = pipeline.passes.grading.uniforms;
+  assert.equal(grading.uSubjectCel.value, 1);
+  pipeline.setGrade({ subjects: 0.3 });
+  assert.equal(grading.uSubjectCel.value, 0.3);
+  pipeline.setGrade({});
+  assert.equal(grading.uSubjectCel.value, 1, "a grade without subjects keeps the step");
+  pipeline.setGrade({ subjects: 0.3 });
+  pipeline.setGrade(null);
+  assert.equal(grading.uSubjectCel.value, 1, "no grade keeps the step");
+  pipeline.setFilmTreatment(false);
+  pipeline.setGrade({ subjects: 0.3 });
+  assert.equal(grading.uSubjectCel.value, 1, "outside film the step is whole");
+  pipeline.setFilmTreatment(true);
 
   // The capture keeps the outgoing shot's focus for the kept frame; the next
   // shot's lens then changes only the live frame.
