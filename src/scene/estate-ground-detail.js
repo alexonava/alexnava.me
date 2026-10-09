@@ -7,6 +7,7 @@ import {
 } from "three";
 import { DEPTH_LAYER, stampDepthLayer } from "./depth-layers.js";
 import { ESTATE, estateLantern, estatePathDistance, estatePoint } from "./estate-layout.js";
+import { GRASS_MOOD } from "./film-light.js";
 import { rockKeepouts } from "./rock-scatter.js";
 import { SLATE_PUDDLES, SLATE_STREAMS } from "./mud-ground.js";
 
@@ -72,22 +73,40 @@ transformed.xz += aGrass.x*(vec2(.8, .5)*sin(grassPhase)+vec2(.25, .4)*sin(grass
 // The wind's clock wraps after a whole number of both its waves' cycles
 // (speed and 2.3 times it), so it never jumps and its float stays precise.
 const WIND_PERIOD = (20 * Math.PI * 10) / GROWTH.speed;
+// The colour inside the blade. High's film is multisampled, and a blade
+// thinner than a pixel can cover a sample but not the pixel's centre, where its
+// vertex colour is read past the blade's edges (overshooting toward a pale
+// yellow, which the lantern lights into a one-pixel sparkle). A centroid copy
+// is read where the blade covers the pixel; a shot's grassInside (film-light.js
+// GRASS_MOOD) takes that share of it, and at 0 nothing changes. WebGL1 has
+// neither centroid varyings nor the multisampled film.
+const GRASS_INSIDE = "#if __VERSION__ >= 300\ncentroid varying vec3 vGrassColor;\n#endif";
+const GRASS_INSIDE_COLOR = `vec3 grassBase = diffuseColor.rgb;
+#include <color_fragment>
+#if __VERSION__ >= 300
+if (grassInside > 0.0) diffuseColor.rgb = grassBase*mix(vColor, vGrassColor, grassInside);
+#endif`;
 export function grassMaterial() {
   const time = { value: 0 };
   const material = new MeshLambertMaterial({ vertexColors: true, side: DoubleSide });
   material.onBeforeCompile = (shader) => {
     shader.uniforms.grassTime = time;
+    shader.uniforms.grassInside = GRASS_MOOD;
     shader.vertexShader = shader.vertexShader
       .replace(
         "#include <common>",
-        "#include <common>\nattribute vec2 aGrass;\nuniform float grassTime;\nvarying float vGrassUp;",
+        `#include <common>\nattribute vec2 aGrass;\nuniform float grassTime;\nvarying float vGrassUp;\n${GRASS_INSIDE}`,
       )
       .replace(
         "#include <begin_vertex>",
-        `#include <begin_vertex>\nvGrassUp = aGrass.y;\n${GRASS_VERTEX}`,
+        `#include <begin_vertex>\nvGrassUp = aGrass.y;\n#if __VERSION__ >= 300\nvGrassColor = vColor;\n#endif\n${GRASS_VERTEX}`,
       );
     shader.fragmentShader = shader.fragmentShader
-      .replace("#include <common>", "#include <common>\nvarying float vGrassUp;")
+      .replace(
+        "#include <common>",
+        `#include <common>\nvarying float vGrassUp;\nuniform float grassInside;\n${GRASS_INSIDE}`,
+      )
+      .replace("#include <color_fragment>", GRASS_INSIDE_COLOR)
       .replace(
         "#include <normal_fragment_begin>",
         "#include <normal_fragment_begin>\nnormal = normalize(mix(normal, (viewMatrix*vec4(0., 1., 0., 0.)).xyz, vGrassUp));",

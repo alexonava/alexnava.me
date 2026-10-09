@@ -7,8 +7,9 @@ export const FILM_LIGHT = Object.freeze({ key: 1.12, fill: 1.15, hemisphere: 0.8
 
 // A shot's `light` mood multiplies the film balance (key, fill), the lantern and
 // the rim, sets how much of the tree's pale wood reads moonlit grey (pale),
-// the share of the tree's rim kept off the text (rimText) and the share of the
-// bark's glints kept off the name and intro (glintText), both 0 by default; it
+// the share of the tree's rim kept off the text (rimText), the share of the
+// grass's colour read inside its blades (grassInside) and the share of the
+// bark's glints kept off the name and intro (glintText), all 0 by default; it
 // follows the shot on screen, so it changes on a cut.
 export const SHOT_LIGHT_DEFAULT = Object.freeze({
   key: 1,
@@ -17,6 +18,7 @@ export const SHOT_LIGHT_DEFAULT = Object.freeze({
   rim: 1,
   pale: 0,
   rimText: 0,
+  grassInside: 0,
   glintText: 0,
 });
 export function shotLight(shot) {
@@ -68,3 +70,12 @@ export const PALE_MOOD = { value: 0 };
 // `reach` of the screen's smaller side. Off (0) unless a shot asks for it.
 export const GLINT = Object.freeze({ reach: 0.2 });
 export const GLINT_MOOD = { value: 0 };
+
+// The grass's colour inside its blades under a shot's `grassInside`
+// (estate-ground-detail.js grassMaterial). High's film is multisampled, and a
+// blade thinner than a pixel can cover a sample but not the pixel's centre,
+// where its colour is read past the blade's own edges and overshoots toward a
+// pale yellow; the lantern lights those specks into one-pixel sparkles. By
+// that share the colour is read where the blade covers the pixel (centroid).
+// Off (0) unless a shot asks for it.
+export const GRASS_MOOD = { value: 0 };
