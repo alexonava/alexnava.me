@@ -11,6 +11,7 @@ import {
   PUSH_IN,
   LETTERBOX,
   letterboxShare,
+  shotAnchor,
 } from "./directed-shots.js";
 
 // The bootstrap reads the page's layout from here too.
@@ -94,8 +95,10 @@ function keepsFit(lock, shot, measured, area, width, height, defer) {
     Math.abs(area.width - a.width) >= 1
   )
     return false;
-  const extent = (Math.min(1, (shot.margin ?? 0.85) / (1 - PUSH_IN)) * a.height) / 2;
-  return a.top + a.height / 2 + extent <= height - 16;
+  // The subject's reach below its aim, wherever the shot anchors it.
+  const down = shotAnchor(shot)[1],
+    extent = Math.min(1, (shot.margin ?? 0.85) / (1 - PUSH_IN)) * a.height * (1 - down);
+  return a.top + a.height * down + extent <= height - 16;
 }
 // A move's nearest pose, as a share of its fitted distance (for the fog).
 const nearestScales = new WeakMap();
@@ -419,10 +422,13 @@ export function createCinematicCamera({
               ((to - from) / 2) * Math.sin(((elapsedSeconds - started) * Math.PI * 2) / 48);
         camera.rotateX((pitch * Math.PI) / 180);
       }
-      // A kept fit becomes a crop anchored to the top of the canvas: the pixel
-      // scale and the subject's distance from the top edge stay constant.
-      const centerX = lock.area.left + lock.area.width / 2,
-        centerY = lock.area.top + lock.area.height / 2;
+      // The aim lands on the shot's anchor in the safe area (its centre unless
+      // the shot places it). A kept fit becomes a crop anchored to the top of
+      // the canvas: the pixel scale and the subject's distance from the top
+      // edge stay constant.
+      const [across, down] = shotAnchor(shot),
+        centerX = lock.area.left + lock.area.width * across,
+        centerY = lock.area.top + lock.area.height * down;
       camera.fov =
         height === lock.height
           ? fov
