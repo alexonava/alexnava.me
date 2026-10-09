@@ -25,6 +25,7 @@ import {
 import {
   DIRECTED_SHOTS,
   fitPoses,
+  fitShot,
   measureShot,
   MOVE_PHASES,
   resolveDirectedShot,
@@ -441,6 +442,26 @@ test("an address-bar resize keeps a tour shot's fit as a top-anchored crop until
   f.dispose();
 });
 
+test("an anchored tour shot keeps its fit through an address bar while its reach below the aim stays on the canvas", () => {
+  const f = terrainSetup(390, 844);
+  assert.equal(f.controller.setPreviewShot("tree", 0), true);
+  f.apply(390, 844);
+  const shot = f.controller.shot,
+    locked = f.controller.frame;
+  // Portrait sets the tree on the phone's lower third.
+  assert.deepEqual(shot.anchor, [0.5, 0.66]);
+  const a = cinematicSafeArea(390, 844, f.hero, { top: 844 - 110 }),
+    reach = a.top + a.height * 0.66 + Math.min(1, shot.margin / (1 - PUSH_IN)) * a.height * 0.34,
+    edge = Math.ceil(reach + 16);
+  f.apply(390, edge + 1);
+  assert.equal(f.controller.frame, locked, "kept while its reach stays on the canvas");
+  f.apply(390, 844);
+  assert.equal(f.controller.frame, locked);
+  f.apply(390, edge - 2);
+  assert.notEqual(f.controller.frame, locked, "refit once its reach would leave the canvas");
+  f.dispose();
+});
+
 test("large height changes, rotation, a moved hero and still framing refit at once", () => {
   const refits = (resize) => {
     const f = terrainSetup(390, 844);
@@ -591,6 +612,132 @@ test("all directed framing regions fit desktop and phone through both movement e
           o.material?.dispose();
         });
       }
+});
+
+test("an anchor sets the aim on its point of the safe area and the fit holds the volume around it", () => {
+  const near = (a, b, eps) => assert.ok(Math.abs(a - b) < eps, `${a} != ${b}`);
+  const [w, h] = [1600, 900],
+    area = cinematicSafeArea(w, h, { right: 420, bottom: 220 }, { top: h - 105 });
+  const root = new Group(),
+    mesh = new Mesh(new BoxGeometry(14, 34, 12), new MeshStandardMaterial());
+  mesh.position.y = 17;
+  root.add(mesh);
+  const base = { ...DIRECTED_SHOTS.tower[2], name: "Anchor probe", move: null, letterbox: null };
+  const fitWith = (anchor) => {
+    const shot = anchor ? { ...base, anchor } : base;
+    DIRECTED_SHOTS.tower.push(shot);
+    const camera = new PerspectiveCamera(45, w / h, 0.1, 1000),
+      controller = createCinematicCamera({
+        camera,
+        selected: "tower",
+        angle: DIRECTED_SHOTS.tower.length - 1,
+        getSafeArea: () => area,
+      });
+    try {
+      controller.setSubject("tower", root);
+      controller.setStatus({ kind: "tower", status: "ready" });
+      // The held pose: the drift's centre, no push.
+      controller.apply({ width: w, height: h, reducedMotion: true });
+      camera.updateMatrixWorld();
+      const measured = measureShot(root, shot),
+        aim = controller.target.clone().project(camera),
+        points = [];
+      for (let i = 0; i < measured.points.length; i += 3) {
+        const v = new Vector3(...measured.points.slice(i, i + 3)).project(camera);
+        points.push([((v.x + 1) * w) / 2, ((1 - v.y) * h) / 2]);
+      }
+      return {
+        distance: controller.frame.distance,
+        aim: [((aim.x + 1) * w) / 2, ((1 - aim.y) * h) / 2],
+        points,
+      };
+    } finally {
+      controller.dispose();
+      DIRECTED_SHOTS.tower.pop();
+    }
+  };
+  // The default is the centre, and the centre is the symmetric fit the shots
+  // had before anchors, written out here: the same distance, bit for bit.
+  assert.equal(fitWith([0.5, 0.5]).distance, fitWith(null).distance);
+  {
+    const shot = base,
+      measured = measureShot(root, shot),
+      aspect = w / h,
+      margin = shot.margin ?? 0.85,
+      poses = fitPoses(shot),
+      dy = measured.cameraY - measured.target.y;
+    const fits = (distance) =>
+      poses.every(({ yaw: offset, scale, fov }) => {
+        const tan = Math.tan((fov * Math.PI) / 360),
+          maxX = ((tan * aspect * area.width) / w) * margin,
+          maxY = ((tan * area.height) / h) * margin,
+          yaw = ((shot.azimuth + offset) * Math.PI) / 180,
+          co = Math.cos(yaw),
+          si = Math.sin(yaw),
+          reach = distance * scale,
+          length = Math.hypot(reach, dy),
+          c = reach / length,
+          s = dy / length;
+        for (let i = 0; i < measured.points.length; i += 3) {
+          const x = measured.points[i] - measured.target.x,
+            y = measured.points[i + 1] - measured.target.y,
+            z = measured.points[i + 2] - measured.target.z;
+          const across = -si * x + co * z,
+            along = co * x + si * z,
+            depth = length - along * c - y * s;
+          if (
+            depth <= 0.1 ||
+            Math.abs(across) > maxX * depth ||
+            Math.abs(y * c - along * s) > maxY * depth
+          )
+            return false;
+        }
+        return true;
+      });
+    let lo = 0.1,
+      hi = Math.max(20, measured.height * 3);
+    while (!fits(hi) && hi < 4096) hi *= 2;
+    for (let i = 0; i < 22; i++) {
+      const mid = (lo + hi) / 2;
+      if (fits(mid)) hi = mid;
+      else lo = mid;
+    }
+    assert.equal(fitShot(measured, { ...shot, anchor: [0.5, 0.5] }, area, w, h).distance, hi);
+  }
+  for (const anchor of [
+    [0.3, 0.5],
+    [0.7, 0.62],
+    [0.5, 0.35],
+  ]) {
+    const { aim, points } = fitWith(anchor),
+      label = JSON.stringify(anchor);
+    near(aim[0], area.left + anchor[0] * area.width, 0.01);
+    near(aim[1], area.top + anchor[1] * area.height, 0.01);
+    for (const [x, y] of points)
+      assert.ok(
+        x >= area.left - 0.01 &&
+          x <= area.left + area.width + 0.01 &&
+          y >= area.top - 0.01 &&
+          y <= area.top + area.height + 0.01,
+        `${label} keeps the volume in the safe area`,
+      );
+    // Snug: the volume reaches its margin on some side of the aim (the fit's
+    // other poses swing it a degree either way).
+    const margin = base.margin ?? 0.85,
+      reach = Math.max(
+        ...points.map(([x, y]) =>
+          Math.max(
+            (aim[0] - x) / (anchor[0] * area.width),
+            (x - aim[0]) / ((1 - anchor[0]) * area.width),
+            (aim[1] - y) / (anchor[1] * area.height),
+            (y - aim[1]) / ((1 - anchor[1]) * area.height),
+          ),
+        ),
+      );
+    assert.ok(reach <= margin + 1e-3 && reach > margin - 0.03, `${label} reaches ${reach}`);
+  }
+  mesh.geometry.dispose();
+  mesh.material.dispose();
 });
 
 test("low shots retain terrain clearance throughout the bounded camera arc", () => {
@@ -879,12 +1026,12 @@ test("a shot's tilt pitches the camera from its cut to the next, and holds the m
 
   assert.equal(f.controller.setPreviewShot("tower", 4), true);
   // Driven by the tour: the cut opens at tilt[0]. A 1440x900 desktop is cut to
-  // 2.39:1, and its letterbox variant tilts from -4 to -1 (the base shot -5 to 0).
+  // 2.39:1 and keeps the base shot, which tilts from -6 to -3.
   assert.equal(f.render(0), 0);
   assert.equal(f.controller.shot.name, "Watch and tree");
-  assert.deepEqual(DIRECTED_SHOTS.tower[4].tilt, [-5, 0]);
   assert.equal(f.controller.shot, resolveDirectedShot(DIRECTED_SHOTS.tower[4], 1440, 900));
-  assert.deepEqual(f.controller.shot.tilt, [-4, -1]);
+  assert.equal(f.controller.shot, DIRECTED_SHOTS.tower[4]);
+  assert.deepEqual(f.controller.shot.tilt, [-6, -3]);
   const [from, to] = f.controller.shot.tilt,
     half = (from + to) / 2;
   closeTo(pose().pitch, from, 1e-6);
@@ -1137,7 +1284,7 @@ test("widescreen bars cut desktops to 2.39:1, never phones, portrait, narrow or 
   }
   assert.deepEqual(
     [...DIRECTED_SHOTS.tower, ...DIRECTED_SHOTS.tree].filter((s) => s.letterbox).map((s) => s.name),
-    ["The watch", "Watch and tree", "Close-up"],
+    ["The watch"],
   );
   // A letterboxed window is never short, so the bars' variant never displaces a
   // landscape phone's.

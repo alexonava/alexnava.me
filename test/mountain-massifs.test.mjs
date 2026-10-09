@@ -197,14 +197,22 @@ test("the composed skyline keeps the sun saddle, Close-up and Threshold clear an
     // The tree shots: taller than the rings' 2.1 degrees (owner, 2026-10-03), with
     // an open band of sky kept above them (framing.test.mjs).
     [22, 86, 4.5],
+    // Portrait's crown meets open cloud: only bare, low ranges stand behind it, no
+    // snowy massif (owner, 2026-10-08).
+    [96, 120, 3.5],
   ])
     assert.ok(highest(from, to) <= cap, `${from}-${to} rises to ${highest(from, to)}`);
   for (const [from, to, least] of [
     [141, 164, 7],
     [5, 17, 5.4],
-    [96, 120, 4],
   ])
     assert.ok(highest(from, to) >= least, `${from}-${to} peaks at ${highest(from, to)}`);
+  // No snowy massif is set behind Portrait's crown (owner, 2026-10-08).
+  for (const placement of RANGE_PLACEMENTS)
+    assert.ok(
+      !placement.snow || placement.azimuth < 96 || placement.azimuth > 120,
+      `${placement.id} carries snow behind Portrait's crown`,
+    );
   // The near layer stays low and bare.
   for (const { placement, sky } of composed.placed)
     if (placement.layer === 0)
