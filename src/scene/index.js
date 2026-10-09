@@ -12,7 +12,14 @@ import {
   isStackedLayout,
   layoutRect,
 } from "./cinematic.js";
-import { LANTERN_MOOD, PALE_MOOD, RIM_UNIFORMS, setRim, shotLight } from "./film-light.js";
+import {
+  GLINT_MOOD,
+  LANTERN_MOOD,
+  PALE_MOOD,
+  RIM_UNIFORMS,
+  setRim,
+  shotLight,
+} from "./film-light.js";
 import {
   configureGroundShading,
   createSlateContacts,
@@ -957,6 +964,7 @@ const ORBIT_SPEED = 0.06;
           }
           setRim(filmActive ? mood.rim : 0, filmActive ? mood.rimText : 0);
           PALE_MOOD.value = filmActive ? mood.pale : 0;
+          GLINT_MOOD.value = filmActive ? mood.glintText : 0;
           camera.updateMatrixWorld();
           RIM_UNIFORMS.babelKeyView.value
             .set(...WORLD.SUN_DIRECTION)

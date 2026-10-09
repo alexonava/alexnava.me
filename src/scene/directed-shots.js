@@ -115,6 +115,9 @@ export const DIRECTED_SHOTS = {
       focus: { width: 0.27, depth: [0.13, 0.41] },
       margin: 0.91,
       portrait: { azimuth: -90, focus: { width: 0.2, depth: [0.13, 0.41] } },
+      // Its broken moonlight eases off behind About (light-shafts.js), where
+      // portrait phones see the lattice's lit leg edges (4.24:1 at 390x844).
+      shafts: { gobo: { about: 1 } },
     },
     {
       name: "Watch and tree",
@@ -219,7 +222,10 @@ export const DIRECTED_SHOTS = {
     },
     {
       name: "Lantern study",
-      light: { key: 0.55, fill: 0.65, lantern: 1.45, rim: 0.7 },
+      // Lantern-led, its bark's glints off the text: the lantern's glint on a
+      // wet root beside the name at the end of the push-in (4.67:1 at
+      // 1920x1080) passes the ground's knee (film-light.js GLINT).
+      light: { key: 0.55, fill: 0.65, lantern: 1.45, rim: 0.7, glintText: 1 },
       lens: { blur: 8 },
       move: { dolly: [1.2, 0.85], ease: 0.6 },
       subject: "tree-lantern",
@@ -272,7 +278,10 @@ export const DIRECTED_SHOTS = {
     {
       name: "Root and lantern",
       move: { dolly: [0.86, 1.05], crane: [0, 0.03], ease: 0.6 },
-      light: { key: 0.6, fill: 0.75, lantern: 1.4, rim: 0.9 },
+      // The moon's glint on a wet root under the intro's end at the start of
+      // the pull-back (4.32:1 at 1440x900) passes the ground's knee, as in
+      // Lantern study.
+      light: { key: 0.6, fill: 0.75, lantern: 1.4, rim: 0.9, glintText: 1 },
       lens: { blur: 8 },
       // Round from the pond's axis, so the trunk stands right of centre and
       // the lantern on the right third, the plain behind the name; the aim

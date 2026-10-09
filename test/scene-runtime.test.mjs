@@ -1532,11 +1532,20 @@ test("a shot's light mood merges over the neutral default and never shares it", 
     rim: 1,
     pale: 0,
     rimText: 0,
+    glintText: 0,
   });
   for (const shot of [null, undefined, {}, { light: null }])
     assert.deepEqual(shotLight(shot), SHOT_LIGHT_DEFAULT);
   const mood = shotLight({ light: { fill: 0.8, rim: 1.8 } });
-  assert.deepEqual(mood, { key: 1, fill: 0.8, lantern: 1, rim: 1.8, pale: 0, rimText: 0 });
+  assert.deepEqual(mood, {
+    key: 1,
+    fill: 0.8,
+    lantern: 1,
+    rim: 1.8,
+    pale: 0,
+    rimText: 0,
+    glintText: 0,
+  });
   assert.notEqual(shotLight(null), SHOT_LIGHT_DEFAULT, "a fresh object each time");
   mood.key = 3;
   assert.equal(SHOT_LIGHT_DEFAULT.key, 1);
@@ -1561,6 +1570,17 @@ test("a shot's light mood merges over the neutral default and never shares it", 
   // Close-up alone takes its rim off the text; every other shot keeps it whole.
   for (const shot of [...DIRECTED_SHOTS.tower, ...DIRECTED_SHOTS.tree])
     assert.equal(shotLight(shot).rimText, shot.name === "Close-up" ? 1 : 0, shot.name);
+  // Only the lantern shots keep the bark's glints off their text, wholly:
+  // their wet roots' glints stood behind Lantern study's name and Root and
+  // lantern's intro (4.67:1 and 4.32:1).
+  const glint = [...DIRECTED_SHOTS.tower, ...DIRECTED_SHOTS.tree].filter(
+    (shot) => shotLight(shot).glintText > 0,
+  );
+  assert.deepEqual(
+    glint.map((shot) => shot.name),
+    ["Lantern study", "Root and lantern"],
+  );
+  for (const shot of glint) assert.equal(shotLight(shot).glintText, 1);
 });
 
 test("setRim scales the cool rim colour and keeps the moon-facing floor", () => {
@@ -1595,7 +1615,7 @@ test("each frame applies the shot's light, lens, grade, bars and grain, holding 
   // The mood follows the shot on screen in film only.
   assert.ok(
     index.includes(
-      "const mood = shotLight(filmActive && cinematicApplied ? cinematic.shot : null); rendering.setShotLight?.(mood); if (LANTERN_MOOD.value !== mood.lantern) { LANTERN_MOOD.value = mood.lantern; treeArchitecture?.refreshLantern?.(); } setRim(filmActive ? mood.rim : 0, filmActive ? mood.rimText : 0); PALE_MOOD.value = filmActive ? mood.pale : 0;",
+      "const mood = shotLight(filmActive && cinematicApplied ? cinematic.shot : null); rendering.setShotLight?.(mood); if (LANTERN_MOOD.value !== mood.lantern) { LANTERN_MOOD.value = mood.lantern; treeArchitecture?.refreshLantern?.(); } setRim(filmActive ? mood.rim : 0, filmActive ? mood.rimText : 0); PALE_MOOD.value = filmActive ? mood.pale : 0; GLINT_MOOD.value = filmActive ? mood.glintText : 0;",
     ),
   );
   assert.ok(
