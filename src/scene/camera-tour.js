@@ -9,7 +9,7 @@ export const TOUR_HOLD_FALLBACK = 7;
 // The tour alternates the lookout and the tree, opening on The watch. Three
 // lookout shots and four of the tree leave one pair of tree shots together:
 // Close-up then Root and lantern, which differ in height and bearing (Lantern
-// study and Root and lantern share both, so they are kept apart).
+// study and Root and lantern nearly share both, so they are kept apart).
 export const TOUR_ORDER = Object.freeze([
   "The watch",
   "Portrait",

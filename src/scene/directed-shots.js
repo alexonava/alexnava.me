@@ -50,6 +50,9 @@ export const DIRECTED_SHOTS = {
       // is raised to 0.64-0.93 so the gable apex keeps headroom under the top
       // edge through the end-of-hold push-in on desktop and landscape phones;
       // portrait phones, which had that headroom, keep 0.62-0.90.
+      // A little left of and below the area's centre, so the gallery's far
+      // corner and the gable apex clear the right and top edges rather than
+      // grazing them.
       region: [0.64, 0.93],
       fov: 36,
       azimuth: 86,
@@ -57,10 +60,12 @@ export const DIRECTED_SHOTS = {
       arc: 2,
       hold: 7,
       focus: { width: 0.3, depth: [0.06, 0.34] },
-      margin: 0.91,
+      margin: 0.87,
+      anchor: [0.47, 0.52],
       portrait: { region: [0.62, 0.9], focus: { width: 0.22, depth: [0.06, 0.34] } },
-      // Landscape phones keep the drift: no room about the name for a move.
-      landscape: { move: null, azimuth: 82 },
+      // Landscape phones keep the drift (no room about the name for a move) and
+      // the centred aim and fuller margin, which keep the star clear of the name.
+      landscape: { move: null, azimuth: 82, anchor: [0.5, 0.5], margin: 0.91 },
     },
     {
       // The name and URL are retained; for the timber lookout it is a
@@ -102,40 +107,59 @@ export const DIRECTED_SHOTS = {
     },
     {
       name: "Watch and tree",
-      letterbox: { tilt: [-4, -1], height: 0.35 },
       light: { key: 1.15, fill: 0.45, rim: 2.4 },
-      move: { dolly: [1.08, 0.94], ease: 0.5 },
-      // The whole lookout from beyond the tree, the star beside it: the one
-      // shot with both landmarks. Small in a wide frame, so the plain is calmed
-      // (as Portrait's) and the camera tilts up through the hold from the
-      // roots to the sky (tilt: degrees of pitch at the cut and at the next).
+      move: { dolly: [1.04, 0.94], ease: 0.5 },
+      // The one shot with both landmarks, side by side and apart: the lookout
+      // whole left of the area's centre, the tree whole to its right, the star
+      // high between the name and the lookout, a triangle of the three. Small
+      // in a wide frame, so the plain is calmed (as Portrait's) and the camera
+      // tilts up through the hold (tilt: degrees of pitch at the cut and at the
+      // next), the range staying above the name. Further out, the cut opens on
+      // the hard top-left edge of the cloud cover at these bearings (it showed
+      // at margin 0.55 from 66 degrees).
       region: [0, 1],
       fov: 34,
-      azimuth: 45,
+      azimuth: 70,
       height: 0.2,
       arc: 2,
       hold: 7,
-      margin: 0.5,
-      tilt: [-5, 0],
-      // Phones and portrait monitors come round the tree's other side: the
-      // tree stands left of the lookout and the star shows whole below the
-      // name, tilting gently (the frame is tall). Squat windows, with the name
-      // beside the subject, keep the star whole to the name's right.
-      portrait: { azimuth: 20, tilt: [0, 2] },
-      squat: { azimuth: 40 },
-      landscape: { tilt: [-3, 0], move: null },
+      margin: 0.66,
+      anchor: [0.36, 0.62],
+      tilt: [-6, -3],
+      // Phones and portrait monitors keep the lookout on the left third and the
+      // tree whole to its right, both clear of the edges; the star is out of
+      // their view. Landscape phones turn a little further round. Squat and the
+      // smallest landscape windows, the name above the subject's left, see the
+      // pair mirrored from across the plain: the tree left, the lookout right,
+      // the star whole beyond it.
+      portrait: { azimuth: 55, margin: 0.52, anchor: [0.2, 0.62], tilt: [-1, 2] },
+      landscape: { azimuth: 75, margin: 0.6, anchor: [0.5, 0.55], tilt: [-3, 0], move: null },
+      compact: { azimuth: -15, margin: 0.6, anchor: [0.6, 0.55], tilt: [-3, 0], move: null },
+      squat: {
+        azimuth: -15,
+        margin: 0.6,
+        anchor: [0.6, 0.55],
+        tilt: [-5, 0],
+        move: { dolly: [1.08, 0.94], ease: 0.5 },
+      },
       ground: { burn: { amount: 0.45, reach: [0.3, 0.9] }, flatten: 0.6, keep: [9, 20] },
     },
   ],
   tree: [
     {
       name: "Portrait",
-      portrait: { move: { dolly: [1.06, 0.94], crane: [0, 0.08], ease: 0.6 } },
+      // Phones set the tree on the lower third, open sky above it.
+      portrait: {
+        move: { dolly: [1.06, 0.94], crane: [0, 0.08], ease: 0.6 },
+        anchor: [0.5, 0.66],
+      },
       light: { fill: 0.85, rim: 1.3 },
       move: { truck: [-0.07, 0.07], crane: [0, 0.13], dolly: [1.05, 0.92], ease: 0.6 },
       // Low (0.12), so the plain ahead is foreshortened under the ranges, and
       // calmed: the near slate burned down, its texture and glints quietened
-      // beyond the tree's knoll (slateCalmFor()).
+      // beyond the tree's knoll (slateCalmFor()). The crown stands against the
+      // clouds over bare near ranges: no snowy massif rises behind it
+      // (mountain-build.js RANGE_PLACEMENTS).
       region: [0, 1],
       fov: 36,
       azimuth: -72,
@@ -153,58 +177,74 @@ export const DIRECTED_SHOTS = {
       lens: { blur: 8 },
       move: { dolly: [1.2, 0.85], ease: 0.6 },
       subject: "tree-lantern",
+      // Across the pond, a little round from its axis and with the lantern
+      // right of the area's centre, so less of the root flare stands behind
+      // the name at the end of the push-in. Phones keep the pond's axis.
       region: [0, 1],
       fov: 34,
-      azimuth: -115,
+      azimuth: -125,
       height: 0.62,
       arc: 2,
       hold: 6,
       margin: 0.7,
-      landscape: { move: null },
-      portrait: { move: { dolly: [1.1, 0.9], ease: 0.6 } },
+      anchor: [0.56, 0.5],
+      landscape: { move: null, azimuth: -115, anchor: [0.5, 0.5] },
+      portrait: { move: { dolly: [1.1, 0.9], ease: 0.6 }, azimuth: -115, anchor: [0.5, 0.5] },
     },
     {
       name: "Close-up",
-      letterbox: { azimuth: -160 },
       light: { fill: 0.7, rim: 2 },
       lens: { blur: 10 },
       move: { truck: [-0.1, 0.1], ease: 0.5 },
-      // The twisted tree's fork sits high on the trunk.
-      region: [0.38, 0.56],
-      fov: 30,
+      // The crown: low under the fork high on the trunk, looking up at the
+      // limbs against the sky, open sky beside the name.
+      region: [0.5, 0.78],
+      fov: 32,
       azimuth: -155,
-      height: 0.42,
+      height: 0.28,
       arc: 2,
       hold: 6,
-      focus: { width: 0.23, depth: [-0.09, 0.14] },
-      margin: 0.95,
-      // Phones push in: a sideways truck this close takes the lens into the trunk.
+      focus: { width: 0.32, depth: [-0.15, 0.2] },
+      margin: 0.92,
+      anchor: [0.58, 0.45],
+      // Phones push in: a sideways truck this close takes the lens into the
+      // trunk. Their aim sits a little high, which lifts the far range's snow
+      // clear above the name on portrait monitors.
       portrait: {
-        focus: { width: 0.16, depth: [-0.09, 0.14] },
+        focus: { width: 0.26, depth: [-0.15, 0.2] },
+        anchor: [0.5, 0.4],
         move: { dolly: [1.1, 0.94], ease: 0.5 },
       },
-      // Landscape phones keep the drift: no room about the name for a move.
-      landscape: { move: null, margin: 0.83 },
+      // Landscape phones keep the drift (no room about the name for a move),
+      // from higher, so the roots stay below the short frame.
+      landscape: { move: null, margin: 0.83, height: 0.5, anchor: [0.5, 0.5] },
     },
     {
       name: "Root and lantern",
       move: { dolly: [0.86, 1.05], crane: [0, 0.03], ease: 0.6 },
       light: { key: 0.6, fill: 0.75, lantern: 1.4, rim: 0.9 },
       lens: { blur: 8 },
+      // Round from the pond's axis, so the trunk stands right of centre and
+      // the lantern on the right third, the plain behind the name; the aim
+      // sits low, which keeps the ranges under the top edge's open band.
+      // Phones set the lantern low on that third.
       region: [0, 0.16],
       fov: 32,
-      azimuth: -115,
+      azimuth: -120,
       height: 0.14,
       arc: 1,
       hold: 6,
       focus: { width: 0.3, depth: [-0.1, 0.32] },
       margin: 0.91,
+      anchor: [0.52, 0.64],
       portrait: {
         focus: { width: 0.25, depth: [-0.1, 0.32] },
+        anchor: [0.55, 0.66],
         move: { dolly: [0.92, 1.06], ease: 0.6 },
       },
-      // Landscape phones keep the drift: no room about the name for a move.
-      landscape: { move: null },
+      // Landscape phones keep the drift (no room about the name for a move)
+      // and the pond's axis.
+      landscape: { move: null, azimuth: -115, anchor: [0.5, 0.5] },
     },
   ],
 };
@@ -407,16 +447,28 @@ export function fitPoses(shot) {
     : [-shot.arc, 0, shot.arc].map((yaw) => ({ yaw, scale: 1, crane: 0, truck: 0, fov: shot.fov }));
 }
 
+// A shot's `anchor`: where its aim lands in the safe area, as shares of the
+// area's width from its left edge and of its height from its top, so a subject
+// can stand on a third rather than at the centre. The fit keeps the focal
+// volume inside the area on every side of that point. A shot's `tilt` pitches
+// the camera after the fit, moving the aim off its anchor; leave margin for it.
+export const CENTRE = Object.freeze([0.5, 0.5]);
+export function shotAnchor(shot) {
+  return shot.anchor ?? CENTRE;
+}
+
 export function fitShot(measured, shot, area, width, height) {
   const aspect = width / height,
     margin = shot.margin ?? 0.85,
+    [across, down] = shotAnchor(shot),
     poses = fitPoses(shot);
+  // Per pose, the slopes the focal volume may reach from the aim: to the left
+  // and right of it, then above and below it.
   const limits = poses.map(({ fov }) => {
-    const tan = Math.tan((fov * Math.PI) / 360);
-    return [
-      ((tan * aspect * area.width) / width) * margin,
-      ((tan * area.height) / height) * margin,
-    ];
+    const tan = Math.tan((fov * Math.PI) / 360),
+      wide = ((2 * tan * aspect * area.width) / width) * margin,
+      tall = ((2 * tan * area.height) / height) * margin;
+    return [wide * across, wide * (1 - across), tall * down, tall * (1 - down)];
   });
   const dy = measured.cameraY - measured.target.y;
   const projected = [];
@@ -438,7 +490,7 @@ export function fitShot(measured, shot, area, width, height) {
   const fits = (distance) => {
     for (let k = 0; k < poses.length; k++) {
       const { scale, crane, truck } = poses[k],
-        [maxX, maxY] = limits[k],
+        [left, right, above, below] = limits[k],
         reach = distance * scale,
         rise = dy + crane * measured.height,
         side = truck * reach,
@@ -446,12 +498,17 @@ export function fitShot(measured, shot, area, width, height) {
         c = reach / length,
         s = rise / length,
         points = projected[k];
+      // Across is positive to the camera's left, up is positive upward.
       for (let i = 0; i < points.length; i += 3) {
-        const depth = length - points[i + 2] * c - points[i + 1] * s;
+        const depth = length - points[i + 2] * c - points[i + 1] * s,
+          across = points[i] - side,
+          up = points[i + 1] * c - points[i + 2] * s;
         if (
           depth <= 0.1 ||
-          Math.abs(points[i] - side) > maxX * depth ||
-          Math.abs(points[i + 1] * c - points[i + 2] * s) > maxY * depth
+          across > left * depth ||
+          -across > right * depth ||
+          up > above * depth ||
+          -up > below * depth
         )
           return false;
       }

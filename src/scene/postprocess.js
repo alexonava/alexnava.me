@@ -363,7 +363,7 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
   // The capture adds no draw: on the capture frame grading writes straight
   // into the kept target and the final pass reads it from there, so the
   // composer's ping-pong is untouched. The kept frame pushes in about the
-  // outgoing camera's off-axis principal point, the safe-area centre.
+  // outgoing camera's off-axis principal point, the shot's anchor in the safe area.
   const renderGrading = gradingPass.render.bind(gradingPass);
   gradingPass.render = (passRenderer, writeBuffer, readBuffer, deltaTime, maskActive) => {
     capturing = phase === ARMED && !gradingPass.renderToScreen;

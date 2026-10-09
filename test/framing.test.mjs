@@ -467,6 +467,14 @@ const LAYOUTS = [
     hero: { left: 16, right: 283, top: 1496, bottom: 1726 },
     nav: { top: 1838 },
   },
+  // A squarish short window: the name top left beside the subject, which takes
+  // a shot's squat framing (or its portrait one).
+  {
+    width: 700,
+    height: 480,
+    hero: { left: 12, right: 261, top: 12, bottom: 148 },
+    nav: { top: 406 },
+  },
 ];
 
 const PHASES = [0, 0.5, 1];
@@ -679,6 +687,13 @@ test("the Meshy massifs frame every tour shot: sun, roof lane, open sky over the
   const top = Math.max(...towerPoints.map((p) => p.y)),
     bottom = Math.min(...towerPoints.map((p) => p.y));
   const roof = towerPoints.filter((p) => p.y > top - 0.06 * (top - bottom));
+  const treePoints = [];
+  tree.root.traverse((o) => {
+    if (!o.isMesh) return;
+    const p = o.geometry.attributes.position;
+    for (let i = 0; i < p.count; i++)
+      treePoints.push(new Vector3().fromBufferAttribute(p, i).applyMatrix4(o.matrixWorld));
+  });
   // The composed ranges.
   const models = {};
   for (const role of MASSIFS.roles) {
@@ -822,6 +837,51 @@ test("the Meshy massifs frame every tour shot: sun, roof lane, open sky over the
                 `${label} shows ${placement.role} twice from one side`,
               );
             seen.set(key, [...(seen.get(key) ?? []), placement.yaw]);
+          }
+          // Silhouettes never merge (the owner's composition pass of 2026-10-08): a
+          // coarse screen grid of each model's vertices, a cell either way of slack.
+          const cell = 6,
+            columns = Math.ceil(width / cell),
+            rows = Math.ceil(height / cell),
+            cellOf = (p) =>
+              p.depth > 0 && p.x >= 0 && p.x < width && p.y >= 0 && p.y < height
+                ? Math.floor(p.y / cell) * columns + Math.floor(p.x / cell)
+                : -1,
+            cover = (points, slack = 0) => {
+              const cells = new Set();
+              for (const point of points) {
+                const p = screen(point);
+                if (p.depth <= 0 || p.x < 0 || p.x >= width || p.y < 0 || p.y >= height) continue;
+                const cx = Math.floor(p.x / cell),
+                  cy = Math.floor(p.y / cell);
+                for (let y = Math.max(0, cy - slack); y <= Math.min(rows - 1, cy + slack); y++)
+                  for (let x = Math.max(0, cx - slack); x <= Math.min(columns - 1, cx + slack); x++)
+                    cells.add(y * columns + x);
+              }
+              return cells;
+            };
+          if (name === "Watch and tree") {
+            // The two landmarks stand apart.
+            const lookout = cover(towerPoints),
+              crown = cover(treePoints, 1);
+            assert.ok(lookout.size > 0 && crown.size > 0, `${label} shows both landmarks`);
+            let both = 0;
+            for (const c of lookout) if (crown.has(c)) both++;
+            assert.ok(
+              both <= 0.02 * Math.min(lookout.size, crown.size),
+              `${label} sets the tree over the lookout (${both} cells)`,
+            );
+          }
+          if (name === "Portrait") {
+            // The crown meets open cloud: no massif's snow behind the tree (the
+            // procedural backdrop rings behind them are hazed, and not counted).
+            const crown = cover(treePoints, 1);
+            assert.ok(crown.size > 0, `${label} shows the tree`);
+            let behind = 0;
+            for (const point of snowy) {
+              if (crown.has(cellOf(screen(point.clone().add(camera.position))))) behind++;
+            }
+            assert.equal(behind, 0, `${label} shows snow behind the crown`);
           }
         }
         controller.dispose();
