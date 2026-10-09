@@ -256,6 +256,15 @@ float fh=max(smoothstep(fogNear,fogFar,vD),smoothstep(${HORIZON_HAZE.near}.,${HO
 c=mix(c,pa,fh*(1.-smoothstep(-.02,0.,vL.y/r)));
 c=mix(c,pa,fh*(1.-smoothstep(0.,${glslFloat(MOUNTAIN_AIR.footHazeHeight)},vH)*smoothstep(-.05,-.008,vL.y/r)));
 #endif`;
+// A shot's low mist on the ranges' feet (mud-ground.js SLATE_LOOK, written each
+// frame by slateCalmFor(), whose ground mist matches it at the ground line):
+// below the ground line (view slope RANGE_MIST_SHAPE.floor) up to w of its
+// colour (xyz, linear), thinning by `top` of view slope above it, the top
+// wavering along the ring. Off (w 0) unless a shot asks for it.
+export const RANGE_MIST = { value: { x: 0, y: 0, z: 0, w: 0 } };
+export const RANGE_MIST_SHAPE = Object.freeze({ floor: -0.03, top: 0.016 });
+const RANGE_MIST_GLSL = `if(uMist.w>0.){float rmE=vL.y/r,rmA=atan(vL.z,vL.x),rmW=.5+.3*sin(rmA*17.+1.3)+.2*sin(rmA*41.+.4);
+c=mix(c,uMist.rgb,uMist.w*(1.-smoothstep(${glslFloat(RANGE_MIST_SHAPE.floor)},${glslFloat(RANGE_MIST_SHAPE.top)}*(.6+.8*rmW),rmE)));}`;
 // Each crest's own ~1.4 px ink line (px: pixels below the crest; k: a quarter of the range).
 const CREST_INK_GLSL = "c=mix(c,vec3(.012,.016,.03),(1.-smoothstep(.4,1.4,px))*(.7-.3*k));";
 
@@ -288,7 +297,7 @@ const CREST_INK_GLSL = "c=mix(c,vec3(.012,.016,.03),(1.-smoothstep(.4,1.4,px))*(
 // blending so it draws after the stars and covers them, writing its depth layer
 // (depth-layers.js) exactly. Noise hashes reach about 1100 cells: highp.
 function mountainMaterial({ skyRadius, shellOpacity, sunPosition }) {
-  return new ShaderMaterial({
+  const material = new ShaderMaterial({
     name: "EstateMountains",
     transparent: true,
     blending: NoBlending,
@@ -318,6 +327,7 @@ gl_Position=projectionMatrix*m;
 gl_Position.z=mix(gl_Position.z,gl_Position.w,.8);
 }`,
     fragmentShader: `
+uniform vec4 uMist;
 uniform vec2 uSky;
 uniform vec3 uSun, fogColor;
 uniform float fogNear, fogFar;
@@ -404,9 +414,13 @@ c=mix(c,sn,snow*(1.-mist));}
 ${GLOW_RIM_GLSL}
 ${FAR_PLAIN_GLSL}
 ${CREST_INK_GLSL}
+${RANGE_MIST_GLSL}
 gl_FragColor=vec4(c,${DEPTH_LAYER.mountains});
 }`,
   });
+  // Set after the merge, so every mountain material shares the ground's one object.
+  material.uniforms.uMist = RANGE_MIST;
+  return material;
 }
 
 // The Meshy massifs (mountain-build.js RANGE_PLACEMENTS): the owner's three
@@ -472,6 +486,7 @@ gl_Position=projectionMatrix*m;
 gl_Position.z=mix(gl_Position.z,gl_Position.w,.8);
 }`,
     fragmentShader: `
+uniform vec4 uMist;
 uniform vec2 uSky;
 uniform vec3 uSun, fogColor;
 uniform float fogNear, fogFar;
@@ -535,6 +550,7 @@ ${FAR_PLAIN_GLSL}
 // The crest's ink, as the rings', fading out below eye level, where the far plain's air
 // has taken the rock; none on a sliver lying wholly on the crest (vT.x 0 at every corner).
 c=mix(c,vec3(.012,.016,.03),(1.-smoothstep(.4,1.4,px))*(.7-.3*k)*smoothstep(-.6,.15,el)*step(1e-6,fwidth(vT.x)));
+${RANGE_MIST_GLSL}
 gl_FragColor=vec4(c,${DEPTH_LAYER.mountains});
 }`,
   });
@@ -543,6 +559,7 @@ gl_FragColor=vec4(c,${DEPTH_LAYER.mountains});
     uNormal: { value: normalMap },
     uMask: { value: maskMap },
     uNearer: { value: nearerMap },
+    uMist: RANGE_MIST,
   });
   return material;
 }

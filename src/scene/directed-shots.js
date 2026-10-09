@@ -160,9 +160,13 @@ export const DIRECTED_SHOTS = {
       move: { truck: [-0.07, 0.07], crane: [0, 0.13], dolly: [1.05, 0.92], ease: 0.6 },
       // Low (0.12), so the plain ahead is foreshortened under the ranges, and
       // calmed: the near slate burned down, its texture and glints quietened
-      // beyond the tree's knoll (slateCalmFor()). The crown stands against the
-      // clouds over bare near ranges: no snowy massif rises behind it
-      // (mountain-build.js RANGE_PLACEMENTS).
+      // beyond the moonlit clearing about the tree (slateCalmFor()). The
+      // owner's pick of 2026-10-08, all three (mud-ground.js SLATE_LOOK): the
+      // clearing with its texture, the near plain in shade; a low mist over the
+      // far plain and the ranges' feet; the plain after rain catching the sky
+      // away from the text; the crown's shadow softening far out on the plain.
+      // The crown stands against the clouds over bare near ranges: no snowy
+      // massif rises behind it (mountain-build.js RANGE_PLACEMENTS).
       region: [0, 1],
       fov: 36,
       azimuth: -72,
@@ -170,7 +174,21 @@ export const DIRECTED_SHOTS = {
       arc: 4,
       hold: 9,
       margin: 0.93,
-      ground: { burn: { amount: 0.45, reach: [0.4, 0.95] }, flatten: 0.65, keep: [7, 16] },
+      ground: {
+        burn: { amount: 0.45, reach: [0.4, 0.95] },
+        flatten: 0.5,
+        keep: [18, 34],
+        clearing: {
+          toward: 5,
+          radius: [7, 34],
+          light: [1.64, 1.72, 1.89],
+          rest: 0.85,
+          shade: [0.55, 22, 70],
+        },
+        mist: { color: [0.23, 0.26, 0.335], amount: 0.8 },
+        gloss: { film: 0.32, gain: 1.9 },
+        shadow: [12, 30],
+      },
       // Landscape phones keep the drift: no room about the name for a move.
       landscape: { move: null },
     },

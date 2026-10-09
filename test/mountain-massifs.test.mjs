@@ -13,6 +13,7 @@ import {
   MASSIF_SNOW,
   MASSIFS,
   MOUNTAIN_AIR,
+  RANGE_MIST,
   snowReach,
 } from "../src/scene/hill-silhouette.js";
 import {
@@ -380,7 +381,13 @@ test("at a model tier the ranges load the massifs at low priority and land them 
     assert.equal(mesh.renderOrder, MASSIFS.renderOrder);
     assert.equal(mesh.frustumCulled, false);
     assert.ok(mesh.geometry.attributes.aTerrain.count > 0);
-    const { uNormal, uMask, uNearer } = mesh.material.uniforms;
+    const { uNormal, uMask, uNearer, uMist } = mesh.material.uniforms;
+    // The ground's low mist reaches the massifs' feet too.
+    assert.equal(uMist, RANGE_MIST);
+    assert.match(
+      mesh.material.fragmentShader,
+      /if\(uMist\.w>0\.\)\{[^}]*\}\s*gl_FragColor=vec4\(c,0\.3333\);/,
+    );
     assert.ok(uNormal.value.isTexture && uMask.value.isTexture);
     assert.equal(uMask.value.colorSpace, "", "the mask is data");
     assert.equal(uNearer.value.image.width, MASSIFS.sky.texture);

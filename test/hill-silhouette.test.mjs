@@ -20,6 +20,8 @@ import {
   HORIZON_HAZE,
   MOUNTAIN_AIR,
   mountainBody,
+  RANGE_MIST,
+  RANGE_MIST_SHAPE,
   SNOW,
   snowReach,
   TERRAIN_HORIZON,
@@ -1062,6 +1064,15 @@ test("the mountain shader rides the camera, hazes toward the film sky and writes
   assert.equal(material.extensions.derivatives, true);
   assert.doesNotMatch(material.fragmentShader + material.vertexShader, /sampler2D|texture2D/);
   assert.match(material.fragmentShader, /gl_FragColor=vec4\(c,0\.3333\);\s*}$/);
+  // A shot's low mist on the feet, shared with the ground's (mud-ground.js
+  // slateCalmFor()) and drawn last, only when a shot asks for it.
+  assert.equal(material.uniforms.uMist, RANGE_MIST);
+  assert.deepEqual({ ...RANGE_MIST.value }, { x: 0, y: 0, z: 0, w: 0 }, "off by default");
+  assert.ok(RANGE_MIST_SHAPE.floor < 0 && RANGE_MIST_SHAPE.top > 0 && RANGE_MIST_SHAPE.top < 0.05);
+  assert.match(
+    material.fragmentShader,
+    /uniform vec4 uMist;[\s\S]*if\(uMist\.w>0\.\)\{[^}]*\}\s*gl_FragColor=vec4\(c,0\.3333\);\s*}$/,
+  );
   // Lit by the moon key (rendering's sun light, 32,28,14).
   const key = [32, 28, 14].map((value) =>
     (value / Math.hypot(32, 28, 14)).toFixed(3).replace(/^0/, ""),

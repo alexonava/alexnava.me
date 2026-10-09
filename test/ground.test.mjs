@@ -32,10 +32,12 @@ import {
   createHillSilhouette,
   HORIZON_AIR,
   HORIZON_HAZE,
+  RANGE_MIST,
   TERRAIN_EDGE,
   TERRAIN_HORIZON,
 } from "../src/scene/hill-silhouette.js";
 import { EARTH } from "../src/scene/filmic-earth.js";
+import { flat as flatCode } from "./support/code.mjs";
 import { createStoneDetailController } from "../src/scene/stone-detail.js";
 
 const flat = () => 0;
@@ -420,8 +422,9 @@ test("each ground shading has its own program cache key; the slate's shading nee
   const contacts = createSlateContacts();
   const { fragment, uniforms } = compile(true, { detail, contacts });
   // The slate's far edge darkens toward the far plain's air, the shared slate
-  // lifted by HORIZON_AIR.ground, as the last colour the ground writes, and
-  // never lightens: slate already darker than that air keeps its tone.
+  // lifted by HORIZON_AIR.ground, and never lightens: slate already darker
+  // than that air keeps its tone. Only a shot's look follows it: its clearing
+  // and its mist, each off unless a shot asks for it.
   const horizon = TERRAIN_HORIZON.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
     LUMA = "vec3\\(\\.2126,\\.7152,\\.0722\\)";
   assert.match(
@@ -429,7 +432,8 @@ test("each ground shading has its own program cache key; the slate's shading nee
     new RegExp(
       `vec3 earthAir = ${horizon}\\*${String(HORIZON_AIR.ground).replace(".", "\\.")};\\s*` +
         `earthHorizon \\*= smoothstep\\(1\\.0, 1\\.15, dot\\(gl_FragColor\\.rgb, ${LUMA}\\)/dot\\(earthAir, ${LUMA}\\)\\);\\s*` +
-        `gl_FragColor\\.rgb = mix\\(gl_FragColor\\.rgb, earthAir, earthHorizon\\);\\s*#endif\\s*gl_FragColor\\.a = 0\\.6667;`,
+        `gl_FragColor\\.rgb = mix\\(gl_FragColor\\.rgb, earthAir, earthHorizon\\);\\s*#endif\\s*` +
+        `if \\(slateClearShade\\.w > 0\\.\\) \\{[^}]*\\}\\s*if \\(slateMist\\.w > 0\\.\\) \\{[^}]*\\}\\s*gl_FragColor\\.a = 0\\.6667;`,
     ),
   );
   // Delay distance haze so the phone foreground retains texture; the outer
@@ -507,9 +511,19 @@ test("each ground shading has its own program cache key; the slate's shading nee
       fragment.indexOf("#include <lights_fragment_begin>"),
     "the water's normal and share are set before the lights",
   );
+  // The water fades with view distance (SLATE_WATER.far, reaching further only
+  // under a shot's gloss).
   assert.ok(
     fragment.includes(
-      `*(1.0-slatePuddle)*(1.0-smoothstep(${SLATE_WATER.far.map((v) => (Number.isInteger(v) ? v.toFixed(1) : String(v))).join(",")}, length(vViewPosition)))*(1.0-0.7*slateMatte);`,
+      "*(1.0-slatePuddle)*(1.0-slateWaterFar(length(vViewPosition)))*(1.0-0.7*slateMatte);",
+    ),
+  );
+  const [farNear, farFar] = SLATE_WATER.far.map((v) =>
+    Number.isInteger(v) ? v.toFixed(1) : String(v),
+  );
+  assert.ok(
+    fragment.includes(
+      `float slateWaterFar(float d){return smoothstep(mix(${farNear},400.0,slateGlossT),mix(${farFar},1100.0,slateGlossT),d);}`,
     ),
   );
   assert.match(
@@ -1094,6 +1108,134 @@ test("only the wide shots calm the plain, written in place, and the calm is off 
     assert.equal(shader.fragmentShader.includes("gl_FragColor.rgb *= 1.0-slateCalm.x"), film);
     material.dispose();
   }
+});
+
+test("only Portrait takes the look on its plain: a moonlit clearing, low mist, the gloss of rain and a softer crown shadow", (t) => {
+  const contacts = createSlateContacts(),
+    target = { x: 55.1, y: 9, z: 36.1 },
+    clear = contacts.slateClear.value,
+    light = contacts.slateClearLight.value,
+    shade = contacts.slateClearShade.value,
+    mist = contacts.slateMist.value,
+    gloss = contacts.slateGloss.value,
+    shadow = contacts.slateShadowFade.value;
+  // The ranges read the same mist: their feet meet the plain's. It is one
+  // object for the module, so it goes off again however this test ends.
+  assert.equal(contacts.slateMist, RANGE_MIST);
+  t.after(() => slateCalmFor(contacts, null, 60, target));
+  const off = () => {
+    assert.equal(shade.w, 0, "no clearing");
+    assert.equal(mist.w, 0, "no mist");
+    assert.equal(gloss.z, 0, "no gloss");
+    assert.deepEqual({ ...shadow }, { x: 0, y: 0 }, "the moon's shadow whole");
+  };
+  off();
+  const looks = Object.values(DIRECTED_SHOTS)
+    .flat()
+    .filter(({ ground }) => ground?.clearing || ground?.mist || ground?.gloss || ground?.shadow)
+    .map(({ name }) => name);
+  assert.deepEqual(looks, ["Portrait"]);
+  const portrait = DIRECTED_SHOTS.tree.find((shot) => shot.name === "Portrait"),
+    look = portrait.ground;
+  for (const shot of Object.values(DIRECTED_SHOTS).flat()) {
+    slateCalmFor(contacts, portrait, 60, target);
+    slateCalmFor(contacts, shot, 60, target);
+    if (shot !== portrait) off();
+  }
+  slateCalmFor(contacts, portrait, 60, target);
+  // The clearing stands toward the lens, on the shot's bearing.
+  const yaw = (portrait.azimuth * Math.PI) / 180;
+  assert.ok(Math.abs(clear.x - (target.x + Math.cos(yaw) * look.clearing.toward)) < 1e-9);
+  assert.ok(Math.abs(clear.y - (target.z + Math.sin(yaw) * look.clearing.toward)) < 1e-9);
+  assert.deepEqual([clear.z, clear.w], look.clearing.radius);
+  assert.deepEqual(
+    [light.x, light.y, light.z, light.w],
+    [...look.clearing.light, look.clearing.rest],
+  );
+  assert.deepEqual([shade.x, shade.y, shade.z, shade.w], [...look.clearing.shade, 1]);
+  // Lit, cooler than warm, never darker than the rest of the plain.
+  assert.ok(look.clearing.light.every((c) => c > look.clearing.rest && c < 2));
+  assert.ok(look.clearing.light[2] > look.clearing.light[0], "moonlight is cool");
+  assert.ok(look.keep[1] >= look.clearing.radius[1], "the clearing keeps its texture");
+  assert.deepEqual([mist.x, mist.y, mist.z, mist.w], [...look.mist.color, look.mist.amount]);
+  assert.ok(look.mist.color[2] > look.mist.color[0], "the mist is moonlit, cool");
+  assert.deepEqual([gloss.x, gloss.y, gloss.z], [look.gloss.film, look.gloss.gain, 1]);
+  assert.deepEqual([shadow.x, shadow.y], look.shadow);
+  // Without a frame the look goes with the calm.
+  slateCalmFor(contacts, portrait, 0, target);
+  off();
+  slateCalmFor(contacts, portrait, 60, target);
+  slateCalmFor(contacts, null, 60, target);
+  off();
+});
+
+test("the look's shading changes nothing until a shot asks for it", () => {
+  const material = new MeshStandardMaterial(),
+    contacts = createSlateContacts(),
+    shader = {
+      uniforms: {},
+      vertexShader: ["#include <begin_vertex>", "#include <project_vertex>"].join("\n"),
+      fragmentShader: ["#include <shadowmap_pars_fragment>", FILM_CHUNKS].join("\n"),
+    };
+  configureGroundShading(material, true, { contacts });
+  material.onBeforeCompile(shader);
+  const fragment = flatCode(shader.fragmentShader);
+  for (const name of [
+    "slateClear",
+    "slateClearLight",
+    "slateClearShade",
+    "slateGloss",
+    "slateShadowFade",
+  ])
+    assert.equal(shader.uniforms[name], contacts[name], name);
+  assert.equal(shader.uniforms.slateMist, RANGE_MIST);
+  // The moon's shadow fades from the subject only under a look (slateShadowFade.y > 0).
+  assert.ok(
+    fragment.includes(
+      "#ifdef USE_SHADOWMAP float slateShadow(sampler2D map,vec2 size,float bias,float radius,vec4 coord){float s=getShadow(map,size,bias,radius,coord);return slateShadowFade.y>0.?",
+    ),
+  );
+  assert.match(fragment, /:s;} #define getShadow slateShadow #endif/);
+  // The film's share and the water's reach and sky change only under a gloss.
+  assert.ok(fragment.includes("slateWetFilm = (mix(0.12, slateGloss.x, slateGlossW)"));
+  assert.ok(
+    fragment.includes(
+      "void slateGlossSet(){if(slateGloss.z>0.){vec2 v=vSlateClip.xy/vSlateClip.w*.5+.5;slateGlossT=smoothstep(",
+    ),
+  );
+  assert.ok(
+    fragment.includes("smoothstep(mix(70.0,400.0,slateGlossT),mix(130.0,1100.0,slateGlossT)"),
+  );
+  assert.equal(
+    fragment.match(/slateWaterFar\(length\(vViewPosition\)\)\)/g).length,
+    2,
+    "the film and the puddles",
+  );
+  assert.ok(
+    fragment.includes(
+      "*mix(mix(1.5, slateGloss.y, slateGlossT)*mix(vec3(1.0), vec3(0.72,0.88,1.18), slateGlossT), vec3(1.8), slatePuddle)",
+    ),
+  );
+  // The gloss's weights are set once, before the water's share and the lights,
+  // and its reach and sky follow the text guard as its share does.
+  assert.ok(
+    fragment.indexOf("slateGlossSet(); slateWaterN = normalize(") >= 0 &&
+      fragment.indexOf("slateGlossSet(); slateWaterN = normalize(") <
+        fragment.indexOf("slateWetFilm = (mix("),
+  );
+  assert.ok(fragment.includes("slateGlossW=slateGlossT*mix("));
+  // The clearing and the mist are drawn only under a look, and at the plain's
+  // edge (where the far plain's air meets the ranges) the rest of the plain
+  // keeps its light and the mist is whole, as on the ranges' feet.
+  const edge = "smoothstep(155.0, 190.0, max(abs(vMudWorld.x),abs(vMudWorld.z)))";
+  assert.ok(fragment.includes(`float earthHorizon = max(${edge},`));
+  assert.match(fragment, /if \(slateClearShade\.w > 0\.\) \{/);
+  assert.ok(
+    fragment.includes(`mix(vec3(mix(slateClearLight.w, 1., ${edge})), slateClearLight.rgb,`),
+  );
+  assert.match(fragment, /if \(slateMist\.w > 0\.\) \{/);
+  assert.ok(fragment.includes(`*slateMN, 1., ${edge}), 0., 1.)*slateMist.w);`));
+  material.dispose();
 });
 
 test("the terrain chunk restates the plain's level", async () => {
