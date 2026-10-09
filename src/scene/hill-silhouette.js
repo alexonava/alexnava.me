@@ -418,7 +418,7 @@ ${RANGE_MIST_GLSL}
 gl_FragColor=vec4(c,${DEPTH_LAYER.mountains});
 }`,
   });
-  // After the merge, which would clone it: the mist is shared with the ground.
+  // Set after the merge, so every mountain material shares the ground's one object.
   material.uniforms.uMist = RANGE_MIST;
   return material;
 }

@@ -349,12 +349,13 @@ export function createSlateContacts(values = new Float32Array(SLATE_CONTACTS * 4
     slateClearShade: { value: { x: 0, y: 0, z: 1, w: 0 } },
     slateMist: RANGE_MIST,
     slateGloss: { value: { x: 0, y: 0, z: 0, w: 0 } },
-    slateShade: { value: { x: 0, y: 0 } },
+    slateShadowFade: { value: { x: 0, y: 0 } },
   };
 }
 
 // A calmed slate's glints and sky reflection ease by this share of its flatten
-// (slateCalmFor()): 0.7 x 0.65 = about 45% in Portrait.
+// (slateCalmFor()): 0.7 x 0.5 = 35% in Portrait, 0.7 x 0.6 = about 40% in
+// Watch and tree.
 export const SLATE_CALM_GLINT = 0.7;
 
 // A shot's `ground` calm: the plain about the subject quietens so the subject,
@@ -410,7 +411,7 @@ export function slateCalmFor(contacts, shot, distance, at) {
 // - gloss: the plain after rain catches the sky. Its water film takes `film`
 //   of the soil (SLATE_WATER.film[0] elsewhere) and its sky `gain` (gain[0]),
 //   cooled by gloss.tint, out to gloss.far units of view distance (the
-//   puddles too); away from the text only, eased over gloss.text ([name and
+//   puddles too); all of it away from the text only, eased over gloss.text ([name and
 //   intro, About] as shares of the screen's smaller side, as the text guard
 //   measures), and in broad wetter and drier patches (gloss.patch: [cell in
 //   units, the drier patches' share]).
@@ -437,7 +438,7 @@ function slateLookFor(contacts, look, azimuth = 0, at = null) {
     shade = contacts.slateClearShade.value,
     mist = contacts.slateMist.value,
     gloss = contacts.slateGloss.value,
-    shadow = contacts.slateShade.value;
+    shadow = contacts.slateShadowFade.value;
   const clearing = look?.clearing,
     yaw = (azimuth * Math.PI) / 180;
   if (clearing && at) {
@@ -460,7 +461,9 @@ function slateLookFor(contacts, look, azimuth = 0, at = null) {
     gloss.y = look.gloss.gain;
     gloss.z = 1;
   } else gloss.z = 0;
-  [shadow.x, shadow.y] = look?.shadow ?? [0, 0];
+  const fade = look?.shadow;
+  shadow.x = fade ? fade[0] : 0;
+  shadow.y = fade ? Math.max(fade[1], fade[0] + 0.01) : 0;
 }
 
 const glslVec = (values) => `vec${values.length}(${values.map(glslNumber).join(",")})`;
@@ -560,35 +563,42 @@ const unitGlsl = (values) => {
   return glslVec(values.map((value) => +(value / length).toFixed(4)));
 };
 const LUMA = "vec3(.2126,.7152,.0722)";
+// The plain's edge: from [0] to [1] units out along either axis (its square)
+// the slate meets the far plain's air, and a shot's look meets the ranges'.
+const PLAIN_EDGE = `smoothstep(${glslNumber(155)}, ${glslNumber(190)}, max(abs(vMudWorld.x),abs(vMudWorld.z)))`;
 // The shot's look (SLATE_LOOK, slateCalmFor()): its uniforms and helpers.
+// slateGlossSet(), before the lights: the gloss away from the name, the intro
+// and About (slateGlossT) and, in wetter and drier patches, its share there
+// (slateGlossW); both 0 without a gloss, and only then is anything computed.
 // slateWaterFar(d): the water's fade at view distance d, reaching gloss.far
-// under a gloss; slateGlossAt(): the gloss's weight (away from the name, the
-// intro and About, in wetter and drier patches; 0 without one); slateTextGap():
-// how far a point lies outside a text box, as slateBehind() measures it.
+// under a gloss. slateTextGap(): how far a point lies outside a text box, as
+// slateBehind() measures it.
 const LOOK = SLATE_LOOK;
 const LOOK_GLSL = `uniform vec4 slateClear, slateClearLight, slateClearShade, slateMist, slateGloss;
-uniform vec2 slateShade;
+uniform vec2 slateShadowFade;
+float slateGlossT = 0.0, slateGlossW = 0.0;
 float slateTextGap(vec4 r,vec2 v){return length(max(max(r.xy-v,v-r.zw),0.)*vec2(slateAspect,1.)/min(slateAspect,1.));}
-float slateWaterFar(float d){return smoothstep(mix(${glslNumber(SLATE_WATER.far[0])},${glslNumber(LOOK.gloss.far[0])},slateGloss.z),mix(${glslNumber(SLATE_WATER.far[1])},${glslNumber(LOOK.gloss.far[1])},slateGloss.z),d);}
-float slateGlossAt(){vec2 v=vSlateClip.xy/vSlateClip.w*.5+.5;return slateGloss.z*smoothstep(0.,${glslNumber(LOOK.gloss.text[0])},slateTextGap(slateText,v))*smoothstep(0.,${glslNumber(LOOK.gloss.text[1])},slateTextGap(slateAbout,v))*mix(${glslNumber(LOOK.gloss.patch[1])},1.,smoothstep(.35,.7,slateNoise(vMudWorld.xz/${glslNumber(LOOK.gloss.patch[0])})));}
+float slateWaterFar(float d){return smoothstep(mix(${glslNumber(SLATE_WATER.far[0])},${glslNumber(LOOK.gloss.far[0])},slateGlossT),mix(${glslNumber(SLATE_WATER.far[1])},${glslNumber(LOOK.gloss.far[1])},slateGlossT),d);}
+void slateGlossSet(){if(slateGloss.z>0.){vec2 v=vSlateClip.xy/vSlateClip.w*.5+.5;slateGlossT=smoothstep(0.,${glslNumber(LOOK.gloss.text[0])},slateTextGap(slateText,v))*smoothstep(0.,${glslNumber(LOOK.gloss.text[1])},slateTextGap(slateAbout,v));slateGlossW=slateGlossT*mix(${glslNumber(LOOK.gloss.patch[1])},1.,smoothstep(.35,.7,slateNoise(vMudWorld.xz/${glslNumber(LOOK.gloss.patch[0])})));}}
 `;
 // After the shadow maps' functions: the moon's shadow fades with distance from
-// the subject under a shot's look (slateShade: near, far; whole at 0).
+// the subject under a shot's look (slateShadowFade: near, far; whole at 0).
 const LOOK_SHADOW = `#include <shadowmap_pars_fragment>
 #ifdef USE_SHADOWMAP
-float slateShadow(sampler2D map,vec2 size,float bias,float radius,vec4 coord){float s=getShadow(map,size,bias,radius,coord);return slateShade.y>0.?mix(1.,s,1.-smoothstep(slateShade.x,slateShade.y,length(vMudWorld.xz-slateCalmAt.xy))):s;}
+float slateShadow(sampler2D map,vec2 size,float bias,float radius,vec4 coord){float s=getShadow(map,size,bias,radius,coord);return slateShadowFade.y>0.?mix(1.,s,1.-smoothstep(slateShadowFade.x,slateShadowFade.y,length(vMudWorld.xz-slateCalmAt.xy))):s;}
 #define getShadow slateShadow
 #endif`;
 // Last: the clearing (its light, and its shade near the lens) and the mist,
-// each only under a shot's look.
+// each only under a shot's look. At the plain's edge the rest of the plain
+// keeps its light and the mist is whole, as on the ranges' feet.
 const LOOK_AFTER = `
       if (slateClearShade.w > 0.) {
         float slateCR = length(vMudWorld.xz-slateClear.xy)*(1.+${glslNumber(LOOK.clearing.wobble)}*(slateNoise(vMudWorld.xz/${glslNumber(LOOK.clearing.cell)})-.5));
-        gl_FragColor.rgb *= mix(1.-slateClearShade.x, 1., smoothstep(slateClearShade.y, slateClearShade.z, length(vViewPosition)))*mix(vec3(slateClearLight.w), slateClearLight.rgb, 1.-smoothstep(slateClear.z, slateClear.w, slateCR));
+        gl_FragColor.rgb *= mix(1.-slateClearShade.x, 1., smoothstep(slateClearShade.y, slateClearShade.z, length(vViewPosition)))*mix(vec3(mix(slateClearLight.w, 1., ${PLAIN_EDGE})), slateClearLight.rgb, 1.-smoothstep(slateClear.z, slateClear.w, slateCR));
       }
       if (slateMist.w > 0.) {
         float slateMN = slateNoise(vMudWorld.xz/${glslNumber(LOOK.mist.cells[0])})*.65+slateNoise(vMudWorld.xz/${glslNumber(LOOK.mist.cells[1])}+3.7)*.35;
-        gl_FragColor.rgb = mix(gl_FragColor.rgb, slateMist.rgb, clamp(smoothstep(${LOOK.mist.reach.map(glslNumber)}, length(vViewPosition))*(${glslNumber(LOOK.mist.wisp[0])}+${glslNumber(LOOK.mist.wisp[1])}*slateMN), 0., 1.)*slateMist.w);
+        gl_FragColor.rgb = mix(gl_FragColor.rgb, slateMist.rgb, clamp(smoothstep(${LOOK.mist.reach.map(glslNumber)}, length(vViewPosition))*mix(${glslNumber(LOOK.mist.wisp[0])}+${glslNumber(LOOK.mist.wisp[1])}*slateMN, 1., ${PLAIN_EDGE}), 0., 1.)*slateMist.w);
       }`;
 const WATER = SLATE_WATER,
   LIGHT = SLATE_LIGHT;
@@ -651,8 +661,9 @@ void RE_Direct_Moonlit(const in IncidentLight directLight, const in vec3 geometr
 // Before the lights: the water's normal (the film's levelled by it, standing
 // water's level: the world's up) and the water film's share
 // of the wet soil (none in a puddle, which mirrors the lights on its own).
-const WATER_BEFORE_LIGHTS = `slateWaterN = normalize(mix(mix(normal, nonPerturbedNormal, ${glslNumber(WATER.level)}), mat3(viewMatrix)[1], slatePuddle)+slateWaterTilt);
-      slateWetFilm = (mix(${glslNumber(WATER.film[0])}, slateGloss.x, slateGlossAt())*(1.0-slateDry)+${glslNumber(WATER.film[1])}*slateWet)*mix(${glslNumber(WATER.patch[1])}, 1.0, smoothstep(.3, .7, slateNoise(vMudWorld.xz/${glslNumber(WATER.patch[0])})))*(1.0-slatePuddle)*(1.0-slateWaterFar(length(vViewPosition)))*(1.0-${glslNumber(1 - SLATE_WET.close.film)}*slateMatte);
+const WATER_BEFORE_LIGHTS = `slateGlossSet();
+      slateWaterN = normalize(mix(mix(normal, nonPerturbedNormal, ${glslNumber(WATER.level)}), mat3(viewMatrix)[1], slatePuddle)+slateWaterTilt);
+      slateWetFilm = (mix(${glslNumber(WATER.film[0])}, slateGloss.x, slateGlossW)*(1.0-slateDry)+${glslNumber(WATER.film[1])}*slateWet)*mix(${glslNumber(WATER.patch[1])}, 1.0, smoothstep(.3, .7, slateNoise(vMudWorld.xz/${glslNumber(WATER.patch[0])})))*(1.0-slatePuddle)*(1.0-slateWaterFar(length(vViewPosition)))*(1.0-${glslNumber(1 - SLATE_WET.close.film)}*slateMatte);
       #include <lights_fragment_begin>`;
 // After the light maps: the ambient's share and the night sky's light, and the
 // sky the water mirrors, at the film's or a puddle's roughness.
@@ -660,7 +671,7 @@ const WATER_SKY = `#include <lights_fragment_maps>
       #ifdef USE_ENVMAP
       irradiance *= ${glslNumber(LIGHT.ambient)};
       iblIrradiance *= ${glslNumber(LIGHT.sky)};
-      vec3 slateWaterSky = mix(getIBLRadiance(geometryViewDir, slateWaterN, mix(${glslNumber(WATER.roughness[0])}, ${glslNumber(WATER.roughness[1])}, slatePuddle))*mix(mix(${glslNumber(WATER.gain[0])}, slateGloss.y, slateGloss.z)*mix(vec3(1.0), ${glslVec(SLATE_LOOK.gloss.tint)}, slateGloss.z), vec3(${glslNumber(WATER.gain[1])}), slatePuddle), slateWaterBark, slateWaterVeil*slatePuddle);
+      vec3 slateWaterSky = mix(getIBLRadiance(geometryViewDir, slateWaterN, mix(${glslNumber(WATER.roughness[0])}, ${glslNumber(WATER.roughness[1])}, slatePuddle))*mix(mix(${glslNumber(WATER.gain[0])}, slateGloss.y, slateGlossT)*mix(vec3(1.0), ${glslVec(SLATE_LOOK.gloss.tint)}, slateGlossT), vec3(${glslNumber(WATER.gain[1])}), slatePuddle), slateWaterBark, slateWaterVeil*slatePuddle);
       #endif`;
 // After the soil's own clamps: the water's mirror (water Fresnel, the film's
 // share or a puddle whole, fading with distance; slateSkyVis is the sky the
@@ -873,7 +884,7 @@ ${SLATE_TEXT_GLSL}${LOOK_GLSL}`
           `
       gl_FragColor.rgb *= 1.0-slateCalm.x*(1.0-smoothstep(slateCalm.y, slateCalm.z, length(vViewPosition)));
       #ifdef USE_FOG
-      float earthHorizon = max(smoothstep(155.0, 190.0, max(abs(vMudWorld.x),abs(vMudWorld.z))),
+      float earthHorizon = max(${PLAIN_EDGE},
         smoothstep(230.0, 330.0, vFogDepth));
       vec3 earthAir = ${TERRAIN_HORIZON}*${glslNumber(HORIZON_AIR.ground)};
       earthHorizon *= smoothstep(1.0, 1.15, dot(gl_FragColor.rgb, ${LUMA})/dot(earthAir, ${LUMA}));

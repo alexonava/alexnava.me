@@ -523,7 +523,7 @@ test("each ground shading has its own program cache key; the slate's shading nee
   );
   assert.ok(
     fragment.includes(
-      `float slateWaterFar(float d){return smoothstep(mix(${farNear},400.0,slateGloss.z),mix(${farFar},1100.0,slateGloss.z),d);}`,
+      `float slateWaterFar(float d){return smoothstep(mix(${farNear},400.0,slateGlossT),mix(${farFar},1100.0,slateGlossT),d);}`,
     ),
   );
   assert.match(
@@ -1110,7 +1110,7 @@ test("only the wide shots calm the plain, written in place, and the calm is off 
   }
 });
 
-test("only Portrait takes the look on its plain: a moonlit clearing, low mist, the gloss of rain and a softer crown shadow", () => {
+test("only Portrait takes the look on its plain: a moonlit clearing, low mist, the gloss of rain and a softer crown shadow", (t) => {
   const contacts = createSlateContacts(),
     target = { x: 55.1, y: 9, z: 36.1 },
     clear = contacts.slateClear.value,
@@ -1118,9 +1118,11 @@ test("only Portrait takes the look on its plain: a moonlit clearing, low mist, t
     shade = contacts.slateClearShade.value,
     mist = contacts.slateMist.value,
     gloss = contacts.slateGloss.value,
-    shadow = contacts.slateShade.value;
-  // The ranges read the same mist: their feet meet the plain's.
+    shadow = contacts.slateShadowFade.value;
+  // The ranges read the same mist: their feet meet the plain's. It is one
+  // object for the module, so it goes off again however this test ends.
   assert.equal(contacts.slateMist, RANGE_MIST);
+  t.after(() => slateCalmFor(contacts, null, 60, target));
   const off = () => {
     assert.equal(shade.w, 0, "no clearing");
     assert.equal(mist.w, 0, "no mist");
@@ -1183,26 +1185,26 @@ test("the look's shading changes nothing until a shot asks for it", () => {
     "slateClearLight",
     "slateClearShade",
     "slateGloss",
-    "slateShade",
+    "slateShadowFade",
   ])
     assert.equal(shader.uniforms[name], contacts[name], name);
   assert.equal(shader.uniforms.slateMist, RANGE_MIST);
-  // The moon's shadow fades from the subject only under a look (slateShade.y > 0).
+  // The moon's shadow fades from the subject only under a look (slateShadowFade.y > 0).
   assert.ok(
     fragment.includes(
-      "#ifdef USE_SHADOWMAP float slateShadow(sampler2D map,vec2 size,float bias,float radius,vec4 coord){float s=getShadow(map,size,bias,radius,coord);return slateShade.y>0.?",
+      "#ifdef USE_SHADOWMAP float slateShadow(sampler2D map,vec2 size,float bias,float radius,vec4 coord){float s=getShadow(map,size,bias,radius,coord);return slateShadowFade.y>0.?",
     ),
   );
   assert.match(fragment, /:s;} #define getShadow slateShadow #endif/);
   // The film's share and the water's reach and sky change only under a gloss.
-  assert.ok(fragment.includes("slateWetFilm = (mix(0.12, slateGloss.x, slateGlossAt())"));
+  assert.ok(fragment.includes("slateWetFilm = (mix(0.12, slateGloss.x, slateGlossW)"));
   assert.ok(
     fragment.includes(
-      "float slateGlossAt(){vec2 v=vSlateClip.xy/vSlateClip.w*.5+.5;return slateGloss.z*",
+      "void slateGlossSet(){if(slateGloss.z>0.){vec2 v=vSlateClip.xy/vSlateClip.w*.5+.5;slateGlossT=smoothstep(",
     ),
   );
   assert.ok(
-    fragment.includes("smoothstep(mix(70.0,400.0,slateGloss.z),mix(130.0,1100.0,slateGloss.z)"),
+    fragment.includes("smoothstep(mix(70.0,400.0,slateGlossT),mix(130.0,1100.0,slateGlossT)"),
   );
   assert.equal(
     fragment.match(/slateWaterFar\(length\(vViewPosition\)\)\)/g).length,
@@ -1211,12 +1213,28 @@ test("the look's shading changes nothing until a shot asks for it", () => {
   );
   assert.ok(
     fragment.includes(
-      "*mix(mix(1.5, slateGloss.y, slateGloss.z)*mix(vec3(1.0), vec3(0.72,0.88,1.18), slateGloss.z), vec3(1.8), slatePuddle)",
+      "*mix(mix(1.5, slateGloss.y, slateGlossT)*mix(vec3(1.0), vec3(0.72,0.88,1.18), slateGlossT), vec3(1.8), slatePuddle)",
     ),
   );
-  // The clearing and the mist are drawn only under a look.
+  // The gloss's weights are set once, before the water's share and the lights,
+  // and its reach and sky follow the text guard as its share does.
+  assert.ok(
+    fragment.indexOf("slateGlossSet(); slateWaterN = normalize(") >= 0 &&
+      fragment.indexOf("slateGlossSet(); slateWaterN = normalize(") <
+        fragment.indexOf("slateWetFilm = (mix("),
+  );
+  assert.ok(fragment.includes("slateGlossW=slateGlossT*mix("));
+  // The clearing and the mist are drawn only under a look, and at the plain's
+  // edge (where the far plain's air meets the ranges) the rest of the plain
+  // keeps its light and the mist is whole, as on the ranges' feet.
+  const edge = "smoothstep(155.0, 190.0, max(abs(vMudWorld.x),abs(vMudWorld.z)))";
+  assert.ok(fragment.includes(`float earthHorizon = max(${edge},`));
   assert.match(fragment, /if \(slateClearShade\.w > 0\.\) \{/);
+  assert.ok(
+    fragment.includes(`mix(vec3(mix(slateClearLight.w, 1., ${edge})), slateClearLight.rgb,`),
+  );
   assert.match(fragment, /if \(slateMist\.w > 0\.\) \{/);
+  assert.ok(fragment.includes(`*slateMN, 1., ${edge}), 0., 1.)*slateMist.w);`));
   material.dispose();
 });
 
