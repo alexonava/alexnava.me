@@ -962,7 +962,7 @@ const ORBIT_SPEED = 0.06;
             LANTERN_MOOD.value = mood.lantern;
             treeArchitecture?.refreshLantern?.();
           }
-          setRim(filmActive ? mood.rim : 0);
+          setRim(filmActive ? mood.rim : 0, filmActive ? mood.rimText : 0);
           PALE_MOOD.value = filmActive ? mood.pale : 0;
           GLINT_MOOD.value = filmActive ? mood.glintText : 0;
           camera.updateMatrixWorld();
