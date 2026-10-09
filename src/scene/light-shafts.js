@@ -88,7 +88,8 @@ export function shaftTreatment(shotName) {
 // ground and the rays show in full; ceil: the soft cap on the air's light
 // (a ray seen end on never blooms into a hot wedge); edge: the box's own
 // fade at its faces (a share of its size); fade: [rise above the terrain,
-// fall below the box top]; mist: the height over which the air thins (0:
+// fall below the box top, which stands that far above the subject (at least
+// 1)]; mist: the height over which the air thins (0:
 // even); drift: the window's and the streaks' slow sway, [amplitude in map
 // units on each axis, period in seconds], bounded so the look holds however
 // long the page stays open; rays: the streaks by angle about the light's
@@ -125,7 +126,14 @@ export function shaftTreatment(shotName) {
 // into the air seen through it while its edge (the ladder, a leg) keeps the
 // air off the plain beside it; core: the lit cylinder's radius over
 // the window's; air: the subject's own gain, over, reach, sky, jitter, rise,
-// tie and hull. breaks: the broken cloud patches of the light on surfaces [frequency,
+// tie, hull and fade. shell: a round closed silhouette and a smooth hull,
+// [radius, low, high, soft]: the closed silhouette blurred twice over radius
+// texels and kept between low and high, so its edge follows the subject, not
+// the map's axes (the hull's shell softens it over soft texels more);
+// shellWindow: that hull's depth window, [share of the subject's depth, least
+// units]; pad: the box's margin about the subject (units; 1 without), so the
+// lit ring outside its outline never meets a face.
+// breaks: the broken cloud patches of the light on surfaces [frequency,
 // threshold, width, floor]. gobo: the light landing on the subject (wrap: diffuse wrap,
 // rim: backlit edge catch, faded on twigs, bias: surface self-shadow offset,
 // clip: [shoulder, headroom] of the soft clip on the surface's direct light,
@@ -236,6 +244,10 @@ export const SHAFTS = Object.freeze({
     // Slim shafts through the crown that fade in past its front, take part
     // of their structure from its own gaps and, over the sky, keep to the
     // view rays through the crown (a soft edge), so none starts in open sky.
+    // Its shell rounds the closed silhouette and smooths the hull, so the
+    // shafts end over the open sky in smooth fades, never in stair-steps or
+    // parallelogram blocks (the grade's cel step hardens any texel step); its
+    // box stands clear of the lit ring, its top a 4-unit fade above the crown.
     tree: Object.freeze({
       gap: [0.62, 14, 12, 0.3],
       ext: 24,
@@ -243,6 +255,9 @@ export const SHAFTS = Object.freeze({
       sharp: 1,
       close: 10,
       erode: -3,
+      shell: [4, 0.3, 0.7, 3],
+      pad: 3,
+      shellWindow: [0.125, 1],
       core: 1.2,
       air: Object.freeze({
         gain: 0.06,
@@ -251,6 +266,7 @@ export const SHAFTS = Object.freeze({
         rise: 8,
         tie: 0.8,
         hull: [0, 1, 0, 3],
+        fade: [3, 4],
       }),
       // Broken cloud light across the bark: large, soft breaks with darker
       // gaps, wrapping round the limbs toward the eye (the crown's own light
@@ -300,7 +316,10 @@ export function shaftDrift(time, [amplitude, period], out = { x: 0, y: 0 }) {
 // the sky (ground < 1) kept only up to a falloff past the silhouette's back.
 // shaftHull: whether the view ray passes through the subject at all, tested
 // at four points across its own depths (inside its closed silhouette, or its
-// outline, and between that texel's front and back). shaftMarch keeps to the
+// outline, and between that texel's front and back), or, where the subject
+// has a shell, at twelve points against it (inside its smooth shell, between
+// its smoothed front and back, in depth windows that reach the next point), so
+// the test fades rather than stepping from texel to texel. shaftMarch keeps to the
 // lit core and to the depths where lit air can be (from the nearest front to
 // a reach past the farthest, or, over the sky, only as far as its falloff
 // there, so the few steps fall where light can show and leave no stray dots),
@@ -327,7 +346,7 @@ uniform sampler2D shaftMap;uniform sampler2D shaftBack;uniform sampler2D shaftNo
 uniform float shaftPoint;uniform vec2 shaftDrift;uniform vec3 shaftShift;uniform mat4 shaftToBox;uniform vec3 shaftColor;uniform float shaftGain;
 uniform float shaftPhase;uniform float shaftSteps;uniform vec3 shaftEdge;uniform vec4 shaftFade;uniform float shaftMist;uniform vec4 shaftAir;
 uniform vec4 shaftCore;uniform vec4 shaftReach;uniform vec2 shaftGround;uniform vec4 shaftText;uniform float shaftTextProtection;uniform float shaftRes;uniform vec4 shaftSource;uniform vec4 shaftStreak;uniform float shaftCeil;uniform vec3 shaftDepths;
-uniform vec4 shaftShape;uniform vec2 shaftHullMode;uniform float shaftJitter;uniform float shaftPeak;
+uniform vec4 shaftShape;uniform vec2 shaftHullMode;uniform float shaftJitter;uniform float shaftPeak;uniform sampler2D shaftShell;uniform vec2 shaftShellMode;
 vec3 shaftUv(vec3 p){
 vec3 q=p-shaftOrigin;float z=dot(q,shaftA);vec2 l=vec2(dot(q,shaftU),dot(q,shaftV));
 if(shaftPoint>.5)l/=z;
@@ -360,6 +379,16 @@ float shaftHull(vec3 ro,vec3 rd,float far){
 float z0=dot(ro-shaftOrigin,shaftA),dz=dot(rd,shaftA);
 if(abs(dz)<1e-4)return 1.;
 float ta=clamp((shaftDepths.x-z0)/dz,0.,far),tb=clamp((shaftDepths.z-z0)/dz,0.,far),h=0.;
+if(shaftShellMode.x>0.){
+float w=max(abs((tb-ta)*dz)*shaftShellMode.x,shaftShellMode.y);
+for(int k=0;k<12;k++){
+vec3 u=shaftUv(ro+rd*mix(ta,tb,(float(k)+.5)/12.));
+if(u.x<0.||u.y<0.||u.x>1.||u.y>1.)continue;
+vec4 m=shaftTex(shaftShell,u.xy,0.);
+h=max(h,m.b*smoothstep(-w,0.,u.z-shaftDepth(m.r))*(1.-smoothstep(0.,w,u.z-shaftDepth(m.g))));
+}
+return h;
+}
 for(int k=0;k<4;k++){
 vec3 u=shaftUv(ro+rd*mix(ta,tb,(float(k)+.5)*.25));
 if(u.x<0.||u.y<0.||u.x>1.||u.y>1.)continue;
@@ -622,6 +651,11 @@ function* blur(src, res, radius, mode = "blur") {
   return from;
 }
 
+// The same blur applied twice: a smoother, rounder kernel.
+function* twice(values, res, radius) {
+  return yield* blur(yield* blur(values, res, radius), res, radius);
+}
+
 // Rasterises triangles (root-frame positions, optionally indexed) into an
 // RGBA8 light-space map with mip levels. A generator: it yields by the work
 // done (vertices, triangles, texels touched), so no slice runs long even on a
@@ -640,7 +674,9 @@ function* blur(src, res, radius, mode = "blur") {
 // closed back carries its edge's value four texels out, then has none.
 // The silhouette is closed over close texels (gaps narrower than twice that fill: a dilation,
 // then an erosion by close + erode, so its edge lies inside the outline) and
-// feathered by a texel; without close it is the whole map.
+// feathered by a texel (with a shell, rounded and feathered wider, and a
+// third map, shellTexture, holds the hull's smooth shell); without close it
+// is the whole map.
 export function* rasterizeLightMap({
   positions,
   index = null,
@@ -657,6 +693,7 @@ export function* rasterizeLightMap({
   close = 0,
   erode = 1,
   inner = 0,
+  shell = null,
 }) {
   const { u, v } = lightBasis(a),
     N = res * res,
@@ -735,11 +772,22 @@ export function* rasterizeLightMap({
     front = hit,
     back = yield* blur(last, res, Math.max(1, sharp), "max");
   const tight = back;
+  let rounded = null;
   if (close > 0) {
     // Thin twigs cover a texel in part: any real coverage counts.
     const solid = cover.map((value) => smooth(0.04, 0.3, value));
-    const grown = yield* blur(solid, res, close, "max");
-    envelope = yield* blur(yield* blur(grown, res, close + erode, "min"), res, 1);
+    const grown = yield* blur(solid, res, close, "max"),
+      closed = yield* blur(grown, res, close + erode, "min");
+    if (shell) {
+      // Square filters close along the map's own axes, which the eye sees as
+      // blocks and parallelograms: a subject with a shell rounds that
+      // silhouette (blurred twice over radius texels, kept between low and
+      // high) and feathers it over a few texels; its outside starts only where
+      // that feather has all but faded, so no light is cut off at its edge.
+      const [radius, low, high] = shell;
+      rounded = (yield* twice(closed, res, radius)).map((g) => smooth(low, high, g));
+      envelope = yield* twice(rounded, res, 1);
+    } else envelope = yield* blur(closed, res, 1);
     front = yield* blur(depth, res, close, "min");
     back = yield* blur(last, res, close, "max");
   }
@@ -758,7 +806,7 @@ export function* rasterizeLightMap({
       y = (c - x) / res;
     // No front or back outside the closed silhouette: the softer levels of B,
     // read further from the subject, cannot carry light past its outline.
-    const outside = envelope && envelope[c] < 0.5;
+    const outside = envelope && envelope[c] < (rounded ? 0.02 : 0.5);
     data[c * 4] = encode(hit[c]);
     backs[c * 2] = outside || back[c] === -Infinity ? 255 : encode(back[c]);
     const own = outside || tight[c] === -Infinity ? 255 : encode(tight[c]);
@@ -802,6 +850,37 @@ export function* rasterizeLightMap({
     }
     spread = next;
   }
+  // The hull's soft shell (shell: [radius, low, high, soft]), a third map
+  // only the hull test reads: a threshold on a linearly filtered map steps
+  // from texel to texel, so the hull reads this smooth one instead. B: the
+  // round closed silhouette, softened over soft texels more; R and G: the
+  // closed front and back, averaged about each texel (none: 255).
+  let shellData = null;
+  if (rounded) {
+    const soft = shell[3];
+    const edge = yield* twice(rounded, res, soft);
+    const known = front.map((z) => (z === Infinity ? 0 : 1)),
+      weight = yield* twice(known, res, soft),
+      firstSum = yield* twice(
+        front.map((z) => (z === Infinity ? 0 : z)),
+        res,
+        soft,
+      ),
+      lastSum = yield* twice(
+        back.map((z) => (z === -Infinity ? 0 : z)),
+        res,
+        soft,
+      );
+    shellData = new Uint8Array(N * 4);
+    for (let c = 0; c < N; c++) {
+      if (c % 512 === 0) yield;
+      const w = weight[c];
+      shellData[c * 4] = w > 1e-3 ? encode(firstSum[c] / w) : 255;
+      shellData[c * 4 + 1] = w > 1e-3 ? encode(lastSum[c] / w) : 255;
+      shellData[c * 4 + 2] = Math.round(255 * Math.max(0, Math.min(1, edge[c])));
+      shellData[c * 4 + 3] = 255;
+    }
+  }
   const texture = new DataTexture(data, res, res);
   texture.magFilter = LINEAR;
   texture.minFilter = LINEAR_MIPMAP_LINEAR;
@@ -812,12 +891,20 @@ export function* rasterizeLightMap({
   backTexture.magFilter = backTexture.minFilter = LINEAR;
   backTexture.wrapS = backTexture.wrapT = CLAMP;
   backTexture.needsUpdate = true;
+  let shellTexture = null;
+  if (shellData) {
+    shellTexture = new DataTexture(shellData, res, res);
+    shellTexture.magFilter = shellTexture.minFilter = LINEAR;
+    shellTexture.wrapS = shellTexture.wrapT = CLAMP;
+    shellTexture.needsUpdate = true;
+  }
   // depths: the nearest and farthest fronts and the deepest back where light
   // comes through (the air's own range starts at the nearest front and ends a
   // reach past the farthest, or, over the sky, a falloff past the deepest back).
   return {
     texture,
     backTexture,
+    shellTexture,
     u,
     v,
     depths: near <= far ? [near, far, Math.max(far, deepest)] : [0, 0, 0],
@@ -1095,7 +1182,7 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
           1,
           Math.hypot((X - gx) / rx, (Y - gy) / ry) + 0.3 * (nz(X * 0.3 + 5, Y * 0.3) - 0.5),
         );
-      key = `${mesh.geometry.uuid}|moon|${a.toArray().map((x) => x.toFixed(3))}|${[cfg.gap, cfg.lit, cfg.ext, cfg.res, cfg.sharp, cfg.close, cfg.erode, bf, bt, bw, bfloor]}`;
+      key = `${mesh.geometry.uuid}|moon|${a.toArray().map((x) => x.toFixed(3))}|${[cfg.gap, cfg.lit, cfg.ext, cfg.res, cfg.sharp, cfg.close, cfg.erode, bf, bt, bw, bfloor]}|${cfg.shell ?? ""}`;
     }
     const map =
       maps.get(key) ??
@@ -1113,6 +1200,7 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
         close: cfg.close,
         erode: cfg.erode,
         inner: cfg.inner,
+        shell: cfg.shell,
         mask,
         beams,
       }));
@@ -1148,12 +1236,13 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
           .addScaledVector(dir, dir.y < 0 ? Math.min(reach, (c.y - b.min.y) / -dir.y) : reach),
       );
     }
-    lo.subScalar(1);
-    hi.addScalar(1);
+    const pad = cfg.pad ?? 1;
+    lo.subScalar(pad);
+    hi.addScalar(pad);
     // The far face must never sit under the terrain: hidden, it would cut the beam.
     const floor = terrainTop(height, lo, hi, heading) + 0.05;
     lo.y = Math.max(lo.y, floor);
-    hi.y = b.max.y + 1;
+    hi.y = b.max.y + Math.max(1, T.fade[1]);
     if (hi.y - lo.y < 2) return null;
     const volume = new Mesh(box, null),
       mid = lo.clone().add(hi).multiplyScalar(0.5);
@@ -1168,6 +1257,8 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
     volume.updateMatrix();
     volume.renderOrder = 20;
     volume.visible = false;
+    // The hull's depth window over its shell: twelve points, each reaching the next.
+    const [share, least] = cfg.shellWindow ?? [1.5 / 12, 1];
     // The per-treatment uniform values; the box and the subject hold their own objects.
     const values = {
       shaftMap: map.texture,
@@ -1204,6 +1295,8 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
       shaftSurface: new Vector3(1, { ...T.gobo, ...cfg.gobo }.bias, 0),
       shaftShape: { x: T.rise, y: T.hull[0], z: T.hull[1], w: T.tie },
       shaftHullMode: { x: T.hull[2], y: T.hull[3] ?? 0 },
+      shaftShell: map.shellTexture ?? map.backTexture,
+      shaftShellMode: map.shellTexture ? { x: share, y: least } : { x: 0, y: 0 },
       shaftPeak: T.peak,
       shaftLayer: T.layer || 1,
     };
@@ -1774,9 +1867,10 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
       disposed = true;
       for (const [subject] of SUBJECTS) teardown(subject);
       box.dispose();
-      maps.forEach(({ texture, backTexture }) => {
+      maps.forEach(({ texture, backTexture, shellTexture }) => {
         texture.dispose();
         backTexture.dispose();
+        shellTexture?.dispose();
       });
       maps.clear();
       shared.shaftNoise.value?.dispose();

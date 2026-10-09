@@ -227,6 +227,111 @@ test("inside the closed silhouette's edge (inner) the hull's back gives way to t
   assert.equal(SHAFTS.moon.tower.inner ?? 0, 0, "the moon's maps are as they were");
 });
 
+test("a subject with a shell closes round, cuts no light at its edge and gets a smooth hull map", () => {
+  // An 8 x 8 frame (two-unit border) around a 4 x 4 gap, facing the light at
+  // z = 3; texels are half a unit, the frame covers texels 8-23.
+  const quad = (x0, y0, x1, y1) => [x0, y0, 3, x1, y0, 3, x1, y1, 3, x0, y1, 3];
+  const positions = new Float32Array([
+    ...quad(-4, -4, 4, -2),
+    ...quad(-4, 2, 4, 4),
+    ...quad(-4, -2, -2, 2),
+    ...quad(2, -2, 4, 2),
+  ]);
+  const index = [0, 4, 8, 12].flatMap((o) => [o, o + 1, o + 2, o, o + 2, o + 3]);
+  const run = (shell) =>
+    runMap({
+      positions,
+      index,
+      origin: new Vector3(),
+      a: new Vector3(0, 0, 1),
+      half: 8,
+      res: 32,
+      t0: 0,
+      t1: 10,
+      close: 5,
+      erode: -3,
+      shell,
+      mask: () => 1,
+    });
+  const plain = run(null),
+    round = run(SHAFTS.moon.tree.shell);
+  assert.equal(plain.shellTexture, null, "a subject without a shell keeps its maps as they were");
+  const shell = (x, y, channel = 2) => round.shellTexture.image.data[(y * 32 + x) * 4 + channel];
+  assert.equal(round.shellTexture.image.data.length, 32 * 32 * 4);
+  assert.deepEqual([shell(16, 16), shell(0, 0)], [255, 0], "full over the subject, none far off");
+  assert.equal(shell(16, 9, 0), Math.round((3 / 10) * 254), "R: the closed front");
+  assert.equal(shell(16, 9, 1), Math.round((3 / 10) * 254), "G: the closed back");
+  // Round, not along the map's axes: two texels past the frame's corner on
+  // both axes lies further out than two texels past an edge.
+  assert.ok(
+    shell(5, 5) + 40 < shell(16, 5),
+    `the corner is rounded (${shell(5, 5)} beside ${shell(16, 5)} off an edge)`,
+  );
+  let step = 0;
+  for (let y = 0; y < 31; y++)
+    for (let x = 0; x < 31; x++)
+      step = Math.max(
+        step,
+        Math.abs(shell(x, y) - shell(x + 1, y)),
+        Math.abs(shell(x, y) - shell(x, y + 1)),
+      );
+  assert.ok(step <= 48, `the hull's shell fades over several texels (${step} per texel at most)`);
+  // Outside the closed silhouette (no front) no light is left to cut off;
+  // the square silhouette cut half its light at its edge.
+  const cut = (map) => {
+    let most = 0;
+    for (let c = 0; c < 32 * 32; c++)
+      if (map.texture.image.data[c * 4 + 3] === 255)
+        most = Math.max(most, map.texture.image.data[c * 4 + 2]);
+    return most;
+  };
+  assert.ok(cut(round) <= 6, `the round silhouette's outside holds no light (${cut(round)})`);
+  assert.ok(cut(plain) > 40, `the square one stops light at its edge (${cut(plain)})`);
+});
+
+test("only the crown's moonbeams take the shell: a smooth hull, a box clear of its ring, a soft top", async () => {
+  const h = harness({ shot: "Portrait", current: "tree" });
+  await h.until(() => h.debug.shafts?.status === "ready");
+  const box = (name) => h.volumes().find((mesh) => mesh.name === `light-shafts-${name}`);
+  const tree = box("moon-tree"),
+    { shell, shellWindow, pad, ext, res, erode, air } = SHAFTS.moon.tree;
+  const u = tree.material.uniforms;
+  assert.notEqual(u.shaftShell.value, u.shaftBack.value, "the crown's hull reads its own shell");
+  assert.equal(u.shaftShell.value.image.data.length, res * res * 4);
+  assert.deepEqual([u.shaftShellMode.value.x, u.shaftShellMode.value.y], shellWindow);
+  assert.ok(shellWindow[0] * 12 >= 1, "each of its twelve depth windows reaches the next point");
+  for (const name of ["moon-tower", "star-tower"])
+    assert.equal(box(name).material.uniforms.shaftShellMode.value.x, 0, `${name}: as it was`);
+  assert.ok(shell && !SHAFTS.moon.tower.shell && !SHAFTS.star.tower.shell);
+  const glsl = tree.material.fragmentShader;
+  assert.ok(glsl.includes("for(int k=0;k<12;k++){"));
+  assert.ok(
+    glsl.includes(
+      "h=max(h,m.b*smoothstep(-w,0.,u.z-shaftDepth(m.r))*(1.-smoothstep(0.,w,u.z-shaftDepth(m.g))));",
+    ),
+    "inside the smooth shell, between its front and back",
+  );
+  // The box stands pad clear of the 3 x 3 trunk across the light, past the
+  // lit ring outside the outline (-erode texels) and the feather, and its top
+  // fades over air.fade[1] above the crown (the tree is 20 tall).
+  const { sun } = h.rendering.lights,
+    a = new Vector3().subVectors(sun.target.position, sun.position),
+    heading = new Vector3(a.x, 0, a.z).normalize();
+  assert.ok(pad >= 1 + (Math.max(0, -erode) + 2) * ((2 * ext) / res), "clear of the lit ring");
+  assert.ok(
+    Math.abs(tree.scale.z - (3 * (Math.abs(heading.x) + Math.abs(heading.z)) + 2 * pad)) < 1e-6,
+    `across the light, the trunk and pad on each side (${tree.scale.z})`,
+  );
+  assert.ok(air.fade[1] > 1);
+  assert.ok(Math.abs(tree.position.y + tree.scale.y / 2 - (20 + air.fade[1])) < 1e-6);
+  const tower = box("moon-tower");
+  assert.ok(
+    Math.abs(tower.position.y + tower.scale.y / 2 - 40) < 1e-6,
+    "the tower's box tops it by one",
+  );
+  h.shafts.dispose();
+});
+
 test("a point source's map holds angles, so a nearer occluder shadows a wider cone", () => {
   const quad = (z) => new Float32Array([-1, -1, z, 1, -1, z, 1, 1, z, -1, 1, z]);
   const covered = (z) => {

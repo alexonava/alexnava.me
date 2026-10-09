@@ -108,6 +108,7 @@ The rules for visual, motion and typographic changes. Read them before changing 
 
 - The watch alone takes warm star rays: distinct streaks from the star through the cabin and down the lattice, never a wash; sparser on phones.
 - Threshold, Gallery detail, Masonry study, Watch and tree, Portrait and Close-up take cool moonbeams along the moon key: slim shafts and soft broken patches on bark and timber, never a spotlight. The two lantern shots have none.
+- The rays stay strong and visible, never a haze. Over open sky Portrait's moonbeams end in smooth fades, never in stair-steps, dashes or parallelogram blocks: the grade's cel step hardens any step in the air light, so the crown's closed silhouette is rounded and its hull is a smooth shell (the tree's `shell` in [light-shafts.js](../src/scene/light-shafts.js)), and its box stands clear of the lit air with a soft top.
 - The air light stays off the sky beyond the subject and off the mountains, and eases off behind the name and intro over a fifth of the screen's smaller side. Text stays at 4.5:1 or better, tour shots at 5:1.
 - Treatments change on a cut or during the reveal's fade-in, never mid-hold (a light still building fades in over a second), sway only slowly, hold still for pauses and reduced motion, and need WebGL2.
 
