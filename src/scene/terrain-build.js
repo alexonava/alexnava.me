@@ -1551,7 +1551,7 @@ export const LITTER = Object.freeze({
     seed: 61331,
     counts: Object.freeze({ leaves: 220, clods: 200, gravel: 2000 }),
     arc: Object.freeze([-175, -55]),
-    reach: Object.freeze([2, 18]),
+    reach: Object.freeze([2, 16]),
     lantern: 0.45,
     puddle: 0.15,
     leafNear: 0.45,

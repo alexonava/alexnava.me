@@ -471,12 +471,15 @@ export const MASSIFS = Object.freeze({
 
 // Rock strata on the massifs' bare rock (the owner's pick of 2026-10-09): broad
 // bands `spacing` to a degree of elevation, warped along the ring by two noises
-// (`warp`: [azimuth and elevation frequency, depth] each), every band's strength
-// its own (`amount`: base and spread). Each band is a moonlit ledge at its base
-// (`ledge`: rise, then fading from [0] to [1] of the band) lifting the face's
-// moonlight by up to `light` about `mean`, over a dark seam (`seam`: width and
-// depth, of the occlusion); both anti-aliased by the band's own gradient, before
-// the snow, so the snow lies over them.
+// (`warp`: [frequency per degree of azimuth, of elevation, depth] each; the
+// azimuth's wraps whole about the ring, so there is no seam at +-180 degrees),
+// every band's strength its own (`amount`: base and spread). Each band is a
+// moonlit ledge at its base (`ledge`: rise, then fading from [0] to [1] of the
+// band) lifting the face's moonlight by up to `light`, less `mean` of the
+// bands' average strength everywhere, so the light never steps where one band
+// meets the next; over a dark seam (`seam`: width and depth, of the occlusion)
+// that ramps in on both sides of the band's edge. Both are anti-aliased by the
+// band's own gradient, before the snow, so the snow lies over them.
 export const MASSIF_STRATA = Object.freeze({
   spacing: 2.4,
   warp: Object.freeze([Object.freeze([0.35, 0.5, 1.8]), Object.freeze([1.1, 1.7, 0.5])]),
@@ -490,7 +493,7 @@ const STRATA_GLSL = (() => {
   const { spacing, warp, amount, ledge, light, mean, seam } = MASSIF_STRATA,
     [[a1, e1, d1], [a2, e2, d2]] = warp,
     g = glslFloat;
-  return `{float w1=vn(vec2(az*${g(a1)},el*${g(e1)})),w2=vn(vec2(az*${g(a2)},el*${g(e2)}));float sk=el*${g(spacing)}+${g(d1)}*w1+${g(d2)}*w2,sw=max(fwidth(sk),1e-3),f=fract(sk),amp=${g(amount[0])}+${g(amount[1])}*fract(sin(floor(sk)*12.9898)*43758.5453);float ledge=smoothstep(0.,${g(ledge[0])}+sw,f)*(1.-smoothstep(${g(ledge[1])},${g(ledge[2])},f));float seam=1.-smoothstep(0.,${g(seam[0])}+sw,f);ao*=1.-${g(seam[1])}*amp*seam;lit*=1.+${g(light)}*amp*(ledge-${g(mean)});}`;
+  return `{float azw=mod(az,360.),w1=vnw(vec2(azw*${g(a1)},el*${g(e1)}),${g(Math.round(a1 * 360))}),w2=vnw(vec2(azw*${g(a2)},el*${g(e2)}),${g(Math.round(a2 * 360))});float sk=el*${g(spacing)}+${g(d1)}*w1+${g(d2)}*w2,sw=max(fwidth(sk),1e-3),f=fract(sk),amp=${g(amount[0])}+${g(amount[1])}*fract(sin(floor(sk)*12.9898)*43758.5453);float ledge=smoothstep(0.,${g(ledge[0])}+sw,f)*(1.-smoothstep(${g(ledge[1])},${g(ledge[2])},f));float seam=max(1.-smoothstep(0.,${g(seam[0])}+sw,f),smoothstep(1.-sw,1.,f));ao*=1.-${g(seam[1])}*amp*seam;lit*=1.+${g(light)}*(amp*ledge-${g(mean * (amount[0] + amount[1] / 2))});}`;
 })();
 
 // The Meshy massifs' shading: the ranges' moonlit style on the models' own
@@ -553,6 +556,10 @@ ${FILM_SKY_GLSL}
 // Smooth value noise, 0..1 (the snowline's jitter).
 float vn(vec2 p){vec2 i=floor(p),f=fract(p),u=f*f*(3.-2.*f);
 vec4 h=fract(sin(vec4(dot(i,vec2(127.1,311.7)),dot(i+vec2(1,0),vec2(127.1,311.7)),dot(i+vec2(0,1),vec2(127.1,311.7)),dot(i+1.,vec2(127.1,311.7))))*43758.5453);
+return mix(mix(h.x,h.y,u.x),mix(h.z,h.w,u.x),u.y);}
+// The same noise wrapped every w cells along x (the ring's azimuth), seamless at +-180 degrees.
+float vnw(vec2 p,float w){vec2 i=floor(p),f=fract(p),u=f*f*(3.-2.*f);float i0=mod(i.x,w),i1=mod(i.x+1.,w);
+vec4 h=fract(sin(vec4(dot(vec2(i0,i.y),vec2(127.1,311.7)),dot(vec2(i1,i.y),vec2(127.1,311.7)),dot(vec2(i0,i.y+1.),vec2(127.1,311.7)),dot(vec2(i1,i.y+1.),vec2(127.1,311.7))))*43758.5453);
 return mix(mix(h.x,h.y,u.x),mix(h.z,h.w,u.x),u.y);}
 // The relief b mip levels down, turned by the copy's placement: mirror x, undo
 // the squash, turn about the vertical.

@@ -709,6 +709,52 @@ const smooth = (a, b, x) => {
   return t * t * (3 - 2 * t);
 };
 
+test("the far plain keeps its own structure: swathes and the slate's far tile after the calm, fading at the plain's edge", async () => {
+  const { configureGroundShading, SLATE_FAR } = await import("../src/scene/mud-ground.js");
+  const material = new MeshStandardMaterial();
+  const compile = (maps) => {
+    configureGroundShading(material, true, maps);
+    const shader = {
+      uniforms: {},
+      vertexShader: "#include <begin_vertex>",
+      fragmentShader: FILM_CHUNKS,
+    };
+    material.onBeforeCompile(shader);
+    return shader.fragmentShader;
+  };
+  const authored = compile({ detail: { isTexture: true } }),
+    procedural = compile({});
+  // After the calm, before the albedo lands; only with the authored maps.
+  const at = authored.indexOf("{float slateFarD=");
+  assert.ok(
+    at >
+      authored.indexOf(
+        "sampledDiffuseColor.rgb = mix(sampledDiffuseColor.rgb, slateMean, slateFlatAt(vMudWorld.xz));",
+      ),
+  );
+  assert.ok(at < authored.indexOf("diffuseColor *= sampledDiffuseColor;"));
+  assert.doesNotMatch(procedural, /slateFar/);
+  // Both parts fade out toward the plain's edge with its air.
+  assert.equal(
+    (authored.match(/slateFarF=smoothstep\([^;]*\)\*\(1\.-smoothstep\(155\.0, 190\.0, /g) ?? [])
+      .length,
+    2,
+  );
+  // Two more lookups of the slate tile, larger than it and weighted whole; a gain that
+  // deepens the structure within a bounded range; swathes that lean warm.
+  const { tile, gain, range, near, swathes } = SLATE_FAR;
+  assert.equal(tile.length, 2);
+  assert.ok(tile.every(({ scale }) => scale > 0 && scale < 1) && tile[0].scale > tile[1].scale);
+  assert.ok(Math.abs(tile[0].weight + tile[1].weight - 1) < 1e-9);
+  assert.ok(gain > 1 && range[0] > 0 && range[0] < 1 && range[1] > 1);
+  assert.ok(near[0] < near[1] && swathes.near[0] < swathes.near[1]);
+  assert.ok(
+    Math.abs(swathes.weights.reduce((a, b) => a + b, 0) - 1) < 1e-9 && swathes.amount < 0.5,
+  );
+  assert.ok(swathes.warm[0] - swathes.warm[2] > swathes.cool[2] - swathes.cool[0], "leaning warm");
+  material.dispose();
+});
+
 test("the far plain reads as dark air: the slate lifted toward the terrain's edge, above the ground's cel step", () => {
   const slate = TERRAIN_HORIZON.match(/[\d.]+/g)
     .slice(1)
@@ -756,8 +802,14 @@ test("the far plain reads as dark air: the slate lifted toward the terrain's edg
     ),
   );
   // The skirt's waves keep its share within 0..1 along the ring; it rises at
-  // most about a degree above eye level, and well below it the air is whole.
+  // most about a degree and a half above eye level, and well below it the air is whole;
+  // its waves are whole about the ring, so it has no seam.
   assert.ok(Math.abs(waves.reduce((sum, [, weight]) => sum + weight, 0) - 0.5) < 1e-9);
+  assert.ok(
+    waves.every(
+      ([frequency, , , bend = 0]) => Number.isInteger(frequency) && Number.isInteger(bend),
+    ),
+  );
   assert.ok(
     lift / 2 + fade[1] < 0.03,
     "the skirt stays within about a degree and a half above eye level",

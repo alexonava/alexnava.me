@@ -515,7 +515,6 @@ const PATH_LENGTH = glslNumber(
 const SECOND = SLATE_TILING.second,
   DETAIL = SLATE_TILING.detail,
   CLOSE = SLATE_CLOSE;
-// The far plain's swathes, then its tile structure (SLATE_FAR), after the calm.
 const FAR = SLATE_FAR,
   FAR_SWATHE = FAR.swathes.cells
     .map((cell, i) => {
@@ -527,14 +526,6 @@ const FAR = SLATE_FAR,
     ({ scale, turn, offset }) =>
       `texture2D(map,${turn ? `mat2(${turn.map(glslNumber)})*` : ""}vMapUv*${glslNumber(scale)}+${glslVec(offset)}).rgb`,
   );
-const FAR_MAP = `
-      {float slateFarD=length(vViewPosition),slateFarF=smoothstep(${FAR.swathes.near.map(glslNumber)},slateFarD);vec2 slateFarP=vMudWorld.xz;
-      float slateFarS=${FAR_SWATHE};float slateFarH=slateNoise(slateFarP/${glslNumber(FAR.swathes.hueCell)}+${glslNumber(FAR.swathes.hueOffset)});
-      sampledDiffuseColor.rgb*=mix(vec3(1.),(${glslNumber(1 - FAR.swathes.amount)}+${glslNumber(2 * FAR.swathes.amount)}*slateFarS)*mix(${glslVec(FAR.swathes.cool)},${glslVec(FAR.swathes.warm)},slateFarH),slateFarF);}
-      {float slateFarD=length(vViewPosition),slateFarF=smoothstep(${FAR.near.map(glslNumber)},slateFarD);vec3 slateFarW=vec3(.2126,.7152,.0722);float slateFarM=dot(slateMean,slateFarW);
-      vec3 slateFarT1=${FAR_TILE[0]},slateFarT2=${FAR_TILE[1]};
-      float slateFarL=${glslNumber(FAR.tile[0].weight)}*dot(slateFarT1,slateFarW)/slateFarM+${glslNumber(FAR.tile[1].weight)}*dot(slateFarT2,slateFarW)/slateFarM;
-      sampledDiffuseColor.rgb*=mix(1.,clamp(pow(slateFarL,${glslNumber(FAR.gain)}),${FAR.range.map(glslNumber)}),slateFarF);}`;
 // Near the lens the slate's mid-scale blotches, enlarged there, give way to its
 // broad tone (the tile blend `blur` mip levels down, `calm` of it), and the close
 // soil's two lookups, blended by a noise, carry the detail: its grit on the
@@ -626,6 +617,18 @@ const LUMA = "vec3(.2126,.7152,.0722)";
 // The plain's edge: from [0] to [1] units out along either axis (its square)
 // the slate meets the far plain's air, and a shot's look meets the ranges'.
 const PLAIN_EDGE = `smoothstep(${glslNumber(155)}, ${glslNumber(190)}, max(abs(vMudWorld.x),abs(vMudWorld.z)))`;
+// The far plain's swathes, then its tile structure (SLATE_FAR), after the calm,
+// fading out toward the plain's edge with its air, so no blotch meets that air at
+// a line. Its darker blotches darken the albedo the cracks read (slateCrack), so
+// the wet sheen comes and goes with them far out.
+const FAR_MAP = `
+      {float slateFarD=length(vViewPosition),slateFarF=smoothstep(${FAR.swathes.near.map(glslNumber)},slateFarD)*(1.-${PLAIN_EDGE});vec2 slateFarP=vMudWorld.xz;
+      float slateFarS=${FAR_SWATHE};float slateFarH=slateNoise(slateFarP/${glslNumber(FAR.swathes.hueCell)}+${glslNumber(FAR.swathes.hueOffset)});
+      sampledDiffuseColor.rgb*=mix(vec3(1.),(${glslNumber(1 - FAR.swathes.amount)}+${glslNumber(2 * FAR.swathes.amount)}*slateFarS)*mix(${glslVec(FAR.swathes.cool)},${glslVec(FAR.swathes.warm)},slateFarH),slateFarF);}
+      {float slateFarD=length(vViewPosition),slateFarF=smoothstep(${FAR.near.map(glslNumber)},slateFarD)*(1.-${PLAIN_EDGE});vec3 slateFarW=vec3(.2126,.7152,.0722);float slateFarM=dot(slateMean,slateFarW);
+      vec3 slateFarT1=${FAR_TILE[0]},slateFarT2=${FAR_TILE[1]};
+      float slateFarL=${glslNumber(FAR.tile[0].weight)}*dot(slateFarT1,slateFarW)/slateFarM+${glslNumber(FAR.tile[1].weight)}*dot(slateFarT2,slateFarW)/slateFarM;
+      sampledDiffuseColor.rgb*=mix(1.,clamp(pow(slateFarL,${glslNumber(FAR.gain)}),${FAR.range.map(glslNumber)}),slateFarF);}`;
 // The shot's look (SLATE_LOOK, slateCalmFor()): its uniforms and helpers.
 // slateGlossSet(), before the lights: the gloss away from the name, the intro
 // and About (slateGlossT) and, in wetter and drier patches, its share there

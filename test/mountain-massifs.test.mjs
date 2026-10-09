@@ -561,13 +561,21 @@ test("the massif shader is the ranges' moonlit style on the models' own relief",
   assert.ok(fragmentShader.includes(`vec3 n=relief(${MASSIFS.sharpen});`));
   // Rock strata on the bare rock: broad warped bands (each its own strength) of a moonlit
   // ledge over a dark seam, anti-aliased by the band's own gradient, before the snow.
-  const strataAt = fragmentShader.indexOf("{float w1=vn(vec2(az*");
+  const strataAt = fragmentShader.indexOf("{float azw=mod(az,360.),w1=vnw(");
   assert.ok(strataAt > fragmentShader.indexOf("ao=mix(1.,mk.y,.6);"));
   assert.ok(strataAt < fragmentShader.indexOf("float cap=clamp("));
   assert.ok(fragmentShader.includes(`float sk=el*${MASSIF_STRATA.spacing}+`));
   assert.ok(fragmentShader.includes("sw=max(fwidth(sk),1e-3),f=fract(sk)"));
   assert.ok(MASSIF_STRATA.spacing > 1 && MASSIF_STRATA.spacing < 4, "bands broad, never a mesh");
   assert.ok(MASSIF_STRATA.amount[0] + MASSIF_STRATA.amount[1] <= 1);
+  // Their warp wraps whole about the ring (no seam at +-180 degrees), their seam ramps in
+  // on both sides of a band's edge, and their light never steps between bands.
+  for (const [azimuth] of MASSIF_STRATA.warp)
+    assert.ok(Math.abs(azimuth * 360 - Math.round(azimuth * 360)) < 1e-9, `${azimuth}`);
+  assert.ok(fragmentShader.includes("float vnw(vec2 p,float w){"));
+  assert.ok(fragmentShader.includes("float azw=mod(az,360.),w1=vnw("));
+  assert.ok(fragmentShader.includes("smoothstep(1.-sw,1.,f)"));
+  assert.match(fragmentShader, /lit\*=1\.\+[\d.]+\*\(amp\*ledge-[\d.]+\);/);
   // The rings' sky, far plain, rims and ink, verbatim; the rock one air farther out.
   for (const shared of [
     "float b=dot(o,d), t=-b+sqrt(max(b*b-dot(o,o)+uSky.x,0.)), a=(o.y+d.y*t)*inversesqrt(uSky.x);",
