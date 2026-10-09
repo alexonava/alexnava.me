@@ -6,9 +6,17 @@ import { Vector3, Vector4 } from "three";
 export const FILM_LIGHT = Object.freeze({ key: 1.12, fill: 1.15, hemisphere: 0.88, ambient: 0.72 });
 
 // A shot's `light` mood multiplies the film balance (key, fill), the lantern and
-// the rim, and sets how much of the tree's pale wood reads moonlit grey (pale);
-// it follows the shot on screen, so it changes on a cut.
-export const SHOT_LIGHT_DEFAULT = Object.freeze({ key: 1, fill: 1, lantern: 1, rim: 1, pale: 0 });
+// the rim, sets how much of the tree's pale wood reads moonlit grey (pale) and
+// the share of the bark's glints kept off the name and intro (glintText, 0 by
+// default); it follows the shot on screen, so it changes on a cut.
+export const SHOT_LIGHT_DEFAULT = Object.freeze({
+  key: 1,
+  fill: 1,
+  lantern: 1,
+  rim: 1,
+  pale: 0,
+  glintText: 0,
+});
 export function shotLight(shot) {
   return { ...SHOT_LIGHT_DEFAULT, ...(shot?.light ?? {}) };
 }
@@ -40,3 +48,11 @@ export const PALE = Object.freeze({
   tint: Object.freeze([0.92, 0.98, 1.08]),
 });
 export const PALE_MOOD = { value: 0 };
+
+// The bark's glints behind the name and intro under a shot's `glintText`
+// (architecture.js BARK_TEXT_GLINT): its direct highlights, the moon's and the
+// lantern's on the wet roots, pass the ground's luminance knee (mud-ground.js
+// slateTextKnee()) by that share, easing out over `reach` of the screen's
+// smaller side. Off (0) unless a shot asks for it.
+export const GLINT = Object.freeze({ reach: 0.2 });
+export const GLINT_MOOD = { value: 0 };

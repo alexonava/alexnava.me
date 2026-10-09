@@ -141,6 +141,9 @@ export function shaftTreatment(shotName) {
 // key light's shadow map); a subject's own gobo overrides the treatment's,
 // and a shot's own (directed-shots.js `shafts.gobo`: gain, colour, wrap, rim
 // and clip; bias is baked when the light is built) overrides the subject's.
+// A shot's gobo may also take `about`: the share of the light on surfaces
+// taken off behind About (shaftAbout, 0 unless a shot asks), easing out over a
+// fifth of the screen's smaller side as it does behind the name and intro.
 export const SHAFTS = Object.freeze({
   // Warm crepuscular rays from the visible star through the cabin's openings
   // and the lattice's gaps toward the eye, only where the eye looks through
@@ -468,6 +471,11 @@ vec3 s=max(shaftQuad(shaftMarch(ro,rd,far,vClip.xy/vClip.w*.5+.5,shaftSteps,grou
 if(s.r+s.g+s.b<=0.)discard;
 gl_FragColor=vec4(s*shaftLayer,0.);
 }`;
+// About's box on the canvas (shaftAbout), tested as the name and intro's are
+// (shaftBehindText()): 1 inside, easing to 0 over a fifth of the screen's
+// smaller side.
+const GOBO_ABOUT = `
+float shaftBehindAbout(vec2 v){vec2 f=max(max(shaftAbout.xy-v,v-shaftAbout.zw),0.)*vec2(shaftSource.z,1.)/min(shaftSource.z,1.);return 1.-smoothstep(0.,.2,length(f));}`;
 // Added to the subject's lighting: the treatment's light, gated by the map (its
 // window and the subject's own occlusion) and, for the moon where its shadow
 // map is drawn (high and balanced), by the key light's real shadow map (four
@@ -497,6 +505,7 @@ gk*=.25*(step(sc.z,unpackRGBAToDepth(shaftTex(directionalShadowMap[SHAFT_SHADOW]
 step(sc.z,unpackRGBAToDepth(shaftTex(directionalShadowMap[SHAFT_SHADOW],sc.xy+vec2(st.x,-st.y),0.)))+step(sc.z,unpackRGBAToDepth(shaftTex(directionalShadowMap[SHAFT_SHADOW],sc.xy+vec2(-st.x,st.y),0.))));}}
 #endif
 gk*=1.-shaftBehindText(vShaftClip.xy/vShaftClip.w*.5+.5)*mix(.85,1.,shaftTextProtection);
+if(shaftGoboAbout>0.)gk*=1.-shaftGoboAbout*shaftBehindAbout(vShaftClip.xy/vShaftClip.w*.5+.5);
 if(gk>.001){
 vec3 gl=normalize((viewMatrix*vec4(shaftPoint>.5?shaftOrigin-gp:-shaftA,0.)).xyz);
 float gn=dot(geometryNormal,gl);
@@ -964,7 +973,7 @@ export function goboHook(material, uniforms, shadow) {
     shader.fragmentShader = shader.fragmentShader
       .replace(
         "#include <common>",
-        `#include <common>\n#define SHAFT_SHADOW ${shadow}\nvarying vec3 vShaftWorld;varying vec4 vShaftClip;uniform float shaftGoboGain;uniform vec3 shaftGoboColor;uniform vec2 shaftGoboWrap;uniform vec2 shaftGoboClip;uniform float shaftGoboShadow;uniform vec3 shaftSurface;${SHAFT_GLSL}`,
+        `#include <common>\n#define SHAFT_SHADOW ${shadow}\nvarying vec3 vShaftWorld;varying vec4 vShaftClip;uniform float shaftGoboGain;uniform vec3 shaftGoboColor;uniform vec2 shaftGoboWrap;uniform vec2 shaftGoboClip;uniform float shaftGoboShadow;uniform vec3 shaftSurface;uniform float shaftGoboAbout;uniform vec4 shaftAbout;${SHAFT_GLSL}${GOBO_ABOUT}`,
       )
       .replace(
         "#include <lights_fragment_begin>",
@@ -1024,6 +1033,7 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
     shaftSteps: { value: 10 },
     shaftNoise: { value: null },
     shaftText: { value: { x: 2, y: 2, z: -1, w: -1 } },
+    shaftAbout: { value: { x: 2, y: 2, z: -1, w: -1 } },
     shaftSource: { value: { x: 0.5, y: 0.5, z: 1, w: 0 } },
     shaftStreak: { value: { x: 48, y: 0, z: 1, w: 0 } },
     shaftJitter: { value: 0 },
@@ -1497,6 +1507,7 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
       shaftGoboWrap: { value: { x: 0, y: 0 } },
       shaftGoboClip: { value: { x: 1, y: 1 } },
       shaftGoboShadow: { value: 0 },
+      shaftGoboAbout: { value: 0 },
     };
     part.uniforms.shaftGain.value = 0;
     part.hook = goboHook(mesh.material, part.uniforms, shadowIndex());
@@ -1627,6 +1638,7 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
       uniforms.shaftGoboWrap.value = { x: gobo.wrap, y: gobo.rim };
       uniforms.shaftGoboClip.value = { x: gobo.clip[0], y: gobo.clip[1] };
       uniforms.shaftGoboShadow.value = set.kind === "moon" && gobo.shadow !== false ? 1 : 0;
+      uniforms.shaftGoboAbout.value = gobo.about ?? 0;
       goboColor(set, uniforms.shaftGoboColor.value, gobo);
     }
     if (lit.length) rays(lit[0][1], true);
@@ -1683,22 +1695,29 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
   }
   // The name and intro's box on the canvas (0-1, y up), which the march
   // feathers: the air scales down behind the text wherever the layout puts it.
+  // About's box too, for a shot whose light on surfaces eases off behind it
+  // (its gobo's `about`).
   function measureText() {
+    measureBox(shared.shaftText.value, [".hero h1", ".hero-intro"]);
+    measureBox(shared.shaftAbout.value, [".site-footer__about .about-link__label"]);
+  }
+  function measureBox(text, selectors) {
     const doc = window.document,
-      canvas = rendering.renderer?.domElement?.getBoundingClientRect?.(),
-      text = shared.shaftText.value;
+      canvas = rendering.renderer?.domElement?.getBoundingClientRect?.();
     let x0 = Infinity,
       y0 = Infinity,
       x1 = -Infinity,
       y1 = -Infinity;
-    for (const selector of [".hero h1", ".hero-intro"]) {
-      const r = doc?.querySelector?.(selector)?.getBoundingClientRect?.();
-      if (!r?.width || !r.height) continue;
-      x0 = Math.min(x0, r.left);
-      x1 = Math.max(x1, r.right);
-      y0 = Math.min(y0, r.top);
-      y1 = Math.max(y1, r.bottom);
-    }
+    // Every match: the page keeps a hidden no-JS About ahead of the button.
+    for (const selector of selectors)
+      for (const element of doc?.querySelectorAll?.(selector) ?? []) {
+        const r = element.getBoundingClientRect?.();
+        if (!r?.width || !r.height) continue;
+        x0 = Math.min(x0, r.left);
+        x1 = Math.max(x1, r.right);
+        y0 = Math.min(y0, r.top);
+        y1 = Math.max(y1, r.bottom);
+      }
     if (!canvas?.width || !canvas.height || x0 > x1)
       return Object.assign(text, { x: 2, y: 2, z: -1, w: -1 });
     return Object.assign(text, {

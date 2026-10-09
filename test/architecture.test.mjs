@@ -18,6 +18,7 @@ import {
   createCompleteTowerArchitecture,
   materialFor,
   applyFilmGrade,
+  BARK_TEXT_GLINT,
   BARK_TEXT_LIGHTS,
   ENVIRONMENT_ROLES,
   LANTERN_REACH,
@@ -36,7 +37,7 @@ import {
 } from "../src/scene/mud-ground.js";
 import { goboHook } from "../src/scene/light-shafts.js";
 import { createPropScale } from "../src/scene/prop-scale.js";
-import { LANTERN_MOOD, PALE, PALE_MOOD } from "../src/scene/film-light.js";
+import { GLINT, GLINT_MOOD, LANTERN_MOOD, PALE, PALE_MOOD } from "../src/scene/film-light.js";
 
 const asset = () => {
   const scene = new Group();
@@ -687,6 +688,79 @@ test("beside About the bark's highlights from the lantern and the crown's fill p
   rock.onBeforeCompile(rockShader);
   assert.doesNotMatch(rockShader.fragmentShader, /slateBehind/);
   rock.dispose();
+  tree.dispose();
+  plain.dispose();
+});
+
+test("behind the name and intro the bark's glints pass the same knee, by the shot's share", () => {
+  const contacts = createSlateContacts(),
+    physical = () => ({
+      uniforms: {},
+      vertexShader: ShaderLib.physical.vertexShader,
+      fragmentShader: ShaderLib.physical.fragmentShader,
+    });
+  const tree = createTreeArchitecture({
+    asset: boxAsset(),
+    groundHeight: () => 0,
+    textGuard: contacts,
+  });
+  const material = tree.root.getObjectByName("meshy-tree").material,
+    shader = physical();
+  material.onBeforeCompile(shader);
+  // The shot's share, a shared uniform: a cut recompiles nothing, and it is
+  // off until a shot asks.
+  assert.equal(shader.uniforms.babelGlint, GLINT_MOOD);
+  assert.equal(GLINT_MOOD.value, 0);
+  // After all the lights, so the moon's and the lantern's highlights are both
+  // in it: the whole direct highlight through the ground's knee, behind the
+  // name and intro's box, easing out over a fifth of the screen's smaller side.
+  const glsl = shader.fragmentShader;
+  assert.ok(glsl.includes(`#include <lights_fragment_end>\n${BARK_TEXT_GLINT}`));
+  assert.equal(GLINT.reach, 0.2);
+  assert.ok(Object.isFrozen(GLINT));
+  assert.ok(
+    BARK_TEXT_GLINT.startsWith(
+      "float babelGlintBehind = babelGlint*slateBehind(slateText, vSlateClip.xy/vSlateClip.w*.5+.5, 0.20);\n",
+    ),
+  );
+  assert.ok(
+    BARK_TEXT_GLINT.includes(
+      "if (babelGlintBehind > 0.0) reflectedLight.directSpecular = slateTextKnee(reflectedLight.directSpecular, babelGlintBehind);",
+    ),
+    "at 0, every other shot, nothing runs",
+  );
+  assert.doesNotMatch(BARK_TEXT_GLINT, /slateAbout|directDiffuse|indirect/);
+  // Everything it reads is declared before main().
+  const main = glsl.indexOf("void main()");
+  for (const declared of [
+    "uniform float babelGlint;",
+    "varying vec4 vSlateClip;",
+    "uniform vec4 slateText, slateAbout;",
+    "float slateBehind(vec4 r,vec2 v,float d){",
+    "vec3 slateTextKnee(vec3 c,float b){",
+  ])
+    assert.ok(glsl.indexOf(declared) >= 0 && glsl.indexOf(declared) < main, declared);
+  assert.ok(glsl.indexOf(BARK_TEXT_GLINT) > main);
+  // With the light shafts' gobo composed it stays.
+  const gobo = goboHook(material, {}, 0),
+    composed = physical();
+  gobo.install();
+  material.onBeforeCompile(composed);
+  assert.ok(composed.fragmentShader.includes(BARK_TEXT_GLINT));
+  gobo.restore();
+  // Without the ground's uniforms, and on the tower and the rocks, none.
+  const plain = createTreeArchitecture({ asset: boxAsset(), groundHeight: () => 0 }),
+    unguarded = physical();
+  plain.root.getObjectByName("meshy-tree").material.onBeforeCompile(unguarded);
+  assert.doesNotMatch(unguarded.fragmentShader, /babelGlint/);
+  assert.equal(unguarded.uniforms.babelGlint, undefined);
+  for (const role of ["tower", "rock"]) {
+    const other = materialFor(boxAsset(), 1, role, contacts),
+      otherShader = physical();
+    other.onBeforeCompile(otherShader);
+    assert.doesNotMatch(otherShader.fragmentShader, /babelGlint/, role);
+    other.dispose();
+  }
   tree.dispose();
   plain.dispose();
 });

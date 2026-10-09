@@ -22,7 +22,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import { smoothTreeNormals } from "./tree-normals.js";
 import { ESTATE } from "./estate-layout.js";
 import { SLATE_TEXT_GUARD } from "./mud-ground.js";
-import { LANTERN_MOOD, PALE, PALE_MOOD, RIM_UNIFORMS } from "./film-light.js";
+import { GLINT, GLINT_MOOD, LANTERN_MOOD, PALE, PALE_MOOD, RIM_UNIFORMS } from "./film-light.js";
 
 export const ARCHITECTURE = Object.freeze({
   treeHeight: 22,
@@ -137,6 +137,17 @@ if (babelBehind > 0.0) {
 }
 `;
 
+// Behind the name and intro, by the shot's share (babelGlint, its mood's
+// glintText), all the bark's direct highlights pass the same knee, easing out
+// over film-light.js GLINT.reach. The lantern shots' wet roots catch the
+// brightest glints behind their text: Lantern study's lantern on a root beside
+// the name (4.67:1 at 1920x1080, the end of the push-in) and Root and lantern's
+// moon on a root under the intro's end (4.32:1 at 1440x900, the start of the
+// pull-back). At 0, every other shot, nothing runs.
+export const BARK_TEXT_GLINT = `float babelGlintBehind = babelGlint*slateBehind(slateText, vSlateClip.xy/vSlateClip.w*.5+.5, ${GLINT.reach.toFixed(2)});
+if (babelGlintBehind > 0.0) reflectedLight.directSpecular = slateTextKnee(reflectedLight.directSpecular, babelGlintBehind);
+`;
+
 // Moonlight grade for the supplied maps, which carry baked daylight and
 // ambient occlusion: cooler, less saturated, compressed sunlit highlights and
 // lifted black undersides. Uniform values switch without a shader rebuild.
@@ -238,8 +249,9 @@ export function editableGeometry(source) {
   return geometry;
 }
 
-// textGuard: the ground's createSlateContacts() uniforms, for the bark's guard
-// beside About (BARK_TEXT_LIGHTS); the tree takes it, the tower and the rocks never.
+// textGuard: the ground's createSlateContacts() uniforms, for the bark's guards
+// beside About (BARK_TEXT_LIGHTS) and, by the shot's share, behind the name and
+// intro (BARK_TEXT_GLINT); the tree takes it, the tower and the rocks never.
 // The pale wood's cool grey under a shot's `pale` (film-light.js PALE), first,
 // on the map's own colour.
 const PALE_GLSL = `
@@ -372,6 +384,7 @@ ${ROOT_MOSS_MAP}`
           slateText: textGuard.slateText,
           slateAbout: textGuard.slateAbout,
           slateAspect: textGuard.slateAspect,
+          babelGlint: GLINT_MOOD,
         });
         shader.vertexShader = shader.vertexShader
           .replace("#include <common>", "#include <common>\nvarying vec4 vSlateClip;")
@@ -382,11 +395,16 @@ ${ROOT_MOSS_MAP}`
         shader.fragmentShader = shader.fragmentShader
           .replace(
             "#include <common>",
-            () => `#include <common>\nvarying vec4 vSlateClip;\n${SLATE_TEXT_GUARD}`,
+            () =>
+              `#include <common>\nvarying vec4 vSlateClip;\nuniform float babelGlint;\n${SLATE_TEXT_GUARD}`,
           )
           .replace(
             "#include <lights_fragment_begin>",
             () => `#include <lights_fragment_begin>\n${BARK_TEXT_LIGHTS}`,
+          )
+          .replace(
+            "#include <lights_fragment_end>",
+            () => `#include <lights_fragment_end>\n${BARK_TEXT_GLINT}`,
           );
       }
     };
