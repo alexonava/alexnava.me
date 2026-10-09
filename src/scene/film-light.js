@@ -50,9 +50,9 @@ export const PALE = Object.freeze({
 export const PALE_MOOD = { value: 0 };
 
 // The bark's glints behind the name and intro under a shot's `glintText`
-// (architecture.js BARK_TEXT_GLINT): its direct highlights, the moon's and the
-// lantern's on the wet roots, pass the ground's luminance knee (mud-ground.js
-// slateTextKnee()) by that share, easing out over `reach` of the screen's
-// smaller side. Off (0) unless a shot asks for it.
+// (architecture.js BARK_TEXT_GLINT): all its direct highlights there (the
+// moon's and the lantern's, brightest on the wet roots) pass the ground's
+// luminance knee (mud-ground.js slateTextKnee()) by that share, easing out over
+// `reach` of the screen's smaller side. Off (0) unless a shot asks for it.
 export const GLINT = Object.freeze({ reach: 0.2 });
 export const GLINT_MOOD = { value: 0 };

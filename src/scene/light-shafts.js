@@ -142,8 +142,9 @@ export function shaftTreatment(shotName) {
 // and a shot's own (directed-shots.js `shafts.gobo`: gain, colour, wrap, rim
 // and clip; bias is baked when the light is built) overrides the subject's.
 // A shot's gobo may also take `about`: the share of the light on surfaces
-// taken off behind About (shaftAbout, 0 unless a shot asks), easing out over a
-// fifth of the screen's smaller side as it does behind the name and intro.
+// taken off behind About's box (shaftGoboAbout, 0 unless a shot asks; the box
+// is shaftAbout), easing out over a fifth of the screen's smaller side as it
+// does behind the name and intro.
 export const SHAFTS = Object.freeze({
   // Warm crepuscular rays from the visible star through the cabin's openings
   // and the lattice's gaps toward the eye, only where the eye looks through

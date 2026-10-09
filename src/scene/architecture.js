@@ -115,12 +115,12 @@ export const ENVIRONMENT_ROLES = Object.freeze({
 // the crown's fill) pass the ground's luminance knee (mud-ground.js
 // SLATE_TEXT_GUARD: About's box, the same reach and knee): in tree-4 a root's
 // wet, muddy base caught the lantern in a warm glint beside the small, dim
-// label, the brightest pixel of its backdrop. The name and intro, large and
-// bright, keep the bark's highlights behind them (6.4:1 or better as they
-// are). After the lights (where the light shafts' gobo adds its own,
-// light-shafts.js) the point lights' highlight is taken again as
+// label, the brightest pixel of its backdrop. Behind the name and intro, large
+// and bright, the bark keeps its highlights unless a shot asks
+// (BARK_TEXT_GLINT). After the lights (where the light shafts' gobo adds its
+// own, light-shafts.js) the point lights' highlight is taken again as
 // RE_Direct_Physical takes it, and only what the knee removes comes off; away
-// from About nothing runs. The moon's broad sheen stays as it is.
+// from About nothing runs. Beside About the moon's broad sheen stays as it is.
 export const BARK_TEXT_LIGHTS = `float babelBehind = slateBehindAbout(vSlateClip.xy/vSlateClip.w*.5+.5);
 if (babelBehind > 0.0) {
   vec3 babelPoint = vec3(0.0);
