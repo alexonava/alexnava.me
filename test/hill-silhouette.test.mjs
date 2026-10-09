@@ -453,7 +453,7 @@ test("thin low strips part as layers without echoing their crest", () => {
 
 test("the rock body stays ordered by distance, below the sky and with a readable lit and shadow flank", () => {
   const { transmittance, albedo, rockMax } = MOUNTAIN_AIR;
-  assert.deepEqual([...transmittance], [0.86, 0.72, 0.58, 0.44, 0.3]);
+  assert.deepEqual([...transmittance], [0.86, 0.8, 0.62, 0.44, 0.3]);
   assert.equal(albedo.length, MOUNTAINS.radii.length);
   for (const lit of [0, 0.5, 1]) {
     for (let range = 0; range < transmittance.length; range++) {
@@ -485,12 +485,14 @@ test("the rock body stays ordered by distance, below the sky and with a readable
   const hill = createHillSilhouette({ groundHeight });
   hill.setFilmTreatment(true);
   const shader = hill.mesh.material.fragmentShader;
+  const g = (v) => (Number.isInteger(v) ? v.toFixed(1) : String(v)),
+    [t0, t1, t2, t3, t4] = transmittance.map(g);
   assert.ok(
     shader.includes(
-      "float T=mix(mix(mix(mix(0.86,0.72,step(0.5,vT.y)),0.58,step(1.5,vT.y)),0.44,step(2.5,vT.y)),0.3,step(3.5,vT.y))",
+      `float T=mix(mix(mix(mix(${t0},${t1},step(0.5,vT.y)),${t2},step(1.5,vT.y)),${t3},step(2.5,vT.y)),${t4},step(3.5,vT.y))`,
     ),
   );
-  assert.ok(shader.includes(`*${MOUNTAIN_AIR.moon}*lit+`));
+  assert.ok(shader.includes(`*${g(MOUNTAIN_AIR.moon)}*lit+`));
   assert.ok(shader.includes(`c*=min(1.,${rockMax}*sL/max(dot(c,W),1e-4));`));
   assert.doesNotMatch(shader, /bodyLuma|tL-/);
   hill.dispose();

@@ -149,6 +149,9 @@ test("the star is hot and glows: a yellow core, a round halo inside its plane, n
   assert.equal(SOLAR_GLOW_RADIUS, SOLAR_RADIUS * (halo.reach + 4 * boil + 0.08 * halo.lean));
   assert.ok(SOLAR_GLOW_RADIUS / SOLAR_RADIUS < plane / 2 - 0.6);
   assert.ok(halo.glow < halo.aura && halo.reach > 1.5);
+  // The glow falls off from the limb and fades out over its last radii, never a flat
+  // plateau with a hard edge (which read as one of the clouds' cel bands).
+  assert.ok(halo.fade >= 0.5 && halo.fade < halo.reach - 1);
   const parent = new Group(),
     controller = createSolarBody({
       parent,
@@ -165,10 +168,16 @@ test("the star is hot and glows: a yellow core, a round halo inside its plane, n
   assert.ok(surface.fragmentShader.includes(`float t=uTime*${glsl(SOLAR_LOOK.churn)};`));
   assert.ok(surface.fragmentShader.includes("*limb*(1.0-spot)*uBreath;"));
   assert.ok(corona.material.fragmentShader.includes(`vec2 p=(vUv-.5)*${glsl(plane)};`));
+  // The glow falls off exponentially from the limb.
+  assert.ok(
+    corona.material.fragmentShader.includes(
+      `float glow=${glsl(halo.glow)}*exp(-h*${glsl(halo.falloff)})*(1.0-smoothstep(`,
+    ),
+  );
   // The glow's edge in the shader is the one SOLAR_GLOW_RADIUS mirrors.
   assert.ok(
     corona.material.fragmentShader.includes(
-      `smoothstep(${glsl(halo.reach - 0.22)},${glsl(halo.reach)},r-boil*4.0-.08*dot(p/max(r,1e-4),uLean))`,
+      `smoothstep(${glsl(halo.reach - halo.fade)},${glsl(halo.reach)},r-boil*4.0-.08*dot(p/max(r,1e-4),uLean))`,
     ),
   );
   // Prominences are soft arcs that flare on irregular noise, faint across the disc.

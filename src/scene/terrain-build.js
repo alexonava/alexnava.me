@@ -4,11 +4,13 @@ import { BufferAttribute, BufferGeometry, Mesh, Vector3 } from "three";
 // and its root shading, the puddles and their drips, the tufts, the litter and
 // the small stones.
 
-// Two low, broken ridges beyond the estate's entire occupied area: radius,
-// half-width and lift.
+// Three low, broken foothill ridges beyond the estate's entire occupied area,
+// rising toward the ranges (the owner's pick of 2026-10-09): radius, half-width
+// and lift. The outermost ends where the plain fades into the far air.
 const RIDGES = [
-  [123, 30, 4],
-  [151, 27, 8],
+  [120, 26, 2.2],
+  [139, 22, 3.6],
+  [156, 22, 5.2],
 ];
 export function foothillHeight(x, z) {
   const r = Math.hypot(x, z);
@@ -1523,7 +1525,7 @@ export const LITTER = Object.freeze({
   // in the crooks `crook` from the trunk, within `among` of a root. Never
   // under a root or an arch, nor at the lantern or a puddle.
   stones: Object.freeze({
-    count: 16,
+    count: 30,
     seed: 52817,
     rootShare: 0.6,
     size: Object.freeze([0.12, 0.3]),
@@ -1547,9 +1549,9 @@ export const LITTER = Object.freeze({
   // them (estate-ground-detail.js).
   fine: Object.freeze({
     seed: 61331,
-    counts: Object.freeze({ leaves: 90, clods: 70, gravel: 650 }),
+    counts: Object.freeze({ leaves: 170, clods: 150, gravel: 1400 }),
     arc: Object.freeze([-175, -55]),
-    reach: Object.freeze([2.8, 12.5]),
+    reach: Object.freeze([2.2, 16]),
     lantern: 0.45,
     puddle: 0.15,
     leafNear: 0.45,

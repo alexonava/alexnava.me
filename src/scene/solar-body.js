@@ -23,9 +23,11 @@ export const SOLAR_QUALITY = Object.freeze({
 // The star's look: a hot, yellow-white core to a deep orange-red limb, kept in
 // one band of the grade's cel step so the surface never posterises; a bright
 // aura close to the limb (aura x exp(-auraFalloff x radii past it)) over a
-// round glow out to `reach` radii (glow, easing by `falloff`), bright enough
-// throughout to clear the night sky's first cel band, so the band's edge is a
-// clean circle rather than a ragged plateau; both lean `lean` toward a
+// round glow that falls off from the limb (glow x exp(-falloff x radii past
+// it)) and fades out over its last `fade` radii before `reach` (the owner's
+// note of 2026-10-09: a flat glow with a hard edge read as one of the clouds'
+// cel bands); the star mask follows its coverage, so the clouds' steps also
+// ease back in along the fade instead of at a ring; both lean `lean` toward a
 // slowly wandering side; and a slight unrest: its light breathes by
 // up to `breath` on irregular noise (`breathRate` per second), its limb boils
 // by `boil` radii and its surface churns at `churn`. The corona plane is
@@ -37,9 +39,10 @@ export const SOLAR_LOOK = Object.freeze({
   halo: Object.freeze({
     aura: 0.4,
     auraFalloff: 6,
-    glow: 0.18,
-    falloff: 1.5,
-    reach: 1.85,
+    glow: 0.22,
+    falloff: 1.3,
+    reach: 2.6,
+    fade: 0.9,
     lean: 0.25,
   }),
   breath: 0.1,
@@ -215,10 +218,10 @@ void main() {
   float drift=2.0*noise3(vec3(uTime*.06,3.1,0.0));
   float flick=.7+.6*noise3(vec3(cos(a)*2.0,sin(a)*2.0,uTime*.45));
   float rays=.46+.23*sin(a*7.0+.4+drift)+.17*sin(a*13.0-1.4-drift*.7)+.10*sin(a*29.0+weave);
-  // A bright aura at the limb over a round amber glow whose soft edge wobbles a little, leaning
-  // toward a slowly wandering side.
+  // A bright aura at the limb over a round amber glow that falls off smoothly, its faint fade
+  // wobbling a little and leaning toward a slowly wandering side.
   float lean=1.0+dot(p/max(r,1e-4),uLean);
-  float glow=${glsl(SOLAR_LOOK.halo.glow)}*(.75+.25*exp(-h*${glsl(SOLAR_LOOK.halo.falloff)}))*(1.0-smoothstep(${glsl(SOLAR_LOOK.halo.reach - 0.22)},${glsl(SOLAR_LOOK.halo.reach)},r-boil*4.0-.08*dot(p/max(r,1e-4),uLean)));
+  float glow=${glsl(SOLAR_LOOK.halo.glow)}*exp(-h*${glsl(SOLAR_LOOK.halo.falloff)})*(1.0-smoothstep(${glsl(SOLAR_LOOK.halo.reach - SOLAR_LOOK.halo.fade)},${glsl(SOLAR_LOOK.halo.reach)},r-boil*4.0-.08*dot(p/max(r,1e-4),uLean)));
   float halo=(${glsl(SOLAR_LOOK.halo.aura)}*exp(-h*${glsl(SOLAR_LOOK.halo.auraFalloff)})+glow)*lean*uBreath;
   float inner=exp(-h*20.0)*.62*uBreath;
   float stream=exp(-h*(9.0-rays*5.0))*(.13+.28*pow(max(0.0,rays),3.0))*flick;

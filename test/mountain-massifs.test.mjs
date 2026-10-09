@@ -555,11 +555,13 @@ test("the massif shader is the ranges' moonlit style on the models' own relief",
   assert.ok(
     fragmentShader.includes("return normalize(vec3(m.x*vI.x-m.z*vI.y,m.y,m.x*vI.y+m.z*vI.x));}"),
   );
-  assert.ok(fragmentShader.includes("vec3 n=relief(0.);"));
+  // The relief read sharper than its footprint (MASSIFS.sharpen), so the moonlit faces keep their form.
+  assert.ok(MASSIFS.sharpen < 0 && MASSIFS.sharpen >= -1);
+  assert.ok(fragmentShader.includes(`vec3 n=relief(${MASSIFS.sharpen});`));
   // The rings' sky, far plain, rims and ink, verbatim; the rock one air farther out.
   for (const shared of [
     "float b=dot(o,d), t=-b+sqrt(max(b*b-dot(o,o)+uSky.x,0.)), a=(o.y+d.y*t)*inversesqrt(uSky.x);",
-    "c=mix(c,pa,fh*(1.-smoothstep(-.02,0.,vL.y/r)));",
+    "{float skE=vL.y/r,skA=atan(vL.z,vL.x),skN=.5+",
     "+vec3(.1,.07,.04)*pow(max(dot(v,toSun),0.),60.));",
   ]) {
     assert.ok(ranges.includes(shared), `the rings keep: ${shared}`);

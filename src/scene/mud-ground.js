@@ -72,7 +72,7 @@ export const SLATE_WET = Object.freeze({
 // degrees (a 3-4-5 turn), is blended in by a 17-unit noise and by which sample
 // is higher (lighter), with the blend's lost contrast restored about the tile's
 // mean linear colour (delivery-report.json). The detail map, a 5.03-unit high
-// band turned 36.87 degrees, adds close relief and grain within 6-28 units of
+// band turned 36.87 degrees, adds close relief and grain within 6-42 units of
 // the lens, and a 53-unit noise varies the tone.
 export const SLATE_TILING = Object.freeze({
   tile: 22,
@@ -90,9 +90,9 @@ export const SLATE_TILING = Object.freeze({
   detail: Object.freeze({
     ratio: 4.37, // base tiles per detail tile: 22 / 4.37 = 5.03 units
     turn: Object.freeze([0.8, 0.6, -0.6, 0.8]),
-    strength: 2.4, // tangent slope per grey step of one texel (about the base map's relief)
-    albedo: 0.18,
-    near: Object.freeze([6.0, 28.0]), // view distance: full detail within, none beyond
+    strength: 3.4, // tangent slope per grey step of one texel (about the base map's relief)
+    albedo: 0.3,
+    near: Object.freeze([6.0, 42.0]), // view distance: full detail within, none beyond
   }),
 });
 
@@ -116,15 +116,51 @@ export const SLATE_CLOSE = Object.freeze({
   }),
   blendCell: 2.6,
   albedo: 1.5,
-  relief: 0.07,
+  relief: 0.12,
   blur: 5,
   calm: 0.9,
-  near: Object.freeze([5, 16]),
+  near: Object.freeze([7, 24]),
   footprint: Object.freeze([0.8, 2]),
   // Crumbs: a cellular noise of `cell`-unit grains on the close soil's relief
   // (`height`, in relief-map units) and albedo (`albedo`), so it reads as
   // crumbly earth; gone where a cell shrinks under `fade` pixels.
-  crumb: Object.freeze({ cell: 0.075, height: 0.55, albedo: 0.35, fade: Object.freeze([1.6, 4]) }),
+  crumb: Object.freeze({ cell: 0.075, height: 0.85, albedo: 0.5, fade: Object.freeze([1.6, 4]) }),
+});
+
+// The far plain's own structure (the owner's pick of 2026-10-09, "detailed"):
+// past the close detail the slate tile's mips average it to one flat tone to the
+// horizon. Broad noise swathes (`cells` units, `weights`, with offsets) move
+// the soil's tone by up to `amount` either way, drifting from cool to warm over
+// a `hueCell` noise; then two more lookups of the slate tile, `scale` times
+// its size (about 95 and 310 units) and turned and offset so neither lines up
+// with the base, carry its cracks and blotches far out: their luma about the
+// tile's mean, weighted, raised to `gain` and kept within `range`, scales the
+// albedo. Each eases in over its `near` view distances, so the close soil
+// keeps its own maps.
+export const SLATE_FAR = Object.freeze({
+  swathes: Object.freeze({
+    cells: Object.freeze([29, 83, 9]),
+    weights: Object.freeze([0.45, 0.35, 0.2]),
+    offsets: Object.freeze([0, 7.3, 3.1]),
+    amount: 0.22,
+    hueCell: 89,
+    hueOffset: 11.7,
+    cool: Object.freeze([0.93, 0.98, 1.07]),
+    warm: Object.freeze([1.07, 1, 0.92]),
+    near: Object.freeze([16, 55]),
+  }),
+  tile: Object.freeze([
+    Object.freeze({ scale: 0.23, offset: Object.freeze([0.31, 0.17]), weight: 0.55 }),
+    Object.freeze({
+      scale: 0.071,
+      turn: Object.freeze([0.6, -0.8, 0.8, 0.6]), // column-major mat2
+      offset: Object.freeze([0.57, 0.23]),
+      weight: 0.45,
+    }),
+  ]),
+  gain: 1.6,
+  range: Object.freeze([0.4, 1.9]),
+  near: Object.freeze([14, 45]),
 });
 
 // The small pond in front of the lantern, where its reflection lands in both
@@ -475,6 +511,26 @@ const PATH_LENGTH = glslNumber(
 const SECOND = SLATE_TILING.second,
   DETAIL = SLATE_TILING.detail,
   CLOSE = SLATE_CLOSE;
+// The far plain's swathes, then its tile structure (SLATE_FAR), after the calm.
+const FAR = SLATE_FAR,
+  FAR_SWATHE = FAR.swathes.cells
+    .map((cell, i) => {
+      const offset = FAR.swathes.offsets[i];
+      return `${glslNumber(FAR.swathes.weights[i])}*slateNoise(slateFarP/${glslNumber(cell)}${offset ? "+" + glslNumber(offset) : ""})`;
+    })
+    .join("+"),
+  FAR_TILE = FAR.tile.map(
+    ({ scale, turn, offset }) =>
+      `texture2D(map,${turn ? `mat2(${turn.map(glslNumber)})*` : ""}vMapUv*${glslNumber(scale)}+${glslVec(offset)}).rgb`,
+  );
+const FAR_MAP = `
+      {float slateFarD=length(vViewPosition),slateFarF=smoothstep(${FAR.swathes.near.map(glslNumber)},slateFarD);vec2 slateFarP=vMudWorld.xz;
+      float slateFarS=${FAR_SWATHE};float slateFarH=slateNoise(slateFarP/${glslNumber(FAR.swathes.hueCell)}+${glslNumber(FAR.swathes.hueOffset)});
+      sampledDiffuseColor.rgb*=mix(vec3(1.),(${glslNumber(1 - FAR.swathes.amount)}+${glslNumber(2 * FAR.swathes.amount)}*slateFarS)*mix(${glslVec(FAR.swathes.cool)},${glslVec(FAR.swathes.warm)},slateFarH),slateFarF);}
+      {float slateFarD=length(vViewPosition),slateFarF=smoothstep(${FAR.near.map(glslNumber)},slateFarD);vec3 slateFarW=vec3(.2126,.7152,.0722);float slateFarM=dot(slateMean,slateFarW);
+      vec3 slateFarT1=${FAR_TILE[0]},slateFarT2=${FAR_TILE[1]};
+      float slateFarL=${glslNumber(FAR.tile[0].weight)}*dot(slateFarT1,slateFarW)/slateFarM+${glslNumber(FAR.tile[1].weight)}*dot(slateFarT2,slateFarW)/slateFarM;
+      sampledDiffuseColor.rgb*=mix(1.,clamp(pow(slateFarL,${glslNumber(FAR.gain)}),${FAR.range.map(glslNumber)}),slateFarF);}`;
 // Near the lens the slate's mid-scale blotches, enlarged there, give way to its
 // broad tone (the tile blend `blur` mip levels down, `calm` of it), and the close
 // soil's two lookups, blended by a noise, carry the detail: its grit on the
@@ -766,7 +822,7 @@ ${SLATE_TEXT_GLSL}${LOOK_GLSL}`
       float slateH = texture2D(slateDetail, slateUvD).r, slateNear = 1.-smoothstep(${DETAIL.near.map(glslNumber)},length(vViewPosition));
       vec3 slateMean = ${glslVec(SLATE_TILING.mean)};
       vec4 sampledDiffuseColor = vec4(max(slateMean+(mix(slateA.rgb,slateB.rgb,slateW)-slateMean)/length(vec2(slateW,1.-slateW)),0.)*(1.+(slateH-.5)*${glslNumber(DETAIL.albedo)}*slateNear)*(.93+.14*slateNoise(vMudWorld.xz/${glslNumber(SLATE_TILING.macroCell)})),1.);
-      ${close ? CLOSE_PRE : ""}sampledDiffuseColor.rgb = mix(sampledDiffuseColor.rgb, slateMean, slateFlatAt(vMudWorld.xz));
+      ${close ? CLOSE_PRE : ""}sampledDiffuseColor.rgb = mix(sampledDiffuseColor.rgb, slateMean, slateFlatAt(vMudWorld.xz));${FAR_MAP}
       diffuseColor *= sampledDiffuseColor;${close ? CLOSE_MAP : ""}
       #endif`,
       );

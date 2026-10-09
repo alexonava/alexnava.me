@@ -98,14 +98,18 @@ export function snowReach(elevation, massif, snow = SNOW) {
 // by the moon key (`moon` on a face turned full to it) plus a blue sky
 // ambient (`ambient` on an upward face), in units of the sky's luma, and
 // never exceeds `rockMax` x the sky behind it. The feet fade to the shared
-// slate over the lowest `footHazeHeight` units above the ground.
+// slate over the lowest `footHazeHeight` units above the ground. Moonlit (the
+// owner's pick of 2026-10-09): a stronger key, and the nearer massifs' layers
+// less hazed, so their lit faces stand out from their shadowed ones instead of
+// reading as one dark cut-out; the farthest range's albedo rises with them, so
+// each farther range still reads lighter than the one before it.
 export const MOUNTAIN_AIR = Object.freeze({
-  transmittance: Object.freeze([0.86, 0.72, 0.58, 0.44, 0.3]),
-  albedo: Object.freeze([0.55, 0.75, 0.9, 1, 1.12]),
+  transmittance: Object.freeze([0.86, 0.8, 0.62, 0.44, 0.3]),
+  albedo: Object.freeze([0.55, 0.8, 0.9, 1, 1.18]),
   thin: 0.5,
   lift: 0.3,
-  moon: 0.78,
-  ambient: 0.055,
+  moon: 1,
+  ambient: 0.05,
   rockMax: 0.95,
   footHazeHeight: 3,
   renderOrder: -0.5,
@@ -244,16 +248,39 @@ c*=1.+vec3(.06,.02,-.04)*pow(max(dot(v,toSun),0.),10.);
 float cr=1.-smoothstep(.8,3.5,px);
 c+=cr*(1.-.8*slim)*(vec3(.55,.62,.8)*.12*max(dot(v,normalize(vec2(32,14))),0.)
 +vec3(.1,.07,.04)*pow(max(dot(v,toSun),0.),60.));`;
+// The ranges' feet below eye level break into a rocky skirt (the owner's pick of
+// 2026-10-09) instead of meeting the far plain's air at one level line: along
+// the ring a sum of waves (`waves`: [frequency per radian, weight, phase] and,
+// on the first, a slower wave bending it, [frequency, depth]) sets each column's
+// skirt, which lifts the fade's line by up to `lift` of view slope about its
+// middle and sets the air's tone there (`tone`: base and range), and the fade
+// runs over `fade` of view slope rather than .02.
+export const HORIZON_SKIRT = Object.freeze({
+  waves: Object.freeze([
+    Object.freeze([23, 0.22, 0, 9, 2]),
+    Object.freeze([61, 0.16, 1.7]),
+    Object.freeze([137, 0.12, 0.3]),
+  ]),
+  lift: 0.035,
+  tone: Object.freeze([0.78, 0.5]),
+  fade: Object.freeze([-0.05, 0.004]),
+});
+const SKIRT_WAVES = HORIZON_SKIRT.waves
+  .map(
+    ([frequency, weight, phase, bend, depth]) =>
+      `${glslFloat(weight)}*sin(skA*${glslFloat(frequency)}${bend ? `+${glslFloat(depth)}*sin(skA*${glslFloat(bend)})` : ""}${phase ? `+${glslFloat(phase)}` : ""})`,
+  )
+  .join("+");
 // The far plain's air (HORIZON_AIR) and the hazed feet (HORIZON_HAZE), on the fog's distances.
 const FAR_PLAIN_GLSL = `#ifdef USE_FOG
 // The far plain's air (HORIZON_AIR): from eye level to where the view meets the
 // terrain's edge (the ray's horizontal reach to its square, at the camera's height
-// above the datum, vH-vL.y). The body below eye level eases to it within .02 of slope,
-// and the feet haze to it.
+// above the datum, vH-vL.y). The body below eye level eases to it through its rocky
+// skirt (HORIZON_SKIRT), and the feet haze to it.
 vec2 hz=vL.xz/r, ah=max(abs(hz),1e-4), eq=(${glslFloat(TERRAIN_EDGE)}-hz/ah*o.xz)/ah;
 vec3 pa=${TERRAIN_HORIZON}*mix(${glslFloat(HORIZON_AIR.horizon)},${glslFloat(HORIZON_AIR.edge)},clamp(vL.y/r*min(eq.x,eq.y)/(vL.y-vH),0.,1.));
 float fh=max(smoothstep(fogNear,fogFar,vD),smoothstep(${HORIZON_HAZE.near}.,${HORIZON_HAZE.far}.,vD));
-c=mix(c,pa,fh*(1.-smoothstep(-.02,0.,vL.y/r)));
+{float skE=vL.y/r,skA=atan(vL.z,vL.x),skN=.5+${SKIRT_WAVES};c=mix(c,pa*(${glslFloat(HORIZON_SKIRT.tone[0])}+${glslFloat(HORIZON_SKIRT.tone[1])}*skN),fh*(1.-smoothstep(${glslFloat(HORIZON_SKIRT.fade[0])},${glslFloat(HORIZON_SKIRT.fade[1])},skE-${glslFloat(HORIZON_SKIRT.lift)}*(skN-.5))));}
 c=mix(c,pa,fh*(1.-smoothstep(0.,${glslFloat(MOUNTAIN_AIR.footHazeHeight)},vH)*smoothstep(-.05,-.008,vL.y/r)));
 #endif`;
 // A shot's low mist on the ranges' feet (mud-ground.js SLATE_LOOK, written each
@@ -437,6 +464,9 @@ export const MASSIFS = Object.freeze({
   // Layer n sees through range n + air's air (MOUNTAIN_AIR): big massifs far off,
   // hazier than the procedural rings at their layer's distance.
   air: 1,
+  // The relief's mip bias: the normal map read this many levels sharper than the
+  // screen's footprint, so the moonlit faces keep their ridges and gullies.
+  sharpen: -0.75,
 });
 
 // The Meshy massifs' shading: the ranges' moonlit style on the models' own
@@ -513,7 +543,7 @@ void main() {
 ${SKY_BEHIND_GLSL}
 float sL=max(dot(s,W),1e-4), far=step(.5,vT.y), k=vT.y*.25, px=vT.x/max(fwidth(vT.x),1e-5), r=length(vL.xz), slim=0.;
 float el=degrees(atan(vL.y,r)), az=degrees(atan(vL.z,vL.x)), ppd=1./max(fwidth(el),1e-4);
-vec3 n=relief(0.);
+vec3 n=relief(${glslFloat(MASSIFS.sharpen)});
 vec2 mk=texture2D(uMask,vU).rg;
 // Faceted moonlight, as the ranges': Lambert blended with a crisp, anti-aliased terminator.
 float nl=dot(n,K), te=max(.05,1.5*fwidth(nl)), crisp=smoothstep(.3-te,.3+te,nl);
