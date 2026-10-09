@@ -21,7 +21,9 @@ import {
   rasterizeLightMap,
   shaftDrift,
   shaftTreatment,
+  SHAFT_MARK,
 } from "../src/scene/light-shafts.js";
+import { SHAFT_LAYER, STAR_LAYER } from "../src/scene/depth-layers.js";
 import { createSceneSubsystemRegistry } from "../src/scene/subsystem.js";
 
 // Drives a light-map generator to completion, counting its yields.
@@ -576,17 +578,19 @@ test("the box adds colour only and leaves the film depth layer in alpha untouche
       star ? SHAFTS.star.layer : 1,
       "the land behind at full weight",
     );
+    // dst.a takes the air's small mark (SHAFT_MARK): over the sky it reads in the
+    // star's window, so the grade keeps it out of the clouds' cel step.
     assert.deepEqual(
       [material.blendSrcAlpha, material.blendDstAlpha],
-      [200, 201],
-      "dst.a unchanged",
+      [201, 201],
+      "dst.a += the air's mark",
     );
     assert.equal(material.depthWrite, false);
     assert.equal(material.depthTest, true, "opaque surfaces hide the far face");
     assert.equal(material.side, 1, "back faces");
     assert.match(
       material.fragmentShader,
-      /if\(s\.r\+s\.g\+s\.b<=0\.\)discard;\ngl_FragColor=vec4\(s\*shaftLayer,0\.\);/,
+      /if\(s\.r\+s\.g\+s\.b<=0\.\)discard;\ngl_FragColor=vec4\(s\*shaftLayer,min\(dot\(s\*shaftLayer,vec3\(\.2126,\.7152,\.0722\)\)\*1\.50,0\.030\)\);/,
       "an unlit pixel costs no blending",
     );
     // Where the treatment asks, only view rays through the subject take air.
@@ -1497,4 +1501,14 @@ test("the blue-noise tile ranks every texel once and keeps neighbours apart", ()
     [1000, 1000, 1003, 1003],
     "tiled, one texel per pixel",
   );
+});
+
+test("the shafts' air marks the film depth layer inside the star's window, as depth-layers.js says", () => {
+  // Restated in the lazy chunk (it imports nothing but three); the two agree.
+  assert.deepEqual({ ...SHAFT_MARK }, { ...SHAFT_LAYER });
+  // At its cap the mark, over the sky, reads in the star's exemption window
+  // (postprocess.js starLayer: 0.0005-0.22 full), and over the mountains' or the
+  // ground's codes it stays well inside their own windows (within 0.04).
+  assert.ok(SHAFT_LAYER.cap >= 0.006 && SHAFT_LAYER.cap + 4 * STAR_LAYER <= 0.22);
+  assert.ok(SHAFT_LAYER.cap <= 0.04);
 });

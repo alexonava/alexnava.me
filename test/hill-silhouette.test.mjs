@@ -1187,7 +1187,10 @@ test("the ranges read as real rock: a softly wrapped key, no drawn rim or ink ab
     g = (v) => (Number.isInteger(v) ? v.toFixed(1) : String(v));
   assert.ok(wrap > 0 && wrap < 0.5);
   assert.ok(shader.includes(`float nl=dot(n,K), lit=clamp((nl+${g(wrap)})/${g(1 + wrap)},0.,1.)`));
-  assert.doesNotMatch(shader, /crisp=smoothstep|fwidth\(nl\)/);
+  assert.doesNotMatch(shader, /crisp=smoothstep/);
+  // Every name the ring shader reads is declared: the snow's terminator width among them.
+  assert.match(shader, /float te=max\(\.05,1\.5\*fwidth\(nl\)\);/);
+  assert.ok(shader.indexOf("float te=") < shader.indexOf("smoothstep(.3-te,.3+te,ns)"));
   // No cool or warm rim drawn about the crests, and no crest ink line.
   assert.doesNotMatch(shader, /float cr=|vec3\(\.55,\.62,\.8\)/);
   assert.ok(!shader.includes("c=mix(c,vec3(.012,.016,.03)"));

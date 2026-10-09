@@ -471,29 +471,28 @@ test("in film the grade's cel step and ink are the sky's alone; everything else 
   assert.equal(g.uLayerRelief.value, 0, "outside film the grade is unchanged");
   pipeline.setFilmTreatment(true);
   assert.equal(g.uLayerRelief.value, 1);
-  // Only the mountains' depth code (1/3, depth-layers.js) is exempt, and the cel
-  // step returns below graded luma .1 so the fogged feet match the ground's crush.
-  assert.match(
-    shader,
-    /float relief = uLayerRelief \* \(1\.0 - smoothstep\(0\.04, 0\.12, abs\(texel\.a - 0\.3333\)\)\);/,
-  );
-  // The ground and the star (depth-layers.js STAR_LAYER, 0.0005-0.28 over
-  // the sky's 0) take no band either.
+  // The ground and the star and shafts' marks (depth-layers.js STAR_LAYER and
+  // SHAFT_LAYER, 0.0005-0.28 over the sky's 0) take no band.
   assert.match(
     shader,
     /float starLayer = uLayerRelief \* smoothstep\(0\.0005, 0\.006, texel\.a\) \* \(1\.0 - smoothstep\(0\.22, 0\.28, texel\.a\)\);/,
   );
-  // In film only the sky (depth code 0) takes the step: the clouds are the
-  // artistic part; subjects, mountains, ground and the shafts' air stay continuous.
+  // In film the bands are the sky's alone (the clouds are the artistic part):
+  // off the sky only the deepest band stays, below graded luma .1, where it never
+  // stepped (a smooth pull toward black that keeps the deep shade's tone),
+  // easing over partly covered edges, whose codes blend toward the sky's 0.
+  assert.match(shader, /float skyLayer = 1\.0 - smoothstep\(0\.0, 0\.3, texel\.a\);/);
   assert.match(
     shader,
-    /float skyLayer = mix\(1\.0, 1\.0 - smoothstep\(0\.0, 0\.006, texel\.a\), uLayerRelief\);/,
+    /float celWeight = mix\(1\.0, mix\(1\.0 - smoothstep\(0\.05, 0\.1, gradedLuma\), 1\.0, skyLayer\), uLayerRelief\);/,
   );
   assert.match(
     shader,
-    /color = mix\(color, celColor, uCelMix \* skyLayer \* \(1\.0 - relief \* smoothstep\(0\.05, 0\.1, gradedLuma\)\) \* \(1\.0 - groundLayer\) \* \(1\.0 - starLayer\)\);/,
+    /color = mix\(color, celColor, uCelMix \* celWeight \* \(1\.0 - groundLayer\) \* \(1\.0 - starLayer\)\);/,
   );
-  assert.doesNotMatch(shader, /uSubjectCel/);
+  // That deepest band is flat: below .1 the band rounds to 0, so no step shows.
+  for (const luma of [0.02, 0.05, 0.08, 0.099]) assert.equal(Math.floor(luma * 5 + 0.5), 0);
+  assert.doesNotMatch(shader, /uSubjectCel|float relief|skySide/);
   // The star's mask, STAR_LAYER from each of its four parts, stays inside the
   // exemption's plateau.
   assert.ok(4 * STAR_LAYER <= 0.22);
@@ -509,9 +508,8 @@ test("in film the grade's cel step and ink are the sky's alone; everything else 
     shader,
     /float skyInk = mix\(1\.0, \(1\.0 - smoothstep\(0\.0, 0\.006, texel\.a\)\) \* \(1\.0 - step\(0\.006, nearest\)\), uLayerRelief\);/,
   );
-  assert.match(shader, /inkContour \* uInkMix \* skyInk \* \(1\.0 - max\(relief, skySide\)\)/);
-  // With uLayerRelief 0 both factors vanish: the grade of every other view is unchanged.
-  assert.match(shader, /float skySide = uLayerRelief \*/);
+  assert.match(shader, /inkContour \* uInkMix \* skyInk\);/);
+  // With uLayerRelief 0 every film factor is 1: the grade of every other view is unchanged.
   pipeline.dispose();
 });
 

@@ -8,8 +8,9 @@
 //
 // The treatment by shot: warm star shafts only in The watch, where the star
 // is in frame behind the cabin; cool moonbeams along the real moon key light
-// on the other shots; nothing in the two lantern shots. The rays are visible:
-// warm ray streaks through the cabin and lattice, slim moon shafts through the
+// on the other shots; nothing in the two lantern shots. The light reads as
+// natural light through the gaps (the owner's direction of 2026-10-09): warm
+// light with faint streaks through the cabin and lattice, slim moon shafts through the
 // crown and past the cabin, larger broken-moonlight patches on bark and
 // timber, and no light on the sky.
 //
@@ -41,13 +42,18 @@
 // pixel (within the middle half of a step; none over the sky, where the
 // grade's cel band would turn faint grain into dots), and is averaged over
 // each 2 x 2 pixel quad where depth allows. The rays streak by angle about the
-// light's place on screen, as crepuscular rays do. Additive colour only (for
-// the star, times the destination alpha): the scene target's alpha, the film
-// depth layer (depth-layers.js), is untouched.
+// light's place on screen, as crepuscular rays do. Additive colour (for the
+// star, times the destination alpha), and a small mark added to the scene
+// target's alpha, the film depth layer (SHAFT_MARK, depth-layers.js
+// SHAFT_LAYER), so the grade leaves the air out of the clouds' cel step.
 // The subject's material also takes the light where it lands (the "gobo"),
 // under a soft shoulder that keeps lit timber from reading as a spotlight.
 import { BufferAttribute, BufferGeometry, DataTexture, Mesh, ShaderMaterial, Vector3 } from "three";
 
+// The air's mark in the film depth layer: its luma times gain, at most cap
+// (depth-layers.js SHAFT_LAYER, which a test holds equal; restated here so this
+// chunk imports nothing but three).
+export const SHAFT_MARK = Object.freeze({ gain: 1.5, cap: 0.03 });
 // Three constants, written as values so this chunk adds no shared export.
 const BACK_SIDE = 1,
   CUSTOM_BLENDING = 5,
@@ -72,8 +78,8 @@ export function shaftTreatment(shotName) {
   return SHAFT_SHOTS.star.includes(shotName) ? "star" : "moon";
 }
 
-// Tuned against desktop high and phone balanced captures: the grade's 0.24
-// cel band and ink contour amplify soft light, so the air stays in rays.
+// Tuned against desktop high and phone balanced captures. The air takes no cel
+// band or ink in film (its mark in the depth layer, SHAFT_MARK), so it can stay soft.
 // gain: in-scattering in the air; over: its share in front of the subject
 // (the subject's own march, at sub of the box's steps); steps: the box's march
 // length on high (with shadows) and balanced; phase: forward scattering
@@ -99,7 +105,7 @@ export function shaftTreatment(shotName) {
 // how far (in streaks) their spacing wanders, so no two read as even bars;
 // sparse: the streaks on balanced (phones), [contrast, noise levels, gain
 // scale]: fewer, with darker gaps and a little more light each, so a small
-// tower keeps distinct rays, not a warm veil (null: as on high);
+// tower keeps its rays, not a warm veil (null: as on high);
 // rise: the distance (units) past the front over which each streak fades in,
 // varied per streak, so none starts bluntly at the closed silhouette's edge
 // (0: at once); tie: the share of the light read at a sharper level of the
@@ -251,12 +257,12 @@ export const SHAFTS = Object.freeze({
     // Slim shafts through the crown that fade in past its front, take part
     // of their structure from its own gaps and, over the sky, keep to the
     // view rays through the crown (a soft edge), so none starts in open sky.
-    // Its own rays (the owner's pick of 2026-10-09): finer, denser and more
-    // varied than the cabin's, streaming through the branches, their spacing
+    // Its own rays (the owner's picks of 2026-10-09): finer and more varied
+    // than the cabin's, faint streaks through the branches, their spacing
     // wandering, and over the open sky they fade sooner.
     // Its shell rounds the closed silhouette and smooths the hull, so the
     // shafts end over the open sky in smooth fades, never in stair-steps or
-    // parallelogram blocks (the grade's cel step hardens any texel step); its
+    // parallelogram blocks; its
     // box stands clear of the lit ring, its top a 4-unit fade above the crown.
     tree: Object.freeze({
       gap: [0.62, 14, 12, 0.3],
@@ -471,7 +477,7 @@ float ground=rd.y<0.?1.-smoothstep(shaftGround.x,shaftGround.x+shaftGround.y,max
 float w=mix(shaftShape.z,shaftShape.y,ground),k=w>0.?mix(1.,shaftHull(ro,rd,far),w):1.;
 vec3 s=max(shaftQuad(shaftMarch(ro,rd,far,vClip.xy/vClip.w*.5+.5,shaftSteps,ground,k),far),0.);
 if(s.r+s.g+s.b<=0.)discard;
-gl_FragColor=vec4(s*shaftLayer,0.);
+gl_FragColor=vec4(s*shaftLayer,min(dot(s*shaftLayer,vec3(.2126,.7152,.0722))*${SHAFT_MARK.gain.toFixed(2)},${SHAFT_MARK.cap.toFixed(3)}));
 }`;
 // About's box on the canvas (shaftAbout), tested as the name and intro's are
 // (shaftBehindText()): 1 inside, easing to 0 over a fifth of the screen's
@@ -1335,11 +1341,12 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
       transparent: true,
       depthWrite: false,
       // dst.rgb += src.rgb (times dst.a, the film depth layer, where the
-      // treatment keeps its air off the sky); dst.a itself is untouched.
+      // treatment keeps its air off the sky); dst.a takes the air's small mark
+      // (SHAFT_MARK), so the grade leaves it out of the cel step.
       blending: CUSTOM_BLENDING,
       blendSrc: T.layer ? DST_ALPHA : ONE,
       blendDst: ONE,
-      blendSrcAlpha: ZERO,
+      blendSrcAlpha: ONE,
       blendDstAlpha: ONE,
       polygonOffset: true,
       polygonOffsetFactor: -1,

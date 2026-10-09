@@ -123,7 +123,7 @@ const smooth01 = (a, b, x) => {
   return u * u * (3 - 2 * u);
 };
 // JS mirror of the shader's bare rock body (tests): its luma as a share of the
-// sky's behind it, before snow, mist, rim and ink. lit: the face's moonlight,
+// sky's behind it, before snow and mist. lit: the face's moonlight,
 // 0 (shadow) to 1 (turned full to the moon); up: the normal's y; clear: the
 // share of the sky's luma that is clear sky rather than cloud lift.
 export function mountainBody(range, lit, { up = 0.6, elevation = 1, clear = 0.75 } = {}) {
@@ -294,7 +294,6 @@ export const RANGE_MIST = { value: { x: 0, y: 0, z: 0, w: 0 } };
 export const RANGE_MIST_SHAPE = Object.freeze({ floor: -0.03, top: 0.016 });
 const RANGE_MIST_GLSL = `if(uMist.w>0.){float rmE=vL.y/r,rmA=atan(vL.z,vL.x),rmW=.5+.3*sin(rmA*17.+1.3)+.2*sin(rmA*41.+.4);
 c=mix(c,uMist.rgb,uMist.w*(1.-smoothstep(${glslFloat(RANGE_MIST_SHAPE.floor)},${glslFloat(RANGE_MIST_SHAPE.top)}*(.6+.8*rmW),rmE)));}`;
-// Each crest's own ~1.4 px ink line (px: pixels below the crest; k: a quarter of the range).
 
 // Film mountains: vertices ride on the camera (world = cameraPosition + position), as
 // the starfield does, so every shot and viewport gets a known backdrop. The ranges
@@ -408,8 +407,10 @@ if(st>0.)st*=pn(vec2(az*.3,el*2.2+.8*g1.x),108.).x-.5;
 // or fold contour runs parallel to the crest below it.
 float lean=mix(vF.y,1.3-.33*k,slim), fold=vF.z*(1.-.7*slim);
 vec3 n=normalize(X*(vF.x+gd)+I*lean*(1.+.25*fold)+vec3(0.,1.,0.));
-// Moonlight wrapped softly round the faces (MOUNTAIN_AIR.wrap).
+// Moonlight wrapped softly round the faces (MOUNTAIN_AIR.wrap); te, the terminator's
+// width on screen, keeps the snow's own light crisp where it turns (below).
 ${WRAP_GLSL};
+float te=max(.05,1.5*fwidth(nl));
 float ao=(1.-.18*max(-fold,0.))*(1.-.24*gully*gully*det*gw)*(1.+.18*st);
 ${rockBodyGLSL("vT.y")}
 // Valley mist rising from each nearer crest (aForm.w): at most .9 degrees and never
@@ -472,7 +473,8 @@ export const MASSIFS = Object.freeze({
 // warped along the ring by two noises (`warp`: [frequency per degree of azimuth,
 // of elevation, depth] each; the azimuth's wraps whole about the ring, so there
 // is no seam at +-180 degrees). They show only on steep rock (`steep`: the
-// relief's upward share where they fade in and out) and in broken patches along
+// relief's upward share where they fade in and out, read `steepBlur` mip levels
+// down, so the mask never shimmers with the relief's fine detail) and in broken patches along
 // the ring (`broken`: a noise's band where they come and go, its frequencies as
 // the warp's), each layer of its own strength (`amount`: base and spread). A
 // layer is a faint moonlit ledge at its base (`ledge`: rise, then fading from
@@ -485,6 +487,7 @@ export const MASSIF_STRATA = Object.freeze({
   spacing: 2.1,
   warp: Object.freeze([Object.freeze([0.35, 0.5, 1.6]), Object.freeze([1.1, 1.7, 0.6])]),
   steep: Object.freeze([0.45, 0.8]),
+  steepBlur: 1.5,
   broken: Object.freeze([0.9, 0.8, 0.35, 0.65]),
   amount: Object.freeze([0.5, 0.5]),
   ledge: Object.freeze([0.15, 0.3, 1]),
@@ -493,20 +496,21 @@ export const MASSIF_STRATA = Object.freeze({
   seam: Object.freeze([0.07, 0.14]),
 });
 const STRATA_GLSL = (() => {
-  const { spacing, warp, steep, broken, amount, ledge, light, mean, seam } = MASSIF_STRATA,
+  const { spacing, warp, steep, steepBlur, broken, amount, ledge, light, mean, seam } =
+      MASSIF_STRATA,
     [[a1, e1, d1], [a2, e2, d2]] = warp,
     [ba, be, b0, b1] = broken,
     g = glslFloat,
     wrap = (a) => g(Math.round(a * 360));
-  return `{float azw=mod(az,360.),w1=vnw(vec2(azw*${g(a1)},el*${g(e1)}),${wrap(a1)}),w2=vnw(vec2(azw*${g(a2)},el*${g(e2)}),${wrap(a2)});float sk=el*${g(spacing)}+${g(d1)}*w1+${g(d2)}*w2,sw=max(fwidth(sk),1e-3),f=fract(sk),id=floor(sk);float amp=${g(amount[0])}+${g(amount[1])}*fract(sin(id*12.9898)*43758.5453);float st=1.-smoothstep(${g(steep[0])},${g(steep[1])},n.y);float p0=smoothstep(${g(b0)},${g(b1)},vnw(vec2(azw*${g(ba)},el*${g(be)}),${wrap(ba)}));float p1=smoothstep(${g(b0)},${g(b1)},vnw(vec2(azw*${g(ba)}+id*7.,el*${g(be)}),${wrap(ba)}));float ledge=smoothstep(0.,${g(ledge[0])}+sw,f)*(1.-smoothstep(${g(ledge[1])},${g(ledge[2])},f));float seam=max(1.-smoothstep(0.,${g(seam[0])}+sw,f),smoothstep(1.-sw,1.,f));ao*=1.-${g(seam[1])}*st*p0*seam;lit*=1.+${g(light)}*(amp*p1*st*ledge-${g(mean)});}`;
+  return `{float azw=mod(az,360.),w1=vnw(vec2(azw*${g(a1)},el*${g(e1)}),${wrap(a1)}),w2=vnw(vec2(azw*${g(a2)},el*${g(e2)}),${wrap(a2)});float sk=el*${g(spacing)}+${g(d1)}*w1+${g(d2)}*w2,sw=max(fwidth(sk),1e-3),f=fract(sk),id=floor(sk);float amp=${g(amount[0])}+${g(amount[1])}*fract(sin(id*12.9898)*43758.5453);float st=1.-smoothstep(${g(steep[0])},${g(steep[1])},relief(${g(steepBlur)}).y);float p0=smoothstep(${g(b0)},${g(b1)},vnw(vec2(azw*${g(ba)},el*${g(be)}),${wrap(ba)}));float p1=smoothstep(${g(b0)},${g(b1)},vnw(vec2(azw*${g(ba)}+id*7.,el*${g(be)}),${wrap(ba)}));float ledge=smoothstep(0.,${g(ledge[0])}+sw,f)*(1.-smoothstep(${g(ledge[1])},${g(ledge[2])},f));float seam=max(1.-smoothstep(0.,${g(seam[0])}+sw,f),smoothstep(1.-sw,1.,f));ao*=1.-${g(seam[1])}*st*p0*seam;lit*=1.+${g(light)}*(amp*p1*st*ledge-${g(mean)});}`;
 })();
 
 // The Meshy massifs' shading: the ranges' moonlit style on the models' own
 // relief. The object-space normal map (the GLB's normalTexture) is turned into
 // the world by each copy's placement (aInst: the turn's cos and sin, mirror,
 // squash); the mask (baseColorTexture: R the source's whiteness, G its ambient
-// occlusion) shades crevices and lays the snow. The rock, its air, the rims,
-// the far plain and the ink are the ranges' own (the shared GLSL above), with
+// occlusion) shades crevices and lays the snow. The rock, its air, the orb's
+// glow and the far plain are the ranges' own (the shared GLSL above), with
 // aTerrain = (degrees below the copy's own crest, layer, snowline: 0 on a bare
 // copy, massif height).
 // Valley mist rises from the nearer layers' skyline (uNearer: layer 0's and
