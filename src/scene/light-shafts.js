@@ -138,7 +138,9 @@ export function shaftTreatment(shotName) {
 // rim: backlit edge catch, faded on twigs, bias: surface self-shadow offset,
 // clip: [shoulder, headroom] of the soft clip on the surface's direct light,
 // shadow: false where the subject's own light map shades it rather than the
-// key light's shadow map); a subject's own gobo overrides the treatment's.
+// key light's shadow map); a subject's own gobo overrides the treatment's,
+// and a shot's own (directed-shots.js `shafts.gobo`: gain, colour, wrap, rim
+// and clip; bias is baked when the light is built) overrides the subject's.
 export const SHAFTS = Object.freeze({
   // Warm crepuscular rays from the visible star through the cabin's openings
   // and the lattice's gaps toward the eye, only where the eye looks through
@@ -278,7 +280,8 @@ export const SHAFTS = Object.freeze({
       // the eye (the crown's own light map shades them, not the key light's
       // shadow), so the moss and limbs take moonlight without glowing. Its
       // gain is held down to match (2.6 with a 0.12 floor before), so the
-      // limbs behind Close-up's name are no brighter than they were.
+      // limbs behind Close-up's name are no brighter at their brightest (its
+      // name and intro keep main's contrast; the former dark patches are lit).
       // Portrait catches it its own way (directed-shots.js shafts.gobo).
       breaks: [0.16, 0.45, 0.18, 0.7],
       gobo: Object.freeze({
@@ -1031,7 +1034,7 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
   const parts = {}; // subject -> { mesh, material, sets, hook, uniforms, probe, installed, ready, linked, done }
   const eye = new Vector3(),
     source = new Vector3();
-  let lit = []; // [part, set] pairs of the treatment on screen
+  let lit = []; // [part, set, gobo] of the treatment on screen (gobo: the shot's over the set's)
   let disposed = false,
     running = null,
     shown = "",
@@ -1582,7 +1585,8 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
     const set = kind && part?.ready ? part.sets.find((s) => s.kind === kind) : null;
     if (!set) return "";
     // A shot's own catch on the subject (directed-shots.js `shafts.gobo`)
-    // keys the state too, so a cut between two shots of one subject applies it.
+    // keys the state too, by the shot's name, so a cut between two shots of
+    // one subject applies it (a viewport variant's own would not re-key).
     const own = cinematic.shot?.shafts?.gobo ? `+${cinematic.shot.name}` : "";
     // In box units, with a unit of margin.
     eye.copy(camera.position).sub(shared.shaftShift.value).applyMatrix4(set.values.shaftToBox);

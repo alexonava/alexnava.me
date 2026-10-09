@@ -92,8 +92,10 @@ void main() {
   // The star and its glow (depth-layers.js STAR_LAYER over the sky's 0) stay
   // continuous: the cloud banks' steps never ring them.
   float starLayer = uLayerRelief * smoothstep(0.0005, 0.006, texel.a) * (1.0 - smoothstep(0.22, 0.28, texel.a));
-  // A shot's grade scales the step on the subjects (alpha 1): uSubjectCel.
-  color = mix(color, celColor, uCelMix * (1.0 - relief * smoothstep(0.05, 0.1, gradedLuma)) * (1.0 - groundLayer) * (1.0 - starLayer) * mix(1.0, uSubjectCel, step(0.95, texel.a)));
+  // A shot's grade scales the step on the subjects (alpha 1): uSubjectCel,
+  // easing in over their multisampled edges (above the ground's window), so
+  // no stepped fringe rings a smooth crown.
+  color = mix(color, celColor, uCelMix * (1.0 - relief * smoothstep(0.05, 0.1, gradedLuma)) * (1.0 - groundLayer) * (1.0 - starLayer) * mix(1.0, uSubjectCel, smoothstep(0.8, 1.0, texel.a)));
   color = saturateColor(color, 1.04);
 
   if (uInkMix > 0.0) {
@@ -587,8 +589,8 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
       finalUniforms.uBlur.value = film ? blur : 0;
     },
     // The shot's grade: `subjects` scales the cel step on the subjects (the
-    // scene target's alpha 1: the lookout, the tree, the rocks and the
-    // lantern), so their light shades smoothly; set with the shot (on a cut).
+    // scene target's alpha 1: the lookout, the tree and the lantern),
+    // so their light shades smoothly; set with the shot (on a cut).
     setGrade(grade = null) {
       gradingPass.uniforms.uSubjectCel.value = film ? (grade?.subjects ?? 1) : 1;
     },

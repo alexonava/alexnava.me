@@ -485,7 +485,7 @@ test("in film the grade leaves the mountains' relief to their own shading and ha
   );
   assert.match(
     shader,
-    /color = mix\(color, celColor, uCelMix \* \(1\.0 - relief \* smoothstep\(0\.05, 0\.1, gradedLuma\)\) \* \(1\.0 - groundLayer\) \* \(1\.0 - starLayer\) \* mix\(1\.0, uSubjectCel, step\(0\.95, texel\.a\)\)\);/,
+    /color = mix\(color, celColor, uCelMix \* \(1\.0 - relief \* smoothstep\(0\.05, 0\.1, gradedLuma\)\) \* \(1\.0 - groundLayer\) \* \(1\.0 - starLayer\) \* mix\(1\.0, uSubjectCel, smoothstep\(0\.8, 1\.0, texel\.a\)\)\);/,
   );
   // The star's mask, STAR_LAYER from each of its four parts, stays inside the
   // exemption's plateau.

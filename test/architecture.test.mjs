@@ -197,7 +197,7 @@ test("only the tree's pale wood turns moonlit grey, and only under a shot's pale
   // eases to a cool grey; at 0 the mix leaves the colour exactly as it was.
   const pale = `#include <map_fragment>
           float babelPaleLuma = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(babelPaleLuma)*vec3(${PALE.tint.join(", ")}), babelPale*smoothstep(${PALE.luma.join(", ")}, babelPaleLuma));`;
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(babelPaleLuma)*vec3(${PALE.tint.map((v) => v.toFixed(3)).join(", ")}), babelPale*smoothstep(${PALE.luma.map((v) => v.toFixed(3)).join(", ")}, babelPaleLuma));`;
   assert.ok(treeShader.fragmentShader.includes(pale));
   assert.ok(
     treeShader.fragmentShader.indexOf(pale) < treeShader.fragmentShader.indexOf("float babelLuma"),

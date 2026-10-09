@@ -244,7 +244,7 @@ export function editableGeometry(source) {
 // on the map's own colour.
 const PALE_GLSL = `
           float babelPaleLuma = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(babelPaleLuma)*vec3(${PALE.tint.join(", ")}), babelPale*smoothstep(${PALE.luma.join(", ")}, babelPaleLuma));`;
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(babelPaleLuma)*vec3(${PALE.tint.map((v) => v.toFixed(3)).join(", ")}), babelPale*smoothstep(${PALE.luma.map((v) => v.toFixed(3)).join(", ")}, babelPaleLuma));`;
 export function materialFor(asset, anisotropy, role, textGuard = null) {
   const material = sourceMesh(asset).material.clone();
   const profile = MATERIAL_PROFILES[role] || {};

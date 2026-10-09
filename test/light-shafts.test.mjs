@@ -1101,6 +1101,14 @@ test("the moon on the tower keeps to its box: no march of its own over the timbe
   assert.equal(SHAFTS.moon.tower.air.over, 0);
   assert.ok(box > 0, "the box's shafts past the cabin");
   assert.equal(shader.uniforms.shaftGain.value, 0, "the tower's own march is skipped");
+  // The cabin's streaks are the treatment's, not the crown's own.
+  const streaks = h.volumes().find(({ name }) => name === "light-shafts-moon-tower")
+    .material.uniforms;
+  assert.equal(streaks.shaftSource.value.w, SHAFTS.moon.rays[0]);
+  assert.deepEqual(
+    [streaks.shaftStreak.value.y, streaks.shaftStreak.value.z],
+    [SHAFTS.moon.rays[2], SHAFTS.moon.rays[3]],
+  );
   assert.ok(
     shader.uniforms.shaftGoboGain.value > 0,
     "its broken moonlight still lands on the timber",
