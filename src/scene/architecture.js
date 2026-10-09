@@ -22,7 +22,15 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import { smoothTreeNormals } from "./tree-normals.js";
 import { ESTATE } from "./estate-layout.js";
 import { SLATE_TEXT_GUARD } from "./mud-ground.js";
-import { LANTERN_MOOD, PALE, PALE_MOOD, RIM, RIM_UNIFORMS } from "./film-light.js";
+import {
+  GLINT,
+  GLINT_MOOD,
+  LANTERN_MOOD,
+  PALE,
+  PALE_MOOD,
+  RIM,
+  RIM_UNIFORMS,
+} from "./film-light.js";
 
 export const ARCHITECTURE = Object.freeze({
   treeHeight: 22,
@@ -115,12 +123,12 @@ export const ENVIRONMENT_ROLES = Object.freeze({
 // the crown's fill) pass the ground's luminance knee (mud-ground.js
 // SLATE_TEXT_GUARD: About's box, the same reach and knee): in tree-4 a root's
 // wet, muddy base caught the lantern in a warm glint beside the small, dim
-// label, the brightest pixel of its backdrop. The name and intro, large and
-// bright, keep the bark's highlights behind them (6.4:1 or better as they
-// are). After the lights (where the light shafts' gobo adds its own,
-// light-shafts.js) the point lights' highlight is taken again as
+// label, the brightest pixel of its backdrop. Behind the name and intro, large
+// and bright, the bark keeps its highlights unless a shot asks
+// (BARK_TEXT_GLINT). After the lights (where the light shafts' gobo adds its
+// own, light-shafts.js) the point lights' highlight is taken again as
 // RE_Direct_Physical takes it, and only what the knee removes comes off; away
-// from About nothing runs. The moon's broad sheen stays as it is.
+// from About nothing runs. Beside About the moon's broad sheen stays as it is.
 export const BARK_TEXT_LIGHTS = `float babelBehind = slateBehindAbout(vSlateClip.xy/vSlateClip.w*.5+.5);
 if (babelBehind > 0.0) {
   vec3 babelPoint = vec3(0.0);
@@ -135,6 +143,17 @@ if (babelBehind > 0.0) {
   #endif
   reflectedLight.directSpecular -= babelPoint-slateTextKnee(babelPoint, babelBehind);
 }
+`;
+
+// Behind the name and intro, by the shot's share (babelGlint, its mood's
+// glintText), all the bark's direct highlights pass the same knee, easing out
+// over film-light.js GLINT.reach. The lantern shots' wet roots catch the
+// brightest glints behind their text: Lantern study's lantern on a root beside
+// the name (4.67:1 at 1920x1080, the end of the push-in) and Root and lantern's
+// moon on a root under the intro's end (4.32:1 at 1440x900, the start of the
+// pull-back). At 0, every other shot, nothing runs.
+export const BARK_TEXT_GLINT = `float babelGlintBehind = babelGlint*slateBehind(slateText, vSlateClip.xy/vSlateClip.w*.5+.5, ${GLINT.reach.toFixed(2)});
+if (babelGlintBehind > 0.0) reflectedLight.directSpecular = slateTextKnee(reflectedLight.directSpecular, babelGlintBehind);
 `;
 
 // The bark's moon rim behind the text, a factor on the rim: the shot's share
@@ -254,8 +273,9 @@ const PALE_GLSL = `
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(babelPaleLuma)*vec3(${PALE.tint.map((v) => v.toFixed(3)).join(", ")}), babelPale*smoothstep(${PALE.luma.map((v) => v.toFixed(3)).join(", ")}, babelPaleLuma));`;
 
 // textGuard: the ground's createSlateContacts() uniforms, for the bark's guards
-// beside About (BARK_TEXT_LIGHTS) and, by the shot's share, its moon rim behind
-// all the text (BARK_RIM_TEXT); the tree takes it, the tower and the rocks never.
+// beside About (BARK_TEXT_LIGHTS) and, by the shot's shares, its glints behind
+// the name and intro (BARK_TEXT_GLINT) and its moon rim behind all the text
+// (BARK_RIM_TEXT); the tree takes it, the tower and the rocks never.
 export function materialFor(asset, anisotropy, role, textGuard = null) {
   const material = sourceMesh(asset).material.clone();
   const profile = MATERIAL_PROFILES[role] || {};
@@ -386,6 +406,7 @@ ${ROOT_MOSS_MAP}`
           slateText: textGuard.slateText,
           slateAbout: textGuard.slateAbout,
           slateAspect: textGuard.slateAspect,
+          babelGlint: GLINT_MOOD,
         });
         shader.vertexShader = shader.vertexShader
           .replace("#include <common>", "#include <common>\nvarying vec4 vSlateClip;")
@@ -396,11 +417,16 @@ ${ROOT_MOSS_MAP}`
         shader.fragmentShader = shader.fragmentShader
           .replace(
             "#include <common>",
-            () => `#include <common>\nvarying vec4 vSlateClip;\n${SLATE_TEXT_GUARD}`,
+            () =>
+              `#include <common>\nvarying vec4 vSlateClip;\nuniform float babelGlint;\n${SLATE_TEXT_GUARD}`,
           )
           .replace(
             "#include <lights_fragment_begin>",
             () => `#include <lights_fragment_begin>\n${BARK_TEXT_LIGHTS}`,
+          )
+          .replace(
+            "#include <lights_fragment_end>",
+            () => `#include <lights_fragment_end>\n${BARK_TEXT_GLINT}`,
           );
       }
     };

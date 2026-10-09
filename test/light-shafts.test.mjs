@@ -1127,10 +1127,11 @@ test("Portrait catches the moon on the crown its own way; a cut to Close-up rest
     tree = SHAFTS.moon.tree.gobo;
   // Only Portrait has its own catch (the owner's pick of 2026-10-09):
   // barely wrapped, with a stronger, cooler catch on the edges toward the moon.
+  // (Gallery detail's own gobo only eases off behind About.)
   assert.deepEqual(
     Object.values(DIRECTED_SHOTS)
       .flat()
-      .filter((shot) => shot.shafts)
+      .filter((shot) => shot.shafts?.gobo?.gain)
       .map((shot) => shot.name),
     ["Portrait"],
   );
@@ -1162,6 +1163,56 @@ test("Portrait catches the moon on the crown its own way; a cut to Close-up rest
   assert.deepEqual([theirs.wrap, theirs.rim], [tree.wrap, tree.rim]);
   assert.ok(Math.abs(mine.gain / theirs.gain - own.gain / tree.gain) < 1e-6);
   assert.ok(theirs.tint < mine.tint);
+  h.shafts.dispose();
+});
+
+test("Gallery detail's moonlight on the timber eases off behind About; a cut away restores it", async () => {
+  const gallery = DIRECTED_SHOTS.tower.find((shot) => shot.name === "Gallery detail"),
+    threshold = DIRECTED_SHOTS.tower.find((shot) => shot.name === "Threshold");
+  // Only Gallery detail asks, wholly: portrait phones saw the lattice's lit
+  // leg edges behind About (4.24:1 at 390x844).
+  assert.deepEqual(
+    Object.values(DIRECTED_SHOTS)
+      .flat()
+      .filter((shot) => shot.shafts?.gobo?.about)
+      .map((shot) => shot.name),
+    ["Gallery detail"],
+  );
+  assert.deepEqual(gallery.shafts, { gobo: { about: 1 } }, "its catch is otherwise the timber's");
+  const h = harness({ shot: "Gallery detail", current: "tower" });
+  h.cinematic.shot = gallery;
+  const shader = {
+    uniforms: {},
+    vertexShader: "#include <common>\n#include <project_vertex>",
+    fragmentShader: "#include <common>\n#include <lights_fragment_begin>\n#include <fog_fragment>",
+  };
+  await h.until(
+    () => h.debug.shafts?.shown === "tower-moon+Gallery detail" && h.debug.shafts.level === 1,
+  );
+  h.tower.material.onBeforeCompile(shader, {});
+  const u = shader.uniforms;
+  assert.equal(u.shaftGoboAbout.value, 1);
+  assert.ok(u.shaftGoboGain.value > 0, "the timber keeps its broken moonlight elsewhere");
+  const glsl = shader.fragmentShader,
+    main = glsl.indexOf("#include <lights_fragment_begin>");
+  // About's box, tested as the name and intro's, a fifth of the screen's
+  // smaller side round it; declared before the light chunk that reads it.
+  assert.ok(glsl.indexOf("uniform float shaftGoboAbout;uniform vec4 shaftAbout;") < main);
+  assert.ok(
+    glsl.includes(
+      "float shaftBehindAbout(vec2 v){vec2 f=max(max(shaftAbout.xy-v,v-shaftAbout.zw),0.)*vec2(shaftSource.z,1.)/min(shaftSource.z,1.);return 1.-smoothstep(0.,.2,length(f));}",
+    ),
+  );
+  assert.ok(
+    glsl.includes(
+      "gk*=1.-shaftBehindText(vShaftClip.xy/vShaftClip.w*.5+.5)*mix(.85,1.,shaftTextProtection);\nif(shaftGoboAbout>0.)gk*=1.-shaftGoboAbout*shaftBehindAbout(vShaftClip.xy/vShaftClip.w*.5+.5);\nif(gk>.001){",
+    ),
+    "after the name and intro's ease, before the light lands; at 0 nothing runs",
+  );
+  // A cut to another shot of the lookout keeps it whole behind About.
+  h.cinematic.shot = threshold;
+  await h.until(() => h.debug.shafts.shown === "tower-moon" && h.debug.shafts.level === 1);
+  assert.equal(u.shaftGoboAbout.value, 0);
   h.shafts.dispose();
 });
 
@@ -1235,15 +1286,27 @@ test("a dissolve into the shot brings its light in with the subject layer, never
 
 test("the rays streak about the light's own place on screen and ease off behind the name and intro", async () => {
   const h = harness();
-  const rects = { ".hero h1": [100, 100, 400, 250], ".hero-intro": [100, 260, 380, 300] };
+  const rects = {
+    ".hero h1": [[100, 100, 400, 250]],
+    ".hero-intro": [[100, 260, 380, 300]],
+    // The hidden no-JS link's label comes first, then the button's.
+    ".site-footer__about .about-link__label": [
+      [0, 0, 0, 0],
+      [20, 460, 70, 480],
+    ],
+  };
   window.document = {
-    querySelector: (selector) =>
-      rects[selector] && {
-        getBoundingClientRect: () => {
-          const [left, top, right, bottom] = rects[selector];
-          return { left, top, right, bottom, width: right - left, height: bottom - top };
-        },
-      },
+    querySelectorAll: (selector) =>
+      (rects[selector] ?? []).map(([left, top, right, bottom]) => ({
+        getBoundingClientRect: () => ({
+          left,
+          top,
+          right,
+          bottom,
+          width: right - left,
+          height: bottom - top,
+        }),
+      })),
   };
   h.rendering.renderer.domElement.getBoundingClientRect = () => ({
     left: 0,
@@ -1271,6 +1334,12 @@ test("the rays streak about the light's own place on screen and ease off behind 
     [text.x, text.y, text.z, text.w].map((v) => +v.toFixed(3)),
     [0.1, 0.4, 0.4, 0.8],
     "the text's box on the canvas, y up",
+  );
+  const about = uniforms.shaftAbout.value;
+  assert.deepEqual(
+    [about.x, about.y, about.z, about.w].map((v) => +v.toFixed(3)),
+    [0.02, 0.04, 0.07, 0.08],
+    "About's box, the visible label's",
   );
   assert.equal(uniforms.shaftJitter.value, 0, "the star's streaks keep their even fan");
   // Portrait's spacing wanders over groups of four streaks, so no two read
