@@ -2273,7 +2273,7 @@ test("the mirrored flame is the flame's own light as the frame shows it, after t
   // Behind the name and intro it passes the ground's text knee (mud-ground.js SLATE_WATER.text).
   assert.ok(
     fragment.includes(
-      "reflectedLight.indirectSpecular += slateZoneRefl/(1.0+slateBehind*dot(slateZoneRefl, vec3(.2126, .7152, .0722))/SLATE_TEXT_KNEE);",
+      "reflectedLight.indirectSpecular += slateTextKnee(slateZoneRefl, slateBehind);",
     ),
   );
   const core = LANTERN_FLAME.color.core;

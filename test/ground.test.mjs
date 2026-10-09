@@ -526,22 +526,61 @@ test("each ground shading has its own program cache key; the slate's shading nee
   }
   assert.ok(SLATE_WATER.moon.knee <= 0.08, "the moon's glints stay low behind the name and intro");
   // Like the light shafts' air, the water eases off behind the name and intro
-  // and behind About (over a fifth of the screen's smaller side), and there the
-  // soil's own highlights pass a knee: text stays at 5:1 over the wet ground.
-  const [share, knee] = SLATE_WATER.text;
+  // (over half the screen's smaller side, the clouds' reach) and behind About
+  // (a fifth), and there the soil's own highlights pass a knee: text stays at
+  // 5:1 over the wet ground. The name's reach is wide, so the moon's glare on
+  // the wet plain fades out along it instead of ending beside the name; the
+  // small label's stays short, clear of the pond's image of the lantern.
+  const [share, knee, reach, aboutReach] = SLATE_WATER.text;
   assert.ok(share > 0 && share < 1 && knee > 0 && knee <= 0.05);
-  assert.match(
-    fragment,
-    /float slateBehind\(vec4 r,vec2 v\)\{[^}]*return 1\.-smoothstep\(0\.,\.2,length\(f\)\);\}/,
+  assert.ok(reach >= 0.4 && reach <= 0.6, "reach");
+  assert.ok(aboutReach > 0 && aboutReach <= 0.25, "About's reach");
+  assert.ok(
+    fragment.includes(
+      "float slateBehind(vec4 r,vec2 v,float d){vec2 f=max(max(r.xy-v,v-r.zw),0.)*vec2(slateAspect,1.)/min(slateAspect,1.);return 1.-smoothstep(0.,d,length(f));}",
+    ),
   );
-  assert.match(fragment, /return max\(slateBehind\(slateText,v\),slateBehind\(slateAbout,v\)\);/);
+  assert.ok(
+    fragment.includes(
+      `float slateBehindAbout(vec2 v){return slateBehind(slateAbout,v,${aboutReach});}`,
+    ),
+  );
+  assert.ok(
+    fragment.includes(`return max(slateBehind(slateText,v,${reach}),slateBehindAbout(v));`),
+  );
   assert.ok(fragment.includes(`#define SLATE_TEXT_KNEE ${knee}\n`));
+  // The knee is blended in by 1-(1-b)^2 of the test's value b, never scaled
+  // into its divisor, where a 0.035 knee crushed bright glare at the guard's
+  // faint edge into a hard wall beside the name.
+  assert.ok(
+    fragment.includes(
+      "vec3 slateTextKnee(vec3 c,float b){return c*mix(1.,1./(1.+dot(c,vec3(.2126,.7152,.0722))/SLATE_TEXT_KNEE),b*(2.-b));}",
+    ),
+  );
+  assert.ok(fragment.indexOf("vec3 slateTextKnee(") > fragment.indexOf("#define SLATE_TEXT_KNEE "));
+  assert.doesNotMatch(fragment, /\/=\s*1\.0\s*\+\s*slateBehind\*/);
+  // So a glare's shown tone (display gamma) fades about evenly from the edge of
+  // the reach to the text: no 1% of the screen's smaller side takes more than
+  // 5% of the change (the knee scaled into its divisor put 16% of a bright
+  // glare's into one such step, about 11 px at 1080).
+  const smooth = (x) => Math.min(1, Math.max(0, x)) ** 2 * (3 - 2 * Math.min(1, Math.max(0, x)));
+  for (const glare of [0.05, 0.2, 0.6, 1]) {
+    const shown = [];
+    for (let i = 0; i <= 600; i++) {
+      const b = 1 - smooth(i / 1000 / reach),
+        k = b * (2 - b);
+      shown.push((glare * (1 - k + k / (1 + glare / knee))) ** (1 / 2.2));
+    }
+    const change = shown[600] - shown[0],
+      steepest = Math.max(...shown.slice(1).map((value, i) => value - shown[i])) * 10;
+    assert.ok(steepest <= 0.05 * change, `glare ${glare}: ${steepest} of ${change}`);
+  }
   // After the water's glints and mirror, both the direct and the sky's
   // reflections pass the knee there.
   for (const term of ["directSpecular", "indirectSpecular"])
     assert.ok(
       fragment.indexOf(
-        `reflectedLight.${term} /= 1.0+slateBehind*dot(reflectedLight.${term},vec3(.2126,.7152,.0722))/SLATE_TEXT_KNEE;`,
+        `reflectedLight.${term} = slateTextKnee(reflectedLight.${term}, slateBehind);`,
       ) > fragment.indexOf("reflectedLight.indirectSpecular += slateWaterRefl;"),
       term,
     );
