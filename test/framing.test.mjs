@@ -838,8 +838,9 @@ test("the Meshy massifs frame every tour shot: sun, roof lane, open sky over the
               );
             seen.set(key, [...(seen.get(key) ?? []), placement.yaw]);
           }
-          // Silhouettes never merge (the owner's composition pass of 2026-10-08): a
-          // coarse screen grid of each model's vertices, a cell either way of slack.
+          // No silhouette merges with the snow behind it (the owner's composition
+          // pass of 2026-10-08): a coarse screen grid of a model's vertices, a cell
+          // either way of slack.
           const cell = 6,
             columns = Math.ceil(width / cell),
             rows = Math.ceil(height / cell),
@@ -860,18 +861,6 @@ test("the Meshy massifs frame every tour shot: sun, roof lane, open sky over the
               }
               return cells;
             };
-          if (name === "Watch and tree") {
-            // The two landmarks stand apart.
-            const lookout = cover(towerPoints),
-              crown = cover(treePoints, 1);
-            assert.ok(lookout.size > 0 && crown.size > 0, `${label} shows both landmarks`);
-            let both = 0;
-            for (const c of lookout) if (crown.has(c)) both++;
-            assert.ok(
-              both <= 0.02 * Math.min(lookout.size, crown.size),
-              `${label} sets the tree over the lookout (${both} cells)`,
-            );
-          }
           if (name === "Portrait") {
             // The crown meets open cloud: no massif's snow behind the tree (the
             // procedural backdrop rings behind them are hazed, and not counted).

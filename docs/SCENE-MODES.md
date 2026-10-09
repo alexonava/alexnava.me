@@ -24,16 +24,16 @@ Append them to the local preview, for example `http://127.0.0.1:4173/?view=tower
 | URL                  | Shot             | Dwell | In the tour  |
 | -------------------- | ---------------- | ----- | ------------ |
 | `view=tower&angle=1` | The watch        | 9 s   | 1st          |
-| `view=tower&angle=2` | Threshold        | 7 s   | 3rd          |
+| `view=tower&angle=2` | Threshold        | 7 s   | 4th          |
 | `view=tower&angle=3` | Masonry study    | 7 s   | no, URL only |
 | `view=tower&angle=4` | Gallery detail   | 7 s   | no, URL only |
-| `view=tower&angle=5` | Watch and tree   | 7 s   | 5th          |
+| `view=tower&angle=5` | Watch and tree   | 7 s   | no, URL only |
 | `view=tree&angle=1`  | Portrait         | 9 s   | 2nd          |
-| `view=tree&angle=2`  | Lantern study    | 6 s   | 4th          |
-| `view=tree&angle=3`  | Close-up         | 6 s   | 6th          |
-| `view=tree&angle=4`  | Root and lantern | 6 s   | 7th          |
+| `view=tree&angle=2`  | Lantern study    | 6 s   | 3rd          |
+| `view=tree&angle=3`  | Close-up         | 6 s   | 5th          |
+| `view=tree&angle=4`  | Root and lantern | 6 s   | 6th          |
 
-The tour alternates the lookout and the tree in the order of the last column (camera-tour.js `TOUR_ORDER`), about 50 s a loop; Close-up and Root and lantern are the one pair of tree shots together. A shot outside the tour, opened by URL, is followed by The watch. Watch and tree tilts up 3 degrees through its dwell (5 in squat windows), rising into its composition (the shot's `tilt`). A shot's `anchor` sets where its aim lands in the safe area, as shares of the area's width and height (its centre unless set), so a subject can stand on a third: Threshold, Watch and tree, Lantern study, Close-up and Root and lantern place theirs, Portrait on phones, and the kept frame of a dissolve pushes in about that point. A `tilt` pitches the camera after the fit, so a tilted shot's aim moves off its anchor through the hold. Portrait and Watch and tree calm the plain about their subject (the shot's `ground`, mud-ground.js `slateCalmFor`). Each shot drifts and pushes in, then dissolves into the next over 1 s (or 30% of a shorter dwell), staggered by depth. A missing subject's shots are skipped. Shot intent and dwells live in [directed-shots.js](../src/scene/directed-shots.js), fitting and drift in [cinematic.js](../src/scene/cinematic.js), pacing in [camera-tour.js](../src/scene/camera-tour.js) and the dissolve in [postprocess.js](../src/scene/postprocess.js).
+The tour alternates the lookout and the tree, while it can, in the order of the last column (camera-tour.js `TOUR_ORDER`), about 43 s a loop; Portrait then Lantern study and Close-up then Root and lantern are the two pairs of tree shots together. A shot outside the tour, opened by URL, is followed by The watch. Watch and tree left the tour on the owner's call of 2026-10-08 and keeps its URL and framing. Watch and tree tilts up 3 degrees through its dwell (5 in squat windows), rising into its composition (the shot's `tilt`). A shot's `anchor` sets where its aim lands in the safe area, as shares of the area's width and height (its centre unless set), so a subject can stand on a third: Threshold, Watch and tree, Lantern study, Close-up and Root and lantern place theirs, Portrait on phones, and the kept frame of a dissolve pushes in about that point. A `tilt` pitches the camera after the fit, so a tilted shot's aim moves off its anchor through the hold. Portrait and Watch and tree calm the plain about their subject (the shot's `ground`, mud-ground.js `slateCalmFor`). Each shot drifts and pushes in, then dissolves into the next over 1 s (or 30% of a shorter dwell), staggered by depth. A missing subject's shots are skipped. Shot intent and dwells live in [directed-shots.js](../src/scene/directed-shots.js), fitting and drift in [cinematic.js](../src/scene/cinematic.js), pacing in [camera-tour.js](../src/scene/camera-tour.js) and the dissolve in [postprocess.js](../src/scene/postprocess.js).
 
 ### Viewport variants
 

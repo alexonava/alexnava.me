@@ -107,6 +107,7 @@ export const DIRECTED_SHOTS = {
     },
     {
       name: "Watch and tree",
+      tour: false, // Out of the tour (owner, 2026-10-08); its URL is retained.
       light: { key: 1.15, fill: 0.45, rim: 2.4 },
       move: { dolly: [1.04, 0.94], ease: 0.5 },
       // The one shot with both landmarks, side by side and apart: the lookout

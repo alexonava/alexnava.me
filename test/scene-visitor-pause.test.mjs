@@ -219,7 +219,7 @@ test("unpausing resumes the same shot from the clear paused frame without a time
   const capture = scene.runUntil(({ transition }) => transition.capture);
   assert.equal(capture.shot, "Portrait");
   scene.run(1);
-  assert.equal(scene.drawn.at(-1).shot, "Threshold", "the next cut completes");
+  assert.equal(scene.drawn.at(-1).shot, "Lantern study", "the next cut completes");
   assertHandshakes(scene.drawn);
   assert.equal(scene.frames.pending, 1, "animation continues");
 
