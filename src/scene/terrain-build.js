@@ -1253,7 +1253,8 @@ if (slateWater > 0.0) {
   reflectedLight.indirectDiffuse *= 1.0-slateF*slateWater;
   reflectedLight.directSpecular *= mix(1.0, ${glsl(M.ggxKeep)}, slateLanternPuddle);
   vec3 slateZoneRefl = slateRefl*slateWater;
-  reflectedLight.indirectSpecular += slateZoneRefl/(1.0+slateBehind*dot(slateZoneRefl, vec3(.2126, .7152, .0722))/SLATE_TEXT_KNEE);
+  // Behind the text it passes the ground's text knee (mud-ground.js slateTextKnee()).
+  reflectedLight.indirectSpecular += slateTextKnee(slateZoneRefl, slateBehind);
 }
 #endif
 `;

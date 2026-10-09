@@ -620,7 +620,7 @@ test("beside About the bark's highlights from the lantern and the crown's fill p
   );
   assert.match(
     BARK_TEXT_LIGHTS,
-    /^float babelBehind = slateBehind\(slateAbout, vSlateClip\.xy\/vSlateClip\.w\*\.5\+\.5\);\nif \(babelBehind > 0\.0\) \{/,
+    /^float babelBehind = slateBehindAbout\(vSlateClip\.xy\/vSlateClip\.w\*\.5\+\.5\);\nif \(babelBehind > 0\.0\) \{/,
   );
   assert.match(
     BARK_TEXT_LIGHTS,
@@ -628,10 +628,17 @@ test("beside About the bark's highlights from the lantern and the crown's fill p
   );
   assert.ok(
     BARK_TEXT_LIGHTS.includes(
-      "reflectedLight.directSpecular -= babelPoint*(1.0-1.0/(1.0+babelBehind*dot(babelPoint, vec3(.2126, .7152, .0722))/SLATE_TEXT_KNEE));",
+      "reflectedLight.directSpecular -= babelPoint-slateTextKnee(babelPoint, babelBehind);",
     ),
   );
-  assert.doesNotMatch(BARK_TEXT_LIGHTS, /slateText|directionalLights|spotLights/);
+  // The knee's define, then About's test and the blended knee the bark calls.
+  const guardAt = (text) => SLATE_TEXT_GUARD.indexOf(text);
+  assert.ok(
+    guardAt("#define SLATE_TEXT_KNEE ") >= 0 &&
+      guardAt("#define SLATE_TEXT_KNEE ") < guardAt("vec3 slateTextKnee(vec3 c,float b){") &&
+      guardAt("float slateBehindAbout(vec2 v){") >= 0,
+  );
+  assert.doesNotMatch(BARK_TEXT_LIGHTS, /\bslateText\b|directionalLights|spotLights/);
   // The light shafts' gobo still lands after the light chunk, on its own hook.
   const gobo = goboHook(material, {}, 0),
     composed = physical();
