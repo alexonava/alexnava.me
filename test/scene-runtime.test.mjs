@@ -1533,6 +1533,7 @@ test("a shot's light mood merges over the neutral default and never shares it", 
     pale: 0,
     rimText: 0,
     glintText: 0,
+    poolAbout: 0,
   });
   for (const shot of [null, undefined, {}, { light: null }])
     assert.deepEqual(shotLight(shot), SHOT_LIGHT_DEFAULT);
@@ -1545,6 +1546,7 @@ test("a shot's light mood merges over the neutral default and never shares it", 
     pale: 0,
     rimText: 0,
     glintText: 0,
+    poolAbout: 0,
   });
   assert.notEqual(shotLight(null), SHOT_LIGHT_DEFAULT, "a fresh object each time");
   mood.key = 3;
@@ -1581,6 +1583,12 @@ test("a shot's light mood merges over the neutral default and never shares it", 
     ["Lantern study", "Root and lantern"],
   );
   for (const shot of glint) assert.equal(shotLight(shot).glintText, 1);
+  // Only Lantern study keeps its lantern's pool off About (its push-in on a
+  // portrait monitor), and wholly.
+  const pool = [...DIRECTED_SHOTS.tower, ...DIRECTED_SHOTS.tree]
+    .filter((shot) => shotLight(shot).poolAbout > 0)
+    .map((shot) => [shot.name, shotLight(shot).poolAbout]);
+  assert.deepEqual(pool, [["Lantern study", 1]]);
 });
 
 test("setRim scales the cool rim colour and keeps the moon-facing floor", () => {
@@ -1618,6 +1626,13 @@ test("each frame applies the shot's light, lens, grade, bars and grain, holding 
       "const mood = shotLight(filmActive && cinematicApplied ? cinematic.shot : null); rendering.setShotLight?.(mood); if (LANTERN_MOOD.value !== mood.lantern) { LANTERN_MOOD.value = mood.lantern; treeArchitecture?.refreshLantern?.(); } setRim(filmActive ? mood.rim : 0, filmActive ? mood.rimText : 0); PALE_MOOD.value = filmActive ? mood.pale : 0; GLINT_MOOD.value = filmActive ? mood.glintText : 0;",
     ),
   );
+  // The ground's pool knee about About follows it too, off out of film.
+  const pool = index.indexOf(
+    "groundContacts.slatePoolAbout.value = filmActive ? mood.poolAbout : 0;",
+  );
+  const moodAt = index.indexOf("const mood = shotLight(");
+  assert.ok(pool > moodAt, "after the mood");
+  assert.ok(pool < index.indexOf("camera.updateMatrixWorld();", moodAt), "in the mood's block");
   assert.ok(
     index.includes(
       "RIM_UNIFORMS.babelKeyView.value .set(...WORLD.SUN_DIRECTION) .transformDirection(camera.matrixWorldInverse);",

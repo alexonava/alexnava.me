@@ -965,6 +965,7 @@ const ORBIT_SPEED = 0.06;
           setRim(filmActive ? mood.rim : 0, filmActive ? mood.rimText : 0);
           PALE_MOOD.value = filmActive ? mood.pale : 0;
           GLINT_MOOD.value = filmActive ? mood.glintText : 0;
+          groundContacts.slatePoolAbout.value = filmActive ? mood.poolAbout : 0;
           camera.updateMatrixWorld();
           RIM_UNIFORMS.babelKeyView.value
             .set(...WORLD.SUN_DIRECTION)
