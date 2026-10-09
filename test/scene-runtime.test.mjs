@@ -1525,11 +1525,11 @@ test("the film's moonlight balance keeps a strong key over a dimmer sky and ambi
 
 test("a shot's light mood merges over the neutral default and never shares it", () => {
   assert.ok(Object.isFrozen(SHOT_LIGHT_DEFAULT));
-  assert.deepEqual(SHOT_LIGHT_DEFAULT, { key: 1, fill: 1, lantern: 1, rim: 1 });
+  assert.deepEqual(SHOT_LIGHT_DEFAULT, { key: 1, fill: 1, lantern: 1, rim: 1, pale: 0 });
   for (const shot of [null, undefined, {}, { light: null }])
     assert.deepEqual(shotLight(shot), SHOT_LIGHT_DEFAULT);
   const mood = shotLight({ light: { fill: 0.8, rim: 1.8 } });
-  assert.deepEqual(mood, { key: 1, fill: 0.8, lantern: 1, rim: 1.8 });
+  assert.deepEqual(mood, { key: 1, fill: 0.8, lantern: 1, rim: 1.8, pale: 0 });
   assert.notEqual(shotLight(null), SHOT_LIGHT_DEFAULT, "a fresh object each time");
   mood.key = 3;
   assert.equal(SHOT_LIGHT_DEFAULT.key, 1);
@@ -1545,6 +1545,12 @@ test("a shot's light mood merges over the neutral default and never shares it", 
   assert.ok(shotLight(DIRECTED_SHOTS.tree[1]).lantern > 1);
   assert.ok(shotLight(DIRECTED_SHOTS.tree[3]).lantern > 1);
   assert.equal(shotLight(DIRECTED_SHOTS.tower[0]).lantern, 1);
+  // Only Portrait cools the tree's pale wood (the owner's pick of 2026-10-09).
+  const pale = [...DIRECTED_SHOTS.tower, ...DIRECTED_SHOTS.tree]
+    .filter((shot) => shotLight(shot).pale > 0)
+    .map((shot) => shot.name);
+  assert.deepEqual(pale, ["Portrait"]);
+  assert.ok(shotLight(DIRECTED_SHOTS.tree[0]).pale <= 1);
 });
 
 test("setRim scales the cool rim colour and keeps the moon-facing floor", () => {
@@ -1568,12 +1574,12 @@ test("setRim scales the cool rim colour and keeps the moon-facing floor", () => 
   assert.equal(LANTERN_MOOD.value, 1);
 });
 
-test("each frame applies the shot's light, lens, bars and grain, holding the grain while still", () => {
+test("each frame applies the shot's light, lens, grade, bars and grain, holding the grain while still", () => {
   const index = flat(source("src/scene/index.js"));
   // The mood follows the shot on screen in film only.
   assert.ok(
     index.includes(
-      "const mood = shotLight(filmActive && cinematicApplied ? cinematic.shot : null); rendering.setShotLight?.(mood); if (LANTERN_MOOD.value !== mood.lantern) { LANTERN_MOOD.value = mood.lantern; treeArchitecture?.refreshLantern?.(); } setRim(filmActive ? mood.rim : 0);",
+      "const mood = shotLight(filmActive && cinematicApplied ? cinematic.shot : null); rendering.setShotLight?.(mood); if (LANTERN_MOOD.value !== mood.lantern) { LANTERN_MOOD.value = mood.lantern; treeArchitecture?.refreshLantern?.(); } setRim(filmActive ? mood.rim : 0); PALE_MOOD.value = filmActive ? mood.pale : 0;",
     ),
   );
   assert.ok(
@@ -1582,6 +1588,7 @@ test("each frame applies the shot's light, lens, bars and grain, holding the gra
     ),
   );
   assert.ok(index.includes("post.setLens?.(cinematicApplied ? cinematic.shot?.lens : null);"));
+  assert.ok(index.includes("post.setGrade?.(cinematicApplied ? cinematic.shot?.grade : null);"));
   assert.ok(
     index.includes(
       "post.setBars?.(filmActive && cinematicApplied ? letterboxShare(viewport.width, viewport.height) : 0);",

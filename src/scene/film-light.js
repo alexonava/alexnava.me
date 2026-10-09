@@ -6,8 +6,9 @@ import { Vector3, Vector4 } from "three";
 export const FILM_LIGHT = Object.freeze({ key: 1.12, fill: 1.15, hemisphere: 0.88, ambient: 0.72 });
 
 // A shot's `light` mood multiplies the film balance (key, fill), the lantern and
-// the rim; it follows the shot on screen, so it changes on a cut.
-export const SHOT_LIGHT_DEFAULT = Object.freeze({ key: 1, fill: 1, lantern: 1, rim: 1 });
+// the rim, and sets how much of the tree's pale wood reads moonlit grey (pale);
+// it follows the shot on screen, so it changes on a cut.
+export const SHOT_LIGHT_DEFAULT = Object.freeze({ key: 1, fill: 1, lantern: 1, rim: 1, pale: 0 });
 export function shotLight(shot) {
   return { ...SHOT_LIGHT_DEFAULT, ...(shot?.light ?? {}) };
 }
@@ -28,3 +29,14 @@ export function setRim(strength = 0) {
 
 // A mutable lantern share the tree's practical multiplies (architecture.js).
 export const LANTERN_MOOD = { value: 1 };
+
+// The tree's pale, bleached wood under a shot's `pale` (architecture.js): up to
+// that share of its colour turns cool moonlit grey (tint), easing in over
+// `luma` (the map's linear luma), so the bare limbs read silver under the moon
+// rather than pink-beige; the darker bark keeps its colour. Off (0) unless a
+// shot asks for it.
+export const PALE = Object.freeze({
+  luma: Object.freeze([0.1, 0.35]),
+  tint: Object.freeze([0.92, 0.98, 1.08]),
+});
+export const PALE_MOOD = { value: 0 };

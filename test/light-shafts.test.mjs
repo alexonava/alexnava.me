@@ -1112,6 +1112,51 @@ test("the moon on the tower keeps to its box: no march of its own over the timbe
   h.shafts.dispose();
 });
 
+test("Portrait catches the moon on the crown its own way; a cut to Close-up restores the tree's", async () => {
+  const portrait = DIRECTED_SHOTS.tree.find((shot) => shot.name === "Portrait"),
+    closeUp = DIRECTED_SHOTS.tree.find((shot) => shot.name === "Close-up"),
+    own = portrait.shafts.gobo,
+    tree = SHAFTS.moon.tree.gobo;
+  // Only Portrait has its own catch (the owner's pick of 2026-10-09):
+  // barely wrapped, with a stronger, cooler catch on the edges toward the moon.
+  assert.deepEqual(
+    Object.values(DIRECTED_SHOTS)
+      .flat()
+      .filter((shot) => shot.shafts)
+      .map((shot) => shot.name),
+    ["Portrait"],
+  );
+  assert.ok(own.wrap < tree.wrap && own.rim > tree.rim && own.gain > tree.gain);
+  assert.ok(own.color[2] > own.color[0], "cool");
+  const h = harness({ shot: "Portrait", current: "tree" });
+  h.cinematic.shot = portrait;
+  const shader = {
+    uniforms: {},
+    vertexShader: "#include <common>\n#include <project_vertex>",
+    fragmentShader: "#include <common>\n#include <lights_fragment_begin>\n#include <fog_fragment>",
+  };
+  await h.until(() => h.debug.shafts?.shown === "tree-moon+Portrait" && h.debug.shafts.level === 1);
+  h.tree.material.onBeforeCompile(shader, {});
+  const u = shader.uniforms,
+    catchOf = () => ({
+      wrap: u.shaftGoboWrap.value.x,
+      rim: u.shaftGoboWrap.value.y,
+      gain: u.shaftGoboGain.value,
+      tint: u.shaftGoboColor.value.z / u.shaftGoboColor.value.x,
+    });
+  const mine = catchOf();
+  assert.deepEqual([mine.wrap, mine.rim], [own.wrap, own.rim]);
+  assert.ok(Math.abs(mine.tint - own.color[2] / own.color[0]) < 1e-6, "the shot's tint");
+  // A cut to another shot of the tree takes the tree's own catch again.
+  h.cinematic.shot = closeUp;
+  await h.until(() => h.debug.shafts.shown === "tree-moon" && h.debug.shafts.level === 1);
+  const theirs = catchOf();
+  assert.deepEqual([theirs.wrap, theirs.rim], [tree.wrap, tree.rim]);
+  assert.ok(Math.abs(mine.gain / theirs.gain - own.gain / tree.gain) < 1e-6);
+  assert.ok(theirs.tint < mine.tint);
+  h.shafts.dispose();
+});
+
 test("the terrain's own sliced build has the idle time first; the shafts wait for it", async () => {
   const h = harness();
   let release;
@@ -1234,6 +1279,14 @@ test("the rays streak about the light's own place on screen and ease off behind 
     SHAFTS.moon.tree.air.jitter > 0 && SHAFTS.moon.jitter === 0,
     "the crown's only; the cabin keeps its shafts where they were",
   );
+  // The crown's own rays (the owner's pick of 2026-10-09): finer and denser
+  // than the cabin's (a shorter period, more of them lit), as strong.
+  const [ownContrast, ownPeriod, ownStart, ownFull] = SHAFTS.moon.tree.air.rays,
+    [contrast, period, start] = SHAFTS.moon.rays;
+  assert.equal(moon.shaftSource.value.w, ownContrast);
+  assert.deepEqual([moon.shaftStreak.value.y, moon.shaftStreak.value.z], [ownStart, ownFull]);
+  assert.ok(ownPeriod < period && ownStart < start && ownContrast >= contrast);
+  assert.equal("rays" in SHAFTS.moon.tower.air, false, "the cabin keeps the treatment's");
   delete window.document;
   h.shafts.dispose();
   // The march: the air lit only past the closed silhouette's front, streaked

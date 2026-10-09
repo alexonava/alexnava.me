@@ -125,7 +125,7 @@ export function shaftTreatment(shotName) {
 // silhouette's (0: never), so a lattice's far members cut no stepped notches
 // into the air seen through it while its edge (the ladder, a leg) keeps the
 // air off the plain beside it; core: the lit cylinder's radius over
-// the window's; air: the subject's own gain, over, reach, sky, jitter, rise,
+// the window's; air: the subject's own gain, over, reach, sky, rays, jitter, rise,
 // tie, hull and fade. shell: a round closed silhouette and a smooth hull,
 // [radius, low, high, soft]: the closed silhouette blurred twice over radius
 // texels and kept between low and high, so its edge follows the subject, not
@@ -244,6 +244,9 @@ export const SHAFTS = Object.freeze({
     // Slim shafts through the crown that fade in past its front, take part
     // of their structure from its own gaps and, over the sky, keep to the
     // view rays through the crown (a soft edge), so none starts in open sky.
+    // Its own rays (the owner's pick of 2026-10-09): finer, denser and more
+    // varied than the cabin's, streaming through the branches, their spacing
+    // wandering, and over the open sky they fade sooner.
     // Its shell rounds the closed silhouette and smooths the hull, so the
     // shafts end over the open sky in smooth fades, never in stair-steps or
     // parallelogram blocks (the grade's cel step hardens any texel step); its
@@ -261,20 +264,25 @@ export const SHAFTS = Object.freeze({
       core: 1.2,
       air: Object.freeze({
         gain: 0.06,
-        sky: [2, 6],
-        jitter: 0.35,
+        sky: [1, 3],
+        rays: [0.95, 0.014, 0.48, 0.82],
+        jitter: 0.9,
         rise: 8,
         tie: 0.8,
         hull: [0, 1, 0, 3],
         fade: [3, 4],
       }),
-      // Broken cloud light across the bark: large, soft breaks with darker
-      // gaps, wrapping round the limbs toward the eye (the crown's own light
-      // map shades them, not the key light's shadow), so the moss and limbs
-      // take moonlight in patches without glowing.
-      breaks: [0.16, 0.45, 0.18, 0.12],
+      // Broken cloud light across the bark: large, soft breaks, but mostly
+      // whole (a high floor; the owner's pick of 2026-10-09), so the crown
+      // has a lit side rather than blotches, wrapping round the limbs toward
+      // the eye (the crown's own light map shades them, not the key light's
+      // shadow), so the moss and limbs take moonlight without glowing. Its
+      // gain is held down to match (2.6 with a 0.12 floor before), so the
+      // limbs behind Close-up's name are no brighter than they were.
+      // Portrait catches it its own way (directed-shots.js shafts.gobo).
+      breaks: [0.16, 0.45, 0.18, 0.7],
       gobo: Object.freeze({
-        gain: 2.6,
+        gain: 1.9,
         wrap: 1.4,
         rim: 2,
         bias: 3,
@@ -1334,6 +1342,7 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
       gobo,
       gain: T.gain,
       over: T.over,
+      rays: T.rays,
       jitter: T.jitter || 0,
       center: b.center,
       height: b.size.y,
@@ -1572,6 +1581,9 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
       part = parts[cinematic.current];
     const set = kind && part?.ready ? part.sets.find((s) => s.kind === kind) : null;
     if (!set) return "";
+    // A shot's own catch on the subject (directed-shots.js `shafts.gobo`)
+    // keys the state too, so a cut between two shots of one subject applies it.
+    const own = cinematic.shot?.shafts?.gobo ? `+${cinematic.shot.name}` : "";
     // In box units, with a unit of margin.
     eye.copy(camera.position).sub(shared.shaftShift.value).applyMatrix4(set.values.shaftToBox);
     const sx = set.hi.x - set.lo.x,
@@ -1581,7 +1593,7 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
       Math.abs(eye.x) < 0.5 + 1 / sx &&
       Math.abs(eye.y) < 0.5 + 1 / sy &&
       Math.abs(eye.z) < 0.5 + 1 / sz;
-    return inside ? `${set.key}:inside` : set.key;
+    return inside ? `${set.key}${own}:inside` : `${set.key}${own}`;
   }
   // Shows a treatment: fully (from = 1), or fading in from nothing over RAMP_MS.
   function show(state, from = 1) {
@@ -1589,13 +1601,16 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
     level = from;
     rampFrom = performance.now();
     lit = [];
-    const [key] = state.split(":");
+    const [key] = state.split(":")[0].split("+"),
+      own = cinematic.shot?.shafts?.gobo;
     for (const part of Object.values(parts)) {
       const set = part.sets.find((s) => s.key === key);
       for (const each of part.sets)
         each.volume.visible = each === set && !state.endsWith(":inside");
       if (!part.hook) continue;
-      if (set) lit.push([part, set]);
+      // The light landing on the subject: its own, under the shot's.
+      const gobo = set && own ? { ...set.gobo, ...own } : set?.gobo;
+      if (set) lit.push([part, set, gobo]);
       // A subject switches to its hooked program at its first commit, so
       // where programs cannot link in parallel the compile lands on a cut.
       if (set && !part.installed) {
@@ -1605,10 +1620,10 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
       if (!set) continue;
       const { uniforms } = part;
       for (const [name, value] of Object.entries(set.values)) uniforms[name].value = value;
-      uniforms.shaftGoboWrap.value = { x: set.gobo.wrap, y: set.gobo.rim };
-      uniforms.shaftGoboClip.value = { x: set.gobo.clip[0], y: set.gobo.clip[1] };
-      uniforms.shaftGoboShadow.value = set.kind === "moon" && set.gobo.shadow !== false ? 1 : 0;
-      goboColor(set, uniforms.shaftGoboColor.value);
+      uniforms.shaftGoboWrap.value = { x: gobo.wrap, y: gobo.rim };
+      uniforms.shaftGoboClip.value = { x: gobo.clip[0], y: gobo.clip[1] };
+      uniforms.shaftGoboShadow.value = set.kind === "moon" && gobo.shadow !== false ? 1 : 0;
+      goboColor(set, uniforms.shaftGoboColor.value, gobo);
     }
     if (lit.length) rays(lit[0][1], true);
     gains();
@@ -1624,9 +1639,10 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
   const onScreen = (point) => point.add(shared.shaftShift.value).project(camera);
   function rays(set, fresh = false) {
     const T = config[set.kind],
-      period = T.rays[1],
+      own = set.rays ?? T.rays,
+      period = own[1],
       jitter = set.jitter;
-    const [contrast, e0, e1] = !high && T.sparse ? T.sparse : [T.rays[0], T.rays[2], T.rays[3]],
+    const [contrast, e0, e1] = !high && T.sparse ? T.sparse : [own[0], own[2], own[3]],
       value = shared.shaftSource.value;
     camera.updateMatrixWorld();
     if (set.kind === "star") onScreen(source.copy(set.values.shaftOrigin));
@@ -1698,11 +1714,11 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
       part.uniforms.shaftGoboGain.value = 0;
       part.uniforms.shaftGain.value = 0;
     }
-    for (const [part, set] of lit) {
+    for (const [part, set, gobo] of lit) {
       // Sparser streaks on balanced carry a little more light each.
       const air = set.gain * ((!high && config[set.kind].sparse?.[3]) || 1);
       set.volume.material.uniforms.shaftGain.value = air * level * blend;
-      part.uniforms.shaftGoboGain.value = set.gobo.gain * level * blend;
+      part.uniforms.shaftGoboGain.value = gobo.gain * level * blend;
       part.uniforms.shaftGain.value = inside ? 0 : air * set.over * level * blend;
     }
   }
@@ -1731,8 +1747,8 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
   // The star is no scene light: its catch takes the treatment's own colour.
   // The moon's follows the key light's colour and strength (legacy light
   // units, as Three scales them).
-  function goboColor(set, target) {
-    const tint = set.gobo.color,
+  function goboColor(set, target, gobo = set.gobo) {
+    const tint = gobo.color,
       scale = set.kind === "moon" && moonLight ? moonLight.intensity * Math.PI : 0;
     return scale
       ? target.set(
@@ -1812,7 +1828,7 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
         shared.shaftDrift.value,
       );
       // The moon's catch follows the key light as the film's lighting moves it.
-      for (const [part, set] of lit) goboColor(set, part.uniforms.shaftGoboColor.value);
+      for (const [part, set, gobo] of lit) goboColor(set, part.uniforms.shaftGoboColor.value, gobo);
       if (lit.length) rays(lit[0][1]);
       if (level < 1) {
         level = Math.min(1, (performance.now() - rampFrom) / RAMP_MS);

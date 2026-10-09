@@ -12,7 +12,7 @@ import {
   isStackedLayout,
   layoutRect,
 } from "./cinematic.js";
-import { LANTERN_MOOD, RIM_UNIFORMS, setRim, shotLight } from "./film-light.js";
+import { LANTERN_MOOD, PALE_MOOD, RIM_UNIFORMS, setRim, shotLight } from "./film-light.js";
 import {
   configureGroundShading,
   createSlateContacts,
@@ -956,6 +956,7 @@ const ORBIT_SPEED = 0.06;
             treeArchitecture?.refreshLantern?.();
           }
           setRim(filmActive ? mood.rim : 0);
+          PALE_MOOD.value = filmActive ? mood.pale : 0;
           camera.updateMatrixWorld();
           RIM_UNIFORMS.babelKeyView.value
             .set(...WORLD.SUN_DIRECTION)
@@ -964,6 +965,7 @@ const ORBIT_SPEED = 0.06;
         // The shot's lens and the film's bars and grain follow the shot on screen.
         const post = rendering.postprocessPipeline;
         post.setLens?.(cinematicApplied ? cinematic.shot?.lens : null);
+        post.setGrade?.(cinematicApplied ? cinematic.shot?.grade : null);
         post.setBars?.(
           filmActive && cinematicApplied ? letterboxShare(viewport.width, viewport.height) : 0,
         );

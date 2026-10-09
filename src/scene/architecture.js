@@ -22,7 +22,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import { smoothTreeNormals } from "./tree-normals.js";
 import { ESTATE } from "./estate-layout.js";
 import { SLATE_TEXT_GUARD } from "./mud-ground.js";
-import { LANTERN_MOOD, RIM_UNIFORMS } from "./film-light.js";
+import { LANTERN_MOOD, PALE, PALE_MOOD, RIM_UNIFORMS } from "./film-light.js";
 
 export const ARCHITECTURE = Object.freeze({
   treeHeight: 22,
@@ -240,6 +240,11 @@ export function editableGeometry(source) {
 
 // textGuard: the ground's createSlateContacts() uniforms, for the bark's guard
 // beside About (BARK_TEXT_LIGHTS); the tree takes it, the tower and the rocks never.
+// The pale wood's cool grey under a shot's `pale` (film-light.js PALE), first,
+// on the map's own colour.
+const PALE_GLSL = `
+          float babelPaleLuma = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(babelPaleLuma)*vec3(${PALE.tint.join(", ")}), babelPale*smoothstep(${PALE.luma.join(", ")}, babelPaleLuma));`;
 export function materialFor(asset, anisotropy, role, textGuard = null) {
   const material = sourceMesh(asset).material.clone();
   const profile = MATERIAL_PROFILES[role] || {};
@@ -280,11 +285,12 @@ roughnessFactor = mix(roughnessFactor, ${ROOT_MOSS.roughness.toFixed(2)}, babelM
     };
     material.userData.babelGrade = { role, uniforms };
     material.customProgramCacheKey = () =>
-      `babel-estate-material-v8-${role}-${roughnessFloor}-${roughnessCeiling}-${directRoughness}${guarded ? "-text" : ""}`;
+      `babel-estate-material-v9-${role}-${roughnessFloor}-${roughnessCeiling}-${directRoughness}${guarded ? "-text" : ""}`;
     const rimmed = role === "tower" || role === "tree";
     material.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, uniforms);
       if (rimmed) Object.assign(shader.uniforms, RIM_UNIFORMS);
+      if (role === "tree") shader.uniforms.babelPale = PALE_MOOD;
       shader.vertexShader = shader.vertexShader
         .replace(
           "#include <common>",
@@ -308,7 +314,12 @@ roughnessFactor = mix(roughnessFactor, ${ROOT_MOSS.roughness.toFixed(2)}, babelM
           ${rimmed ? "uniform vec4 babelRimLight;\n          uniform vec3 babelKeyView;" : ""}
           varying vec3 babelLocal;
           varying vec3 babelLocalN;
-          ${role === "tree" ? ROOT_MOSS_GLSL : ""}`,
+          ${
+            role === "tree"
+              ? `uniform float babelPale;
+${ROOT_MOSS_GLSL}`
+              : ""
+          }`,
         )
         // The role's share of the flat ambient and of the sky's light; without an
         // environment (the film off, or a failed capture) the ambient stays whole.
@@ -324,7 +335,7 @@ roughnessFactor = mix(roughnessFactor, ${ROOT_MOSS.roughness.toFixed(2)}, babelM
         .replace("#include <roughnessmap_fragment>", roughnessFragment)
         .replace(
           "#include <map_fragment>",
-          `#include <map_fragment>
+          `#include <map_fragment>${role === "tree" ? PALE_GLSL : ""}
           float babelLuma = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
           diffuseColor.rgb = mix(vec3(babelLuma), diffuseColor.rgb, babelSaturation);
           diffuseColor.rgb *= 1.0 - babelHighlights * smoothstep(0.30, 0.85, babelLuma);

@@ -36,7 +36,7 @@ import {
 } from "../src/scene/mud-ground.js";
 import { goboHook } from "../src/scene/light-shafts.js";
 import { createPropScale } from "../src/scene/prop-scale.js";
-import { LANTERN_MOOD } from "../src/scene/film-light.js";
+import { LANTERN_MOOD, PALE, PALE_MOOD } from "../src/scene/film-light.js";
 
 const asset = () => {
   const scene = new Group();
@@ -181,6 +181,32 @@ function materialShader(material) {
   material.onBeforeCompile(shader);
   return shader;
 }
+
+test("only the tree's pale wood turns moonlit grey, and only under a shot's pale", () => {
+  const source = sourceAsset(true),
+    tree = createTreeArchitecture({ asset: source, groundHeight: () => 0 }),
+    treeShader = materialShader(tree.root.getObjectByName("meshy-tree").material),
+    tower = createCompleteTowerArchitecture({ asset: boxAsset(), groundY: 0 }),
+    towerShader = materialShader(tower.root.getObjectByName("complete-meshy-tower").material);
+  // One mood for the tree's every material, off until a shot asks for it.
+  assert.equal(treeShader.uniforms.babelPale, PALE_MOOD);
+  assert.equal(PALE_MOOD.value, 0);
+  assert.equal("babelPale" in towerShader.uniforms, false);
+  assert.doesNotMatch(towerShader.fragmentShader, /babelPale/);
+  // First on the map's own colour, before the role's grade: the pale share
+  // eases to a cool grey; at 0 the mix leaves the colour exactly as it was.
+  const pale = `#include <map_fragment>
+          float babelPaleLuma = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(babelPaleLuma)*vec3(${PALE.tint.join(", ")}), babelPale*smoothstep(${PALE.luma.join(", ")}, babelPaleLuma));`;
+  assert.ok(treeShader.fragmentShader.includes(pale));
+  assert.ok(
+    treeShader.fragmentShader.indexOf(pale) < treeShader.fragmentShader.indexOf("float babelLuma"),
+  );
+  assert.ok(PALE.tint[2] > 1 && PALE.tint[0] < 1, "cool");
+  assert.ok(PALE.luma[0] < PALE.luma[1] && PALE.luma[1] < 0.5, "the pale wood, not the dark bark");
+  tree.dispose();
+  source.resources.forEach((resource) => resource.dispose());
+});
 
 test("mapless tower retains direct matte response and borrowed atlas across film toggles", () => {
   const source = sourceAsset(false),
