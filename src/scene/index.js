@@ -29,6 +29,7 @@ import {
 import { ESTATE } from "./estate-layout.js";
 import { createRockScatter, estateContacts } from "./rock-scatter.js";
 import { createHillSilhouette } from "./hill-silhouette.js";
+import { createLightning } from "./lightning.js";
 import { markScene, measureScene, sceneNow } from "./perf-marks.js";
 import { createPropScale } from "./prop-scale.js";
 import {
@@ -353,6 +354,23 @@ const ORBIT_SPEED = 0.06;
         skyRadius: WORLD.SKY_DOME_RADIUS,
       });
       subsystemRegistry.register(starfield);
+      // The film storm's lightning (lightning.js): flashes in the shell's banks,
+      // now and then a far bolt beside the stars, and the flash on the lights,
+      // on its own clock and only in film. Created before the first warm-up,
+      // which links the bolt's program.
+      const lightning = createLightning({
+        parent: atmosphereSystem.root,
+        camera,
+        rendering,
+        sky: skyShell.material.uniforms,
+        textGuard: groundContacts,
+        film: () => filmActive,
+        shot: () => cinematic.shot?.name ?? null,
+        profile: state.profile,
+        skyRadius: WORLD.SKY_DOME_RADIUS,
+      });
+      subsystemRegistry.register(lightning);
+      if (qualityDebug) qualityDebug.lightning = lightning.state;
       const environmentSystem = createSceneEnvironment({
         groundHeight,
         parent: sceneRoot,

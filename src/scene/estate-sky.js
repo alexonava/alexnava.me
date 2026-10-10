@@ -1,4 +1,4 @@
-import { BackSide, Color, ShaderMaterial } from "three";
+import { BackSide, Color, ShaderMaterial, Vector4 } from "three";
 import { CELESTIAL_FIELD_GLSL } from "./celestial-field.js";
 import { DEPTH_LAYER } from "./depth-layers.js";
 
@@ -50,6 +50,16 @@ export const CLOUD_RESHAPE = Object.freeze({
   lanes: 0.1,
   swirl: 0.25,
   text: Object.freeze([0.12, 0.5]),
+});
+
+// The reference banks as a lightning flash keeps off them (lightning.js): the crop
+// itself, azimuths 122-174 from radius 1.13 out, where a flash's glow is exactly 0,
+// easing back in by `wedge`'s outer values and, toward the zenith, over `radius`.
+// Tighter than the reshaping's wedge, so The watch's sky right of the crop (the
+// star's side, behind the lookout) can flash; its crop keeps every pixel.
+export const FLASH_REFERENCE = Object.freeze({
+  wedge: Object.freeze([116, 122, 174, 184]),
+  radius: Object.freeze([0.85, 1.13]),
 });
 
 const glslFloat = (value) => (Number.isInteger(value) ? value.toFixed(1) : String(value));
@@ -149,6 +159,28 @@ return 1.-smoothstep(0.,${glslFloat(text[1])},length(f));}`;
 // A box beyond the canvas: nothing is behind the text.
 const noText = () => ({ x: 2, y: 2, z: -1, w: -1 });
 
+const { wedge: flashWedge, radius: flashRadius } = FLASH_REFERENCE;
+// A lightning flash in the banks (lightning.js), drawn by the shell while uFlash.w
+// (its level) is above 0: the banks glow cold from inside about the flash's point
+// on the cloud plane (uFlash.xyz, a world direction), over uFlashGlow.x of the
+// plane, by uFlashGlow.y (and uFlashCore more in the banks' hot centre, a third of
+// that radius), their thick cores fully and their thin edges by 1 - uFlashGlow.w,
+// and the clear sky between them by uFlashGlow.z, so the grade's cel step reads
+// the flash in the banks' own bands. It is exactly 0 over the reference banks
+// (FLASH_REFERENCE, so The watch's crop keeps every pixel) and eases off behind
+// the name and intro (the clouds' text guard) and About (uFlashTone.w of the
+// screen's smaller side). Its colour is uFlashTone.rgb. The environment's capture
+// never sees one.
+const FLASH_GLSL = `if(uFlash.w>0.){
+vec2 fo=(b-uFlash.xz/(max(uFlash.y,0.)+.24)*1.1)/uFlashGlow.x;
+vec2 fa=vCloudClip.xy/vCloudClip.w*.5+.5;
+fa=max(max(slateAbout.xy-fa,fa-slateAbout.zw),0.)*vec2(slateAspect,1.)/min(slateAspect,1.);
+float fg=exp(-dot(fo,fo)), fl=uFlash.w*(1.-smoothstep(${glslFloat(flashWedge[0])},${glslFloat(flashWedge[1])},cloudAz)*(1.-smoothstep(${glslFloat(flashWedge[2])},${glslFloat(flashWedge[3])},cloudAz))*smoothstep(${glslFloat(flashRadius[0])},${glslFloat(flashRadius[1])},bl))
+*(1.-max(cloudText,1.-smoothstep(0.,uFlashTone.w,length(fa))));
+cloudCol+=uFlashTone.rgb*fl*(fg+uFlashCore*pow(fg,9.))*uFlashGlow.y*mix(1.-uFlashGlow.w,1.,thick);
+col+=uFlashTone.rgb*fl*fg*uFlashGlow.z;
+}`;
+
 // Density lives on the fixed world-space sky shell, never camera-facing cards:
 // no extra render pass or image request. Outside film the shell keeps its
 // baseline branch.
@@ -182,7 +214,13 @@ export function createEstateSkyMaterial(config, textGuard = null) {
       uNebulaLayers: { value: 0 },
       uCloudReshape: { value: 1 },
       slateText: textGuard?.slateText ?? { value: noText() },
+      slateAbout: textGuard?.slateAbout ?? { value: noText() },
       slateAspect: textGuard?.slateAspect ?? { value: 1 },
+      // The lightning's flash (FLASH_GLSL), set per frame by lightning.js.
+      uFlash: { value: new Vector4(0, 1, 0, 0) },
+      uFlashGlow: { value: new Vector4(0.5, 0, 0, 0) },
+      uFlashTone: { value: new Vector4(0.74, 0.83, 1, 0.2) },
+      uFlashCore: { value: 0 },
     },
     vertexShader: `
 varying vec3 vWorldPosition;
@@ -195,8 +233,8 @@ vCloudClip = gl_Position;
 }`,
     fragmentShader: `
 uniform vec3 topColor, bottomColor, glowColor, sunDirection, sunColor;
-uniform float uTime, uFilm, uClouds, uNebulaLayers, uCloudReshape;
-uniform vec4 slateText;
+uniform float uTime, uFilm, uClouds, uNebulaLayers, uCloudReshape, uFlashCore;
+uniform vec4 slateText, slateAbout, uFlash, uFlashGlow, uFlashTone;
 uniform float slateAspect;
 varying vec3 vWorldPosition;
 varying vec4 vCloudClip;
@@ -246,6 +284,7 @@ cloudCol*=(1.0+.4*smoothstep(.55,.85,altitude))*(.86+.26*smoothstep(-.35,.45,dir
 *(1.0-.14*thin)*(1.0-.3*max(gapG,eaveG));
 vec3 kn=vec3(.64,.62,.66), cap=vec3(.88,.86,.91);
 cloudCol=min(cloudCol,kn)+(cap-kn)*(1.-exp(-max(cloudCol-kn,0.)/(cap-kn)));
+${FLASH_GLSL}
 col+=vec3(.027,.03,.036)*smoothstep(.36,.54,d)*horizonFade*uClouds;
 col=mix(col,cloudCol,cover*.94);
 }

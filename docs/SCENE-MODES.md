@@ -62,24 +62,25 @@ Every shot has a `portrait` variant; Portrait's changes its move (a push without
 
 With `sceneDebug=1`, `window.BabelSite.sceneDebug` is a plain, read-only status object. It adds no controls and loads no extra code.
 
-| Field                                     | Meaning                                                                                                                |
-| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `tier`, `initialTier`, `assetTier`        | Current profile tier, startup tier, and the tier models and maps were loaded for                                       |
-| `requestedTier`, `overrideTier`           | From `quality`: the value read (`auto` when absent) and the fixed tier, or `null`                                      |
-| `governorTier`, `reason`                  | Governor tier (its `low` is the resolution step) and why the profile last applied: `initial`, `resize` or `adaptive`   |
-| `pixelRatio`, `caps`                      | Pixel ratio; the texture limits the startup tier was chosen from                                                       |
-| `composition`, `compositionReason`        | Composition profile (`desktop`, `compact`, `tabletPortrait`, `portraitPhone`, `landscapePhone`); `resize`              |
-| `architecture.tower`, `.tree`, `.lantern` | `{ kind, status, tier }`, plus `reason: "asset-unavailable"` on a fallback                                             |
-| `lanternCommitted`                        | `true` once the supplied lantern is in the scene                                                                       |
-| `ground`                                  | The slate maps: `{ status, tier, material }`, `material` naming their source                                           |
-| `groundTreatment`                         | `slate` while the film is on, else `baseline`                                                                          |
-| `rocks`                                   | `{ status, tier }`                                                                                                     |
-| `mountains`                               | A plain string: `loading`, `ready` or `fallback`                                                                       |
-| `shaders`                                 | Warm-up per label (`scene`, `ground`, `tower`, `tree`, `lantern`): `ready` or `unwarmed`                               |
-| `cinematic`                               | `shot`, `selected`, `angle` (1-based), `current`, `film` and `tour`                                                    |
-| `programs`, `renderFps`                   | Linked program count; frames drawn per second                                                                          |
-| `environment`                             | The environment capture of the film sky: `status` (`none`, `ready` or `failed`) and `ms`, its time                     |
-| `failure`                                 | `{ stage, message }` when the scene stopped for the title card; `stage` is `architecture:tower` or `architecture:tree` |
+| Field                                     | Meaning                                                                                                                                        |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tier`, `initialTier`, `assetTier`        | Current profile tier, startup tier, and the tier models and maps were loaded for                                                               |
+| `requestedTier`, `overrideTier`           | From `quality`: the value read (`auto` when absent) and the fixed tier, or `null`                                                              |
+| `governorTier`, `reason`                  | Governor tier (its `low` is the resolution step) and why the profile last applied: `initial`, `resize` or `adaptive`                           |
+| `pixelRatio`, `caps`                      | Pixel ratio; the texture limits the startup tier was chosen from                                                                               |
+| `composition`, `compositionReason`        | Composition profile (`desktop`, `compact`, `tabletPortrait`, `portraitPhone`, `landscapePhone`); `resize`                                      |
+| `architecture.tower`, `.tree`, `.lantern` | `{ kind, status, tier }`, plus `reason: "asset-unavailable"` on a fallback                                                                     |
+| `lanternCommitted`                        | `true` once the supplied lantern is in the scene                                                                                               |
+| `ground`                                  | The slate maps: `{ status, tier, material }`, `material` naming their source                                                                   |
+| `groundTreatment`                         | `slate` while the film is on, else `baseline`                                                                                                  |
+| `rocks`                                   | `{ status, tier }`                                                                                                                             |
+| `mountains`                               | A plain string: `loading`, `ready` or `fallback`                                                                                               |
+| `shaders`                                 | Warm-up per label (`scene`, `ground`, `tower`, `tree`, `lantern`): `ready` or `unwarmed`                                                       |
+| `cinematic`                               | `shot`, `selected`, `angle` (1-based), `current`, `film` and `tour`                                                                            |
+| `programs`, `renderFps`                   | Linked program count; frames drawn per second                                                                                                  |
+| `environment`                             | The environment capture of the film sky: `status` (`none`, `ready` or `failed`) and `ms`, its time                                             |
+| `lightning`                               | The lightning's own clock (`time`, s), the flash's `level` and the lit `event` (`k`, `start`, `bolt`, view `azimuth` and `altitude`) or `null` |
+| `failure`                                 | `{ stage, message }` when the scene stopped for the title card; `stage` is `architecture:tower` or `architecture:tree`                         |
 
 Status values:
 
@@ -116,4 +117,4 @@ Size the window first: the scene's size picks the shot's [variant](#viewport-var
 - `sceneDebug.shaders.lantern` is `ready` or `unwarmed`;
 - `sceneDebug.rocks.status` is `ready` or `fallback`.
 
-Then advance a fixed number of frames before capturing. The flame and the cloud drift run on scene time. The drips keep their own clock, the `performance.now()` time between drawn ground frames ([terrain-build.js](../src/scene/terrain-build.js) `dripClock`). A deterministic capture therefore drives both the frame clock and `performance.now()` itself.
+Then advance a fixed number of frames before capturing. The flame, the cloud drift and the lightning run on scene time; the lightning's schedule is seeded, and a capture can force a flash to peak at a phase ([lightning.js](../src/scene/lightning.js) `LIGHTNING.forceAt`, empty in use). The drips keep their own clock, the `performance.now()` time between drawn ground frames ([terrain-build.js](../src/scene/terrain-build.js) `dripClock`). A deterministic capture therefore drives both the frame clock and `performance.now()` itself.

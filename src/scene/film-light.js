@@ -50,6 +50,19 @@ export function setRim(strength = 0, text = 0) {
 // A mutable lantern share the tree's practical multiplies (architecture.js).
 export const LANTERN_MOOD = { value: 1 };
 
+// A lightning flash on the film ground (lightning.js, rendering.js setFlash()),
+// read by the slate (mud-ground.js) and its puddle mirror (terrain-build.js).
+// babelFillAim: the cool fill's world direction, which a flash swings toward
+// itself, so the ground still knows its fill (SLATE_LIGHT.fill) by it.
+// babelFlash: x the flash's share added to the night sky's light on the
+// ground, y to the water's mirror, z the flash's share of the fill's light,
+// all three easing off behind the name, the intro and About (the slate's text
+// test); 0 outside a flash, so the ground is then exactly as without it.
+export const FLASH_GROUND = Object.freeze({
+  babelFillAim: { value: new Vector3(-30, 22, -28).normalize() },
+  babelFlash: { value: new Vector4(0, 0, 0, 0) },
+});
+
 // The tree's pale, bleached wood under a shot's `pale` (architecture.js): up to
 // that share of its colour turns cool moonlit grey (tint), easing in over
 // `luma` (the map's linear luma), so the bare limbs read silver under the moon

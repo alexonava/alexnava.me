@@ -1,4 +1,5 @@
 import { DEPTH_LAYER } from "./depth-layers.js";
+import { FLASH_GROUND } from "./film-light.js";
 import { HORIZON_AIR, RANGE_MIST, TERRAIN_HORIZON } from "./hill-silhouette.js";
 import { ESTATE, estateLantern, estatePoint } from "./estate-layout.js";
 // The estate's human scale for props and trees: one doorway height. The
@@ -665,12 +666,15 @@ const LOOK_AFTER = `
       }`;
 const WATER = SLATE_WATER,
   LIGHT = SLATE_LIGHT;
-// The film ground's own direct light (SLATE_LIGHT): it finds the key and the
-// fill among the directional lights by their fixed directions and the lantern
-// by its warm colour; any other light is the crown's cool point fill. Three's
-// light loops fetch each light through get*LightInfo(), so wrapping those marks
-// a directional one (slateDirectional): where the crown's point light lines up
-// with the key or the fill from some spot on the ground, it stays the crown's.
+// The film ground's own direct light (SLATE_LIGHT): it finds the key among the
+// directional lights by its fixed direction, the fill by its aim (film-light.js
+// FLASH_GROUND.babelFillAim, MOON_LIGHTS.fill until a lightning flash swings it;
+// the flash's share of the fill, babelFlash.z, eases off behind the text) and
+// the lantern by its warm colour; any other light is the crown's cool point
+// fill. Three's light loops fetch each light through get*LightInfo(), so
+// wrapping those marks a directional one (slateDirectional): where the crown's
+// point light lines up with the key or the fill from some spot on the ground,
+// it stays the crown's.
 // Where the soil is wet (slateWetLamp, set before the lights) the moon and the
 // lantern also light the water film over it (SLATE_WATER.moon, .lamp), on the
 // water's normal (slateWaterN), into slateMoonSpec and slateLampSpec.
@@ -707,7 +711,7 @@ void RE_Direct_Moonlit(const in IncidentLight directLight, const in vec3 geometr
   bool slateWarm = directLight.color.b < .7*directLight.color.r;
   bool slateKey = slateDirectional && !slateWarm && dot(directLight.direction, normalize(mat3(viewMatrix)*${unitGlsl(MOON_LIGHTS.key)})) > .9999;
   #ifdef USE_ENVMAP
-  if (!slateWarm) slateL.color *= slateKey ? ${glslNumber(LIGHT.key)} : slateDirectional && dot(directLight.direction, normalize(mat3(viewMatrix)*${unitGlsl(MOON_LIGHTS.fill)})) > .9999 ? ${glslNumber(LIGHT.fill)} : ${glslNumber(LIGHT.crown)};
+  if (!slateWarm) slateL.color *= slateKey ? ${glslNumber(LIGHT.key)} : slateDirectional && dot(directLight.direction, normalize(mat3(viewMatrix)*babelFillAim)) > .9999 ? ${glslNumber(LIGHT.fill)}*(babelFlash.z > 0.0 ? 1.0-babelFlash.z*slateBehindText() : 1.0) : ${glslNumber(LIGHT.crown)};
   #endif
   RE_Direct_Physical(slateL, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight);
   #ifdef USE_ENVMAP
@@ -729,12 +733,16 @@ const WATER_BEFORE_LIGHTS = `slateGlossSet();
       slateWetFilm = (mix(${glslNumber(WATER.film[0])}, slateGloss.x, slateGlossW)*(1.0-slateDry)+${glslNumber(WATER.film[1])}*slateWet)*mix(${glslNumber(WATER.patch[1])}, 1.0, smoothstep(.3, .7, slateNoise(vMudWorld.xz/${glslNumber(WATER.patch[0])})))*(1.0-slatePuddle)*(1.0-slateWaterFar(length(vViewPosition)))*(1.0-${glslNumber(1 - SLATE_WET.close.film)}*slateMatte);
       #include <lights_fragment_begin>`;
 // After the light maps: the ambient's share and the night sky's light, and the
-// sky the water mirrors, at the film's or a puddle's roughness.
+// sky the water mirrors, at the film's or a puddle's roughness, each brighter by
+// a lightning flash's share away from the text (FLASH_GROUND.babelFlash.x, .y).
 const WATER_SKY = `#include <lights_fragment_maps>
       #ifdef USE_ENVMAP
       irradiance *= ${glslNumber(LIGHT.ambient)};
       iblIrradiance *= ${glslNumber(LIGHT.sky)};
+      float slateFlashAway = babelFlash.x+babelFlash.y > 0.0 ? 1.0-slateBehindText() : 0.0;
+      iblIrradiance *= 1.0+babelFlash.x*slateFlashAway;
       vec3 slateWaterSky = mix(getIBLRadiance(geometryViewDir, slateWaterN, mix(${glslNumber(WATER.roughness[0])}, ${glslNumber(WATER.roughness[1])}, slatePuddle))*mix(mix(${glslNumber(WATER.gain[0])}, slateGloss.y, slateGlossT)*mix(vec3(1.0), mix(${glslVec(SLATE_LOOK.gloss.warm)}, ${glslVec(SLATE_LOOK.gloss.tint)}, slateGloss.w), slateGlossT), vec3(${glslNumber(WATER.gain[1])}), slatePuddle), slateWaterBark, slateWaterVeil*slatePuddle);
+      slateWaterSky *= 1.0+babelFlash.y*slateFlashAway;
       #endif`;
 // After the soil's own clamps: the water's mirror (water Fresnel, the film's
 // share or a puddle whole, fading with distance; slateSkyVis is the sky the
@@ -789,7 +797,7 @@ export function configureGroundShading(
     (useWet && material.userData.slateRoot ? "+root" : "");
   material.onBeforeCompile = (shader) => {
     if (!useWet) return;
-    Object.assign(shader.uniforms, uniforms);
+    Object.assign(shader.uniforms, uniforms, FLASH_GROUND);
     // The dune field varies over 100+ world units; the film terrain's 3-unit
     // quads carry it per vertex, so fragments only read the interpolated height.
     const wetVarying = useWet ? "varying float vSlateDune;\nvarying vec4 vSlateClip;\n" : "";
@@ -810,6 +818,8 @@ export function configureGroundShading(
 uniform vec4 slateCalm, slateCalmAt;
 float slateFlatAt(vec2 p){return slateCalm.w*smoothstep(slateCalmAt.z,slateCalmAt.w,length(p-slateCalmAt.xy));}
 uniform float slateRockContact, slateContactGain, slateAspect;
+uniform vec3 babelFillAim;
+uniform vec4 babelFlash;
 #define SLATE_TEXT_KNEE ${glslNumber(WATER.text[1])}
 uniform vec4 slateText, slateAbout;
 ${authored ? "uniform sampler2D slateDetail;\n" : ""}${close ? "uniform sampler2D slateGrit, slateRelief;\n" : ""}${POND_GLSL}float slateHash(vec2 p){vec3 q=fract(p.xyx*.1031);q+=dot(q,q.yzx+33.33);return fract((q.x+q.y)*q.z);}
