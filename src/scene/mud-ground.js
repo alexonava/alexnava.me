@@ -222,9 +222,10 @@ export const SLATE_RIVER_BED = Object.freeze({
 // unit) and drifting with it, over `amount` of the water, `join` where the
 // courses meet and `mouth` where the creek pours into the river (within
 // reach[0] to reach[1] of the river's radius), in drifting patches (`patch`
-// cycles per unit), covering at most `cover` of the water's colour, at albedo
-// `albedo`; behind the text it keeps 1 - `text` of that (terrain-build.js
-// STREAM_FOAM).
+// cycles per unit), covering at most `cover` of the water's colour (`far` of
+// its churn where the streaks are too fine to draw), at albedo `albedo`; out in
+// the river the plume thins to `plume` toward its middle, and behind the text it
+// keeps 1 - `text` (terrain-build.js STREAM_FOAM).
 export const SLATE_STREAMS = Object.freeze({
   courses: Object.freeze(
     [
@@ -292,6 +293,8 @@ export const SLATE_STREAMS = Object.freeze({
     mouth: 0.75,
     reach: Object.freeze([1, 1.9]),
     cover: 0.7,
+    far: 0.3,
+    plume: 0.55,
     albedo: 0.3,
     text: 0.9,
   }),

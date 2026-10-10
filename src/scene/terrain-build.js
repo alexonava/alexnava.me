@@ -296,6 +296,8 @@ export const STREAMS = Object.freeze({
     mouth: 0.75,
     reach: Object.freeze([1, 1.9]),
     cover: 0.7,
+    far: 0.3,
+    plume: 0.55,
     albedo: 0.3,
     text: 0.9,
   }),
@@ -1565,8 +1567,10 @@ if (slateStreamQ.x > 0.0) {
   vec2 slateSU = vec2(slateStreamQ.y-slateFlow*${glsl(STREAMS.flow)}, slateStreamQ.z*slateStreamQ.w), slateSF = slateSU*${glslVec(...SF.cell)};
   float slateSN = .6*slateNoise(slateSF)+.4*slateNoise(slateSF*2.2+11.0);
   float slateChurn = max(${glsl(SF.amount)}, max(${glsl(SF.join)}*smoothstep(.2, .8, slateStreamJoin), ${glsl(SF.mouth)}*(1.0-smoothstep(${glsl(SF.reach[0])}, ${glsl(SF.reach[1])}, slateRiverR))))*(.4+1.2*slateNoise(slateSU*${glslVec(...SF.patch)}+23.0));
-  // Streaks finer than about two pixels give way to their mean cover, so they never alias.
-  slateFoam = mix(smoothstep(1.0-slateChurn, 1.3-slateChurn, slateSN), .5*slateChurn, clamp(length(fwidth(slateSF))-.5, 0.0, 1.0))*${glsl(SF.cover)}*smoothstep(.45, .95, slateStreamQ.x)*slatePuddle;
+  // Streaks finer than about two pixels give way to a faint share of their cover, so they never alias nor wash a far
+  // creek pale; out in the river the plume thins as it spreads (SF.plume of it toward the river's middle).
+  slateFoam = mix(smoothstep(1.0-slateChurn, 1.3-slateChurn, slateSN), ${glsl(SF.far)}*slateChurn, clamp(length(fwidth(slateSF))-.5, 0.0, 1.0))*${glsl(SF.cover)}*smoothstep(.45, .95, slateStreamQ.x)*slatePuddle;
+  slateFoam *= mix(${glsl(SF.plume)}, 1.0, smoothstep(.1, .9, slateRiverR));
   // Lit froth is diffuse, past the reflections' text knee: behind the text it thins (mud-ground.js slateBehindText()).
   slateFoam *= 1.0-${glsl(SF.text)}*slateBehindText();
 }
