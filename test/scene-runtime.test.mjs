@@ -1610,7 +1610,7 @@ test("setRim scales the cool rim colour and keeps the moon-facing floor", () => 
   assert.equal(LANTERN_MOOD.value, 1);
 });
 
-test("each frame applies the shot's light, lens, grade, bars and grain, holding the grain while still", () => {
+test("each frame applies the shot's light, lens, bars and grain, holding the grain while still", () => {
   const index = flat(source("src/scene/index.js"));
   // The mood follows the shot on screen in film only.
   assert.ok(
@@ -1624,7 +1624,7 @@ test("each frame applies the shot's light, lens, grade, bars and grain, holding 
     ),
   );
   assert.ok(index.includes("post.setLens?.(cinematicApplied ? cinematic.shot?.lens : null);"));
-  assert.ok(index.includes("post.setGrade?.(cinematicApplied ? cinematic.shot?.grade : null);"));
+  assert.ok(!index.includes("setGrade"), "no per-shot grade: the cel step is the sky's alone");
   assert.ok(
     index.includes(
       "post.setBars?.(filmActive && cinematicApplied ? letterboxShare(viewport.width, viewport.height) : 0);",

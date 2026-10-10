@@ -32,7 +32,6 @@ const GRADING_SHADER = {
   uniforms: {
     tDiffuse: { value: null },
     uCelMix: { value: 0.24 },
-    uSubjectCel: { value: 1 },
     uInkMix: { value: 0.14 },
     uContrast: { value: 1.1 },
     uHighlightWarmMix: { value: 0.2 },
@@ -44,7 +43,6 @@ const GRADING_SHADER = {
   fragmentShader: `
 uniform sampler2D tDiffuse;
 uniform float uCelMix;
-uniform float uSubjectCel;
 uniform float uInkMix;
 uniform float uContrast;
 uniform float uHighlightWarmMix;
@@ -79,23 +77,25 @@ void main() {
   color = mix(color, parchmentHighlight, uHighlightWarmMix * highlightMix);
 
   float gradedLuma = max(0.02, dot(color, vec3(0.299, 0.587, 0.114)));
-  // Film (uLayerRelief 1): the mountains (depth code 1/3) keep their moonlit relief.
-  // The cel step fades off them, returning below luma .1 so the fogged feet match
-  // the ground's crush, and the post ink skips them and the sky beside them, where
-  // each crest draws its own hairline (hill-silhouette.js).
-  float relief = uLayerRelief * (1.0 - smoothstep(0.04, 0.12, abs(texel.a - 0.3333)));
   float tonalBand = floor(gradedLuma * 5.0 + 0.5) / 5.0;
   vec3 celColor = color * (tonalBand / gradedLuma);
   // The ground (depth code 2/3) takes no band: its soil, cracks and water stay
   // continuous, close up and far.
   float groundLayer = uLayerRelief * (1.0 - smoothstep(0.04, 0.12, abs(texel.a - 0.6667)));
-  // The star and its glow (depth-layers.js STAR_LAYER over the sky's 0) stay
+  // The star and its glow, and the light shafts' air over the sky
+  // (depth-layers.js STAR_LAYER and SHAFT_LAYER over the sky's 0), stay
   // continuous: the cloud banks' steps never ring them.
   float starLayer = uLayerRelief * smoothstep(0.0005, 0.006, texel.a) * (1.0 - smoothstep(0.22, 0.28, texel.a));
-  // A shot's grade scales the step on the subjects (alpha 1): uSubjectCel,
-  // easing in over their multisampled edges (above the ground's window), so
-  // no stepped fringe rings a smooth crown.
-  color = mix(color, celColor, uCelMix * (1.0 - relief * smoothstep(0.05, 0.1, gradedLuma)) * (1.0 - groundLayer) * (1.0 - starLayer) * mix(1.0, uSubjectCel, smoothstep(0.8, 1.0, texel.a)));
+  // In film the step's bands and the ink are the sky's alone (the owner's direction
+  // of 2026-10-09: the clouds are the artistic part, everything else realistic).
+  // Off the sky only its deepest band stays, where it never stepped: below graded
+  // luma .1 it pulls the colour toward black, easing out from .05, so the subjects'
+  // deep shade and the ranges' fogged feet keep their tone. skyLayer eases over a
+  // subject's or a crest's partly covered edge (their codes blend toward 0 there),
+  // so no unbanded fringe rings them against the banded clouds.
+  float skyLayer = 1.0 - smoothstep(0.0, 0.3, texel.a);
+  float celWeight = mix(1.0, mix(1.0 - smoothstep(0.05, 0.1, gradedLuma), 1.0, skyLayer), uLayerRelief);
+  color = mix(color, celColor, uCelMix * celWeight * (1.0 - groundLayer) * (1.0 - starLayer));
   color = saturateColor(color, 1.04);
 
   if (uInkMix > 0.0) {
@@ -106,8 +106,10 @@ void main() {
   float verticalEdge = abs(dot(e3.rgb, Y) - dot(e4.rgb, Y));
   float inkContour = smoothstep(0.2, 0.48, max(horizontalEdge, verticalEdge));
   float nearest = max(max(e1.a, e2.a), max(e3.a, e4.a));
-  float skySide = uLayerRelief * step(texel.a, 0.02) * step(0.2, nearest) * step(nearest, 0.5);
-  color = mix(color, vec3(0.035, 0.055, 0.095), inkContour * uInkMix * (1.0 - max(relief, skySide)));
+  // In film only where the pixel and its four neighbours are all bare sky: the
+  // clouds' own edges, never an outline on a subject, a crest, the ground or a shaft.
+  float skyInk = mix(1.0, (1.0 - smoothstep(0.0, 0.006, texel.a)) * (1.0 - step(0.006, nearest)), uLayerRelief);
+  color = mix(color, vec3(0.035, 0.055, 0.095), inkContour * uInkMix * skyInk);
   }
   // A soft shoulder: highlights past the knee roll off toward white, not clip.
   vec3 over = max(color - 0.75, 0.0);
@@ -587,12 +589,6 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
     setLens(lens = null) {
       const blur = lens?.blur ?? 0;
       finalUniforms.uBlur.value = film ? blur : 0;
-    },
-    // The shot's grade: `subjects` scales the cel step on the subjects (the
-    // scene target's alpha 1: the lookout, the tree and the lantern),
-    // so their light shades smoothly; set with the shot (on a cut).
-    setGrade(grade = null) {
-      gradingPass.uniforms.uSubjectCel.value = film ? (grade?.subjects ?? 1) : 1;
     },
     // Widescreen bars as a share of the height at each edge.
     setBars(share = 0) {
