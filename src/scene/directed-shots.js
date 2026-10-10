@@ -229,9 +229,9 @@ export const DIRECTED_SHOTS = {
       lens: { blur: 8 },
       move: { dolly: [1.2, 0.85], ease: 0.6 },
       subject: "tree-lantern",
-      // Across the pond, a little round from its axis and with the lantern
-      // right of the area's centre, so less of the root flare stands behind
-      // the name at the end of the push-in. Phones keep the pond's axis.
+      // Across the river, a little round from the -115° axis and with the
+      // lantern right of the area's centre, so less of the root flare stands
+      // behind the name at the end of the push-in. Phones keep that axis.
       region: [0, 1],
       fov: 34,
       azimuth: -125,
@@ -283,7 +283,7 @@ export const DIRECTED_SHOTS = {
       // Lantern study.
       light: { key: 0.6, fill: 0.75, lantern: 1.4, rim: 0.9, glintText: 1 },
       lens: { blur: 8 },
-      // Round from the pond's axis, so the trunk stands right of centre and
+      // Round from the -115° axis, so the trunk stands right of centre and
       // the lantern on the right third, the plain behind the name; the aim
       // sits low, which keeps the ranges under the top edge's open band.
       // Phones set the lantern low on that third.
@@ -303,7 +303,7 @@ export const DIRECTED_SHOTS = {
         move: { dolly: [0.92, 1.06], ease: 0.6 },
       },
       // Landscape phones keep the drift (no room about the name for a move)
-      // and the pond's axis.
+      // and the -115° axis.
       landscape: { move: null, azimuth: -115, anchor: [0.5, 0.5] },
     },
   ],

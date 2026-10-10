@@ -113,10 +113,10 @@ export const ROOT_HOLLOWS = Object.freeze([
 
 // Where nothing of the knoll, the relief or the hollows reaches, so the pinned
 // ground keeps its exact heights and shading normals: within `lantern` of the
-// lantern, `front` (its own stretched units) of the front puddle and `drip`
-// beyond each other puddle's radius, easing in over `feather`. Each margin is
-// its pin plus a fine-grid triangle's reach (0.75 x sqrt 2).
-export const PIN_KEEP = Object.freeze({ lantern: 2.5, front: 4.6, drip: 0.8, feather: 1 });
+// lantern, and `drip` beyond the river's whole bank and each puddle's radius,
+// easing in over `feather`. Each margin is its pin plus a fine-grid
+// triangle's reach (0.75 x sqrt 2).
+export const PIN_KEEP = Object.freeze({ lantern: 2.5, drip: 0.8, feather: 1 });
 
 // Rain stands where the soil lies below its neighbours: the cavity, the fine
 // root grid's local mean height (a box `mean` cells either side) less its own
@@ -224,7 +224,6 @@ const zoneAt = ({ x, z }, deg, dist, radius, stretch = 1, along = 0) =>
     s: Math.sin((along * Math.PI) / 180),
   });
 export const PUDDLE_ZONES = Object.freeze([
-  zoneAt(LANTERN_FOOT, -115, 2.1, 2.2, 0.47, -115),
   zoneAt(TREE_FOOTING, 185, 8, 1.6),
   zoneAt(TREE_FOOTING, 75, 9, 2.5),
   zoneAt(TREE_FOOTING, -100, 16, 1.5),
@@ -241,18 +240,21 @@ export const STREAMS = Object.freeze({
         [2.28, -1.06],
         [1.08, -1.56],
         [0.08, -1.86],
+        [-0.3, -2.85],
       ],
       [
         [2.28, 1.24],
         [1.38, 0.64],
         [0.98, -0.36],
         [0.1, -1.7],
+        [-0.25, -2.8],
       ],
       [
         [4.48, -2.36],
         [3.08, -1.96],
         [1.68, -2.06],
         [0.48, -2.06],
+        [0.15, -3.05],
       ],
     ].map((path) => Object.freeze(path.map(([dx, dz]) => Object.freeze([dx, dz])))),
   ),
@@ -275,70 +277,173 @@ export function streamDistance(x, z) {
 export const zoneDistance = ({ x: cx, z: cz, stretch, c, s }, x, z) =>
   Math.hypot((c * (x - cx) + s * (z - cz)) / stretch, -s * (x - cx) + c * (z - cz));
 
-// The pond (mud-ground.js SLATE_POND, restated): PUDDLE_ZONES[0] is its
-// footprint. Its water lies `level` below the lantern's foot; its floor falls
-// to `depth` below the water at the centre and its bank rises toward `rise`
-// above it, until it meets the ground: the surface is the smooth minimum
-// (`blend` units) of the ground and that shape, eased back to the ground from
-// reach[0] to reach[1] radii, so the lantern's footing stays level.
-export const POND = Object.freeze({
-  wobble: Object.freeze([0.08, 0.05]),
+// The river's bed and banks (mud-ground.js SLATE_RIVER_BED, restated): its
+// water lies `level` below the lantern's foot; its bed falls to `depth` below
+// the water down its middle and its bank rises toward `rise` above it, until
+// it meets the ground: the surface is the smooth minimum (`blend` units) of
+// the ground and that shape, eased back to the ground from reach[0] to
+// reach[1] radii, so the lantern's footing stays level.
+export const RIVER_BED = Object.freeze({
   depth: 0.18,
   rise: 0.15,
   level: -0.04,
   reach: Object.freeze([1.25, 1.55]),
   blend: 0.05,
 });
-// The normalised radius in the pond's footprint at a world x/z, 1 on its
-// wobbled shore (as the ground shader's slatePondR()).
-export function pondRadius(x, z) {
-  const { x: cx, z: cz, radius, stretch, c, s } = PUDDLE_ZONES[0];
-  const u = (c * (x - cx) + s * (z - cz)) / stretch / radius,
-    v = (-s * (x - cx) + c * (z - cz)) / radius,
-    a = Math.atan2(v, u);
-  return (
-    Math.hypot(u, v) /
-    (1 + POND.wobble[0] * Math.sin(3 * a + 1.3) + POND.wobble[1] * Math.sin(5 * a + 0.4))
+// The river (mud-ground.js SLATE_RIVER, riverLine() and riverAt(), restated):
+// its sampled centreline and a point's place on it.
+export const RIVER = Object.freeze({
+  path: Object.freeze(
+    [
+      [-21, 0.4],
+      [-13, -0.9],
+      [-8.6, -3.1],
+      [-4.4, -3.8],
+      [-1.9, -3.9],
+      [-0.6, -5.4],
+      [-1.5, -7.8],
+      [-3.5, -10.2],
+      [-5.1, -12.4],
+      [-6.7, -15.8],
+      [-7.1, -21],
+    ].map((p) => Object.freeze(p)),
+  ),
+  step: 0.9,
+  width: 2,
+  wobble: Object.freeze([0.08, 0.05]),
+  flow: 0.25,
+});
+export const RIVER_LINE = (() => {
+  const { path, step } = RIVER,
+    p = path.map(([dx, dz]) => [LANTERN_FOOT.x + dx, LANTERN_FOOT.z + dz]),
+    at = (i) => p[Math.max(0, Math.min(p.length - 1, i))],
+    points = [];
+  for (let i = 0; i + 1 < p.length; i++) {
+    const [a, b, c, d] = [at(i - 1), at(i), at(i + 1), at(i + 2)],
+      pieces = Math.max(1, Math.ceil(Math.hypot(c[0] - b[0], c[1] - b[1]) / step));
+    for (let k = 0; k < pieces; k++) {
+      const t = k / pieces,
+        t2 = t * t,
+        t3 = t2 * t,
+        f = (q) =>
+          0.5 *
+          (2 * b[q] +
+            (c[q] - a[q]) * t +
+            (2 * a[q] - 5 * b[q] + 4 * c[q] - d[q]) * t2 +
+            (3 * b[q] - a[q] - 3 * c[q] + d[q]) * t3);
+      points.push([f(0), f(1)]);
+    }
+  }
+  points.push(p.at(-1));
+  let s = 0;
+  return Object.freeze(
+    points.map(([x, z], i) => {
+      if (i) s += Math.hypot(x - points[i - 1][0], z - points[i - 1][1]);
+      return Object.freeze([+x.toFixed(3), +z.toFixed(3), +s.toFixed(3)]);
+    }),
   );
+})();
+export function riverAt(x, z) {
+  let best = { d: Infinity };
+  for (let k = 1; k < RIVER_LINE.length; k++) {
+    const [ax, az, s0] = RIVER_LINE[k - 1],
+      [bx, bz] = RIVER_LINE[k],
+      ex = bx - ax,
+      ez = bz - az,
+      len = Math.hypot(ex, ez),
+      h = Math.min(1, Math.max(0, ((x - ax) * ex + (z - az) * ez) / (len * len))),
+      d = Math.hypot(x - ax - ex * h, z - az - ez * h);
+    if (d < best.d)
+      best = {
+        d,
+        s: s0 + h * len,
+        side: Math.sign(ex * (z - az) - ez * (x - ax)) || 1,
+        dx: ex / len,
+        dz: ez / len,
+      };
+  }
+  const { width, wobble } = RIVER;
+  best.r =
+    best.d /
+    (width *
+      (1 + wobble[0] * Math.sin(0.9 * best.s + 1.3) + wobble[1] * Math.sin(2.3 * best.s + 0.4)));
+  return best;
 }
-// Its height above the water at normalised radius r (mud-ground.js pondShape()).
-export function pondShapeAt(r) {
-  const { depth, rise } = POND;
+// The normalised radius across the river at a world x/z, 1 on its wobbled
+// shore (as the ground shader's slateRiver()).
+export function riverRadius(x, z) {
+  return riverAt(x, z).r;
+}
+// Whether x/z lies within margin units of the water: the river's wobbled
+// shore or a puddle zone's radius (the litter's keepouts).
+export const nearWater = (x, z, margin) =>
+  riverRadius(x, z) < 1 + margin / RIVER.width ||
+  PUDDLE_ZONES.some((zone) => zoneDistance(zone, x, z) < zone.radius + margin);
+// The centreline at distance s downstream: [x, z, flow x, flow z].
+export function riverPoint(s) {
+  let k = 1;
+  while (k < RIVER_LINE.length - 1 && RIVER_LINE[k][2] < s) k++;
+  const [ax, az, s0] = RIVER_LINE[k - 1],
+    [bx, bz, s1] = RIVER_LINE[k],
+    t = Math.min(1, Math.max(0, (s - s0) / (s1 - s0))),
+    len = Math.hypot(bx - ax, bz - az);
+  return [ax + (bx - ax) * t, az + (bz - az) * t, (bx - ax) / len, (bz - az) / len];
+}
+// How far downstream the river passes the lantern.
+export const RIVER_NEAR = riverAt(LANTERN_FOOT.x, LANTERN_FOOT.z).s;
+// Its height above the water at normalised radius r (mud-ground.js riverBed()).
+export function riverBedAt(r) {
+  const { depth, rise } = RIVER_BED;
   return r < 1 ? -depth * (1 - r * r) : rise * (1 - Math.exp((-(r - 1) * 2 * depth) / rise));
 }
-// The fine grid's 0.75 cells under the pond are cut POND_STEPS x POND_STEPS
-// (0.25 units), so its floor and bank are smooth curves.
-export const POND_STEPS = 3;
-// The world box [x0, x1, z0, z1] the pond reaches (its wobble at its most).
-export function pondBounds() {
-  const { x, z, radius, stretch, c, s } = PUDDLE_ZONES[0],
-    r = POND.reach[1] * (1 + POND.wobble[0] + POND.wobble[1]);
+// The fine grid's 0.75 cells under the river are cut RIVER_STEPS x RIVER_STEPS
+// (0.25 units), so its bed and banks are smooth curves.
+export const RIVER_STEPS = 3;
+// The world box [x0, x1, z0, z1] the river's carved stretch reaches (its
+// wobble at its most). The river is carved only inside the fine grid's window, easing out over
+// RIVER_EDGE units inside its edge; beyond, its water lies on the plain.
+const RIVER_EDGE = 2.5;
+const riverInside = (x, z) =>
+  Math.min(
+    x - TREE_FOOTING.x - FINE_WINDOW.x[0],
+    TREE_FOOTING.x + FINE_WINDOW.x[1] - x,
+    z - TREE_FOOTING.z - FINE_WINDOW.z[0],
+    TREE_FOOTING.z + FINE_WINDOW.z[1] - z,
+  );
+export function riverBounds() {
+  const pad = RIVER.width * RIVER_BED.reach[1] * (1 + RIVER.wobble[0] + RIVER.wobble[1]);
   let x0 = Infinity,
     x1 = -Infinity,
     z0 = Infinity,
     z1 = -Infinity;
-  for (let k = 0; k < 64; k++) {
-    const t = (k / 64) * 2 * Math.PI,
-      u = Math.cos(t) * stretch * radius * r,
-      v = Math.sin(t) * radius * r,
-      px = x + c * u - s * v,
-      pz = z + s * u + c * v;
-    x0 = Math.min(x0, px);
-    x1 = Math.max(x1, px);
-    z0 = Math.min(z0, pz);
-    z1 = Math.max(z1, pz);
+  for (const [x, z] of RIVER_LINE) {
+    if (riverInside(x, z) < -pad) continue;
+    x0 = Math.min(x0, x - pad);
+    x1 = Math.max(x1, x + pad);
+    z0 = Math.min(z0, z - pad);
+    z1 = Math.max(z1, z + pad);
   }
-  return [x0, x1, z0, z1];
+  // Half a coarse cell inside the window, so the sub-grid lies on the fine grid.
+  return [
+    Math.max(x0, TREE_FOOTING.x + FINE_WINDOW.x[0] + 1.5),
+    Math.min(x1, TREE_FOOTING.x + FINE_WINDOW.x[1] - 1.5),
+    Math.max(z0, TREE_FOOTING.z + FINE_WINDOW.z[0] + 1.5),
+    Math.min(z1, TREE_FOOTING.z + FINE_WINDOW.z[1] - 1.5),
+  ];
 }
-// How far the pond lowers the ground at x/z (0 or less), over the base height
-// `base` there and the lantern's foot `foot`.
-export function pondCarve(x, z, base, foot) {
-  const r = pondRadius(x, z);
-  if (r >= POND.reach[1]) return 0;
-  const shape = foot + POND.level + pondShapeAt(r),
-    k = POND.blend,
+// How far the river lowers the ground at x/z (0 or less), over the base
+// height `base` there and the lantern's foot `foot`.
+export function riverCarve(x, z, base, foot) {
+  const r = riverRadius(x, z);
+  if (r >= RIVER_BED.reach[1]) return 0;
+  const shape = foot + RIVER_BED.level + riverBedAt(r),
+    k = RIVER_BED.blend,
     h = Math.max(k - Math.abs(base - shape), 0) / k;
-  return (Math.min(base, shape) - (h * h * k) / 4 - base) * (1 - ease(...POND.reach, r));
+  return (
+    (Math.min(base, shape) - (h * h * k) / 4 - base) *
+    (1 - ease(...RIVER_BED.reach, r)) *
+    ease(0, RIVER_EDGE, riverInside(x, z))
+  );
 }
 
 // The moon key light's direction (toward it), as rendering.js places it
@@ -385,9 +490,9 @@ export const ROOT_SHADE = Object.freeze({
     "00000000000027elnlf83100000000000",
     "0000000000113amxBwmb6321000000000",
     "0000000001125bnBIDrf9643100000000",
-    "0000001112347bkyHFvkeb85310000000",
-    "000000000469belwFFyqlie9521000000",
-    "0000000008cgilqzGGAvspjc731000000",
+    "0000000002347bkyHFvkeb85310000000",
+    "000000002468belwFFyqlie9521000000",
+    "0000000018cgikqzGGAvspjc731000000",
     "0000000000bosuxDIIDAywpg952100000",
     "00000000007lzEFJMKGEECvme84100000",
     "00000000006kzMNOPNKJJIExpia510000",
@@ -419,9 +524,9 @@ export const ROOT_SHADE = Object.freeze({
     "0000000000003aktrh710000000000000",
     "0000000000015fsBxk821100000000000",
     "000000000125bnAHBnb65310000000000",
-    "00000001137eozKMEpfdb720000000000",
-    "0000000009jtDNTRGsmnkb30000000000",
-    "0000000008juHUYTIywxrf51000000000",
+    "00000000037eozKMEpfdb720000000000",
+    "000000002cjtDNTRGsmnkb30000000000",
+    "0000000018juHUYTIywxrf51000000000",
     "0000000000boCPZUMGHIAma3100000000",
     "00000000007lzNZVRPRRIwlc642100000",
     "00000000006kzN-YVVXXSHyqjd7410000",
@@ -447,15 +552,15 @@ export const ROOT_SHADE = Object.freeze({
   ].join(""),
   cut: [
     "000000000000000000000000000000000",
-    "0wwwwwwwwwwwwwwwwwwwwwwwwwwwwwww0",
-    "0w_____________________________w0",
-    "0w_____________________________w0",
-    "0w___________q00q______________w0",
-    "0w___________O000m_____________w0",
-    "0w____XzzP____Q000_____________w0",
-    "0w__000000a____L00_____________w0",
-    "0wb00000003_____00_____________w0",
-    "010000000008____0______________w0",
+    "0000000000swwwwwwwwwwwwwwwwwwwww0",
+    "00000000000____________________w0",
+    "00000000000O___________________w0",
+    "00000000000C_q00q______________w0",
+    "00000000000Q_O000m_____________w0",
+    "00000000000V__Q000_____________w0",
+    "00000000000____L00_____________w0",
+    "0000000000u_____00_____________w0",
+    "000000000108____0______________w0",
     "000000000000a___a______________w0",
     "0000000000W_0d_________________w0",
     "0000000000X____________________w0",
@@ -564,11 +669,14 @@ function underSpur(dx, dz) {
 }
 // 1 beyond the pinned ground's keep (PIN_KEEP), easing in over feather; 0 on it.
 export function pinKeep(x, z, feather = PIN_KEEP.feather) {
-  const { lantern, front, drip } = PIN_KEEP;
+  const { lantern, drip } = PIN_KEEP;
   let keep = ease(lantern, lantern + feather, Math.hypot(x - LANTERN_FOOT.x, z - LANTERN_FOOT.z));
+  // The river keeps its whole bank clear, and the drip-line margin past it.
+  const bank = RIVER.width * RIVER_BED.reach[1] + drip;
+  keep *= ease(bank, bank + feather, riverRadius(x, z) * RIVER.width);
   for (let i = 0; keep > 0 && i < PUDDLE_ZONES.length; i++) {
     const zone = PUDDLE_ZONES[i],
-      margin = i ? zone.radius + drip : front;
+      margin = zone.radius + drip;
     keep *= ease(margin, margin + feather, zoneDistance(zone, x, z));
   }
   return keep;
@@ -647,9 +755,9 @@ export function rootSupportLifts(x, z, baseHeight, banks = true) {
   const base = baseHeight(x, z),
     bank = banks ? rootBankLift(x, z) : 0,
     r = Math.hypot(tx, tz),
-    pond = pondCarve(x, z, base, baseHeight(LANTERN_FOOT.x, LANTERN_FOOT.z));
+    channel = riverCarve(x, z, base, baseHeight(LANTERN_FOOT.x, LANTERN_FOOT.z));
   const keep = Math.hypot(dx, dz) < SUPPORT_REACH ? pinKeep(x, z) : 0;
-  if (!keep) return [base, 0, 0, bank, pond];
+  if (!keep) return [base, 0, 0, bank, channel];
   const knollKeep = pinKeep(x, z, ROOT_KNOLL.feather);
   const floor = baseHeight(TREE_FOOTING.x, TREE_FOOTING.z),
     spur = underSpur(dx, dz);
@@ -662,14 +770,14 @@ export function rootSupportLifts(x, z, baseHeight, banks = true) {
   for (const [hx, hz, radius, depth] of ROOT_HOLLOWS)
     relief -= depth * (1 - ease(0.2 * radius, radius, Math.hypot(dx - hx, dz - hz)));
   relief -= Math.max(0, base + knoll - (floor - SPUR_HOLLOW)) * spur;
-  return [base, knoll * knollKeep, relief * keep, bank, pond];
+  return [base, knoll * knollKeep, relief * keep, bank, channel];
 }
 
-// The supported ground at x/z, the pond's basin included; banks false leaves
+// The supported ground at x/z, the river's channel included; banks false leaves
 // out the soil banks (what tools/bake-root-shade.mjs measures them against).
 export function rootSupportHeight(x, z, baseHeight, banks = true) {
-  const [base, knoll, relief, bank, pond] = rootSupportLifts(x, z, baseHeight, banks);
-  return base + knoll + relief + bank + pond;
+  const [base, knoll, relief, bank, channel] = rootSupportLifts(x, z, baseHeight, banks);
+  return base + knoll + relief + bank + channel;
 }
 
 // What the entry lips add: where the soil settles (the knoll, its relief and
@@ -981,15 +1089,16 @@ sampledDiffuseColor.rgb = mix(sampledDiffuseColor.rgb, slateSoilTone, mix(${glsl
   return true;
 }
 
-// The lantern puddle's mirror (plan P3): still, clear water. SLATE_PUDDLES'
+// The river's and the puddles' mirror (plan P3): clear water. SLATE_PUDDLES'
 // grazing sky sheen gives way to a water Fresnel (F0 .02) mirror of the
-// terrain horizon, the fog and the zenith (the pond's water since the pond), with the tree's trunk as a dark
+// terrain horizon, the fog and the zenith (the night sky), with the tree's trunk as a dark
 // occluder and the lantern upside down in it, lit by the lantern light's own
 // (flickering) colour and compressed to a luminance knee; the flame's image
 // (MIRROR_FLAME) keeps the knee's peak, so it stays well under the flame, but
 // not its flattening. The water forms a level plane .02 above the
 // lantern's footing, a soft shore that follows the cracks with a damp margin,
-// and a static micro-undulation near the lens; rare drips ruffle it. The
+// and a static micro-undulation near the lens; the river's current
+// (RIVER_RIPPLE) ripples it as it flows, and rare drips ruffle it. The
 // drip-line puddles keep SLATE_PUDDLES' roughness .12 and specular gain 4.
 export const PUDDLE_MIRROR = Object.freeze({
   // The sky in the water, times the sky as shown: the night's dim sky and its
@@ -1006,7 +1115,7 @@ export const PUDDLE_MIRROR = Object.freeze({
   marginAlbedo: 0.08,
   coat: 0.15,
   darken: Object.freeze([0.3, 0.75]),
-  // The level water plane, relative to the lantern's foot: the pond's (POND.level).
+  // The level water plane, relative to the lantern's foot: the river's (RIVER_BED.level).
   water: -0.04,
   cloud: 0.22,
   // hill-silhouette.js TERRAIN_HORIZON and SLATE_PUDDLES.zenith (mud-ground.js).
@@ -1097,16 +1206,16 @@ export function dripAt(t, aim = () => null) {
       spread = dripHash(n, 4),
       c = Math.cos(turn),
       s = Math.sin(turn);
-    const [front, west, north] = PUDDLE_ZONES;
+    const [west, north] = PUDDLE_ZONES;
     if (zone < 0.6) {
       const at = aim(n);
-      if (at && zoneDistance(front, at[0], at[1]) < front.radius * DRIP_RIPPLES.inside) {
+      if (at && riverRadius(at[0], at[1]) < DRIP_RIPPLES.inside) {
         const r = DRIP_RIPPLES.aim[0] + (DRIP_RIPPLES.aim[1] - DRIP_RIPPLES.aim[0]) * spread;
         return [at[0] + c * r, at[1] + s * r, age, n];
       }
-      const ox = c * Math.sqrt(spread) * 0.45 * front.stretch * front.radius,
-        oz = s * Math.sqrt(spread) * 0.45 * front.radius;
-      return [front.x + ox * front.c - oz * front.s, front.z + ox * front.s + oz * front.c, age, n];
+      // Elsewhere on the river within a few units of the lantern.
+      const [px, pz, dx, dz] = riverPoint(RIVER_NEAR + (spread - 0.5) * 7);
+      return [px - dz * c * 0.45 * RIVER.width, pz + dx * c * 0.45 * RIVER.width, age, n];
     }
     const { x, z, radius } = zone < 0.8 ? west : north;
     return [
@@ -1119,14 +1228,23 @@ export function dripAt(t, aim = () => null) {
   return null;
 }
 const zoneGlsl = (zone) => glslVec(+zone.x.toFixed(2), +zone.z.toFixed(2));
+// The river's current on the water (MIRROR): two octaves of ripples, each
+// [along, across] cycles per unit (drawn out along the flow), and the tilt of
+// each.
+export const RIVER_RIPPLE = Object.freeze({
+  coarse: Object.freeze([0.6, 1.6]),
+  fine: Object.freeze([1.8, 4]),
+  tilt: Object.freeze([0.018, 0.007]),
+});
 // The puddles that lie on dune slopes keep the ground's height in the mirror:
 // the north drip-line puddle and Portrait's foreground one.
-const SLOPED = [PUDDLE_ZONES[2], PUDDLE_ZONES[3]];
+const SLOPED = [PUDDLE_ZONES[1], PUDDLE_ZONES[2]];
 const LAMP_FOOT = LANTERN_IMAGE.glow * LANTERN_IMAGE.scale;
 // slateDrip: the live drip (dripAt(): world x, z, age; w 1 while one lives),
 // set per draw on the CPU. slateFlame: the lantern flame's draught (height
 // factor, 0 without the flame module; lean in lantern units along world x, z).
 const PUDDLE_HEAD = `uniform vec4 slateDrip, slateFlame;
+uniform float slateFlow;
 vec3 slateNoiseD(vec2 p){vec2 i=floor(p),f=fract(p),u=f*f*(3.-2.*f),du=6.*f*(1.-f);float a=slateHash(i),b=slateHash(i+vec2(1,0)),c=slateHash(i+vec2(0,1)),d=slateHash(i+1.),k=a-b-c+d;return vec3(a+(b-a)*u.x+(c-a)*u.y+k*u.x*u.y,du*(vec2(b-a,c-a)+k*u.yx));}
 // The live drip's tilt of the water at p (world xz); rings finer than about
 // three pixels of ground footprint (fp, units) fade out instead of aliasing.
@@ -1171,6 +1289,15 @@ if (slateWater > 0.0) {
       slateG = (slateU1.yz*mat2(.8, .6, -.6, .8)+.5*slateU2.yz)*${glsl(M.undulation)}*(1.0-smoothstep(${glsl(M.undulationFade[0])}, ${glsl(M.undulationFade[1])}, slateView));
     }
     if (slateDrip.w > 0.0) slateG += slateRipples(vMudWorld.xz, slatePx*slateView/max(abs(dot(normal, normalize(vViewPosition))), .3));
+    // The river's current: ripples drawn out along the flow drift downstream at RIVER.flow (on the drips' clock, so they hold
+    // as the drips do); the finer octave fades where it would fall under three pixels of ground. They ease out toward the shore.
+    if (slateRiverR < 1.1) {
+      vec2 slateFU = vec2(slateRiverQ.y-slateFlow*${glsl(RIVER.flow)}, slateRiverQ.z);
+      float slateFP = slatePx*slateView/max(abs(dot(normal, normalize(vViewPosition))), .3);
+      vec3 slateF1 = slateNoiseD(slateFU*${glslVec(...RIVER_RIPPLE.coarse)}), slateF2 = slateNoiseD(slateFU*${glslVec(...RIVER_RIPPLE.fine)}+13.0);
+      vec2 slateFG = slateF1.yz*${glslVec(...RIVER_RIPPLE.coarse)}*${glsl(RIVER_RIPPLE.tilt[0])}+slateF2.yz*${glslVec(...RIVER_RIPPLE.fine)}*${glsl(RIVER_RIPPLE.tilt[1])}*smoothstep(1.5, 3.0, ${glsl(1 / RIVER_RIPPLE.fine[1])}/slateFP);
+      slateG += (slateRiverDir*slateFG.x+vec2(-slateRiverDir.y, slateRiverDir.x)*slateFG.y)*(1.0-smoothstep(.8, 1.1, slateRiverR));
+    }
     slateN = normalize(mix(slateN, normalize(vec3(-slateG.x, 1.0, -slateG.y)), slateDeep));
   }
   vec3 slateV = normalize(cameraPosition-vMudWorld), slateR = reflect(-slateV, slateN);
@@ -1319,6 +1446,7 @@ float slateMargin = smoothstep(${glsl(M.margin[0])}-slateShore, ${glsl(M.margin[
   ];
   if (!applyEdits(shader, edits)) return false;
   shader.uniforms.slateDrip = DRIP;
+  shader.uniforms.slateFlow = RIPPLE_TIME;
   shader.uniforms.slateFlame = FLAME_DRAUGHT;
   return true;
 }
@@ -1703,7 +1831,7 @@ export function scatterLitter(surface, groundColor) {
     )
       continue;
     if (Math.hypot(x - LANTERN_FOOT.x, z - LANTERN_FOOT.z) < L.lantern) continue;
-    if (PUDDLE_ZONES.some((zone) => zoneDistance(zone, x, z) < zone.radius + L.puddle)) continue;
+    if (nearWater(x, z, L.puddle)) continue;
     if (streamDistance(x, z) < 0) continue;
     // Beside a real root, never under one.
     const near = rootCovered(x, z) ? 0 : coverDistance(x, z, L.near[1]);
@@ -1881,7 +2009,7 @@ export function scatterLitter(surface, groundColor) {
     )
       continue;
     if (Math.hypot(x - LANTERN_FOOT.x, z - LANTERN_FOOT.z) < L.lantern) continue;
-    if (PUDDLE_ZONES.some((zone) => zoneDistance(zone, x, z) < zone.radius + L.puddle)) continue;
+    if (nearWater(x, z, L.puddle)) continue;
     if (streamDistance(x, z) < 0) continue;
     // Clear of every root and arch above it (the stone's own reach), yet among them.
     if (rootCovered(x, z)) continue;
@@ -2033,9 +2161,9 @@ function scatterFine(surface, base, stones, triangle, vertices) {
     )
       continue;
     if (Math.hypot(x - LANTERN_FOOT.x, z - LANTERN_FOOT.z) < F.lantern) continue;
-    if (PUDDLE_ZONES.some((zone) => zoneDistance(zone, x, z) < zone.radius + F.puddle)) continue;
+    if (nearWater(x, z, F.puddle)) continue;
     // Clear of a root by a quarter unit, so no piece reaches under its edge.
-    if (pondRadius(x, z) < 1.05 || coverDistance(x, z, 0.25) <= 0.25 || streamDistance(x, z) < 0)
+    if (riverRadius(x, z) < 1.05 || coverDistance(x, z, 0.25) <= 0.25 || streamDistance(x, z) < 0)
       continue;
     if (stones.some(([px, pz, w]) => Math.hypot(px - x, pz - z) < w * 0.6)) continue;
     if (kind === "leaf" && coverDistance(x, z, 0.8) > 0.8 && random() > F.leafNear) continue;
@@ -2124,17 +2252,19 @@ function scatterFine(surface, base, stones, triangle, vertices) {
   return pieces;
 }
 
-// The pond's rushes (drawn with the grass material, estate-ground-detail.js,
-// so they sway): a few clumps of thin, bowed stems on its bank, `bank`
-// normalised radii out, at its two ends: never within `clear` degrees of the
-// pond-to-lantern line on the lantern's side or the camera's. Each stem is a tapering 4-row strip as a
-// grass blade; `heads` of them carry a slim brown seed head near the top.
+// The river's rushes (drawn with the grass material, estate-ground-detail.js,
+// so they sway): clumps of thin, bowed stems on either bank, `bank`
+// normalised radii out, within `reach` units along the river of where it
+// passes the lantern but never within `clear` units of it, where the lantern
+// and its image stand between the banks. Each stem is a tapering 4-row strip
+// as a grass blade; `heads` of them carry a slim brown seed head near the top.
 export const RUSHES = Object.freeze({
   seed: 90417,
-  clumps: 6,
+  clumps: 11,
   stems: Object.freeze([18, 32]),
   bank: Object.freeze([1.08, 1.45]),
-  clear: 62,
+  reach: 9,
+  clear: 2.2,
   lantern: 0.7,
   height: Object.freeze([0.35, 0.9]),
   width: Object.freeze([0.008, 0.013]),
@@ -2146,8 +2276,7 @@ export const RUSHES = Object.freeze({
   up: 0.35,
 });
 export function plantRushes(surface) {
-  const R = RUSHES,
-    pond = PUDDLE_ZONES[0];
+  const R = RUSHES;
   let seed = R.seed;
   const random = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296;
   const between = ([a, b]) => a + random() * (b - a);
@@ -2155,7 +2284,6 @@ export function plantRushes(surface) {
     colors = [],
     grass = [],
     indices = [];
-  const toLantern = Math.atan2(LANTERN_FOOT.z - pond.z, LANTERN_FOOT.x - pond.x);
   // Rows of [x, y, z, across x, across z], widths, colours and sway per row.
   // Each stem and head is two crossed strips, so it never reads as a plank.
   const strip = (points, widths, rgbs, sways) => {
@@ -2183,21 +2311,16 @@ export function plantRushes(surface) {
   const T = [0, 0.35, 0.7, 1];
   let clumps = 0;
   for (let attempt = 0; clumps < R.clumps && attempt < 400; attempt++) {
-    // A point on the bank, in the pond's stretched frame.
-    const turn = random() * Math.PI * 2;
-    const reach = between(R.bank) * pond.radius,
-      u = Math.cos(turn) * reach * pond.stretch,
-      v = Math.sin(turn) * reach,
-      cx = pond.x + pond.c * u - pond.s * v,
-      cz = pond.z + pond.s * u + pond.c * v;
-    // Off the lantern's side: its world bearing from the pond, against the lantern's.
-    const away = Math.abs(
-      ((Math.atan2(cz - pond.z, cx - pond.x) - toLantern + 3 * Math.PI) % (2 * Math.PI)) - Math.PI,
-    );
-    // Nor on the camera's side (the lantern shots look across the pond at it):
-    // only at the pond's two ends.
-    if (away < (R.clear * Math.PI) / 180 || Math.PI - away < (R.clear * Math.PI) / 180) continue;
-    if (pondRadius(cx, cz) < 1.05 || rootCovered(cx, cz)) continue;
+    // A point on either bank within R.reach units of where the river passes
+    // the lantern, but not within R.clear of it, where the lantern and its
+    // image stand between the banks.
+    const along = (random() * 2 - 1) * R.reach;
+    if (Math.abs(along) < R.clear) continue;
+    const [px, pz, fx, fz] = riverPoint(RIVER_NEAR + along),
+      out = (random() < 0.5 ? -1 : 1) * between(R.bank) * RIVER.width,
+      cx = px - fz * out,
+      cz = pz + fx * out;
+    if (riverRadius(cx, cz) < 1.05 || rootCovered(cx, cz)) continue;
     if (Math.hypot(cx - LANTERN_FOOT.x, cz - LANTERN_FOOT.z) < R.lantern) continue;
     const stems = Math.round(between(R.stems));
     for (let n = 0; n < stems; n++) {
@@ -2206,12 +2329,12 @@ export function plantRushes(surface) {
         x = cx + Math.cos(at) * spread,
         z = cz + Math.sin(at) * spread,
         y = surface(x, z);
-      if (!Number.isFinite(y) || pondRadius(x, z) < 1.02) continue;
+      if (!Number.isFinite(y) || riverRadius(x, z) < 1.02) continue;
       const height = between(R.height),
         width = between(R.width),
         lean = height * between([0.05, 0.3]),
         // They lean off the water, give or take a radian.
-        outward = Math.atan2(z - pond.z, x - pond.x) + (random() - 0.5) * 2,
+        outward = Math.atan2(fx * Math.sign(out), -fz * Math.sign(out)) + (random() - 0.5) * 2,
         lx = Math.cos(outward),
         lz = Math.sin(outward),
         tone = 0.8 + 0.4 * random();
@@ -2290,7 +2413,7 @@ export function settleRoots(
     litter.updateMatrix();
     growth.add(litter);
     rushes = new Mesh(plantRushes(terrainHeight(terrain)), growth.material);
-    rushes.name = "estate-pond-rushes";
+    rushes.name = "estate-river-rushes";
     rushes.receiveShadow = true;
     rushes.castShadow = false;
     rushes.matrixAutoUpdate = false;
@@ -2722,17 +2845,17 @@ function* earthSteps(groundHeight, EARTH) {
     zs.indexOf(-EARTH.width / 2 + i * step * 2),
   );
   const refined = (i, j) => coarseX[i + 1] - coarseX[i] > 1 && coarseZ[j + 1] - coarseZ[j] > 1;
-  // The pond's own refinement: the fine cells within its reach, fine-grid
-  // columns [c0, c1) and rows [r0, r1), each cut into POND_STEPS x POND_STEPS.
-  const S = POND_STEPS,
-    [px0, px1, pz0, pz1] = pondBounds();
+  // The river's own refinement: the fine cells within its reach, fine-grid
+  // columns [c0, c1) and rows [r0, r1), each cut into RIVER_STEPS x RIVER_STEPS.
+  const S = RIVER_STEPS,
+    [px0, px1, pz0, pz1] = riverBounds();
   const c0 = fineX + Math.floor((px0 - xs[fineX]) / pitch),
     c1 = fineX + Math.ceil((px1 - xs[fineX]) / pitch),
     r0 = fineZ + Math.floor((pz0 - zs[fineZ]) / pitch),
     r1 = fineZ + Math.ceil((pz1 - zs[fineZ]) / pitch);
   const nc = c1 - c0,
     nr = r1 - r0,
-    pondCols = S * nc + 1;
+    riverCols = S * nc + 1;
   // Size every array once: a coarse triangle beside a refined neighbour is a
   // fan about one added centre point.
   const grid = xs.length * zs.length;
@@ -2755,16 +2878,16 @@ function* earthSteps(groundHeight, EARTH) {
         if (corners > 3) fans++;
       }
     }
-  // The pond's cells take S x S quads each, and each fine cell beside them a
+  // The river's cells take S x S quads each, and each fine cell beside them a
   // fan of S + 1 triangles about its far corner, through the shared edge's
   // added points; the sub-grid's points that are not fine-grid vertices follow
   // the centres.
   size += nc * nr * (S * S - 1) * 6 + 2 * (nc + nr) * (S - 1) * 3;
-  const pondExtra = new Int32Array(pondCols * (S * nr + 1)).fill(-1);
+  const riverExtra = new Int32Array(riverCols * (S * nr + 1)).fill(-1);
   let extra = 0;
   for (let gj = 0; gj <= S * nr; gj++)
     for (let gi = 0; gi <= S * nc; gi++)
-      if (gi % S || gj % S) pondExtra[gj * pondCols + gi] = extra++;
+      if (gi % S || gj % S) riverExtra[gj * riverCols + gi] = extra++;
   const count = grid + fans + extra,
     positions = new Float32Array(count * 3),
     normalArray = new Float32Array(count * 3);
@@ -2817,27 +2940,27 @@ function* earthSteps(groundHeight, EARTH) {
     if (near) occlusion.set(rootOcclusion(x, z), i * 2);
     if (i % 8 === 7) yield;
   }
-  // The pond's added points, raised (lowered) and shaded as the grid's; its
+  // The river's added points, raised (lowered) and shaded as the grid's; its
   // sub-grid's lifts and heights, for the samplers.
-  const pondBase = grid + fans,
-    pondLifts = new Float32Array(pondExtra.length),
-    pondSurface = new Float32Array(pondExtra.length);
+  const riverBase = grid + fans,
+    riverLifts = new Float32Array(riverExtra.length),
+    riverSurface = new Float32Array(riverExtra.length);
   for (let gj = 0; gj <= S * nr; gj += S)
     for (let gi = 0; gi <= S * nc; gi += S) {
       const at = (r0 + gj / S - fineZ) * (cols + 1) + c0 + gi / S - fineX;
-      pondLifts[gj * pondCols + gi] = lifts[at];
-      pondSurface[gj * pondCols + gi] = surface[at];
+      riverLifts[gj * riverCols + gi] = lifts[at];
+      riverSurface[gj * riverCols + gi] = surface[at];
     }
   const gridVertex = (i, j) => j * xs.length + i;
   for (let gj = 0; gj <= S * nr; gj++) {
     for (let gi = 0; gi <= S * nc; gi++) {
-      const k = pondExtra[gj * pondCols + gi];
+      const k = riverExtra[gj * riverCols + gi];
       if (k < 0) continue;
       const x = xs[c0] + (gi * pitch) / S,
         z = zs[r0] + (gj * pitch) / S,
         dx = x - TREE_FOOTING.x,
         dz = z - TREE_FOOTING.z,
-        at = pondBase + k;
+        at = riverBase + k;
       // A point on the sub-grid's border lies on its fine edge, between that
       // edge's two vertices (as a stitching fan's centre lies in its triangle's
       // plane), so the cells beside it keep their surface exactly.
@@ -2859,10 +2982,10 @@ function* earthSteps(groundHeight, EARTH) {
           occlusion[at * 2 + j] = mix(occlusion, 2, j);
         }
         for (let j = 0; j < 4; j++) shading[at * 4 + j] = mix(shading, 4, j);
-        const l0 = pondLifts[across ? gj * pondCols + from : from * pondCols + gi],
-          l1 = pondLifts[across ? gj * pondCols + from + S : (from + S) * pondCols + gi];
-        pondLifts[gj * pondCols + gi] = l0 + (l1 - l0) * t;
-        pondSurface[gj * pondCols + gi] = positions[at * 3 + 2];
+        const l0 = riverLifts[across ? gj * riverCols + from : from * riverCols + gi],
+          l1 = riverLifts[across ? gj * riverCols + from + S : (from + S) * riverCols + gi];
+        riverLifts[gj * riverCols + gi] = l0 + (l1 - l0) * t;
+        riverSurface[gj * riverCols + gi] = positions[at * 3 + 2];
         continue;
       }
       const raised = lift(x, z),
@@ -2873,8 +2996,8 @@ function* earthSteps(groundHeight, EARTH) {
         const sz = (lift(x, z + h) - lift(x, z - h)) / (2 * h);
         normal.set(normal.x / normal.z - sx, normal.y / normal.z + sz, 1).normalize();
       }
-      pondLifts[gj * pondCols + gi] = raised;
-      pondSurface[gj * pondCols + gi] = y;
+      riverLifts[gj * riverCols + gi] = raised;
+      riverSurface[gj * riverCols + gi] = y;
       point(at, x, z, y);
       shade(at, rootShade(dx, dz, raised && rootBermExcess(x, z, sample)));
       occlusion.set(rootOcclusion(x, z), at * 2);
@@ -2889,20 +3012,22 @@ function* earthSteps(groundHeight, EARTH) {
   let cursor = 0,
     center = grid;
   const vertex = (i, j) => j * xs.length + i;
-  // A point of the pond's sub-grid (gi, gj from its first corner): a fine-grid
+  // A point of the river's sub-grid (gi, gj from its first corner): a fine-grid
   // vertex where it lies on one, else an added point.
-  const pondPoint = (gi, gj) =>
-    gi % S || gj % S ? pondBase + pondExtra[gj * pondCols + gi] : vertex(c0 + gi / S, r0 + gj / S);
-  // A pond cell's S x S quads, split as the grid's (a, b, d and b, c, d).
-  const pondCell = (col, row) => {
+  const riverVertex = (gi, gj) =>
+    gi % S || gj % S
+      ? riverBase + riverExtra[gj * riverCols + gi]
+      : vertex(c0 + gi / S, r0 + gj / S);
+  // A river cell's S x S quads, split as the grid's (a, b, d and b, c, d).
+  const riverCell = (col, row) => {
     for (let sj = 0; sj < S; sj++)
       for (let si = 0; si < S; si++) {
         const gi = (col - c0) * S + si,
           gj = (row - r0) * S + sj;
-        const a = pondPoint(gi, gj),
-          b = pondPoint(gi, gj + 1),
-          c = pondPoint(gi + 1, gj + 1),
-          d = pondPoint(gi + 1, gj);
+        const a = riverVertex(gi, gj),
+          b = riverVertex(gi, gj + 1),
+          c = riverVertex(gi + 1, gj + 1),
+          d = riverVertex(gi + 1, gj);
         indices[cursor++] = a;
         indices[cursor++] = b;
         indices[cursor++] = d;
@@ -2911,23 +3036,23 @@ function* earthSteps(groundHeight, EARTH) {
         indices[cursor++] = d;
       }
   };
-  // A fine cell sharing an edge with the pond's: its corners in the grid's
+  // A fine cell sharing an edge with the river's: its corners in the grid's
   // winding (a, b, c, d) with that edge's added points between, starting from
   // the end of the cell's own b-d diagonal off that edge, so the fan keeps the
   // diagonal and every triangle lies in one of the cell's two planes; null for
   // any other cell.
-  const pondBeside = (col, row, a, b, c, d) => {
+  const riverBeside = (col, row, a, b, c, d) => {
     const inRows = row >= r0 && row < r1,
       inCols = col >= c0 && col < c1,
       along = (at) => Array.from({ length: S - 1 }, (_, k) => at(k + 1));
     if (inRows && col === c1)
-      return [d, a, ...along((k) => pondPoint(nc * S, (row - r0) * S + k)), b, c];
+      return [d, a, ...along((k) => riverVertex(nc * S, (row - r0) * S + k)), b, c];
     if (inRows && col === c0 - 1)
-      return [b, c, ...along((k) => pondPoint(0, (row - r0) * S + S - k)), d, a];
+      return [b, c, ...along((k) => riverVertex(0, (row - r0) * S + S - k)), d, a];
     if (inCols && row === r1)
-      return [b, c, d, ...along((k) => pondPoint((col - c0) * S + S - k, nr * S)), a];
+      return [b, c, d, ...along((k) => riverVertex((col - c0) * S + S - k, nr * S)), a];
     if (inCols && row === r0 - 1)
-      return [d, a, b, ...along((k) => pondPoint((col - c0) * S + k, 0)), c];
+      return [d, a, b, ...along((k) => riverVertex((col - c0) * S + k, 0)), c];
     return null;
   };
   const triangle = (corners, polygon, x, z) => {
@@ -2957,16 +3082,16 @@ function* earthSteps(groundHeight, EARTH) {
         for (let row = z0; row < z1; row++)
           for (let col = x0; col < x1; col++) {
             if (col >= c0 && col < c1 && row >= r0 && row < r1) {
-              pondCell(col, row);
+              riverCell(col, row);
               continue;
             }
             const a = vertex(col, row),
               b = vertex(col, row + 1),
               c = vertex(col + 1, row + 1),
               d = vertex(col + 1, row);
-            const polygon = pondBeside(col, row, a, b, c, d);
+            const polygon = riverBeside(col, row, a, b, c, d);
             if (polygon) {
-              // A fine cell beside the pond: a fan from its far corner through
+              // A fine cell beside the river's: a fan from its far corner through
               // the shared edge's points (no T-junction).
               for (let k = 1; k < polygon.length - 1; k++) {
                 indices[cursor++] = polygon[0];
@@ -3012,7 +3137,7 @@ function* earthSteps(groundHeight, EARTH) {
   geometry.setIndex(new BufferAttribute(indices, 1));
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
-  // Inside the pond's sub-grid, its own (finer) triangles.
+  // Inside the river's sub-grid, its own (finer) triangles.
   const within = (outer, inner) => (x, z) => {
     const value = inner(x, z);
     return Number.isNaN(value) ? outer(x, z) : value;
@@ -3021,14 +3146,14 @@ function* earthSteps(groundHeight, EARTH) {
     geometry,
     within(
       liftSampler(lifts, xs[fineX], zs[fineZ], cols, rows, pitch),
-      liftSampler(pondLifts, xs[c0], zs[r0], S * nc, S * nr, pitch / S, NaN),
+      liftSampler(riverLifts, xs[c0], zs[r0], S * nc, S * nr, pitch / S, NaN),
     ),
   );
   SURFACES.set(
     geometry,
     within(
       liftSampler(surface, xs[fineX], zs[fineZ], cols, rows, pitch, NaN),
-      liftSampler(pondSurface, xs[c0], zs[r0], S * nc, S * nr, pitch / S, NaN),
+      liftSampler(riverSurface, xs[c0], zs[r0], S * nc, S * nr, pitch / S, NaN),
     ),
   );
   return geometry;

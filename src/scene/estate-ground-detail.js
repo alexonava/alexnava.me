@@ -8,7 +8,7 @@ import {
 import { DEPTH_LAYER, stampDepthLayer } from "./depth-layers.js";
 import { ESTATE, estateLantern, estatePathDistance, estatePoint } from "./estate-layout.js";
 import { rockKeepouts } from "./rock-scatter.js";
-import { SLATE_PUDDLES, SLATE_STREAMS } from "./mud-ground.js";
+import { SLATE_PUDDLES, SLATE_RIVER, SLATE_STREAMS, riverAt } from "./mud-ground.js";
 
 // The same winding approach stays clear in every camera and quality tier.
 // Its centerline joins the tower's entrance side to the tree's lantern clearing.
@@ -19,7 +19,7 @@ export { estatePathDistance };
 // first pair straddles its foot (terrain-build.js settleTufts() reads it).
 // Kinds: fine olive grass, broader blue-green sedge and dead straw, as
 // [share, width / height, lean, base rgb, tip rgb]. The clumps gather where
-// water collects (the pond's bank and the puddles' margins: `wet` is the
+// water collects (the river's banks and the puddles' margins: `wet` is the
 // acceptance there, `dry` on open slate) and never stand in the water.
 export const BLADE_VERTICES = 8;
 export const GROWTH = Object.freeze({
@@ -47,8 +47,8 @@ export const GROWTH = Object.freeze({
   sway: 0.11,
   speed: 1.6,
 });
-// The puddle zones (mud-ground.js SLATE_PUDDLES, the pond first): a point's
-// distance outside a zone's stretched footprint, in units (negative inside).
+// The puddle zones (mud-ground.js SLATE_PUDDLES): a point's distance outside a
+// zone's footprint, in units (negative inside).
 const WATER = SLATE_PUDDLES.zones.map(({ anchor, deg, dist, radius, stretch = 1, along = 0 }) => ({
   ...estatePoint(anchor, deg, dist),
   radius,
@@ -133,7 +133,12 @@ export function createEstateGroundDetail(groundHeight) {
     const radius = (tree ? 5.9 : 10.5) + Math.pow(random(), 1.7) * (tree ? 10 : 17);
     const x = anchor.x + Math.cos(angle) * radius;
     const z = anchor.z + Math.sin(angle) * radius;
-    const water = Math.min(...WATER.map((zone) => outside(zone, x, z)), streamDistance(x, z));
+    // The river in units outside its wobbled shore, the puddles and the streams.
+    const water = Math.min(
+      (riverAt(x, z).r - 1) * SLATE_RIVER.width,
+      ...WATER.map((zone) => outside(zone, x, z)),
+      streamDistance(x, z),
+    );
     const wet = water < 0 ? 0 : Math.exp(-Math.pow(water / GROWTH.bank, 2));
     const degrees = (angle * 180) / Math.PI - 360,
       front = !tree || (degrees >= GROWTH.front[0] && degrees <= GROWTH.front[1]),
@@ -213,7 +218,7 @@ export function createEstateGroundDetail(groundHeight) {
   const mesh = new Mesh(geometry, material);
   // terrain-build.js settleRoots() finds it by name and raises the blades that
   // stand on the tree's knoll once the film terrain arrives, then hangs the
-  // litter and the pond's rushes under it.
+  // litter and the river's rushes under it.
   mesh.name = "estate-ground-growth";
   mesh.castShadow = false;
   mesh.receiveShadow = true;

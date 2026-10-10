@@ -37,12 +37,19 @@ import {
   MIRROR_FLAME,
   PIN_KEEP,
   pinKeep,
-  POND,
-  POND_STEPS,
-  pondBounds,
-  pondCarve,
-  pondRadius,
-  pondShapeAt,
+  nearWater,
+  RIVER,
+  RIVER_BED,
+  RIVER_LINE,
+  RIVER_NEAR,
+  RIVER_RIPPLE,
+  RIVER_STEPS,
+  riverAt,
+  riverPoint,
+  riverBounds,
+  riverCarve,
+  riverRadius,
+  riverBedAt,
   plantRushes,
   PEBBLE_DOME,
   RUSHES,
@@ -174,6 +181,7 @@ test("rain stands where the soil lies below its neighbours, never on the pinned 
     );
     assert.ok(Math.hypot(x - LANTERN_FOOT.x, z - LANTERN_FOOT.z) > PIN_KEEP.lantern);
     for (const zone of PUDDLE_ZONES) assert.ok(zoneDistance(zone, x, z) > zone.radius * 0.5);
+    assert.ok(riverRadius(x, z) > RIVER_BED.reach[1], `a pool on the river's bank at ${x},${z}`);
     if (value > SLATE_SOIL.pool.water[0]) wet++;
     if (value < 0) dry++;
   }
@@ -213,13 +221,13 @@ test("root supports preserve coarse terrain vertices, map scale and bounded mesh
   }
   assert.ok(hills.boundingBox.max.z < 9 + TERRAIN_BASE);
   assert.ok(foothillHeight(106.8, 106.8) < 1.5, "keep the lantern's north-east horizon low");
-  // The root rectangle and the pond's sub-grid (each of its 0.75 cells cut
-  // POND_STEPS x POND_STEPS, each cell beside it a fan) and their stitching.
-  const [px0, px1, pz0, pz1] = pondBounds(),
+  // The root rectangle and the river's sub-grid (each of its 0.75 cells cut
+  // RIVER_STEPS x RIVER_STEPS, each cell beside it a fan) and their stitching.
+  const [px0, px1, pz0, pz1] = riverBounds(),
     cells = (Math.ceil((px1 - px0) / 0.75) + 1) * (Math.ceil((pz1 - pz0) / 0.75) + 1);
   assert.ok(
-    hills.index.count < original.index.count * 1.15 + cells * (POND_STEPS * POND_STEPS + 1) * 6,
-    "only the root rectangle, the pond and their stitched boundaries are refined",
+    hills.index.count < original.index.count * 1.15 + cells * (RIVER_STEPS * RIVER_STEPS + 1) * 6,
+    "only the root rectangle, the river and their stitched boundaries are refined",
   );
   assert.equal(hills.groups.length, 0, "one ground material and draw");
   const repeat = createEarthGeometry(base);
@@ -291,20 +299,22 @@ function surface(geometry) {
   };
 }
 
-test("the pond lowers only its basin and bank: the lantern's footing and the pinned ground beyond keep their heights and shading", () => {
+test("the river lowers only its channel and banks: the lantern's footing and the pinned ground beyond keep their heights and shading", () => {
   assert.deepEqual(TREE_FOOTING, { x: ESTATE.tree.x, z: ESTATE.tree.z });
   // The sink prop-scale.js seats the tree with, restated for the bake.
   assert.equal(TREE_SINK, ESTATE.tree.sink);
   assert.equal(ESTATE.lantern.offset, 5);
-  const zone = SLATE_PUDDLES.zones[0];
-  assert.deepEqual(zone, {
-    anchor: "lantern",
-    deg: -115,
-    dist: 2.1,
-    radius: 2.2,
-    stretch: 0.47,
-    along: -115,
-  });
+  // The river passes the lantern on the lantern shots' side (they look from
+  // -115° to -125°), the lantern standing on its bank clear of its reach.
+  const passing = riverAt(LANTERN_FOOT.x, LANTERN_FOOT.z),
+    [cx, cz] = riverPoint(RIVER_NEAR);
+  assert.ok(Math.abs(passing.s - RIVER_NEAR) < 1e-9);
+  const bearing = (Math.atan2(cz - LANTERN_FOOT.z, cx - LANTERN_FOOT.x) * 180) / Math.PI;
+  assert.ok(bearing > -135 && bearing < -105, `the river passes at ${bearing}°`);
+  assert.ok(
+    (passing.r - RIVER_BED.reach[1]) * RIVER.width > 0.6,
+    "the lantern's foot (0.47 about) stands clear of the bank",
+  );
   const base = groundBase(),
     original = plainDunes(base),
     restored = createEarthGeometry(base);
@@ -315,24 +325,25 @@ test("the pond lowers only its basin and bank: the lantern's footing and the pin
     b = surface(restored),
     height = terrainHeight(restored);
   const lamp = estateLantern(),
-    pond = estatePoint(zone.anchor, zone.deg, zone.dist),
     foot = a.at(lamp.x, lamp.z).point.y,
-    water = foot + POND.level;
+    water = foot + RIVER_BED.level;
+  const sub = riverBounds();
   let footing = 0,
     beyond = 0,
     basin = 0;
-  for (let x = pond.x - 5; x < pond.x + 5; x += 0.13)
-    for (let z = pond.z - 5; z < pond.z + 5; z += 0.13) {
-      const r = pondRadius(x, z),
+  // About where it passes the lantern, well inside the fine grid.
+  for (let x = cx - 6; x < cx + 6; x += 0.17)
+    for (let z = cz - 6; z < cz + 6; z += 0.17) {
+      const r = riverRadius(x, z),
         before = a.at(x, z),
         after = b.at(x, z);
-      // The pinned ground a sub-grid cell (0.25, up to 0.35 radii) beyond the pond's reach,
+      // The pinned ground a sub-grid cell (0.25, up to 0.35 radii) beyond the river's reach,
       // all the triangles about it pinned too.
       const pinned =
-        r > POND.reach[1] + 0.35 &&
+        r > RIVER_BED.reach[1] + 0.35 &&
         [-0.8, 0, 0.8].every((u) => [-0.8, 0, 0.8].every((v) => pinKeep(x + u, z + v) === 0));
       if (Math.hypot(x - lamp.x, z - lamp.z) < 0.6 || pinned) {
-        // The lantern's footing, and the pinned ground beyond the pond.
+        // The lantern's footing, and the pinned ground beyond the river.
         assert.ok(
           Math.abs(before.point.y - after.point.y) < 0.000002,
           `height changed at ${x},${z}`,
@@ -340,11 +351,36 @@ test("the pond lowers only its basin and bank: the lantern's footing and the pin
         assert.ok(before.normal.angleTo(after.normal) < 0.0001, `shading tilted at ${x},${z}`);
         if (Math.hypot(x - lamp.x, z - lamp.z) < 0.6) footing++;
         else beyond++;
-      } else if (r < 0.95) {
-        // In the water: the basin's shape (to the sub-grid's linear pieces), below the water.
-        const expected = before.point.y + pondCarve(x, z, before.point.y, foot);
-        assert.ok(Math.abs(after.point.y - expected) < 0.012, `basin at ${x},${z}`);
-        assert.ok(after.point.y < water, `the pond's floor lies under its water at ${x},${z}`);
+      } else if (
+        r < 0.95 &&
+        x > sub[0] + 0.3 &&
+        x < sub[1] - 0.3 &&
+        z > sub[2] + 0.3 &&
+        z < sub[3] - 0.3
+      ) {
+        // In the water, on its sub-grid: the channel's shape (to the sub-grid's linear pieces), below the water.
+        // Except across the fold on the inner side of its bend after the lantern (out of
+        // every shot's frame), where the nearest stretch of its centreline jumps and
+        // the sub-grid's linear pieces cut the crease.
+        const here = riverAt(x, z).s,
+          fold = [
+            [0.3, 0],
+            [-0.3, 0],
+            [0, 0.3],
+            [0, -0.3],
+          ].some(([u, v]) => Math.abs(riverAt(x + u, z + v).s - here) > 1);
+        const expected = before.point.y + riverCarve(x, z, before.point.y, foot);
+        if (!fold) assert.ok(Math.abs(after.point.y - expected) < 0.012, `basin at ${x},${z}`);
+        // Where the channel is carved in full (it eases out over 2.5 units inside the fine
+        // grid's edge, beyond the lantern shots' frames), its bed lies under its water.
+        const inside = Math.min(
+          x - TREE_FOOTING.x - FINE_WINDOW.x[0],
+          TREE_FOOTING.x + FINE_WINDOW.x[1] - x,
+          z - TREE_FOOTING.z - FINE_WINDOW.z[0],
+          TREE_FOOTING.z + FINE_WINDOW.z[1] - z,
+        );
+        if (inside > 2.5)
+          assert.ok(after.point.y < water, `the river's bed lies under its water at ${x},${z}`);
         assert.ok(
           Math.abs(height(x, z) - after.point.y) < 1e-5,
           "the height sampler reads the basin",
@@ -352,12 +388,14 @@ test("the pond lowers only its basin and bank: the lantern's footing and the pin
         basin++;
       }
     }
-  assert.ok(footing > 40 && beyond > 150 && basin > 150, `${footing} ${beyond} ${basin}`);
-  // Deep at the centre, as deep as the shape says.
-  assert.ok(
-    Math.abs(b.at(pond.x, pond.z).point.y - (water + pondShapeAt(pondRadius(pond.x, pond.z)))) <
-      0.015,
-  );
+  assert.ok(footing > 30 && beyond > 150 && basin > 400, `${footing} ${beyond} ${basin}`);
+  // Deep down its middle, as deep as the shape says.
+  assert.ok(Math.abs(b.at(cx, cz).point.y - (water + riverBedAt(riverRadius(cx, cz)))) < 0.015);
+  // Out on the plain, beyond the fine grid, its water lies on the uncarved soil.
+  const [wx, wz] = RIVER_LINE[2];
+  assert.ok(wx < TREE_FOOTING.x + FINE_WINDOW.x[0] && riverRadius(wx, wz) < 1e-9);
+  assert.ok(riverCarve(wx, wz, base(wx, wz), foot) === 0, "no carve on the plain");
+  assert.ok(Math.abs(b.at(wx, wz).point.y - a.at(wx, wz).point.y) < 0.000002);
   a.dispose();
   b.dispose();
 });
@@ -487,11 +525,14 @@ test("the knoll: soil rises toward the footing where the roots touch down, with 
   const supports = (x, z) => rootSupportHeight(x, z, base, false);
   for (let x = 35; x < 80; x += 0.25)
     for (let z = 15; z < 60; z += 0.25) {
-      const [b, knoll, shape, lip, pond] = rootSupportLifts(x, z, base);
+      const [b, knoll, shape, lip, channel] = rootSupportLifts(x, z, base);
       assert.equal(b, base(x, z));
-      assert.ok(Math.abs(height(x, z) - (b + knoll + shape + lip + pond)) < 1e-12);
-      // The pond only lowers, and only within its reach.
-      assert.ok(pond <= 0 && (pond === 0 || pondRadius(x, z) < POND.reach[1]), `${x},${z}`);
+      assert.ok(Math.abs(height(x, z) - (b + knoll + shape + lip + channel)) < 1e-12);
+      // The river only lowers, and only within its reach.
+      assert.ok(
+        channel <= 0 && (channel === 0 || riverRadius(x, z) < RIVER_BED.reach[1]),
+        `${x},${z}`,
+      );
       // The knoll only fills: up to the footing, a little more toward the
       // trunk collar (its dome), never above.
       assert.ok(knoll >= 0, `${x},${z}`);
@@ -573,36 +614,48 @@ test("the knoll: soil rises toward the footing where the roots touch down, with 
       knollWeight(x - TRUNK[0], z - TRUNK[1], TREE_FOOTING.x + x, TREE_FOOTING.z + z) < 0.5,
     );
   // The pinned ground takes nothing of the knoll, the relief or the lips:
-  // within PIN_KEEP of the lantern and the pond, and beyond each drip-line
-  // puddle's radius. Only the pond's own basin lowers it.
+  // within PIN_KEEP of the lantern, the river's banks, and beyond each
+  // drip-line puddle's radius. Only the river's own channel lowers it.
   for (let a = 0; a < 6.3; a += 0.1)
     for (const r of [0, 1, 2, PIN_KEEP.lantern]) {
       const x = LANTERN_FOOT.x + r * Math.cos(a),
         z = LANTERN_FOOT.z + r * Math.sin(a);
-      const [b, knoll, relief, lip, pond] = rootSupportLifts(x, z, base, false);
+      const [b, knoll, relief, lip, channel] = rootSupportLifts(x, z, base, false);
       assert.ok(
         Math.abs(knoll) + Math.abs(relief) + Math.abs(lip) < 1e-12,
         `lantern clearing raised at ${x},${z}`,
       );
-      assert.equal(supports(x, z), b + pond);
+      assert.equal(supports(x, z), b + channel);
+    }
+  // So does the river's whole bank about where it passes the lantern.
+  for (let along = -8; along <= 8; along += 0.5)
+    for (const out of [-1, -0.5, 0, 0.5, 1]) {
+      const [px, pz, fx, fz] = riverPoint(RIVER_NEAR + along),
+        x = px - fz * out * RIVER.width * RIVER_BED.reach[1],
+        z = pz + fx * out * RIVER.width * RIVER_BED.reach[1];
+      const [, knoll, relief, lip] = rootSupportLifts(x, z, base, false);
+      assert.ok(
+        Math.abs(knoll) + Math.abs(relief) + Math.abs(lip) < 1e-12,
+        `bank raised at ${x},${z}`,
+      );
     }
   // The drip-line puddles and Portrait's foreground puddle keep their ground
   // and gain no rim: untouched to half a unit beyond their edge, at most a
-  // trace at three quarters. Where the pond's own bank reaches that margin
-  // (the west puddle's, beside the lantern) only the pond lowers it.
-  for (const zone of SLATE_PUDDLES.zones.slice(1)) {
+  // trace at three quarters. The river's bank never reaches into them (its
+  // reach may come near Portrait's), and only the river lowers their margin.
+  for (const zone of SLATE_PUDDLES.zones) {
     const p = estatePoint(zone.anchor, zone.deg, zone.dist);
     for (let a = 0; a < 6.3; a += 0.05)
       for (const r of [0, zone.radius / 2, zone.radius, zone.radius + 0.5, zone.radius + 0.75]) {
         const x = p.x + r * Math.cos(a),
           z = p.z + r * Math.sin(a),
-          pond = rootSupportLifts(x, z, base)[4];
-        assert.ok(pond === 0 || r > zone.radius, `the pond reaches into a puddle at ${x},${z}`);
+          channel = rootSupportLifts(x, z, base)[4];
+        assert.ok(channel === 0 || r > zone.radius, `the river reaches into a puddle at ${x},${z}`);
         if (r <= zone.radius + 0.5)
-          assert.equal(height(x, z), base(x, z) + pond, `drip-line puddle raised at ${x},${z}`);
+          assert.equal(height(x, z), base(x, z) + channel, `drip-line puddle raised at ${x},${z}`);
         else
           assert.ok(
-            Math.abs(height(x, z) - pond - base(x, z)) < 0.005,
+            Math.abs(height(x, z) - channel - base(x, z)) < 0.005,
             `drip-line puddle rim at ${x},${z}`,
           );
       }
@@ -639,7 +692,12 @@ test("root contact shading is neutral away from the roots and settles the soil a
     assert.ok(contact >= 0 && contact <= 1 && open >= 0 && open <= 1);
     if (Math.hypot(x - TRUNK[0], z - TRUNK[1]) > 20) {
       assert.deepEqual([contact, open], [0, 1], "neutral away from the roots");
-      assert.equal(lift(p.getX(i), -p.getY(i)), 0);
+      // Nothing lifts there; only the river's channel may lower it.
+      const at = lift(p.getX(i), -p.getY(i));
+      assert.ok(
+        at === 0 || (at < 0 && riverRadius(p.getX(i), -p.getY(i)) < RIVER_BED.reach[1]),
+        `${at} at ${p.getX(i)},${-p.getY(i)}`,
+      );
     }
     if (Math.hypot(x - TRUNK[0], z - TRUNK[1]) < 3) {
       assert.equal(open, 0, "the soil about the trunk is settled");
@@ -905,6 +963,29 @@ test("the lazy ground shading extends only the slate's program, under its own ke
     // environment cube, night-environment.js).
     assert.equal(count(fragment, "texture2D("), count(before.fragmentShader, "texture2D("));
     assert.equal(count(vertex, "texture2D("), count(before.vertexShader, "texture2D("));
+    // The river's current: ripples drawn out along the flow, drifting downstream
+    // at RIVER.flow on the drips' clock (the same uniform, so they hold as the
+    // drips do), easing out toward the shore; the finer octave fades out
+    // before it aliases.
+    assert.match(fragment, /^uniform vec4 slateDrip, slateFlame;\nuniform float slateFlow;\n/m);
+    assert.ok(
+      fragment.includes(
+        `vec2 slateFU = vec2(slateRiverQ.y-slateFlow*${RIVER.flow}, slateRiverQ.z);`,
+      ),
+    );
+    assert.match(
+      fragment,
+      /slateG \+= \(slateRiverDir\*slateFG\.x\+vec2\(-slateRiverDir\.y, slateRiverDir\.x\)\*slateFG\.y\)\*\(1\.0-smoothstep\(\.8, 1\.1, slateRiverR\)\);/,
+    );
+    assert.match(fragment, /\*smoothstep\(1\.5, 3\.0, [\d.]+\/slateFP\);/);
+    assert.equal(after.uniforms.slateFlow, dripClock().uniform, "the drips' own clock");
+    // Gentle: slow, the ripples drawn out along the flow, their tilt below the drips'.
+    assert.ok(RIVER.flow > 0 && RIVER.flow <= 0.4);
+    assert.ok(
+      RIVER_RIPPLE.coarse[0] < RIVER_RIPPLE.coarse[1] &&
+        RIVER_RIPPLE.fine[0] < RIVER_RIPPLE.fine[1],
+    );
+    assert.ok(RIVER_RIPPLE.tilt[0] + RIVER_RIPPLE.tilt[1] <= 0.03);
     // The lazy chunk's own uniforms.
     assert.equal(after.uniforms.slateDrip.value.length, 4);
     assert.equal(after.uniforms.slateFlame.value.length, 4);
@@ -1567,19 +1648,19 @@ test("the root shading keeps full float precision beside a 16-bit index", () => 
   assert.equal(occlusion.count, geometry.attributes.position.count);
   assert.ok(geometry.index.array instanceof Uint16Array, "the index stays 16-bit");
   const p = geometry.attributes.position,
-    [px0, px1, pz0, pz1] = pondBounds(),
-    inPond = (x, z) => x > px0 - 0.75 && x < px1 + 0.75 && z > pz0 - 0.75 && z < pz1 + 0.75;
+    [px0, px1, pz0, pz1] = riverBounds(),
+    inRiver = (x, z) => x > px0 - 0.75 && x < px1 + 0.75 && z > pz0 - 0.75 && z < pz1 + 0.75;
   let checked = 0,
     occluded = 0;
   for (let i = 0; i < p.count; i++) {
     const x = p.getX(i) - TREE_FOOTING.x,
       z = -p.getY(i) - TREE_FOOTING.z;
-    // The pond's sub-grid points carry the lattice's occlusion where they lie
+    // The river's sub-grid points carry the lattice's occlusion where they lie
     // (as the GPU interpolates it between the fine vertices).
-    if ((p.getX(i) % 0.75 || p.getY(i) % 0.75) && inPond(p.getX(i), -p.getY(i))) {
+    if ((p.getX(i) % 0.75 || p.getY(i) % 0.75) && inRiver(p.getX(i), -p.getY(i))) {
       const lattice = rootOcclusion(p.getX(i), -p.getY(i));
-      assert.ok(Math.abs(occlusion.getX(i) - lattice[0]) < 1e-6, `pond ${x},${z}`);
-      assert.ok(Math.abs(occlusion.getY(i) - lattice[1]) < 1e-6, `pond ${x},${z}`);
+      assert.ok(Math.abs(occlusion.getX(i) - lattice[0]) < 1e-6, `river ${x},${z}`);
+      assert.ok(Math.abs(occlusion.getY(i) - lattice[1]) < 1e-6, `river ${x},${z}`);
       continue;
     }
     // Grid vertices near the roots (stitching fan centres stay open soil).
@@ -1692,6 +1773,7 @@ test("the root tables are neutral beyond the tree and leave the lantern clearing
     PUDDLE_ZONES.forEach((zone) =>
       assert.ok(zoneDistance(zone, x, z) > zone.radius + 0.75, `${col},${row}`),
     );
+    assert.ok((riverRadius(x, z) - 1) * RIVER.width > 0.75, `${col},${row} by the river`);
   }
 });
 
@@ -1847,8 +1929,10 @@ test("sparse dark litter and small grey stones lie among the roots, clear of the
   for (const [x, z] of placed) {
     assert.ok(x > LX && z > LZ && x < LX + (cols - 1) * pitch && z < LZ + (rows - 1) * pitch);
     assert.ok(Math.hypot(x - LANTERN_FOOT.x, z - LANTERN_FOOT.z) >= LITTER.lantern);
+    assert.equal(nearWater(x, z, LITTER.puddle), false, `litter at ${x},${z} by the water`);
     for (const zone of PUDDLE_ZONES)
       assert.ok(zoneDistance(zone, x, z) >= zone.radius + LITTER.puddle);
+    assert.ok(riverRadius(x, z) >= 1 + LITTER.puddle / RIVER.width);
     assert.equal(rootCovered(x, z), false, "never under a root");
     const [sky] = rootOcclusion(x, z);
     assert.ok(
@@ -1905,6 +1989,7 @@ test("sparse dark litter and small grey stones lie among the roots, clear of the
     assert.ok(Math.hypot(x - LANTERN_FOOT.x, z - LANTERN_FOOT.z) >= LITTER.lantern);
     for (const zone of PUDDLE_ZONES)
       assert.ok(zoneDistance(zone, x, z) >= zone.radius + LITTER.puddle);
+    assert.ok(riverRadius(x, z) >= 1 + LITTER.puddle / RIVER.width);
     assert.equal(rootCovered(x, z), false, "never under a root or an arch");
     let among = false;
     for (let dx = -S.among; dx <= S.among && !among; dx += 0.25)
@@ -1970,7 +2055,7 @@ test("the fine litter (leaves, clods, grit) lies on the foreground soil, never u
       assert.ok(n.getY(i) >= 0, `vertex ${i} faces into the soil`);
     }
     assert.equal(rootCovered(x, z), false, `piece at ${x},${z} under a root`);
-    assert.ok(pondRadius(x, z) > 1, "never in the pond");
+    assert.ok(riverRadius(x, z) > 1, "never in the river");
     for (let i = first; i < end; i++) {
       const y = surface(p.getX(i), p.getZ(i));
       if (Number.isFinite(y)) assert.ok(Math.abs(p.getY(i) - y) < lift, `vertex ${i} off the soil`);
@@ -1983,22 +2068,25 @@ test("the fine litter (leaves, clods, grit) lies on the foreground soil, never u
   terrain.dispose();
 });
 
-test("the rain streams restate the ground shader's and run from the roots into the pond", () => {
+test("the rain streams restate the ground shader's and run from the roots into the river", () => {
   assert.deepEqual(STREAMS.paths, SLATE_STREAMS.paths);
   assert.ok(Math.abs(STREAMS.reach - (SLATE_STREAMS.width[1] / 2 + SLATE_STREAMS.meander)) < 1e-9);
   for (const path of STREAMS.paths) {
     const [mx, mz] = path.at(-1);
-    assert.ok(pondRadius(LANTERN_FOOT.x + mx, LANTERN_FOOT.z + mz) < 1, "its mouth is in the pond");
+    assert.ok(
+      riverRadius(LANTERN_FOOT.x + mx, LANTERN_FOOT.z + mz) < 1,
+      "its mouth is in the river",
+    );
     const [hx, hz] = path[0];
     assert.ok(
-      pondRadius(LANTERN_FOOT.x + hx, LANTERN_FOOT.z + hz) > 1.5,
+      riverRadius(LANTERN_FOOT.x + hx, LANTERN_FOOT.z + hz) > 1.5,
       "its head is up by the roots",
     );
   }
   assert.ok(streamDistance(LANTERN_FOOT.x, LANTERN_FOOT.z) > 0.3, "clear of the lantern's foot");
 });
 
-test("the pond's rushes stand in clumps on its bank, away from the lantern, and sway from their feet", () => {
+test("the river's rushes stand in clumps on its banks near the lantern, clear of its image, and sway from their feet", () => {
   const base = groundBase(),
     terrain = createEarthGeometry(base),
     surface = terrainHeight(terrain);
@@ -2010,21 +2098,17 @@ test("the pond's rushes stand in clumps on its bank, away from the lantern, and 
   for (let i = 0; i < p.count; i++) {
     const x = p.getX(i),
       z = p.getZ(i);
-    assert.ok(pondRadius(x, z) > 0.98, `rush vertex ${i} stands in the water`);
+    assert.ok(riverRadius(x, z) > 0.98, `rush vertex ${i} stands in the water`);
     assert.ok(Math.hypot(x - LANTERN_FOOT.x, z - LANTERN_FOOT.z) > RUSHES.lantern - 0.4);
     assert.ok(p.getY(i) >= surface(x, z) - 0.05 - 1e-6);
     assert.ok(grass.getX(i) >= 0 && grass.getX(i) <= RUSHES.height[1] * RUSHES.sway + 1e-6);
-    // Only at the pond's ends: off the lantern's side and the camera's (a
-    // clump's spread and lean may turn a stem a few degrees).
-    const pond = PUDDLE_ZONES[0],
-      line = Math.atan2(LANTERN_FOOT.z - pond.z, LANTERN_FOOT.x - pond.x),
-      away =
-        (Math.abs(
-          ((Math.atan2(z - pond.z, x - pond.x) - line + 3 * Math.PI) % (2 * Math.PI)) - Math.PI,
-        ) *
-          180) /
-        Math.PI;
-    assert.ok(away > RUSHES.clear - 12 && away < 180 - RUSHES.clear + 12, `rush at ${away}°`);
+    // On a bank within RUSHES.reach of where the river passes the lantern, but
+    // never within RUSHES.clear of it, where the lantern and its image stand
+    // between the banks (a clump's spread and lean may carry a stem a little).
+    const along = riverAt(x, z).s - RIVER_NEAR;
+    assert.ok(Math.abs(along) > RUSHES.clear - 0.6, `rush ${along} along from the lantern`);
+    assert.ok(Math.abs(along) < RUSHES.reach + 0.6, `rush ${along} along from the lantern`);
+    assert.ok(riverRadius(x, z) < RUSHES.bank[1] + 0.6, "on the bank");
   }
   assert.deepEqual(plantRushes(surface).attributes.position.array, p.array);
   rushes.dispose();
@@ -2073,9 +2157,9 @@ test("the drips' clock advances by bounded frame steps only while the scene anim
   );
 });
 
-test("one drip lives at a time, 4-9 s apart, and those into the lantern's puddle fall near its image", () => {
+test("one drip lives at a time, 4-9 s apart, and those into the river fall near the lantern and its image", () => {
   const { cell, life, aim, inside } = DRIP_RIPPLES,
-    [front, west] = PUDDLE_ZONES;
+    [west, north] = PUDDLE_ZONES;
   const births = [],
     zones = [0, 0, 0];
   let previous = null;
@@ -2089,16 +2173,18 @@ test("one drip lives at a time, 4-9 s apart, and those into the lantern's puddle
     assert.ok(age >= 0 && age <= life);
     if (previous !== n) {
       births.push(t - age);
-      const i =
-        zoneDistance(front, x, z) < front.radius
-          ? 0
-          : zoneDistance(west, x, z) < west.radius
-            ? 1
-            : 2;
-      assert.ok(
-        zoneDistance(PUDDLE_ZONES[i], x, z) < PUDDLE_ZONES[i].radius * 0.5,
-        `drip ${n} inside its puddle`,
-      );
+      const river = riverAt(x, z),
+        i = river.r < 1 ? 0 : zoneDistance(west, x, z) < west.radius ? 1 : 2;
+      if (i)
+        assert.ok(
+          zoneDistance([west, north][i - 1], x, z) < [west, north][i - 1].radius * 0.5,
+          `drip ${n} inside its puddle`,
+        );
+      else
+        assert.ok(
+          river.r < 0.6 && Math.abs(river.s - RIVER_NEAR) < 4,
+          `drip ${n} in the river near the lantern`,
+        );
       zones[i]++;
     }
     previous = n;
@@ -2117,13 +2203,15 @@ test("one drip lives at a time, 4-9 s apart, and those into the lantern's puddle
   assert.deepEqual(dripAt(123.4), dripAt(123.4));
   assert.equal(dripAt(DRIP_RIPPLES.start), null);
   // Aimed at the lantern's image when it lies well inside the water.
-  const image = [front.x + 0.3, front.z - 0.2];
+  const [ix, iz] = riverPoint(RIVER_NEAR),
+    image = [ix + 0.3, iz - 0.2];
+  assert.ok(riverRadius(...image) < inside);
   let aimed = 0;
   for (let t = 0; t < 200 * cell; t += 0.5) {
     const drip = dripAt(t, () => image),
       plain = dripAt(t);
     if (!drip) continue;
-    if (zoneDistance(front, plain[0], plain[1]) < front.radius) {
+    if (riverRadius(plain[0], plain[1]) < 1) {
       const d = Math.hypot(drip[0] - image[0], drip[1] - image[1]);
       assert.ok(d >= aim[0] - 1e-9 && d <= aim[1] + 1e-9, `${d}`);
       aimed++;
@@ -2131,10 +2219,8 @@ test("one drip lives at a time, 4-9 s apart, and those into the lantern's puddle
   }
   assert.ok(aimed > 50);
   // An image beyond the water (another shot) leaves the seeded point.
-  const outside = [
-    front.x + front.radius * front.stretch * inside * 1.5 * front.c,
-    front.z + front.radius * front.stretch * inside * 1.5 * front.s,
-  ];
+  const outside = [LANTERN_FOOT.x, LANTERN_FOOT.z];
+  assert.ok(riverRadius(...outside) > inside);
   for (let t = 0; t < 60 * cell; t += 0.5)
     assert.deepEqual(
       dripAt(t, () => outside),
