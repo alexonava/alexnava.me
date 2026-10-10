@@ -620,15 +620,23 @@ const PLAIN_EDGE = `smoothstep(${glslNumber(155)}, ${glslNumber(190)}, max(abs(v
 // The far plain's swathes, then its tile structure (SLATE_FAR), after the calm,
 // fading out toward the plain's edge with its air, so no blotch meets that air at
 // a line. Its darker blotches darken the albedo the cracks read (slateCrack), so
-// the wet sheen comes and goes with them far out.
+// the wet sheen comes and goes with them far out. Behind About (slateBehindAbout(),
+// its share eased in as the text knee's is) the lighter swathes and blotches ease
+// to the soil's own tone and only the darker ones stay: in Close-up and, on
+// landscape phones, Masonry study, the plain's lit blotches behind the small label
+// read 4.49:1 at 1080x1920 and 4.89:1 at 844x390.
+const FAR_ABOUT =
+  "float slateFarA=slateBehindAbout(vSlateClip.xy/vSlateClip.w*.5+.5);slateFarA*=2.-slateFarA;";
 const FAR_MAP = `
-      {float slateFarD=length(vViewPosition),slateFarF=smoothstep(${FAR.swathes.near.map(glslNumber)},slateFarD)*(1.-${PLAIN_EDGE});vec2 slateFarP=vMudWorld.xz;
+      {float slateFarD=length(vViewPosition),slateFarF=smoothstep(${FAR.swathes.near.map(glslNumber)},slateFarD)*(1.-${PLAIN_EDGE});vec2 slateFarP=vMudWorld.xz;${FAR_ABOUT}
       float slateFarS=${FAR_SWATHE};float slateFarH=slateNoise(slateFarP/${glslNumber(FAR.swathes.hueCell)}+${glslNumber(FAR.swathes.hueOffset)});
-      sampledDiffuseColor.rgb*=mix(vec3(1.),(${glslNumber(1 - FAR.swathes.amount)}+${glslNumber(2 * FAR.swathes.amount)}*slateFarS)*mix(${glslVec(FAR.swathes.cool)},${glslVec(FAR.swathes.warm)},slateFarH),slateFarF);}
-      {float slateFarD=length(vViewPosition),slateFarF=smoothstep(${FAR.near.map(glslNumber)},slateFarD)*(1.-${PLAIN_EDGE});vec3 slateFarW=vec3(.2126,.7152,.0722);float slateFarM=dot(slateMean,slateFarW);
+      vec3 slateFarC=(${glslNumber(1 - FAR.swathes.amount)}+${glslNumber(2 * FAR.swathes.amount)}*slateFarS)*mix(${glslVec(FAR.swathes.cool)},${glslVec(FAR.swathes.warm)},slateFarH);
+      sampledDiffuseColor.rgb*=mix(vec3(1.),min(slateFarC,mix(slateFarC,vec3(1.),slateFarA)),slateFarF);}
+      {float slateFarD=length(vViewPosition),slateFarF=smoothstep(${FAR.near.map(glslNumber)},slateFarD)*(1.-${PLAIN_EDGE});vec3 slateFarW=vec3(.2126,.7152,.0722);float slateFarM=dot(slateMean,slateFarW);${FAR_ABOUT}
       vec3 slateFarT1=${FAR_TILE[0]},slateFarT2=${FAR_TILE[1]};
       float slateFarL=${glslNumber(FAR.tile[0].weight)}*dot(slateFarT1,slateFarW)/slateFarM+${glslNumber(FAR.tile[1].weight)}*dot(slateFarT2,slateFarW)/slateFarM;
-      sampledDiffuseColor.rgb*=mix(1.,clamp(pow(slateFarL,${glslNumber(FAR.gain)}),${FAR.range.map(glslNumber)}),slateFarF);}`;
+      float slateFarC=clamp(pow(slateFarL,${glslNumber(FAR.gain)}),${FAR.range.map(glslNumber)});
+      sampledDiffuseColor.rgb*=mix(1.,min(slateFarC,mix(slateFarC,1.,slateFarA)),slateFarF);}`;
 // The shot's look (SLATE_LOOK, slateCalmFor()): its uniforms and helpers.
 // slateGlossSet(), before the lights: the gloss away from the name, the intro
 // and About (slateGlossT) and, in wetter and drier patches, its share there
