@@ -48,7 +48,15 @@ import { createLanternMount } from "./lantern.js";
 import { createCompleteTowerArchitecture, createTreeArchitecture } from "./architecture.js";
 import { createSceneAtmosphere } from "./atmosphere.js";
 import { createSceneEnvironment } from "./environment.js";
-import { createEstateSkyMaterial } from "./estate-sky.js";
+import {
+  advanceMist,
+  lendMistText,
+  setMistDatum,
+  setMistLights,
+  setMistShot,
+  setMistTier,
+} from "./drifting-mist.js";
+import { CLOUD_VORTEX, cloudVortexCenter, createEstateSkyMaterial } from "./estate-sky.js";
 import { createSceneRendering } from "./rendering.js";
 import {
   createDeferredQualityStep,
@@ -207,6 +215,9 @@ const ORBIT_SPEED = 0.06;
         sunDirection: new Vector3(...WORLD.SUN_DIRECTION).normalize(),
         sunColor: 0xdfb882,
         shellOpacity: 0.52,
+        // The star and the shell's radius place the cloud vortex's eye (estate-sky.js).
+        starPosition: WORLD.SUN_POSITION,
+        skyRadius: WORLD.SKY_DOME_RADIUS,
       };
     const subsystemRegistry = createSceneSubsystemRegistry();
     const rendering = createSceneRendering({
@@ -353,6 +364,20 @@ const ORBIT_SPEED = 0.06;
         skyRadius: WORLD.SKY_DOME_RADIUS,
       });
       subsystemRegistry.register(starfield);
+      // The drifting mist (drifting-mist.js): its light eases behind the ground's text
+      // boxes; the moon key and the star light it; its clock, tier and the shot's
+      // share follow the frame (below).
+      lendMistText(groundContacts);
+      setMistLights(WORLD.SUN_DIRECTION, WORLD.SUN_POSITION);
+      subsystemRegistry.register({
+        applyQuality(profile) {
+          setMistTier(profile?.tier);
+        },
+        update(frame) {
+          advanceMist(frame);
+        },
+      });
+      setMistTier(state.profile?.tier);
       const environmentSystem = createSceneEnvironment({
         groundHeight,
         parent: sceneRoot,
@@ -847,6 +872,8 @@ const ORBIT_SPEED = 0.06;
       window.addEventListener("resize", onWindowResize);
       window.addEventListener("scroll", onWindowScroll, { passive: true });
       resizeController.update({ force: true });
+      let vortexShot = null;
+      const vortexEye = new Vector3();
       let debugRenderFrameCount = 0,
         groundTextFrames = 0,
         groundTextScrolled = false;
@@ -954,6 +981,23 @@ const ORBIT_SPEED = 0.06;
         }
         if (cinematicApplied) lookTarget.copy(cinematic.target);
         else lookTarget.set(0, lookAtHeight, 0);
+        // The cloud vortex's eye sits where this lens sees the star, set on each cut
+        // (estate-sky.js CLOUD_VORTEX), so it stays about the star in every shot.
+        if (cinematicApplied && cinematic.shot !== vortexShot) {
+          vortexShot = cinematic.shot;
+          camera.updateMatrixWorld();
+          cloudVortexCenter(
+            camera.getWorldPosition(vortexEye),
+            WORLD.SUN_POSITION,
+            WORLD.SKY_DOME_RADIUS,
+            skyShell.material.uniforms.uVortex.value,
+          );
+          skyShell.material.uniforms.uVortex.value.w = CLOUD_VORTEX.guardShots.includes(
+            vortexShot?.name,
+          )
+            ? 1
+            : 0;
+        }
         // The shot's light mood, and the rim's moon direction from this lens.
         {
           const mood = shotLight(filmActive && cinematicApplied ? cinematic.shot : null);
@@ -982,6 +1026,9 @@ const ORBIT_SPEED = 0.06;
           !document.body.hasAttribute("data-panel-open")
         )
           post.setFilmTime?.(elapsedTime);
+        // The mist's share is the shot's on screen, over the plain's datum.
+        setMistShot(cinematic.shot?.name, filmActive && cinematicApplied);
+        setMistDatum(environmentRoot.position.y + groundHeight(ESTATE.tree.x, ESTATE.tree.z));
         // The shot's ground calm follows the shot on screen, so it changes on a cut.
         slateCalmFor(
           groundContacts,
