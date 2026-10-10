@@ -440,20 +440,20 @@ test("thin low strips part as layers without echoing their crest", () => {
   // Stacked strips never echo as a second light-dark band under each crest: on a
   // thin strip the valley mist fades smoothly over its lower two thirds (dark
   // under its crest, misted at its foot, so the layers still part at every
-  // junction), and the rim under the crest and the lean's change with depth fade,
-  // while the crest ink stays.
+  // junction), and the lean's change with depth fades; no rim or ink is drawn
+  // about any crest (realistic ranges).
   assert.match(
     shader,
     /float mist=\(1\.-smoothstep\(0\.,min\(\.9,mix\(\.6,\.65,slim\)\*max\(rise,\.05\)\),el-vF\.w\)\)\*far\*mix\(\.7,\.65,slim\);/,
   );
-  assert.match(shader, /c\+=cr\*\(1\.-\.8\*slim\)\*/);
+  assert.doesNotMatch(shader, /float cr=|c\+=cr\*/);
   assert.match(shader, /float lean=mix\(vF\.y,[^,]+,slim\)/);
   hill.dispose();
 });
 
 test("the rock body stays ordered by distance, below the sky and with a readable lit and shadow flank", () => {
   const { transmittance, albedo, rockMax } = MOUNTAIN_AIR;
-  assert.deepEqual([...transmittance], [0.86, 0.72, 0.58, 0.44, 0.3]);
+  assert.deepEqual([...transmittance], [0.86, 0.8, 0.62, 0.44, 0.3]);
   assert.equal(albedo.length, MOUNTAINS.radii.length);
   for (const lit of [0, 0.5, 1]) {
     for (let range = 0; range < transmittance.length; range++) {
@@ -485,12 +485,14 @@ test("the rock body stays ordered by distance, below the sky and with a readable
   const hill = createHillSilhouette({ groundHeight });
   hill.setFilmTreatment(true);
   const shader = hill.mesh.material.fragmentShader;
+  const g = (v) => (Number.isInteger(v) ? v.toFixed(1) : String(v)),
+    [t0, t1, t2, t3, t4] = transmittance.map(g);
   assert.ok(
     shader.includes(
-      "float T=mix(mix(mix(mix(0.86,0.72,step(0.5,vT.y)),0.58,step(1.5,vT.y)),0.44,step(2.5,vT.y)),0.3,step(3.5,vT.y))",
+      `float T=mix(mix(mix(mix(${t0},${t1},step(0.5,vT.y)),${t2},step(1.5,vT.y)),${t3},step(2.5,vT.y)),${t4},step(3.5,vT.y))`,
     ),
   );
-  assert.ok(shader.includes(`*${MOUNTAIN_AIR.moon}*lit+`));
+  assert.ok(shader.includes(`*${g(MOUNTAIN_AIR.moon)}*lit+`));
   assert.ok(shader.includes(`c*=min(1.,${rockMax}*sL/max(dot(c,W),1e-4));`));
   assert.doesNotMatch(shader, /bodyLuma|tL-/);
   hill.dispose();
@@ -1176,30 +1178,24 @@ test("the shared horizon slate reads as distant ground: lighter than a void, bel
   assert.ok(b >= r && b - r <= 0.02, "a cool, near-neutral slate rather than a blue veil");
 });
 
-test("crest highlights stay a soft edge near sky level rather than a stack of pale wires", () => {
+test("the ranges read as real rock: a softly wrapped key, no drawn rim or ink about the crests", () => {
   const hill = createHillSilhouette({ groundHeight });
   hill.setFilmTreatment(true);
   const shader = hill.mesh.material.fragmentShader;
-  const width = shader.match(/float cr=1\.-smoothstep\(([\d.]+),([\d.]+),px\);/);
-  assert.ok(width, "the crest band is measured in render pixels");
-  // The ink covers the first 1.4 px below each crest; a rim ending within a
-  // pixel of it aliases into dashes that crawl as the camera drifts.
-  assert.ok(
-    shader.includes("c=mix(c,vec3(.012,.016,.03),(1.-smoothstep(.4,1.4,px))"),
-    "1.4 px crest ink",
-  );
-  assert.ok(Number(width[2]) - 1.4 >= 1.5, `rim ends ${width[2]} px below the crest`);
-  // Every tree shot faces the key light, where the old .35 gain drew each
-  // stacked crest at 1.6x the sky's luminance.
-  const cool = Number(shader.match(/vec3\(\.55,\.62,\.8\)\*([\d.]+)\*max/)[1]);
-  assert.ok(cool > 0 && cool <= 0.15, `cool rim gain ${cool}`);
-  const warm = shader
-    .match(/\+vec3\(([\d.]+),([\d.]+),([\d.]+)\)\*pow\(max\(dot\(v,toSun\)/)
-    .slice(1)
-    .map(Number);
-  assert.ok(Math.max(...warm) <= 0.1, `orb rim ${warm} stays a faint tint, not a copper line`);
-  // The thin ink line still defines each crest after the rim.
-  assert.ok(shader.indexOf("c=mix(c,vec3(.012,.016,.03)") > shader.indexOf("float cr="));
+  // The key wraps a little past the terminator, never a crisp, faceted edge.
+  const { wrap } = MOUNTAIN_AIR,
+    g = (v) => (Number.isInteger(v) ? v.toFixed(1) : String(v));
+  assert.ok(wrap > 0 && wrap < 0.5);
+  assert.ok(shader.includes(`float nl=dot(n,K), lit=clamp((nl+${g(wrap)})/${g(1 + wrap)},0.,1.)`));
+  assert.doesNotMatch(shader, /crisp=smoothstep/);
+  // Every name the ring shader reads is declared: the snow's terminator width among them.
+  assert.match(shader, /float te=max\(\.05,1\.5\*fwidth\(nl\)\);/);
+  assert.ok(shader.indexOf("float te=") < shader.indexOf("smoothstep(.3-te,.3+te,ns)"));
+  // No cool or warm rim drawn about the crests, and no crest ink line.
+  assert.doesNotMatch(shader, /float cr=|vec3\(\.55,\.62,\.8\)/);
+  assert.ok(!shader.includes("c=mix(c,vec3(.012,.016,.03)"));
+  // The faint warm glow toward the orb stays.
+  assert.ok(shader.includes("c*=1.+vec3(.06,.02,-.04)*pow(max(dot(v,toSun),0.),10.);"));
   hill.dispose();
 });
 

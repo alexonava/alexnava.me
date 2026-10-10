@@ -8,6 +8,8 @@ import {
   SrcAlphaFactor,
   UniformsUtils,
   Vector2,
+  Vector3,
+  Vector4,
   WebGLRenderTarget,
   ZeroFactor,
 } from "three";
@@ -32,7 +34,6 @@ const GRADING_SHADER = {
   uniforms: {
     tDiffuse: { value: null },
     uCelMix: { value: 0.24 },
-    uSubjectCel: { value: 1 },
     uInkMix: { value: 0.14 },
     uContrast: { value: 1.1 },
     uHighlightWarmMix: { value: 0.2 },
@@ -44,7 +45,6 @@ const GRADING_SHADER = {
   fragmentShader: `
 uniform sampler2D tDiffuse;
 uniform float uCelMix;
-uniform float uSubjectCel;
 uniform float uInkMix;
 uniform float uContrast;
 uniform float uHighlightWarmMix;
@@ -79,23 +79,25 @@ void main() {
   color = mix(color, parchmentHighlight, uHighlightWarmMix * highlightMix);
 
   float gradedLuma = max(0.02, dot(color, vec3(0.299, 0.587, 0.114)));
-  // Film (uLayerRelief 1): the mountains (depth code 1/3) keep their moonlit relief.
-  // The cel step fades off them, returning below luma .1 so the fogged feet match
-  // the ground's crush, and the post ink skips them and the sky beside them, where
-  // each crest draws its own hairline (hill-silhouette.js).
-  float relief = uLayerRelief * (1.0 - smoothstep(0.04, 0.12, abs(texel.a - 0.3333)));
   float tonalBand = floor(gradedLuma * 5.0 + 0.5) / 5.0;
   vec3 celColor = color * (tonalBand / gradedLuma);
   // The ground (depth code 2/3) takes no band: its soil, cracks and water stay
   // continuous, close up and far.
   float groundLayer = uLayerRelief * (1.0 - smoothstep(0.04, 0.12, abs(texel.a - 0.6667)));
-  // The star and its glow (depth-layers.js STAR_LAYER over the sky's 0) stay
+  // The star and its glow, and the light shafts' air over the sky
+  // (depth-layers.js STAR_LAYER and SHAFT_LAYER over the sky's 0), stay
   // continuous: the cloud banks' steps never ring them.
   float starLayer = uLayerRelief * smoothstep(0.0005, 0.006, texel.a) * (1.0 - smoothstep(0.22, 0.28, texel.a));
-  // A shot's grade scales the step on the subjects (alpha 1): uSubjectCel,
-  // easing in over their multisampled edges (above the ground's window), so
-  // no stepped fringe rings a smooth crown.
-  color = mix(color, celColor, uCelMix * (1.0 - relief * smoothstep(0.05, 0.1, gradedLuma)) * (1.0 - groundLayer) * (1.0 - starLayer) * mix(1.0, uSubjectCel, smoothstep(0.8, 1.0, texel.a)));
+  // In film the step's bands and the ink are the sky's alone (the owner's direction
+  // of 2026-10-09: the clouds are the artistic part, everything else realistic).
+  // Off the sky only its deepest band stays, where it never stepped: below graded
+  // luma .1 it pulls the colour toward black, easing out from .05, so the subjects'
+  // deep shade and the ranges' fogged feet keep their tone. skyLayer eases over a
+  // subject's or a crest's partly covered edge (their codes blend toward 0 there),
+  // so no unbanded fringe rings them against the banded clouds.
+  float skyLayer = 1.0 - smoothstep(0.0, 0.3, texel.a);
+  float celWeight = mix(1.0, mix(1.0 - smoothstep(0.05, 0.1, gradedLuma), 1.0, skyLayer), uLayerRelief);
+  color = mix(color, celColor, uCelMix * celWeight * (1.0 - groundLayer) * (1.0 - starLayer));
   color = saturateColor(color, 1.04);
 
   if (uInkMix > 0.0) {
@@ -106,8 +108,10 @@ void main() {
   float verticalEdge = abs(dot(e3.rgb, Y) - dot(e4.rgb, Y));
   float inkContour = smoothstep(0.2, 0.48, max(horizontalEdge, verticalEdge));
   float nearest = max(max(e1.a, e2.a), max(e3.a, e4.a));
-  float skySide = uLayerRelief * step(texel.a, 0.02) * step(0.2, nearest) * step(nearest, 0.5);
-  color = mix(color, vec3(0.035, 0.055, 0.095), inkContour * uInkMix * (1.0 - max(relief, skySide)));
+  // In film only where the pixel and its four neighbours are all bare sky: the
+  // clouds' own edges, never an outline on a subject, a crest, the ground or a shaft.
+  float skyInk = mix(1.0, (1.0 - smoothstep(0.0, 0.006, texel.a)) * (1.0 - step(0.006, nearest)), uLayerRelief);
+  color = mix(color, vec3(0.035, 0.055, 0.095), inkContour * uInkMix * skyInk);
   }
   // A soft shoulder: highlights past the knee roll off toward white, not clip.
   vec3 over = max(color - 0.75, 0.0);
@@ -127,6 +131,196 @@ void main() {
 // a 5-tap cross, so anti-aliased edges travel with the nearer layer. Every
 // weight stays in 0..1, a mix of two frames, so no frame can go black.
 export const LAYER_STAGGER = Object.freeze({ step: 0.2, window: 0.4 });
+
+// The lens (the owner's pick of the Eye breakdown, 2026-10-09), all of it in the
+// final pass, in film only; each part switches off with its `on`.
+export const LENS_FX = Object.freeze({
+  // Heat shimmer: the frame's UV drifts on flowing noise in a ring about the star
+  // (`ring`: from, full, fading, gone, in star radii) and in a plume above the
+  // lantern's flame in the shots that look at it (`flameShots`; `plume` world
+  // units tall, `width` wide at the flame). `amount` is the drift (star radii;
+  // world units at the flame), `scale` the noise's frequency (per radius; per
+  // unit), `rise` its outward or upward flow a second and `boil` its churn;
+  // `octaves` per tier.
+  heat: Object.freeze({
+    on: 1,
+    star: Object.freeze({
+      amount: 0.028,
+      ring: Object.freeze([0.92, 1.2, 1.9, 3]),
+      scale: 2.6,
+      rise: 0.45,
+      boil: 0.5,
+    }),
+    flame: Object.freeze({
+      amount: 0.012,
+      plume: 1.9,
+      width: 0.16,
+      scale: 7,
+      rise: 0.9,
+      boil: 0.8,
+    }),
+    flameShots: Object.freeze(["Lantern study", "Root and lantern"]),
+    octaves: Object.freeze({ high: 2, balanced: 1 }),
+  }),
+  // Chromatic aberration: red read outward and blue inward, growing with the
+  // square of the distance from the frame's centre to `edge` CSS px apart at a
+  // 1600x900 frame's corners (scaled with the frame's diagonal), and `star` px
+  // apart across the star's fire edge.
+  aberration: Object.freeze({ on: 1, edge: 1.2, star: 0.6 }),
+  // Flare, only while the star is in frame: a soft shine about it (`shine` at
+  // the limb, falling off over `shineReach` radii, `shineDisc` of it over the
+  // disc) in `color`, and ghosts along the line from the star through the
+  // frame's centre: [t along it (1 at the centre), radius in frame heights,
+  // r, g, b, strength].
+  flare: Object.freeze({
+    on: 1,
+    shine: 0.1,
+    shineReach: 1.3,
+    shineDisc: 0.25,
+    color: Object.freeze([1, 0.6, 0.3]),
+    ghosts: Object.freeze([
+      Object.freeze([0.32, 0.011, 1, 0.68, 0.38, 0.06]),
+      Object.freeze([0.62, 0.02, 0.36, 0.62, 0.56, 0.04]),
+      Object.freeze([1.2, 0.034, 0.5, 0.46, 0.8, 0.04]),
+    ]),
+  }),
+  // None of it reaches the text: it eases out over `text[0]` of the screen's
+  // smaller side about the name and intro, and `text[1]` about About.
+  text: Object.freeze([0.1, 0.05]),
+  // Nor The watch's reference banks (STYLE.md, Sky) on desktop landscape frames: the
+  // frame's share [x0, y0, x1, y1] from its top-left corner, kept whole, with
+  // the lens easing in over `keepSoft` frame heights beyond it.
+  keep: Object.freeze({ "The watch": Object.freeze([0, 0, 0.6875, 0.4889]) }),
+  keepSoft: 0.03,
+});
+
+const lensNumber = (value) => (Number.isInteger(value) ? value.toFixed(1) : String(value));
+const lensVec3 = (values) => `vec3(${values.map(lensNumber).join(", ")})`;
+const LENS_HEAT = LENS_FX.heat,
+  LENS_STAR = LENS_HEAT.star,
+  LENS_FLAME = LENS_HEAT.flame,
+  LENS_FLARE = LENS_FX.flare;
+const LENS_GLSL = `
+uniform vec4 uStar;
+uniform vec4 uStarPrev;
+uniform vec4 uFlame;
+uniform vec4 uFlamePrev;
+uniform vec4 uKeep;
+uniform vec4 uKeepPrev;
+uniform vec4 uLens;
+uniform float uLensTime;
+uniform vec4 slateText;
+uniform vec4 slateAbout;
+uniform float slateAspect;
+
+float lensHash(vec3 p) {
+  p = fract(p * .1031);
+  p += dot(p, p.yzx + 33.33);
+  return fract((p.x + p.y) * p.z);
+}
+float lensNoise(vec3 p) {
+  vec3 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mix(lensHash(i), lensHash(i + vec3(1.0, 0.0, 0.0)), f.x),
+                 mix(lensHash(i + vec3(0.0, 1.0, 0.0)), lensHash(i + vec3(1.0, 1.0, 0.0)), f.x), f.y),
+             mix(mix(lensHash(i + vec3(0.0, 0.0, 1.0)), lensHash(i + vec3(1.0, 0.0, 1.0)), f.x),
+                 mix(lensHash(i + vec3(0.0, 1.0, 1.0)), lensHash(i + vec3(1.0, 1.0, 1.0)), f.x), f.y), f.z);
+}
+// The frame in frame heights: (its aspect, 1).
+vec2 lensAspect() {
+  return vec2(uCssTexel.y / uCssTexel.x, 1.0);
+}
+// 1 behind a text box (canvas UV, y up), easing to 0 over d of the smaller side.
+float lensBehind(vec4 r, vec2 v, float d) {
+  vec2 f = max(max(r.xy - v, v - r.zw), 0.0) * vec2(slateAspect, 1.0) / min(slateAspect, 1.0);
+  return 1.0 - smoothstep(0.0, d, length(f));
+}
+// 1 inside the kept rect and out to grow frame heights, easing to 0 beyond.
+float lensKeep(vec4 r, vec2 v, float grow) {
+  float d = length(max(max(r.xy - v, v - r.zw), 0.0) * lensAspect());
+  return 1.0 - smoothstep(grow, grow + ${lensNumber(LENS_FX.keepSoft)}, d);
+}
+// Two drifts of flowing noise, about -1..1; a second octave on high.
+vec2 lensFlow(vec3 q) {
+  vec2 o = vec2(lensNoise(q), lensNoise(q + vec3(17.3, 9.1, 3.7))) - 0.5;
+  if (uLens.w > 1.5)
+    o += 0.5 * (vec2(lensNoise(q * 2.3 + 5.1), lensNoise(q * 2.3 + vec3(1.7, 31.4, 8.2))) - 0.5);
+  return o * 2.0;
+}
+// The heat's drift at v in UV: a ring about the star flowing outward, a plume
+// above the flame flowing up.
+vec2 lensHeat(vec2 v, vec4 star, vec4 flame) {
+  vec2 aspect = lensAspect(), o = vec2(0.0);
+  if (star.w > 0.0) {
+    vec2 d = (v - star.xy) * aspect / star.z;
+    float r = length(d);
+    float m = smoothstep(${lensNumber(LENS_STAR.ring[0])}, ${lensNumber(LENS_STAR.ring[1])}, r) * (1.0 - smoothstep(${lensNumber(LENS_STAR.ring[2])}, ${lensNumber(LENS_STAR.ring[3])}, r));
+    if (m > 0.001)
+      o += m * ${lensNumber(LENS_STAR.amount)} * star.z * lensFlow(vec3(d / r * 3.0 + uLensTime * ${lensNumber(LENS_STAR.boil * 0.3)}, (r - uLensTime * ${lensNumber(LENS_STAR.rise)}) * ${lensNumber(LENS_STAR.scale)}));
+  }
+  if (flame.w > 0.0) {
+    vec2 d = (v - flame.xy) * aspect / flame.z;
+    float width = ${lensNumber(LENS_FLAME.width)} + 0.22 * max(d.y, 0.0);
+    float m = flame.w * exp(-d.x * d.x / (width * width)) * smoothstep(-0.12, 0.2, d.y) * (1.0 - smoothstep(${lensNumber(LENS_FLAME.plume * 0.45)}, ${lensNumber(LENS_FLAME.plume)}, d.y));
+    if (m > 0.001)
+      o += m * ${lensNumber(LENS_FLAME.amount)} * flame.z * lensFlow(vec3(d.x * ${lensNumber(LENS_FLAME.scale)}, (d.y - uLensTime * ${lensNumber(LENS_FLAME.rise)}) * ${lensNumber(LENS_FLAME.scale)}, uLensTime * ${lensNumber(LENS_FLAME.boil)}));
+  }
+  return o / aspect;
+}
+// The aberration's shift at v in UV (red reads it outward, blue inward): half
+// the fringe, from the frame's centre and across the star's fire edge.
+vec2 lensFringe(vec2 v, vec4 star) {
+  vec2 aspect = lensAspect(), c = (v - 0.5) * aspect;
+  float corner = 0.25 * (aspect.x * aspect.x + 1.0);
+  float frame = length(1.0 / uCssTexel) / 1835.76;
+  vec2 px = c * (${lensNumber(LENS_FX.aberration.edge * 0.5)} * frame * length(c) / corner);
+  if (star.w > 0.0) {
+    vec2 d = (v - star.xy) * aspect / star.z;
+    float r = length(d);
+    px += d / max(r, 1e-4) * (${lensNumber(LENS_FX.aberration.star * 0.5)} * star.w * smoothstep(0.95, 1.25, r) * (1.0 - smoothstep(1.7, 2.6, r)));
+  }
+  return px * uCssTexel;
+}
+// The scene through the lens at uv (screen position v): the heat's drift, the
+// shot's focus, then the aberration's fringes, all eased off behind the text
+// and the kept banks.
+vec4 lensView(sampler2D map, vec2 uv, vec2 v, float blur, vec4 star, vec4 flame, vec4 keep, float guard) {
+  // No early return: the focus's taps stay in uniform control flow.
+  float open = (1.0 - guard) * (1.0 - lensKeep(keep, v, 0.0));
+  vec2 q = uv;
+  if (uLens.x > 0.0 && open > 0.0) q += lensHeat(v, star, flame) * (uLens.x * open);
+  vec4 texel = lensBlur(map, q, blur);
+  if (uLens.y > 0.0) {
+    vec2 s = lensFringe(v, star) * (uLens.y * open);
+    vec4 centre = blur > 0.0 ? texture2D(map, q) : texel;
+    // Blurred sky and ranges keep their focus: only sharp layers fringe there.
+    float sharp = blur > 0.0 ? step(0.5, centre.a) : 1.0;
+    texel.r += (texture2D(map, q + s).r - centre.r) * sharp;
+    texel.b += (texture2D(map, q - s).b - centre.b) * sharp;
+  }
+  return texel;
+}
+// The flare at v while the star is in frame: its shine and the ghosts.
+vec3 lensFlare(vec2 v, vec4 star, vec4 keep) {
+  if (star.w <= 0.0) return vec3(0.0);
+  vec2 aspect = lensAspect();
+  float inside = min(min(star.x, 1.0 - star.x) * aspect.x, min(star.y - uBars, 1.0 - uBars - star.y));
+  float shown = star.w * smoothstep(-star.z, 2.0 * star.z, inside);
+  if (shown <= 0.0) return vec3(0.0);
+  float r = length((v - star.xy) * aspect) / star.z;
+  vec3 c = ${lensVec3(LENS_FLARE.color)} * (${lensNumber(LENS_FLARE.shine)} * exp(-max(r - 1.0, 0.0) / ${lensNumber(LENS_FLARE.shineReach)}) * mix(${lensNumber(LENS_FLARE.shineDisc)}, 1.0, smoothstep(0.7, 1.0, r)));
+  vec2 g;
+  float e;
+${LENS_FLARE.ghosts
+  .map(
+    ([t, size, red, green, blue, strength]) => `  g = star.xy + (0.5 - star.xy) * ${lensNumber(t)};
+  e = length((v - g) * aspect) / ${lensNumber(size)};
+  c += ${lensVec3([red, green, blue])} * (${lensNumber(strength)} * (1.0 - smoothstep(0.78, 1.0, e)) * (0.55 + 0.45 * smoothstep(0.45, 0.95, e)) * (1.0 - lensKeep(keep, g, ${lensNumber(size)})));`,
+  )
+  .join("\n")}
+  return c * shown * (1.0 - lensKeep(keep, v, 0.0));
+}
+`;
 
 const VIGNETTE_GRAIN_SHADER = {
   name: "BabelVignetteGrainShader",
@@ -151,6 +345,22 @@ const VIGNETTE_GRAIN_SHADER = {
     uBlurPrev: { value: 0 },
     uBars: { value: 0 },
     uGrainTime: { value: 0 },
+    // The lens (LENS_FX): its sources on screen, as (x, y) in UV, a size in frame
+    // heights (the star's radius; a world unit at the flame) and whether it is on,
+    // and the kept rect, for the live frame and the kept one.
+    uStar: { value: new Vector4(0, 0, 0, 0) },
+    uStarPrev: { value: new Vector4(0, 0, 0, 0) },
+    uFlame: { value: new Vector4(0, 0, 0, 0) },
+    uFlamePrev: { value: new Vector4(0, 0, 0, 0) },
+    uKeep: { value: new Vector4(2, 2, -1, -1) },
+    uKeepPrev: { value: new Vector4(2, 2, -1, -1) },
+    // Heat, aberration and flare on (1) or off, and the heat's octaves.
+    uLens: { value: new Vector4(0, 0, 0, 1) },
+    uLensTime: { value: 0 },
+    // The text boxes the lens keeps off (index.js lends the ground's).
+    slateText: { value: { x: 2, y: 2, z: -1, w: -1 } },
+    slateAbout: { value: { x: 2, y: 2, z: -1, w: -1 } },
+    slateAspect: { value: 1 },
   },
   vertexShader: PASS_VERTEX_SHADER,
   fragmentShader: `
@@ -206,22 +416,32 @@ float layerCode(sampler2D map, vec2 uv) {
   return max(max(texture2D(map, uv).a, max(texture2D(map, uv - x).a, texture2D(map, uv + x).a)),
     max(texture2D(map, uv - y).a, texture2D(map, uv + y).a));
 }
-
+${LENS_GLSL}
 void main() {
-  vec4 texel = uLayered > 0.5 ? lensBlur(tDiffuse, vUv, uBlur) : texture2D(tDiffuse, vUv);
+  float guard = uLayered > 0.5 ? max(lensBehind(slateText, vUv, ${lensNumber(LENS_FX.text[0])}), lensBehind(slateAbout, vUv, ${lensNumber(LENS_FX.text[1])})) : 0.0;
+  vec4 texel = uLayered > 0.5 ? lensView(tDiffuse, vUv, vUv, uBlur, uStar, uFlame, uKeep, guard) : texture2D(tDiffuse, vUv);
+  // The kept frame pushes in about its origin: here it shows its own pixel prevUv,
+  // so its lens (heat, fringes, kept rect and flare) is placed in its own UV and
+  // stays on its own star and flame.
+  vec2 prevUv = uPrevOrigin + (vUv - uPrevOrigin) * uPrevScale;
   float protection = uTextProtection, w = 1.0;
   if (uProgress < 1.0) {
-    vec2 prevUv = uPrevOrigin + (vUv - uPrevOrigin) * uPrevScale;
     float start = 0.0, span = 1.0;
     if (uLayered > 0.5) {
       start = 3.0 * uStagger.x * clamp(max(layerCode(tPrev, prevUv), layerCode(tDiffuse, vUv)), 0.0, 1.0);
       span = uStagger.y;
     }
     w = smoothstep(start, start + span, uProgress);
-    texel = mix(uLayered > 0.5 ? lensBlur(tPrev, prevUv, uBlurPrev) : texture2D(tPrev, prevUv), texel, w);
+    texel = mix(uLayered > 0.5 ? lensView(tPrev, prevUv, prevUv, uBlurPrev, uStarPrev, uFlamePrev, uKeepPrev, guard) : texture2D(tPrev, prevUv), texel, w);
     protection = mix(uTextProtectionFrom, uTextProtection, w);
   }
   vec3 color = texel.rgb;
+  // The star's flare, dissolving with each frame's own.
+  if (uLayered > 0.5 && uLens.z > 0.0) {
+    vec3 flare = lensFlare(vUv, uStar, uKeep);
+    if (uProgress < 1.0) flare = mix(lensFlare(prevUv, uStarPrev, uKeepPrev), flare, w);
+    color += flare * (uLens.z * (1.0 - guard));
+  }
 
   if (uVignetteEnabled == 1) {
     float dist = distance(vUv, vec2(0.5));
@@ -242,6 +462,24 @@ void main() {
 }
 `,
 };
+
+// A source as the lens sees it, into out: its centre in the frame's UV (y up),
+// radius world units as frame heights, and 1 while it lies in front of the lens.
+const lensPoint = new Vector3();
+export function lensSource(camera, position, radius = 1, out = [0, 0, 0, 0]) {
+  lensPoint.copy(position).applyMatrix4(camera.matrixWorldInverse);
+  const depth = -lensPoint.z;
+  if (!(depth > 0)) {
+    out[0] = out[1] = out[2] = out[3] = 0;
+    return out;
+  }
+  lensPoint.applyMatrix4(camera.projectionMatrix);
+  out[0] = (lensPoint.x + 1) / 2;
+  out[1] = (lensPoint.y + 1) / 2;
+  out[2] = (radius * camera.projectionMatrix.elements[5]) / depth / 2;
+  out[3] = 1;
+  return out;
+}
 
 function getSize(renderer) {
   if (renderer && typeof renderer.getSize === "function") {
@@ -386,6 +624,10 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
         elements ? toUv(elements[9]) : 0.5,
       );
       finalUniforms.uCodeTexel.value.set(1 / width, 1 / height);
+      // The kept frame keeps its lens: the outgoing star, flame and kept rect.
+      finalUniforms.uStarPrev.value.copy(finalUniforms.uStar.value);
+      finalUniforms.uFlamePrev.value.copy(finalUniforms.uFlame.value);
+      finalUniforms.uKeepPrev.value.copy(finalUniforms.uKeep.value);
       protectionFrom = finalUniforms.uTextProtection.value;
       phase = CAPTURED;
     }
@@ -461,6 +703,12 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
     vignetteGrainPass.uniforms.uVignetteStrength.value = settings.vignetteStrength ?? 0.08;
     vignetteGrainPass.uniforms.uGrainEnabled.value = grainEnabled ? 1 : 0;
     vignetteGrainPass.uniforms.uGrainStrength.value = settings.grainStrength ?? 0.022;
+    finalUniforms.uLens.value.set(
+      film && LENS_FX.heat.on ? 1 : 0,
+      film && LENS_FX.aberration.on ? 1 : 0,
+      film && LENS_FX.flare.on ? 1 : 0,
+      LENS_FX.heat.octaves[profile.tier] ?? LENS_FX.heat.octaves.high,
+    );
   }
 
   function onTransparencyChange(event) {
@@ -588,12 +836,6 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
       const blur = lens?.blur ?? 0;
       finalUniforms.uBlur.value = film ? blur : 0;
     },
-    // The shot's grade: `subjects` scales the cel step on the subjects (the
-    // scene target's alpha 1: the lookout, the tree and the lantern),
-    // so their light shades smoothly; set with the shot (on a cut).
-    setGrade(grade = null) {
-      gradingPass.uniforms.uSubjectCel.value = film ? (grade?.subjects ?? 1) : 1;
-    },
     // Widescreen bars as a share of the height at each edge.
     setBars(share = 0) {
       finalUniforms.uBars.value = Math.max(0, share);
@@ -601,6 +843,26 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
     // The grain's frame, 24 a second; held while the scene holds still.
     setFilmTime(seconds = 0) {
       finalUniforms.uGrainTime.value = Math.floor(seconds * 24) % 997;
+      // The heat flows on the same clock, smoothly, wrapping each hour.
+      finalUniforms.uLensTime.value = seconds % 3600;
+    },
+    // The lens's sources this frame (lensSource()): the star and the flame as
+    // [x, y, size, on], or null for none, and the rect it keeps whole as the
+    // frame's [x0, y0, x1, y1] from its top-left corner (LENS_FX.keep), or null.
+    setLensSources({ star = null, flame = null, keep = null } = {}) {
+      const source = (uniform, value) =>
+        value
+          ? uniform.value.set(value[0], value[1], value[2], value[3])
+          : uniform.value.set(0, 0, 0, 0);
+      source(finalUniforms.uStar, star);
+      source(finalUniforms.uFlame, flame);
+      if (keep) finalUniforms.uKeep.value.set(keep[0], 1 - keep[3], keep[2], 1 - keep[1]);
+      else finalUniforms.uKeep.value.set(2, 2, -1, -1);
+    },
+    // Lends the text boxes (mud-ground.js createSlateContacts()) the lens keeps off.
+    setTextGuard(contacts = {}) {
+      for (const name of ["slateText", "slateAbout", "slateAspect"])
+        if (contacts[name]) finalUniforms[name] = contacts[name];
     },
     setTextProtection(active, bottom = 0.25) {
       protectionTarget = film && active ? 1 : 0;

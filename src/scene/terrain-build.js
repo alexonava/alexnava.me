@@ -4,11 +4,13 @@ import { BufferAttribute, BufferGeometry, Mesh, Vector3 } from "three";
 // and its root shading, the puddles and their drips, the tufts, the litter and
 // the small stones.
 
-// Two low, broken ridges beyond the estate's entire occupied area: radius,
-// half-width and lift.
+// Three low, broken foothill ridges beyond the estate's entire occupied area,
+// rising toward the ranges (the owner's pick of 2026-10-09): radius, half-width
+// and lift. The outermost ends where the plain fades into the far air.
 const RIDGES = [
-  [123, 30, 4],
-  [151, 27, 8],
+  [120, 26, 3.2],
+  [139, 22, 5.2],
+  [156, 22, 7.4],
 ];
 export function foothillHeight(x, z) {
   const r = Math.hypot(x, z);
@@ -1046,11 +1048,12 @@ export const LANTERN_FLAME = Object.freeze({
 // The flame's mirror image reads the size of the flame (its extent at 30% and
 // 50% of its own peak 0.9-1.0x the real flame's in the same frame): it is the flame's own light as the frame shows it, lanternFire's
 // fire and glass light with the gain clipped at white as the grade clamps the
-// real flame, added after the knee. The grade inks the real flame's steep
-// outline, which the dim, soft image escapes, so the image's body is `width`
-// of the flame's and its ends sit `inset` pixel footprints inside the flame's
-// (scaling about `mid`, over the `span` of the flame's height it lights).
-export const MIRROR_FLAME = Object.freeze({ width: 0.945, inset: 0.7, span: 0.65, mid: 0.46 });
+// real flame, added after the knee. The image's body is `width` of the
+// flame's, the flame's own falloff (the film grade leaves the flame without a
+// cel step or ink), and its ends, soft where the flame's are cut, sit `inset`
+// pixel footprints inside the flame's (scaling about `mid`, over the `span` of
+// the flame's height it lights).
+export const MIRROR_FLAME = Object.freeze({ width: 1, inset: 0.7, span: 0.65, mid: 0.46 });
 // Rare drips: one per 6.5 s cell, landing +-1.25 s about the cell's middle
 // (4-9 s apart), so at most one lives at a time, inside a puddle (60% the
 // lantern's). In the lantern's puddle a drip falls within `aim` (units) of
@@ -1185,9 +1188,9 @@ if (slateWater > 0.0) {
   vec3 slateP = vMudWorld;
   if (dot(slateLamp, slateLamp) > 0.0${SLOPED.map((zone) => ` && length(vMudWorld.xz-${zoneGlsl(zone)}) > ${glsl(zone.radius + 0.1)}`).join("")})
     slateP = cameraPosition+(vMudWorld-cameraPosition)*((cameraPosition.y-slateLampW.y+${glsl(LAMP_FOOT - M.water)})/max(cameraPosition.y-vMudWorld.y, .01));
-  // The night sky (the film's environment, night-environment.js) at its sharpest; without it, a sky from the horizon, fog and zenith colours.
+  // The night sky (the film's environment, night-environment.js) at its sharpest, brighter in a lightning flash away from the text (film-light.js FLASH_GROUND); without it, a sky from the horizon, fog and zenith colours.
   #ifdef USE_ENVMAP
-  vec3 slateSkyW = textureCubeUV(envMap, slateR, 0.0).rgb*envMapIntensity*${glsl(M.sky)};
+  vec3 slateSkyW = textureCubeUV(envMap, slateR, 0.0).rgb*envMapIntensity*${glsl(M.sky)}*(babelFlash.y > 0.0 ? 1.0+babelFlash.y*(1.0-slateBehindText()) : 1.0);
   #else
   vec3 slateSkyW = mix(mix(${glslVec(...M.horizon)}, fogColor, smoothstep(0.0, .1, slateR.y)), ${glslVec(...M.zenith)}, smoothstep(.12, .6, slateR.y));
   slateSkyW *= 1.0+${glsl(2 * M.cloud)}*(slateNoise((slateP.xz+slateR.xz*(60.0/max(slateR.y, .05)))/45.0)-.5)*smoothstep(.02, .12, slateR.y);
@@ -1523,7 +1526,7 @@ export const LITTER = Object.freeze({
   // in the crooks `crook` from the trunk, within `among` of a root. Never
   // under a root or an arch, nor at the lantern or a puddle.
   stones: Object.freeze({
-    count: 16,
+    count: 40,
     seed: 52817,
     rootShare: 0.6,
     size: Object.freeze([0.12, 0.3]),
@@ -1547,9 +1550,9 @@ export const LITTER = Object.freeze({
   // them (estate-ground-detail.js).
   fine: Object.freeze({
     seed: 61331,
-    counts: Object.freeze({ leaves: 90, clods: 70, gravel: 650 }),
+    counts: Object.freeze({ leaves: 220, clods: 200, gravel: 2000 }),
     arc: Object.freeze([-175, -55]),
-    reach: Object.freeze([2.8, 12.5]),
+    reach: Object.freeze([2, 16]),
     lantern: 0.45,
     puddle: 0.15,
     leafNear: 0.45,
@@ -1650,12 +1653,27 @@ export function scatterLitter(surface, groundColor) {
   ];
   // `normals` (one per corner) keeps a piece smooth-shaded; without them its
   // faces take their own flat normals. `color` is one rgb or one per corner.
+  // Thousands of pieces go through here as the roots settle, under the reveal's
+  // fade-in: plain pushes, and `smooth` as flat (first vertex, normals) pairs.
   const smooth = [];
   const triangle = (a, b, c, color, normals = null) => {
-    positions.push(...a, ...b, ...c);
-    if (Array.isArray(color[0])) colors.push(...color[0], ...color[1], ...color[2]);
-    else colors.push(...color, ...color, ...color);
-    if (normals) smooth.push([positions.length / 3 - 3, normals]);
+    positions.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
+    if (Array.isArray(color[0])) {
+      const [p, q, r] = color;
+      colors.push(p[0], p[1], p[2], q[0], q[1], q[2], r[0], r[1], r[2]);
+    } else
+      colors.push(
+        color[0],
+        color[1],
+        color[2],
+        color[0],
+        color[1],
+        color[2],
+        color[0],
+        color[1],
+        color[2],
+      );
+    if (normals) smooth.push(positions.length / 3 - 3, normals);
   };
   const ground = (x, z, fallback) => {
     const y = surface(x, z);
@@ -1933,8 +1951,13 @@ export function scatterLitter(surface, groundColor) {
   );
   geometry.computeVertexNormals();
   geometry.attributes.normal.array.set(stoneNormals, litterVertices * 3);
-  for (const [first, normals] of smooth)
-    geometry.attributes.normal.array.set(normals.flat(), first * 3);
+  const normalArray = geometry.attributes.normal.array;
+  for (let i = 0; i < smooth.length; i += 2) {
+    const first = smooth[i] * 3,
+      normals = smooth[i + 1];
+    for (let k = 0; k < 3; k++)
+      for (let e = 0; e < 3; e++) normalArray[first + k * 3 + e] = normals[k][e];
+  }
   geometry.computeBoundingSphere();
   geometry.userData.litter = placed;
   // The stones' vertices follow the litter's.
@@ -1971,15 +1994,12 @@ function pebbleDome(a, b, h, random, at, [cy, sy], rgb, triangle) {
   const top = [at(0, 0, h), [0, 1, 0]],
     upper = Array.from({ length: sides }, (_, k) => point(ring, h * 0.8, k + 0.5)),
     lower = Array.from({ length: sides }, (_, k) => point(1, -h * 0.15, k));
-  const shade = (n) => rgb.map((c) => c * (0.68 + 0.32 * Math.max(0, n[1])));
-  const face = (...vertices) =>
-    triangle(
-      vertices.map(([p]) => p).at(0),
-      vertices[1][0],
-      vertices[2][0],
-      vertices.map(([, n]) => shade(n)),
-      vertices.map(([, n]) => n),
-    );
+  const shade = (n) => {
+    const k = 0.68 + 0.32 * Math.max(0, n[1]);
+    return [rgb[0] * k, rgb[1] * k, rgb[2] * k];
+  };
+  const face = (p, q, r) =>
+    triangle(p[0], q[0], r[0], [shade(p[1]), shade(q[1]), shade(r[1])], [p[1], q[1], r[1]]);
   for (let k = 0; k < sides; k++) {
     const k1 = (k + 1) % sides;
     face(top, upper[k1], upper[k]);

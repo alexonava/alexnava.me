@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
-import { BoxGeometry, Group, Mesh, MeshStandardMaterial, Box3, Vector3 } from "three";
+import { BoxGeometry, Group, Mesh, MeshStandardMaterial, Box3, ShaderLib, Vector3 } from "three";
 import { ESTATE, estatePathDistance, estatePoint } from "../src/scene/estate-layout.js";
 import { DIRECTED_SHOTS } from "../src/scene/directed-shots.js";
 import {
@@ -32,12 +32,25 @@ import {
   createHillSilhouette,
   HORIZON_AIR,
   HORIZON_HAZE,
+  HORIZON_SKIRT,
   RANGE_MIST,
   TERRAIN_EDGE,
   TERRAIN_HORIZON,
 } from "../src/scene/hill-silhouette.js";
 import { EARTH } from "../src/scene/filmic-earth.js";
-import { flat as flatCode } from "./support/code.mjs";
+import {
+  advanceMist,
+  MIST_DRIFT,
+  MIST_PARS,
+  MIST_RANGES,
+  MIST_UNIFORMS,
+  mistDriftAt,
+  mistHook,
+  mistOn,
+  setMistShot,
+  setMistTier,
+} from "../src/scene/drifting-mist.js";
+import { flat as flatCode, source } from "./support/code.mjs";
 import { createStoneDetailController } from "../src/scene/stone-detail.js";
 
 const flat = () => 0;
@@ -355,7 +368,10 @@ test("the pond's water lies only below its shore, as the terrain carves it, and 
   // Crumbs: a cellular noise on the close soil's relief and grit, worked out
   // only where they show (near the lens, a cell over a few pixels).
   assert.match(soil.fragment, /if \(slateKW > 0\.\) \{\s*for \(int j = -1; j <= 1; j\+\+\)/);
-  assert.ok(soil.fragment.includes(`slateCH += slateCrumb*${SLATE_CLOSE.crumb.height}*slateKW;`));
+  const crumbHeight = Number.isInteger(SLATE_CLOSE.crumb.height)
+    ? SLATE_CLOSE.crumb.height.toFixed(1)
+    : String(SLATE_CLOSE.crumb.height);
+  assert.ok(soil.fragment.includes(`slateCH += slateCrumb*${crumbHeight}*slateKW;`));
   assert.doesNotMatch(soil.fragment, /slateKO = fract\(sin/);
   // The rain streams fill like the puddles, in the detail map's low texels.
   assert.ok(soil.fragment.includes("float slateStreams(vec2 p)"));
@@ -433,7 +449,9 @@ test("each ground shading has its own program cache key; the slate's shading nee
       `vec3 earthAir = ${horizon}\\*${String(HORIZON_AIR.ground).replace(".", "\\.")};\\s*` +
         `earthHorizon \\*= smoothstep\\(1\\.0, 1\\.15, dot\\(gl_FragColor\\.rgb, ${LUMA}\\)/dot\\(earthAir, ${LUMA}\\)\\);\\s*` +
         `gl_FragColor\\.rgb = mix\\(gl_FragColor\\.rgb, earthAir, earthHorizon\\);\\s*#endif\\s*` +
-        `if \\(slateClearShade\\.w > 0\\.\\) \\{[^}]*\\}\\s*if \\(slateMist\\.w > 0\\.\\) \\{[^}]*\\}\\s*gl_FragColor\\.a = 0\\.6667;`,
+        `if \\(slateClearShade\\.w > 0\\.\\) \\{[^}]*\\}\\s*if \\(slateMist\\.w > 0\\.\\) \\{[^}]*\\}\\s*` +
+        // Then the drifting mist (drifting-mist.js), over the slate's own air and look.
+        `${mistOn ? "gl_FragColor\\.rgb = mistOver\\(gl_FragColor\\.rgb, vMudWorld\\);\\s*" : ""}gl_FragColor\\.a = 0\\.6667;`,
     ),
   );
   // Delay distance haze so the phone foreground retains texture; the outer
@@ -740,6 +758,76 @@ const smooth = (a, b, x) => {
   return t * t * (3 - 2 * t);
 };
 
+test("the far plain keeps its own structure: swathes and the slate's far tile after the calm, fading at the plain's edge, its lighter tones eased behind About", async () => {
+  const { configureGroundShading, SLATE_FAR } = await import("../src/scene/mud-ground.js");
+  const material = new MeshStandardMaterial();
+  const compile = (maps) => {
+    configureGroundShading(material, true, maps);
+    const shader = {
+      uniforms: {},
+      vertexShader: "#include <begin_vertex>",
+      fragmentShader: FILM_CHUNKS,
+    };
+    material.onBeforeCompile(shader);
+    return shader.fragmentShader;
+  };
+  const authored = compile({ detail: { isTexture: true } }),
+    procedural = compile({});
+  // After the calm, before the albedo lands; only with the authored maps.
+  const at = authored.indexOf("{float slateFarD=");
+  assert.ok(
+    at >
+      authored.indexOf(
+        "sampledDiffuseColor.rgb = mix(sampledDiffuseColor.rgb, slateMean, slateFlatAt(vMudWorld.xz));",
+      ),
+  );
+  assert.ok(at < authored.indexOf("diffuseColor *= sampledDiffuseColor;"));
+  assert.doesNotMatch(procedural, /slateFar/);
+  // Both parts fade out toward the plain's edge with its air.
+  assert.equal(
+    (authored.match(/slateFarF=smoothstep\([^;]*\)\*\(1\.-smoothstep\(155\.0, 190\.0, /g) ?? [])
+      .length,
+    2,
+  );
+  // Behind About (the ground's About test, its share eased in as the knee's is)
+  // both parts keep only their darker tones: the lighter ones ease to the soil's own.
+  assert.equal(
+    (
+      authored.match(
+        /float slateFarA=slateBehindAbout\(vSlateClip\.xy\/vSlateClip\.w\*\.5\+\.5\);slateFarA\*=2\.-slateFarA;/g,
+      ) ?? []
+    ).length,
+    2,
+  );
+  assert.ok(
+    authored.includes(
+      "sampledDiffuseColor.rgb*=mix(vec3(1.),min(slateFarC,mix(slateFarC,vec3(1.),slateFarA)),slateFarF);",
+    ),
+  );
+  assert.ok(
+    authored.includes(
+      "sampledDiffuseColor.rgb*=mix(1.,min(slateFarC,mix(slateFarC,1.,slateFarA)),slateFarF);",
+    ),
+  );
+  assert.ok(
+    authored.indexOf("float slateBehindAbout(") < at,
+    "the About test is declared before it",
+  );
+  // Two more lookups of the slate tile, larger than it and weighted whole; a gain that
+  // deepens the structure within a bounded range; swathes that lean warm.
+  const { tile, gain, range, near, swathes } = SLATE_FAR;
+  assert.equal(tile.length, 2);
+  assert.ok(tile.every(({ scale }) => scale > 0 && scale < 1) && tile[0].scale > tile[1].scale);
+  assert.ok(Math.abs(tile[0].weight + tile[1].weight - 1) < 1e-9);
+  assert.ok(gain > 1 && range[0] > 0 && range[0] < 1 && range[1] > 1);
+  assert.ok(near[0] < near[1] && swathes.near[0] < swathes.near[1]);
+  assert.ok(
+    Math.abs(swathes.weights.reduce((a, b) => a + b, 0) - 1) < 1e-9 && swathes.amount < 0.5,
+  );
+  assert.ok(swathes.warm[0] - swathes.warm[2] > swathes.cool[2] - swathes.cool[0], "leaning warm");
+  material.dispose();
+});
+
 test("the far plain reads as dark air: the slate lifted toward the terrain's edge, above the ground's cel step", () => {
   const slate = TERRAIN_HORIZON.match(/[\d.]+/g)
     .slice(1)
@@ -763,24 +851,49 @@ test("the far plain reads as dark air: the slate lifted toward the terrain's edg
   const shader = hill.mesh.material.fragmentShader;
   hill.dispose();
   // The air runs from eye level (0) to where the view meets the terrain's
-  // square edge at the datum (1); the body below eye level eases into it within
-  // .02 of slope (about a degree), and the feet haze to it as before.
+  // square edge at the datum (1); the body below eye level eases into it through
+  // a rocky skirt (HORIZON_SKIRT), and the feet haze to it as before.
   assert.ok(
     shader.includes(
       `vec2 hz=vL.xz/r, ah=max(abs(hz),1e-4), eq=(${TERRAIN_EDGE}.0-hz/ah*o.xz)/ah;\n` +
         `vec3 pa=${TERRAIN_HORIZON}*mix(${horizon},${edge},clamp(vL.y/r*min(eq.x,eq.y)/(vL.y-vH),0.,1.));`,
     ),
   );
+  const g = (v) => (Number.isInteger(v) ? v.toFixed(1) : String(v)),
+    { waves, lift, tone, fade } = HORIZON_SKIRT,
+    skirtWaves = waves
+      .map(
+        ([frequency, weight, phase, bend, depth]) =>
+          `${g(weight)}*sin(skA*${g(frequency)}${bend ? `+${g(depth)}*sin(skA*${g(bend)})` : ""}${phase ? `+${g(phase)}` : ""})`,
+      )
+      .join("+");
   assert.ok(
     shader.includes(
       `float fh=max(smoothstep(fogNear,fogFar,vD),smoothstep(${HORIZON_HAZE.near}.,${HORIZON_HAZE.far}.,vD));\n` +
-        "c=mix(c,pa,fh*(1.-smoothstep(-.02,0.,vL.y/r)));\n" +
+        `{float skE=vL.y/r,skA=atan(vL.z,vL.x),skN=.5+${skirtWaves};c=mix(c,pa*(${g(tone[0])}+${g(tone[1])}*skN),fh*(1.-smoothstep(${g(fade[0])},${g(fade[1])},skE-${g(lift)}*(skN-.5))));}\n` +
         "c=mix(c,pa,fh*(1.-smoothstep(0.,3.0,vH)*smoothstep(-.05,-.008,vL.y/r)));",
     ),
   );
-  // Nothing at or above eye level eases: the ranges keep their own shade there.
-  for (const slope of [0, 0.001, 0.05]) assert.equal(1 - smooth(-0.02, 0, slope), 0);
-  assert.equal(1 - smooth(-0.02, 0, -0.02), 1);
+  // The skirt's waves keep its share within 0..1 along the ring; it rises at
+  // most about a degree and a half above eye level, and well below it the air is whole;
+  // its waves are whole about the ring, so it has no seam.
+  assert.ok(Math.abs(waves.reduce((sum, [, weight]) => sum + weight, 0) - 0.5) < 1e-9);
+  assert.ok(
+    waves.every(
+      ([frequency, , , bend = 0]) => Number.isInteger(frequency) && Number.isInteger(bend),
+    ),
+  );
+  assert.ok(
+    lift / 2 + fade[1] < 0.03,
+    "the skirt stays within about a degree and a half above eye level",
+  );
+  for (const share of [0, 0.5, 1]) {
+    const line = (slope) => 1 - smooth(fade[0], fade[1], slope - lift * (share - 0.5));
+    assert.equal(line(lift / 2 + fade[1] + 0.001), 0);
+    assert.equal(line(fade[0] - lift / 2 - 0.001), 1);
+  }
+  // Its tone stays a dark slate, under the edge air's luma limit at its lightest.
+  assert.ok(luma(edge) * (tone[0] + tone[1]) < 0.17 && tone[0] > 0.5);
 
   // The shader's reach, restated: for cameras about the estate and every
   // azimuth, the slope where it reads 1 is the one that meets the square's
@@ -1089,14 +1202,19 @@ test("only the wide shots calm the plain, written in place, and the calm is off 
     at = contacts.slateCalmAt.value,
     target = { x: 55.1, y: 9, z: 36.1 };
   const off = { x: 0, y: 1, z: 2, w: 0 };
+  const calms = (shot) => Boolean(shot.ground?.burn || shot.ground?.flatten);
   const calmed = Object.values(DIRECTED_SHOTS)
     .flat()
-    .filter((shot) => shot.ground)
+    .filter(calms)
     .map((shot) => shot.name);
   assert.deepEqual(calmed, ["Watch and tree", "Portrait"]);
   for (const shot of Object.values(DIRECTED_SHOTS).flat()) {
     assert.equal(slateCalmFor(contacts, shot, 60, target), calm, "the same object, in place");
-    if (shot.ground) {
+    if (shot.ground && !calms(shot)) {
+      // The rest of the wide shots take only the rain's mist and gloss.
+      assert.equal(calm.x, 0, shot.name + " burns nothing");
+      assert.equal(calm.w, 0, shot.name + " flattens nothing");
+    } else if (shot.ground) {
       assert.ok(calm.x > 0 && calm.x < 1, shot.name + " burns part way");
       assert.ok(calm.y < calm.z && calm.z <= 60, shot.name + " burn fades by the subject");
       assert.ok(calm.w > 0 && calm.w < 1, shot.name + " flattens part way");
@@ -1145,7 +1263,7 @@ test("only the wide shots calm the plain, written in place, and the calm is off 
   }
 });
 
-test("only Portrait takes the look on its plain: a moonlit clearing, low mist, the gloss of rain and a softer crown shadow", (t) => {
+test("Portrait takes the whole look on its plain (a moonlit clearing, low mist, the gloss of rain, a softer crown shadow); the wide shots the rain's mist and gloss", (t) => {
   const contacts = createSlateContacts(),
     target = { x: 55.1, y: 9, z: 36.1 },
     clear = contacts.slateClear.value,
@@ -1165,17 +1283,57 @@ test("only Portrait takes the look on its plain: a moonlit clearing, low mist, t
     assert.deepEqual({ ...shadow }, { x: 0, y: 0 }, "the moon's shadow whole");
   };
   off();
-  const looks = Object.values(DIRECTED_SHOTS)
-    .flat()
-    .filter(({ ground }) => ground?.clearing || ground?.mist || ground?.gloss || ground?.shadow)
-    .map(({ name }) => name);
-  assert.deepEqual(looks, ["Portrait"]);
+  const shots = Object.values(DIRECTED_SHOTS).flat(),
+    names = (test) => shots.filter(({ ground }) => test(ground ?? {})).map(({ name }) => name);
+  assert.deepEqual(
+    names((g) => g.clearing || g.shadow),
+    ["Portrait"],
+  );
+  // After the rain every wide shot takes the gloss and a light mist; the close
+  // and the high shots (Gallery detail, Close-up) keep the plain as it is.
+  const rainy = [
+    "The watch",
+    "Threshold",
+    "Masonry study",
+    "Watch and tree",
+    "Portrait",
+    "Lantern study",
+    "Root and lantern",
+  ];
+  assert.deepEqual(
+    names((g) => g.mist),
+    rainy,
+  );
+  assert.deepEqual(
+    names((g) => g.gloss),
+    rainy,
+  );
   const portrait = DIRECTED_SHOTS.tree.find((shot) => shot.name === "Portrait"),
     look = portrait.ground;
-  for (const shot of Object.values(DIRECTED_SHOTS).flat()) {
+  for (const shot of shots) {
     slateCalmFor(contacts, portrait, 60, target);
     slateCalmFor(contacts, shot, 60, target);
-    if (shot !== portrait) off();
+    if (shot === portrait) continue;
+    assert.equal(shade.w, 0, shot.name + ": no clearing");
+    assert.deepEqual({ ...shadow }, { x: 0, y: 0 }, shot.name + ": the moon's shadow whole");
+    const rain = shot.ground;
+    if (!rain) {
+      off();
+      continue;
+    }
+    // A lighter mist than Portrait's, warm grey where its is moonlit blue; Portrait's
+    // gloss, untinted, so the plain keeps its warmth.
+    assert.deepEqual([mist.x, mist.y, mist.z], rain.mist.color);
+    assert.ok(
+      mist.x / mist.z > look.mist.color[0] / look.mist.color[2],
+      shot.name + " mist warmer",
+    );
+    assert.ok(mist.w > 0 && mist.w < look.mist.amount, shot.name + " mist " + mist.w);
+    assert.deepEqual(
+      [gloss.x, gloss.y, gloss.z, gloss.w],
+      [look.gloss.film, look.gloss.gain, 1, 0],
+    );
+    assert.equal(rain.clearing, undefined);
   }
   slateCalmFor(contacts, portrait, 60, target);
   // The clearing stands toward the lens, on the shot's bearing.
@@ -1194,7 +1352,8 @@ test("only Portrait takes the look on its plain: a moonlit clearing, low mist, t
   assert.ok(look.keep[1] >= look.clearing.radius[1], "the clearing keeps its texture");
   assert.deepEqual([mist.x, mist.y, mist.z, mist.w], [...look.mist.color, look.mist.amount]);
   assert.ok(look.mist.color[2] > look.mist.color[0], "the mist is moonlit, cool");
-  assert.deepEqual([gloss.x, gloss.y, gloss.z], [look.gloss.film, look.gloss.gain, 1]);
+  // Portrait's gloss is wholly the cool tint.
+  assert.deepEqual([gloss.x, gloss.y, gloss.z, gloss.w], [look.gloss.film, look.gloss.gain, 1, 1]);
   assert.deepEqual([shadow.x, shadow.y], look.shadow);
   // Without a frame the look goes with the calm.
   slateCalmFor(contacts, portrait, 0, target);
@@ -1248,7 +1407,7 @@ test("the look's shading changes nothing until a shot asks for it", () => {
   );
   assert.ok(
     fragment.includes(
-      "*mix(mix(1.5, slateGloss.y, slateGlossT)*mix(vec3(1.0), vec3(0.72,0.88,1.18), slateGlossT), vec3(1.8), slatePuddle)",
+      "*mix(mix(1.5, slateGloss.y, slateGlossT)*mix(vec3(1.0), mix(vec3(1.0,0.97,0.94), vec3(0.72,0.88,1.18), slateGloss.w), slateGlossT), vec3(1.8), slatePuddle)",
     ),
   );
   // The gloss's weights are set once, before the water's share and the lights,
@@ -1285,4 +1444,105 @@ test("the terrain chunk restates the plain's level", async () => {
     sx: 0,
     sz: 0,
   });
+});
+
+test("the drifting mist lies below its ceiling on every film material, after its fog, on the scene's clock", () => {
+  assert.equal(MIST_DRIFT.on, 1);
+  assert.ok(mistOn && Object.isFrozen(MIST_DRIFT) && Object.isFrozen(MIST_DRIFT.ceiling));
+  // Exactly none above its ceiling, which rises toward the ranges: a lens above it
+  // sees none above eye level (The watch's reference banks, the sky), and none
+  // within MIST_DRIFT.near[0] of the lens.
+  const [near, far] = MIST_DRIFT.ceiling;
+  assert.ok(near > 0 && far >= near);
+  assert.ok(MIST_PARS.includes(`top=${far.toFixed(1)};`));
+  assert.ok(MIST_PARS.includes("if(hC>=top){if(hP>=top)return c;"));
+  assert.ok(MIST_PARS.includes(`float t0=${MIST_DRIFT.near[0].toFixed(1)},t1=L;`));
+  assert.ok(MIST_PARS.includes("float prof=1.-h;prof=prof>0.?prof*prof:0.;"));
+  assert.ok(MIST_PARS.includes("if(tau<=0.)return c;"));
+  // It never covers more than its veil, so the plain and the ranges' feet show through.
+  assert.ok(MIST_DRIFT.veil > 0 && MIST_DRIFT.veil < 1);
+  // The ranges take it only about their feet: up to ranges[1] of view slope above
+  // eye level, never on their bodies against the sky.
+  assert.ok(MIST_RANGES.includes(`if(md.y<${MIST_DRIFT.ranges[1]}){`));
+  // A built-in lit material takes it after its fog, at its own world point, with the
+  // shared uniforms (lent, never copied) and its own key.
+  const material = mistHook(new MeshStandardMaterial());
+  const shader = {
+    uniforms: {},
+    vertexShader: ShaderLib.standard.vertexShader,
+    fragmentShader: ShaderLib.standard.fragmentShader,
+  };
+  material.onBeforeCompile(shader);
+  assert.ok(
+    shader.fragmentShader.includes(
+      "#include <fog_fragment>\n#ifdef USE_FOG\ngl_FragColor.rgb=mistOver(gl_FragColor.rgb,cameraPosition+(vec4(-vViewPosition,0.)*viewMatrix).xyz);\n#endif",
+    ),
+  );
+  assert.ok(
+    shader.fragmentShader.includes(
+      `#include <fog_pars_fragment>\nuniform mat4 projectionMatrix;\n${MIST_PARS}`,
+    ),
+  );
+  for (const name of Object.keys(MIST_UNIFORMS))
+    assert.equal(shader.uniforms[name], MIST_UNIFORMS[name]);
+  assert.match(material.customProgramCacheKey(), /\|mist$/);
+  assert.equal(mistHook(material), material, "hooked once");
+  // Every film material that stands in it: the tower, the tree and the rocks
+  // (materialFor), the lantern, the growth and litter, the ground and the ranges.
+  const architecture = flatCode(source("src/scene/architecture.js"));
+  assert.ok(architecture.includes("return mistHook(material);"));
+  assert.ok(architecture.includes("mistHook(new MeshStandardMaterial({ color: 0x45413d"));
+  assert.ok(
+    flatCode(source("src/scene/estate-ground-detail.js")).includes(
+      "stampDepthLayer(mistHook(material), DEPTH_LAYER.ground)",
+    ),
+  );
+  const hills = source("src/scene/hill-silhouette.js");
+  assert.equal(hills.match(/\$\{MOUNTAIN_MIST\}\$\{RANGE_MIST_GLSL\}/g).length, 2);
+  // The drift runs on drawn, unpaused frames (at most 0.1 s a step), along a bounded
+  // circle, so its offset stays small however long the page stays open.
+  const held = advanceMist({ deltaSeconds: 5, reducedMotion: true }),
+    start = MIST_UNIFORMS.mistDrift.value.x;
+  assert.equal(advanceMist({ deltaSeconds: 5, motionPaused: true }), held);
+  assert.equal(MIST_UNIFORMS.mistDrift.value.x, start);
+  assert.ok(Math.abs(advanceMist({ deltaSeconds: 5 }) - held - 0.1) < 1e-9);
+  const reach = (2 * MIST_DRIFT.wind[0]) / MIST_DRIFT.turn;
+  let last = mistDriftAt(0);
+  for (let t = 0.5; t < 2e5; t *= 1.7) {
+    const at = mistDriftAt(t);
+    assert.ok(Math.hypot(at.x, at.y) <= reach + 1e-6, `${t}`);
+    last = at;
+  }
+  const a = mistDriftAt(600),
+    b = mistDriftAt(601);
+  assert.ok(Math.abs(Math.hypot(b.x - a.x, b.y - a.y) - MIST_DRIFT.wind[0]) < 1e-3, "its speed");
+  assert.ok(last);
+  // The banks' boil swings smoothly back within boilSwing cells: bounded, and it never
+  // jumps (no wrap), however long the page stays open.
+  for (let t = 0; t < 1e6; t += 997) {
+    const z = mistDriftAt(t).z;
+    assert.ok(Math.abs(z) <= MIST_DRIFT.boilSwing + 1e-9, `${t}`);
+    assert.ok(Math.abs(mistDriftAt(t + 1).z - z) <= MIST_DRIFT.boil + 1e-9, `${t}`);
+  }
+  // Balanced marches fewer steps and one octave; low draws none; a shot's share, and
+  // none outside the film.
+  setMistTier("high");
+  assert.deepEqual(
+    [MIST_UNIFORMS.mistFrame.value.y, MIST_UNIFORMS.mistFrame.value.z],
+    [...MIST_DRIFT.steps.slice(0, 1), MIST_DRIFT.octaves[0]],
+  );
+  setMistTier("balanced");
+  assert.ok(
+    MIST_UNIFORMS.mistFrame.value.y < MIST_DRIFT.steps[0] && MIST_UNIFORMS.mistFrame.value.z === 1,
+  );
+  setMistTier("low");
+  assert.equal(MIST_UNIFORMS.mistFrame.value.y, 0);
+  setMistTier("high");
+  setMistShot("The watch", true);
+  assert.equal(MIST_UNIFORMS.mistDrift.value.w, MIST_DRIFT.shots["The watch"] ?? 1);
+  setMistShot("The watch", false);
+  assert.equal(MIST_UNIFORMS.mistDrift.value.w, 0);
+  const index = flatCode(source("src/scene/index.js"));
+  assert.ok(index.includes("setMistShot(cinematic.shot?.name, filmActive && cinematicApplied);"));
+  assert.ok(index.includes("update(frame) { advanceMist(frame); }"));
 });
