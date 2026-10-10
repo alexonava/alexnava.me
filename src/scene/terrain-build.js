@@ -343,25 +343,60 @@ export const RIVER_LINE = (() => {
     }),
   );
 })();
+// Its segments in runs of RIVER_SPAN, each boxed, so riverAt() measures only
+// the runs that could hold the nearest segment (the litter tries it thousands
+// of times while the terrain settles, inside the reveal's early window).
+const RIVER_SPAN = 8;
+const RIVER_RUNS = Object.freeze(
+  Array.from({ length: Math.ceil((RIVER_LINE.length - 1) / RIVER_SPAN) }, (_, j) => {
+    const from = 1 + j * RIVER_SPAN,
+      to = Math.min(RIVER_LINE.length, from + RIVER_SPAN),
+      points = RIVER_LINE.slice(from - 1, to),
+      xs = points.map(([px]) => px),
+      zs = points.map(([, pz]) => pz);
+    return Object.freeze({
+      from,
+      to,
+      box: Object.freeze([Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs)]),
+    });
+  }),
+);
+const riverNear = new Float64Array(RIVER_RUNS.length);
 export function riverAt(x, z) {
-  let best = { d: Infinity };
-  for (let k = 1; k < RIVER_LINE.length; k++) {
-    const [ax, az, s0] = RIVER_LINE[k - 1],
-      [bx, bz] = RIVER_LINE[k],
-      ex = bx - ax,
-      ez = bz - az,
-      len = Math.hypot(ex, ez),
-      h = Math.min(1, Math.max(0, ((x - ax) * ex + (z - az) * ez) / (len * len))),
-      d = Math.hypot(x - ax - ex * h, z - az - ez * h);
-    if (d < best.d)
-      best = {
-        d,
-        s: s0 + h * len,
-        side: Math.sign(ex * (z - az) - ez * (x - ax)) || 1,
-        dx: ex / len,
-        dz: ez / len,
-      };
+  let best = { d: Infinity },
+    nearest = 0,
+    first = 0;
+  // The nearest segment, the first of equals along the river: the run nearest
+  // the point first, then any other whose box is no farther than it.
+  const measure = ({ from, to }) => {
+    for (let k = from; k < to; k++) {
+      const [ax, az, s0] = RIVER_LINE[k - 1],
+        [bx, bz] = RIVER_LINE[k],
+        ex = bx - ax,
+        ez = bz - az,
+        len = Math.hypot(ex, ez),
+        h = Math.min(1, Math.max(0, ((x - ax) * ex + (z - az) * ez) / (len * len))),
+        d = Math.hypot(x - ax - ex * h, z - az - ez * h);
+      if (d < best.d || (d === best.d && k < nearest)) {
+        nearest = k;
+        best = {
+          d,
+          s: s0 + h * len,
+          side: Math.sign(ex * (z - az) - ez * (x - ax)) || 1,
+          dx: ex / len,
+          dz: ez / len,
+        };
+      }
+    }
+  };
+  for (let j = 0; j < RIVER_RUNS.length; j++) {
+    const [x0, x1, z0, z1] = RIVER_RUNS[j].box;
+    riverNear[j] = Math.hypot(Math.max(x0 - x, 0, x - x1), Math.max(z0 - z, 0, z - z1));
+    if (riverNear[j] < riverNear[first]) first = j;
   }
+  measure(RIVER_RUNS[first]);
+  for (let j = 0; j < RIVER_RUNS.length; j++)
+    if (j !== first && riverNear[j] <= best.d + 1e-9) measure(RIVER_RUNS[j]);
   const { width, wobble } = RIVER;
   best.r =
     best.d /
