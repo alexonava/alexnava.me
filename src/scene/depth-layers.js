@@ -8,6 +8,12 @@ export const DEPTH_LAYER = Object.freeze({ sky: "0.0", mountains: "0.3333", grou
 // and its glow read about 0.01-0.17, still sky to the dissolve, and the grade leaves them out of
 // the cloud banks' cel step (postprocess.js).
 export const STAR_LAYER = 0.035;
+// The light shafts' air marks itself the same way (light-shafts.js): its luma
+// times `gain`, at most `cap`, added to the code, so over the sky it reads in
+// the star's window and the grade leaves it out of the clouds' cel step (the
+// owner's direction of 2026-10-09: only the clouds are painterly), and over the
+// mountains, the ground or a subject it stays inside their layer's window.
+export const SHAFT_LAYER = Object.freeze({ gain: 1.5, cap: 0.03 });
 // Its parts' blending: the disc over the sky, the glow, prominences and
 // streak added premultiplied (their colour times their coverage, which may
 // pass 1), each adding its coverage, at most 1, times STAR_LAYER to the code.

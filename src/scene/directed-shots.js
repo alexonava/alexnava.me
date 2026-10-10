@@ -94,6 +94,10 @@ export const DIRECTED_SHOTS = {
       margin: 0.87,
       ground: AFTER_RAIN,
       portrait: { focus: { width: 0.16, depth: [0.13, 0.36] } },
+      // Its broken moonlight eases off behind About (light-shafts.js): with no
+      // cel step or ink on the timber, a lit leg edge beside it on portrait
+      // phones reached 4.83:1 at 390x844.
+      shafts: { gobo: { about: 1 } },
     },
     {
       name: "Gallery detail",
@@ -176,14 +180,12 @@ export const DIRECTED_SHOTS = {
         anchor: [0.5, 0.66],
       },
       // The crown in moonlight (the owner's pick of 2026-10-09): its pale,
-      // bleached limbs read cool grey, not pink-beige (pale), and its bark
-      // shades smoothly with a third of the cel step (grade.subjects). The
+      // bleached limbs read cool grey, not pink-beige (pale). The
       // moon catches it its own way (shafts.gobo over the tree's,
       // light-shafts.js): barely wrapped, so it falls on the faces turned to
       // the moon and leaves the rest dark, with a strong cool silver catch on
       // the edges toward it. Its rays are the tree's own.
       light: { fill: 0.85, rim: 1.3, pale: 0.75 },
-      grade: { subjects: 0.3 },
       shafts: { gobo: { color: [0.6, 0.78, 1.2], gain: 3.4, wrap: 0.1, rim: 5 } },
       move: { truck: [-0.07, 0.07], crane: [0, 0.13], dolly: [1.05, 0.92], ease: 0.6 },
       // Low (0.12), so the plain ahead is foreshortened under the ranges, and

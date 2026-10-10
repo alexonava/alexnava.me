@@ -1007,8 +1007,8 @@ export function sectorsInView(camera) {
 // seconds of drawn frames (each frame's step at most 0.1 s, so a hidden or
 // paused page resumes where it left off). The fade blends the mountain
 // material by a constant alpha over what the canvas already shows there (the
-// sky, its clouds and stars), its depth-layer code too, so the grade's relief
-// exemption (postprocess.js) fades in with the colour and no cel band pops.
+// sky, its clouds and stars), its depth-layer code too, so the grade's sky-only
+// cel step and ink (postprocess.js) ease off with the colour and no band pops.
 // Literal three constants (CustomBlending 5, AddEquation 100,
 // ConstantAlphaFactor 213, OneMinusConstantAlphaFactor 214) keep this chunk
 // from growing the shared three exports; the material's own blending (none)

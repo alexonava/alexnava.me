@@ -2316,7 +2316,7 @@ test("the mirrored flame is the flame's own light as the frame shows it, after t
   material.onBeforeCompile(shader);
   assert.equal(shadeSlatePuddles(shader), true);
   const fragment = shader.fragmentShader,
-    at = (v) => String(+v.toFixed(4));
+    at = (v) => (Number.isInteger(v) ? v.toFixed(1) : String(+v.toFixed(4)));
   // lanternFire's width with no floor, and its fire and glass light with the
   // gain clipped at white (as the grade clamps the real flame), in the ramp's
   // hue and 1 at the core.
@@ -2373,10 +2373,11 @@ test("the mirrored flame is the flame's own light as the frame shows it, after t
     fragment.includes("+.02*exp(-3.0*slateGlobe*slateGlobe))*(1.0-step(.01, slateFlame.x));"),
   );
   assert.ok(fragment.includes(`*slateGlassM*step(.01, slateFlame.x)/${LANTERN_FLAME.gain};`));
-  // Measured 2026-09-28 (desktop high and balanced, phone balanced, Lantern
-  // study and Root and lantern, calm water): the image's extents at 30% and 50%
-  // of its peak are 0.9-1.0x the flame's in the same frame, its peak under 0.75x.
-  assert.deepEqual({ ...MIRROR_FLAME }, { width: 0.945, inset: 0.7, span: 0.65, mid: 0.46 });
+  // Measured 2026-10-09 (desktop high and balanced, phone balanced, Lantern
+  // study and Root and lantern, calm water, both ends of the move): the
+  // image's widths at 30% and 50% of its peak are 0.9-1.1x the flame's in the
+  // same frame, its peak under 0.75x.
+  assert.deepEqual({ ...MIRROR_FLAME }, { width: 1, inset: 0.7, span: 0.65, mid: 0.46 });
   material.dispose();
 });
 
