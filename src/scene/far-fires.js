@@ -95,7 +95,7 @@ export const FAR_FIRES = Object.freeze({
     halo: 7,
     pool: Object.freeze([3.2, 0.8, 1.4]),
   }),
-  light: Object.freeze({ core: 2.6, halo: 0.4, pool: 0.1, peak: 0.55 }),
+  light: Object.freeze({ core: 2.6, halo: 0.4, pool: 0.1, peak: 0.45 }),
   colour: Object.freeze({
     kelvin: Object.freeze([2000, 2500]),
     gutter: Object.freeze([1, 0.72, 0.5]),

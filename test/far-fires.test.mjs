@@ -188,17 +188,18 @@ test("the fires are one depth-tested Points draw of added light that keeps the d
 
 test("the fires' cores stay under the bloom's threshold, and the air reddens and dims them", () => {
   const { vertexShader } = createFarFires({ parent: new Group() }).root.material;
-  // Core and halo together, over the far plain's air and a shot's mist (up to
-  // about .2), stay under UnrealBloomPass's 0.9 threshold (postprocess.js), so no
-  // fire blooms and the bloom elsewhere (The watch's reference clouds) is untouched.
-  assert.ok(FAR_FIRES.light.peak + 0.2 < 0.9);
+  // Core and halo together, over the ranges' misted feet (whose light reaches about
+  // .4 before the grade), stay under UnrealBloomPass's 0.9 threshold
+  // (postprocess.js), so no fire blooms and the bloom elsewhere (The watch's
+  // reference clouds) is untouched.
+  assert.ok(FAR_FIRES.light.peak + 0.4 < 0.9);
   assert.match(
     source("src/scene/postprocess.js"),
     /new UnrealBloomPass\(size, 0\.18, 0\.45, 0\.9\)/,
   );
   assert.match(
     vertexShader,
-    /float peak=dot\(vCore\+vHalo,vec3\(\.2126,\.7152,\.0722\)\)\*1\.22;\s*float cap=min\(1\.,0\.55\/max\(peak,1e-4\)\)\*f;\s*vCore\*=cap;\s*vHalo\*=cap;/,
+    /float peak=dot\(vCore\+vHalo,vec3\(\.2126,\.7152,\.0722\)\)\*1\.22;\s*float cap=min\(1\.,0\.45\/max\(peak,1e-4\)\)\*f;\s*vCore\*=cap;\s*vHalo\*=cap;/,
   );
   // Nor does light pile up: a cluster's fires stand apart as seen from the estate.
   const fires = farFireLayout();
