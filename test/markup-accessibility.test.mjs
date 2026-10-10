@@ -480,9 +480,17 @@ test("the first-paint hero, action cursors, microcopy and paper copy stay legibl
     "user-facing microcopy must not fall below 12px",
   );
   // The one top-level sheet rule holds every paper's height at all widths but
-  // on small landscape phones, whose screens are shorter than it: there the
-  // vignette goes back beside the copy and the sheet keeps its content's height.
-  assert.match(cssRule(styles, ".panel-parchment__sheet"), /min-height:\s*\d+px;/);
+  // two: desktops' larger letter, taller for every category alike, and small
+  // landscape phones, whose screens are shorter than it: there the vignette
+  // goes back beside the copy and the sheet keeps its content's height.
+  const baseHeight = Number(
+    cssRule(styles, ".panel-parchment__sheet").match(/min-height:\s*(\d+)px;/)[1],
+  );
+  const letter = mediaBlock(styles, "(min-width: 701px) and (min-height: 501px)");
+  const letterHeight = Number(
+    letter.match(/\.panel-parchment__sheet\s*\{[^}]*min-height:\s*(\d+)px;/)[1],
+  );
+  assert.ok(letterHeight > baseHeight, `the letter is taller (${letterHeight}px)`);
   const shortLandscape = mediaBlock(
     styles,
     "(orientation: landscape) and (max-height: 500px) and (max-width: 700px)",
@@ -490,7 +498,10 @@ test("the first-paint hero, action cursors, microcopy and paper copy stay legibl
   assert.match(shortLandscape, /\.panel-parchment__sheet\s*\{[^}]*min-height:\s*0;/);
   assert.match(shortLandscape, /\.panel-vignette\s*\{[^}]*grid-column:\s*2;/);
   assert.doesNotMatch(
-    styles.replace(/\n\.panel-parchment__sheet\s*\{[^}]*\}/, "").replace(shortLandscape, ""),
+    styles
+      .replace(/\n\.panel-parchment__sheet\s*\{[^}]*\}/, "")
+      .replace(letter, "")
+      .replace(shortLandscape, ""),
     /\.panel-parchment__sheet\s*\{[^}]*min-height/,
     "no other later or media rule overrides the paper height",
   );
@@ -849,6 +860,110 @@ test("footer controls keep 44px targets without blocking the scene", async () =>
 
   const forced = styles.slice(styles.indexOf("/* Windows High Contrast"));
   assert.match(forced, /a,\s*\.site-footer__about\s*\{\s*color:\s*LinkText;/);
+});
+
+test("the footer's About keeps a brighter label over an edgeless text scrim of its own", async () => {
+  const styles = await readStyles();
+  // A tier above the meta text, 14px, and well clear of the night.
+  const nav = styles.match(/--text-nav:\s*(#[0-9a-f]{6});/i)[1];
+  const meta = styles.match(/--text-muted-accent:\s*(#[0-9a-f]{6});/i)[1];
+  const night = styles.match(/--night-900:\s*(#[0-9a-f]{6});/i)[1];
+  assert.ok(contrast(nav, night) > contrast(meta, night));
+  assert.ok(contrast(nav, night) >= 12, `${contrast(nav, night)}`);
+  assert.match(cssRule(styles, ".site-footer"), /font-size:\s*14px;\s*line-height:\s*18px;/);
+  const about = cssRule(styles, ".site-footer__about");
+  assert.match(about, /position:\s*relative;/);
+  assert.match(about, /isolation:\s*isolate;/);
+  assert.match(about, /color:\s*var\(--text-nav\);/);
+  // The 44px target hangs around the 18px line; the ring stays 2px clear of it.
+  assert.match(cssRule(styles, ".site-footer__link"), /margin:\s*-13px -14px;/);
+  assert.match(cssRule(styles, ".site-footer__link:focus-visible"), /outline-offset:\s*-11px;/);
+  // The scrim sits behind the label inside its own stacking context, wider
+  // and taller than the target so its corners are covered, and reaches
+  // transparent before every edge: no plate, no straight edge.
+  const scrim = cssRule(styles, ".site-footer__about::before");
+  assert.match(scrim, /z-index:\s*-1;/);
+  assert.match(scrim, /pointer-events:\s*none;/);
+  assert.ok(Number(scrim.match(/width:\s*(\d+)px;/)[1]) >= 2 * 67);
+  assert.ok(Number(scrim.match(/height:\s*(\d+)px;/)[1]) >= 2 * 44);
+  assert.match(scrim, /radial-gradient\(\s*closest-side,\s*rgba\(7, 10, 18, 0\.5\) 0%/);
+  assert.match(scrim, /rgba\(7, 10, 18, 0\) 100%\s*\);/);
+  // Forced colours drop it with the other scrims; reduced transparency keeps it
+  // with the hero's, as both keep text legible.
+  assert.match(
+    mediaBlock(styles, "(forced-colors: active)"),
+    /\.site-footer__about::before,[^{]*\{\s*display:\s*none;/,
+  );
+  assert.doesNotMatch(
+    mediaBlock(styles, "(prefers-reduced-transparency: reduce)"),
+    /site-footer__about/,
+  );
+});
+
+test("the estate map's controls are drawn in its ink", async () => {
+  const styles = await readStyles();
+  // Hairline rules either side of the title, on one line.
+  assert.match(cssRule(styles, ".estate-title"), /white-space:\s*nowrap;/);
+  assert.match(
+    styles,
+    /\.estate-title::before,\s*\.estate-title::after\s*\{[^}]*height:\s*1px;[^}]*content:\s*"";/,
+  );
+  // Close: a hairline ink ring with no pale disc, tinted only under real
+  // hover, focus or a press.
+  const close = cssRule(styles, ".panel-estate .panel-close");
+  assert.match(close, /background:\s*transparent;/);
+  assert.match(close, /box-shadow:\s*none;/);
+  assert.match(close, /border-color:\s*rgba\(48, 37, 24, 0\.42\);/);
+  assert.match(
+    mediaBlock(styles, "(hover: hover)"),
+    /\.panel-estate \.panel-close:hover\s*\{\s*background:/,
+  );
+  assert.match(cssRule(styles, ".panel-estate .panel-close:focus-visible"), /background:/);
+  // A destination's wash is a radial gradient transparent before the target's
+  // edge, for hover, focus and a press alike.
+  const destination = cssRule(styles, ".estate-destination");
+  for (const name of ["--estate-wash", "--estate-wash-press"])
+    assert.match(
+      destination,
+      new RegExp(
+        `${name}:\\s*radial-gradient\\(\\s*closest-side,[^;]*rgba\\(78, 54, 26, 0\\)\\s*\\);`,
+      ),
+      name,
+    );
+  assert.match(cssRule(styles, ".estate-destination:focus-visible"), /var\(--estate-wash\)/);
+  assert.match(
+    mediaBlock(styles, "(hover: none), (pointer: coarse)"),
+    /\.panel-estate \.estate-destination:active\s*\{\s*background:\s*var\(--estate-wash-press\);/,
+  );
+});
+
+test("papers take a larger letter on desktops and Back is written in ink", async () => {
+  const styles = await readStyles();
+  const back = cssRule(styles, ".panel-parchment .panel-back");
+  assert.match(back, /display:\s*inline-flex;/);
+  assert.match(back, /background:\s*transparent;/);
+  assert.match(back, /border-color:\s*transparent;/);
+  assert.match(back, /text-decoration:\s*underline;/);
+  assert.match(back, /min-width:\s*64px;/);
+  assert.match(cssRule(styles, ".panel-parchment .panel-back::before"), /content:\s*"\\2190";/);
+  // The arrow is drawn, not read: Back keeps its accessible name.
+  const html = await readIndexHtml();
+  assert.equal(
+    (html.match(/class="panel-close panel-back" aria-label="Back to About">Back</g) || []).length,
+    3,
+  );
+  // Only desktops over 700px wide and 500px tall take the letter, so phones and
+  // small landscape phones keep their layouts.
+  const letter = mediaBlock(styles, "(min-width: 701px) and (min-height: 501px)");
+  assert.match(letter, /\.panel-parchment\s*\{\s*width:\s*min\(100%, 860px\);/);
+  assert.match(letter, /\.panel-vignette\s*\{\s*width:\s*220px;/);
+  assert.match(
+    letter,
+    /\.panel-parchment__sheet h2\s*\{\s*font-size:\s*clamp\(40px, 4\.6vw, 62px\);/,
+  );
+  assert.ok(
+    Number(letter.match(/\.panel-parchment \.panel-back\s*\{\s*margin:\s*(\d+)px;/)[1]) > 24,
+  );
 });
 
 test("category copy stays minimal and matches its Markdown equivalent", async () => {
