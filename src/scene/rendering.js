@@ -1,6 +1,5 @@
 import {
   AmbientLight,
-  Color,
   ColorManagement,
   DirectionalLight,
   Fog,
@@ -10,11 +9,10 @@ import {
   PerspectiveCamera,
   Scene,
   SRGBColorSpace,
-  Vector3,
   WebGLRenderer,
 } from "three";
 import { createNightEnvironment } from "./night-environment.js";
-import { FILM_LIGHT, FLASH_GROUND } from "./film-light.js";
+import { FILM_LIGHT } from "./film-light.js";
 import { createPostprocessPipeline } from "./postprocess.js";
 import { disposeSceneRuntimeResources } from "./runtime.js";
 
@@ -158,53 +156,6 @@ export function createSceneRendering({
   let baselineFillIntensity = fillLight.intensity;
   let baselineHemisphereIntensity = hemisphereLight.intensity;
   let baselineAmbientIntensity = ambientLight.intensity;
-  // A lightning flash (lightning.js) over the film balance: the cool fill, the
-  // one light without a shadow map, swings toward the flash by the flash's
-  // share of its light (times `aim`) and takes its cold colour, and the sky and
-  // ambient lift, all as uniforms, so nothing recompiles and the shadow map
-  // keeps its frame. The key never moves. Without a flash every light is
-  // exactly its own.
-  const fillHome = fillLight.position.clone(),
-    baselineFillColor = fillLight.color.clone(),
-    baselineSkyColor = hemisphereLight.color.clone(),
-    flashColor = new Color(),
-    flashAim = new Vector3();
-  FLASH_GROUND.babelFillAim.value.copy(fillHome).normalize();
-  let flash = null;
-  function applyFlash() {
-    fillLight.position.copy(fillHome);
-    fillLight.color.copy(baselineFillColor);
-    hemisphereLight.color.copy(baselineSkyColor);
-    FLASH_GROUND.babelFillAim.value.copy(fillHome).normalize();
-    FLASH_GROUND.babelFlash.value.z = 0;
-    if (!filmLighting || !flash) return;
-    flashColor.setRGB(...flash.color);
-    const base = fillLight.intensity,
-      added = Math.max(0, flash.fill),
-      share = added / Math.max(1e-6, base + added);
-    if (added > 0) {
-      const swing = share * (flash.aim ?? 1);
-      if (swing > 0) {
-        flashAim.set(...flash.direction).normalize();
-        fillLight.position
-          .copy(fillHome)
-          .normalize()
-          .lerp(flashAim, swing)
-          .normalize()
-          .multiplyScalar(fillHome.length());
-        FLASH_GROUND.babelFillAim.value.copy(fillLight.position).normalize();
-      }
-      fillLight.color.lerp(flashColor, share);
-      fillLight.intensity = base + added;
-      FLASH_GROUND.babelFlash.value.z = share;
-    }
-    const sky = Math.max(0, flash.hemisphere);
-    if (sky > 0) {
-      hemisphereLight.color.lerp(flashColor, sky / (1 + sky));
-      hemisphereLight.intensity *= 1 + sky;
-    }
-    if (flash.ambient > 0) ambientLight.intensity *= 1 + flash.ambient;
-  }
   // Film: the supplied maps already carry daylight, so the key drops and cools
   // while fill, sky and ambient rise to open eaves, brackets and shadow ground.
   let shotMood = { key: 1, fill: 1 };
@@ -224,7 +175,6 @@ export function createSceneRendering({
     // Lit, relief-mapped earth shows acne bands at grazing moonlight; bias more.
     sunLight.shadow.bias = filmLighting ? -0.0016 : baselineShadowBias;
     sunLight.shadow.normalBias = filmLighting ? 0.09 : baselineNormalBias;
-    applyFlash();
   }
 
   const renderTargets = new Set();
@@ -322,18 +272,6 @@ export function createSceneRendering({
         fill = mood?.fill ?? 1;
       if (disposed || (key === shotMood.key && fill === shotMood.fill)) return false;
       shotMood = { key, fill };
-      applyLightingTreatment();
-      return true;
-    },
-    // A lightning flash over the lights (lightning.js), or null: `fill` the
-    // intensity it adds to the cool fill, which turns toward `direction` (world,
-    // toward the flash) by its share times `aim` (0-1, default 1), `color` its light, and `hemisphere` and
-    // `ambient` the shares it adds to the sky and the flat ambient. Uniforms
-    // only: no recompile, no shadow redraw.
-    setFlash(next = null) {
-      if (disposed) return false;
-      if (!next && !flash) return false;
-      flash = next ? { ...next } : null;
       applyLightingTreatment();
       return true;
     },

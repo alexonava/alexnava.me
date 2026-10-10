@@ -11,17 +11,21 @@ import {
 } from "three";
 import { STAR_LAYER } from "./depth-layers.js";
 import { CLOUD_RESHAPE, FLASH_REFERENCE } from "./estate-sky.js";
-import { FLASH_GROUND, RIM_UNIFORMS } from "./film-light.js";
+import { MIST_UNIFORMS } from "./drifting-mist.js";
+import { FLASH_GROUND, FLASH_UNIFORMS, lendFlashText } from "./film-light.js";
 
 // Bold lightning in the film's night storm (the owner's pick of the storm
 // effects, 2026-10-09: Bold): large flashes that light the cloud banks from inside,
 // most of them sending down a bright, branching cold bolt behind the ranges, and a cold flash of light on
 // the subjects and the wet ground from the flash's side. No light, pass or
 // texture is added: the sky shell draws the banks' glow (estate-sky.js
-// FLASH_GLSL), one small mesh the bolt, and the flash rides the lights already
-// there (rendering.js setFlash(): the cool fill swings toward it, the sky and
-// ambient lift), the moon rim (film-light.js RIM_UNIFORMS, re-aimed at the
-// flash for its length) and the ground's sky light and water (FLASH_GROUND).
+// FLASH_GLSL), one small mesh the bolt, and every film material adds the
+// flash's light after its own lights (film-light.js FLASH_UNIFORMS and
+// flashHook(); the slate in mud-ground.js): light from the flash's side, a lift
+// of the sky's and the flat light and, on the lookout and the tree, a cold rim,
+// none of it behind the name, the intro or About. The ground's sky light and
+// water (FLASH_GROUND) and the drifting mist's banks (drifting-mist.js
+// mistFlash) brighten too, away from the text. The scene's lights never change.
 //
 // Timing is the lightning's own clock, the drawn frames' time while the scene
 // animates (frozen under reduced motion, a visitor pause or an open dialog, as
@@ -37,8 +41,8 @@ import { FLASH_GROUND, RIM_UNIFORMS } from "./film-light.js";
 // frame (`frame`, a share of its width) or, `side` of the time, `sideAngle`
 // degrees beyond its sides, lighting the subjects from there. A flash never centres over The watch's
 // reference banks (CLOUD_RESHAPE's wedge, whose protection also zeroes the glow
-// there) or within `textClear` of the clouds' text guard; a bolt keeps wholly
-// clear of both.
+// there) or within `textClear` of the clouds' text guard (it tries up to
+// `tries` places); a bolt keeps wholly clear of both.
 // - `sky`: the banks' glow: `radius` on the cloud plane (by strength), `gain` in
 //   the banks, `core` more in its hot centre (a third of the radius), `clear` on
 //   the clear sky, `thin` the share the banks' thin edges lose, `color`, `jitter` (degrees each pulse's centre wanders) and `about`,
@@ -47,11 +51,20 @@ import { FLASH_GROUND, RIM_UNIFORMS } from "./film-light.js";
 //   the events, at least `strength`; from `top` (degrees) to `bottom`, below the ranges' crest,
 //   leaning up to `lean`, jagged by `rough` over `detail` halvings, with
 //   `branches`; a `core` and `halo` in CSS px (`glow` the halo's share),
-//   `brightness`, `color`; it grows down over `leader` seconds, each stroke falls
+//   `brightness`, `color`; it grows down over `leader` seconds (a faint channel
+//   at `leaderGlow` of its light until the first stroke; it keeps its size
+//   wherever it fits, at any of the flash's places and either lean, `textGap`
+//   (a share of the screen's smaller side) from the text and `cropGap` degrees
+//   of azimuth from the reference banks, and only then tries `fallback` shares
+//   of its height above the flash before going without), each stroke falls
 //   over `decay` and the channel keeps `afterglow` of the flash.
-// - `relight`: what a whole flash adds: `fill` (in `color`) to the cool fill's
-//   intensity, `hemisphere` and `ambient` shares, `rim` times `rimColor` to the
-//   moon rim, `sky` and `water` shares to the ground's sky light and water mirror.
+// - `relight`: what a whole flash adds, eased off behind the text over `text`
+//   [name and intro, About] of the screen's smaller side: `fill`, the intensity
+//   of its light (in `color`) from its side (from the cool fill's, for a flash in
+//   view, behind the subjects), `hemisphere` and `ambient`, shares of those
+//   lights' own in its colour, `rim` times `rimColor` as a cold rim on the
+//   lookout and the tree, `sky` and `water`, shares of the ground's sky light and
+//   water mirror, and `mist`, its light scattered in the drifting mist.
 // - `tiers`: per-tier overrides (balanced draws no bolt and a plain glow), and
 //   `shots`: per-shot ones, by shot name (DIRECTED_SHOTS), over the tier's.
 // - `forceAt`: a debug override for captures, empty in use: scene seconds (or
@@ -76,6 +89,7 @@ export const LIGHTNING = Object.freeze({
   side: 0.25,
   sideAngle: Object.freeze([20, 80]),
   textClear: 0.3,
+  tries: 12,
   sky: Object.freeze({
     radius: Object.freeze([0.5, 0.95]),
     gain: 0.85,
@@ -102,6 +116,10 @@ export const LIGHTNING = Object.freeze({
     brightness: 2.4,
     color: Object.freeze([0.85, 0.91, 1]),
     leader: 0.04,
+    leaderGlow: 0.3,
+    fallback: Object.freeze([0.6, 0.3]),
+    cropGap: 2,
+    textGap: 0.1,
     decay: 0.05,
     afterglow: 0.15,
   }),
@@ -114,6 +132,8 @@ export const LIGHTNING = Object.freeze({
     rimColor: Object.freeze([0.5, 0.66, 1]),
     sky: 0.7,
     water: 1.2,
+    mist: 0.6,
+    text: Object.freeze([0.25, 0.15]),
   }),
   tiers: Object.freeze({
     balanced: Object.freeze({
@@ -495,9 +515,11 @@ function writeBolt(mesh, segments) {
 }
 
 // The lightning subsystem. `sky` is the shell's uniforms (uFlash, uFlashGlow,
-// uFlashTone), `rendering` takes the flash on its lights (setFlash), `textGuard`
-// is the ground's text boxes (createSlateContacts()), `film()` whether the film
-// is on and `shot()` the shot on screen. `config` defaults to LIGHTNING.
+// uFlashTone, uFlashCore), `rendering` lends its lights' film intensities (the
+// sky and flat light the flash adds a share of, the cool fill's direction),
+// `textGuard` is the ground's text boxes (createSlateContacts(), lent to the
+// flash's materials), `film()` whether the film is on and `shot()` the shot on
+// screen. `config` defaults to LIGHTNING.
 export function createLightning({
   parent,
   camera,
@@ -522,6 +544,7 @@ export function createLightning({
       perShot.set(name, lightningTier({ ...settings, tiers: { shot: over } }, "shot"));
     return perShot.get(name);
   }
+  lendFlashText(textGuard);
   const bolt = parent ? createBolt() : null;
   if (bolt) parent.add(bolt);
   let time = 0,
@@ -554,6 +577,19 @@ export function createLightning({
       .sub(eye)
       .normalize();
     return [Math.atan2(ray.z, ray.x) / DEG, Math.asin(Math.max(-1, Math.min(1, ray.y))) / DEG];
+  }
+  // How far a canvas point lies from the name, the intro and About, as a share
+  // of the screen's smaller side (the text guards' measure).
+  function textDistance(u, v) {
+    if (!textGuard) return Infinity;
+    const aspect = textGuard.slateAspect?.value ?? 1;
+    const from = (box) => {
+      if (!box || box.x > box.z) return Infinity;
+      const fx = Math.max(box.x - u, u - box.z, 0) * (aspect / Math.min(aspect, 1)),
+        fy = Math.max(box.y - v, v - box.w, 0) / Math.min(aspect, 1);
+      return Math.hypot(fx, fy);
+    };
+    return Math.min(from(textGuard.slateText?.value), from(textGuard.slateAbout?.value));
   }
   // 1 behind the name and intro (or About), easing to 0 over the clouds' reach.
   function textNear(u, v) {
@@ -590,12 +626,14 @@ export function createLightning({
     );
     const radius = lerp(settings.sky.radius, strength01);
     const spread = Math.min(40, (radius / 2.5) * 57);
-    let centre = null;
+    // Where the flash may centre: every place among `tries` that keeps clear of
+    // the reference banks and the text, in the order tried (one, if forced).
+    const places = [];
     if (force && Number.isFinite(force.u) && Number.isFinite(force.v)) {
       const [az, alt] = viewAzimuth(force.u, force.v);
-      centre = [az, Math.max(1, alt)];
+      places.push([az, Math.max(1, alt)]);
     } else
-      for (let attempt = 0; attempt < 8 && !centre; attempt++) {
+      for (let attempt = 0; attempt < settings.tries; attempt++) {
         const slot = 60 + 7 * attempt;
         const beyond = !event.bolt && r(slot) < settings.side;
         let [az] = viewAzimuth(lerp(settings.frame, r(slot + 1)));
@@ -607,37 +645,83 @@ export function createLightning({
         if (!clearOfReference(az, alt, spread / 2, 0.98)) continue;
         const [su, sv] = screenOf(skyDirection(az, alt, view));
         if (textNear(clamp01(su), clamp01(sv)) > settings.textClear) continue;
-        centre = [az, alt];
+        places.push([az, alt]);
+        // A flicker takes the first place; a bolt may need another.
+        if (!event.bolt) break;
       }
-    if (!centre) return null;
-    let segments = null;
+    if (!places.length) return null;
+    let centre = places[0],
+      segments = null;
+    // A bolt keeps its size where it fits: from its top down at each place in
+    // turn, leaning either way, wholly clear of the text and the reference
+    // banks; only where it fits at none does it try shorter ones (`fallback`,
+    // shares of its height above the flash) before the flash goes without it.
     if (event.bolt && bolt && settings.bolt.draw) {
-      for (const flip of [1, -1]) {
-        const top = Math.max(centre[1], lerp(settings.bolt.top, r(91)));
-        const path = boltPath(settings, r(90), centre[0], top, flip);
-        const clear = path.every(({ a, b }) =>
+      const height = lerp(settings.bolt.top, r(91));
+      const fits = (path) =>
+        path.every(({ a, b }) =>
           [a, b].every(([az, alt]) => {
-            if (!clearOfReference(az, alt, 6, 1e-6)) return false;
+            if (!clearOfReference(az, alt, settings.bolt.cropGap, 1e-6)) return false;
             const [su, sv] = screenOf(skyDirection(az, alt, view));
-            return textNear(su, sv) < 0.05;
+            return textDistance(su, sv) >= settings.bolt.textGap;
           }),
         );
-        if (clear) {
-          segments = path;
-          break;
+      search: for (const share of [1, ...(settings.bolt.fallback ?? [])])
+        for (const place of places) {
+          const foot = Math.max(place[1], 2),
+            top = foot + (Math.max(height, foot) - foot) * share;
+          for (const flip of [1, -1]) {
+            const path = boltPath(settings, r(90), place[0], top, flip);
+            if (fits(path)) {
+              centre = place;
+              segments = path;
+              break search;
+            }
+          }
         }
-      }
     }
     return { centre, radius, segments, shot: shot() };
   }
 
+  // Every flash uniform back to none.
   function clear() {
     if (!lit) return;
     lit = false;
     sky.uFlash.value.w = 0;
     FLASH_GROUND.babelFlash.value.x = 0;
     FLASH_GROUND.babelFlash.value.y = 0;
-    rendering?.setFlash?.(null);
+    FLASH_UNIFORMS.babelFlashLight.value.set(0, 0, 0, 0);
+    FLASH_UNIFORMS.babelFlashSky.value.set(0, 0, 0, 0);
+    FLASH_UNIFORMS.babelFlashRim.value.set(0, 0, 0, FLASH_UNIFORMS.babelFlashRim.value.w);
+    Object.assign(MIST_UNIFORMS.mistFlash.value, { x: 0, y: 0, z: 0, w: 0 });
+  }
+  // A light's film intensity times its colour's mean (rendering.lights).
+  const lightOf = (light, fallback) =>
+    light ? (light.intensity * (light.color.r + light.color.g + light.color.b)) / 3 : fallback;
+  const fillHome = new Vector3(),
+    flashKey = new Vector3();
+  // The bolt at a flash's `level` (0 while its leader grows down).
+  function drawBolt(event, where, local, level) {
+    const b = local.bolt;
+    bolt.visible = true;
+    if (bolt.userData.event !== event) {
+      writeBolt(bolt, where.segments);
+      bolt.userData.event = event;
+    }
+    const u = bolt.material.uniforms;
+    let strokes = 0;
+    for (const p of event.peaks)
+      strokes = Math.max(strokes, p.amp * lightningPulse(time - p.t, local.attack * 0.5, b.decay));
+    const first = event.peaks[0].t;
+    // The leader: a faint channel growing down before the first stroke.
+    const leader = time < first ? b.leaderGlow : 0;
+    u.uLevel.value = event.strength * b.brightness * Math.max(strokes, b.afterglow * level, leader);
+    u.uGrow.value = (time - (first - b.leader)) / Math.max(1e-3, b.leader);
+    u.uCore.value = b.core * pixelRatio;
+    u.uHalo.value = b.halo * pixelRatio;
+    u.uGlow.value = b.glow;
+    u.uColor.value.set(...b.color);
+    u.uViewport.value.set((size[0] * pixelRatio) / 2, (size[1] * pixelRatio) / 2);
   }
 
   const controller = {
@@ -682,6 +766,7 @@ export function createLightning({
       // A cut ends the flash: its place belonged to the shot before.
       if (!where || where.shot !== shot()) {
         state.level = 0;
+        state.event = null;
         clear();
         return true;
       }
@@ -692,11 +777,15 @@ export function createLightning({
         k: event.k,
         start: event.start,
         bolt: Boolean(where.segments),
+        wanted: event.bolt,
         azimuth: where.centre[0],
         altitude: where.centre[1],
       };
       if (level <= 0) {
         clear();
+        // Before the first stroke only the bolt's leader shows, growing down.
+        if (bolt && where.segments && time >= event.peaks[0].t - local.bolt.leader)
+          drawBolt(event, where, local, 0);
         return true;
       }
       lit = true;
@@ -722,70 +811,54 @@ export function createLightning({
       sky.uFlashGlow.value.set(where.radius, glow.gain, glow.clear, glow.thin);
       sky.uFlashTone.value.set(...glow.color, glow.about);
       sky.uFlashCore.value = glow.core;
-      // The fill turns toward a flash off the lens's axis, so it lights the
-      // subjects' near side from there; one in view, behind them, leaves the
-      // fill where it is (the faces we see keep it) and backlights them through
-      // the rim instead.
+      // The flash's light on the film's materials (film-light.js FLASH_UNIFORMS):
+      // from its side for a flash off the lens's axis, so it lights the subjects'
+      // near side from there; one in view, behind them, lights the faces we see
+      // from the cool fill's side and backlights them through the cold rim.
       camera.getWorldDirection(point);
       const facing =
         (point.x * centre.x + point.z * centre.z) /
         Math.max(1e-6, Math.hypot(point.x, point.z) * Math.hypot(centre.x, centre.z));
-      rendering?.setFlash?.({
-        fill: level * relight.fill,
-        aim: 1 - smoothstep(0.2, 0.8, facing),
-        direction: [direction.x, direction.y, direction.z],
-        color: relight.color,
-        hemisphere: level * relight.hemisphere,
-        ambient: level * relight.ambient,
-      });
+      const lights = rendering?.lights;
+      fillHome.copy(lights?.fill?.position ?? flashKey.set(-30, 22, -28)).normalize();
+      flashKey
+        .copy(fillHome)
+        .lerp(direction, 1 - smoothstep(0.2, 0.8, facing))
+        .normalize();
+      const [fr, fg, fb] = relight.color,
+        [rr, rg, rb] = relight.rimColor;
+      const U = FLASH_UNIFORMS,
+        light = level * relight.fill,
+        lift = level * relight.hemisphere * lightOf(lights?.hemisphere, 0.55),
+        rim = level * relight.rim,
+        mist = level * relight.mist;
+      U.babelFlashLight.value.set(fr * light, fg * light, fb * light, level);
+      U.babelFlashKey.value.copy(flashKey);
+      U.babelFlashSky.value.set(
+        fr * lift,
+        fg * lift,
+        fb * lift,
+        level * relight.ambient * lightOf(lights?.ambient, 0.09),
+      );
+      U.babelFlashRim.value.set(rr * rim, rg * rim, rb * rim, U.babelFlashRim.value.w);
+      camera.updateMatrixWorld();
+      U.babelFlashView.value.copy(direction).transformDirection(camera.matrixWorldInverse);
+      U.babelFlashProj.value.copy(camera.projectionMatrix);
+      U.babelFlashReach.value.set(...relight.text);
       FLASH_GROUND.babelFlash.value.x = level * relight.sky;
       FLASH_GROUND.babelFlash.value.y = level * relight.water;
-      // The moon rim takes the flash's cold light and turns toward it by the
-      // flash's share; on the bark that share comes off behind the text (the
-      // rim's text guard, BARK_RIM_TEXT, at (moon x the mood's + flash) / both),
-      // so there the bark keeps exactly its moon rim.
-      const rim = RIM_UNIFORMS.babelRimLight.value,
-        added = level * relight.rim,
-        [cr, cg, cb] = relight.rimColor;
-      const moon = Math.max(1e-6, 0.2126 * rim.x + 0.7152 * rim.y + 0.0722 * rim.z),
-        flash = added * (0.2126 * cr + 0.7152 * cg + 0.0722 * cb);
-      rim.x += cr * added;
-      rim.y += cg * added;
-      rim.z += cb * added;
-      const share = flash / (moon + flash);
-      RIM_UNIFORMS.babelRimText.value = RIM_UNIFORMS.babelRimText.value * (1 - share) + share;
-      camera.updateMatrixWorld();
-      RIM_UNIFORMS.babelKeyView.value
-        .lerp(view.copy(direction).transformDirection(camera.matrixWorldInverse), share)
-        .normalize();
-      if (bolt) {
-        const b = local.bolt;
-        bolt.visible = Boolean(where.segments);
-        if (where.segments && bolt.userData.event !== event) {
-          writeBolt(bolt, where.segments);
-          bolt.userData.event = event;
-        }
-        if (bolt.visible) {
-          const u = bolt.material.uniforms;
-          let strokes = 0;
-          for (const p of event.peaks)
-            strokes = Math.max(
-              strokes,
-              p.amp * lightningPulse(time - p.t, local.attack * 0.5, b.decay),
-            );
-          u.uLevel.value = event.strength * b.brightness * Math.max(strokes, b.afterglow * level);
-          u.uGrow.value = (time - (event.peaks[0].t - b.leader)) / Math.max(1e-3, b.leader);
-          u.uCore.value = b.core * pixelRatio;
-          u.uHalo.value = b.halo * pixelRatio;
-          u.uGlow.value = b.glow;
-          u.uColor.value.set(...b.color);
-          u.uViewport.value.set((size[0] * pixelRatio) / 2, (size[1] * pixelRatio) / 2);
-        }
-      }
+      Object.assign(MIST_UNIFORMS.mistFlash.value, {
+        x: fr * mist,
+        y: fg * mist,
+        z: fb * mist,
+        w: level,
+      });
+      if (bolt && where.segments) drawBolt(event, where, local, level);
       return true;
     },
     dispose() {
       if (disposed) return false;
+      lit = true;
       clear();
       disposed = true;
       if (bolt) {

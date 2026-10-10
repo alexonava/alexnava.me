@@ -1,7 +1,9 @@
 // The film storm's lightning (src/scene/lightning.js): its seeded schedule and
 // the flash limit, the reference banks it keeps off, the bolt's path, the
-// subsystem's flash on the sky, the lights, the rim and the ground and its
-// holds, rendering's setFlash(), and the shaders and wiring that carry it.
+// subsystem's flash on the sky, the film's materials, the ground and the
+// mist (never the scene's lights or the moon rim) and its holds, the flash's
+// guarded term (film-light.js flashHook()), and the shaders and wiring that
+// carry it.
 
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -19,8 +21,15 @@ import {
   skyDirection,
 } from "../src/scene/lightning.js";
 import { CLOUD_RESHAPE, FLASH_REFERENCE } from "../src/scene/estate-sky.js";
-import { FILM_LIGHT, FLASH_GROUND, RIM_UNIFORMS, setRim } from "../src/scene/film-light.js";
-import { createSceneRendering } from "../src/scene/rendering.js";
+import {
+  FLASH_GROUND,
+  FLASH_UNIFORMS,
+  RIM_UNIFORMS,
+  flashHook,
+  lendFlashText,
+  setRim,
+} from "../src/scene/film-light.js";
+import { MIST_UNIFORMS } from "../src/scene/drifting-mist.js";
 import { flat, source } from "./support/code.mjs";
 
 // Every pulse peak an event list holds.
@@ -179,15 +188,28 @@ function skyUniforms() {
     uFlashCore: { value: 0 },
   };
 }
-function lightningRig({ az = 20, forceAt = [], shot = "Portrait", tier = "high", ...rest } = {}) {
-  const calls = [];
+function lightningRig({
+  az = 20,
+  forceAt = [],
+  shot = "Portrait",
+  tier = "high",
+  textGuard = null,
+  ...rest
+} = {}) {
   const sky = skyUniforms();
   const parent = new Group();
   const state = { shot, film: true };
+  const grey = { r: 1, g: 1, b: 1 };
+  const lights = {
+    hemisphere: { intensity: 0.5, color: grey },
+    ambient: { intensity: 0.1, color: grey },
+    fill: { position: new Vector3(-30, 22, -28) },
+  };
   const lightning = createLightning({
     parent,
     camera: lookToward(az),
-    rendering: { setFlash: (flash) => calls.push(flash) },
+    rendering: { lights },
+    textGuard,
     sky,
     film: () => state.film,
     shot: () => state.shot,
@@ -199,43 +221,104 @@ function lightningRig({ az = 20, forceAt = [], shot = "Portrait", tier = "high",
     for (let i = 0; i < Math.round(seconds * 60); i++)
       lightning.update({ deltaSeconds: 1 / 60, ...options });
   };
-  return { lightning, sky, calls, state, step, bolt: parent.children[0] };
+  return { lightning, sky, state, step, bolt: parent.children[0] };
 }
 
-test("a flash lights the banks, the lights, the rim and the ground, then leaves them whole", () => {
+test("a flash lights the banks, the film's materials, the ground and the mist, then nothing", () => {
   setRim(1, 0);
+  const moonRim = RIM_UNIFORMS.babelRimLight.value.clone(),
+    moonKey = RIM_UNIFORMS.babelKeyView.value.clone();
+  const L = FLASH_UNIFORMS.babelFlashLight.value;
   const rig = lightningRig({ forceAt: [{ at: 2, u: 0.7, v: 0.6, bolt: true, strength: 1 }] });
   rig.step(1.9);
   assert.equal(rig.sky.uFlash.value.w, 0, "nothing before the event");
-  assert.equal(rig.calls.length, 0);
+  assert.equal(L.w, 0);
   rig.step(0.1);
   assert.ok(Math.abs(rig.lightning.state.time - 2) < 1e-9);
   assert.ok(rig.sky.uFlash.value.w > 0.99, "the peak");
   assert.ok(Math.abs(new Vector3(...rig.sky.uFlash.value).length() - 1) < 1e-6);
   assert.equal(rig.sky.uFlashGlow.value.y, LIGHTNING.sky.gain);
   assert.equal(rig.sky.uFlashCore.value, LIGHTNING.sky.core);
-  const lit = rig.calls.at(-1);
-  assert.ok(Math.abs(lit.fill - LIGHTNING.relight.fill) < 0.01);
-  assert.ok(lit.aim < 0.01, "a flash in view leaves the fill where it is");
-  assert.ok(FLASH_GROUND.babelFlash.value.x > 0 && FLASH_GROUND.babelFlash.value.y > 0);
-  const rim = RIM_UNIFORMS.babelRimLight.value;
-  assert.ok(rim.z > 0.36 + LIGHTNING.relight.rim * 0.9, "the moon rim takes the flash's light");
+  // The flash's light on the film's materials: from the cool fill's side for a
+  // flash in view, its sky a share of the hemisphere's, the cold rim, the text guard.
+  const { relight } = LIGHTNING;
+  assert.ok(L.w > 0.99);
+  assert.ok(Math.abs(L.z - relight.color[2] * relight.fill * L.w) < 1e-9);
+  const key = FLASH_UNIFORMS.babelFlashKey.value;
   assert.ok(
-    RIM_UNIFORMS.babelRimText.value > 0.5,
-    "and the bark's text guard takes it off the text",
+    key.distanceTo(new Vector3(-30, 22, -28).normalize()) < 1e-6,
+    "in view: the fill's side",
   );
+  const lift = FLASH_UNIFORMS.babelFlashSky.value;
+  assert.ok(Math.abs(lift.z - relight.color[2] * relight.hemisphere * 0.5 * L.w) < 1e-9);
+  assert.ok(Math.abs(lift.w - relight.ambient * 0.1 * L.w) < 1e-9);
+  assert.ok(
+    Math.abs(FLASH_UNIFORMS.babelFlashRim.value.z - relight.rimColor[2] * relight.rim * L.w) < 1e-9,
+  );
+  assert.deepEqual(FLASH_UNIFORMS.babelFlashReach.value.toArray(), [...relight.text]);
+  assert.ok(FLASH_GROUND.babelFlash.value.x > 0 && FLASH_GROUND.babelFlash.value.y > 0);
+  assert.ok(MIST_UNIFORMS.mistFlash.value.z > 0 && MIST_UNIFORMS.mistFlash.value.w > 0.99);
+  // The scene's lights and the moon rim are never touched.
+  assert.ok(RIM_UNIFORMS.babelRimLight.value.equals(moonRim));
+  assert.ok(RIM_UNIFORMS.babelKeyView.value.equals(moonKey));
   assert.equal(rig.lightning.state.event.bolt, true);
   assert.equal(rig.bolt.visible, true);
   assert.ok(rig.bolt.geometry.drawRange.count > 0);
   assert.ok(rig.bolt.material.uniforms.uLevel.value > 1);
   rig.step(1.5);
   assert.equal(rig.sky.uFlash.value.w, 0, "gone after the event");
-  assert.equal(rig.calls.at(-1), null, "the lights are given back");
+  assert.equal(L.w, 0);
+  assert.deepEqual(L.toArray(), [0, 0, 0, 0]);
+  assert.deepEqual(FLASH_UNIFORMS.babelFlashSky.value.toArray(), [0, 0, 0, 0]);
+  assert.equal(FLASH_UNIFORMS.babelFlashRim.value.z, 0);
   assert.equal(FLASH_GROUND.babelFlash.value.x, 0);
   assert.equal(FLASH_GROUND.babelFlash.value.y, 0);
+  assert.deepEqual({ ...MIST_UNIFORMS.mistFlash.value }, { x: 0, y: 0, z: 0, w: 0 });
   assert.equal(rig.bolt.visible, false);
   rig.lightning.dispose();
   setRim(0, 0);
+});
+
+test("a flash beside the frame lights the subjects from its side", () => {
+  const rig = lightningRig({ forceAt: [{ at: 1, u: 2.4, v: 0.6, strength: 1 }] });
+  rig.step(1);
+  const key = FLASH_UNIFORMS.babelFlashKey.value,
+    flash = new Vector3(...rig.sky.uFlash.value).normalize(),
+    fill = new Vector3(-30, 22, -28).normalize();
+  assert.ok(
+    key.distanceTo(flash) < 0.3 * fill.distanceTo(flash),
+    "the light comes from the flash's side, not the fill's",
+  );
+  rig.lightning.dispose();
+});
+
+test("a bolt's leader grows down before its first stroke", () => {
+  const { leader } = LIGHTNING.bolt;
+  const rig = lightningRig({ forceAt: [{ at: 1, u: 0.7, v: 0.6, bolt: true, strength: 1 }] });
+  rig.step(58 / 60);
+  assert.ok(
+    rig.lightning.state.time >= 1 - leader && rig.lightning.state.time < 1 - LIGHTNING.attack,
+  );
+  assert.equal(rig.lightning.state.level, 0, "before the stroke's own rise");
+  assert.equal(rig.bolt.visible, true, "the leader draws");
+  const u = rig.bolt.material.uniforms;
+  assert.ok(u.uGrow.value > 0 && u.uGrow.value < 0.6);
+  assert.ok(u.uLevel.value > 0 && u.uLevel.value < LIGHTNING.bolt.brightness);
+  assert.equal(rig.sky.uFlash.value.w, 0, "no flash until the stroke");
+  assert.equal(FLASH_UNIFORMS.babelFlashLight.value.w, 0);
+  rig.lightning.dispose();
+});
+
+test("disposing mid-flash leaves no flash behind", () => {
+  const rig = lightningRig({ forceAt: [{ at: 1, u: 0.7, v: 0.6, strength: 1 }] });
+  rig.step(1);
+  assert.ok(FLASH_UNIFORMS.babelFlashLight.value.w > 0.99);
+  rig.lightning.dispose();
+  assert.equal(rig.sky.uFlash.value.w, 0);
+  assert.equal(FLASH_UNIFORMS.babelFlashLight.value.w, 0);
+  assert.equal(MIST_UNIFORMS.mistFlash.value.w, 0);
+  assert.equal(FLASH_GROUND.babelFlash.value.x, 0);
+  assert.equal(rig.bolt.parent, null);
 });
 
 test("lightning holds with the scene and never flashes under reduced motion", () => {
@@ -255,7 +338,7 @@ test("lightning holds with the scene and never flashes under reduced motion", ()
   off.state.film = false;
   off.step(1);
   assert.equal(off.sky.uFlash.value.w, 0, "only in film");
-  assert.equal(off.calls.length, 0);
+  assert.equal(FLASH_UNIFORMS.babelFlashLight.value.w, 0);
 });
 
 test("a cut ends a flash, whose place belonged to the shot before", () => {
@@ -265,7 +348,8 @@ test("a cut ends a flash, whose place belonged to the shot before", () => {
   rig.state.shot = "Threshold";
   rig.step(1 / 60);
   assert.equal(rig.sky.uFlash.value.w, 0);
-  assert.equal(rig.calls.at(-1), null);
+  assert.equal(FLASH_UNIFORMS.babelFlashLight.value.w, 0);
+  assert.equal(rig.lightning.state.event, null, "no stale event");
 });
 
 test("no flash centres on the reference banks and no bolt reaches them", () => {
@@ -292,6 +376,66 @@ test("no flash centres on the reference banks and no bolt reaches them", () => {
   }
 });
 
+test("a tall bolt keeps its size where it fits and falls back to shorter ones before going without", () => {
+  // The owner's tall bolts, facing the reference banks' edge, where many don't fit.
+  const big = { ...LIGHTNING.bolt, chance: 1, top: [26, 40], lean: 7, branches: [5, 9] };
+  const run = (fallback) => {
+    const rig = lightningRig({
+      az: 185,
+      first: 0.5,
+      interval: [1.2, 1.6],
+      bolt: { ...big, fallback },
+    });
+    const seen = new Map();
+    for (let i = 0; i < 60 * 150; i++) {
+      rig.lightning.update({ deltaSeconds: 1 / 60 });
+      const { level, event } = rig.lightning.state;
+      if (level > 0 && event?.wanted && !seen.has(event.start)) seen.set(event.start, event.bolt);
+    }
+    rig.lightning.dispose();
+    return [...seen.values()];
+  };
+  const none = run([]),
+    some = run([0.6, 0.3]);
+  assert.ok(none.length > 40 && some.length === none.length);
+  const placed = (list) => list.filter(Boolean).length;
+  assert.ok(placed(some) >= placed(none), `${placed(some)} >= ${placed(none)}`);
+  assert.ok(placed(some) > 0);
+});
+
+test("a bolt keeps its gap from the name, the intro and About", () => {
+  // The name and intro across the frame's left half, About low left, on a 16:9 canvas.
+  const textGuard = {
+    slateText: { value: { x: 0.12, y: 0.3, z: 0.48, w: 0.62 } },
+    slateAbout: { value: { x: 0.01, y: 0.02, z: 0.05, w: 0.05 } },
+    slateAspect: { value: 16 / 9 },
+  };
+  const big = { ...LIGHTNING.bolt, chance: 1, top: [26, 40], lean: 7, branches: [5, 9] };
+  const rig = lightningRig({ textGuard, first: 0.5, interval: [1.2, 1.6], bolt: big });
+  const camera = lookToward(20);
+  const box = textGuard.slateText.value,
+    gap = LIGHTNING.bolt.textGap;
+  let drawn = 0;
+  for (let i = 0; i < 60 * 90; i++) {
+    rig.lightning.update({ deltaSeconds: 1 / 60 });
+    if (!rig.bolt.visible || !(rig.lightning.state.level > 0)) continue;
+    drawn++;
+    const position = rig.bolt.geometry.attributes.position;
+    for (let v = 0; v < (rig.bolt.geometry.drawRange.count / 6) * 4; v++) {
+      const p = new Vector3().fromBufferAttribute(position, v).multiplyScalar(100).project(camera);
+      const [u, w] = [(p.x + 1) / 2, (p.y + 1) / 2];
+      const dx = Math.max(box.x - u, u - box.z, 0) * (16 / 9),
+        dy = Math.max(box.y - w, w - box.w, 0);
+      assert.ok(
+        Math.hypot(dx, dy) >= gap - 1e-9,
+        `vertex ${v} is ${Math.hypot(dx, dy)} from the text`,
+      );
+    }
+  }
+  assert.ok(drawn > 0);
+  rig.lightning.dispose();
+});
+
 test("balanced draws no bolt, even a forced one", () => {
   const rig = lightningRig({ tier: "balanced", forceAt: [{ at: 1, u: 0.7, v: 0.6, bolt: true }] });
   rig.step(1);
@@ -300,130 +444,79 @@ test("balanced draws no bolt, even a forced one", () => {
   assert.equal(rig.bolt.visible, false);
 });
 
-function filmRendering() {
-  const renderer = {
-    capabilities: { getMaxAnisotropy: () => 8 },
-    domElement: {},
-    shadowMap: {},
-    getContext: () => ({ isContextLost: () => false }),
-    getPixelRatio: () => 1,
-    setClearColor() {},
-    setPixelRatio() {},
-    setSize() {},
-  };
-  const pipeline = {
-    composer: { addPass() {}, render() {}, setPixelRatio() {}, setSize() {} },
-    resize() {},
-    setQualityProfile() {},
-  };
-  const profile = {
-    lighting: {
-      ambientIntensity: 0.22,
-      directionalIntensity: 2.9,
-      extraDirectional: true,
-      fillIntensity: 0.31,
-      fogFar: 150,
-      fogNear: 62,
-      hemisphereIntensity: 0.71,
-    },
-    shadows: { enabled: true, mapSize: 1024 },
-  };
-  const rendering = createSceneRendering({
-    container: { appendChild() {} },
-    createPipeline: () => pipeline,
-    createRenderer: () => renderer,
-    disposeResources: () => ({}),
-    height: 600,
-    lighting: {
-      ambientColor: 0xffffff,
-      ambientIntensity: 0.22,
-      directionalColor: 0xffffff,
-      directionalIntensity: 2.9,
-      directionalPosition: { x: 32, y: 28, z: 14 },
-      fillColor: 0x7486b5,
-      fogColor: 0x222222,
-      fogFar: 150,
-      fogNear: 62,
-      hemisphereGroundColor: 0x111111,
-      hemisphereIntensity: 0.71,
-      hemisphereSkyColor: 0x596d96,
-    },
-    profile,
-    width: 800,
-    world: {
-      CAMERA_FAR: 210,
-      CAMERA_FOV: 48,
-      CAMERA_NEAR: 0.5,
-      FILL_LIGHT_POSITION: [-30, 22, -28],
-      SHADOW_CAMERA_FAR: 120,
-      SHADOW_CAMERA_HALF_EXTENT: 34,
-      SHADOW_CAMERA_NEAR: 0.5,
-    },
-  });
-  rendering.applyQuality(profile);
-  rendering.setFilmTreatment(true);
-  return rendering;
-}
+// A fragment shader with the chunks the hook anchors on.
+const FRAGMENT =
+  "#include <common>\nvoid main(){\n#include <lights_fragment_end>\n#include <aomap_fragment>\n#include <fog_fragment>\n}";
 
-test("setFlash rides the existing lights as uniforms and gives every one back exactly", () => {
-  const rendering = filmRendering();
-  const { fill, sun, hemisphere, ambient } = rendering.lights;
-  const before = {
-    fill: [fill.position.clone(), fill.color.getHex(), fill.intensity],
-    sun: [sun.position.clone(), sun.color.getHex(), sun.intensity],
-    hemisphere: [hemisphere.color.getHex(), hemisphere.intensity],
-    ambient: ambient.intensity,
+test("flashHook adds the flash after a material's lights, composed and keyed, guarded by the text", () => {
+  const calls = [];
+  const material = {
+    userData: {},
+    onBeforeCompile(shader) {
+      calls.push("own");
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <lights_fragment_end>",
+        "#include <lights_fragment_end>\nOWN_RIM;",
+      );
+    },
+    customProgramCacheKey: () => "tower-v9",
   };
-  assert.equal(fill.intensity, 0.31 * FILM_LIGHT.fill);
-  assert.equal(fill.castShadow, false, "the fill has no shadow map to redraw");
-  sun.shadow.needsUpdate = false;
-  const flash = {
-    fill: 1,
-    direction: [1, 0.2, 0],
-    color: [0.74, 0.83, 1],
-    hemisphere: 0.2,
-    ambient: 0.1,
+  assert.equal(flashHook(material, { rim: true, sky: "babelEnvironment.x" }), material);
+  assert.equal(flashHook(material), material, "once");
+  assert.equal(material.customProgramCacheKey(), "tower-v9|flash-rim");
+  const shader = { uniforms: {}, fragmentShader: FRAGMENT };
+  material.onBeforeCompile(shader);
+  assert.deepEqual(calls, ["own"], "its own hook first");
+  for (const name of Object.keys(FLASH_UNIFORMS))
+    assert.equal(shader.uniforms[name], FLASH_UNIFORMS[name], `${name} is lent, not copied`);
+  const glsl = flat(shader.fragmentShader);
+  assert.ok(glsl.includes("float babelFlashKeep(vec3 viewPosition)"));
+  assert.ok(glsl.includes("return (1.-b)*(1.-b);"), "none of the flash behind the text");
+  assert.ok(glsl.includes("if (babelFlashLight.w > 0.0) {"), "a uniform test between flashes");
+  assert.ok(glsl.includes("float babelFK = babelFlashKeep(-vViewPosition);"));
+  assert.ok(glsl.includes("*(babelEnvironment.x))*material.diffuseColor;"), "the role's sky share");
+  assert.ok(glsl.includes("reflectedLight.directDiffuse += babelFK*babelFlashRim.rgb*pow("));
+  assert.ok(glsl.indexOf("OWN_RIM;") < glsl.indexOf("babelFK*"), "after the lights' own terms");
+  assert.ok(glsl.indexOf("babelFK*") < glsl.indexOf("#include <aomap_fragment>"), "before the sum");
+  const plain = { userData: {}, onBeforeCompile() {}, customProgramCacheKey: () => "grass" };
+  flashHook(plain);
+  const plainShader = { uniforms: {}, fragmentShader: FRAGMENT };
+  plain.onBeforeCompile(plainShader);
+  assert.ok(!plainShader.fragmentShader.includes("babelFlashRim.rgb*pow"), "no rim unless asked");
+  assert.ok(plainShader.fragmentShader.includes("*(1.0))*material.diffuseColor;"));
+  assert.equal(plain.customProgramCacheKey(), "grass|flash");
+  // The ground's text boxes guard it, lent by the lightning.
+  const contacts = {
+    slateText: { value: {} },
+    slateAbout: { value: {} },
+    slateAspect: { value: 1.7 },
   };
-  rendering.setFlash(flash);
-  const share = 1 / (before.fill[2] + 1);
-  assert.ok(Math.abs(fill.intensity - (before.fill[2] + 1)) < 1e-9);
-  const expected = before.fill[0]
-    .clone()
-    .normalize()
-    .lerp(new Vector3(1, 0.2, 0).normalize(), share);
-  assert.ok(fill.position.clone().normalize().distanceTo(expected.normalize()) < 1e-9, "it turns");
-  assert.ok(Math.abs(fill.position.length() - before.fill[0].length()) < 1e-9);
-  assert.ok(Math.abs(FLASH_GROUND.babelFlash.value.z - share) < 1e-9);
-  assert.ok(FLASH_GROUND.babelFillAim.value.distanceTo(fill.position.clone().normalize()) < 1e-9);
-  assert.ok(fill.color.b > fill.color.r, "cold");
-  assert.ok(Math.abs(hemisphere.intensity - before.hemisphere[1] * 1.2) < 1e-9);
-  assert.ok(Math.abs(ambient.intensity - before.ambient * 1.1) < 1e-9);
-  assert.ok(sun.position.equals(before.sun[0]), "the key never moves");
-  assert.equal(sun.intensity, before.sun[2]);
-  assert.equal(sun.shadow.needsUpdate, false, "and its shadow map keeps its frame");
-  rendering.setFlash({ ...flash, aim: 0 });
-  assert.ok(fill.position.equals(before.fill[0]), "a flash in view leaves the fill's aim");
-  assert.ok(fill.intensity > before.fill[2]);
-  rendering.setFlash(null);
-  assert.ok(fill.position.equals(before.fill[0]));
-  assert.equal(fill.color.getHex(), before.fill[1]);
-  assert.equal(fill.intensity, before.fill[2]);
-  assert.equal(hemisphere.color.getHex(), before.hemisphere[0]);
-  assert.equal(hemisphere.intensity, before.hemisphere[1]);
-  assert.equal(ambient.intensity, before.ambient);
-  assert.equal(FLASH_GROUND.babelFlash.value.z, 0);
-  assert.equal(rendering.setFlash(null), false, "no flash, no work");
-  // A mood change mid-flash keeps the flash over the new balance.
-  rendering.setFlash(flash);
-  rendering.setShotLight({ key: 1, fill: 2 });
-  assert.ok(Math.abs(fill.intensity - (before.fill[2] * 2 + 1)) < 1e-9);
-  rendering.setFlash(null);
-  rendering.setFilmTreatment(false);
-  rendering.setFlash(flash);
-  assert.ok(fill.position.equals(before.fill[0]), "outside the film a flash changes nothing");
-  rendering.setFlash(null);
-  rendering.dispose();
-  FLASH_GROUND.babelFillAim.value.set(-30, 22, -28).normalize();
+  const before = { ...FLASH_UNIFORMS };
+  lendFlashText(contacts);
+  assert.equal(FLASH_UNIFORMS.babelFlashText, contacts.slateText);
+  assert.equal(FLASH_UNIFORMS.babelFlashAbout, contacts.slateAbout);
+  assert.equal(FLASH_UNIFORMS.babelFlashAspect, contacts.slateAspect);
+  Object.assign(FLASH_UNIFORMS, before);
+});
+
+test("every lit film material takes the flash, and none of the scene's lights moves for it", () => {
+  const architecture = flat(source("src/scene/architecture.js"));
+  assert.ok(
+    architecture.includes(
+      'flashHook(material, { rim: rimmed, sky: "babelEnvironment.x" }); return mistHook(material);',
+    ),
+    "the lookout, the tree and the rocks",
+  );
+  assert.equal(architecture.match(/flashHook\(\s*mistHook\(new MeshStandardMaterial/g)?.length, 2);
+  assert.ok(
+    flat(source("src/scene/estate-ground-detail.js")).includes(
+      "flashHook(material); return stampDepthLayer(mistHook(material), DEPTH_LAYER.ground);",
+    ),
+    "the growth, litter and rushes",
+  );
+  assert.ok(flat(source("src/scene/lantern.js")).includes("material = flashHook(source.clone());"));
+  assert.ok(!flat(source("src/scene/rendering.js")).includes("setFlash"));
+  assert.ok(!flat(source("src/scene/lightning.js")).includes("RIM_UNIFORMS"));
 });
 
 test("the sky draws the flash in the banks, off the crop and the text, never in the environment", () => {
@@ -441,11 +534,20 @@ test("the sky draws the flash in the banks, off the crop and the text, never in 
   const environment = flat(source("src/scene/night-environment.js"));
   assert.ok(environment.includes("uFlash: { value: new Vector4(0, 1, 0, 0) }"));
   const ground = flat(source("src/scene/mud-ground.js"));
-  assert.ok(ground.includes("normalize(mat3(viewMatrix)*babelFillAim)) > .9999"));
-  assert.ok(ground.includes("Object.assign(shader.uniforms, uniforms, FLASH_GROUND);"));
+  assert.ok(!ground.includes("babelFillAim"), "the slate's fill keeps its fixed direction");
   assert.ok(
-    ground.includes("1.0-babelFlash.z*slateBehindText()"),
-    "the fill's flash eases off the text",
+    ground.includes("Object.assign(shader.uniforms, uniforms, FLASH_GROUND, FLASH_UNIFORMS);"),
+  );
+  assert.ok(ground.includes("if (babelFlashLight.w > 0.0)"));
+  assert.ok(
+    ground.includes("reflectedLight.directDiffuse += (1.0-slateBehind)*(1.0-slateBehind)*("),
+    "the flash's light on the slate eases off the text",
+  );
+  const mist = flat(source("src/scene/drifting-mist.js"));
+  assert.ok(mist.includes("if(mistFlash.w>0.){"), "the mist scatters the flash");
+  assert.ok(
+    mist.includes("glow+=mistFlash.xyz*flash*(1.-max(mistBox(mistText,fu,"),
+    "off the text",
   );
   assert.ok(ground.includes("babelFlash.x+babelFlash.y > 0.0 ? 1.0-slateBehindText() : 0.0"));
   const puddles = flat(source("src/scene/terrain-build.js"));

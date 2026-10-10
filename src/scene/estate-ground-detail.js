@@ -7,6 +7,7 @@ import {
 } from "three";
 import { DEPTH_LAYER, stampDepthLayer } from "./depth-layers.js";
 import { mistHook } from "./drifting-mist.js";
+import { flashHook } from "./film-light.js";
 import { ESTATE, estateLantern, estatePathDistance, estatePoint } from "./estate-layout.js";
 import { rockKeepouts } from "./rock-scatter.js";
 import { SLATE_PUDDLES, SLATE_STREAMS } from "./mud-ground.js";
@@ -96,7 +97,9 @@ export function grassMaterial() {
   };
   material.customProgramCacheKey = () => "estate-grass-v1";
   material.userData.grassTime = time;
-  // The drifting mist after the fog (drifting-mist.js): the growth, litter and rushes.
+  // A lightning flash after the lights (film-light.js flashHook()) and the drifting
+  // mist after the fog (drifting-mist.js): the growth, litter and rushes.
+  flashHook(material);
   return stampDepthLayer(mistHook(material), DEPTH_LAYER.ground);
 }
 
