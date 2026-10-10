@@ -31,6 +31,7 @@ import { ESTATE } from "./estate-layout.js";
 import { createRockScatter, estateContacts } from "./rock-scatter.js";
 import { createHillSilhouette } from "./hill-silhouette.js";
 import { createLightning } from "./lightning.js";
+import { createFarFires } from "./far-fires.js";
 import { markScene, measureScene, sceneNow } from "./perf-marks.js";
 import { createPropScale } from "./prop-scale.js";
 import {
@@ -568,6 +569,17 @@ const ORBIT_SPEED = 0.06;
       const propScale = createPropScale({ groundRoot: environmentRoot, groundHeight });
       subsystemRegistry.register(propScale);
       let completeTower = null;
+      // The film's distant firelights on the far plain (far-fires.js): out
+      // behind the text and about the tower's and the tree's silhouettes.
+      const farFires = createFarFires({
+        parent: environmentRoot,
+        camera,
+        subjects: () => [completeTower?.root, treeArchitecture?.root],
+        shot: () => cinematic.shot,
+        textGuard: groundContacts,
+        profile: state.profile,
+      });
+      subsystemRegistry.register(farFires);
       // The orbital sun stays in the directed scene: it is the one warm celestial
       // anchor in an otherwise cool night, and reads as distance rather than clutter.
       filmScene = createFilmScene({
@@ -585,6 +597,7 @@ const ORBIT_SPEED = 0.06;
           completeTower?.setFilmTreatment(active);
           groundTextures.setFilmActive(active);
           rockScatter.setFilmActive(active);
+          farFires.setFilmActive(active);
         },
       });
       subsystemRegistry.register(filmScene);
