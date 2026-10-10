@@ -94,6 +94,10 @@ export const DIRECTED_SHOTS = {
       margin: 0.87,
       ground: AFTER_RAIN,
       portrait: { focus: { width: 0.16, depth: [0.13, 0.36] } },
+      // Its broken moonlight eases off behind About (light-shafts.js): with no
+      // cel step or ink on the timber, a lit leg edge beside it on portrait
+      // phones reached 4.83:1 at 390x844.
+      shafts: { gobo: { about: 1 } },
     },
     {
       name: "Gallery detail",
