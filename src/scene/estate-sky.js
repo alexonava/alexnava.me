@@ -98,6 +98,10 @@ const { wedge, radius, bend, horizon, scale, banks, lanes, swirl, text } = CLOUD
 const horizonZero = (Math.sqrt(horizon[0] ** 2 + 0.04) - horizon[0]).toFixed(6);
 const VX = CLOUD_VORTEX;
 const vortexOn = Boolean(VX.on);
+// The plane point and radius the reshaping's coordinates start from: the vortex's
+// turned ones (bv, blv) when it is on.
+const B = vortexOn ? "bv" : "b",
+  R = vortexOn ? "blv" : "bl";
 
 // The vortex's density at local coordinates e (CLOUD_VORTEX): its arms and ring, less
 // its eye. Declared once beside each shader that runs cloudFieldGLSL (the shell, the
@@ -113,20 +117,20 @@ float ring=(r-${glslFloat(VX.ring[1])})/${glslFloat(VX.ring[2])};
 return ${glslFloat(VX.arms[2])}*arm+${glslFloat(VX.ring[0])}*exp(-ring*ring)-${glslFloat(VX.eye[2])}*(1.-smoothstep(${glslFloat(VX.eye[0])},${glslFloat(VX.eye[1])},r));}
 `
   : "";
-// Its frame and weight, after the reshaping's coordinates: exactly 0 over the reference
-// banks, where bn stays as it was. Inside, the banks' coordinates turn about the eye
-// (bv) before the reshaping's horizon and scale map them as they map b.
+// Its frame and weight, after the reshaping's weights: exactly 0 over the reference
+// banks, where bv stays b itself (and blv bl). Inside, the banks' coordinates turn
+// about the eye (bv) before the reshaping's horizon and scale map them as they map b.
 const VORTEX_FRAME = vortexOn
   ? `vec2 vxR=normalize(uVortex.xy),vxT=vec2(-vxR.y,vxR.x),vxD=b-uVortex.xy;
 vec2 vxE=vec2(dot(vxD,vxT),dot(vxD,vxR)*${glslFloat(VX.squash)});
 float vxRho=length(vxE);
 float vxW=(1.-smoothstep(${glslFloat(wedge[0])},${glslFloat(wedge[1])},cloudAz)*(1.-smoothstep(${glslFloat(VX.protect[0])},${glslFloat(VX.protect[1])},cloudAz))*smoothstep(${glslFloat(radius[0])},${glslFloat(radius[1])},bl))*uCloudReshape*uVortex.z;
 vxW*=(1.-smoothstep(${glslFloat(+(VX.fade * VX.radius).toFixed(6))},${glslFloat(VX.radius)},length(vxE-vec2(${glslFloat(+(VX.shift[0] * VX.radius).toFixed(6))},${glslFloat(+(VX.shift[1] * VX.radius).toFixed(6))})*uVortex.w)))*mix(1.,smoothstep(${glslFloat(VX.hole[0])},${glslFloat(VX.hole[1])},vxRho),uVortex.w);
+vec2 bv=b;
 if(vxW>0.){float vxA=vxW*${glslFloat(VX.twist)}/(1.+vxRho*vxRho/${glslFloat(+(VX.eye[1] ** 2).toFixed(6))});
 vec2 vxS=vec2(cos(vxA),sin(vxA)),vxF=vec2(vxS.x*vxE.x-vxS.y*vxE.y,vxS.y*vxE.x+vxS.x*vxE.y);
-vec2 bv=uVortex.xy+vxF.x*vxT+vxF.y/${glslFloat(VX.squash)}*vxR;
-float blv=max(length(bv),.001),vxO=blv-${glslFloat(horizon[0])};
-bn=bv*mix(1.,(blv-${glslFloat(1 - horizon[1])}*.5*(vxO+sqrt(vxO*vxO+.04)-${horizonZero}))/blv*${glslFloat(scale)},bend);}
+bv=uVortex.xy+vxF.x*vxT+vxF.y/${glslFloat(VX.squash)}*vxR;}
+float blv=max(length(bv),.001);
 `
   : "";
 // Its density, lit as the banks are: once here and once toward the sun (da).
@@ -156,10 +160,9 @@ cloudAz+=cloudAz<0.?360.:0.;
 float open=(1.-smoothstep(${glslFloat(wedge[0])},${glslFloat(wedge[1])},cloudAz)*(1.-smoothstep(${glslFloat(wedge[2])},${glslFloat(wedge[3])},cloudAz))*smoothstep(${glslFloat(radius[0])},${glslFloat(radius[1])},bl))*(1.-gapG);
 open*=uCloudReshape;
 float bend=(1.-smoothstep(${glslFloat(bend[0])},${glslFloat(wedge[1])},cloudAz)*(1.-smoothstep(${glslFloat(wedge[2])},${glslFloat(bend[1])},cloudAz))*smoothstep(${glslFloat(bend[2])},${glslFloat(radius[1])},bl))*uCloudReshape;
-float cloudOut=bl-${glslFloat(horizon[0])};
-float cloudR=bl-${glslFloat(1 - horizon[1])}*.5*(cloudOut+sqrt(cloudOut*cloudOut+.04)-${horizonZero});
-vec2 bn=b*mix(1.,cloudR/bl*${glslFloat(scale)},bend);
-${VORTEX_FRAME}
+${VORTEX_FRAME}float cloudOut=${R}-${glslFloat(horizon[0])};
+float cloudR=${R}-${glslFloat(1 - horizon[1])}*.5*(cloudOut+sqrt(cloudOut*cloudOut+.04)-${horizonZero});
+vec2 bn=${B}*mix(1.,cloudR/${R}*${glslFloat(scale)},bend);
 float wa=T*.000436;
 vec2 p=bn+2.98*(sin(wa)*vec2(.923,.385)+(1.-cos(wa))*vec2(-.385,.923));
 vec2 q=p+vec2(5.7,0.9);

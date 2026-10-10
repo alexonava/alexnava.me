@@ -649,8 +649,14 @@ test("the clouds' reshaping never reaches the reference banks or the roof's lane
     }
   // Past the horizon's knee the noise radius grows slower but never folds back, and
   // nearer the zenith it is the plane's own.
-  const outer = new Function("bl", `return ${line("cloudOut")}`);
-  const radiusOf = new Function("bl", "cloudOut", "sqrt", `return ${line("cloudR")}`);
+  // (Where the vortex turns, its radius blv stands for bl; elsewhere blv is bl itself.)
+  const outer = new Function("bl", `return ${line("cloudOut").replace(/\bblv\b/g, "bl")}`);
+  const radiusOf = new Function(
+    "bl",
+    "cloudOut",
+    "sqrt",
+    `return ${line("cloudR").replace(/\bblv\b/g, "bl")}`,
+  );
   const [knee, rate] = CLOUD_RESHAPE.horizon;
   let previous = 0;
   for (let bl = 0.001; bl <= 6; bl += 0.01) {
@@ -695,7 +701,13 @@ test("the clouds' reshaping never reaches the reference banks or the roof's lane
   assert.ok(CLOUD_RESHAPE.wedge[1] - farLeft >= 20 && farRight - CLOUD_RESHAPE.wedge[2] >= 20);
   const scale = CLOUD_RESHAPE.scale;
   assert.ok(scale > 0 && scale <= 1);
-  assert.ok(shader.includes(`vec2 bn=b*mix(1.,cloudR/bl*${scale},bend);`));
+  assert.ok(
+    shader.includes(
+      CLOUD_VORTEX.on
+        ? `vec2 bn=bv*mix(1.,cloudR/blv*${scale},bend);`
+        : `vec2 bn=b*mix(1.,cloudR/bl*${scale},bend);`,
+    ),
+  );
   assert.match(shader, /vec2 p=bn\+2\.98\*\(/);
   // The swirl turns the noise along half a turn of the half-frequency octave.
   const swirlLine = shader.match(/wo\+=bend\*([\d.]+)\*vec2\(cos\(turn\),sin\(turn\)\);/);
@@ -877,7 +889,8 @@ test("the cloud vortex turns about the star's eye, never over the reference bank
   assert.match(shader, /\*uCloudReshape\*uVortex\.z;/);
   // Where the weight is 0 the noise's coordinates and the density are untouched: the
   // turn and the vortex's density sit in branches the reference never takes.
-  assert.ok(shader.includes("vec2 bn=b*mix(1.,cloudR/bl*0.85,bend);\nvec2 vxR="));
+  assert.ok(shader.includes("vec2 bv=b;\nif(vxW>0.){float vxA="));
+  assert.ok(shader.includes("float blv=max(length(bv),.001);\nfloat cloudOut=blv-1.5;"));
   assert.match(shader, /if\(vxW>0\.\)\{float vxA=/);
   assert.match(shader, /if\(vxW>0\.\)\{vec2 vxL=L\*clamp\(bl\*\.1,\.1,\.2\);/);
   // The turn is a rotation of the local frame by an angle, so it never folds the

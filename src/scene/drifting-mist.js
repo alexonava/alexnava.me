@@ -209,10 +209,11 @@ return mix(c,c*keep+glow,${g(M.veil)});}
   : "";
 
 // The ranges ride on the camera (hill-silhouette.js): their mist is gathered along
-// their view ray `dir` out to MIST_DRIFT.ranges, or to the plain where it meets it.
+// their view ray `dir` out to MIST_DRIFT.ranges, or to the plain where it meets it,
+// added as a change, so where there is none the colour stays exactly as it was.
 export const MIST_RANGES = mistOn
   ? `{vec3 md=normalize(vL);if(md.y<${g(M.ranges[1])}){float mD=${g(M.ranges[0])};if(md.y<0.)mD=min(mD,max(cameraPosition.y-mistFrame.x,0.)/-md.y);
-c=mix(mistOver(c,cameraPosition+md*mD),c,smoothstep(0.,${g(M.ranges[1])},md.y));}}
+c+=(mistOver(c,cameraPosition+md*mD)-c)*(1.-smoothstep(0.,${g(M.ranges[1])},md.y));}}
 `
   : "";
 
