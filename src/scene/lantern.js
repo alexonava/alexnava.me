@@ -1,5 +1,6 @@
 import { Box3, Group, Mesh, Vector3 } from "three";
 import { editableGeometry } from "./architecture.js";
+import { flashHook } from "./film-light.js";
 
 export const LANTERN_AUTHORING_HEIGHT = 2.48;
 // The lantern's iron and glass mirror the film's night sky (night-environment.js)
@@ -34,7 +35,8 @@ export function createLanternArchitecture({ asset, anisotropy = 4 }) {
         throw new Error("Lantern requires authored PBR materials");
       let material = clonedMaterials.get(source);
       if (!material) {
-        material = source.clone();
+        // A lightning flash lights it too (film-light.js flashHook()).
+        material = flashHook(source.clone());
         material.envMapIntensity = LANTERN_ENVIRONMENT;
         clonedMaterials.set(source, material);
         materials.add(material);

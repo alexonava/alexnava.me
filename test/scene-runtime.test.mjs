@@ -1532,7 +1532,9 @@ test("a shot's light mood merges over the neutral default and never shares it", 
     rim: 1,
     pale: 0,
     rimText: 0,
+    grassInside: 0,
     glintText: 0,
+    poolAbout: 0,
   });
   for (const shot of [null, undefined, {}, { light: null }])
     assert.deepEqual(shotLight(shot), SHOT_LIGHT_DEFAULT);
@@ -1544,7 +1546,9 @@ test("a shot's light mood merges over the neutral default and never shares it", 
     rim: 1.8,
     pale: 0,
     rimText: 0,
+    grassInside: 0,
     glintText: 0,
+    poolAbout: 0,
   });
   assert.notEqual(shotLight(null), SHOT_LIGHT_DEFAULT, "a fresh object each time");
   mood.key = 3;
@@ -1581,6 +1585,24 @@ test("a shot's light mood merges over the neutral default and never shares it", 
     ["Lantern study", "Root and lantern"],
   );
   for (const shot of glint) assert.equal(shotLight(shot).glintText, 1);
+  // Only Lantern study keeps its lantern's pool off About (its push-in on a
+  // portrait monitor), and wholly.
+  const pool = [...DIRECTED_SHOTS.tower, ...DIRECTED_SHOTS.tree]
+    .filter((shot) => shotLight(shot).poolAbout > 0)
+    .map((shot) => [shot.name, shotLight(shot).poolAbout]);
+  assert.deepEqual(pool, [["Lantern study", 1]]);
+  // Only the lantern shots read their grass inside the blades, wholly: a
+  // blade's tip read past its edge sparkled on Lantern study's name (lit by
+  // the lantern, 4.19:1) and under Root and lantern's intro (lit by the moon,
+  // 4.21:1).
+  const inside = [...DIRECTED_SHOTS.tower, ...DIRECTED_SHOTS.tree].filter(
+    (shot) => shotLight(shot).grassInside > 0,
+  );
+  assert.deepEqual(
+    inside.map((shot) => shot.name),
+    ["Lantern study", "Root and lantern"],
+  );
+  for (const shot of inside) assert.equal(shotLight(shot).grassInside, 1);
 });
 
 test("setRim scales the cool rim colour and keeps the moon-facing floor", () => {
@@ -1610,21 +1632,28 @@ test("setRim scales the cool rim colour and keeps the moon-facing floor", () => 
   assert.equal(LANTERN_MOOD.value, 1);
 });
 
-test("each frame applies the shot's light, lens, grade, bars and grain, holding the grain while still", () => {
+test("each frame applies the shot's light, lens, bars and grain, holding the grain while still", () => {
   const index = flat(source("src/scene/index.js"));
   // The mood follows the shot on screen in film only.
   assert.ok(
     index.includes(
-      "const mood = shotLight(filmActive && cinematicApplied ? cinematic.shot : null); rendering.setShotLight?.(mood); if (LANTERN_MOOD.value !== mood.lantern) { LANTERN_MOOD.value = mood.lantern; treeArchitecture?.refreshLantern?.(); } setRim(filmActive ? mood.rim : 0, filmActive ? mood.rimText : 0); PALE_MOOD.value = filmActive ? mood.pale : 0; GLINT_MOOD.value = filmActive ? mood.glintText : 0;",
+      "const mood = shotLight(filmActive && cinematicApplied ? cinematic.shot : null); rendering.setShotLight?.(mood); if (LANTERN_MOOD.value !== mood.lantern) { LANTERN_MOOD.value = mood.lantern; treeArchitecture?.refreshLantern?.(); } setRim(filmActive ? mood.rim : 0, filmActive ? mood.rimText : 0); PALE_MOOD.value = filmActive ? mood.pale : 0; GLINT_MOOD.value = filmActive ? mood.glintText : 0; GRASS_MOOD.value = filmActive ? mood.grassInside : 0;",
     ),
   );
+  // The ground's pool knee about About follows it too, off out of film.
+  const pool = index.indexOf(
+    "groundContacts.slatePoolAbout.value = filmActive ? mood.poolAbout : 0;",
+  );
+  const moodAt = index.indexOf("const mood = shotLight(");
+  assert.ok(pool > moodAt, "after the mood");
+  assert.ok(pool < index.indexOf("camera.updateMatrixWorld();", moodAt), "in the mood's block");
   assert.ok(
     index.includes(
       "RIM_UNIFORMS.babelKeyView.value .set(...WORLD.SUN_DIRECTION) .transformDirection(camera.matrixWorldInverse);",
     ),
   );
   assert.ok(index.includes("post.setLens?.(cinematicApplied ? cinematic.shot?.lens : null);"));
-  assert.ok(index.includes("post.setGrade?.(cinematicApplied ? cinematic.shot?.grade : null);"));
+  assert.ok(!index.includes("setGrade"), "no per-shot grade: the cel step is the sky's alone");
   assert.ok(
     index.includes(
       "post.setBars?.(filmActive && cinematicApplied ? letterboxShare(viewport.width, viewport.height) : 0);",
@@ -1639,4 +1668,28 @@ test("each frame applies the shot's light, lens, grade, bars and grain, holding 
       'if (!reducedMotion && !visitorHold?.paused && !document.body.hasAttribute("data-panel-open")) post.setFilmTime?.(elapsedTime);',
     ),
   );
+  // The lens (LENS_FX) follows its sources on screen in film only: the star always,
+  // the flame in the shots that look at it, and The watch's kept banks on desktops.
+  assert.ok(
+    index.includes(
+      "const shot = filmActive && cinematicApplied ? cinematic.shot : null, flame = shot && treeArchitecture?.light && LENS_FX.heat.flameShots.includes(shot.name);",
+    ),
+  );
+  assert.ok(
+    index.includes(
+      "star: shot ? lensSource(camera, solarBody.root.getWorldPosition(lensPoint), SOLAR_RADIUS, lensStar) : null,",
+    ),
+  );
+  assert.ok(
+    index.includes(
+      "flame: flame ? lensSource(camera, treeArchitecture.light.getWorldPosition(lensPoint), 1, lensFlame) : null,",
+    ),
+  );
+  assert.ok(
+    index.includes(
+      "keep: shot && viewport.width >= 1000 && viewport.width > 1.2 * viewport.height ? (LENS_FX.keep[shot.name] ?? null) : null });",
+    ),
+  );
+  // It reads the ground's own text boxes.
+  assert.ok(index.includes("rendering.postprocessPipeline.setTextGuard?.(groundContacts);"));
 });

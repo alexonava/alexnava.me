@@ -4,6 +4,14 @@ import { Box3, Vector3 } from "three";
 // Detail shots intentionally crop incidental roof/canopy geometry; fitting the
 // entire horizontal slice would turn every portrait detail into a wide shot.
 // hold: seconds the tour stays on a shot, cut to cut; tour=3|5|20 overrides it.
+// After the rain (the owner's picks of 2026-10-09): every wide shot's plain
+// catches the sky (Portrait's gloss, but untinted, so the plain keeps main's
+// warmth) and a light, warm grey mist lies on the ranges' feet, so the plain
+// meets them softly (mud-ground.js SLATE_LOOK).
+const AFTER_RAIN = Object.freeze({
+  mist: Object.freeze({ color: Object.freeze([0.27, 0.26, 0.29]), amount: 0.45 }),
+  gloss: Object.freeze({ film: 0.32, gain: 1.9, cool: 0 }),
+});
 export const DIRECTED_SHOTS = {
   tower: [
     {
@@ -23,6 +31,7 @@ export const DIRECTED_SHOTS = {
       height: 0.68,
       arc: 2,
       hold: 9,
+      ground: AFTER_RAIN,
       portrait: { region: [0.62, 1], targetHeight: 1.11, azimuth: -4, height: 0.66 },
       // Landscape phones hold the intro over the upper third, where the snowy
       // range projected; lower and further round, it runs between text and tower.
@@ -62,6 +71,7 @@ export const DIRECTED_SHOTS = {
       focus: { width: 0.3, depth: [0.06, 0.34] },
       margin: 0.87,
       anchor: [0.47, 0.52],
+      ground: AFTER_RAIN,
       portrait: { region: [0.62, 0.9], focus: { width: 0.22, depth: [0.06, 0.34] } },
       // Landscape phones keep the drift (no room about the name for a move) and
       // the centred aim and fuller margin, which keep the star clear of the name.
@@ -82,7 +92,12 @@ export const DIRECTED_SHOTS = {
       focus: { width: 0.2, depth: [0.13, 0.36] },
       // Keeps the far corner leg off the right frame edge through its drift.
       margin: 0.87,
+      ground: AFTER_RAIN,
       portrait: { focus: { width: 0.16, depth: [0.13, 0.36] } },
+      // Its broken moonlight eases off behind About (light-shafts.js): with no
+      // cel step or ink on the timber, a lit leg edge beside it on portrait
+      // phones reached 4.83:1 at 390x844.
+      shafts: { gobo: { about: 1 } },
     },
     {
       name: "Gallery detail",
@@ -148,7 +163,12 @@ export const DIRECTED_SHOTS = {
         tilt: [-5, 0],
         move: { dolly: [1.08, 0.94], ease: 0.5 },
       },
-      ground: { burn: { amount: 0.45, reach: [0.3, 0.9] }, flatten: 0.6, keep: [9, 20] },
+      ground: {
+        burn: { amount: 0.45, reach: [0.3, 0.9] },
+        flatten: 0.6,
+        keep: [9, 20],
+        ...AFTER_RAIN,
+      },
     },
   ],
   tree: [
@@ -160,14 +180,12 @@ export const DIRECTED_SHOTS = {
         anchor: [0.5, 0.66],
       },
       // The crown in moonlight (the owner's pick of 2026-10-09): its pale,
-      // bleached limbs read cool grey, not pink-beige (pale), and its bark
-      // shades smoothly with a third of the cel step (grade.subjects). The
+      // bleached limbs read cool grey, not pink-beige (pale). The
       // moon catches it its own way (shafts.gobo over the tree's,
       // light-shafts.js): barely wrapped, so it falls on the faces turned to
       // the moon and leaves the rest dark, with a strong cool silver catch on
       // the edges toward it. Its rays are the tree's own.
       light: { fill: 0.85, rim: 1.3, pale: 0.75 },
-      grade: { subjects: 0.3 },
       shafts: { gobo: { color: [0.6, 0.78, 1.2], gain: 3.4, wrap: 0.1, rim: 5 } },
       move: { truck: [-0.07, 0.07], crane: [0, 0.13], dolly: [1.05, 0.92], ease: 0.6 },
       // Low (0.12), so the plain ahead is foreshortened under the ranges, and
@@ -208,8 +226,22 @@ export const DIRECTED_SHOTS = {
       name: "Lantern study",
       // Lantern-led, its bark's glints off the text: the lantern's glint on a
       // wet root beside the name at the end of the push-in (4.67:1 at
-      // 1920x1080) passes the ground's knee (film-light.js GLINT).
-      light: { key: 0.55, fill: 0.65, lantern: 1.45, rim: 0.7, glintText: 1 },
+      // 1920x1080) passes the ground's knee (film-light.js GLINT). Its grass
+      // reads its colour inside the blades (film-light.js GRASS_MOOD): a
+      // rush's tip read past its edge, lit by the lantern, sparkled on the
+      // name's top edge (4.19:1 at 1920x1080, phase 24.4 of the move). Its
+      // pool is kept off About: on a portrait monitor the push-in carries the
+      // pool's lit cobble crests across the label (3.92:1 at 1080x1920), so
+      // there the pool passes its knee (mud-ground.js SLATE_LIGHT.poolKnee).
+      light: {
+        key: 0.55,
+        fill: 0.65,
+        lantern: 1.45,
+        rim: 0.7,
+        grassInside: 1,
+        glintText: 1,
+        poolAbout: 1,
+      },
       lens: { blur: 8 },
       move: { dolly: [1.2, 0.85], ease: 0.6 },
       subject: "tree-lantern",
@@ -224,6 +256,7 @@ export const DIRECTED_SHOTS = {
       hold: 6,
       margin: 0.7,
       anchor: [0.56, 0.5],
+      ground: AFTER_RAIN,
       landscape: { move: null, azimuth: -115, anchor: [0.5, 0.5] },
       portrait: { move: { dolly: [1.1, 0.9], ease: 0.6 }, azimuth: -115, anchor: [0.5, 0.5] },
     },
@@ -262,9 +295,12 @@ export const DIRECTED_SHOTS = {
       name: "Root and lantern",
       move: { dolly: [0.86, 1.05], crane: [0, 0.03], ease: 0.6 },
       // The moon's glint on a wet root under the intro's end at the start of
-      // the pull-back (4.32:1 at 1440x900) passes the ground's knee, as in
-      // Lantern study.
-      light: { key: 0.6, fill: 0.75, lantern: 1.4, rim: 0.9, glintText: 1 },
+      // the pull-back (4.32:1 at 1440x900) passes the ground's knee, and its
+      // grass reads its colour inside the blades (film-light.js GRASS_MOOD),
+      // as in Lantern study: a blade's tip read past its edge, lit by the
+      // moon, sparkled under the intro (4.21:1 at 1440x900, phase 24.1 of the
+      // move).
+      light: { key: 0.6, fill: 0.75, lantern: 1.4, rim: 0.9, grassInside: 1, glintText: 1 },
       lens: { blur: 8 },
       // Round from the pond's axis, so the trunk stands right of centre and
       // the lantern on the right third, the plain behind the name; the aim
@@ -279,6 +315,7 @@ export const DIRECTED_SHOTS = {
       focus: { width: 0.3, depth: [-0.1, 0.32] },
       margin: 0.91,
       anchor: [0.52, 0.64],
+      ground: AFTER_RAIN,
       portrait: {
         focus: { width: 0.25, depth: [-0.1, 0.32] },
         anchor: [0.55, 0.66],

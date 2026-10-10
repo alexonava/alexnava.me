@@ -24,6 +24,7 @@ import {
   estatePathDistance,
   streamDistance,
 } from "../src/scene/estate-ground-detail.js";
+import { GRASS_MOOD } from "../src/scene/film-light.js";
 import { rockKeepouts } from "../src/scene/rock-scatter.js";
 import { createSceneEnvironment } from "../src/scene/environment.js";
 
@@ -327,6 +328,43 @@ test("balanced trims the fine litter only at whole pieces", () => {
   detail.applyQuality({ tier: "high" });
   assert.equal(litter.geometry.drawRange.count, end);
   detail.dispose();
+});
+
+test("a shot's grassInside reads the grass's colour inside its blades, and at 0 nothing changes", () => {
+  const detail = createEstateGroundDetail(groundHeight),
+    material = detail.mesh.material;
+  const shader = {
+    uniforms: {},
+    vertexShader: "#include <common>\n#include <color_vertex>\n#include <begin_vertex>",
+    fragmentShader:
+      "#include <common>\n#include <color_fragment>\n#include <normal_fragment_begin>\n#include <dithering_fragment>\n}",
+  };
+  material.onBeforeCompile(shader);
+  // The mood's shared uniform, off unless a shot asks for it.
+  assert.equal(shader.uniforms.grassInside, GRASS_MOOD);
+  assert.equal(GRASS_MOOD.value, 0);
+  // A centroid copy of the vertex colour, only where GLSL 3 has centroid
+  // (WebGL2, where the film is multisampled), taken after color_vertex sets it.
+  const centroid = /#if __VERSION__ >= 300\ncentroid varying vec3 vGrassColor;\n#endif/;
+  assert.match(shader.vertexShader, centroid);
+  assert.match(shader.fragmentShader, centroid);
+  assert.match(
+    shader.vertexShader,
+    /#include <color_vertex>\n#include <begin_vertex>[^]*vGrassColor = vColor;/,
+  );
+  // three's own colour stays, so at 0 the blade reads exactly as before; the
+  // mood's share replaces it with the colour inside the blade.
+  assert.match(
+    shader.fragmentShader,
+    /uniform float grassInside;[^]*vec3 grassBase = diffuseColor\.rgb;\n#include <color_fragment>\n#if __VERSION__ >= 300\nif \(grassInside > 0\.0\) diffuseColor\.rgb = grassBase\*mix\(vColor, vGrassColor, grassInside\);\n#endif\n#include <normal_fragment_begin>/,
+  );
+  // Every growth material shares the one mood.
+  const other = createEstateGroundDetail(groundHeight),
+    second = { uniforms: {}, vertexShader: "", fragmentShader: "" };
+  other.mesh.material.onBeforeCompile(second);
+  assert.equal(second.uniforms.grassInside, GRASS_MOOD);
+  detail.dispose();
+  other.dispose();
 });
 
 test("the grass's wind runs with drawn frames and holds while motion is held", () => {
