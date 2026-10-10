@@ -12,6 +12,7 @@ import {
   HORIZON_HAZE,
   MASSIF_SNOW,
   MASSIFS,
+  MASSIF_STRATA,
   MOUNTAIN_AIR,
   RANGE_MIST,
   snowReach,
@@ -555,24 +556,44 @@ test("the massif shader is the ranges' moonlit style on the models' own relief",
   assert.ok(
     fragmentShader.includes("return normalize(vec3(m.x*vI.x-m.z*vI.y,m.y,m.x*vI.y+m.z*vI.x));}"),
   );
-  assert.ok(fragmentShader.includes("vec3 n=relief(0.);"));
-  // The rings' sky, far plain, rims and ink, verbatim; the rock one air farther out.
+  // The relief read sharper than its footprint (MASSIFS.sharpen), so the moonlit faces keep their form.
+  assert.ok(MASSIFS.sharpen < 0 && MASSIFS.sharpen >= -1);
+  assert.ok(fragmentShader.includes(`vec3 n=relief(${MASSIFS.sharpen});`));
+  // Natural strata on the bare rock: irregular warped layers, faint, on steep rock only and
+  // in broken patches along the ring, each a moonlit ledge over a dark seam, anti-aliased by
+  // the layer's own gradient, before the snow.
+  const strataAt = fragmentShader.indexOf("{float azw=mod(az,360.),w1=vnw(");
+  assert.ok(strataAt > fragmentShader.indexOf("ao=mix(1.,mk.y,.6);"));
+  assert.ok(strataAt < fragmentShader.indexOf("float cap=clamp("));
+  assert.ok(fragmentShader.includes(`float sk=el*${MASSIF_STRATA.spacing}+`));
+  assert.ok(fragmentShader.includes("sw=max(fwidth(sk),1e-3),f=fract(sk),id=floor(sk)"));
+  assert.ok(MASSIF_STRATA.spacing > 1 && MASSIF_STRATA.spacing < 4, "layers broad, never a mesh");
+  assert.ok(MASSIF_STRATA.amount[0] + MASSIF_STRATA.amount[1] <= 1);
+  assert.ok(MASSIF_STRATA.light <= 0.2 && MASSIF_STRATA.seam[1] <= 0.2, "faint, not contour lines");
+  assert.ok(fragmentShader.includes("float st=1.-smoothstep("), "steep rock only");
+  assert.ok(fragmentShader.includes("float p0=smoothstep("), "broken along the ring");
+  // Their noises wrap whole about the ring (no seam at +-180 degrees), their seam ramps in
+  // on both sides of a layer's edge with the same patches, and their light never steps.
+  for (const [azimuth] of [...MASSIF_STRATA.warp, [MASSIF_STRATA.broken[0]]])
+    assert.ok(Math.abs(azimuth * 360 - Math.round(azimuth * 360)) < 1e-9, `${azimuth}`);
+  assert.ok(fragmentShader.includes("float vnw(vec2 p,float w){"));
+  assert.ok(fragmentShader.includes("smoothstep(1.-sw,1.,f)"));
+  assert.match(fragmentShader, /ao\*=1\.-[\d.]+\*st\*p0\*seam;/);
+  assert.match(fragmentShader, /lit\*=1\.\+[\d.]+\*\(amp\*p1\*st\*ledge-[\d.]+\);/);
+  // The rings' sky, far plain and orb glow, verbatim; the rock one air farther out.
   for (const shared of [
     "float b=dot(o,d), t=-b+sqrt(max(b*b-dot(o,o)+uSky.x,0.)), a=(o.y+d.y*t)*inversesqrt(uSky.x);",
-    "c=mix(c,pa,fh*(1.-smoothstep(-.02,0.,vL.y/r)));",
-    "+vec3(.1,.07,.04)*pow(max(dot(v,toSun),0.),60.));",
+    "{float skE=vL.y/r,skA=atan(vL.z,vL.x),skN=.5+",
+    "c*=1.+vec3(.06,.02,-.04)*pow(max(dot(v,toSun),0.),10.);",
   ]) {
     assert.ok(ranges.includes(shared), `the rings keep: ${shared}`);
     assert.ok(fragmentShader.includes(shared), `the massifs share: ${shared}`);
   }
-  // The crest's ink is the rings', fading out below eye level where the plain's air took the rock.
-  assert.ok(ranges.includes("c=mix(c,vec3(.012,.016,.03),(1.-smoothstep(.4,1.4,px))*(.7-.3*k));"));
-  // None on a sliver lying wholly on the crest, where vT.x does not vary.
-  assert.ok(
-    fragmentShader.includes(
-      "c=mix(c,vec3(.012,.016,.03),(1.-smoothstep(.4,1.4,px))*(.7-.3*k)*smoothstep(-.6,.15,el)*step(1e-6,fwidth(vT.x)));",
-    ),
-  );
+  // Real rock: no crest ink and no drawn rim on either.
+  for (const shader of [ranges, fragmentShader]) {
+    assert.ok(!shader.includes("c=mix(c,vec3(.012,.016,.03)"));
+    assert.doesNotMatch(shader, /float cr=/);
+  }
   // Snow holds off near-vertical rock with an anti-aliased edge; its tongues read a blurred mask.
   assert.ok(fragmentShader.includes("vec2 mb=texture2D(uMask,vU,2.5).rg;"));
   assert.ok(
