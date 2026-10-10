@@ -228,50 +228,159 @@ export const PUDDLE_ZONES = Object.freeze([
   zoneAt(TREE_FOOTING, 75, 9, 2.5),
   zoneAt(TREE_FOOTING, -100, 16, 1.5),
 ]);
-// The rain streams (mud-ground.js SLATE_STREAMS, restated): world polylines
-// from the lantern's foot offsets, and a point's distance outside them (at
-// their widest, meander included).
+// The streams (mud-ground.js SLATE_STREAMS, restated): the courses, the
+// mirror's ripples and the white water, and a point's distance outside them
+// (each course's half-width where it passes, its meander included).
 export const STREAMS = Object.freeze({
-  paths: Object.freeze(
+  courses: Object.freeze(
     [
-      [
-        [5.28, 1.04],
-        [3.68, 0.04],
-        [2.28, -1.06],
-        [1.08, -1.56],
-        [0.08, -1.86],
-        [-0.3, -2.85],
-      ],
-      [
-        [2.28, 1.24],
-        [1.38, 0.64],
-        [0.98, -0.36],
-        [0.1, -1.7],
-        [-0.25, -2.8],
-      ],
-      [
-        [4.48, -2.36],
-        [3.08, -1.96],
-        [1.68, -2.06],
-        [0.48, -2.06],
-        [0.15, -3.05],
-      ],
-    ].map((path) => Object.freeze(path.map(([dx, dz]) => Object.freeze([dx, dz])))),
+      {
+        path: [
+          [5.28, 1.04],
+          [4.3, 0.45],
+          [3.3, -0.3],
+          [2.4, -1.0],
+          [1.55, -1.55],
+        ],
+        width: [0.2, 0.52],
+      },
+      {
+        path: [
+          [2.28, 1.24],
+          [1.62, 0.72],
+          [1.3, -0.1],
+          [1.3, -0.95],
+          [1.55, -1.55],
+        ],
+        width: [0.18, 0.45],
+      },
+      {
+        path: [
+          [4.48, -2.36],
+          [3.5, -2.05],
+          [2.5, -1.8],
+          [1.55, -1.55],
+        ],
+        width: [0.2, 0.52],
+      },
+      {
+        path: [
+          [1.55, -1.55],
+          [0.85, -1.95],
+          [0.2, -2.45],
+          [-0.3, -3.1],
+          [-0.75, -3.85],
+        ],
+        width: [0.75, 1.85],
+      },
+    ].map(({ path, width }) =>
+      Object.freeze({
+        path: Object.freeze(path.map((p) => Object.freeze(p))),
+        width: Object.freeze(width),
+      }),
+    ),
   ),
-  reach: 0.17 + 0.28,
+  step: 0.45,
+  meander: 0.28,
+  flow: 2.1,
+  current: Object.freeze({
+    coarse: Object.freeze([1.1, 2.4]),
+    fine: Object.freeze([3, 6.5]),
+    tilt: Object.freeze([0.065, 0.03]),
+  }),
+  foam: Object.freeze({
+    cell: Object.freeze([9, 30]),
+    patch: Object.freeze([1.2, 2]),
+    amount: 0.32,
+    join: 0.65,
+    mouth: 0.75,
+    reach: Object.freeze([1, 1.9]),
+    cover: 0.7,
+    albedo: 0.3,
+    text: 0.9,
+  }),
+});
+// A smooth course through world points (Catmull-Rom; mud-ground.js
+// smoothCourse()), sampled about every `step` units: [x, z, distance along].
+function smoothCourse(p, step) {
+  const at = (i) => p[Math.max(0, Math.min(p.length - 1, i))],
+    points = [];
+  for (let i = 0; i + 1 < p.length; i++) {
+    const [a, b, c, d] = [at(i - 1), at(i), at(i + 1), at(i + 2)],
+      pieces = Math.max(1, Math.ceil(Math.hypot(c[0] - b[0], c[1] - b[1]) / step));
+    for (let k = 0; k < pieces; k++) {
+      const t = k / pieces,
+        t2 = t * t,
+        t3 = t2 * t,
+        f = (q) =>
+          0.5 *
+          (2 * b[q] +
+            (c[q] - a[q]) * t +
+            (2 * a[q] - 5 * b[q] + 4 * c[q] - d[q]) * t2 +
+            (3 * b[q] - a[q] - 3 * c[q] + d[q]) * t3);
+      points.push([f(0), f(1)]);
+    }
+  }
+  points.push(p.at(-1));
+  let s = 0;
+  return points.map(([x, z], i) => {
+    if (i) s += Math.hypot(x - points[i - 1][0], z - points[i - 1][1]);
+    return Object.freeze([+x.toFixed(3), +z.toFixed(3), +s.toFixed(3)]);
+  });
+}
+// The streams' courses, sampled (mud-ground.js streamLines()).
+export const STREAM_LINES = Object.freeze(
+  STREAMS.courses.map(({ path, width }) => {
+    const points = smoothCourse(
+      path.map(([dx, dz]) => [LANTERN_FOOT.x + dx, LANTERN_FOOT.z + dz]),
+      STREAMS.step,
+    );
+    return Object.freeze({ points: Object.freeze(points), width, length: points.at(-1)[2] });
+  }),
+);
+// Each course in runs of STREAM_RUN segments, boxed: the half-width at every
+// sample, the run's widest, and its box [x0, x1, z0, z1].
+const STREAM_RUN = 4;
+const STREAM_RUNS = STREAM_LINES.flatMap(({ points, width, length }) => {
+  const half = points.map(([, , s]) => (width[0] + ((width[1] - width[0]) * s) / length) / 2),
+    runs = [];
+  for (let k = 0; k + 1 < points.length; k += STREAM_RUN) {
+    const end = Math.min(points.length - 1, k + STREAM_RUN),
+      xs = points.slice(k, end + 1).map(([x]) => x),
+      zs = points.slice(k, end + 1).map(([, z]) => z);
+    runs.push({
+      points: points.slice(k, end + 1),
+      half: half.slice(k, end + 1),
+      reach: Math.max(...half.slice(k, end + 1)),
+      box: [Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs)],
+    });
+  }
+  return runs;
 });
 export function streamDistance(x, z) {
+  // Start from the nearest run's head (an upper bound), then measure only the runs whose box could be nearer.
   let best = Infinity;
-  for (const path of STREAMS.paths)
-    for (let k = 1; k < path.length; k++) {
-      const ax = LANTERN_FOOT.x + path[k - 1][0],
-        az = LANTERN_FOOT.z + path[k - 1][1],
-        bx = path[k][0] - path[k - 1][0],
-        bz = path[k][1] - path[k - 1][1],
+  for (const { points, half } of STREAM_RUNS)
+    best = Math.min(best, Math.hypot(x - points[0][0], z - points[0][1]) - half[0]);
+  for (const { points, half, reach, box } of STREAM_RUNS) {
+    if (
+      Math.hypot(Math.max(box[0] - x, 0, x - box[1]), Math.max(box[2] - z, 0, z - box[3])) -
+        reach >=
+      best
+    )
+      continue;
+    for (let k = 1; k < points.length; k++) {
+      const [ax, az] = points[k - 1],
+        bx = points[k][0] - ax,
+        bz = points[k][1] - az,
         h = Math.min(1, Math.max(0, ((x - ax) * bx + (z - az) * bz) / (bx * bx + bz * bz)));
-      best = Math.min(best, Math.hypot(x - ax - bx * h, z - az - bz * h));
+      best = Math.min(
+        best,
+        Math.hypot(x - ax - bx * h, z - az - bz * h) - (half[k - 1] + (half[k] - half[k - 1]) * h),
+      );
     }
-  return best - STREAMS.reach;
+  }
+  return best - STREAMS.meander;
 }
 // A zone's distance from its centre in its own stretched frame (units).
 export const zoneDistance = ({ x: cx, z: cz, stretch, c, s }, x, z) =>
@@ -313,36 +422,12 @@ export const RIVER = Object.freeze({
   wobble: Object.freeze([0.08, 0.05]),
   flow: 0.25,
 });
-export const RIVER_LINE = (() => {
-  const { path, step } = RIVER,
-    p = path.map(([dx, dz]) => [LANTERN_FOOT.x + dx, LANTERN_FOOT.z + dz]),
-    at = (i) => p[Math.max(0, Math.min(p.length - 1, i))],
-    points = [];
-  for (let i = 0; i + 1 < p.length; i++) {
-    const [a, b, c, d] = [at(i - 1), at(i), at(i + 1), at(i + 2)],
-      pieces = Math.max(1, Math.ceil(Math.hypot(c[0] - b[0], c[1] - b[1]) / step));
-    for (let k = 0; k < pieces; k++) {
-      const t = k / pieces,
-        t2 = t * t,
-        t3 = t2 * t,
-        f = (q) =>
-          0.5 *
-          (2 * b[q] +
-            (c[q] - a[q]) * t +
-            (2 * a[q] - 5 * b[q] + 4 * c[q] - d[q]) * t2 +
-            (3 * b[q] - a[q] - 3 * c[q] + d[q]) * t3);
-      points.push([f(0), f(1)]);
-    }
-  }
-  points.push(p.at(-1));
-  let s = 0;
-  return Object.freeze(
-    points.map(([x, z], i) => {
-      if (i) s += Math.hypot(x - points[i - 1][0], z - points[i - 1][1]);
-      return Object.freeze([+x.toFixed(3), +z.toFixed(3), +s.toFixed(3)]);
-    }),
-  );
-})();
+export const RIVER_LINE = Object.freeze(
+  smoothCourse(
+    RIVER.path.map(([dx, dz]) => [LANTERN_FOOT.x + dx, LANTERN_FOOT.z + dz]),
+    RIVER.step,
+  ),
+);
 // Its segments in runs of RIVER_SPAN, each boxed, so riverAt() measures only
 // the runs that could hold the nearest segment (the litter tries it thousands
 // of times while the terrain settles, inside the reveal's early window).
@@ -1307,6 +1392,8 @@ export const RIVER_RIPPLE = Object.freeze({
   fine: Object.freeze([1.8, 4]),
   tilt: Object.freeze([0.018, 0.007]),
 });
+// The streams' current (STREAMS.current), on the same octaves' terms.
+const SC = STREAMS.current;
 // The puddles that lie on dune slopes keep the ground's height in the mirror:
 // the north drip-line puddle and Portrait's foreground one.
 const SLOPED = [PUDDLE_ZONES[1], PUDDLE_ZONES[2]];
@@ -1368,6 +1455,15 @@ if (slateWater > 0.0) {
       vec3 slateF1 = slateNoiseD(slateFU*${glslVec(...RIVER_RIPPLE.coarse)}), slateF2 = slateNoiseD(slateFU*${glslVec(...RIVER_RIPPLE.fine)}+13.0);
       vec2 slateFG = slateF1.yz*${glslVec(...RIVER_RIPPLE.coarse)}*${glsl(RIVER_RIPPLE.tilt[0])}+slateF2.yz*${glslVec(...RIVER_RIPPLE.fine)}*${glsl(RIVER_RIPPLE.tilt[1])}*smoothstep(1.5, 3.0, ${glsl(1 / RIVER_RIPPLE.fine[1])}/slateFP);
       slateG += (slateRiverDir*slateFG.x+vec2(-slateRiverDir.y, slateRiverDir.x)*slateFG.y)*(1.0-smoothstep(.8, 1.1, slateRiverR));
+    }
+    // The streams' current: steeper, finer ripples drawn out along each course drift down it at STREAMS.flow, each
+    // octave fading where it would fall under three pixels of ground.
+    if (slateStreamQ.x > 0.0) {
+      vec2 slateSU = vec2(slateStreamQ.y-slateFlow*${glsl(STREAMS.flow)}, slateStreamQ.z*slateStreamQ.w);
+      float slateSP = slatePx*slateView/max(abs(dot(normal, normalize(vViewPosition))), .3);
+      vec3 slateS1 = slateNoiseD(slateSU*${glslVec(...SC.coarse)}+5.0), slateS2 = slateNoiseD(slateSU*${glslVec(...SC.fine)}+29.0);
+      vec2 slateSG = slateS1.yz*${glslVec(...SC.coarse)}*${glsl(SC.tilt[0])}*smoothstep(1.5, 3.0, ${glsl(+(1 / SC.coarse[1]).toFixed(4))}/slateSP)+slateS2.yz*${glslVec(...SC.fine)}*${glsl(SC.tilt[1])}*smoothstep(1.5, 3.0, ${glsl(+(1 / SC.fine[1]).toFixed(4))}/slateSP);
+      slateG += (slateStreamDir*slateSG.x+vec2(-slateStreamDir.y, slateStreamDir.x)*slateSG.y)*slateStreamQ.x;
     }
     slateN = normalize(mix(slateN, normalize(vec3(-slateG.x, 1.0, -slateG.y)), slateDeep));
   }
@@ -1458,6 +1554,27 @@ if (slateWater > 0.0) {
 }
 #endif
 `;
+// White water on the streams (STREAMS.foam): streaks drawn out along each
+// course drift down it with the current, over more of the water where the
+// courses meet and where the creek pours into the river. It is rough, pale
+// froth lit like the soil, not water: the mirror and the water's gloss give
+// way to it.
+const SF = STREAMS.foam;
+const STREAM_FOAM = `float slateFoam = 0.0;
+if (slateStreamQ.x > 0.0) {
+  vec2 slateSU = vec2(slateStreamQ.y-slateFlow*${glsl(STREAMS.flow)}, slateStreamQ.z*slateStreamQ.w), slateSF = slateSU*${glslVec(...SF.cell)};
+  float slateSN = .6*slateNoise(slateSF)+.4*slateNoise(slateSF*2.2+11.0);
+  float slateChurn = max(${glsl(SF.amount)}, max(${glsl(SF.join)}*smoothstep(.2, .8, slateStreamJoin), ${glsl(SF.mouth)}*(1.0-smoothstep(${glsl(SF.reach[0])}, ${glsl(SF.reach[1])}, slateRiverR))))*(.4+1.2*slateNoise(slateSU*${glslVec(...SF.patch)}+23.0));
+  // Streaks finer than about two pixels give way to their mean cover, so they never alias.
+  slateFoam = mix(smoothstep(1.0-slateChurn, 1.3-slateChurn, slateSN), .5*slateChurn, clamp(length(fwidth(slateSF))-.5, 0.0, 1.0))*${glsl(SF.cover)}*smoothstep(.45, .95, slateStreamQ.x)*slatePuddle;
+  // Lit froth is diffuse, past the reflections' text knee: behind the text it thins (mud-ground.js slateBehindText()).
+  slateFoam *= 1.0-${glsl(SF.text)}*slateBehindText();
+}
+diffuseColor.rgb = mix(diffuseColor.rgb, vec3(${glsl(SF.albedo)}), slateFoam);
+roughnessFactor = mix(roughnessFactor, .85, slateFoam);
+slatePuddle *= 1.0-slateFoam;
+slateLanternPuddle *= 1.0-slateFoam;
+`;
 // The mirror's own drip clock (settleRoots() advances it), the live drip and
 // the flame's draught (settleRoots() sets both per draw of the ground).
 const RIPPLE_TIME = { value: DRIP_RIPPLES.start },
@@ -1505,7 +1622,7 @@ float slateMargin = smoothstep(${glsl(M.margin[0])}-slateShore, ${glsl(M.margin[
     [
       "fragmentShader",
       "|float slateAo =",
-      `slatePuddle = slateBody;\nslateLanternPuddle = slateBodyL;\ndiffuseColor.rgb *= 1.0-${glsl(M.marginAlbedo)}*slateMargin;\n`,
+      `slatePuddle = slateBody;\nslateLanternPuddle = slateBodyL;\ndiffuseColor.rgb *= 1.0-${glsl(M.marginAlbedo)}*slateMargin;\n${STREAM_FOAM}`,
     ],
     // In the zone's water, the water film's and the puddles' sky mirror give way to the zone's own.
     [

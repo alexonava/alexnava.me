@@ -54,6 +54,7 @@ import {
   PEBBLE_DOME,
   RUSHES,
   STREAMS,
+  STREAM_LINES,
   streamDistance,
   POOL_FIELD,
   poolField,
@@ -110,6 +111,7 @@ import {
   DOOR_HEIGHT,
   SLATE_PUDDLES,
   SLATE_STREAMS,
+  streamLines,
 } from "../src/scene/mud-ground.js";
 import { TERRAIN_HORIZON } from "../src/scene/hill-silhouette.js";
 import { LANTERN_AUTHORING_HEIGHT } from "../src/scene/lantern.js";
@@ -2069,20 +2071,27 @@ test("the fine litter (leaves, clods, grit) lies on the foreground soil, never u
   terrain.dispose();
 });
 
-test("the rain streams restate the ground shader's and run from the roots into the river", () => {
-  assert.deepEqual(STREAMS.paths, SLATE_STREAMS.paths);
-  assert.ok(Math.abs(STREAMS.reach - (SLATE_STREAMS.width[1] / 2 + SLATE_STREAMS.meander)) < 1e-9);
-  for (const path of STREAMS.paths) {
+test("the streams restate the ground shader's: rills off the roots gather into a creek that pours into the river", () => {
+  for (const key of ["courses", "step", "meander", "flow", "current", "foam"])
+    assert.deepEqual(STREAMS[key], SLATE_STREAMS[key], key);
+  assert.deepEqual(STREAM_LINES, streamLines(), "sampled alike");
+  const creek = STREAMS.courses.filter(({ path }) => {
     const [mx, mz] = path.at(-1);
-    assert.ok(
-      riverRadius(LANTERN_FOOT.x + mx, LANTERN_FOOT.z + mz) < 1,
-      "its mouth is in the river",
-    );
-    const [hx, hz] = path[0];
+    return riverRadius(LANTERN_FOOT.x + mx, LANTERN_FOOT.z + mz) < 1;
+  });
+  assert.equal(creek.length, 1, "one course pours into the river");
+  for (const { path, width } of STREAMS.courses) {
+    const [hx, hz] = path[0],
+      [mx, mz] = path.at(-1);
     assert.ok(
       riverRadius(LANTERN_FOOT.x + hx, LANTERN_FOOT.z + hz) > 1.5,
       "its head is up by the roots",
     );
+    assert.ok(width[1] > width[0], "it widens downstream");
+    if (path === creek[0].path) continue;
+    // A rill's mouth lies on the creek's head.
+    assert.deepEqual([mx, mz], creek[0].path[0], "a rill feeds the creek");
+    assert.ok(width[1] < creek[0].width[0], "narrower than the creek it feeds");
   }
   assert.ok(streamDistance(LANTERN_FOOT.x, LANTERN_FOOT.z) > 0.3, "clear of the lantern's foot");
 });
