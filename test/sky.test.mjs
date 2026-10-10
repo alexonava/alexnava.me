@@ -234,10 +234,25 @@ test("the star's fire streams from the limb inside its reach, under the bloom, m
   assert.ok(shader.includes(`float room=max(0.0,${glsl(SOLAR_FIRE.knee)}-dot(corona,`));
   assert.ok(shader.includes("fire*=room*(1.0-exp(-lit/max(room,1e-4)))/max(lit,1e-4);"));
   assert.ok(shader.includes("fire=solarFire(p,r,edge)*smoothstep(1.0+edge,1.0+3.0*edge,r);"));
-  // Its light writes the star mask, so the clouds' cel step never bands it.
+  // Its light writes the star mask, so the clouds' cel step never bands it; and the
+  // mask is held whole over the whole glow, past its furthest reach (the owner's
+  // note of 2026-10-10: the glow's faint tail was banded over the vortex's dark eye).
   assert.ok(
-    shader.includes(`min(alpha+dot(fire,vec3(.2126,.7152,.0722))*${glsl(SOLAR_FIRE.mask)},1.0)`),
+    shader.includes(
+      `min(max(alpha+dot(fire,vec3(.2126,.7152,.0722))*${glsl(SOLAR_FIRE.mask)},hold),1.0)`,
+    ),
   );
+  const reach = SOLAR_GLOW_RADIUS / SOLAR_RADIUS,
+    { feather, cover } = SOLAR_LOOK.hold;
+  assert.ok(
+    shader.includes(
+      `float hold=${glsl(cover)}*(1.0-smoothstep(${glsl(reach)},${glsl(reach + feather)},r));`,
+    ),
+  );
+  // The hold marks the mask whole in the grade (STAR_LAYER × cover ≥ its 0.006 knee)
+  // and ends inside the corona plane.
+  assert.ok(STAR_LAYER * cover >= 0.006);
+  assert.ok(reach + feather <= SOLAR_LOOK.plane / 2 - 0.2);
   // A pause or an open dialog holds it with the rest of the star.
   controller.update({ elapsedSeconds: 0 });
   controller.update({ elapsedSeconds: 4 });

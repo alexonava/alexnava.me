@@ -26,8 +26,12 @@ export const SOLAR_QUALITY = Object.freeze({
 // round glow that falls off from the limb (glow x exp(-falloff x radii past
 // it)) and fades out over its last `fade` radii before `reach` (the owner's
 // note of 2026-10-09: a flat glow with a hard edge read as one of the clouds'
-// cel bands); the star mask follows its coverage, so the clouds' steps also
-// ease back in along the fade instead of at a ring; both lean `lean` toward a
+// cel bands); the star mask is held whole over all of it, out past its furthest
+// reach (SOLAR_GLOW_RADIUS) and feathered over `hold.feather` radii beyond, where
+// the glow is already gone, so no faint tail of it is ever stepped by the clouds'
+// cel bands (the owner's note of 2026-10-10, over the Maelstrom's dark eye; a mask
+// that followed the glow's own coverage left its last radius banded); `hold.cover`
+// is the coverage that marks the mask whole in the grade; both lean `lean` toward a
 // slowly wandering side; and a slight unrest: its light breathes by
 // up to `breath` on irregular noise (`breathRate` per second), its limb boils
 // by `boil` radii and its surface churns at `churn`. The corona plane is
@@ -45,6 +49,7 @@ export const SOLAR_LOOK = Object.freeze({
     fade: 0.9,
     lean: 0.25,
   }),
+  hold: Object.freeze({ feather: 0.45, cover: 0.18 }),
   breath: 0.1,
   breathRate: 0.5,
   leanRate: 0.03,
@@ -319,6 +324,8 @@ void main() {
   float stream=exp(-h*(9.0-rays*5.0))*(.13+.28*pow(max(0.0,rays),3.0))*flick${QUIET};
   float filaments=pow(.5+.5*sin(a*93.0+weave*3.0),9.0)*exp(-h*18.0)*.055${QUIET};
   float alpha=(halo+inner+stream+filaments)*outside*(1.0-smoothstep(${glsl(SOLAR_LOOK.plane / 2 - 0.6)},${glsl(SOLAR_LOOK.plane / 2)},r));
+  // The mask alone (its light is added with factor one): whole over the glow, past its reach.
+  float hold=${glsl(SOLAR_LOOK.hold.cover)}*(1.0-smoothstep(${glsl(SOLAR_GLOW_RADIUS / SOLAR_RADIUS)},${glsl(SOLAR_GLOW_RADIUS / SOLAR_RADIUS + SOLAR_LOOK.hold.feather)},r));
   ${
     SOLAR_FIRE.on
       ? `vec3 corona=mix(vec3(1.0,.46,.1),vec3(1.0,.76,.42),exp(-h*8.0))*alpha, fire=solarFire(p,r,edge)*smoothstep(1.0+edge,1.0+3.0*edge,r);
@@ -328,8 +335,8 @@ void main() {
   float streak=exp(-q.y*q.y*28.0)*(exp(-q.x*3.2)*.8+exp(-q.x*q.x*40.0)*.6)*(1.0-smoothstep(.85,1.0,q.x))*${glsl(SOLAR_STREAK.strength * (0.2126 + 0.7152 * 0.62 + 0.0722 * 0.32))}*uBreath;
   float room=max(0.0,${glsl(SOLAR_FIRE.knee)}-dot(corona,vec3(.2126,.7152,.0722))-streak), lit=dot(fire,vec3(.2126,.7152,.0722));
   fire*=room*(1.0-exp(-lit/max(room,1e-4)))/max(lit,1e-4);
-  gl_FragColor=vec4(corona+fire,min(alpha+dot(fire,vec3(.2126,.7152,.0722))*${glsl(SOLAR_FIRE.mask)},1.0));`
-      : `gl_FragColor=vec4(mix(vec3(1.0,.46,.1),vec3(1.0,.76,.42),exp(-h*8.0))*alpha,min(alpha,1.0));`
+  gl_FragColor=vec4(corona+fire,min(max(alpha+dot(fire,vec3(.2126,.7152,.0722))*${glsl(SOLAR_FIRE.mask)},hold),1.0));`
+      : `gl_FragColor=vec4(mix(vec3(1.0,.46,.1),vec3(1.0,.76,.42),exp(-h*8.0))*alpha,min(max(alpha,hold),1.0));`
   }
   #include <colorspace_fragment>
 }
