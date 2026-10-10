@@ -651,13 +651,14 @@ export function createLightning({
       }
     if (!places.length) return null;
     let centre = places[0],
-      segments = null;
+      segments = null,
+      share = null;
     // A bolt keeps its size where it fits: from its top down at each place in
     // turn, leaning either way, wholly clear of the text and the reference
     // banks; only where it fits at none does it try shorter ones (`fallback`,
     // shares of its height above the flash) before the flash goes without it.
     if (event.bolt && bolt && settings.bolt.draw) {
-      const height = lerp(settings.bolt.top, r(91));
+      const full = lerp(settings.bolt.top, r(91));
       const fits = (path) =>
         path.every(({ a, b }) =>
           [a, b].every(([az, alt]) => {
@@ -666,21 +667,23 @@ export function createLightning({
             return textDistance(su, sv) >= settings.bolt.textGap;
           }),
         );
-      search: for (const share of [1, ...(settings.bolt.fallback ?? [])])
+      search: for (const part of [1, ...(settings.bolt.fallback ?? [])])
         for (const place of places) {
           const foot = Math.max(place[1], 2),
-            top = foot + (Math.max(height, foot) - foot) * share;
+            top = foot + (Math.max(full, foot) - foot) * part;
           for (const flip of [1, -1]) {
             const path = boltPath(settings, r(90), place[0], top, flip);
             if (fits(path)) {
               centre = place;
               segments = path;
+              share = part;
               break search;
             }
           }
         }
     }
-    return { centre, radius, segments, shot: shot() };
+    // `share`: the share of its full height the bolt kept (debug state).
+    return { centre, radius, segments, share, shot: shot() };
   }
 
   // Every flash uniform back to none.
@@ -778,6 +781,7 @@ export function createLightning({
         start: event.start,
         bolt: Boolean(where.segments),
         wanted: event.bolt,
+        height: where.share,
         azimuth: where.centre[0],
         altitude: where.centre[1],
       };
