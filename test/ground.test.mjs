@@ -723,7 +723,7 @@ const smooth = (a, b, x) => {
   return t * t * (3 - 2 * t);
 };
 
-test("the far plain keeps its own structure: swathes and the slate's far tile after the calm, fading at the plain's edge", async () => {
+test("the far plain keeps its own structure: swathes and the slate's far tile after the calm, fading at the plain's edge, its lighter tones eased behind About", async () => {
   const { configureGroundShading, SLATE_FAR } = await import("../src/scene/mud-ground.js");
   const material = new MeshStandardMaterial();
   const compile = (maps) => {
@@ -753,6 +753,30 @@ test("the far plain keeps its own structure: swathes and the slate's far tile af
     (authored.match(/slateFarF=smoothstep\([^;]*\)\*\(1\.-smoothstep\(155\.0, 190\.0, /g) ?? [])
       .length,
     2,
+  );
+  // Behind About (the ground's About test, its share eased in as the knee's is)
+  // both parts keep only their darker tones: the lighter ones ease to the soil's own.
+  assert.equal(
+    (
+      authored.match(
+        /float slateFarA=slateBehindAbout\(vSlateClip\.xy\/vSlateClip\.w\*\.5\+\.5\);slateFarA\*=2\.-slateFarA;/g,
+      ) ?? []
+    ).length,
+    2,
+  );
+  assert.ok(
+    authored.includes(
+      "sampledDiffuseColor.rgb*=mix(vec3(1.),min(slateFarC,mix(slateFarC,vec3(1.),slateFarA)),slateFarF);",
+    ),
+  );
+  assert.ok(
+    authored.includes(
+      "sampledDiffuseColor.rgb*=mix(1.,min(slateFarC,mix(slateFarC,1.,slateFarA)),slateFarF);",
+    ),
+  );
+  assert.ok(
+    authored.indexOf("float slateBehindAbout(") < at,
+    "the About test is declared before it",
   );
   // Two more lookups of the slate tile, larger than it and weighted whole; a gain that
   // deepens the structure within a bounded range; swathes that lean warm.
