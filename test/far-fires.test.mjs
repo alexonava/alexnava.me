@@ -198,7 +198,7 @@ test("the fires' cores stay under the bloom's threshold, and the air reddens and
   );
   assert.match(
     vertexShader,
-    /float peak=dot\(vCore\+vHalo,vec3\(\.2126,\.7152,\.0722\)\);\s*vCore\*=min\(1\.,0\.55\/max\(peak,1e-4\)\);\s*vHalo\*=min\(1\.,0\.55\/max\(peak,1e-4\)\);/,
+    /float peak=dot\(vCore\+vHalo,vec3\(\.2126,\.7152,\.0722\)\)\*1\.22;\s*float cap=min\(1\.,0\.55\/max\(peak,1e-4\)\)\*f;\s*vCore\*=cap;\s*vHalo\*=cap;/,
   );
   // Nor does light pile up: a cluster's fires stand apart as seen from the estate.
   const fires = farFireLayout();

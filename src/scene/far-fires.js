@@ -285,13 +285,15 @@ vHalo=col*scatter*${glsl(config.glow.gain)}*(1.+.25*breath)*keep;
 }else{
 float sigma=mix(${glsl(size.core[0])},${glsl(size.core[1])},clamp(aFire.x,0.,1.)), halo=${glsl(size.halo)}*uPixelRatio*uHalo;
 vShape=vec4(sigma,halo,2.*ceil(max(halo,${glsl(size.pool[0])}+1.))+1.,0.);
-vCore=mix(col,${vec3(colour.hot)},${glsl(colour.core)})*T*aFire.x*f*${glsl(config.light.core)}*keep;
-vHalo=col*scatter*aFire.x*f*${glsl(config.light.halo)}*keep;
-// The core and halo together stay under the bloom's threshold over the dark plain,
-// so the halo is the fire's only glow on every tier and nothing blooms elsewhere.
-float peak=dot(vCore+vHalo,vec3(.2126,.7152,.0722));
-vCore*=min(1.,${glsl(config.light.peak)}/max(peak,1e-4));
-vHalo*=min(1.,${glsl(config.light.peak)}/max(peak,1e-4));
+vCore=mix(col,${vec3(colour.hot)},${glsl(colour.core)})*T*aFire.x*${glsl(config.light.core)}*keep;
+vHalo=col*scatter*aFire.x*${glsl(config.light.halo)}*keep;
+// The core and halo together, at the flicker's crest, stay under the bloom's
+// threshold over the dark plain, so the halo is the fire's only glow on every
+// tier and nothing blooms elsewhere; the brightest fires still breathe.
+float peak=dot(vCore+vHalo,vec3(.2126,.7152,.0722))*${glsl(+(1 + config.flicker.breath + config.flicker.flutter).toFixed(4))};
+float cap=min(1.,${glsl(config.light.peak)}/max(peak,1e-4))*f;
+vCore*=cap;
+vHalo*=cap;
 }
 gl_PointSize=vShape.z;
 if(keep<.002)gl_Position=vec4(2.,2.,2.,1.);
