@@ -295,9 +295,12 @@ export const DIRECTED_SHOTS = {
       name: "Root and lantern",
       move: { dolly: [0.86, 1.05], crane: [0, 0.03], ease: 0.6 },
       // The moon's glint on a wet root under the intro's end at the start of
-      // the pull-back (4.32:1 at 1440x900) passes the ground's knee, as in
-      // Lantern study.
-      light: { key: 0.6, fill: 0.75, lantern: 1.4, rim: 0.9, glintText: 1 },
+      // the pull-back (4.32:1 at 1440x900) passes the ground's knee, and its
+      // grass reads its colour inside the blades (film-light.js GRASS_MOOD),
+      // as in Lantern study: a blade's tip read past its edge, lit by the
+      // moon, sparkled under the intro (4.21:1 at 1440x900, phase 24.1 of the
+      // move).
+      light: { key: 0.6, fill: 0.75, lantern: 1.4, rim: 0.9, grassInside: 1, glintText: 1 },
       lens: { blur: 8 },
       // Round from the pond's axis, so the trunk stands right of centre and
       // the lantern on the right third, the plain behind the name; the aim

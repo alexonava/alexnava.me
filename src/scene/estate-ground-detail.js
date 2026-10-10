@@ -78,10 +78,11 @@ const WIND_PERIOD = (20 * Math.PI * 10) / GROWTH.speed;
 // The colour inside the blade. High's film is multisampled, and a blade
 // thinner than a pixel can cover a sample but not the pixel's centre, where its
 // vertex colour is read past the blade's edges (overshooting toward a pale
-// yellow, which the lantern lights into a one-pixel sparkle). A centroid copy
-// is read where the blade covers the pixel; a shot's grassInside (film-light.js
-// GRASS_MOOD) takes that share of it, and at 0 nothing changes. WebGL1 has
-// neither centroid varyings nor the multisampled film.
+// yellow or grey, which the lantern or the moon lights into a one-pixel
+// sparkle). A centroid copy is read where the blade covers the pixel; a shot's
+// grassInside (film-light.js GRASS_MOOD) takes that share of it, and at 0
+// nothing changes. WebGL1 has neither centroid varyings nor the multisampled
+// film.
 const GRASS_INSIDE = "#if __VERSION__ >= 300\ncentroid varying vec3 vGrassColor;\n#endif";
 const GRASS_INSIDE_COLOR = `vec3 grassBase = diffuseColor.rgb;
 #include <color_fragment>
