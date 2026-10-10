@@ -275,6 +275,12 @@ export const MOON_LIGHTS = Object.freeze({
 // roots (bounce: the share of its light that reaches the soil from all about,
 // not only from the lamp's low angle), so its warm pool spreads to the light's
 // reach. Without an environment the fills and ambient stay whole.
+// Behind About, under a shot's `poolAbout` (film-light.js), that pool (the
+// lantern's direct diffuse and its bounce) passes a luminance knee (poolKnee)
+// by that share, across the text guard's reach about About (SLATE_WATER.text[3]):
+// on a portrait monitor Lantern study's push-in carries the lit crests of the
+// near cobbles across the small label (3.92:1 at 1080x1920). Only the crests
+// near the ceiling give way; the pool keeps its warmth and its relief.
 export const SLATE_LIGHT = Object.freeze({
   key: 1.35,
   fill: 0.35,
@@ -282,6 +288,7 @@ export const SLATE_LIGHT = Object.freeze({
   ambient: 0.3,
   sky: 3.4, // the environment's diffuse light, times (its colours are the sky as shown)
   bounce: 0.18,
+  poolKnee: 0.08,
 });
 
 // Water on the ground mirrors the night sky (the environment), with water's
@@ -373,6 +380,8 @@ export function createSlateContacts(values = new Float32Array(SLATE_CONTACTS * 4
     slateText: { value: { x: 2, y: 2, z: -1, w: -1 } },
     slateAbout: { value: { x: 2, y: 2, z: -1, w: -1 } },
     slateAspect: { value: 1 },
+    // The shot's `poolAbout` (SLATE_LIGHT.poolKnee): off until a shot asks.
+    slatePoolAbout: { value: 0 },
     // The shot's calm (slateCalmFor()): off until a shot asks for it.
     slateCalm: { value: { x: 0, y: 1, z: 2, w: 0 } },
     slateCalmAt: { value: { x: 0, y: 0, z: 0, w: 1 } },
@@ -684,6 +693,9 @@ const WATER = SLATE_WATER,
 // Where the soil is wet (slateWetLamp, set before the lights) the moon and the
 // lantern also light the water film over it (SLATE_WATER.moon, .lamp), on the
 // water's normal (slateWaterN), into slateMoonSpec and slateLampSpec.
+// Behind About, under a shot's poolAbout (slatePoolAbout), the lantern's pool
+// passes its knee (SLATE_LIGHT.poolKnee): slatePoolKnee() is what the knee takes
+// off it, by 1-(1-b)^2 of the guard's value b, as slateTextKnee() blends.
 // The root shading (terrain-build.js) wraps this function in turn.
 const MOONLIT_LIGHTS = `
 bool slateDirectional = false;
@@ -712,6 +724,16 @@ vec3 slateWaterLobe(const in IncidentLight light, const in vec3 viewDir, const i
   slateWM.specularF90 = 1.0;
   return saturate(dot(slateWaterN, light.direction))*light.color*BRDF_GGX(light.direction, viewDir, slateWaterN, slateWM)*slateWetFilm;
 }
+uniform float slatePoolAbout;
+vec3 slatePoolKnee(const in IncidentLight light, const in vec3 normal, const in PhysicalMaterial material) {
+  float slatePN = saturate(dot(normal, light.direction));
+  #ifdef USE_ENVMAP
+  slatePN += ${glslNumber(LIGHT.bounce)};
+  #endif
+  vec3 slatePool = slatePN*light.color*BRDF_Lambert(material.diffuseColor);
+  float slatePB = slatePoolAbout*slateBehindAbout(vSlateClip.xy/vSlateClip.w*.5+.5);
+  return slatePool*slatePB*(2.0-slatePB)*(1.0-1.0/(1.0+dot(slatePool, ${LUMA})/${glslNumber(LIGHT.poolKnee)}));
+}
 void RE_Direct_Moonlit(const in IncidentLight directLight, const in vec3 geometryPosition, const in vec3 geometryNormal, const in vec3 geometryViewDir, const in vec3 geometryClearcoatNormal, const in PhysicalMaterial material, inout ReflectedLight reflectedLight) {
   IncidentLight slateL = directLight;
   bool slateWarm = directLight.color.b < .7*directLight.color.r;
@@ -723,6 +745,7 @@ void RE_Direct_Moonlit(const in IncidentLight directLight, const in vec3 geometr
   #ifdef USE_ENVMAP
   if (slateWarm) reflectedLight.directDiffuse += ${glslNumber(LIGHT.bounce)}*slateL.color*BRDF_Lambert(material.diffuseColor);
   #endif
+  if (slateWarm && slatePoolAbout > 0.0) reflectedLight.directDiffuse -= slatePoolKnee(slateL, geometryNormal, material);
   if (slateWetFilm > 0.0) {
     if (slateWarm) slateLampSpec += slateWaterLobe(slateL, geometryViewDir, material, ${glslNumber(WATER.lamp.roughness)});
     else if (slateKey) slateMoonSpec += slateWaterLobe(slateL, geometryViewDir, material, ${glslNumber(WATER.moon.roughness)});

@@ -1052,6 +1052,7 @@ const ORBIT_SPEED = 0.06;
           PALE_MOOD.value = filmActive ? mood.pale : 0;
           GLINT_MOOD.value = filmActive ? mood.glintText : 0;
           GRASS_MOOD.value = filmActive ? mood.grassInside : 0;
+          groundContacts.slatePoolAbout.value = filmActive ? mood.poolAbout : 0;
           camera.updateMatrixWorld();
           RIM_UNIFORMS.babelKeyView.value
             .set(...WORLD.SUN_DIRECTION)
