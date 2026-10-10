@@ -226,11 +226,22 @@ export const DIRECTED_SHOTS = {
       name: "Lantern study",
       // Lantern-led, its bark's glints off the text: the lantern's glint on a
       // wet root beside the name at the end of the push-in (4.67:1 at
-      // 1920x1080) passes the ground's knee (film-light.js GLINT). Its pool
-      // is kept off About: on a portrait monitor the push-in carries the
+      // 1920x1080) passes the ground's knee (film-light.js GLINT). Its grass
+      // reads its colour inside the blades (film-light.js GRASS_MOOD): a
+      // rush's tip read past its edge, lit by the lantern, sparkled on the
+      // name's top edge (4.19:1 at 1920x1080, phase 24.4 of the move). Its
+      // pool is kept off About: on a portrait monitor the push-in carries the
       // pool's lit cobble crests across the label (3.92:1 at 1080x1920), so
       // there the pool passes its knee (mud-ground.js SLATE_LIGHT.poolKnee).
-      light: { key: 0.55, fill: 0.65, lantern: 1.45, rim: 0.7, glintText: 1, poolAbout: 1 },
+      light: {
+        key: 0.55,
+        fill: 0.65,
+        lantern: 1.45,
+        rim: 0.7,
+        grassInside: 1,
+        glintText: 1,
+        poolAbout: 1,
+      },
       lens: { blur: 8 },
       move: { dolly: [1.2, 0.85], ease: 0.6 },
       subject: "tree-lantern",
