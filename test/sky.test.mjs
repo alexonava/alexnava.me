@@ -48,6 +48,7 @@ import {
   CLOUD_VORTEX_GLSL,
   cloudFieldGLSL,
   cloudVortexCenter,
+  cloudVortexReach,
   createEstateSkyMaterial,
   FILM_SKY_GLSL,
 } from "../src/scene/estate-sky.js";
@@ -929,40 +930,59 @@ test("the cloud vortex turns about the star's eye, never over the reference bank
     const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
     return t * t * (3 - 2 * t);
   };
-  // Its weight's protection is the reshaping's own wedge and radius, easing out over
+  // The density's weight takes the reshaping's own wedge and radius, easing out over
   // `protect`: exactly 0 over the reference banks (azimuths 119-176 from radius 1.12
-  // out), for any eye and strength, and 0 in the environment's capture.
+  // out), for any eye, and 0 in the environment's capture (uCloudReshape 0).
   const weight = shader.match(/float vxW=([^;]+);/)[1];
-  const protectOf = new Function("cloudAz", "bl", "uCloudReshape", "uVortex", "smoothstep", `return ${weight}`);
-  const [, from, to] = CLOUD_RESHAPE.wedge;
-  assert.ok(from >= 119 && CLOUD_VORTEX.protect[0] >= CLOUD_RESHAPE.wedge[2] && CLOUD_VORTEX.protect[0] < CLOUD_VORTEX.protect[1]);
+  const protectOf = new Function(
+    "cloudAz",
+    "bl",
+    "uCloudReshape",
+    "smoothstep",
+    `return ${weight}`,
+  );
+  const [, from] = CLOUD_RESHAPE.wedge;
+  assert.ok(
+    from >= 119 &&
+      CLOUD_VORTEX.protect[0] >= CLOUD_RESHAPE.wedge[2] &&
+      CLOUD_VORTEX.protect[0] < CLOUD_VORTEX.protect[1],
+  );
   for (let az = 119; az <= CLOUD_VORTEX.protect[0]; az += 0.5)
     for (let bl = CLOUD_RESHAPE.radius[1]; bl < 4.6; bl += 0.05)
-      assert.equal(protectOf(az, bl, 1, { z: 1 }, smoothstep), 0, `reference banks at ${az},${bl}`);
-  assert.equal(protectOf(200, 1.4, 0, { z: 1 }, smoothstep), 0, "the capture draws none");
-  assert.equal(protectOf(200, 1.4, 1, { z: 1 }, smoothstep), 1, "open sky beyond the wedge");
-  // The capture clones the shell with uCloudReshape 0, which scales the weight.
-  assert.match(shader, /\*uCloudReshape\*uVortex\.z;/);
-  // Where the weight is 0 the noise's coordinates and the density are untouched: the
-  // turn and the vortex's density sit in branches the reference never takes.
-  assert.ok(shader.includes("vec2 bv=b;\nif(vxW>0.){float vxA="));
+      assert.equal(protectOf(az, bl, 1, smoothstep), 0, `reference banks at ${az},${bl}`);
+  assert.equal(protectOf(200, 1.4, 0, smoothstep), 0, "the capture draws none");
+  assert.equal(protectOf(200, 1.4, 1, smoothstep), 1, "open sky beyond the wedge");
+  assert.match(shader, /smoothstep\(0\.85,1\.12,bl\)\)\*uCloudReshape;/);
+  // The turn's angle reads the distance from the eye alone (vxRho, and the guard's hole
+  // about it), never the azimuth, the density's shifted disc or its protection, so it
+  // never folds the noise; it ends at the reach the eye allows (uVortex.z).
+  const turn = shader.match(/float vxA=([^;]+);/)[1];
+  assert.doesNotMatch(turn, /vxW|cloudAz|\bbl\b|vxE|vxD/);
+  assert.match(turn, /\(1\.-smoothstep\([\d.]+\*uVortex\.z,uVortex\.z,vxRho\)\)/);
+  assert.match(turn, /^uVortex\.z>0\.\?uCloudReshape\*vxHole\*/);
+  assert.match(
+    shader,
+    /float vxRho=length\(vxE\),vxHole=mix\(1\.,smoothstep\([\d.]+,[\d.]+,vxRho\),uVortex\.w\);/,
+  );
+  // Where the turn and the weight are 0 the noise's coordinates and the density are
+  // untouched: both sit in branches the reference never takes.
+  assert.ok(shader.includes("vec2 bv=b;\nif(vxA>0.){vec2 vxS=vec2(cos(vxA),sin(vxA))"));
   assert.ok(shader.includes("float blv=max(length(bv),.001);\nfloat cloudOut=blv-1.5;"));
-  assert.match(shader, /if\(vxW>0\.\)\{float vxA=/);
   assert.match(shader, /if\(vxW>0\.\)\{vec2 vxL=L\*clamp\(bl\*\.1,\.1,\.2\);/);
-  // The turn is a rotation of the local frame by an angle, so it never folds the
-  // noise; the arms turn rigidly on the drift clock, a turn in many minutes.
+  // The turn is a rotation of the local frame by that angle; the arms turn rigidly on
+  // the drift clock, a turn in many minutes.
   assert.match(shader, /vxF=vec2\(vxS\.x\*vxE\.x-vxS\.y\*vxE\.y,vxS\.y\*vxE\.x\+vxS\.x\*vxE\.y\)/);
   assert.ok(CLOUD_VORTEX.arms[3] >= 300, "a turn in many minutes");
   assert.ok(CLOUD_VORTEX_GLSL.includes(`-t*${((2 * Math.PI) / CLOUD_VORTEX.arms[3]).toFixed(6)})`));
   // Behind the name and intro it takes nothing (the text guard).
   assert.match(shader, /float vxK=vxW\*\(1\.-cloudText\);/);
   // The guard shots keep the star's disc and glow as they were (the bloom they feed
-  // reaches the reference banks) and lean the disc away from them.
+  // reaches the reference banks) and lean the density's disc away from them.
   assert.deepEqual([...CLOUD_VORTEX.guardShots], ["The watch"]);
-  assert.match(shader, /mix\(1\.,smoothstep\([\d.]+,[\d.]+,vxRho\),uVortex\.w\)/);
+  assert.match(shader, /length\(vxE-vec2\([\d.]+,[\d.]+\)\*uVortex\.w\)/);
   // Its eye: where a lens sees the star on the cloud plane, as the field maps the
   // shell (b = xz / (max(y, 0) + .24) * 1.1); from the world origin, the star's own
-  // direction; set on each cut from the shot's lens (index.js).
+  // direction; set on each cut and refit from the shot's lens (index.js).
   const star = [-72.25, 50, -11.9],
     n = Math.hypot(...star),
     d = star.map((v) => v / n),
@@ -970,16 +990,111 @@ test("the cloud vortex turns about the star's eye, never over the reference bank
   assert.ok(Math.abs(eye.x - (d[0] / (d[1] + 0.24)) * 1.1) < 1e-9);
   assert.ok(Math.abs(eye.y - (d[2] / (d[1] + 0.24)) * 1.1) < 1e-9);
   // From The watch's lens the star stands just past the wedge (the reference banks lie
-  // left of it on screen).
+  // left of it on screen), so its turn reaches less far than the disc's rim.
   const watch = cloudVortexCenter({ x: 97.29, y: 26.38, z: -13.99 }, star, 130);
   let az = (Math.atan2(watch.y, watch.x) * 180) / Math.PI;
   if (az < 0) az += 360;
   assert.ok(az > CLOUD_VORTEX.protect[1] && az < 190, `${az}`);
+  assert.ok(watch.z > 0.2 && watch.z < CLOUD_VORTEX.radius, `${watch.z}`);
   const index = flat(source("src/scene/index.js"));
-  assert.ok(index.includes("if (cinematicApplied && cinematic.shot !== vortexShot) {"));
-  assert.ok(index.includes("uVortex.value.w = CLOUD_VORTEX.guardShots.includes(vortexShot?.name) ? 1 : 0;"));
-  assert.equal(material.uniforms.uVortex.value.z, 1);
+  assert.ok(
+    index.includes(
+      "if (cinematicApplied && (cinematic.shot !== vortexShot || cinematic.frame !== vortexFit)) {",
+    ),
+  );
+  assert.ok(
+    index.includes("uVortex.value.w = CLOUD_VORTEX.guardShots.includes(vortexShot?.name) ? 1 : 0;"),
+  );
+  const { value } = material.uniforms.uVortex;
+  assert.equal(value.z, cloudVortexReach(value.x, value.y));
   material.dispose();
+});
+
+test("the vortex's turn never folds the noise and never reaches the reference banks, from any eye", () => {
+  const smoothstep = (a, b, x) => {
+    const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+    return t * t * (3 - 2 * t);
+  };
+  const VX = CLOUD_VORTEX,
+    [, from, to] = CLOUD_RESHAPE.wedge,
+    near = CLOUD_RESHAPE.radius[1];
+  // The emitted turn (estate-sky.js VORTEX_FRAME): b to bv about an eye, guard w.
+  const turn = (eye, w, b) => {
+    const l = Math.hypot(eye.x, eye.y),
+      R = [eye.x / l, eye.y / l],
+      T = [-R[1], R[0]],
+      D = [b[0] - eye.x, b[1] - eye.y],
+      E = [D[0] * T[0] + D[1] * T[1], (D[0] * R[0] + D[1] * R[1]) * VX.squash],
+      rho = Math.hypot(...E),
+      hole = 1 + (smoothstep(VX.hole[0], VX.hole[1], rho) - 1) * w,
+      A =
+        eye.z > 0
+          ? ((hole * VX.twist) / (1 + (rho * rho) / VX.eye[1] ** 2)) *
+            (1 - smoothstep(VX.fade * eye.z, eye.z, rho))
+          : 0;
+    if (!(A > 0)) return [b, 0];
+    const F = [Math.cos(A) * E[0] - Math.sin(A) * E[1], Math.sin(A) * E[0] + Math.cos(A) * E[1]];
+    return [
+      [
+        eye.x + F[0] * T[0] + (F[1] / VX.squash) * R[0],
+        eye.y + F[0] * T[1] + (F[1] / VX.squash) * R[1],
+      ],
+      A,
+    ];
+  };
+  // Every shot's lens at 1600x900 and the phones' The watch and Portrait (The watch
+  // with its guard, and without), and a sweep of eyes all round the wedge.
+  const star = [-72.25, 50, -11.9],
+    eyes = [
+      [97.29, 26.38, -13.99, 1],
+      [97.29, 26.38, -13.99, 0],
+      [59.27, 2.98, 173.19, 0],
+      [1.73, 18.58, 34.77, 0],
+      [35.52, 10.78, -16.53, 0],
+      [-5, 19.36, -29.6, 0],
+      [81.72, 0.77, -28.67, 0],
+      [46.92, -4.93, 27.44, 0],
+      [20.19, 1.6, 16.38, 0],
+      [41.4, -1.45, 11.94, 0],
+      [153.57, 21.62, -8.35, 1],
+      [99.09, 0.08, -90.99, 0],
+    ].map(([x, y, z, w]) => [cloudVortexCenter({ x, y, z }, star, 130), w]);
+  for (let deg = 100; deg <= 260; deg += 8)
+    for (const bl of [1.0, 1.2, 1.45, 1.8]) {
+      const a = (deg * Math.PI) / 180,
+        x = bl * Math.cos(a),
+        y = bl * Math.sin(a);
+      eyes.push([{ x, y, z: cloudVortexReach(x, y) }, 0]);
+    }
+  const h = 1e-5;
+  let worst = Infinity,
+    turned = 0;
+  for (const [eye, w] of eyes) {
+    assert.ok(eye.z >= 0 && eye.z <= VX.radius);
+    // The turn is a rotation by an angle of the distance alone: the map keeps area,
+    // so its Jacobian determinant stays 1 (finite differences across the hole's edge
+    // read a little less), and it never turns over.
+    for (let x = eye.x - 0.45; x <= eye.x + 0.45; x += 0.009)
+      for (let y = eye.y - 0.55; y <= eye.y + 0.55; y += 0.009) {
+        const [p, A] = turn(eye, w, [x, y]);
+        if (!(A > 0)) continue;
+        turned++;
+        const px = turn(eye, w, [x + h, y])[0],
+          py = turn(eye, w, [x, y + h])[0];
+        worst = Math.min(
+          worst,
+          ((px[0] - p[0]) * (py[1] - p[1]) - (px[1] - p[1]) * (py[0] - p[0])) / (h * h),
+        );
+      }
+    // Over the reference banks the turn is exactly 0, whatever the eye.
+    for (let az = from; az <= to; az += 1)
+      for (let bl = near; bl < 3; bl += 0.02) {
+        const a = (az * Math.PI) / 180;
+        assert.equal(turn(eye, w, [bl * Math.cos(a), bl * Math.sin(a)])[1], 0, `${az},${bl}`);
+      }
+  }
+  assert.ok(turned > 10000, `${turned}`);
+  assert.ok(worst > 0.5, `the turn folds: det ${worst}`);
 });
 
 test("sky drift follows the scheduler clock, freezes for reduced motion and stops on disposal", () => {
