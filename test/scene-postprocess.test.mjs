@@ -864,7 +864,7 @@ test("the final pass decodes each frame's layer from a 5-tap cross and mixes by 
   // and its heat, fringes and kept rect (LENS_FX).
   assert.match(
     shader,
-    /w = smoothstep\(start, start \+ span, uProgress\);\s*texel = mix\(uLayered > 0\.5 \? lensView\(tPrev, prevUv, vUv, uBlurPrev, uStarPrev, uFlamePrev, uKeepPrev, guard\) : texture2D\(tPrev, prevUv\), texel, w\);\s*protection = mix\(uTextProtectionFrom, uTextProtection, w\);/,
+    /w = smoothstep\(start, start \+ span, uProgress\);\s*texel = mix\(uLayered > 0\.5 \? lensView\(tPrev, prevUv, prevUv, uBlurPrev, uStarPrev, uFlamePrev, uKeepPrev, guard\) : texture2D\(tPrev, prevUv\), texel, w\);\s*protection = mix\(uTextProtectionFrom, uTextProtection, w\);/,
   );
   assert.match(
     shader,
@@ -964,7 +964,7 @@ test("the lens's heat, fringes and flare live in the final pass, in film, off th
   // The flare dissolves with each frame's own, and only while the star is in frame.
   assert.match(
     shader,
-    /if \(uProgress < 1\.0\) flare = mix\(lensFlare\(vUv, uStarPrev, uKeepPrev\), flare, w\);/,
+    /if \(uProgress < 1\.0\) flare = mix\(lensFlare\(prevUv, uStarPrev, uKeepPrev\), flare, w\);/,
   );
   assert.match(shader, /float shown = star\.w \* smoothstep\(-star\.z, 2\.0 \* star\.z, inside\);/);
   // One block per ghost, each dropped whole near the kept rect.
@@ -976,6 +976,43 @@ test("the lens's heat, fringes and flare live in the final pass, in film, off th
   assert.ok(shader.indexOf("color += flare") < shader.indexOf("if (uVignetteEnabled == 1)"));
   // The text guard reaches LENS_FX.text of the smaller side.
   assert.ok(shader.includes(`lensBehind(slateText, vUv, ${LENS_FX.text[0]})`));
+  pipeline.dispose();
+});
+
+test("the kept frame's lens stays on its own star and flame as the frame pushes in", () => {
+  // An off-axis outgoing shot: the kept frame pushes in about its principal point.
+  const elements = new Array(16).fill(0);
+  elements[8] = -0.2;
+  elements[9] = 0.1;
+  const { capture, pipeline } = createRecordedPipeline(GRADING_ONLY, {
+    projectionMatrix: { elements },
+  });
+  const final = pipeline.passes.vignetteGrain.uniforms;
+  pipeline.setFilmTreatment(true);
+  pipeline.resize(1600, 900);
+  const star = [0.83, 0.79, 0.04, 1];
+  pipeline.setLensSources({ star, keep: [0, 0, 0.6875, 0.4889] });
+  capture();
+  pipeline.setLensSources({});
+  pipeline.setTransition({ capture: false, cut: true, progress: 0.8, zoom: 0.02 });
+  const shader = pipeline.passes.vignetteGrain.material.fragmentShader;
+  // The pixel at vUv shows the kept frame's own pixel prevUv; its heat, fringes,
+  // kept rect and flare are all evaluated there, with the outgoing sources.
+  assert.match(shader, /vec2 prevUv = uPrevOrigin \+ \(vUv - uPrevOrigin\) \* uPrevScale;/);
+  assert.ok(shader.indexOf("vec2 prevUv =") < shader.indexOf("lensView(tPrev, prevUv, prevUv,"));
+  assert.ok(shader.indexOf("vec2 prevUv =") < shader.indexOf("lensFlare(prevUv, uStarPrev,"));
+  assert.doesNotMatch(shader, /lensView\(tPrev, prevUv, vUv,|lensFlare\(vUv, uStarPrev/);
+  // So where the kept star shows on screen (pushed out from the origin by
+  // 1 / uPrevScale), its lens is centred on it exactly.
+  const origin = final.uPrevOrigin.value.toArray(),
+    scale = final.uPrevScale.value,
+    shown = [0, 1].map((i) => origin[i] + (star[i] - origin[i]) / scale),
+    prevUv = shown.map((v, i) => origin[i] + (v - origin[i]) * scale);
+  assert.ok(scale < 1, "the kept frame is pushing in");
+  assert.ok(Math.hypot(prevUv[0] - star[0], prevUv[1] - star[1]) < 1e-12);
+  // Read in the screen's UV instead, the lens would sit several pixels off it.
+  const off = Math.hypot((shown[0] - star[0]) * 1600, (shown[1] - star[1]) * 900);
+  assert.ok(off > 5, `${off.toFixed(1)} px`);
   pipeline.dispose();
 });
 
