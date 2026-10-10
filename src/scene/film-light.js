@@ -75,7 +75,8 @@ export const GLINT_MOOD = { value: 0 };
 // (estate-ground-detail.js grassMaterial). High's film is multisampled, and a
 // blade thinner than a pixel can cover a sample but not the pixel's centre,
 // where its colour is read past the blade's own edges and overshoots toward a
-// pale yellow; the lantern lights those specks into one-pixel sparkles. By
-// that share the colour is read where the blade covers the pixel (centroid).
+// pale yellow or grey; the lantern or the moon lights those specks into
+// one-pixel sparkles. By that share the colour is read where the blade covers
+// the pixel (centroid).
 // Off (0) unless a shot asks for it.
 export const GRASS_MOOD = { value: 0 };

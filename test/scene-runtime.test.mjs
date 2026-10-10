@@ -1583,10 +1583,18 @@ test("a shot's light mood merges over the neutral default and never shares it", 
     ["Lantern study", "Root and lantern"],
   );
   for (const shot of glint) assert.equal(shotLight(shot).glintText, 1);
-  // Only Lantern study reads its grass inside the blades, wholly: a rush tip
-  // read past its edge, lit by the lantern, sparkled on its name (4.19:1).
-  for (const shot of [...DIRECTED_SHOTS.tower, ...DIRECTED_SHOTS.tree])
-    assert.equal(shotLight(shot).grassInside, shot.name === "Lantern study" ? 1 : 0, shot.name);
+  // Only the lantern shots read their grass inside the blades, wholly: a
+  // blade's tip read past its edge sparkled on Lantern study's name (lit by
+  // the lantern, 4.19:1) and under Root and lantern's intro (lit by the moon,
+  // 4.21:1).
+  const inside = [...DIRECTED_SHOTS.tower, ...DIRECTED_SHOTS.tree].filter(
+    (shot) => shotLight(shot).grassInside > 0,
+  );
+  assert.deepEqual(
+    inside.map((shot) => shot.name),
+    ["Lantern study", "Root and lantern"],
+  );
+  for (const shot of inside) assert.equal(shotLight(shot).grassInside, 1);
 });
 
 test("setRim scales the cool rim colour and keeps the moon-facing floor", () => {
