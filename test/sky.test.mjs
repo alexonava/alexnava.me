@@ -25,6 +25,7 @@ import {
   createSolarBody,
   createCelestialClock,
   makeLoopGeometry,
+  SOLAR_FIRE,
   SOLAR_GLOW_RADIUS,
   SOLAR_LOOK,
   SOLAR_RADIUS,
@@ -144,9 +145,13 @@ test("the star is hot and glows: a yellow core, a round halo inside its plane, n
   // Hotter at the core than at the limb in every channel past red.
   assert.ok(SOLAR_LOOK.core[1] > SOLAR_LOOK.rim[1] && SOLAR_LOOK.core[2] > SOLAR_LOOK.rim[2]);
   const { halo, boil, plane } = SOLAR_LOOK;
-  // The glow's furthest reach, edge wobble and lean included, fits well inside the
-  // corona plane's own fade.
-  assert.equal(SOLAR_GLOW_RADIUS, SOLAR_RADIUS * (halo.reach + 4 * boil + 0.08 * halo.lean));
+  // The glow's furthest reach, edge wobble and lean included, or the fire's if it
+  // reaches further, fits well inside the corona plane's own fade.
+  assert.equal(
+    SOLAR_GLOW_RADIUS,
+    SOLAR_RADIUS *
+      Math.max(halo.reach + 4 * boil + 0.08 * halo.lean, SOLAR_FIRE.on ? SOLAR_FIRE.reach : 0),
+  );
   assert.ok(SOLAR_GLOW_RADIUS / SOLAR_RADIUS < plane / 2 - 0.6);
   assert.ok(halo.glow < halo.aura && halo.reach > 1.5);
   // The glow falls off from the limb and fades out over its last radii, never a flat
@@ -184,6 +189,57 @@ test("the star is hot and glows: a yellow core, a round halo inside its plane, n
   assert.doesNotMatch(loops.fragmentShader, /threads|sin\(uTime/);
   assert.match(loops.fragmentShader, /wander\(uTime\*\.07\+vPhase\*5\.3\)/);
   assert.match(loops.vertexShader, /vOver=/);
+  controller.dispose();
+});
+
+test("the star's fire streams from the limb inside its reach, under the bloom, masked from the cel step", () => {
+  assert.ok(Object.isFrozen(SOLAR_FIRE) && Object.isFrozen(SOLAR_FIRE.octaves));
+  // The fire reaches past the limb but stays inside the corona plane's fade, and
+  // SOLAR_GLOW_RADIUS (the framing checks' reach) covers it.
+  assert.ok(SOLAR_FIRE.reach > 1 + SOLAR_FIRE.length);
+  assert.ok(SOLAR_FIRE.reach < SOLAR_LOOK.plane / 2 - 0.6);
+  assert.ok(SOLAR_GLOW_RADIUS >= SOLAR_RADIUS * SOLAR_FIRE.reach);
+  // Hot at the limb to deep red at the tips: each step loses green and blue.
+  const { hot, mid, tip } = SOLAR_FIRE;
+  assert.ok(hot[1] > mid[1] && mid[1] > tip[1] && hot[2] > mid[2] && mid[2] >= tip[2]);
+  // Its light stays under the bloom's threshold (0.9), leaving room for the sky, so
+  // it adds no bloom and The watch's reference banks stay pixel-identical; it
+  // keeps today's corona whole under it.
+  assert.ok(SOLAR_FIRE.knee > 0 && SOLAR_FIRE.knee <= 0.6);
+  assert.equal(SOLAR_FIRE.quiet, 1);
+  // Phones pay for fewer layers.
+  assert.ok(SOLAR_FIRE.octaves.balanced < SOLAR_FIRE.octaves.high);
+  const controller = createSolarBody({
+    parent: new Group(),
+    camera: new PerspectiveCamera(),
+    position: new Vector3(0, 0, -60),
+    profile: { tier: "high" },
+  });
+  const corona = controller.root.getObjectByName("solar-corona").material;
+  assert.equal(corona.uniforms.uFireDetail.value, SOLAR_FIRE.octaves.high);
+  controller.applyQuality({ tier: "balanced" });
+  assert.equal(corona.uniforms.uFireDetail.value, SOLAR_FIRE.octaves.balanced);
+  const shader = corona.fragmentShader;
+  const glsl = (v) => (Number.isInteger(v) ? v.toFixed(1) : String(v));
+  // Flames advect outward on the celestial clock and stop at their reach.
+  assert.ok(shader.includes(`if(r>${glsl(SOLAR_FIRE.reach)}) return vec3(0.0);`));
+  assert.ok(shader.includes(`float u=h/side-t*${glsl(SOLAR_FIRE.rise)}`));
+  assert.ok(shader.includes("if(float(i)>=uFireDetail) break;"));
+  // The knee: the fire fills only the room the glow and the streak leave under it,
+  // and starts two pixels off the limb.
+  assert.ok(shader.includes(`float room=max(0.0,${glsl(SOLAR_FIRE.knee)}-dot(corona,`));
+  assert.ok(shader.includes("fire*=room*(1.0-exp(-lit/max(room,1e-4)))/max(lit,1e-4);"));
+  assert.ok(shader.includes("fire=solarFire(p,r,edge)*smoothstep(1.0+edge,1.0+3.0*edge,r);"));
+  // Its light writes the star mask, so the clouds' cel step never bands it.
+  assert.ok(
+    shader.includes(`min(alpha+dot(fire,vec3(.2126,.7152,.0722))*${glsl(SOLAR_FIRE.mask)},1.0)`),
+  );
+  // A pause or an open dialog holds it with the rest of the star.
+  controller.update({ elapsedSeconds: 0 });
+  controller.update({ elapsedSeconds: 4 });
+  const time = corona.uniforms.uTime.value;
+  controller.update({ elapsedSeconds: 6, motionPaused: true });
+  assert.equal(corona.uniforms.uTime.value, time);
   controller.dispose();
 });
 

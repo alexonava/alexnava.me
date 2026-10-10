@@ -1639,4 +1639,28 @@ test("each frame applies the shot's light, lens, bars and grain, holding the gra
       'if (!reducedMotion && !visitorHold?.paused && !document.body.hasAttribute("data-panel-open")) post.setFilmTime?.(elapsedTime);',
     ),
   );
+  // The lens (LENS_FX) follows its sources on screen in film only: the star always,
+  // the flame in the shots that look at it, and The watch's kept banks on desktops.
+  assert.ok(
+    index.includes(
+      "const shot = filmActive && cinematicApplied ? cinematic.shot : null, flame = shot && treeArchitecture?.light && LENS_FX.heat.flameShots.includes(shot.name);",
+    ),
+  );
+  assert.ok(
+    index.includes(
+      "star: shot ? lensSource(camera, solarBody.root.getWorldPosition(lensPoint), SOLAR_RADIUS, lensStar) : null,",
+    ),
+  );
+  assert.ok(
+    index.includes(
+      "flame: flame ? lensSource(camera, treeArchitecture.light.getWorldPosition(lensPoint), 1, lensFlame) : null,",
+    ),
+  );
+  assert.ok(
+    index.includes(
+      "keep: shot && viewport.width >= 1000 && viewport.width > 1.2 * viewport.height ? (LENS_FX.keep[shot.name] ?? null) : null });",
+    ),
+  );
+  // It reads the ground's own text boxes.
+  assert.ok(index.includes("rendering.postprocessPipeline.setTextGuard?.(groundContacts);"));
 });
