@@ -73,7 +73,10 @@ export const FLASH_REFERENCE = Object.freeze({
 //   the eye, so it reaches away from the reference banks further than toward them;
 // - `twist`: the banks' own noise turns about the eye, by up to this many radians,
 //   halved at the eye's edge and falling off as the square of the distance beyond, a
-//   fixed spiral (it never winds up), by angle alone, so the noise is never folded;
+//   fixed spiral (it never winds up). The angle depends on the distance from the eye
+//   alone, so the turn never folds the noise; it eases out from `fade` of its reach to
+//   the reach (uVortex.z, cloudVortexReach()): the disc's rim, or nearer, the reference
+//   banks' edge as this shot's eye sees it, so the turn never enters them;
 // - `arms`: [count, pitch (radians of turn per e-fold of radius), density, seconds per
 //   turn]: log-spiral arms that wind in toward the eye and turn rigidly on the drift
 //   clock (uTime), a turn in many minutes, so it reads as weather, never a spinner;
@@ -83,8 +86,8 @@ export const FLASH_REFERENCE = Object.freeze({
 // - `hole`: [within, eased out by]: in the guard shots the star's disc and its bright
 //   glow keep the sky behind them as it was, so the bloom they feed (postprocess.js) is
 //   unchanged and spills nothing new into the reference banks; the eye clears about them;
-// - `protect`: the reference banks' protection (CLOUD_RESHAPE.wedge, radius) eases out
-//   over these azimuths, so its weight is exactly 0 over The watch's protected crop.
+// - `protect`: the density's protection (the reference banks' CLOUD_RESHAPE.wedge,
+//   radius) eases out over these azimuths, so it is exactly 0 over The watch's crop.
 // Like the reshaping, uCloudReshape scales it (0 in the environment's capture), and
 // behind the name and intro (cloudText) it takes nothing. `on`: 0 emits none of it.
 export const CLOUD_VORTEX = Object.freeze({
@@ -115,7 +118,7 @@ const B = vortexOn ? "bv" : "b",
 
 // The vortex's density at local coordinates e (CLOUD_VORTEX): its arms and ring, less
 // its eye. Declared once beside each shader that runs cloudFieldGLSL (the shell, the
-// stars), with uVortex: xy the eye on the cloud plane, z its strength, w its guard.
+// stars), with uVortex: xy the eye on the cloud plane, z the turn's reach, w its guard.
 export const CLOUD_VORTEX_GLSL = vortexOn
   ? `uniform vec4 uVortex;
 float cloudVortex(vec2 e,float t){float r=length(e),a=atan(e.y,e.x+1e-6);
@@ -127,18 +130,19 @@ float ring=(r-${glslFloat(VX.ring[1])})/${glslFloat(VX.ring[2])};
 return ${glslFloat(VX.arms[2])}*arm+${glslFloat(VX.ring[0])}*exp(-ring*ring)-${glslFloat(VX.eye[2])}*(1.-smoothstep(${glslFloat(VX.eye[0])},${glslFloat(VX.eye[1])},r));}
 `
   : "";
-// Its frame and weight, after the reshaping's weights: exactly 0 over the reference
-// banks, where bv stays b itself (and blv bl). Inside, the banks' coordinates turn
-// about the eye (bv) before the reshaping's horizon and scale map them as they map b.
+// Its frame, the density's weight (vxW) and the turn (vxA), after the reshaping's
+// weights: both exactly 0 over the reference banks, where bv stays b itself (and blv
+// bl). Inside, the banks' coordinates turn about the eye (bv), by an angle of the
+// distance from it alone, before the reshaping's horizon and scale map them as they map b.
 const VORTEX_FRAME = vortexOn
   ? `vec2 vxR=normalize(uVortex.xy),vxT=vec2(-vxR.y,vxR.x),vxD=b-uVortex.xy;
 vec2 vxE=vec2(dot(vxD,vxT),dot(vxD,vxR)*${glslFloat(VX.squash)});
-float vxRho=length(vxE);
-float vxW=(1.-smoothstep(${glslFloat(wedge[0])},${glslFloat(wedge[1])},cloudAz)*(1.-smoothstep(${glslFloat(VX.protect[0])},${glslFloat(VX.protect[1])},cloudAz))*smoothstep(${glslFloat(radius[0])},${glslFloat(radius[1])},bl))*uCloudReshape*uVortex.z;
-vxW*=(1.-smoothstep(${glslFloat(+(VX.fade * VX.radius).toFixed(6))},${glslFloat(VX.radius)},length(vxE-vec2(${glslFloat(+(VX.shift[0] * VX.radius).toFixed(6))},${glslFloat(+(VX.shift[1] * VX.radius).toFixed(6))})*uVortex.w)))*mix(1.,smoothstep(${glslFloat(VX.hole[0])},${glslFloat(VX.hole[1])},vxRho),uVortex.w);
+float vxRho=length(vxE),vxHole=mix(1.,smoothstep(${glslFloat(VX.hole[0])},${glslFloat(VX.hole[1])},vxRho),uVortex.w);
+float vxW=(1.-smoothstep(${glslFloat(wedge[0])},${glslFloat(wedge[1])},cloudAz)*(1.-smoothstep(${glslFloat(VX.protect[0])},${glslFloat(VX.protect[1])},cloudAz))*smoothstep(${glslFloat(radius[0])},${glslFloat(radius[1])},bl))*uCloudReshape;
+vxW*=(1.-smoothstep(${glslFloat(+(VX.fade * VX.radius).toFixed(6))},${glslFloat(VX.radius)},length(vxE-vec2(${glslFloat(+(VX.shift[0] * VX.radius).toFixed(6))},${glslFloat(+(VX.shift[1] * VX.radius).toFixed(6))})*uVortex.w)))*vxHole;
+float vxA=uVortex.z>0.?uCloudReshape*vxHole*${glslFloat(VX.twist)}/(1.+vxRho*vxRho/${glslFloat(+(VX.eye[1] ** 2).toFixed(6))})*(1.-smoothstep(${glslFloat(VX.fade)}*uVortex.z,uVortex.z,vxRho)):0.;
 vec2 bv=b;
-if(vxW>0.){float vxA=vxW*${glslFloat(VX.twist)}/(1.+vxRho*vxRho/${glslFloat(+(VX.eye[1] ** 2).toFixed(6))});
-vec2 vxS=vec2(cos(vxA),sin(vxA)),vxF=vec2(vxS.x*vxE.x-vxS.y*vxE.y,vxS.y*vxE.x+vxS.x*vxE.y);
+if(vxA>0.){vec2 vxS=vec2(cos(vxA),sin(vxA)),vxF=vec2(vxS.x*vxE.x-vxS.y*vxE.y,vxS.y*vxE.x+vxS.x*vxE.y);
 bv=uVortex.xy+vxF.x*vxT+vxF.y/${glslFloat(VX.squash)}*vxR;}
 float blv=max(length(bv),.001);
 `
@@ -293,7 +297,44 @@ export function cloudVortexCenter(eye, star, shellRadius, out = { x: 0, y: 0, z:
     lift = Math.max(py / p, 0) + 0.24;
   out.x = (px / p / lift) * 1.1;
   out.y = (pz / p / lift) * 1.1;
+  out.z = cloudVortexReach(out.x, out.y);
   return out;
+}
+
+// How far the vortex's turn may reach about an eye at (x, y) on the cloud plane, in its
+// local units (CLOUD_VORTEX): the disc's rim, or, nearer, the edge of the reference
+// banks' full protection (azimuths CLOUD_RESHAPE.wedge[1] to [2] from radius[1] out),
+// less a margin, so the turn is exactly 0 over them; 0 for an eye inside them. Their
+// edge, two rays and an arc, is measured in the eye's own frame, where a plane segment
+// stays a segment; the arc's chords are pushed out to touch it, so none lies beyond it.
+export function cloudVortexReach(x, y) {
+  const length = Math.hypot(x, y) || 1,
+    rx = x / length,
+    ry = y / length,
+    [from, to] = [wedge[1], wedge[2]],
+    near = radius[1];
+  let az = (Math.atan2(y, x + 1e-6) * 180) / Math.PI;
+  if (az < 0) az += 360;
+  if (az >= from && az <= to && length >= near) return 0;
+  const local = (px, py) => [
+    (px - x) * -ry + (py - y) * rx,
+    ((px - x) * rx + (py - y) * ry) * VX.squash,
+  ];
+  const toSegment = ([ax, ay], [bx, by]) => {
+    const dx = bx - ax,
+      dy = by - ay,
+      t = Math.max(0, Math.min(1, -(ax * dx + ay * dy) / (dx * dx + dy * dy || 1)));
+    return Math.hypot(ax + dx * t, ay + dy * t);
+  };
+  const at = (deg, r) =>
+    local(r * Math.cos((deg * Math.PI) / 180), r * Math.sin((deg * Math.PI) / 180));
+  let best = Math.min(toSegment(at(from, near), at(from, 6)), toSegment(at(to, near), at(to, 6)));
+  const steps = 128,
+    step = (to - from) / steps,
+    out = near / Math.cos((step * Math.PI) / 360);
+  for (let k = 0; k < steps; k++)
+    best = Math.min(best, toSegment(at(from + k * step, out), at(from + (k + 1) * step, out)));
+  return Math.max(0, Math.min(VX.radius, best - 0.002));
 }
 
 // Density lives on the fixed world-space sky shell, never camera-facing cards:
@@ -333,7 +374,7 @@ export function createEstateSkyMaterial(config, textGuard = null) {
       uVortex: {
         value: config.starPosition
           ? cloudVortexCenter({ x: 0, y: 0, z: 0 }, config.starPosition, config.skyRadius ?? 130)
-          : { x: -1.115, y: -0.184, z: 1, w: 0 },
+          : { x: -1.115, y: -0.184, z: cloudVortexReach(-1.115, -0.184), w: 0 },
       },
       slateText: textGuard?.slateText ?? { value: noText() },
       slateAbout: textGuard?.slateAbout ?? { value: noText() },

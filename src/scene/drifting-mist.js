@@ -24,7 +24,9 @@
 //   octave's share (high only);
 // - `wind`: [units per second, heading in degrees]: the drift, along a slowly turning
 //   bounded circle (`turn`, radians per second) so the noise's lattice stays small
-//   however long the page stays open; `boil`: the banks' slow change in place;
+//   however long the page stays open; `boil`: the banks' slow change in place (noise
+//   cells per second along the noise's height, swinging smoothly back over `boilSwing`
+//   cells, so it stays bounded and never jumps);
 // - `near`: [none within, whole by] units of view distance: it thins toward the lens,
 //   so no veil lies over a close subject;
 // - `color`: the mist's own light (linear), lighter toward its top (`top`); `side`:
@@ -60,6 +62,7 @@ export const MIST_DRIFT = Object.freeze({
   wind: Object.freeze([1.4, 240]),
   turn: 0.00012,
   boil: 0.02,
+  boilSwing: 60,
   near: Object.freeze([7, 32]),
   color: Object.freeze([0.24, 0.25, 0.3]),
   top: 1.3,
@@ -142,7 +145,8 @@ export function advanceMist({ deltaSeconds = 0, reducedMotion = false, motionPau
   return clock;
 }
 // The drift at time t: along a circle of radius speed / turn whose heading turns
-// slowly (a whole turn in about 14 hours), so its offset never grows past its diameter.
+// slowly (a whole turn in about 14 hours), so its offset never grows past its diameter;
+// the boil swings smoothly within boilSwing cells (back and forth every 5 hours or so).
 export function mistDriftAt(t, out = { x: 0, y: 0, z: 0, w: 0 }) {
   const a = t * M.turn,
     r = speed / M.turn,
@@ -151,7 +155,7 @@ export function mistDriftAt(t, out = { x: 0, y: 0, z: 0, w: 0 }) {
     side = r * (1 - Math.cos(a));
   out.x = -(Math.cos(h) * along - Math.sin(h) * side);
   out.y = -(Math.sin(h) * along + Math.cos(h) * side);
-  out.z = (t * M.boil) % 289;
+  out.z = M.boilSwing * Math.sin((t * M.boil) / M.boilSwing);
   return out;
 }
 export function setMistDatum(y) {

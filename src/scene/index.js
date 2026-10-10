@@ -386,8 +386,9 @@ const ORBIT_SPEED = 0.06;
       });
       subsystemRegistry.register(lightning);
       if (qualityDebug) qualityDebug.lightning = lightning.state;
-      // The drifting mist (drifting-mist.js): its light eases behind the ground's text
-      // boxes; the moon key and the star light it; its clock, tier and the shot's
+      // The drifting mist (drifting-mist.js): the ground's text boxes are lent for its
+      // text guard (MIST_DRIFT.text, off by default: it keeps every text's contrast as
+      // it is); the moon key and the star light it; its clock, tier and the shot's
       // share follow the frame (below).
       lendMistText(groundContacts);
       setMistLights(WORLD.SUN_DIRECTION, WORLD.SUN_POSITION);
@@ -906,7 +907,8 @@ const ORBIT_SPEED = 0.06;
       window.addEventListener("resize", onWindowResize);
       window.addEventListener("scroll", onWindowScroll, { passive: true });
       resizeController.update({ force: true });
-      let vortexShot = null;
+      let vortexShot = null,
+        vortexFit = null;
       const vortexEye = new Vector3();
       let debugRenderFrameCount = 0,
         groundTextFrames = 0,
@@ -1019,10 +1021,11 @@ const ORBIT_SPEED = 0.06;
         }
         if (cinematicApplied) lookTarget.copy(cinematic.target);
         else lookTarget.set(0, lookAtHeight, 0);
-        // The cloud vortex's eye sits where this lens sees the star, set on each cut
-        // (estate-sky.js CLOUD_VORTEX), so it stays about the star in every shot.
-        if (cinematicApplied && cinematic.shot !== vortexShot) {
+        // The cloud vortex's eye sits where this lens sees the star, set on each cut and
+        // each refit (a resize; estate-sky.js CLOUD_VORTEX), so it stays about the star.
+        if (cinematicApplied && (cinematic.shot !== vortexShot || cinematic.frame !== vortexFit)) {
           vortexShot = cinematic.shot;
+          vortexFit = cinematic.frame;
           camera.updateMatrixWorld();
           cloudVortexCenter(
             camera.getWorldPosition(vortexEye),
