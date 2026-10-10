@@ -1532,6 +1532,7 @@ test("a shot's light mood merges over the neutral default and never shares it", 
     rim: 1,
     pale: 0,
     rimText: 0,
+    grassInside: 0,
     glintText: 0,
   });
   for (const shot of [null, undefined, {}, { light: null }])
@@ -1544,6 +1545,7 @@ test("a shot's light mood merges over the neutral default and never shares it", 
     rim: 1.8,
     pale: 0,
     rimText: 0,
+    grassInside: 0,
     glintText: 0,
   });
   assert.notEqual(shotLight(null), SHOT_LIGHT_DEFAULT, "a fresh object each time");
@@ -1581,6 +1583,10 @@ test("a shot's light mood merges over the neutral default and never shares it", 
     ["Lantern study", "Root and lantern"],
   );
   for (const shot of glint) assert.equal(shotLight(shot).glintText, 1);
+  // Only Lantern study reads its grass inside the blades, wholly: a rush tip
+  // read past its edge, lit by the lantern, sparkled on its name (4.19:1).
+  for (const shot of [...DIRECTED_SHOTS.tower, ...DIRECTED_SHOTS.tree])
+    assert.equal(shotLight(shot).grassInside, shot.name === "Lantern study" ? 1 : 0, shot.name);
 });
 
 test("setRim scales the cool rim colour and keeps the moon-facing floor", () => {
@@ -1615,7 +1621,7 @@ test("each frame applies the shot's light, lens, bars and grain, holding the gra
   // The mood follows the shot on screen in film only.
   assert.ok(
     index.includes(
-      "const mood = shotLight(filmActive && cinematicApplied ? cinematic.shot : null); rendering.setShotLight?.(mood); if (LANTERN_MOOD.value !== mood.lantern) { LANTERN_MOOD.value = mood.lantern; treeArchitecture?.refreshLantern?.(); } setRim(filmActive ? mood.rim : 0, filmActive ? mood.rimText : 0); PALE_MOOD.value = filmActive ? mood.pale : 0; GLINT_MOOD.value = filmActive ? mood.glintText : 0;",
+      "const mood = shotLight(filmActive && cinematicApplied ? cinematic.shot : null); rendering.setShotLight?.(mood); if (LANTERN_MOOD.value !== mood.lantern) { LANTERN_MOOD.value = mood.lantern; treeArchitecture?.refreshLantern?.(); } setRim(filmActive ? mood.rim : 0, filmActive ? mood.rimText : 0); PALE_MOOD.value = filmActive ? mood.pale : 0; GLINT_MOOD.value = filmActive ? mood.glintText : 0; GRASS_MOOD.value = filmActive ? mood.grassInside : 0;",
     ),
   );
   assert.ok(
