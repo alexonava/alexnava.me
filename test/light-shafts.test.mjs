@@ -1172,17 +1172,19 @@ test("Portrait catches the moon on the crown its own way; a cut to Close-up rest
 
 test("Gallery detail's moonlight on the timber eases off behind About; a cut away restores it", async () => {
   const gallery = DIRECTED_SHOTS.tower.find((shot) => shot.name === "Gallery detail"),
+    masonry = DIRECTED_SHOTS.tower.find((shot) => shot.name === "Masonry study"),
     threshold = DIRECTED_SHOTS.tower.find((shot) => shot.name === "Threshold");
-  // Only Gallery detail asks, wholly: portrait phones saw the lattice's lit
-  // leg edges behind About (4.24:1 at 390x844).
+  // Only Masonry study and Gallery detail ask, wholly: portrait phones saw the
+  // lattice's lit leg edges behind About (4.83:1 and 4.24:1 at 390x844).
   assert.deepEqual(
     Object.values(DIRECTED_SHOTS)
       .flat()
       .filter((shot) => shot.shafts?.gobo?.about)
       .map((shot) => shot.name),
-    ["Gallery detail"],
+    ["Masonry study", "Gallery detail"],
   );
   assert.deepEqual(gallery.shafts, { gobo: { about: 1 } }, "its catch is otherwise the timber's");
+  assert.deepEqual(masonry.shafts, { gobo: { about: 1 } }, "its catch is otherwise the timber's");
   const h = harness({ shot: "Gallery detail", current: "tower" });
   h.cinematic.shot = gallery;
   const shader = {

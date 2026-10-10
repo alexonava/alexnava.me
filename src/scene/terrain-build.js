@@ -1048,11 +1048,12 @@ export const LANTERN_FLAME = Object.freeze({
 // The flame's mirror image reads the size of the flame (its extent at 30% and
 // 50% of its own peak 0.9-1.0x the real flame's in the same frame): it is the flame's own light as the frame shows it, lanternFire's
 // fire and glass light with the gain clipped at white as the grade clamps the
-// real flame, added after the knee. The grade inks the real flame's steep
-// outline, which the dim, soft image escapes, so the image's body is `width`
-// of the flame's and its ends sit `inset` pixel footprints inside the flame's
-// (scaling about `mid`, over the `span` of the flame's height it lights).
-export const MIRROR_FLAME = Object.freeze({ width: 0.945, inset: 0.7, span: 0.65, mid: 0.46 });
+// real flame, added after the knee. The image's body is `width` of the
+// flame's, the flame's own falloff (the film grade leaves the flame without a
+// cel step or ink), and its ends, soft where the flame's are cut, sit `inset`
+// pixel footprints inside the flame's (scaling about `mid`, over the `span` of
+// the flame's height it lights).
+export const MIRROR_FLAME = Object.freeze({ width: 1, inset: 0.7, span: 0.65, mid: 0.46 });
 // Rare drips: one per 6.5 s cell, landing +-1.25 s about the cell's middle
 // (4-9 s apart), so at most one lives at a time, inside a puddle (60% the
 // lantern's). In the lantern's puddle a drip falls within `aim` (units) of
