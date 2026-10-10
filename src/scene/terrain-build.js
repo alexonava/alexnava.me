@@ -361,58 +361,93 @@ const RIVER_RUNS = Object.freeze(
     });
   }),
 );
+// The nearest segment (riverK, the point riverH along it, riverD away), the
+// first of equals along the river: the run nearest the point first, then any
+// other whose box is no farther than the best so far. It allocates nothing.
 const riverNear = new Float64Array(RIVER_RUNS.length);
-export function riverAt(x, z) {
-  let best = { d: Infinity },
-    nearest = 0,
-    first = 0;
-  // The nearest segment, the first of equals along the river: the run nearest
-  // the point first, then any other whose box is no farther than it.
-  const measure = ({ from, to }) => {
-    for (let k = from; k < to; k++) {
-      const [ax, az, s0] = RIVER_LINE[k - 1],
-        [bx, bz] = RIVER_LINE[k],
-        ex = bx - ax,
-        ez = bz - az,
-        len = Math.hypot(ex, ez),
-        h = Math.min(1, Math.max(0, ((x - ax) * ex + (z - az) * ez) / (len * len))),
-        d = Math.hypot(x - ax - ex * h, z - az - ez * h);
-      if (d < best.d || (d === best.d && k < nearest)) {
-        nearest = k;
-        best = {
-          d,
-          s: s0 + h * len,
-          side: Math.sign(ex * (z - az) - ez * (x - ax)) || 1,
-          dx: ex / len,
-          dz: ez / len,
-        };
-      }
+let riverK = 0,
+  riverH = 0,
+  riverD = Infinity;
+function riverMeasure(x, z, { from, to }) {
+  for (let k = from; k < to; k++) {
+    const a = RIVER_LINE[k - 1],
+      b = RIVER_LINE[k],
+      ex = b[0] - a[0],
+      ez = b[1] - a[1],
+      len = Math.hypot(ex, ez),
+      h = Math.min(1, Math.max(0, ((x - a[0]) * ex + (z - a[1]) * ez) / (len * len))),
+      d = Math.hypot(x - a[0] - ex * h, z - a[1] - ez * h);
+    if (d < riverD || (d === riverD && k < riverK)) {
+      riverD = d;
+      riverK = k;
+      riverH = h;
     }
-  };
+  }
+}
+function riverNearest(x, z) {
+  let first = 0;
   for (let j = 0; j < RIVER_RUNS.length; j++) {
-    const [x0, x1, z0, z1] = RIVER_RUNS[j].box;
-    riverNear[j] = Math.hypot(Math.max(x0 - x, 0, x - x1), Math.max(z0 - z, 0, z - z1));
+    const box = RIVER_RUNS[j].box;
+    riverNear[j] = Math.hypot(
+      Math.max(box[0] - x, 0, x - box[1]),
+      Math.max(box[2] - z, 0, z - box[3]),
+    );
     if (riverNear[j] < riverNear[first]) first = j;
   }
-  measure(RIVER_RUNS[first]);
+  riverK = 0;
+  riverH = 0;
+  riverD = Infinity;
+  riverMeasure(x, z, RIVER_RUNS[first]);
   for (let j = 0; j < RIVER_RUNS.length; j++)
-    if (j !== first && riverNear[j] <= best.d + 1e-9) measure(RIVER_RUNS[j]);
-  const { width, wobble } = RIVER;
-  best.r =
-    best.d /
-    (width *
-      (1 + wobble[0] * Math.sin(0.9 * best.s + 1.3) + wobble[1] * Math.sin(2.3 * best.s + 0.4)));
-  return best;
+    if (j !== first && riverNear[j] <= riverD + 1e-9) riverMeasure(x, z, RIVER_RUNS[j]);
+}
+// The river's half-width at distance s downstream.
+const riverSpan = (s) =>
+  RIVER.width *
+  (1 + RIVER.wobble[0] * Math.sin(0.9 * s + 1.3) + RIVER.wobble[1] * Math.sin(2.3 * s + 0.4));
+export function riverAt(x, z) {
+  riverNearest(x, z);
+  const a = RIVER_LINE[riverK - 1],
+    b = RIVER_LINE[riverK],
+    ex = b[0] - a[0],
+    ez = b[1] - a[1],
+    len = Math.hypot(ex, ez),
+    s = a[2] + riverH * len;
+  return {
+    d: riverD,
+    s,
+    side: Math.sign(ex * (z - a[1]) - ez * (x - a[0])) || 1,
+    dx: ex / len,
+    dz: ez / len,
+    r: riverD / riverSpan(s),
+  };
 }
 // The normalised radius across the river at a world x/z, 1 on its wobbled
 // shore (as the ground shader's slateRiver()).
 export function riverRadius(x, z) {
-  return riverAt(x, z).r;
+  riverNearest(x, z);
+  const a = RIVER_LINE[riverK - 1],
+    b = RIVER_LINE[riverK];
+  return riverD / riverSpan(a[2] + riverH * Math.hypot(b[0] - a[0], b[1] - a[1]));
+}
+// Whether x/z lies inside normalised radius `within` (riverRadius(x, z) <
+// within). Where every run's box is farther than the river could reach there
+// (its widest wobble), it is not, without measuring a segment: the litter asks
+// this for thousands of candidates, most of them far out on the plain.
+const RIVER_WIDEST = RIVER.width * (1 + Math.abs(RIVER.wobble[0]) + Math.abs(RIVER.wobble[1]));
+export function riverWithin(x, z, within) {
+  const reach = within * RIVER_WIDEST + 1e-6;
+  for (let j = 0; j < RIVER_RUNS.length; j++) {
+    const box = RIVER_RUNS[j].box;
+    if (x > box[0] - reach && x < box[1] + reach && z > box[2] - reach && z < box[3] + reach)
+      return riverRadius(x, z) < within;
+  }
+  return false;
 }
 // Whether x/z lies within margin units of the water: the river's wobbled
 // shore or a puddle zone's radius (the litter's keepouts).
 export const nearWater = (x, z, margin) =>
-  riverRadius(x, z) < 1 + margin / RIVER.width ||
+  riverWithin(x, z, 1 + margin / RIVER.width) ||
   PUDDLE_ZONES.some((zone) => zoneDistance(zone, x, z) < zone.radius + margin);
 // The centreline at distance s downstream: [x, z, flow x, flow z].
 export function riverPoint(s) {
@@ -2199,7 +2234,7 @@ function scatterFine(surface, base, stones, triangle, vertices) {
     if (Math.hypot(x - LANTERN_FOOT.x, z - LANTERN_FOOT.z) < F.lantern) continue;
     if (nearWater(x, z, F.puddle)) continue;
     // Clear of a root by a quarter unit, so no piece reaches under its edge.
-    if (riverRadius(x, z) < 1.05 || coverDistance(x, z, 0.25) <= 0.25 || streamDistance(x, z) < 0)
+    if (riverWithin(x, z, 1.05) || coverDistance(x, z, 0.25) <= 0.25 || streamDistance(x, z) < 0)
       continue;
     if (stones.some(([px, pz, w]) => Math.hypot(px - x, pz - z) < w * 0.6)) continue;
     if (kind === "leaf" && coverDistance(x, z, 0.8) > 0.8 && random() > F.leafNear) continue;
@@ -2356,7 +2391,7 @@ export function plantRushes(surface) {
       out = (random() < 0.5 ? -1 : 1) * between(R.bank) * RIVER.width,
       cx = px - fz * out,
       cz = pz + fx * out;
-    if (riverRadius(cx, cz) < 1.05 || rootCovered(cx, cz)) continue;
+    if (riverWithin(cx, cz, 1.05) || rootCovered(cx, cz)) continue;
     if (Math.hypot(cx - LANTERN_FOOT.x, cz - LANTERN_FOOT.z) < R.lantern) continue;
     const stems = Math.round(between(R.stems));
     for (let n = 0; n < stems; n++) {
@@ -2365,7 +2400,7 @@ export function plantRushes(surface) {
         x = cx + Math.cos(at) * spread,
         z = cz + Math.sin(at) * spread,
         y = surface(x, z);
-      if (!Number.isFinite(y) || riverRadius(x, z) < 1.02) continue;
+      if (!Number.isFinite(y) || riverWithin(x, z, 1.02)) continue;
       const height = between(R.height),
         width = between(R.width),
         lean = height * between([0.05, 0.3]),
