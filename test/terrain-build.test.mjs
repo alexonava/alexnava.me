@@ -935,10 +935,11 @@ test("the lazy ground shading extends only the slate's program, under its own ke
       "the water film's and the puddles' mirror give way to the zone's own",
     );
     // The zone's mirror shows the night sky (the environment) at its sharpest,
-    // and the old horizon, fog and zenith sky only without it.
+    // brighter in a lightning flash away from the text (film-light.js
+    // FLASH_GROUND), and the old horizon, fog and zenith sky only without it.
     assert.match(
       fragment,
-      /#ifdef USE_ENVMAP\s*vec3 slateSkyW = textureCubeUV\(envMap, slateR, 0\.0\)\.rgb\*envMapIntensity\*[\d.]+;\s*#else\s*vec3 slateSkyW = mix\(/,
+      /#ifdef USE_ENVMAP\s*vec3 slateSkyW = textureCubeUV\(envMap, slateR, 0\.0\)\.rgb\*envMapIntensity\*[\d.]+\*\(babelFlash\.y > 0\.0 \? 1\.0\+babelFlash\.y\*\(1\.0-slateBehindText\(\)\) : 1\.0\);\s*#else\s*vec3 slateSkyW = mix\(/,
     );
     assert.match(fragment, /slatePuddle = mix\(slatePuddle, smoothstep\([^;]*\), slateZoneW\);/);
     assert.match(

@@ -26,8 +26,12 @@ export const SOLAR_QUALITY = Object.freeze({
 // round glow that falls off from the limb (glow x exp(-falloff x radii past
 // it)) and fades out over its last `fade` radii before `reach` (the owner's
 // note of 2026-10-09: a flat glow with a hard edge read as one of the clouds'
-// cel bands); the star mask follows its coverage, so the clouds' steps also
-// ease back in along the fade instead of at a ring; both lean `lean` toward a
+// cel bands); the star mask is held whole over all of it, out past its furthest
+// reach (SOLAR_GLOW_RADIUS) and feathered over `hold.feather` radii beyond, where
+// the glow is already gone, so no faint tail of it is ever stepped by the clouds'
+// cel bands (the owner's note of 2026-10-10, over the Maelstrom's dark eye; a mask
+// that followed the glow's own coverage left its last radius banded); `hold.cover`
+// is the coverage that marks the mask whole in the grade; both lean `lean` toward a
 // slowly wandering side; and a slight unrest: its light breathes by
 // up to `breath` on irregular noise (`breathRate` per second), its limb boils
 // by `boil` radii and its surface churns at `churn`. The corona plane is
@@ -45,6 +49,7 @@ export const SOLAR_LOOK = Object.freeze({
     fade: 0.9,
     lean: 0.25,
   }),
+  hold: Object.freeze({ feather: 0.45, cover: 0.18 }),
   breath: 0.1,
   breathRate: 0.5,
   leanRate: 0.03,
@@ -52,11 +57,58 @@ export const SOLAR_LOOK = Object.freeze({
   churn: 0.07,
   plane: 7,
 });
+// The anamorphic streak across the star: SOLAR_RADIUS times length and height.
+export const SOLAR_STREAK = Object.freeze({ length: 26, height: 1.4, strength: 0.32 });
+// The star's fire, a living corona like the Eye of Sauron's (the owner's pick of
+// 2026-10-09): flames stream out from the limb, layered noise in polar
+// coordinates advected outward at `rise` radii a second and curling as they rise
+// (`curl`). Their body falls off over `length` radii from the limb with a ragged,
+// tongued edge, and slow licks (`licks`, on a `lickRate` clock) lengthen it; fine
+// strands (`filaments`, the finest layer's angular frequency, `octaves` layers per
+// tier, each fading out where it would alias) carry `strands` of its light, and
+// strands that run past it break off as wisps (`wisps`) that fade as they climb.
+// Amber at the limb to deep red at the tips (`hot`, `mid`, `tip`). `reach` is the
+// furthest the fire goes from the centre, fading over its last 0.45 radii
+// (SOLAR_GLOW_RADIUS includes it); `wide` lengthens the flames toward the sides
+// (the Eye's sideways sweep). The fire fills only the room the corona and the
+// lens streak leave under `knee` (luminance, easing in), and starts two pixels
+// off the limb, so it never feeds the bloom (threshold 0.9 over the sky's own
+// light) and The watch's reference banks stay pixel-identical. `quiet` keeps that
+// share of the corona's aura, inner glow and streamers under it (below 1 the
+// bloom, and so the banks, change). Its light writes the star mask at `mask` times
+// its luminance, so the clouds' cel step never bands its wisps. `on` 0 keeps the
+// star as it was.
+export const SOLAR_FIRE = Object.freeze({
+  on: 1,
+  strength: 0.95,
+  length: 0.42,
+  licks: 1.3,
+  lickRate: 0.08,
+  reach: 2.2,
+  wide: 0,
+  rise: 0.2,
+  curl: 1,
+  filaments: 12,
+  octaves: Object.freeze({ high: 3, balanced: 2, low: 1 }),
+  wisps: 0.8,
+  strands: 0.85,
+  quiet: 1,
+  knee: 0.6,
+  mask: 6,
+  hot: Object.freeze([1, 0.8, 0.45]),
+  mid: Object.freeze([1, 0.36, 0.06]),
+  tip: Object.freeze([0.55, 0.06, 0.02]),
+});
 // The glow's furthest reach in world units: its round edge, wobbled by the
-// boiling limb and shifted by the lean at their most (framing.test keeps it
-// clear of the text and of The watch's crests).
+// boiling limb and shifted by the lean at their most, or the fire's, if it
+// reaches further (framing.test keeps it clear of the text and of The watch's
+// crests).
 export const SOLAR_GLOW_RADIUS =
-  SOLAR_RADIUS * (SOLAR_LOOK.halo.reach + 4 * SOLAR_LOOK.boil + 0.08 * SOLAR_LOOK.halo.lean);
+  SOLAR_RADIUS *
+  Math.max(
+    SOLAR_LOOK.halo.reach + 4 * SOLAR_LOOK.boil + 0.08 * SOLAR_LOOK.halo.lean,
+    SOLAR_FIRE.on ? SOLAR_FIRE.reach : 0,
+  );
 export function celestialTier(profile = {}) {
   return SOLAR_QUALITY[profile.tier] ? profile.tier : "high";
 }
@@ -198,12 +250,57 @@ void main() {
   #include <colorspace_fragment>
 }
 `;
+// The fire (SOLAR_FIRE) at p, r radii from the centre; edge is a pixel in radii.
+const FIRE = SOLAR_FIRE.on
+  ? `
+uniform float uFireDetail;
+vec3 solarFire(vec2 p, float r, float edge) {
+  if(r>${glsl(SOLAR_FIRE.reach)}) return vec3(0.0);
+  float h=max(0.0,r-1.0), t=uTime;
+  vec2 n=p/max(r,1e-4);
+  // The Eye's sideways sweep: flames toward the sides run longer.
+  float side=1.0+${glsl(SOLAR_FIRE.wide)}*pow(abs(n.x),3.0);
+  // Licks: broad tongues on a slow, irregular clock lengthen the flames.
+  float lick=smoothstep(.42,.92,noise3(vec3(n*1.9,t*${glsl(SOLAR_FIRE.lickRate)})));
+  float len=${glsl(SOLAR_FIRE.length)}*side*(1.0+${glsl(SOLAR_FIRE.licks)}*lick*lick);
+  // The flames curl as they rise: their direction bends more the higher they reach.
+  float bend=(noise3(vec3(n*2.7+7.0,h*1.4-t*${glsl(SOLAR_FIRE.rise * 0.6)}))-.5)*${glsl(SOLAR_FIRE.curl)}*h/side;
+  vec2 m=vec2(cos(bend)*n.x-sin(bend)*n.y,sin(bend)*n.x+cos(bend)*n.y);
+  // Filaments: fine strands streaming outward along the flow, layered; a layer
+  // fades out where it would alias.
+  float u=h/side-t*${glsl(SOLAR_FIRE.rise)}, f=0.0, w=0.0, amp=1.0, fa=${glsl(SOLAR_FIRE.filaments)}, fr=1.6;
+  for(int i=0;i<4;i++){
+    if(float(i)>=uFireDetail) break;
+    float k=amp*(1.0-smoothstep(.22,.45,fa*edge/r));
+    f+=k*noise3(vec3(m*fa,u*fr+float(i)*7.31));
+    w+=k; amp*=.6; fa*=2.1; fr*=1.6;
+  }
+  float strands=smoothstep(.32,.76,w>0.0?f/w:.5);
+  // The body: bright at the limb, falling off over the flames' length, its edge
+  // ragged with broad tongues of the same flow.
+  float ragged=noise3(vec3(m*${glsl(SOLAR_FIRE.filaments * 0.3)},u*1.2+3.7));
+  float body=exp(-h/len)*smoothstep(-.1,.5,ragged*1.7+.3-h/len);
+  float flame=body*(1.0-${glsl(SOLAR_FIRE.strands)}+${glsl(SOLAR_FIRE.strands)}*strands);
+  // Wisps: strands that run past the flames break off and fade as they climb.
+  float wv=noise3(vec3(m*${glsl(SOLAR_FIRE.filaments * 0.55)},(h/side-t*${glsl(SOLAR_FIRE.rise * 1.35)})*3.0+19.7));
+  float wisp=${glsl(SOLAR_FIRE.wisps)}*smoothstep(.58,.85,wv)*(.4+.6*strands)*smoothstep(.5,1.1,h/len)*(1.0-smoothstep(1.2,2.4,h/len));
+  float fire=(flame+wisp*exp(-.5*h/len))*(1.0-smoothstep(${glsl(SOLAR_FIRE.reach - 0.45)},${glsl(SOLAR_FIRE.reach)},r));
+  // Amber at the limb to deep red at the tips.
+  float temp=body*(.55+.45*strands);
+  vec3 col=mix(${vec3(SOLAR_FIRE.tip)},${vec3(SOLAR_FIRE.mid)},smoothstep(.06,.4,temp));
+  col=mix(col,${vec3(SOLAR_FIRE.hot)},smoothstep(.4,.9,temp));
+  return col*fire*${glsl(SOLAR_FIRE.strength)}*uBreath;
+}
+`
+  : "";
+const QUIET = SOLAR_FIRE.on ? `*${glsl(SOLAR_FIRE.quiet)}` : "";
 const CORONA_FRAGMENT = `
 uniform float uTime;
 uniform float uBreath;
 uniform vec2 uLean;
 varying vec2 vUv;
 ${NOISE}
+${FIRE}
 void main() {
   // p in solar radii across a plane SOLAR_LOOK.plane radii wide.
   vec2 p=(vUv-.5)*${glsl(SOLAR_LOOK.plane)};
@@ -222,12 +319,25 @@ void main() {
   // wobbling a little and leaning toward a slowly wandering side.
   float lean=1.0+dot(p/max(r,1e-4),uLean);
   float glow=${glsl(SOLAR_LOOK.halo.glow)}*exp(-h*${glsl(SOLAR_LOOK.halo.falloff)})*(1.0-smoothstep(${glsl(SOLAR_LOOK.halo.reach - SOLAR_LOOK.halo.fade)},${glsl(SOLAR_LOOK.halo.reach)},r-boil*4.0-.08*dot(p/max(r,1e-4),uLean)));
-  float halo=(${glsl(SOLAR_LOOK.halo.aura)}*exp(-h*${glsl(SOLAR_LOOK.halo.auraFalloff)})+glow)*lean*uBreath;
-  float inner=exp(-h*20.0)*.62*uBreath;
-  float stream=exp(-h*(9.0-rays*5.0))*(.13+.28*pow(max(0.0,rays),3.0))*flick;
-  float filaments=pow(.5+.5*sin(a*93.0+weave*3.0),9.0)*exp(-h*18.0)*.055;
+  float halo=(${glsl(SOLAR_LOOK.halo.aura)}*exp(-h*${glsl(SOLAR_LOOK.halo.auraFalloff)})${QUIET}+glow)*lean*uBreath;
+  float inner=exp(-h*20.0)*.62*uBreath${QUIET};
+  float stream=exp(-h*(9.0-rays*5.0))*(.13+.28*pow(max(0.0,rays),3.0))*flick${QUIET};
+  float filaments=pow(.5+.5*sin(a*93.0+weave*3.0),9.0)*exp(-h*18.0)*.055${QUIET};
   float alpha=(halo+inner+stream+filaments)*outside*(1.0-smoothstep(${glsl(SOLAR_LOOK.plane / 2 - 0.6)},${glsl(SOLAR_LOOK.plane / 2)},r));
-  gl_FragColor=vec4(mix(vec3(1.0,.46,.1),vec3(1.0,.76,.42),exp(-h*8.0))*alpha,min(alpha,1.0));
+  // The mask alone (its light is added with factor one): whole over the glow, past its reach.
+  float hold=${glsl(SOLAR_LOOK.hold.cover)}*(1.0-smoothstep(${glsl(SOLAR_GLOW_RADIUS / SOLAR_RADIUS)},${glsl(SOLAR_GLOW_RADIUS / SOLAR_RADIUS + SOLAR_LOOK.hold.feather)},r));
+  ${
+    SOLAR_FIRE.on
+      ? `vec3 corona=mix(vec3(1.0,.46,.1),vec3(1.0,.76,.42),exp(-h*8.0))*alpha, fire=solarFire(p,r,edge)*smoothstep(1.0+edge,1.0+3.0*edge,r);
+  // The fire fills only the room under the knee left by the glow and the lens streak
+  // over it (SOLAR_STREAK, the same profile), easing in, never past it.
+  vec2 q=abs(p)/vec2(${glsl(SOLAR_STREAK.length / 2)},${glsl(SOLAR_STREAK.height / 2)});
+  float streak=exp(-q.y*q.y*28.0)*(exp(-q.x*3.2)*.8+exp(-q.x*q.x*40.0)*.6)*(1.0-smoothstep(.85,1.0,q.x))*${glsl(SOLAR_STREAK.strength * (0.2126 + 0.7152 * 0.62 + 0.0722 * 0.32))}*uBreath;
+  float room=max(0.0,${glsl(SOLAR_FIRE.knee)}-dot(corona,vec3(.2126,.7152,.0722))-streak), lit=dot(fire,vec3(.2126,.7152,.0722));
+  fire*=room*(1.0-exp(-lit/max(room,1e-4)))/max(lit,1e-4);
+  gl_FragColor=vec4(corona+fire,min(max(alpha+dot(fire,vec3(.2126,.7152,.0722))*${glsl(SOLAR_FIRE.mask)},hold),1.0));`
+      : `gl_FragColor=vec4(mix(vec3(1.0,.46,.1),vec3(1.0,.76,.42),exp(-h*8.0))*alpha,min(max(alpha,hold),1.0));`
+  }
   #include <colorspace_fragment>
 }
 `;
@@ -346,8 +456,6 @@ export function makeLoopGeometry(radius = SOLAR_RADIUS, seed = 7143) {
   return geometry;
 }
 
-// The anamorphic streak across the star: SOLAR_RADIUS times length and height.
-export const SOLAR_STREAK = Object.freeze({ length: 26, height: 1.4, strength: 0.32 });
 export function createSolarBody({ parent, camera, position, profile = {} }) {
   const root = new Group(),
     rotating = new Group(),
@@ -360,7 +468,8 @@ export function createSolarBody({ parent, camera, position, profile = {} }) {
   const uTime = { value: 0 },
     uDetail = { value: 3 },
     uBreath = { value: 1 },
-    uLean = { value: new Vector2() };
+    uLean = { value: new Vector2() },
+    uFireDetail = { value: SOLAR_FIRE.octaves.high };
   const surfaceMaterial = new ShaderMaterial({
     name: "SolarPhotosphere",
     uniforms: { uTime, uDetail, uBreath },
@@ -379,7 +488,7 @@ export function createSolarBody({ parent, camera, position, profile = {} }) {
   rotating.add(surface);
   const coronaMaterial = new ShaderMaterial({
     name: "SolarCorona",
-    uniforms: { uTime, uBreath, uLean },
+    uniforms: { uTime, uBreath, uLean, uFireDetail },
     vertexShader: CORONA_VERTEX,
     fragmentShader: CORONA_FRAGMENT,
     transparent: true,
@@ -455,6 +564,7 @@ gl_FragColor=vec4(vec3(1.,.62,.32)*line*uStrength*uBreath,min(line,1.));
       if (disposed) return false;
       tier = celestialTier(next);
       uDetail.value = SOLAR_QUALITY[tier].detail;
+      uFireDetail.value = SOLAR_FIRE.octaves[tier] ?? 1;
       loops.geometry.setDrawRange(
         0,
         SOLAR_QUALITY[tier].loops * loops.geometry.userData.indicesPerLoop,
@@ -467,9 +577,10 @@ gl_FragColor=vec4(vec3(1.,.62,.32)*line*uStrength*uBreath,min(line,1.));
       resolution.set(Math.max(1, width), Math.max(1, height));
       return true;
     },
-    update({ elapsedSeconds = 0, reducedMotion = false } = {}) {
+    update({ elapsedSeconds = 0, reducedMotion = false, motionPaused = false } = {}) {
       if (disposed) return false;
-      uTime.value = clock.tick(elapsedSeconds, reducedMotion);
+      // A visitor pause or an open dialog holds the fire with the rest of the star.
+      uTime.value = clock.tick(elapsedSeconds, reducedMotion || motionPaused);
       const unrest = solarUnrest(uTime.value);
       uBreath.value = unrest.breath;
       uLean.value.set(...unrest.lean);

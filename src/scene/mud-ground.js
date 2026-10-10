@@ -1,6 +1,8 @@
 import { DEPTH_LAYER } from "./depth-layers.js";
+import { FLASH_GROUND, FLASH_UNIFORMS } from "./film-light.js";
 import { HORIZON_AIR, RANGE_MIST, TERRAIN_HORIZON } from "./hill-silhouette.js";
 import { ESTATE, estateLantern, estatePoint } from "./estate-layout.js";
+import { MIST_PARS, MIST_UNIFORMS, mistOn } from "./drifting-mist.js";
 // The estate's human scale for props and trees: one doorway height. The
 // timber lookout matches it: its cabin rises about 6.5 from gallery floor
 // (29.9) to eave (36.4) above a railing about 3.9 high.
@@ -787,10 +789,10 @@ const WATER = SLATE_WATER,
   LIGHT = SLATE_LIGHT;
 // The film ground's own direct light (SLATE_LIGHT): it finds the key and the
 // fill among the directional lights by their fixed directions and the lantern
-// by its warm colour; any other light is the crown's cool point fill. Three's
-// light loops fetch each light through get*LightInfo(), so wrapping those marks
-// a directional one (slateDirectional): where the crown's point light lines up
-// with the key or the fill from some spot on the ground, it stays the crown's.
+// by its warm colour; any other light is the crown's cool point fill. Three's light loops fetch each light through get*LightInfo(), so
+// wrapping those marks a directional one (slateDirectional): where the crown's
+// point light lines up with the key or the fill from some spot on the ground,
+// it stays the crown's.
 // Where the soil is wet (slateWetLamp, set before the lights) the moon and the
 // lantern also light the water film over it (SLATE_WATER.moon, .lamp), on the
 // water's normal (slateWaterN), into slateMoonSpec and slateLampSpec.
@@ -849,12 +851,16 @@ const WATER_BEFORE_LIGHTS = `slateGlossSet();
       slateWetFilm = (mix(${glslNumber(WATER.film[0])}, slateGloss.x, slateGlossW)*(1.0-slateDry)+${glslNumber(WATER.film[1])}*slateWet)*mix(${glslNumber(WATER.patch[1])}, 1.0, smoothstep(.3, .7, slateNoise(vMudWorld.xz/${glslNumber(WATER.patch[0])})))*(1.0-slatePuddle)*(1.0-slateWaterFar(length(vViewPosition)))*(1.0-${glslNumber(1 - SLATE_WET.close.film)}*slateMatte);
       #include <lights_fragment_begin>`;
 // After the light maps: the ambient's share and the night sky's light, and the
-// sky the water mirrors, at the film's or a puddle's roughness.
+// sky the water mirrors, at the film's or a puddle's roughness, each brighter by
+// a lightning flash's share away from the text (FLASH_GROUND.babelFlash.x, .y).
 const WATER_SKY = `#include <lights_fragment_maps>
       #ifdef USE_ENVMAP
       irradiance *= ${glslNumber(LIGHT.ambient)};
       iblIrradiance *= ${glslNumber(LIGHT.sky)};
+      float slateFlashAway = babelFlash.x+babelFlash.y > 0.0 ? 1.0-slateBehindText() : 0.0;
+      iblIrradiance *= 1.0+babelFlash.x*slateFlashAway;
       vec3 slateWaterSky = mix(getIBLRadiance(geometryViewDir, slateWaterN, mix(${glslNumber(WATER.roughness[0])}, ${glslNumber(WATER.roughness[1])}, slatePuddle))*mix(mix(${glslNumber(WATER.gain[0])}, slateGloss.y, slateGlossT)*mix(vec3(1.0), mix(${glslVec(SLATE_LOOK.gloss.warm)}, ${glslVec(SLATE_LOOK.gloss.tint)}, slateGloss.w), slateGlossT), vec3(${glslNumber(WATER.gain[1])}), slatePuddle), slateWaterBark, slateWaterVeil*slatePuddle);
+      slateWaterSky *= 1.0+babelFlash.y*slateFlashAway;
       #endif`;
 // After the soil's own clamps: the water's mirror (water Fresnel, the film's
 // share or a puddle whole, fading with distance; slateSkyVis is the sky the
@@ -909,7 +915,9 @@ export function configureGroundShading(
     (useWet && material.userData.slateRoot ? "+root" : "");
   material.onBeforeCompile = (shader) => {
     if (!useWet) return;
-    Object.assign(shader.uniforms, uniforms);
+    Object.assign(shader.uniforms, uniforms, FLASH_GROUND, FLASH_UNIFORMS);
+    // The drifting mist (drifting-mist.js), last, over the slate's own air and look.
+    if (mistOn) Object.assign(shader.uniforms, MIST_UNIFORMS);
     // The dune field varies over 100+ world units; the film terrain's 3-unit
     // quads carry it per vertex, so fragments only read the interpolated height.
     const wetVarying = useWet ? "varying float vSlateDune;\nvarying vec4 vSlateClip;\n" : "";
@@ -930,12 +938,14 @@ export function configureGroundShading(
 uniform vec4 slateCalm, slateCalmAt;
 float slateFlatAt(vec2 p){return slateCalm.w*smoothstep(slateCalmAt.z,slateCalmAt.w,length(p-slateCalmAt.xy));}
 uniform float slateRockContact, slateContactGain, slateAspect;
+uniform vec3 babelFlashKey;
+uniform vec4 babelFlash, babelFlashLight, babelFlashSky;
 #define SLATE_TEXT_KNEE ${glslNumber(WATER.text[1])}
 uniform vec4 slateText, slateAbout;
 ${authored ? "uniform sampler2D slateDetail;\n" : ""}${close ? "uniform sampler2D slateGrit, slateRelief;\n" : ""}${RIVER_BED_GLSL}float slateHash(vec2 p){vec3 q=fract(p.xyx*.1031);q+=dot(q,q.yzx+33.33);return fract((q.x+q.y)*q.z);}
 float slateNoise(vec2 p){vec2 i=floor(p),f=fract(p);f*=f*(3.-2.*f);return mix(mix(slateHash(i),slateHash(i+vec2(1,0)),f.x),mix(slateHash(i+vec2(0,1)),slateHash(i+1.),f.x),f.y);}
 ${STREAM_GLSL}
-${SLATE_TEXT_GLSL}${LOOK_GLSL}`
+${SLATE_TEXT_GLSL}${LOOK_GLSL}${mistOn ? `uniform mat4 projectionMatrix;\n${MIST_PARS}` : ""}`
         : "") +
       shader.fragmentShader;
     if (authored)
@@ -1049,6 +1059,10 @@ ${SLATE_TEXT_GLSL}${LOOK_GLSL}`
       reflectedLight.directSpecular *= mix(1.0, ${glslNumber(SLATE_WET.close.specular)}, slateMatte)*(1.0 + ${glslNumber(SLATE_WET.specular)}*slateWet)*(1.0 + ${glslNumber(SLATE_PUDDLES.specular)}*slatePuddle - ${glslNumber(SLATE_PUDDLES.specular - SLATE_PUDDLES.lantern.specular)}*slateLanternPuddle);
       reflectedLight.directSpecular /= 1.0 + 2.5*dot(reflectedLight.directSpecular,vec3(.2126,.7152,.0722))*slateLanternPuddle;
       float slateBehind = slateBehindText(), slateShow = 1.0-${glslNumber(WATER.text[0])}*slateBehind;
+      // A lightning flash's light (film-light.js FLASH_UNIFORMS) at the slate's
+      // shares of the fill and the flat light, none of it behind the text.
+      if (babelFlashLight.w > 0.0)
+        reflectedLight.directDiffuse += (1.0-slateBehind)*(1.0-slateBehind)*(babelFlashLight.rgb*saturate(dot(normal, (viewMatrix*vec4(babelFlashKey, 0.0)).xyz))*${glslNumber(LIGHT.fill)}+(babelFlashSky.rgb*(.5+.5*dot(normal, viewMatrix[1].xyz))+babelFlashSky.w)*${glslNumber(LIGHT.ambient)})*material.diffuseColor;
       reflectedLight.indirectSpecular *= mix(1.0, ${glslNumber(+(SLATE_WET.indirect[1] / SLATE_WET.indirect[0]).toFixed(4))}, slateWet*slateShow)*mix(1.0, ${glslNumber(SLATE_WET.close.sky)}, slateMatte);${WATER_AFTER_LIGHTS}
       float slateQuiet = 1.0-${glslNumber(SLATE_CALM_GLINT)}*slateFlatAt(vMudWorld.xz)*(1.0-slatePuddle);
       reflectedLight.directSpecular *= slateQuiet;
@@ -1075,7 +1089,7 @@ ${SLATE_TEXT_GLSL}${LOOK_GLSL}`
       vec3 earthAir = ${TERRAIN_HORIZON}*${glslNumber(HORIZON_AIR.ground)};
       earthHorizon *= smoothstep(1.0, 1.15, dot(gl_FragColor.rgb, ${LUMA})/dot(earthAir, ${LUMA}));
       gl_FragColor.rgb = mix(gl_FragColor.rgb, earthAir, earthHorizon);
-      #endif${LOOK_AFTER}
+      #endif${LOOK_AFTER}${useWet && mistOn ? "\n      gl_FragColor.rgb = mistOver(gl_FragColor.rgb, vMudWorld);" : ""}
       gl_FragColor.a = ${DEPTH_LAYER.ground};
     `,
         );
