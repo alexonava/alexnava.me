@@ -28,6 +28,7 @@ import { RANGE_MIST, RANGE_MIST_SHAPE, TERRAIN_EDGE } from "../src/scene/hill-si
 import { RANGE_LAYERS, MOUNTAINS } from "../src/scene/mountain-build.js";
 import { foothillHeight } from "../src/scene/terrain-build.js";
 import { createSlateContacts, TERRAIN_BASE } from "../src/scene/mud-ground.js";
+import { MIST_KEEP, MIST_PARS, MIST_UNIFORMS, mistOn } from "../src/scene/drifting-mist.js";
 import { flat, source } from "./support/code.mjs";
 
 test("the default is the scattered layout: a dozen small clusters of one to six fires", () => {
@@ -188,19 +189,34 @@ test("the fires are one depth-tested Points draw of added light that keeps the d
 
 test("the fires' cores stay under the bloom's threshold, and the air reddens and dims them", () => {
   const { vertexShader } = createFarFires({ parent: new Group() }).root.material;
-  // Core and halo together, over the ranges' misted feet (whose light reaches about
-  // .4 before the grade), stay under UnrealBloomPass's 0.9 threshold
-  // (postprocess.js), so no fire blooms and the bloom elsewhere (The watch's
-  // reference clouds) is untouched.
-  assert.ok(FAR_FIRES.light.peak + 0.4 < 0.9);
+  // The air behind the fires, measured (2026-10-09, storm-fx round 2,
+  // captures/fires2/air): the scene's luminance before the grade, as the bloom's
+  // high-pass reads it, with the drifting mist on, at six phases from 8 to 47 s, in
+  // every shot that shows fires (The watch, Watch and tree, Portrait and Root and
+  // lantern at 1600x900 high; The watch and Portrait at 2560x1080 high; Portrait,
+  // Watch and tree, Lantern study and Root and lantern at 390x844 balanced): at
+  // most 0.30 (0.28 under a fire's core). With the fires the high-pass saw at most
+  // 0.72, and no pixel reached UnrealBloomPass's 0.9 threshold (postprocess.js).
+  const MEASURED_AIR = 0.3;
   assert.match(
     source("src/scene/postprocess.js"),
     /new UnrealBloomPass\(size, 0\.18, 0\.45, 0\.9\)/,
   );
+  const { peak, edge, air } = FAR_FIRES.light;
+  // Core and halo at the flicker's crest reach at most `peak`, and with the air
+  // behind them at most `edge`, under the threshold: over the measured air the
+  // ceiling is `peak` itself (edge - peak is that air), and where a lit bank of
+  // the drifting mist lifts the air further (mistOver over the plain's own air),
+  // the ceiling drops with it.
+  assert.ok(peak + MEASURED_AIR < 0.9 && edge < 0.9);
+  assert.ok(edge - peak >= MEASURED_AIR - 1e-9 && air < MEASURED_AIR);
   assert.match(
     vertexShader,
-    /float peak=dot\(vCore\+vHalo,vec3\(\.2126,\.7152,\.0722\)\)\*1\.22;\s*float cap=min\(1\.,0\.45\/max\(peak,1e-4\)\)\*f;\s*vCore\*=cap;\s*vHalo\*=cap;/,
+    /float peak=dot\(vCore\+vHalo,vec3\(\.2126,\.7152,\.0722\)\)\*1\.22;\s*float room=min\(0\.55,0\.85-dot\(mistOver\(vec3\(0\.2\),cameraPosition\+e\),vec3\(\.2126,\.7152,\.0722\)\)\);\s*float cap=min\(1\.,max\(room,0\.\)\/max\(peak,1e-4\)\)\*f\*veil;\s*vCore\*=cap;\s*vHalo\*=cap;/,
   );
+  // The owner's brighter pick (2026-10-09): bigger, hotter cores and halos.
+  assert.deepEqual([FAR_FIRES.light.core, FAR_FIRES.light.halo, peak], [3.8, 0.6, 0.55]);
+  assert.deepEqual([[...FAR_FIRES.size.core], FAR_FIRES.size.halo], [[0.75, 1.4], 9.5]);
   // Nor does light pile up: a cluster's fires stand apart as seen from the estate.
   const fires = farFireLayout();
   for (const a of fires)
@@ -222,6 +238,36 @@ test("the fires' cores stay under the bloom's threshold, and the air reddens and
   );
   // The shot's low mist on the ranges' feet, shared with the ranges and the slate.
   assert.equal(createFarFires({ parent: new Group() }).uniforms.uMist, RANGE_MIST);
+});
+
+test("the drifting mist veils each fire as it veils the plain there, through its own march", () => {
+  assert.ok(mistOn);
+  const fires = createFarFires({ parent: new Group() }),
+    { vertexShader } = fires.root.material;
+  // The mist's own functions (drifting-mist.js), not a copy: mistKeep reads what
+  // mistOver keeps of any colour at the fire, so it marches the same banks.
+  assert.ok(vertexShader.includes(MIST_PARS + MIST_KEEP));
+  assert.equal(
+    MIST_KEEP,
+    "float mistKeep(vec3 world){return mistOver(vec3(1.),world).g-mistOver(vec3(0.),world).g;}",
+  );
+  // Half its depth (haze.drift): a bank still dims a fire inside it, by up to 30%,
+  // while the far plain's standing mist leaves the owner's brighter fires bright.
+  assert.equal(FAR_FIRES.haze.drift, 0.5);
+  assert.ok(vertexShader.includes("float veil=mix(1.,mistKeep(cameraPosition+e),0.5);"));
+  // At the fire's eased reach (where it stands against the ranges), on its core,
+  // halo and the settlement's glow alike.
+  assert.ok(vertexShader.includes("*keep*veil;"));
+  assert.ok(vertexShader.includes("*f*veil;"));
+  // The mist's uniforms are lent, never copied.
+  for (const name of ["mistDrift", "mistFrame"])
+    assert.equal(fires.uniforms[name], MIST_UNIFORMS[name]);
+  // Off, nothing marches.
+  const off = createFarFires({
+    parent: new Group(),
+    config: { ...FAR_FIRES, haze: { ...FAR_FIRES.haze, drift: 0 } },
+  }).root.material.vertexShader;
+  assert.ok(off.includes("float veil=1.;"));
 });
 
 test("the fires breathe on the scene clock and hold for pauses, dialogs and reduced motion", () => {
@@ -317,6 +363,14 @@ test("the subjects' silhouettes keep the fires off them, band by band", () => {
   subject.updateMatrixWorld(true);
   fires.update({});
   assert.ok(rects[0].y < before);
+  // A part committed later (the lantern on the tree) is measured within 30 frames.
+  const widthBefore = rects[0].z - rects[0].x,
+    lantern = new Mesh(new BoxGeometry(2, 2, 2, 2, 2, 2), new MeshBasicMaterial());
+  lantern.position.set(9, 1, 0);
+  subject.add(lantern);
+  subject.updateMatrixWorld(true);
+  for (let i = 0; i < 30; i++) fires.update({});
+  assert.ok(rects[0].z - rects[0].x > widthBefore + 0.01, "the committed part widens its band");
   assert.match(
     fires.root.material.vertexShader,
     /for\(int i=0;i<16;i\+\+\)keep\*=1\.-near\(uSubjects\[i\],v,0\.012,0\.02\);/,

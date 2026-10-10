@@ -15,6 +15,7 @@ import {
 import { RANGE_MIST, RANGE_MIST_SHAPE, TERRAIN_EDGE } from "./hill-silhouette.js";
 import { TERRAIN_BASE } from "./mud-ground.js";
 import { seededRandom } from "./solar-body.js";
+import { MIST_KEEP, MIST_PARS, MIST_UNIFORMS, mistOn } from "./drifting-mist.js";
 
 // Distant firelights (the owner's storm-fx brief, 2026-10-09, frame F): tiny
 // warm fires far out on the plain and at the ranges' feet, campfires, torches
@@ -41,16 +42,20 @@ import { seededRandom } from "./solar-body.js";
 // size (device px): the core's Gaussian sigma from the weakest to the
 // strongest fire, the halo's radius (CSS px), the pool's half width, half
 // height and drop below the core.
-// light: the core's, halo's and pool's gains, and the most the core and halo
-// together reach (luma: under the bloom's threshold with the plain's air
-// beneath them).
+// light: the core's, halo's and pool's gains; the most the core and halo
+// together reach (`peak`, luma); and the most they reach with the air behind
+// them (`edge`, under the bloom's 0.9 threshold), that air reckoned as the
+// drifting mist's own light over the plain's air (`air`, luma), so where a lit
+// bank drifts behind a fire its ceiling drops.
 // colour: the fires' temperatures (K), the tint a guttering fire sinks
 // toward, and the hot tint and share of a core.
 // flicker: the slow breath and the faster flutter (shares of the light), how
 // deep a gutter dips, and a rate scale.
 // haze: the air's reach (units: light falls to 1/e), its reddening
 // (extinction per channel), how much the halo scatters with distance, how
-// deeply a shot's low mist (hill-silhouette.js RANGE_MIST) veils a fire, the
+// deeply a shot's low mist (hill-silhouette.js RANGE_MIST) veils a fire, how
+// deeply the drifting mist does (`drift`, a share of drifting-mist.js
+// mistKeep: what it keeps of a light inside or behind its banks), the
 // ranges' ground line (`feet`, a view slope: the ranges ride on the lens, so
 // past the terrain's edge a fire's reach eases toward where the plain meets
 // them and it never stands on a range's flank) and the draw distance (a fire
@@ -91,11 +96,11 @@ export const FAR_FIRES = Object.freeze({
   ]),
   glow: Object.freeze({ cluster: -1, gain: 0.05, width: 1.2, aspect: 0.34, lift: 0.2 }),
   size: Object.freeze({
-    core: Object.freeze([0.55, 1.05]),
-    halo: 7,
+    core: Object.freeze([0.75, 1.4]),
+    halo: 9.5,
     pool: Object.freeze([3.2, 0.8, 1.4]),
   }),
-  light: Object.freeze({ core: 2.6, halo: 0.4, pool: 0.1, peak: 0.45 }),
+  light: Object.freeze({ core: 3.8, halo: 0.6, pool: 0.1, peak: 0.55, edge: 0.85, air: 0.2 }),
   colour: Object.freeze({
     kelvin: Object.freeze([2000, 2500]),
     gutter: Object.freeze([1, 0.72, 0.5]),
@@ -108,6 +113,7 @@ export const FAR_FIRES = Object.freeze({
     redden: Object.freeze([0.8, 1, 1.45]),
     scatter: 0.5,
     mist: 0.6,
+    drift: 0.5,
     feet: -RANGE_MIST_SHAPE.floor,
     draw: 320,
   }),
@@ -241,6 +247,7 @@ uniform vec4 uMist, slateText, slateAbout, uClear, uSubjects[${SUBJECT_RECTS}];
 uniform float slateAspect;
 varying vec3 vCore, vHalo;
 varying vec4 vShape;
+${MIST_PARS}${MIST_KEEP}
 float fh(float n){n=fract(n*.1031);n*=n+33.33;n*=n+n;return fract(n);}
 float fn(float x){float i=floor(x),f=fract(x);return mix(fh(i),fh(i+1.),f*f*(3.-2.*f));}
 // 1 inside the canvas UV rect r, easing to 0 over d (shares of the smaller side) past pad.
@@ -275,23 +282,30 @@ col*=mix(${vec3(colour.gutter)},vec3(1.),smoothstep(.35,1.,f));
 float slope=e.y/max(length(e.xz),1e-3), mist=uMist.w*max(1.-smoothstep(${glsl(RANGE_MIST_SHAPE.floor)},${glsl(RANGE_MIST_SHAPE.top)},slope),smoothstep(55.,190.,D));
 vec3 T=exp(-D/${glsl(haze.reach)}*${vec3(haze.redden)})*(1.-${glsl(haze.mist)}*mist);
 vec3 scatter=mix(T,sqrt(T),${glsl(haze.scatter)});
+// The drifting mist (drifting-mist.js) veils a fire as it veils the plain there: a
+// fire inside a bank dims with it and never reads in front of it.
+float veil=${haze.drift > 0 ? `mix(1.,mistKeep(cameraPosition+e),${glsl(haze.drift)})` : "1."};
 float glow=aFire.w;
 if(glow>.5){
 // The settlement's light in the haze above it: its width on screen from its spread.
 float px=aFire.x*projectionMatrix[1][1]*uHeight/max(D,1.);
 vShape=vec4(0.,0.,clamp(px,6.,256.),1.);
 vCore=vec3(0.);
-vHalo=col*scatter*${glsl(config.glow.gain)}*(1.+.25*breath)*keep;
+vHalo=col*scatter*${glsl(config.glow.gain)}*(1.+.25*breath)*keep*veil;
 }else{
 float sigma=mix(${glsl(size.core[0])},${glsl(size.core[1])},clamp(aFire.x,0.,1.)), halo=${glsl(size.halo)}*uPixelRatio*uHalo;
 vShape=vec4(sigma,halo,2.*ceil(max(halo,${glsl(size.pool[0])}+1.))+1.,0.);
 vCore=mix(col,${vec3(colour.hot)},${glsl(colour.core)})*T*aFire.x*${glsl(config.light.core)}*keep;
 vHalo=col*scatter*aFire.x*${glsl(config.light.halo)}*keep;
-// The core and halo together, at the flicker's crest, stay under the bloom's
-// threshold over the dark plain, so the halo is the fire's only glow on every
-// tier and nothing blooms elsewhere; the brightest fires still breathe.
+// The core and halo together, at the flicker's crest, stay at most light.peak and,
+// with the air behind them, under light.edge (the bloom's threshold is 0.9), so the
+// halo is the fire's only glow on every tier and nothing blooms elsewhere: where the
+// drifting mist's own light (drifting-mist.js mistOver, over the plain's air
+// light.air) lifts the air, the fire's ceiling drops with it. The brightest fires
+// still breathe.
 float peak=dot(vCore+vHalo,vec3(.2126,.7152,.0722))*${glsl(+(1 + config.flicker.breath + config.flicker.flutter).toFixed(4))};
-float cap=min(1.,${glsl(config.light.peak)}/max(peak,1e-4))*f;
+float room=min(${glsl(config.light.peak)},${glsl(config.light.edge)}-dot(${mistOn ? `mistOver(vec3(${glsl(config.light.air)}),cameraPosition+e)` : `vec3(${glsl(config.light.air)})`},vec3(.2126,.7152,.0722)));
+float cap=min(1.,max(room,0.)/max(peak,1e-4))*f*veil;
 vCore*=cap;
 vHalo*=cap;
 }
@@ -349,13 +363,27 @@ export function farFireCount(fires, tier, config = FAR_FIRES) {
 }
 
 const EMPTY = Object.freeze({ x: 2, y: 2, z: -1, w: -1 });
+// What a subject is built of: its visible meshes and their vertices. A change (a
+// committed lantern on the tree) measures its bands again.
+function subjectShape(root) {
+  let meshes = 0,
+    vertices = 0;
+  root.traverseVisible((mesh) => {
+    if (!mesh.isMesh) return;
+    meshes++;
+    vertices += mesh.geometry?.attributes?.position?.count ?? 0;
+  });
+  return `${meshes}:${vertices}`;
+}
 // The silhouette of a subject as `bands` world boxes up its height, from every
 // third vertex of its meshes; kept with the root's inverse world matrix then,
-// so a moved root (a new composition's scene offset) carries them.
+// so a moved root (a new composition's scene offset) carries them, and with its
+// shape (subjectShape), so a changed one is measured again.
 function subjectBands(root, bands) {
   root.updateWorldMatrix(true, true);
-  const whole = new Box3().setFromObject(root);
-  if (whole.isEmpty()) return null;
+  const shape = subjectShape(root),
+    whole = new Box3().setFromObject(root);
+  if (whole.isEmpty()) return { shape, boxes: [], inverse: new Matrix4() };
   const boxes = Array.from({ length: bands }, () => new Box3()),
     point = new Vector3(),
     low = whole.min.y,
@@ -381,7 +409,7 @@ function subjectBands(root, bands) {
     box.min.y = low + (band / bands) * height;
     box.max.y = low + ((band + 1) / bands) * height;
   });
-  return { root, boxes, inverse: root.matrixWorld.clone().invert() };
+  return { shape, boxes, inverse: root.matrixWorld.clone().invert() };
 }
 
 // The film's distant firelights (FAR_FIRES), a subsystem under the ground's
@@ -407,6 +435,9 @@ export function createFarFires({
     uHalo: { value: 1 },
     uPool: { value: config.light.pool },
     uMist: RANGE_MIST,
+    // The drifting mist's shared uniforms (lent, never copied): mistKeep() and mistOver() read
+    // its drift, shot share, datum and march.
+    ...MIST_UNIFORMS,
     uClear: { value: new Vector4(2, 2, -1, -1) },
     uSubjects: { value: subjectRects },
     slateText: textGuard.slateText ?? { value: { ...EMPTY } },
@@ -421,8 +452,10 @@ export function createFarFires({
   points.renderOrder = 4;
   points.visible = false;
   parent.add(points);
-  const bands = new Map(),
-    corner = new Vector3(),
+  // Each subject's bands, by root: weakly held, so a replaced root is let go.
+  let bands = new WeakMap(),
+    projections = 0;
+  const corner = new Vector3(),
     carry = new Matrix4();
   let disposed = false,
     film = false,
@@ -470,11 +503,14 @@ export function createFarFires({
   }
   function projectSubjects() {
     let slot = 0;
+    projections++;
     for (const root of subjects() ?? []) {
       if (!root || slot >= SUBJECT_RECTS) continue;
+      // Measured on its first frame, and again when its shape changes (checked
+      // every 30th frame).
       let entry = bands.get(root);
-      if (entry === undefined) bands.set(root, (entry = subjectBands(root, config.guard.bands)));
-      if (!entry) continue;
+      if (!entry || (projections % 30 === 0 && subjectShape(root) !== entry.shape))
+        bands.set(root, (entry = subjectBands(root, config.guard.bands)));
       carry.multiplyMatrices(root.matrixWorld, entry.inverse);
       for (const box of entry.boxes)
         if (slot < SUBJECT_RECTS) projectBox(box, subjectRects[slot++]);
@@ -527,7 +563,7 @@ export function createFarFires({
       points.removeFromParent();
       points.geometry.dispose();
       material.dispose();
-      bands.clear();
+      bands = new WeakMap();
       return true;
     },
   };
