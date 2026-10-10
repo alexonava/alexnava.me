@@ -420,23 +420,26 @@ ${LENS_GLSL}
 void main() {
   float guard = uLayered > 0.5 ? max(lensBehind(slateText, vUv, ${lensNumber(LENS_FX.text[0])}), lensBehind(slateAbout, vUv, ${lensNumber(LENS_FX.text[1])})) : 0.0;
   vec4 texel = uLayered > 0.5 ? lensView(tDiffuse, vUv, vUv, uBlur, uStar, uFlame, uKeep, guard) : texture2D(tDiffuse, vUv);
+  // The kept frame pushes in about its origin: here it shows its own pixel prevUv,
+  // so its lens (heat, fringes, kept rect and flare) is placed in its own UV and
+  // stays on its own star and flame.
+  vec2 prevUv = uPrevOrigin + (vUv - uPrevOrigin) * uPrevScale;
   float protection = uTextProtection, w = 1.0;
   if (uProgress < 1.0) {
-    vec2 prevUv = uPrevOrigin + (vUv - uPrevOrigin) * uPrevScale;
     float start = 0.0, span = 1.0;
     if (uLayered > 0.5) {
       start = 3.0 * uStagger.x * clamp(max(layerCode(tPrev, prevUv), layerCode(tDiffuse, vUv)), 0.0, 1.0);
       span = uStagger.y;
     }
     w = smoothstep(start, start + span, uProgress);
-    texel = mix(uLayered > 0.5 ? lensView(tPrev, prevUv, vUv, uBlurPrev, uStarPrev, uFlamePrev, uKeepPrev, guard) : texture2D(tPrev, prevUv), texel, w);
+    texel = mix(uLayered > 0.5 ? lensView(tPrev, prevUv, prevUv, uBlurPrev, uStarPrev, uFlamePrev, uKeepPrev, guard) : texture2D(tPrev, prevUv), texel, w);
     protection = mix(uTextProtectionFrom, uTextProtection, w);
   }
   vec3 color = texel.rgb;
   // The star's flare, dissolving with each frame's own.
   if (uLayered > 0.5 && uLens.z > 0.0) {
     vec3 flare = lensFlare(vUv, uStar, uKeep);
-    if (uProgress < 1.0) flare = mix(lensFlare(vUv, uStarPrev, uKeepPrev), flare, w);
+    if (uProgress < 1.0) flare = mix(lensFlare(prevUv, uStarPrev, uKeepPrev), flare, w);
     color += flare * (uLens.z * (1.0 - guard));
   }
 
