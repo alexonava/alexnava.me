@@ -1,5 +1,6 @@
 import "./quality.js";
-import { createSolarBody } from "./solar-body.js";
+import { createSolarBody, SOLAR_RADIUS } from "./solar-body.js";
+import { LENS_FX, lensSource } from "./postprocess.js";
 import { createStarfield } from "./starfield.js";
 import { readTourInterval, createCameraTour, TOUR_IDLE } from "./camera-tour.js";
 import { createFilmScene } from "./film-scene.js";
@@ -29,6 +30,8 @@ import {
 import { ESTATE } from "./estate-layout.js";
 import { createRockScatter, estateContacts } from "./rock-scatter.js";
 import { createHillSilhouette } from "./hill-silhouette.js";
+import { createLightning } from "./lightning.js";
+import { createFarFires } from "./far-fires.js";
 import { markScene, measureScene, sceneNow } from "./perf-marks.js";
 import { createPropScale } from "./prop-scale.js";
 import {
@@ -48,7 +51,15 @@ import { createLanternMount } from "./lantern.js";
 import { createCompleteTowerArchitecture, createTreeArchitecture } from "./architecture.js";
 import { createSceneAtmosphere } from "./atmosphere.js";
 import { createSceneEnvironment } from "./environment.js";
-import { createEstateSkyMaterial } from "./estate-sky.js";
+import {
+  advanceMist,
+  lendMistText,
+  setMistDatum,
+  setMistLights,
+  setMistShot,
+  setMistTier,
+} from "./drifting-mist.js";
+import { CLOUD_VORTEX, cloudVortexCenter, createEstateSkyMaterial } from "./estate-sky.js";
 import { createSceneRendering } from "./rendering.js";
 import {
   createDeferredQualityStep,
@@ -207,6 +218,9 @@ const ORBIT_SPEED = 0.06;
         sunDirection: new Vector3(...WORLD.SUN_DIRECTION).normalize(),
         sunColor: 0xdfb882,
         shellOpacity: 0.52,
+        // The star and the shell's radius place the cloud vortex's eye (estate-sky.js).
+        starPosition: WORLD.SUN_POSITION,
+        skyRadius: WORLD.SKY_DOME_RADIUS,
       };
     const subsystemRegistry = createSceneSubsystemRegistry();
     const rendering = createSceneRendering({
@@ -337,6 +351,8 @@ const ORBIT_SPEED = 0.06;
       atmosphereSystem.setSkyMaterial(skyShell.material);
       // The film's environment is captured from this shell's film sky.
       rendering.setEnvironmentSky(skyShell.material, skyConfig.shellOpacity);
+      // The lens keeps its heat, fringes and flare off the same text boxes.
+      rendering.postprocessPipeline.setTextGuard?.(groundContacts);
       const solarBody = createSolarBody({
         parent: atmosphereSystem.root,
         camera,
@@ -353,6 +369,38 @@ const ORBIT_SPEED = 0.06;
         skyRadius: WORLD.SKY_DOME_RADIUS,
       });
       subsystemRegistry.register(starfield);
+      // The film storm's lightning (lightning.js): flashes in the shell's banks,
+      // now and then a far bolt beside the stars, and the flash on the lights,
+      // on its own clock and only in film. Created before the first warm-up,
+      // which links the bolt's program.
+      const lightning = createLightning({
+        parent: atmosphereSystem.root,
+        camera,
+        rendering,
+        sky: skyShell.material.uniforms,
+        textGuard: groundContacts,
+        film: () => filmActive,
+        shot: () => cinematic.shot?.name ?? null,
+        profile: state.profile,
+        skyRadius: WORLD.SKY_DOME_RADIUS,
+      });
+      subsystemRegistry.register(lightning);
+      if (qualityDebug) qualityDebug.lightning = lightning.state;
+      // The drifting mist (drifting-mist.js): the ground's text boxes are lent for its
+      // text guard (MIST_DRIFT.text, off by default: it keeps every text's contrast as
+      // it is); the moon key and the star light it; its clock, tier and the shot's
+      // share follow the frame (below).
+      lendMistText(groundContacts);
+      setMistLights(WORLD.SUN_DIRECTION, WORLD.SUN_POSITION);
+      subsystemRegistry.register({
+        applyQuality(profile) {
+          setMistTier(profile?.tier);
+        },
+        update(frame) {
+          advanceMist(frame);
+        },
+      });
+      setMistTier(state.profile?.tier);
       const environmentSystem = createSceneEnvironment({
         groundHeight,
         parent: sceneRoot,
@@ -547,6 +595,17 @@ const ORBIT_SPEED = 0.06;
       const propScale = createPropScale({ groundRoot: environmentRoot, groundHeight });
       subsystemRegistry.register(propScale);
       let completeTower = null;
+      // The film's distant firelights on the far plain (far-fires.js): out
+      // behind the text and about the tower's and the tree's silhouettes.
+      const farFires = createFarFires({
+        parent: environmentRoot,
+        camera,
+        subjects: () => [completeTower?.root, treeArchitecture?.root],
+        shot: () => cinematic.shot,
+        textGuard: groundContacts,
+        profile: state.profile,
+      });
+      subsystemRegistry.register(farFires);
       // The orbital sun stays in the directed scene: it is the one warm celestial
       // anchor in an otherwise cool night, and reads as distance rather than clutter.
       filmScene = createFilmScene({
@@ -564,6 +623,7 @@ const ORBIT_SPEED = 0.06;
           completeTower?.setFilmTreatment(active);
           groundTextures.setFilmActive(active);
           rockScatter.setFilmActive(active);
+          farFires.setFilmActive(active);
         },
       });
       subsystemRegistry.register(filmScene);
@@ -847,6 +907,9 @@ const ORBIT_SPEED = 0.06;
       window.addEventListener("resize", onWindowResize);
       window.addEventListener("scroll", onWindowScroll, { passive: true });
       resizeController.update({ force: true });
+      let vortexShot = null,
+        vortexFit = null;
+      const vortexEye = new Vector3();
       let debugRenderFrameCount = 0,
         groundTextFrames = 0,
         groundTextScrolled = false;
@@ -856,6 +919,10 @@ const ORBIT_SPEED = 0.06;
       const adaptiveSteps = createDeferredQualityStep({
         prepare: (profile) => rendering.prepareQuality(profile),
       });
+      // The lens's sources on screen (postprocess.js lensSource()), reused each frame.
+      const lensPoint = new Vector3(),
+        lensStar = [0, 0, 0, 0],
+        lensFlame = [0, 0, 0, 0];
       function updateSceneFrame({
         deltaSeconds,
         elapsedSeconds: elapsedTime,
@@ -954,6 +1021,24 @@ const ORBIT_SPEED = 0.06;
         }
         if (cinematicApplied) lookTarget.copy(cinematic.target);
         else lookTarget.set(0, lookAtHeight, 0);
+        // The cloud vortex's eye sits where this lens sees the star, set on each cut and
+        // each refit (a resize; estate-sky.js CLOUD_VORTEX), so it stays about the star.
+        if (cinematicApplied && (cinematic.shot !== vortexShot || cinematic.frame !== vortexFit)) {
+          vortexShot = cinematic.shot;
+          vortexFit = cinematic.frame;
+          camera.updateMatrixWorld();
+          cloudVortexCenter(
+            camera.getWorldPosition(vortexEye),
+            WORLD.SUN_POSITION,
+            WORLD.SKY_DOME_RADIUS,
+            skyShell.material.uniforms.uVortex.value,
+          );
+          skyShell.material.uniforms.uVortex.value.w = CLOUD_VORTEX.guardShots.includes(
+            vortexShot?.name,
+          )
+            ? 1
+            : 0;
+        }
         // The shot's light mood, and the rim's moon direction from this lens.
         {
           const mood = shotLight(filmActive && cinematicApplied ? cinematic.shot : null);
@@ -982,6 +1067,33 @@ const ORBIT_SPEED = 0.06;
           !document.body.hasAttribute("data-panel-open")
         )
           post.setFilmTime?.(elapsedTime);
+        // The lens follows its sources on screen (LENS_FX): the star, the lantern's
+        // flame in the shots that look at it, and the rect it keeps whole (The
+        // watch's reference banks on desktop landscape frames). They change with the shot.
+        {
+          const shot = filmActive && cinematicApplied ? cinematic.shot : null,
+            flame = shot && treeArchitecture?.light && LENS_FX.heat.flameShots.includes(shot.name);
+          post.setLensSources?.({
+            star: shot
+              ? lensSource(
+                  camera,
+                  solarBody.root.getWorldPosition(lensPoint),
+                  SOLAR_RADIUS,
+                  lensStar,
+                )
+              : null,
+            flame: flame
+              ? lensSource(camera, treeArchitecture.light.getWorldPosition(lensPoint), 1, lensFlame)
+              : null,
+            keep:
+              shot && viewport.width >= 1000 && viewport.width > 1.2 * viewport.height
+                ? (LENS_FX.keep[shot.name] ?? null)
+                : null,
+          });
+        }
+        // The mist's share is the shot's on screen, over the plain's datum.
+        setMistShot(cinematic.shot?.name, filmActive && cinematicApplied);
+        setMistDatum(environmentRoot.position.y + groundHeight(ESTATE.tree.x, ESTATE.tree.z));
         // The shot's ground calm follows the shot on screen, so it changes on a cut.
         slateCalmFor(
           groundContacts,

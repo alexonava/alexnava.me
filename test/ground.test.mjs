@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
-import { BoxGeometry, Group, Mesh, MeshStandardMaterial, Box3, Vector3 } from "three";
+import { BoxGeometry, Group, Mesh, MeshStandardMaterial, Box3, ShaderLib, Vector3 } from "three";
 import { ESTATE, estatePathDistance, estatePoint } from "../src/scene/estate-layout.js";
 import { DIRECTED_SHOTS } from "../src/scene/directed-shots.js";
 import {
@@ -38,7 +38,19 @@ import {
   TERRAIN_HORIZON,
 } from "../src/scene/hill-silhouette.js";
 import { EARTH } from "../src/scene/filmic-earth.js";
-import { flat as flatCode } from "./support/code.mjs";
+import {
+  advanceMist,
+  MIST_DRIFT,
+  MIST_PARS,
+  MIST_RANGES,
+  MIST_UNIFORMS,
+  mistDriftAt,
+  mistHook,
+  mistOn,
+  setMistShot,
+  setMistTier,
+} from "../src/scene/drifting-mist.js";
+import { flat as flatCode, source } from "./support/code.mjs";
 import { createStoneDetailController } from "../src/scene/stone-detail.js";
 
 const flat = () => 0;
@@ -437,7 +449,9 @@ test("each ground shading has its own program cache key; the slate's shading nee
       `vec3 earthAir = ${horizon}\\*${String(HORIZON_AIR.ground).replace(".", "\\.")};\\s*` +
         `earthHorizon \\*= smoothstep\\(1\\.0, 1\\.15, dot\\(gl_FragColor\\.rgb, ${LUMA}\\)/dot\\(earthAir, ${LUMA}\\)\\);\\s*` +
         `gl_FragColor\\.rgb = mix\\(gl_FragColor\\.rgb, earthAir, earthHorizon\\);\\s*#endif\\s*` +
-        `if \\(slateClearShade\\.w > 0\\.\\) \\{[^}]*\\}\\s*if \\(slateMist\\.w > 0\\.\\) \\{[^}]*\\}\\s*gl_FragColor\\.a = 0\\.6667;`,
+        `if \\(slateClearShade\\.w > 0\\.\\) \\{[^}]*\\}\\s*if \\(slateMist\\.w > 0\\.\\) \\{[^}]*\\}\\s*` +
+        // Then the drifting mist (drifting-mist.js), over the slate's own air and look.
+        `${mistOn ? "gl_FragColor\\.rgb = mistOver\\(gl_FragColor\\.rgb, vMudWorld\\);\\s*" : ""}gl_FragColor\\.a = 0\\.6667;`,
     ),
   );
   // Delay distance haze so the phone foreground retains texture; the outer
@@ -1395,4 +1409,105 @@ test("the terrain chunk restates the plain's level", async () => {
     sx: 0,
     sz: 0,
   });
+});
+
+test("the drifting mist lies below its ceiling on every film material, after its fog, on the scene's clock", () => {
+  assert.equal(MIST_DRIFT.on, 1);
+  assert.ok(mistOn && Object.isFrozen(MIST_DRIFT) && Object.isFrozen(MIST_DRIFT.ceiling));
+  // Exactly none above its ceiling, which rises toward the ranges: a lens above it
+  // sees none above eye level (The watch's reference banks, the sky), and none
+  // within MIST_DRIFT.near[0] of the lens.
+  const [near, far] = MIST_DRIFT.ceiling;
+  assert.ok(near > 0 && far >= near);
+  assert.ok(MIST_PARS.includes(`top=${far.toFixed(1)};`));
+  assert.ok(MIST_PARS.includes("if(hC>=top){if(hP>=top)return c;"));
+  assert.ok(MIST_PARS.includes(`float t0=${MIST_DRIFT.near[0].toFixed(1)},t1=L;`));
+  assert.ok(MIST_PARS.includes("float prof=1.-h;prof=prof>0.?prof*prof:0.;"));
+  assert.ok(MIST_PARS.includes("if(tau<=0.)return c;"));
+  // It never covers more than its veil, so the plain and the ranges' feet show through.
+  assert.ok(MIST_DRIFT.veil > 0 && MIST_DRIFT.veil < 1);
+  // The ranges take it only about their feet: up to ranges[1] of view slope above
+  // eye level, never on their bodies against the sky.
+  assert.ok(MIST_RANGES.includes(`if(md.y<${MIST_DRIFT.ranges[1]}){`));
+  // A built-in lit material takes it after its fog, at its own world point, with the
+  // shared uniforms (lent, never copied) and its own key.
+  const material = mistHook(new MeshStandardMaterial());
+  const shader = {
+    uniforms: {},
+    vertexShader: ShaderLib.standard.vertexShader,
+    fragmentShader: ShaderLib.standard.fragmentShader,
+  };
+  material.onBeforeCompile(shader);
+  assert.ok(
+    shader.fragmentShader.includes(
+      "#include <fog_fragment>\n#ifdef USE_FOG\ngl_FragColor.rgb=mistOver(gl_FragColor.rgb,cameraPosition+(vec4(-vViewPosition,0.)*viewMatrix).xyz);\n#endif",
+    ),
+  );
+  assert.ok(
+    shader.fragmentShader.includes(
+      `#include <fog_pars_fragment>\nuniform mat4 projectionMatrix;\n${MIST_PARS}`,
+    ),
+  );
+  for (const name of Object.keys(MIST_UNIFORMS))
+    assert.equal(shader.uniforms[name], MIST_UNIFORMS[name]);
+  assert.match(material.customProgramCacheKey(), /\|mist$/);
+  assert.equal(mistHook(material), material, "hooked once");
+  // Every film material that stands in it: the tower, the tree and the rocks
+  // (materialFor), the lantern, the growth and litter, the ground and the ranges.
+  const architecture = flatCode(source("src/scene/architecture.js"));
+  assert.ok(architecture.includes("return mistHook(material);"));
+  assert.ok(architecture.includes("mistHook(new MeshStandardMaterial({ color: 0x45413d"));
+  assert.ok(
+    flatCode(source("src/scene/estate-ground-detail.js")).includes(
+      "stampDepthLayer(mistHook(material), DEPTH_LAYER.ground)",
+    ),
+  );
+  const hills = source("src/scene/hill-silhouette.js");
+  assert.equal(hills.match(/\$\{MOUNTAIN_MIST\}\$\{RANGE_MIST_GLSL\}/g).length, 2);
+  // The drift runs on drawn, unpaused frames (at most 0.1 s a step), along a bounded
+  // circle, so its offset stays small however long the page stays open.
+  const held = advanceMist({ deltaSeconds: 5, reducedMotion: true }),
+    start = MIST_UNIFORMS.mistDrift.value.x;
+  assert.equal(advanceMist({ deltaSeconds: 5, motionPaused: true }), held);
+  assert.equal(MIST_UNIFORMS.mistDrift.value.x, start);
+  assert.ok(Math.abs(advanceMist({ deltaSeconds: 5 }) - held - 0.1) < 1e-9);
+  const reach = (2 * MIST_DRIFT.wind[0]) / MIST_DRIFT.turn;
+  let last = mistDriftAt(0);
+  for (let t = 0.5; t < 2e5; t *= 1.7) {
+    const at = mistDriftAt(t);
+    assert.ok(Math.hypot(at.x, at.y) <= reach + 1e-6, `${t}`);
+    last = at;
+  }
+  const a = mistDriftAt(600),
+    b = mistDriftAt(601);
+  assert.ok(Math.abs(Math.hypot(b.x - a.x, b.y - a.y) - MIST_DRIFT.wind[0]) < 1e-3, "its speed");
+  assert.ok(last);
+  // The banks' boil swings smoothly back within boilSwing cells: bounded, and it never
+  // jumps (no wrap), however long the page stays open.
+  for (let t = 0; t < 1e6; t += 997) {
+    const z = mistDriftAt(t).z;
+    assert.ok(Math.abs(z) <= MIST_DRIFT.boilSwing + 1e-9, `${t}`);
+    assert.ok(Math.abs(mistDriftAt(t + 1).z - z) <= MIST_DRIFT.boil + 1e-9, `${t}`);
+  }
+  // Balanced marches fewer steps and one octave; low draws none; a shot's share, and
+  // none outside the film.
+  setMistTier("high");
+  assert.deepEqual(
+    [MIST_UNIFORMS.mistFrame.value.y, MIST_UNIFORMS.mistFrame.value.z],
+    [...MIST_DRIFT.steps.slice(0, 1), MIST_DRIFT.octaves[0]],
+  );
+  setMistTier("balanced");
+  assert.ok(
+    MIST_UNIFORMS.mistFrame.value.y < MIST_DRIFT.steps[0] && MIST_UNIFORMS.mistFrame.value.z === 1,
+  );
+  setMistTier("low");
+  assert.equal(MIST_UNIFORMS.mistFrame.value.y, 0);
+  setMistTier("high");
+  setMistShot("The watch", true);
+  assert.equal(MIST_UNIFORMS.mistDrift.value.w, MIST_DRIFT.shots["The watch"] ?? 1);
+  setMistShot("The watch", false);
+  assert.equal(MIST_UNIFORMS.mistDrift.value.w, 0);
+  const index = flatCode(source("src/scene/index.js"));
+  assert.ok(index.includes("setMistShot(cinematic.shot?.name, filmActive && cinematicApplied);"));
+  assert.ok(index.includes("update(frame) { advanceMist(frame); }"));
 });

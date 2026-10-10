@@ -6,6 +6,8 @@ import {
   MeshLambertMaterial,
 } from "three";
 import { DEPTH_LAYER, stampDepthLayer } from "./depth-layers.js";
+import { mistHook } from "./drifting-mist.js";
+import { flashHook } from "./film-light.js";
 import { ESTATE, estateLantern, estatePathDistance, estatePoint } from "./estate-layout.js";
 import { rockKeepouts } from "./rock-scatter.js";
 import { SLATE_PUDDLES, SLATE_STREAMS } from "./mud-ground.js";
@@ -95,7 +97,10 @@ export function grassMaterial() {
   };
   material.customProgramCacheKey = () => "estate-grass-v1";
   material.userData.grassTime = time;
-  return stampDepthLayer(material, DEPTH_LAYER.ground);
+  // A lightning flash after the lights (film-light.js flashHook()) and the drifting
+  // mist after the fog (drifting-mist.js): the growth, litter and rushes.
+  flashHook(material);
+  return stampDepthLayer(mistHook(material), DEPTH_LAYER.ground);
 }
 
 // Distance outside the rain streams (SLATE_STREAMS, at their widest), in units.
