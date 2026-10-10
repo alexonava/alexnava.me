@@ -221,6 +221,13 @@ return mix(c,c*keep+glow,${g(M.veil)});}
 `
   : "";
 
+// The share of a light at `world` that comes through the mist to the lens (the far
+// fires, far-fires.js): what mistOver keeps of any colour there, read off mistOver
+// itself, so it marches the same banks through the same density. After MIST_PARS.
+export const MIST_KEEP = mistOn
+  ? "float mistKeep(vec3 world){return mistOver(vec3(1.),world).g-mistOver(vec3(0.),world).g;}"
+  : "float mistKeep(vec3 world){return 1.;}";
+
 // The ranges ride on the camera (hill-silhouette.js): their mist is gathered along
 // their view ray `dir` out to MIST_DRIFT.ranges, or to the plain where it meets it,
 // added as a change, so where there is none the colour stays exactly as it was.
