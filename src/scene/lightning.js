@@ -108,7 +108,7 @@ export const LIGHTNING = Object.freeze({
     bottom: -1.5,
     lean: 7,
     rough: 0.3,
-    detail: 5,
+    detail: 6,
     branches: Object.freeze([5, 9]),
     core: 3.6,
     halo: 22,
@@ -146,7 +146,7 @@ export const LIGHTNING = Object.freeze({
 });
 
 // The most segments one bolt draws: its channel (2^detail) and its branches.
-const BOLT_SEGMENTS = 192;
+const BOLT_SEGMENTS = 256;
 // The clouds' text guard's reach (estate-sky.js CLOUD_RESHAPE.text[1]).
 const CLOUD_TEXT_REACH = CLOUD_RESHAPE.text[1];
 // How far after its last peak an event lasts, in that pulse's decays.
@@ -338,7 +338,9 @@ function sequence(seed) {
 }
 
 // A jagged line from a to b ([az, alt] degrees), halved `detail` times, each
-// midpoint pushed sideways by up to `rough` of its span.
+// midpoint pushed sideways by up to `rough` of its span. A midpoint keeps its
+// altitude between its ends', so a channel only ever falls: no hook or loop climbs
+// back up, however tall the bolt.
 function jagged(a, b, detail, rough, next) {
   let points = [a, b];
   for (let level = 0; level < detail; level++) {
@@ -350,8 +352,12 @@ function jagged(a, b, detail, rough, next) {
         dy = qy - py,
         span = Math.hypot(dx, dy) || 1e-6,
         push = (next() - 0.5) * 2 * rough * span;
+      const my = (py + qy) / 2 + (dx / span) * push;
       out.push(
-        [(px + qx) / 2 - (dy / span) * push, (py + qy) / 2 + (dx / span) * push],
+        [
+          (px + qx) / 2 - (dy / span) * push,
+          Math.min(Math.max(my, Math.min(py, qy)), Math.max(py, qy)),
+        ],
         points[i + 1],
       );
     }

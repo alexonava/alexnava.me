@@ -160,7 +160,11 @@ test("a bolt's path is seeded, jagged, branching and reaches below the crest", (
   assert.equal(main.at(-1).sb, 1);
   assert.ok(Math.abs(main.at(-1).b[0] - 30) <= LIGHTNING.bolt.lean * 1.31);
   const branches = a.filter((s) => s.width < 1);
-  assert.ok(branches.length > 0 && a.length <= 192);
+  assert.ok(branches.length > 0 && a.length <= 256);
+  for (const seed of [0.07, 0.42, 0.61, 0.93]) {
+    const tall = boltPath(LIGHTNING, seed, 170, 40, 1);
+    for (const s of tall) assert.ok(s.b[1] <= s.a[1] + 1e-9, "a tall bolt never climbs back up");
+  }
   for (const s of a) {
     assert.ok(s.sa <= s.sb && s.sa >= 0, "it grows down from the cloud");
     assert.ok(s.ga >= 0 && s.ga <= 1 && s.gb >= 0 && s.gb <= 1);
