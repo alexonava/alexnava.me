@@ -4,12 +4,19 @@ import {
   AdditiveBlending,
   CustomBlending,
   OneFactor,
+  PerspectiveCamera,
   SrcAlphaFactor,
   UnsignedByteType,
+  Vector3,
   ZeroFactor,
 } from "three";
 import { DEPTH_LAYER, STAR_LAYER } from "../src/scene/depth-layers.js";
-import { createPostprocessPipeline, LAYER_STAGGER } from "../src/scene/postprocess.js";
+import {
+  createPostprocessPipeline,
+  LAYER_STAGGER,
+  LENS_FX,
+  lensSource,
+} from "../src/scene/postprocess.js";
 import { compactShaderSource } from "../tools/shader-compact.mjs";
 
 function createRendererMock() {
@@ -464,29 +471,35 @@ test("film grading survives quality changes and restores the current profile wit
   pipeline.dispose();
 });
 
-test("in film the grade leaves the mountains' relief to their own shading and hairline", () => {
+test("in film the grade's cel step and ink are the sky's alone; everything else shades continuously", () => {
   const pipeline = createPipeline({ postprocessGrading: true });
   const shader = pipeline.passes.grading.material.fragmentShader,
     g = pipeline.passes.grading.uniforms;
   assert.equal(g.uLayerRelief.value, 0, "outside film the grade is unchanged");
   pipeline.setFilmTreatment(true);
   assert.equal(g.uLayerRelief.value, 1);
-  // Only the mountains' depth code (1/3, depth-layers.js) is exempt, and the cel
-  // step returns below graded luma .1 so the fogged feet match the ground's crush.
-  assert.match(
-    shader,
-    /float relief = uLayerRelief \* \(1\.0 - smoothstep\(0\.04, 0\.12, abs\(texel\.a - 0\.3333\)\)\);/,
-  );
-  // The ground and the star (depth-layers.js STAR_LAYER, 0.0005-0.28 over
-  // the sky's 0) take no band either.
+  // The ground and the star and shafts' marks (depth-layers.js STAR_LAYER and
+  // SHAFT_LAYER, 0.0005-0.28 over the sky's 0) take no band.
   assert.match(
     shader,
     /float starLayer = uLayerRelief \* smoothstep\(0\.0005, 0\.006, texel\.a\) \* \(1\.0 - smoothstep\(0\.22, 0\.28, texel\.a\)\);/,
   );
+  // In film the bands are the sky's alone (the clouds are the artistic part):
+  // off the sky only the deepest band stays, below graded luma .1, where it never
+  // stepped (a smooth pull toward black that keeps the deep shade's tone),
+  // easing over partly covered edges, whose codes blend toward the sky's 0.
+  assert.match(shader, /float skyLayer = 1\.0 - smoothstep\(0\.0, 0\.3, texel\.a\);/);
   assert.match(
     shader,
-    /color = mix\(color, celColor, uCelMix \* \(1\.0 - relief \* smoothstep\(0\.05, 0\.1, gradedLuma\)\) \* \(1\.0 - groundLayer\) \* \(1\.0 - starLayer\) \* mix\(1\.0, uSubjectCel, smoothstep\(0\.8, 1\.0, texel\.a\)\)\);/,
+    /float celWeight = mix\(1\.0, mix\(1\.0 - smoothstep\(0\.05, 0\.1, gradedLuma\), 1\.0, skyLayer\), uLayerRelief\);/,
   );
+  assert.match(
+    shader,
+    /color = mix\(color, celColor, uCelMix \* celWeight \* \(1\.0 - groundLayer\) \* \(1\.0 - starLayer\)\);/,
+  );
+  // That deepest band is flat: below .1 the band rounds to 0, so no step shows.
+  for (const luma of [0.02, 0.05, 0.08, 0.099]) assert.equal(Math.floor(luma * 5 + 0.5), 0);
+  assert.doesNotMatch(shader, /uSubjectCel|float relief|skySide/);
   // The star's mask, STAR_LAYER from each of its four parts, stays inside the
   // exemption's plateau.
   assert.ok(4 * STAR_LAYER <= 0.22);
@@ -495,12 +508,15 @@ test("in film the grade leaves the mountains' relief to their own shading and ha
     shader,
     /vec3 over = max\(color - 0\.75, 0\.0\);\s*color = mix\(color, min\(color, 0\.75\) \+ 0\.25 \* \(1\.0 - exp\(-over \/ 0\.25\)\), uLayerRelief\);\s*gl_FragColor = vec4\(clamp\(color, 0\.0, 1\.0\), texel\.a\);/,
   );
-  // The post ink skips the mountains and the sky pixel beside a crest, which
-  // draws its own hairline; it still reads the same four neighbours.
+  // The post ink, in film, only where the pixel and its four neighbours are all
+  // sky (the clouds' own edges): no outline on the subjects, mountains or ground.
   assert.equal((shader.match(/texture2D\(tDiffuse, vUv [+-] vec2\(/g) || []).length, 4);
-  assert.match(shader, /inkContour \* uInkMix \* \(1\.0 - max\(relief, skySide\)\)/);
-  // With uLayerRelief 0 both factors vanish: the grade of every other view is unchanged.
-  assert.match(shader, /float skySide = uLayerRelief \*/);
+  assert.match(
+    shader,
+    /float skyInk = mix\(1\.0, \(1\.0 - smoothstep\(0\.0, 0\.006, texel\.a\)\) \* \(1\.0 - step\(0\.006, nearest\)\), uLayerRelief\);/,
+  );
+  assert.match(shader, /inkContour \* uInkMix \* skyInk\);/);
+  // With uLayerRelief 0 every film factor is 1: the grade of every other view is unchanged.
   pipeline.dispose();
 });
 
@@ -833,7 +849,8 @@ test("the dissolve stages sky, mountains, ground and subject over the transition
 test("the final pass decodes each frame's layer from a 5-tap cross and mixes by it", () => {
   const pipeline = createPipeline(GRADING_ONLY);
   const shader = pipeline.passes.vignetteGrain.material.fragmentShader;
-  const layerCode = shader.slice(shader.indexOf("float layerCode("), shader.indexOf("void main()"));
+  const start = shader.indexOf("float layerCode(");
+  const layerCode = shader.slice(start, shader.indexOf("\n}\n", start) + 2);
   assert.equal((layerCode.match(/texture2D\(map, /g) || []).length, 5);
   assert.match(layerCode, /texture2D\(map, uv\)\.a/);
   for (const tap of ["uv - x", "uv + x", "uv - y", "uv + y"])
@@ -843,14 +860,15 @@ test("the final pass decodes each frame's layer from a 5-tap cross and mixes by 
     shader,
     /start = 3\.0 \* uStagger\.x \* clamp\(max\(layerCode\(tPrev, prevUv\), layerCode\(tDiffuse, vUv\)\), 0\.0, 1\.0\);\s*span = uStagger\.y;/,
   );
-  // In film the kept frame dissolves through the outgoing shot's lens.
+  // In film the kept frame dissolves through the outgoing shot's lens: its focus,
+  // and its heat, fringes and kept rect (LENS_FX).
   assert.match(
     shader,
-    /w = smoothstep\(start, start \+ span, uProgress\);\s*texel = mix\(uLayered > 0\.5 \? lensBlur\(tPrev, prevUv, uBlurPrev\) : texture2D\(tPrev, prevUv\), texel, w\);\s*protection = mix\(uTextProtectionFrom, uTextProtection, w\);/,
+    /w = smoothstep\(start, start \+ span, uProgress\);\s*texel = mix\(uLayered > 0\.5 \? lensView\(tPrev, prevUv, prevUv, uBlurPrev, uStarPrev, uFlamePrev, uKeepPrev, guard\) : texture2D\(tPrev, prevUv\), texel, w\);\s*protection = mix\(uTextProtectionFrom, uTextProtection, w\);/,
   );
   assert.match(
     shader,
-    /vec4 texel = uLayered > 0\.5 \? lensBlur\(tDiffuse, vUv, uBlur\) : texture2D\(tDiffuse, vUv\);/,
+    /vec4 texel = uLayered > 0\.5 \? lensView\(tDiffuse, vUv, vUv, uBlur, uStar, uFlame, uKeep, guard\) : texture2D\(tDiffuse, vUv\);/,
   );
   assert.match(
     shader,
@@ -863,7 +881,156 @@ test("the final pass decodes each frame's layer from a 5-tap cross and mixes by 
   const shipped = compactShaderSource("const s = `" + shader + "`;");
   assert.doesNotMatch(shipped, /\/\//, "no comments in the shipped GLSL");
   assert.match(shipped, /vec4 lensBlur\(/);
+  assert.match(shipped, /vec4 lensView\(/);
   pipeline.dispose();
+});
+
+test("the lens's heat, fringes and flare live in the final pass, in film, off the text and the kept banks", () => {
+  const { capture, frame, pipeline } = createRecordedPipeline({
+    tier: "high",
+    postprocessGrading: true,
+  });
+  const final = pipeline.passes.vignetteGrain.uniforms;
+  // No new pass: the scene, bloom, grading and the final pass.
+  assert.equal(pipeline.composer.passes.length, 4);
+  assert.ok(
+    Object.isFrozen(LENS_FX) && Object.isFrozen(LENS_FX.heat) && Object.isFrozen(LENS_FX.flare),
+  );
+  for (const part of ["heat", "aberration", "flare"]) assert.ok("on" in LENS_FX[part], part);
+  // Outside film it is off; in film each part follows its switch, and the heat's
+  // octaves follow the tier.
+  assert.deepEqual(final.uLens.value.toArray().slice(0, 3), [0, 0, 0]);
+  pipeline.setFilmTreatment(true);
+  assert.deepEqual(final.uLens.value.toArray(), [
+    LENS_FX.heat.on ? 1 : 0,
+    LENS_FX.aberration.on ? 1 : 0,
+    LENS_FX.flare.on ? 1 : 0,
+    LENS_FX.heat.octaves.high,
+  ]);
+  pipeline.setQualityProfile({ tier: "balanced", postprocessGrading: true });
+  assert.equal(final.uLens.value.w, LENS_FX.heat.octaves.balanced);
+  assert.ok(LENS_FX.heat.octaves.balanced < LENS_FX.heat.octaves.high, "phones pay less");
+
+  // Sources: [x, y, size, on] or none; the kept rect turns from the frame's
+  // top-left shares to UV with y up, and none is an empty box.
+  pipeline.setLensSources({ star: [0.8, 0.7, 0.04, 1], flame: null, keep: [0, 0, 0.6875, 0.4889] });
+  assert.deepEqual(final.uStar.value.toArray(), [0.8, 0.7, 0.04, 1]);
+  assert.deepEqual(final.uFlame.value.toArray(), [0, 0, 0, 0]);
+  const keep = final.uKeep.value.toArray();
+  assert.deepEqual([keep[0], keep[2], keep[3]], [0, 0.6875, 1]);
+  assert.ok(Math.abs(keep[1] - (1 - 0.4889)) < 1e-9);
+  // The capture keeps the outgoing lens for the kept frame.
+  capture();
+  assert.deepEqual(final.uStarPrev.value.toArray(), [0.8, 0.7, 0.04, 1]);
+  assert.deepEqual(final.uKeepPrev.value.toArray(), keep);
+  pipeline.setLensSources({ flame: [0.6, 0.3, 0.1, 1] });
+  pipeline.setTransition({ capture: false, cut: true, progress: 0.4, zoom: 0.01 });
+  frame();
+  assert.deepEqual(final.uStar.value.toArray(), [0, 0, 0, 0]);
+  assert.deepEqual(final.uKeep.value.toArray(), [2, 2, -1, -1]);
+  assert.deepEqual(final.uStarPrev.value.toArray(), [0.8, 0.7, 0.04, 1], "the dissolve keeps it");
+  assert.deepEqual(final.uFlame.value.toArray(), [0.6, 0.3, 0.1, 1]);
+  assert.deepEqual(final.uFlamePrev.value.toArray(), [0, 0, 0, 0]);
+
+  // The heat flows on the film's clock, which holds with the scene.
+  pipeline.setFilmTime(12.5);
+  assert.equal(final.uLensTime.value, 12.5);
+  pipeline.setFilmTime(3600 + 2);
+  assert.equal(final.uLensTime.value, 2);
+
+  // The text boxes are the ground's own objects, lent once.
+  const contacts = {
+    slateText: { value: { x: 0.1, y: 0.2, z: 0.4, w: 0.6 } },
+    slateAbout: { value: { x: 0, y: 0, z: 0.1, w: 0.05 } },
+    slateAspect: { value: 16 / 9 },
+  };
+  pipeline.setTextGuard(contacts);
+  for (const name of ["slateText", "slateAbout", "slateAspect"])
+    assert.equal(final[name], contacts[name], name);
+
+  const shader = pipeline.passes.vignetteGrain.material.fragmentShader;
+  // Behind the text and inside the kept rect the lens is open 0: no drift, no fringe, no flare.
+  assert.match(shader, /float open = \(1\.0 - guard\) \* \(1\.0 - lensKeep\(keep, v, 0\.0\)\);/);
+  assert.match(
+    shader,
+    /if \(uLens\.x > 0\.0 && open > 0\.0\) q \+= lensHeat\(v, star, flame\) \* \(uLens\.x \* open\);/,
+  );
+  assert.match(shader, /vec2 s = lensFringe\(v, star\) \* \(uLens\.y \* open\);/);
+  assert.match(shader, /color \+= flare \* \(uLens\.z \* \(1\.0 - guard\)\);/);
+  assert.match(shader, /return c \* shown \* \(1\.0 - lensKeep\(keep, v, 0\.0\)\);/);
+  // The focus's taps never sit behind a per-pixel branch: no early return in lensView.
+  const view = shader.slice(shader.indexOf("vec4 lensView("), shader.indexOf("vec3 lensFlare("));
+  assert.equal((view.match(/return /g) || []).length, 1);
+  // The flare dissolves with each frame's own, and only while the star is in frame.
+  assert.match(
+    shader,
+    /if \(uProgress < 1\.0\) flare = mix\(lensFlare\(prevUv, uStarPrev, uKeepPrev\), flare, w\);/,
+  );
+  assert.match(shader, /float shown = star\.w \* smoothstep\(-star\.z, 2\.0 \* star\.z, inside\);/);
+  // One block per ghost, each dropped whole near the kept rect.
+  assert.equal(
+    (shader.match(/\* \(1\.0 - lensKeep\(keep, g, /g) || []).length,
+    LENS_FX.flare.ghosts.length,
+  );
+  // The flare is added before the vignette, the text shade and the bars.
+  assert.ok(shader.indexOf("color += flare") < shader.indexOf("if (uVignetteEnabled == 1)"));
+  // The text guard reaches LENS_FX.text of the smaller side.
+  assert.ok(shader.includes(`lensBehind(slateText, vUv, ${LENS_FX.text[0]})`));
+  pipeline.dispose();
+});
+
+test("the kept frame's lens stays on its own star and flame as the frame pushes in", () => {
+  // An off-axis outgoing shot: the kept frame pushes in about its principal point.
+  const elements = new Array(16).fill(0);
+  elements[8] = -0.2;
+  elements[9] = 0.1;
+  const { capture, pipeline } = createRecordedPipeline(GRADING_ONLY, {
+    projectionMatrix: { elements },
+  });
+  const final = pipeline.passes.vignetteGrain.uniforms;
+  pipeline.setFilmTreatment(true);
+  pipeline.resize(1600, 900);
+  const star = [0.83, 0.79, 0.04, 1];
+  pipeline.setLensSources({ star, keep: [0, 0, 0.6875, 0.4889] });
+  capture();
+  pipeline.setLensSources({});
+  pipeline.setTransition({ capture: false, cut: true, progress: 0.8, zoom: 0.02 });
+  const shader = pipeline.passes.vignetteGrain.material.fragmentShader;
+  // The pixel at vUv shows the kept frame's own pixel prevUv; its heat, fringes,
+  // kept rect and flare are all evaluated there, with the outgoing sources.
+  assert.match(shader, /vec2 prevUv = uPrevOrigin \+ \(vUv - uPrevOrigin\) \* uPrevScale;/);
+  assert.ok(shader.indexOf("vec2 prevUv =") < shader.indexOf("lensView(tPrev, prevUv, prevUv,"));
+  assert.ok(shader.indexOf("vec2 prevUv =") < shader.indexOf("lensFlare(prevUv, uStarPrev,"));
+  assert.doesNotMatch(shader, /lensView\(tPrev, prevUv, vUv,|lensFlare\(vUv, uStarPrev/);
+  // So where the kept star shows on screen (pushed out from the origin by
+  // 1 / uPrevScale), its lens is centred on it exactly.
+  const origin = final.uPrevOrigin.value.toArray(),
+    scale = final.uPrevScale.value,
+    shown = [0, 1].map((i) => origin[i] + (star[i] - origin[i]) / scale),
+    prevUv = shown.map((v, i) => origin[i] + (v - origin[i]) * scale);
+  assert.ok(scale < 1, "the kept frame is pushing in");
+  assert.ok(Math.hypot(prevUv[0] - star[0], prevUv[1] - star[1]) < 1e-12);
+  // Read in the screen's UV instead, the lens would sit several pixels off it.
+  const off = Math.hypot((shown[0] - star[0]) * 1600, (shown[1] - star[1]) * 900);
+  assert.ok(off > 5, `${off.toFixed(1)} px`);
+  pipeline.dispose();
+});
+
+test("the lens sees a source at its screen centre, its radius in frame heights, and none behind it", () => {
+  const camera = new PerspectiveCamera(30, 16 / 9, 0.1, 1000);
+  camera.position.set(0, 0, 0);
+  camera.lookAt(0, 0, -1);
+  camera.updateMatrixWorld(true);
+  const ahead = lensSource(camera, new Vector3(0, 0, -50), 2);
+  assert.ok(Math.abs(ahead[0] - 0.5) < 1e-9 && Math.abs(ahead[1] - 0.5) < 1e-9);
+  assert.ok(Math.abs(ahead[2] - (2 * camera.projectionMatrix.elements[5]) / 50 / 2) < 1e-12);
+  assert.equal(ahead[3], 1);
+  // Up and right of centre reads up and right in UV (y up).
+  const corner = lensSource(camera, new Vector3(5, 5, -50), 1);
+  assert.ok(corner[0] > 0.5 && corner[1] > 0.5);
+  const out = [9, 9, 9, 9];
+  assert.equal(lensSource(camera, new Vector3(0, 0, 50), 2, out), out);
+  assert.deepEqual(out, [0, 0, 0, 0]);
 });
 
 test("the shot's lens blurs only in film, the bars cut the frame and the grain steps at 24 a second", () => {
@@ -892,21 +1059,9 @@ test("the shot's lens blurs only in film, the bars cut the frame and the grain s
   pipeline.setLens(null);
   assert.equal(final.uBlur.value, 0, "no lens is sharp");
 
-  // A shot's grade scales the cel step on the subjects in film only; without
-  // one the step is whole.
-  const grading = pipeline.passes.grading.uniforms;
-  assert.equal(grading.uSubjectCel.value, 1);
-  pipeline.setGrade({ subjects: 0.3 });
-  assert.equal(grading.uSubjectCel.value, 0.3);
-  pipeline.setGrade({});
-  assert.equal(grading.uSubjectCel.value, 1, "a grade without subjects keeps the step");
-  pipeline.setGrade({ subjects: 0.3 });
-  pipeline.setGrade(null);
-  assert.equal(grading.uSubjectCel.value, 1, "no grade keeps the step");
-  pipeline.setFilmTreatment(false);
-  pipeline.setGrade({ subjects: 0.3 });
-  assert.equal(grading.uSubjectCel.value, 1, "outside film the step is whole");
-  pipeline.setFilmTreatment(true);
+  // No per-shot grade: in film the subjects take no cel step at all.
+  assert.equal(pipeline.setGrade, undefined);
+  assert.equal(pipeline.passes.grading.uniforms.uSubjectCel, undefined);
 
   // The capture keeps the outgoing shot's focus for the kept frame; the next
   // shot's lens then changes only the live frame.

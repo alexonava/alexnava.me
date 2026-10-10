@@ -1,4 +1,4 @@
-import { BackSide, Color, ShaderMaterial } from "three";
+import { BackSide, Color, ShaderMaterial, Vector4 } from "three";
 import { CELESTIAL_FIELD_GLSL } from "./celestial-field.js";
 import { DEPTH_LAYER } from "./depth-layers.js";
 
@@ -52,10 +52,108 @@ export const CLOUD_RESHAPE = Object.freeze({
   text: Object.freeze([0.12, 0.5]),
 });
 
+// The reference banks as a lightning flash keeps off them (lightning.js): the crop
+// itself, azimuths 122-174 from radius 1.13 out, where a flash's glow is exactly 0,
+// easing back in by `wedge`'s outer values and, toward the zenith, over `radius`.
+// Tighter than the reshaping's wedge, so The watch's sky right of the crop (the
+// star's side, behind the lookout) can flash; its crop keeps every pixel.
+export const FLASH_REFERENCE = Object.freeze({
+  wedge: Object.freeze([116, 122, 174, 184]),
+  radius: Object.freeze([0.85, 1.13]),
+});
+
+// The cloud vortex (storm-fx, reference C): a slow spiral in the banks about the star,
+// the scene's Mount Doom. Its eye sits where the camera sees the star on the cloud plane
+// (uVortex.xy, cloudVortexCenter(), set on each cut, so the eye stays about the star in
+// every shot that looks toward it); in the plane's local frame there, u runs along the
+// azimuth and v out toward the horizon, counted `squash` per plane unit, so the disc
+// lies on the cloud deck, wider than tall on screen, as the reference's does.
+// - `radius`: the disc's rim (local units), its weight easing out from `fade` of it;
+//   in the `guardShots` (The watch, uVortex.w 1) about a centre `shift` rims (u, v) from
+//   the eye, so it reaches away from the reference banks further than toward them;
+// - `twist`: the banks' own noise turns about the eye, by up to this many radians,
+//   halved at the eye's edge and falling off as the square of the distance beyond, a
+//   fixed spiral (it never winds up). The angle depends on the distance from the eye
+//   alone, so the turn never folds the noise; it eases out from `fade` of its reach to
+//   the reach (uVortex.z, cloudVortexReach()): the disc's rim, or nearer, the reference
+//   banks' edge as this shot's eye sees it, so the turn never enters them;
+// - `arms`: [count, pitch (radians of turn per e-fold of radius), density, seconds per
+//   turn]: log-spiral arms that wind in toward the eye and turn rigidly on the drift
+//   clock (uTime), a turn in many minutes, so it reads as weather, never a spinner;
+// - `eye`: [clear within, eased out by (local units), density taken off]: a calmer,
+//   clearer eye about the star;
+// - `ring`: [density, radius, width]: a ring of cloud about the eye (0: none);
+// - `hole`: [within, eased out by]: in the guard shots the star's disc and its bright
+//   glow keep the sky behind them as it was, so the bloom they feed (postprocess.js) is
+//   unchanged and spills nothing new into the reference banks; the eye clears about them;
+// - `protect`: the density's protection (the reference banks' CLOUD_RESHAPE.wedge,
+//   radius) eases out over these azimuths, so it is exactly 0 over The watch's crop.
+// Like the reshaping, uCloudReshape scales it (0 in the environment's capture), and
+// behind the name and intro (cloudText) it takes nothing. `on`: 0 emits none of it.
+export const CLOUD_VORTEX = Object.freeze({
+  on: 1,
+  radius: 0.4,
+  squash: 0.75,
+  fade: 0.4,
+  shift: Object.freeze([0.6, 0.3]),
+  twist: 5,
+  arms: Object.freeze([4, 3.2, 0.24, 480]),
+  eye: Object.freeze([0.1, 0.16, 0.45]),
+  ring: Object.freeze([0.32, 0.17, 0.035]),
+  hole: Object.freeze([0.09, 0.12]),
+  guardShots: Object.freeze(["The watch"]),
+  protect: Object.freeze([176, 179]),
+});
+
 const glslFloat = (value) => (Number.isInteger(value) ? value.toFixed(1) : String(value));
 const { wedge, radius, bend, horizon, scale, banks, lanes, swirl, text } = CLOUD_RESHAPE;
 // The soft knee's own offset at the zenith, so the noise radius starts at 0 there.
 const horizonZero = (Math.sqrt(horizon[0] ** 2 + 0.04) - horizon[0]).toFixed(6);
+const VX = CLOUD_VORTEX;
+const vortexOn = Boolean(VX.on);
+// The plane point and radius the reshaping's coordinates start from: the vortex's
+// turned ones (bv, blv) when it is on.
+const B = vortexOn ? "bv" : "b",
+  R = vortexOn ? "blv" : "bl";
+
+// The vortex's density at local coordinates e (CLOUD_VORTEX): its arms and ring, less
+// its eye. Declared once beside each shader that runs cloudFieldGLSL (the shell, the
+// stars), with uVortex: xy the eye on the cloud plane, z the turn's reach, w its guard.
+export const CLOUD_VORTEX_GLSL = vortexOn
+  ? `uniform vec4 uVortex;
+float cloudVortex(vec2 e,float t){float r=length(e),a=atan(e.y,e.x+1e-6);
+float arm=cos(${glslFloat(VX.arms[0])}*(a+${glslFloat(VX.arms[1])}*log(max(r,.001)/${glslFloat(VX.radius)}))-t*${(
+      (2 * Math.PI) /
+      VX.arms[3]
+    ).toFixed(6)})*smoothstep(${glslFloat(VX.eye[0])},${glslFloat(VX.eye[1])},r);
+float ring=(r-${glslFloat(VX.ring[1])})/${glslFloat(VX.ring[2])};
+return ${glslFloat(VX.arms[2])}*arm+${glslFloat(VX.ring[0])}*exp(-ring*ring)-${glslFloat(VX.eye[2])}*(1.-smoothstep(${glslFloat(VX.eye[0])},${glslFloat(VX.eye[1])},r));}
+`
+  : "";
+// Its frame, the density's weight (vxW) and the turn (vxA), after the reshaping's
+// weights: both exactly 0 over the reference banks, where bv stays b itself (and blv
+// bl). Inside, the banks' coordinates turn about the eye (bv), by an angle of the
+// distance from it alone, before the reshaping's horizon and scale map them as they map b.
+const VORTEX_FRAME = vortexOn
+  ? `vec2 vxR=normalize(uVortex.xy),vxT=vec2(-vxR.y,vxR.x),vxD=b-uVortex.xy;
+vec2 vxE=vec2(dot(vxD,vxT),dot(vxD,vxR)*${glslFloat(VX.squash)});
+float vxRho=length(vxE),vxHole=mix(1.,smoothstep(${glslFloat(VX.hole[0])},${glslFloat(VX.hole[1])},vxRho),uVortex.w);
+float vxW=(1.-smoothstep(${glslFloat(wedge[0])},${glslFloat(wedge[1])},cloudAz)*(1.-smoothstep(${glslFloat(VX.protect[0])},${glslFloat(VX.protect[1])},cloudAz))*smoothstep(${glslFloat(radius[0])},${glslFloat(radius[1])},bl))*uCloudReshape;
+vxW*=(1.-smoothstep(${glslFloat(+(VX.fade * VX.radius).toFixed(6))},${glslFloat(VX.radius)},length(vxE-vec2(${glslFloat(+(VX.shift[0] * VX.radius).toFixed(6))},${glslFloat(+(VX.shift[1] * VX.radius).toFixed(6))})*uVortex.w)))*vxHole;
+float vxA=uVortex.z>0.?uCloudReshape*vxHole*${glslFloat(VX.twist)}/(1.+vxRho*vxRho/${glslFloat(+(VX.eye[1] ** 2).toFixed(6))})*(1.-smoothstep(${glslFloat(VX.fade)}*uVortex.z,uVortex.z,vxRho)):0.;
+vec2 bv=b;
+if(vxA>0.){vec2 vxS=vec2(cos(vxA),sin(vxA)),vxF=vec2(vxS.x*vxE.x-vxS.y*vxE.y,vxS.y*vxE.x+vxS.x*vxE.y);
+bv=uVortex.xy+vxF.x*vxT+vxF.y/${glslFloat(VX.squash)}*vxR;}
+float blv=max(length(bv),.001);
+`
+  : "";
+// Its density, lit as the banks are: once here and once toward the sun (da).
+const VORTEX_DENSITY = vortexOn
+  ? `
+if(vxW>0.){vec2 vxL=L*clamp(bl*.1,.1,.2);
+float vxK=vxW*(1.-cloudText);
+d+=vxK*cloudVortex(vxE,T); da+=vxK*cloudVortex(vxE+vec2(dot(vxL,vxT),dot(vxL,vxR)*${glslFloat(VX.squash)}),T);}`
+  : "";
 
 // The film's cloud field on the sky shell, as GLSL statements, shared with the stars,
 // which dim behind the banks (starfield.js). They expect `vec3 direction` (the shell
@@ -76,9 +174,9 @@ cloudAz+=cloudAz<0.?360.:0.;
 float open=(1.-smoothstep(${glslFloat(wedge[0])},${glslFloat(wedge[1])},cloudAz)*(1.-smoothstep(${glslFloat(wedge[2])},${glslFloat(wedge[3])},cloudAz))*smoothstep(${glslFloat(radius[0])},${glslFloat(radius[1])},bl))*(1.-gapG);
 open*=uCloudReshape;
 float bend=(1.-smoothstep(${glslFloat(bend[0])},${glslFloat(wedge[1])},cloudAz)*(1.-smoothstep(${glslFloat(wedge[2])},${glslFloat(bend[1])},cloudAz))*smoothstep(${glslFloat(bend[2])},${glslFloat(radius[1])},bl))*uCloudReshape;
-float cloudOut=bl-${glslFloat(horizon[0])};
-float cloudR=bl-${glslFloat(1 - horizon[1])}*.5*(cloudOut+sqrt(cloudOut*cloudOut+.04)-${horizonZero});
-vec2 bn=b*mix(1.,cloudR/bl*${glslFloat(scale)},bend);
+${VORTEX_FRAME}float cloudOut=${R}-${glslFloat(horizon[0])};
+float cloudR=${R}-${glslFloat(1 - horizon[1])}*.5*(cloudOut+sqrt(cloudOut*cloudOut+.04)-${horizonZero});
+vec2 bn=${B}*mix(1.,cloudR/${R}*${glslFloat(scale)},bend);
 float wa=T*.000436;
 vec2 p=bn+2.98*(sin(wa)*vec2(.923,.385)+(1.-cos(wa))*vec2(-.385,.923));
 vec2 q=p+vec2(5.7,0.9);
@@ -133,7 +231,7 @@ float thin=exp(-dot(thinUV,thinUV));
 float eaveG=exp(-dot(eaveUV,eaveUV));
 float shape=exp(-dot(bankUV,bankUV))*.24+exp(-dot(sunBankUV,sunBankUV))*.30-gapG*.19
 -eaveG*.17-thin*.06-smoothstep(.70,.84,altitude)*.22;
-d+=shape; da+=shape;
+d+=shape; da+=shape;${VORTEX_DENSITY}
 float horizonFade=uNebulaLayers>1.5?smoothstep(0.,.045,altitude):smoothstep(-.03,.17,altitude);
 float w=uNebulaLayers>1.5?.034:mix(.05,.034,smoothstep(.45,.8,altitude));
 float cover=smoothstep(.548-w,.548+w,d)*horizonFade*uClouds;`;
@@ -148,6 +246,96 @@ vec2 f=max(max(slateText.xy-v,v-slateText.zw),0.)*vec2(slateAspect,1.)/min(slate
 return 1.-smoothstep(0.,${glslFloat(text[1])},length(f));}`;
 // A box beyond the canvas: nothing is behind the text.
 const noText = () => ({ x: 2, y: 2, z: -1, w: -1 });
+
+const { wedge: flashWedge, radius: flashRadius } = FLASH_REFERENCE;
+// A lightning flash in the banks (lightning.js), drawn by the shell while uFlash.w
+// (its level) is above 0: the banks glow cold from inside about the flash's point
+// on the cloud plane (uFlash.xyz, a world direction), over uFlashGlow.x of the
+// plane, by uFlashGlow.y (and uFlashCore more in the banks' hot centre, a third of
+// that radius), their thick cores fully and their thin edges by 1 - uFlashGlow.w,
+// and the clear sky between them by uFlashGlow.z, so the grade's cel step reads
+// the flash in the banks' own bands. It is exactly 0 over the reference banks
+// (FLASH_REFERENCE, so The watch's crop keeps every pixel) and eases off behind
+// the name and intro (the clouds' text guard) and About (uFlashTone.w of the
+// screen's smaller side). Its colour is uFlashTone.rgb. The environment's capture
+// never sees one.
+const FLASH_GLSL = `if(uFlash.w>0.){
+vec2 fo=(b-uFlash.xz/(max(uFlash.y,0.)+.24)*1.1)/uFlashGlow.x;
+vec2 fa=vCloudClip.xy/vCloudClip.w*.5+.5;
+fa=max(max(slateAbout.xy-fa,fa-slateAbout.zw),0.)*vec2(slateAspect,1.)/min(slateAspect,1.);
+float fg=exp(-dot(fo,fo)), fl=uFlash.w*(1.-smoothstep(${glslFloat(flashWedge[0])},${glslFloat(flashWedge[1])},cloudAz)*(1.-smoothstep(${glslFloat(flashWedge[2])},${glslFloat(flashWedge[3])},cloudAz))*smoothstep(${glslFloat(flashRadius[0])},${glslFloat(flashRadius[1])},bl))
+*(1.-max(cloudText,1.-smoothstep(0.,uFlashTone.w,length(fa))));
+cloudCol+=uFlashTone.rgb*fl*(fg+uFlashCore*pow(fg,9.))*uFlashGlow.y*mix(1.-uFlashGlow.w,1.,thick);
+col+=uFlashTone.rgb*fl*fg*uFlashGlow.z;
+}`;
+
+// Where a camera at `eye` sees the star (`star`, world) on the cloud plane: the sky
+// shell (radius `shellRadius`, centred on the world origin) point behind the star, as
+// cloudFieldGLSL maps it (b = direction.xz / (max(y, 0) + .24) * 1.1). Writes x, y into
+// `out` (the vortex's eye, uVortex), z kept. From the origin, the star's own direction.
+export function cloudVortexCenter(eye, star, shellRadius, out = { x: 0, y: 0, z: 1, w: 0 }) {
+  let dx = star[0] - eye.x,
+    dy = star[1] - eye.y,
+    dz = star[2] - eye.z;
+  const length = Math.hypot(dx, dy, dz) || 1;
+  dx /= length;
+  dy /= length;
+  dz /= length;
+  const along = eye.x * dx + eye.y * dy + eye.z * dz,
+    reach =
+      -along +
+      Math.sqrt(
+        Math.max(
+          along * along - (eye.x ** 2 + eye.y ** 2 + eye.z ** 2) + shellRadius * shellRadius,
+          0,
+        ),
+      );
+  const px = eye.x + dx * reach,
+    py = eye.y + dy * reach,
+    pz = eye.z + dz * reach,
+    p = Math.hypot(px, py, pz) || 1,
+    lift = Math.max(py / p, 0) + 0.24;
+  out.x = (px / p / lift) * 1.1;
+  out.y = (pz / p / lift) * 1.1;
+  out.z = cloudVortexReach(out.x, out.y);
+  return out;
+}
+
+// How far the vortex's turn may reach about an eye at (x, y) on the cloud plane, in its
+// local units (CLOUD_VORTEX): the disc's rim, or, nearer, the edge of the reference
+// banks' full protection (azimuths CLOUD_RESHAPE.wedge[1] to [2] from radius[1] out),
+// less a margin, so the turn is exactly 0 over them; 0 for an eye inside them. Their
+// edge, two rays and an arc, is measured in the eye's own frame, where a plane segment
+// stays a segment; the arc's chords are pushed out to touch it, so none lies beyond it.
+export function cloudVortexReach(x, y) {
+  const length = Math.hypot(x, y) || 1,
+    rx = x / length,
+    ry = y / length,
+    [from, to] = [wedge[1], wedge[2]],
+    near = radius[1];
+  let az = (Math.atan2(y, x + 1e-6) * 180) / Math.PI;
+  if (az < 0) az += 360;
+  if (az >= from && az <= to && length >= near) return 0;
+  const local = (px, py) => [
+    (px - x) * -ry + (py - y) * rx,
+    ((px - x) * rx + (py - y) * ry) * VX.squash,
+  ];
+  const toSegment = ([ax, ay], [bx, by]) => {
+    const dx = bx - ax,
+      dy = by - ay,
+      t = Math.max(0, Math.min(1, -(ax * dx + ay * dy) / (dx * dx + dy * dy || 1)));
+    return Math.hypot(ax + dx * t, ay + dy * t);
+  };
+  const at = (deg, r) =>
+    local(r * Math.cos((deg * Math.PI) / 180), r * Math.sin((deg * Math.PI) / 180));
+  let best = Math.min(toSegment(at(from, near), at(from, 6)), toSegment(at(to, near), at(to, 6)));
+  const steps = 128,
+    step = (to - from) / steps,
+    out = near / Math.cos((step * Math.PI) / 360);
+  for (let k = 0; k < steps; k++)
+    best = Math.min(best, toSegment(at(from + k * step, out), at(from + (k + 1) * step, out)));
+  return Math.max(0, Math.min(VX.radius, best - 0.002));
+}
 
 // Density lives on the fixed world-space sky shell, never camera-facing cards:
 // no extra render pass or image request. Outside film the shell keeps its
@@ -181,8 +369,21 @@ export function createEstateSkyMaterial(config, textGuard = null) {
       uClouds: { value: 1 },
       uNebulaLayers: { value: 0 },
       uCloudReshape: { value: 1 },
+      // The vortex's eye (CLOUD_VORTEX): the star from the world origin until a shot
+      // sets it from its own lens (cloudVortexCenter()); the stars borrow it.
+      uVortex: {
+        value: config.starPosition
+          ? cloudVortexCenter({ x: 0, y: 0, z: 0 }, config.starPosition, config.skyRadius ?? 130)
+          : { x: -1.115, y: -0.184, z: cloudVortexReach(-1.115, -0.184), w: 0 },
+      },
       slateText: textGuard?.slateText ?? { value: noText() },
+      slateAbout: textGuard?.slateAbout ?? { value: noText() },
       slateAspect: textGuard?.slateAspect ?? { value: 1 },
+      // The lightning's flash (FLASH_GLSL), set per frame by lightning.js.
+      uFlash: { value: new Vector4(0, 1, 0, 0) },
+      uFlashGlow: { value: new Vector4(0.5, 0, 0, 0) },
+      uFlashTone: { value: new Vector4(0.74, 0.83, 1, 0.2) },
+      uFlashCore: { value: 0 },
     },
     vertexShader: `
 varying vec3 vWorldPosition;
@@ -195,8 +396,8 @@ vCloudClip = gl_Position;
 }`,
     fragmentShader: `
 uniform vec3 topColor, bottomColor, glowColor, sunDirection, sunColor;
-uniform float uTime, uFilm, uClouds, uNebulaLayers, uCloudReshape;
-uniform vec4 slateText;
+uniform float uTime, uFilm, uClouds, uNebulaLayers, uCloudReshape, uFlashCore;
+uniform vec4 slateText, slateAbout, uFlash, uFlashGlow, uFlashTone;
 uniform float slateAspect;
 varying vec3 vWorldPosition;
 varying vec4 vCloudClip;
@@ -209,7 +410,7 @@ mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);
 ${CELESTIAL_FIELD_GLSL}
 ${FILM_SKY_GLSL}
 ${CLOUD_TEXT_GLSL}
-vec3 nebula(vec3 direction) {
+${CLOUD_VORTEX_GLSL}vec3 nebula(vec3 direction) {
 vec2 p=celestialPlane(direction);
 float envelope=celestialEnvelope(direction,p);
 if(envelope<.002) return vec3(0.0);
@@ -246,6 +447,7 @@ cloudCol*=(1.0+.4*smoothstep(.55,.85,altitude))*(.86+.26*smoothstep(-.35,.45,dir
 *(1.0-.14*thin)*(1.0-.3*max(gapG,eaveG));
 vec3 kn=vec3(.64,.62,.66), cap=vec3(.88,.86,.91);
 cloudCol=min(cloudCol,kn)+(cap-kn)*(1.-exp(-max(cloudCol-kn,0.)/(cap-kn)));
+${FLASH_GLSL}
 col+=vec3(.027,.03,.036)*smoothstep(.36,.54,d)*horizonFade*uClouds;
 col=mix(col,cloudCol,cover*.94);
 }
