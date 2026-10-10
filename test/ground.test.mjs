@@ -656,6 +656,39 @@ test("each ground shading has its own program cache key; the slate's shading nee
   for (const share of [SLATE_LIGHT.fill, SLATE_LIGHT.crown, SLATE_LIGHT.ambient])
     assert.ok(share > 0 && share < 1);
   assert.ok(SLATE_LIGHT.bounce > 0 && SLATE_LIGHT.bounce <= 0.25);
+  // Behind About, under a shot's poolAbout, the lantern's pool (its direct
+  // diffuse and its bounce) passes its own knee, gentler than the reflections'
+  // and harder than the lamp's glints on the water: Lantern study's lit cobble
+  // crests read 3.92:1 behind About at 1080x1920, 6.09:1 through it. Only the
+  // crests near the ceiling give way: dim soil (luma 0.01) keeps nearly 90%.
+  const poolKnee = SLATE_LIGHT.poolKnee;
+  assert.ok(poolKnee > SLATE_WATER.text[1] && poolKnee < SLATE_WATER.lamp.knee, "pool knee");
+  assert.ok(1 / (1 + 0.01 / poolKnee) > 0.88);
+  assert.match(
+    fragment,
+    new RegExp(
+      "uniform float slatePoolAbout;\\s*" +
+        "vec3 slatePoolKnee\\(const in IncidentLight light, const in vec3 normal, const in PhysicalMaterial material\\) \\{\\s*" +
+        "float slatePN = saturate\\(dot\\(normal, light\\.direction\\)\\);\\s*" +
+        `#ifdef USE_ENVMAP\\s*slatePN \\+= ${String(SLATE_LIGHT.bounce).replace(".", "\\.")};\\s*#endif\\s*` +
+        "vec3 slatePool = slatePN\\*light\\.color\\*BRDF_Lambert\\(material\\.diffuseColor\\);\\s*" +
+        "float slatePB = slatePoolAbout\\*slateBehindAbout\\(vSlateClip\\.xy/vSlateClip\\.w\\*\\.5\\+\\.5\\);\\s*" +
+        `return slatePool\\*slatePB\\*\\(2\\.0-slatePB\\)\\*\\(1\\.0-1\\.0/\\(1\\.0\\+dot\\(slatePool, ${LUMA}\\)/${String(poolKnee).replace(".", "\\.")}\\)\\);\\s*\\}\\s*` +
+        "void RE_Direct_Moonlit\\(",
+    ),
+  );
+  assert.ok(fragment.indexOf("float slateBehindAbout(") < fragment.indexOf("vec3 slatePoolKnee("));
+  // Only the warm light, only when a shot asks, after its pool and bounce are
+  // lit and inside the moonlit light function.
+  const poolCall =
+    "if (slateWarm && slatePoolAbout > 0.0) reflectedLight.directDiffuse -= slatePoolKnee(slateL, geometryNormal, material);";
+  assert.equal(fragment.split(poolCall).length, 2, "one call");
+  assert.ok(
+    fragment.indexOf(poolCall) >
+      fragment.indexOf("if (slateWarm) reflectedLight.directDiffuse += 0.18*slateL.color*"),
+  );
+  assert.ok(fragment.indexOf(poolCall) < fragment.indexOf("#define RE_Direct RE_Direct_Moonlit"));
+  assert.equal(contacts.slatePoolAbout.value, 0, "off until a shot asks");
   assert.match(
     fragment,
     /#include <lights_physical_pars_fragment>\s*bool slateDirectional = false;[\s\S]*vec3 slateWaterN[\s\S]*void RE_Direct_Moonlit\([\s\S]*#undef RE_Direct\n#define RE_Direct RE_Direct_Moonlit/,
@@ -723,8 +756,8 @@ test("each ground shading has its own program cache key; the slate's shading nee
   assert.match(fragment, new RegExp(`uniform vec4 slateContacts\\[${SLATE_CONTACTS}\\];`));
   assert.match(fragment, /\(i < 2 \? 1\.0 : slateRockContact\)/);
   assert.match(fragment, /diffuseColor\.rgb \*= 1\.0 - slateAo\*slateContactGain;/);
-  // The shared uniform objects: rocks arriving or shadows switching change
-  // values, never the program.
+  // The shared uniform objects: rocks arriving, shadows switching or a cut to
+  // a shot's poolAbout change values, never the program.
   for (const name of [
     "slateContacts",
     "slateRockContact",
@@ -733,12 +766,14 @@ test("each ground shading has its own program cache key; the slate's shading nee
     "slateText",
     "slateAbout",
     "slateAspect",
+    "slatePoolAbout",
   ])
     assert.equal(uniforms[name], contacts[name], name);
   assert.equal(contacts.slateDetail.value, detail);
   const key = material.customProgramCacheKey();
   contacts.slateContactGain.value = 0.6;
   contacts.slateRockContact.value = 1;
+  contacts.slatePoolAbout.value = 1;
   assert.equal(material.customProgramCacheKey(), key);
   material.dispose();
 });
