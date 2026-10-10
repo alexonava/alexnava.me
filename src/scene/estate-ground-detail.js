@@ -8,10 +8,10 @@ import {
 import { DEPTH_LAYER, stampDepthLayer } from "./depth-layers.js";
 import { mistHook } from "./drifting-mist.js";
 import { flashHook } from "./film-light.js";
-import { ESTATE, estateLantern, estatePathDistance, estatePoint } from "./estate-layout.js";
+import { ESTATE, estatePathDistance, estatePoint } from "./estate-layout.js";
 import { GRASS_MOOD } from "./film-light.js";
 import { rockKeepouts } from "./rock-scatter.js";
-import { SLATE_PUDDLES, SLATE_RIVER, SLATE_STREAMS, riverAt } from "./mud-ground.js";
+import { SLATE_PUDDLES, SLATE_RIVER, SLATE_STREAMS, riverAt, streamLines } from "./mud-ground.js";
 
 // The same winding approach stays clear in every camera and quality tier.
 // Its centerline joins the tower's entrance side to the tree's lantern clearing.
@@ -123,20 +123,52 @@ export function grassMaterial() {
   return stampDepthLayer(mistHook(material), DEPTH_LAYER.ground);
 }
 
-// Distance outside the rain streams (SLATE_STREAMS, at their widest), in units.
-const LANTERN = estateLantern();
+// Distance outside the streams (SLATE_STREAMS: each course's half-width where
+// it passes, its meander included), in units.
+const STREAM_LINES = streamLines();
+// Each course in runs of STREAM_RUN segments, boxed: the half-width at every
+// sample, the run's widest, and its box [x0, x1, z0, z1].
+const STREAM_RUN = 4;
+const STREAM_RUNS = STREAM_LINES.flatMap(({ points, width, length }) => {
+  const half = points.map(([, , s]) => (width[0] + ((width[1] - width[0]) * s) / length) / 2),
+    runs = [];
+  for (let k = 0; k + 1 < points.length; k += STREAM_RUN) {
+    const end = Math.min(points.length - 1, k + STREAM_RUN),
+      xs = points.slice(k, end + 1).map(([x]) => x),
+      zs = points.slice(k, end + 1).map(([, z]) => z);
+    runs.push({
+      points: points.slice(k, end + 1),
+      half: half.slice(k, end + 1),
+      reach: Math.max(...half.slice(k, end + 1)),
+      box: [Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs)],
+    });
+  }
+  return runs;
+});
 export function streamDistance(x, z) {
+  // Start from the nearest run's head (an upper bound), then measure only the runs whose box could be nearer.
   let best = Infinity;
-  for (const path of SLATE_STREAMS.paths)
-    for (let k = 1; k < path.length; k++) {
-      const ax = LANTERN.x + path[k - 1][0],
-        az = LANTERN.z + path[k - 1][1],
-        bx = LANTERN.x + path[k][0] - ax,
-        bz = LANTERN.z + path[k][1] - az,
+  for (const { points, half } of STREAM_RUNS)
+    best = Math.min(best, Math.hypot(x - points[0][0], z - points[0][1]) - half[0]);
+  for (const { points, half, reach, box } of STREAM_RUNS) {
+    if (
+      Math.hypot(Math.max(box[0] - x, 0, x - box[1]), Math.max(box[2] - z, 0, z - box[3])) -
+        reach >=
+      best
+    )
+      continue;
+    for (let k = 1; k < points.length; k++) {
+      const [ax, az] = points[k - 1],
+        bx = points[k][0] - ax,
+        bz = points[k][1] - az,
         h = Math.min(1, Math.max(0, ((x - ax) * bx + (z - az) * bz) / (bx * bx + bz * bz)));
-      best = Math.min(best, Math.hypot(x - ax - bx * h, z - az - bz * h));
+      best = Math.min(
+        best,
+        Math.hypot(x - ax - bx * h, z - az - bz * h) - (half[k - 1] + (half[k] - half[k - 1]) * h),
+      );
     }
-  return best - SLATE_STREAMS.width[1] / 2 - SLATE_STREAMS.meander;
+  }
+  return best - SLATE_STREAMS.meander;
 }
 
 export function createEstateGroundDetail(groundHeight) {
