@@ -22,6 +22,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import { smoothTreeNormals } from "./tree-normals.js";
 import { ESTATE } from "./estate-layout.js";
 import { SLATE_TEXT_GUARD } from "./mud-ground.js";
+import { mistHook } from "./drifting-mist.js";
 import {
   GLINT,
   GLINT_MOOD,
@@ -436,7 +437,8 @@ ${ROOT_MOSS_MAP}`
     for (const value of Object.values(material)) {
       if (value?.isTexture) value.anisotropy = anisotropy;
     }
-    return material;
+    // The drifting mist after the fog (drifting-mist.js): the tower, the tree and the rocks.
+    return mistHook(material);
   } catch (error) {
     material.dispose();
     throw error;
@@ -593,7 +595,7 @@ export function createTreeArchitecture({
     // stiles, top plate, pyramid cap and finial ring merge into one frame. The
     // candle flame is the emitter, seen through four tinted glass panes.
     const frameMaterial = ownMaterial(
-      new MeshStandardMaterial({ color: 0x45413d, roughness: 0.84, metalness: 0.38 }),
+      mistHook(new MeshStandardMaterial({ color: 0x45413d, roughness: 0.84, metalness: 0.38 })),
     );
     const frameParts = [];
     let frameGeometry;
@@ -648,7 +650,7 @@ export function createTreeArchitecture({
     }
     const candle = new Mesh(
       ownGeometry(new CylinderGeometry(0.06, 0.065, 0.3, 8)),
-      ownMaterial(new MeshStandardMaterial({ color: 0xe9dcbc, roughness: 0.85 })),
+      ownMaterial(mistHook(new MeshStandardMaterial({ color: 0xe9dcbc, roughness: 0.85 }))),
     );
     candle.name = "lantern-candle";
     candle.position.y = 1.45;

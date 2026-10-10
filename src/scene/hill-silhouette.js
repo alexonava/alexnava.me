@@ -24,6 +24,7 @@ import {
 } from "./architecture-assets.js";
 import { DEPTH_LAYER } from "./depth-layers.js";
 import { FILM_SKY_GLSL } from "./estate-sky.js";
+import { MIST_PARS, MIST_RANGES, MIST_UNIFORMS, mistOn } from "./drifting-mist.js";
 
 // South Downs elevation traverse, 48 samples (SRTM-derived public-domain
 // data). Reused at different phases for fixed, continuous ridges.
@@ -291,6 +292,10 @@ c=mix(c,pa,fh*(1.-smoothstep(0.,${glslFloat(MOUNTAIN_AIR.footHazeHeight)},vH)*sm
 // colour (xyz, linear), thinning by `top` of view slope above it, the top
 // wavering along the ring. Off (w 0) unless a shot asks for it.
 export const RANGE_MIST = { value: { x: 0, y: 0, z: 0, w: 0 } };
+// The drifting mist (drifting-mist.js) over the ranges' feet, under the shot's own
+// low mist, gathered along their view ray (MIST_RANGES).
+const MOUNTAIN_MIST_PARS = mistOn ? `uniform mat4 projectionMatrix;\n${MIST_PARS}` : "";
+const MOUNTAIN_MIST = MIST_RANGES;
 export const RANGE_MIST_SHAPE = Object.freeze({ floor: -0.03, top: 0.016 });
 const RANGE_MIST_GLSL = `if(uMist.w>0.){float rmE=vL.y/r,rmA=atan(vL.z,vL.x),rmW=.5+.3*sin(rmA*17.+1.3)+.2*sin(rmA*41.+.4);
 c=mix(c,uMist.rgb,uMist.w*(1.-smoothstep(${glslFloat(RANGE_MIST_SHAPE.floor)},${glslFloat(RANGE_MIST_SHAPE.top)}*(.6+.8*rmW),rmE)));}`;
@@ -354,6 +359,7 @@ gl_Position.z=mix(gl_Position.z,gl_Position.w,.8);
 }`,
     fragmentShader: `
 uniform vec4 uMist;
+${MOUNTAIN_MIST_PARS}
 uniform vec2 uSky;
 uniform vec3 uSun, fogColor;
 uniform float fogNear, fogFar;
@@ -440,12 +446,13 @@ sn=mix(air,sn,mix(1.,T,.55));
 c=mix(c,sn,snow*(1.-mist));}
 ${GLOW_GLSL}
 ${FAR_PLAIN_GLSL}
-${RANGE_MIST_GLSL}
+${MOUNTAIN_MIST}${RANGE_MIST_GLSL}
 gl_FragColor=vec4(c,${DEPTH_LAYER.mountains});
 }`,
   });
   // Set after the merge, so every mountain material shares the ground's one object.
   material.uniforms.uMist = RANGE_MIST;
+  if (mistOn) Object.assign(material.uniforms, MIST_UNIFORMS);
   return material;
 }
 
@@ -553,6 +560,7 @@ gl_Position.z=mix(gl_Position.z,gl_Position.w,.8);
 }`,
     fragmentShader: `
 uniform vec4 uMist;
+${MOUNTAIN_MIST_PARS}
 uniform vec2 uSky;
 uniform vec3 uSun, fogColor;
 uniform float fogNear, fogFar;
@@ -617,7 +625,7 @@ sn=mix(air,sn,mix(1.,T,.55));
 c=mix(c,sn,snow*(1.-mist));}
 ${GLOW_GLSL}
 ${FAR_PLAIN_GLSL}
-${RANGE_MIST_GLSL}
+${MOUNTAIN_MIST}${RANGE_MIST_GLSL}
 gl_FragColor=vec4(c,${DEPTH_LAYER.mountains});
 }`,
   });
@@ -627,6 +635,7 @@ gl_FragColor=vec4(c,${DEPTH_LAYER.mountains});
     uMask: { value: maskMap },
     uNearer: { value: nearerMap },
     uMist: RANGE_MIST,
+    ...(mistOn ? MIST_UNIFORMS : {}),
   });
   return material;
 }

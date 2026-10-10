@@ -44,7 +44,10 @@ import { createSceneAtmosphere } from "../src/scene/atmosphere.js";
 import {
   CLOUD_RESHAPE,
   CLOUD_TEXT_GLSL,
+  CLOUD_VORTEX,
+  CLOUD_VORTEX_GLSL,
   cloudFieldGLSL,
+  cloudVortexCenter,
   createEstateSkyMaterial,
   FILM_SKY_GLSL,
 } from "../src/scene/estate-sky.js";
@@ -702,8 +705,14 @@ test("the clouds' reshaping never reaches the reference banks or the roof's lane
     }
   // Past the horizon's knee the noise radius grows slower but never folds back, and
   // nearer the zenith it is the plane's own.
-  const outer = new Function("bl", `return ${line("cloudOut")}`);
-  const radiusOf = new Function("bl", "cloudOut", "sqrt", `return ${line("cloudR")}`);
+  // (Where the vortex turns, its radius blv stands for bl; elsewhere blv is bl itself.)
+  const outer = new Function("bl", `return ${line("cloudOut").replace(/\bblv\b/g, "bl")}`);
+  const radiusOf = new Function(
+    "bl",
+    "cloudOut",
+    "sqrt",
+    `return ${line("cloudR").replace(/\bblv\b/g, "bl")}`,
+  );
   const [knee, rate] = CLOUD_RESHAPE.horizon;
   let previous = 0;
   for (let bl = 0.001; bl <= 6; bl += 0.01) {
@@ -748,7 +757,13 @@ test("the clouds' reshaping never reaches the reference banks or the roof's lane
   assert.ok(CLOUD_RESHAPE.wedge[1] - farLeft >= 20 && farRight - CLOUD_RESHAPE.wedge[2] >= 20);
   const scale = CLOUD_RESHAPE.scale;
   assert.ok(scale > 0 && scale <= 1);
-  assert.ok(shader.includes(`vec2 bn=b*mix(1.,cloudR/bl*${scale},bend);`));
+  assert.ok(
+    shader.includes(
+      CLOUD_VORTEX.on
+        ? `vec2 bn=bv*mix(1.,cloudR/blv*${scale},bend);`
+        : `vec2 bn=b*mix(1.,cloudR/bl*${scale},bend);`,
+    ),
+  );
   assert.match(shader, /vec2 p=bn\+2\.98\*\(/);
   // The swirl turns the noise along half a turn of the half-frequency octave.
   const swirlLine = shader.match(/wo\+=bend\*([\d.]+)\*vec2\(cos\(turn\),sin\(turn\)\);/);
@@ -852,7 +867,12 @@ test("the clouds' reshaping never reaches the reference banks or the roof's lane
   for (const nv0 of [0, 0.5, 1])
     assert.ok(Math.abs(bank(1, nv0, 0.5, 1) - (bank(1, nv0) - clearing)) < 1e-12);
   const field = cloudFieldGLSL("uTime");
-  assert.equal(field.match(/cloudText/g).length, 1, "the guard reaches only the bank");
+  // It reaches the reshaped bank and, where the vortex turns, the vortex (CLOUD_VORTEX).
+  assert.equal(
+    field.match(/cloudText/g).length,
+    CLOUD_VORTEX.on ? 2 : 1,
+    "the guard reaches only the bank and the vortex",
+  );
   assert.match(field, /float cover=smoothstep\(\.548-w,\.548\+w,d\)\*horizonFade\*uClouds;$/);
   assert.ok(shader.includes("col+=vec3(.027,.03,.036)*smoothstep(.36,.54,d)*horizonFade*uClouds;"));
   assert.match(shader, /d\+=bank; da\+=bank;/);
@@ -900,6 +920,68 @@ return 1.-smoothstep(0.,${textReach},length(f));}`,
   material.dispose();
 });
 
+test("the cloud vortex turns about the star's eye, never over the reference banks or the capture", () => {
+  const material = skyMaterial(),
+    shader = material.fragmentShader;
+  assert.equal(CLOUD_VORTEX.on, 1);
+  assert.ok(Object.isFrozen(CLOUD_VORTEX) && Object.isFrozen(CLOUD_VORTEX.arms));
+  const smoothstep = (a, b, x) => {
+    const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+    return t * t * (3 - 2 * t);
+  };
+  // Its weight's protection is the reshaping's own wedge and radius, easing out over
+  // `protect`: exactly 0 over the reference banks (azimuths 119-176 from radius 1.12
+  // out), for any eye and strength, and 0 in the environment's capture.
+  const weight = shader.match(/float vxW=([^;]+);/)[1];
+  const protectOf = new Function("cloudAz", "bl", "uCloudReshape", "uVortex", "smoothstep", `return ${weight}`);
+  const [, from, to] = CLOUD_RESHAPE.wedge;
+  assert.ok(from >= 119 && CLOUD_VORTEX.protect[0] >= CLOUD_RESHAPE.wedge[2] && CLOUD_VORTEX.protect[0] < CLOUD_VORTEX.protect[1]);
+  for (let az = 119; az <= CLOUD_VORTEX.protect[0]; az += 0.5)
+    for (let bl = CLOUD_RESHAPE.radius[1]; bl < 4.6; bl += 0.05)
+      assert.equal(protectOf(az, bl, 1, { z: 1 }, smoothstep), 0, `reference banks at ${az},${bl}`);
+  assert.equal(protectOf(200, 1.4, 0, { z: 1 }, smoothstep), 0, "the capture draws none");
+  assert.equal(protectOf(200, 1.4, 1, { z: 1 }, smoothstep), 1, "open sky beyond the wedge");
+  // The capture clones the shell with uCloudReshape 0, which scales the weight.
+  assert.match(shader, /\*uCloudReshape\*uVortex\.z;/);
+  // Where the weight is 0 the noise's coordinates and the density are untouched: the
+  // turn and the vortex's density sit in branches the reference never takes.
+  assert.ok(shader.includes("vec2 bv=b;\nif(vxW>0.){float vxA="));
+  assert.ok(shader.includes("float blv=max(length(bv),.001);\nfloat cloudOut=blv-1.5;"));
+  assert.match(shader, /if\(vxW>0\.\)\{float vxA=/);
+  assert.match(shader, /if\(vxW>0\.\)\{vec2 vxL=L\*clamp\(bl\*\.1,\.1,\.2\);/);
+  // The turn is a rotation of the local frame by an angle, so it never folds the
+  // noise; the arms turn rigidly on the drift clock, a turn in many minutes.
+  assert.match(shader, /vxF=vec2\(vxS\.x\*vxE\.x-vxS\.y\*vxE\.y,vxS\.y\*vxE\.x\+vxS\.x\*vxE\.y\)/);
+  assert.ok(CLOUD_VORTEX.arms[3] >= 300, "a turn in many minutes");
+  assert.ok(CLOUD_VORTEX_GLSL.includes(`-t*${((2 * Math.PI) / CLOUD_VORTEX.arms[3]).toFixed(6)})`));
+  // Behind the name and intro it takes nothing (the text guard).
+  assert.match(shader, /float vxK=vxW\*\(1\.-cloudText\);/);
+  // The guard shots keep the star's disc and glow as they were (the bloom they feed
+  // reaches the reference banks) and lean the disc away from them.
+  assert.deepEqual([...CLOUD_VORTEX.guardShots], ["The watch"]);
+  assert.match(shader, /mix\(1\.,smoothstep\([\d.]+,[\d.]+,vxRho\),uVortex\.w\)/);
+  // Its eye: where a lens sees the star on the cloud plane, as the field maps the
+  // shell (b = xz / (max(y, 0) + .24) * 1.1); from the world origin, the star's own
+  // direction; set on each cut from the shot's lens (index.js).
+  const star = [-72.25, 50, -11.9],
+    n = Math.hypot(...star),
+    d = star.map((v) => v / n),
+    eye = cloudVortexCenter({ x: 0, y: 0, z: 0 }, star, 130);
+  assert.ok(Math.abs(eye.x - (d[0] / (d[1] + 0.24)) * 1.1) < 1e-9);
+  assert.ok(Math.abs(eye.y - (d[2] / (d[1] + 0.24)) * 1.1) < 1e-9);
+  // From The watch's lens the star stands just past the wedge (the reference banks lie
+  // left of it on screen).
+  const watch = cloudVortexCenter({ x: 97.29, y: 26.38, z: -13.99 }, star, 130);
+  let az = (Math.atan2(watch.y, watch.x) * 180) / Math.PI;
+  if (az < 0) az += 360;
+  assert.ok(az > CLOUD_VORTEX.protect[1] && az < 190, `${az}`);
+  const index = flat(source("src/scene/index.js"));
+  assert.ok(index.includes("if (cinematicApplied && cinematic.shot !== vortexShot) {"));
+  assert.ok(index.includes("uVortex.value.w = CLOUD_VORTEX.guardShots.includes(vortexShot?.name) ? 1 : 0;"));
+  assert.equal(material.uniforms.uVortex.value.z, 1);
+  material.dispose();
+});
+
 test("sky drift follows the scheduler clock, freezes for reduced motion and stops on disposal", () => {
   const atmosphere = createSceneAtmosphere({ parent: new Group(), profile });
   const sky = { uniforms: { uTime: { value: 0 } } };
@@ -936,6 +1018,8 @@ test("film stars hide behind the sky's cloud banks, on the sky's own clock and s
   assert.equal(uniforms.uSkyRadius.value, 130);
   // The banks' text guard reads the sky's own box and aspect objects too.
   assert.equal(uniforms.uCloudReshape, sky.uniforms.uCloudReshape);
+  assert.equal(uniforms.uVortex, sky.uniforms.uVortex);
+  assert.ok(vertexShader.includes(CLOUD_VORTEX_GLSL));
   assert.equal(uniforms.slateText, sky.uniforms.slateText);
   assert.equal(uniforms.slateAspect, sky.uniforms.slateAspect);
   // The stars evaluate the sky's own cloud field where their view ray leaves the
