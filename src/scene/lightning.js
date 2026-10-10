@@ -61,8 +61,8 @@ import { FLASH_GROUND, RIM_UNIFORMS } from "./film-light.js";
 export const LIGHTNING = Object.freeze({
   enabled: true,
   seed: 277,
-  first: 3,
-  interval: Object.freeze([4, 12]),
+  first: 2,
+  interval: Object.freeze([2, 6]),
   pulses: Object.freeze([1, 3]),
   gap: Object.freeze([0.08, 0.2]),
   attack: 0.025,
