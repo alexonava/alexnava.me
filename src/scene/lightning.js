@@ -13,9 +13,9 @@ import { STAR_LAYER } from "./depth-layers.js";
 import { CLOUD_RESHAPE, FLASH_REFERENCE } from "./estate-sky.js";
 import { FLASH_GROUND, RIM_UNIFORMS } from "./film-light.js";
 
-// Rare, soft lightning in the film's night storm (the owner's pick of the storm
-// effects, 2026-10-09): flashes that light the cloud banks from inside, now and
-// then a thin, cold bolt far off behind the ranges, and a cold flash of light on
+// Bold lightning in the film's night storm (the owner's pick of the storm
+// effects, 2026-10-09: Bold): large flashes that light the cloud banks from inside,
+// most of them sending down a bright, branching cold bolt behind the ranges, and a cold flash of light on
 // the subjects and the wet ground from the flash's side. No light, pass or
 // texture is added: the sky shell draws the banks' glow (estate-sky.js
 // FLASH_GLSL), one small mesh the bolt, and the flash rides the lights already
@@ -33,8 +33,7 @@ import { FLASH_GROUND, RIM_UNIFORMS } from "./film-light.js";
 // capped there and events keep a second apart) and no full-frame white: the
 // glow stays in the banks about one point, under the grade's shoulder.
 //
-// Where: most events are faint, far in-cloud flickers (`strength`, skewed low by
-// `skew`) low over the ranges (`altitude`, degrees), at a random point across the
+// Where: events range from fair to full (`strength`, skewed low by `skew`) low over the ranges (`altitude`, degrees), at a random point across the
 // frame (`frame`, a share of its width) or, `side` of the time, `sideAngle`
 // degrees beyond its sides, lighting the subjects from there. A flash never centres over The watch's
 // reference banks (CLOUD_RESHAPE's wedge, whose protection also zeroes the glow
@@ -70,18 +69,18 @@ export const LIGHTNING = Object.freeze({
   decay: Object.freeze([0.06, 0.14]),
   echo: Object.freeze([0.45, 0.85]),
   perSecond: 3,
-  strength: Object.freeze([0.3, 1]),
+  strength: Object.freeze([0.6, 1]),
   skew: 2,
-  altitude: Object.freeze([3, 12]),
+  altitude: Object.freeze([5, 16]),
   frame: Object.freeze([0.12, 0.88]),
   side: 0.25,
   sideAngle: Object.freeze([20, 80]),
   textClear: 0.3,
   sky: Object.freeze({
-    radius: Object.freeze([0.28, 0.6]),
-    gain: 0.55,
-    core: 1.2,
-    clear: 0.25,
+    radius: Object.freeze([0.5, 0.95]),
+    gain: 0.85,
+    core: 1.6,
+    clear: 0.4,
     thin: 0.5,
     color: Object.freeze([0.74, 0.83, 1]),
     jitter: 2.5,
@@ -89,18 +88,18 @@ export const LIGHTNING = Object.freeze({
   }),
   bolt: Object.freeze({
     draw: true,
-    chance: 0.2,
+    chance: 0.6,
     strength: 0.85,
-    top: Object.freeze([10, 16]),
+    top: Object.freeze([12, 18]),
     bottom: -1.5,
     lean: 3,
     rough: 0.3,
     detail: 5,
-    branches: Object.freeze([2, 4]),
-    core: 1.1,
-    halo: 7,
-    glow: 0.3,
-    brightness: 1.6,
+    branches: Object.freeze([3, 5]),
+    core: 1.6,
+    halo: 10,
+    glow: 0.4,
+    brightness: 2.4,
     color: Object.freeze([0.85, 0.91, 1]),
     leader: 0.04,
     decay: 0.05,
@@ -108,13 +107,13 @@ export const LIGHTNING = Object.freeze({
   }),
   relight: Object.freeze({
     color: Object.freeze([0.74, 0.83, 1]),
-    fill: 1.3,
-    hemisphere: 0.15,
-    ambient: 0.1,
-    rim: 0.8,
+    fill: 3,
+    hemisphere: 0.35,
+    ambient: 0.2,
+    rim: 2.2,
     rimColor: Object.freeze([0.5, 0.66, 1]),
-    sky: 0.35,
-    water: 0.6,
+    sky: 0.7,
+    water: 1.2,
   }),
   tiers: Object.freeze({
     balanced: Object.freeze({

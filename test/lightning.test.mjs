@@ -37,14 +37,20 @@ function busiestSecond(peaks) {
   return most;
 }
 
-test("the storm's lightning is rare, soft and off nothing but a debug override", () => {
+test("the storm's lightning is occasional, bold and off nothing but a debug override", () => {
   assert.equal(LIGHTNING.enabled, true);
   assert.deepEqual([...LIGHTNING.forceAt], [], "captures force flashes; the site never does");
   assert.ok(LIGHTNING.interval[0] >= 10 && LIGHTNING.interval[1] <= 30, "an event every 10-30 s");
   assert.ok(LIGHTNING.pulses[0] >= 1 && LIGHTNING.pulses[1] <= 3, "1-3 pulses");
   assert.equal(LIGHTNING.perSecond, 3, "WCAG 2.3.1: never more than three flashes a second");
-  assert.ok(LIGHTNING.bolt.chance < 0.5, "most events are in-cloud flickers");
-  assert.ok(LIGHTNING.strength[0] < LIGHTNING.strength[1] && LIGHTNING.skew > 1, "most are faint");
+  assert.ok(
+    LIGHTNING.bolt.chance > 0.5 && LIGHTNING.bolt.chance < 1,
+    "most events send a bolt, some flicker in the banks",
+  );
+  assert.ok(
+    LIGHTNING.strength[0] < LIGHTNING.strength[1] && LIGHTNING.skew > 1,
+    "they vary, skewed toward the fainter",
+  );
   const balanced = lightningTier(LIGHTNING, "balanced");
   assert.equal(balanced.bolt.draw, false, "phones draw no bolt");
   assert.equal(balanced.bolt.chance, 0);
