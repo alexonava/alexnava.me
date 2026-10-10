@@ -92,7 +92,9 @@ const WIND_AXIS = `vec2(${g(Math.cos(windHeading))},${g(Math.sin(windHeading))})
 // shot's density share (w; 0 draws nothing). mistFrame: the plain's datum (world y),
 // the march's steps and octaves. mistMoon: the moon key's direction (xyz). mistStar:
 // the star's world position (xyz). mistText, mistAbout, mistAspect: the ground's text
-// boxes and the canvas's aspect (lendMistText()).
+// boxes and the canvas's aspect (lendMistText()). mistFlash: a lightning flash's light
+// scattered in the banks (rgb, lightning.js; w its level, 0 between flashes), none of
+// it behind the text (over `textReach`).
 export const MIST_UNIFORMS = {
   mistDrift: { value: { x: 0, y: 0, z: 0, w: 0 } },
   mistFrame: { value: { x: -6.25, y: M.steps[0], z: M.octaves[0], w: 0 } },
@@ -101,6 +103,7 @@ export const MIST_UNIFORMS = {
   mistText: { value: { x: 2, y: 2, z: -1, w: -1 } },
   mistAbout: { value: { x: 2, y: 2, z: -1, w: -1 } },
   mistAspect: { value: 1 },
+  mistFlash: { value: { x: 0, y: 0, z: 0, w: 0 } },
 };
 
 // The ground's text boxes (mud-ground.js createSlateContacts()) guard the mist's light.
@@ -138,7 +141,11 @@ export function setMistShot(shotName, film = true) {
 // The drift clock, in seconds of drawn, unpaused frames, and the plain's datum.
 let clock = 0;
 const [speed, heading] = M.wind;
-export function advanceMist({ deltaSeconds = 0, reducedMotion = false, motionPaused = false } = {}) {
+export function advanceMist({
+  deltaSeconds = 0,
+  reducedMotion = false,
+  motionPaused = false,
+} = {}) {
   if (!reducedMotion && !motionPaused && Number.isFinite(deltaSeconds))
     clock += Math.max(0, Math.min(0.1, deltaSeconds));
   mistDriftAt(clock, MIST_UNIFORMS.mistDrift.value);
@@ -165,7 +172,7 @@ export function setMistDatum(y) {
 // The mist's functions, declared once beside a material's fog: mistOver(c, world)
 // returns c seen through the mist between the lens and that world point.
 export const MIST_PARS = mistOn
-  ? `uniform vec4 mistDrift,mistFrame,mistMoon,mistStar,mistText,mistAbout;
+  ? `uniform vec4 mistDrift,mistFrame,mistMoon,mistStar,mistText,mistAbout,mistFlash;
 uniform float mistAspect;
 float mistHash(vec3 p){p=fract(p*.1031);p+=dot(p,p.zyx+31.32);return fract((p.x+p.y)*p.z);}
 float mistNoise(vec3 x){vec3 i=floor(x),f=fract(x);f=f*f*(3.-2.*f);
@@ -180,7 +187,7 @@ float t0=${g(M.near[0])},t1=L;
 if(hC>=top){if(hP>=top)return c;t0=max(t0,L*(hC-top)/(hC-hP));}
 else if(hP>top)t1=L*(top-hC)/(hP-hC);
 if(t1<=t0)return c;
-float dt=(t1-t0)/mistFrame.y,tau=0.,keep=1.;vec3 glow=vec3(0.);
+float dt=(t1-t0)/mistFrame.y,tau=0.,keep=1.,flash=0.;vec3 glow=vec3(0.);
 float moonPhase=${g(1 - M.moon[1] ** 2)}/pow(1.+${g(M.moon[1] ** 2)}-${g(2 * M.moon[1])}*dot(dir,mistMoon.xyz),1.5);
 vec3 ${MOON_STEP}=vec3(dot(mistMoon.xz,${WIND_AXIS})/${g(M.cells[0])},mistMoon.y/${g(M.cells[2])},dot(mistMoon.xz,${WIND_ACROSS})/${g(M.cells[1])})*${g(M.side[1])};
 for(int i=0;i<4;i++){if(float(i)>=mistFrame.y)break;
@@ -200,8 +207,10 @@ vec3 s=normalize(p-mistStar.xyz);float sd=length(p-mistStar.xyz)/${g(M.star[2])}
 float starPhase=${g(1 - M.star[1] ** 2)}/pow(1.+${g(M.star[1] ** 2)}+${g(2 * M.star[1])}*dot(s,dir),1.5);
 vec3 lit=${vec3(M.color)}*mix(1.,${g(M.top)},h)*side+${vec3([0.62, 0.74, 1])}*${g(M.moon[0])}*moonPhase*(.35+.65*h)
 +${vec3([1, 0.62, 0.34])}*${g(M.star[0])}*starPhase/(1.+sd*sd);
-glow+=keep*(1.-exp(-a))*lit;keep*=exp(-a);tau+=a;}
-if(tau<=0.)return c;${
+glow+=keep*(1.-exp(-a))*lit;flash+=keep*(1.-exp(-a))*(.55+.45*h);keep*=exp(-a);tau+=a;}
+if(tau<=0.)return c;
+if(mistFlash.w>0.){vec4 fc=projectionMatrix*viewMatrix*vec4(world,1.);vec2 fu=fc.xy/fc.w*.5+.5;
+glow+=mistFlash.xyz*flash*(1.-max(mistBox(mistText,fu,${g(M.textReach[0])}),mistBox(mistAbout,fu,${g(M.textReach[1])})));}${
       M.text > 0
         ? `
 vec4 clip=projectionMatrix*viewMatrix*vec4(world,1.);vec2 uv=clip.xy/clip.w*.5+.5;
@@ -245,7 +254,10 @@ export function mistHook(material) {
 // The same for a fragment shader with `#include <fog_fragment>` and vViewPosition.
 export function mistFragment(fragmentShader, world = MIST_WORLD) {
   if (!mistOn) return fragmentShader;
-  const pars = (fragmentShader.includes("uniform mat4 projectionMatrix") ? "" : "uniform mat4 projectionMatrix;\n") + MIST_PARS;
+  const pars =
+    (fragmentShader.includes("uniform mat4 projectionMatrix")
+      ? ""
+      : "uniform mat4 projectionMatrix;\n") + MIST_PARS;
   return fragmentShader
     .replace("#include <fog_pars_fragment>", `#include <fog_pars_fragment>\n${pars}`)
     .replace(
