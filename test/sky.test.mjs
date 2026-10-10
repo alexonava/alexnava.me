@@ -39,6 +39,7 @@ import {
   makeStarGeometry,
   STAR_COUNTS,
   STAR_MIN_FOOTPRINT,
+  STAR_TEXT_REACH,
 } from "../src/scene/starfield.js";
 import { createSceneAtmosphere } from "../src/scene/atmosphere.js";
 import {
@@ -368,6 +369,35 @@ test("faint stars keep a two-pixel footprint and their light, so they hold still
       if (size >= 2) assert.equal(gain, 1, "stars already two pixels wide are unchanged");
     }
   }
+  stars.dispose();
+});
+
+test("no star shows behind the name and intro; beside them stars ease back in", () => {
+  assert.equal(STAR_TEXT_REACH, 0.04);
+  const slateText = { value: { x: 0.1, y: 0.6, z: 0.5, w: 0.9 } },
+    slateAspect = { value: 0.5 };
+  const stars = createStarfield({
+      parent: new Group(),
+      profile: { tier: "high" },
+      sky: { slateText, slateAspect },
+    }),
+    { uniforms, vertexShader } = stars.root.material;
+  assert.equal(uniforms.slateText, slateText, "the sky's measured box, borrowed");
+  assert.equal(uniforms.slateAspect, slateAspect);
+  const shader = flat(vertexShader),
+    guard = shader.indexOf("vColor*=smoothstep(0.,0.040,length(starOff));");
+  // In every treatment (after the film's cloud cover closes), before the size.
+  assert.ok(
+    guard > shader.indexOf("cloudTextAt(gl_Position)); }"),
+    "outside the film's cloud block",
+  );
+  assert.ok(guard < shader.indexOf("float size=aSize*uPixelRatio"), "before the point size");
+  assert.ok(
+    shader.includes(
+      "vec2 starAt=gl_Position.xy/gl_Position.w*.5+.5; vec2 starOff=max(max(slateText.xy-starAt,starAt-slateText.zw),0.)*vec2(slateAspect,1.)/min(slateAspect,1.);",
+    ),
+    "the clouds' own distance from the box, on the screen's smaller side",
+  );
   stars.dispose();
 });
 

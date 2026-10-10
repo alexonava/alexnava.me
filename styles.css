@@ -1269,9 +1269,42 @@ body[data-panel-open]::after {
     padding-left: clamp(24px, 5vw, 40px);
   }
 
+  /* The intro runs on one line here, its end past the reach of the hero's
+     scrim and over the subject in the close shots (Masonry study's lit post,
+     Close-up's pale branches), so it keeps its own text scrim, as About does: a
+     soft oval centred on the line that reaches transparent before every edge of
+     its box (the hero's (1 - t²)² falloff), 0.6 at its centre. */
   .hero-intro {
+    position: relative;
+    isolation: isolate;
     max-width: 31ch;
     margin-top: 12px;
+  }
+
+  .hero-intro::before {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    z-index: -1;
+    width: calc(100% + 240px);
+    height: calc(100% + 96px);
+    content: "";
+    pointer-events: none;
+    transform: translate(-50%, -50%);
+    background: radial-gradient(
+      closest-side,
+      rgba(7, 10, 18, 0.6) 0%,
+      rgba(7, 10, 18, 0.588) 10%,
+      rgba(7, 10, 18, 0.553) 20%,
+      rgba(7, 10, 18, 0.497) 30%,
+      rgba(7, 10, 18, 0.424) 40%,
+      rgba(7, 10, 18, 0.337) 50%,
+      rgba(7, 10, 18, 0.246) 60%,
+      rgba(7, 10, 18, 0.156) 70%,
+      rgba(7, 10, 18, 0.078) 80%,
+      rgba(7, 10, 18, 0.022) 90%,
+      rgba(7, 10, 18, 0) 100%
+    );
   }
 
   .site-shell {
@@ -1323,6 +1356,7 @@ body[data-panel-open]::after {
   }
 
   .hero-minimal::before,
+  .hero-intro::before,
   .site-footer__about::before,
   .bottom-bar::before {
     display: none;

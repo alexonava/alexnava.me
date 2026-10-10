@@ -900,6 +900,51 @@ test("the footer's About keeps a brighter label over an edgeless text scrim of i
   );
 });
 
+test("on tablets the intro keeps its own text scrim", async () => {
+  const styles = await readStyles();
+  // Tablets in portrait: the intro runs on one line past the hero scrim's reach,
+  // over the close shots' subjects, so it sits over its own soft oval, as About
+  // does: behind the line, in its own stacking context, transparent before
+  // every edge with the hero's (1 - t²)² falloff.
+  const tablet = mediaBlock(
+    styles,
+    "(min-width: 761px) and (max-width: 1024px) and (orientation: portrait)",
+  );
+  const intro = cssRule(tablet, ".hero-intro");
+  assert.match(intro, /position:\s*relative;/);
+  assert.match(intro, /isolation:\s*isolate;/);
+  assert.match(intro, /max-width:\s*31ch;/);
+  const scrim = cssRule(tablet, ".hero-intro::before");
+  assert.match(scrim, /z-index:\s*-1;/);
+  assert.match(scrim, /pointer-events:\s*none;/);
+  assert.match(scrim, /width:\s*calc\(100% \+ 240px\);/);
+  assert.match(scrim, /height:\s*calc\(100% \+ 96px\);/);
+  assert.match(scrim, /radial-gradient\(\s*closest-side,/);
+  const stops = [...scrim.matchAll(/rgba\(7, 10, 18, ([\d.]+)\) ([\d.]+)%/g)].map(([, a, at]) => [
+    +a,
+    +at / 100,
+  ]);
+  assert.equal(stops[0].join(), "0.6,0", "0.6 at its centre");
+  assert.equal(stops.at(-1).join(), "0,1", "fully transparent at the ellipse's edge");
+  for (const [alpha, t] of stops)
+    assert.ok(
+      Math.abs(alpha - 0.6 * (1 - t * t) ** 2) < 0.006,
+      `a smooth (1 - t²)² falloff at ${t}`,
+    );
+  // Only there: phones, desktops and landscape keep the hero's scrim alone, and
+  // forced colours drop it with the others.
+  assert.equal(
+    cssRules(styles, (selector) => selector.includes(".hero-intro::before")).filter(
+      ({ body }) => !/display:\s*none/.test(body),
+    ).length,
+    1,
+  );
+  assert.match(
+    mediaBlock(styles, "(forced-colors: active)"),
+    /\.hero-intro::before,[^{]*\{\s*display:\s*none;/,
+  );
+});
+
 test("the estate map's controls are drawn in its ink", async () => {
   const styles = await readStyles();
   // Hairline rules either side of the title, on one line.

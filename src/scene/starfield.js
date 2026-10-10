@@ -12,6 +12,9 @@ import { CLOUD_TEXT_GLSL, CLOUD_VORTEX_GLSL, cloudFieldGLSL } from "./estate-sky
 export const STAR_COUNTS = Object.freeze({ high: 4200, balanced: 2600, low: 1200 });
 // The smallest star sprite in device pixels (the faint stars are 1.25-1.9 CSS px).
 export const STAR_MIN_FOOTPRINT = 2;
+// The share of the screen's smaller side over which a star eases back in beyond
+// the name and intro's box (the stars' text guard).
+export const STAR_TEXT_REACH = 0.04;
 export function makeStarGeometry(seed = 92717) {
   const random = seededRandom(seed),
     clusterRandom = seededRandom(seed ^ 0x9e3779b9),
@@ -139,6 +142,12 @@ export function createStarfield({
                                       +uSkyRadius*uSkyRadius,0.0));
           vColor*=1.0-.94*skyCloudCover(normalize(cameraPosition+ray*reach),cloudTextAt(gl_Position));
         }
+        // No star shows behind the name and intro (slateText): one twinkling into
+        // their box read as a bright point behind the letters. It fades out inside
+        // the box and back in over STAR_TEXT_REACH of the screen's smaller side.
+        vec2 starAt=gl_Position.xy/gl_Position.w*.5+.5;
+        vec2 starOff=max(max(slateText.xy-starAt,starAt-slateText.zw),0.)*vec2(slateAspect,1.)/min(slateAspect,1.);
+        vColor*=smoothstep(0.,${STAR_TEXT_REACH.toFixed(3)},length(starOff));
         // No star draws under STAR_MIN_FOOTPRINT device px: a smaller sprite falls
         // between pixel centres and shimmers as the camera drifts. The wider sprite
         // keeps the star's light (colour scales by the area ratio).
