@@ -8,8 +8,10 @@ export const FILM_LIGHT = Object.freeze({ key: 1.12, fill: 1.15, hemisphere: 0.8
 // A shot's `light` mood multiplies the film balance (key, fill), the lantern and
 // the rim, sets how much of the tree's pale wood reads moonlit grey (pale),
 // the share of the tree's rim kept off the text (rimText), the share of the
-// grass's colour read inside its blades (grassInside) and the share of the
-// bark's glints kept off the name and intro (glintText), all 0 by default; it
+// grass's colour read inside its blades (grassInside), the share of the bark's
+// glints kept off the name and intro (glintText) and the share of the
+// lantern's pool on the ground that passes its knee behind About (poolAbout,
+// mud-ground.js SLATE_LIGHT.poolKnee), all 0 by default; it
 // follows the shot on screen, so it changes on a cut.
 export const SHOT_LIGHT_DEFAULT = Object.freeze({
   key: 1,
@@ -20,6 +22,7 @@ export const SHOT_LIGHT_DEFAULT = Object.freeze({
   rimText: 0,
   grassInside: 0,
   glintText: 0,
+  poolAbout: 0,
 });
 export function shotLight(shot) {
   return { ...SHOT_LIGHT_DEFAULT, ...(shot?.light ?? {}) };
