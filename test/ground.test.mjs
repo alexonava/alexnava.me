@@ -292,25 +292,43 @@ const FILM_CHUNKS = [
   "#include <fog_fragment>",
 ].join("\n");
 
-test("the pond's water lies only below its shore, as the terrain carves it, and the close soil comes with its maps", async () => {
-  const { configureGroundShading, SLATE_POND, SLATE_CLOSE, SLATE_PUDDLES, pondShape } =
-    await import("../src/scene/mud-ground.js");
-  const { POND, PUDDLE_ZONES, pondShapeAt, pondRadius } =
-    await import("../src/scene/terrain-build.js");
-  // The shader's pond and the terrain's agree: the same footprint, wobble, depth, bank and water.
-  for (const key of ["wobble", "depth", "rise", "level", "reach"])
-    assert.deepEqual(SLATE_POND[key], POND[key], key);
-  const zone = SLATE_PUDDLES.zones[0],
-    centre = estatePoint(zone.anchor, zone.deg, zone.dist);
-  assert.ok(Math.hypot(centre.x - PUDDLE_ZONES[0].x, centre.z - PUDDLE_ZONES[0].z) < 1e-9);
-  assert.ok(Math.abs(pondRadius(PUDDLE_ZONES[0].x, PUDDLE_ZONES[0].z)) < 1e-9);
+test("the river's water lies only below its shore, as the terrain carves it, and the close soil comes with its maps", async () => {
+  const {
+    configureGroundShading,
+    SLATE_RIVER,
+    SLATE_RIVER_BED,
+    SLATE_CLOSE,
+    riverAt,
+    riverBed,
+    riverLine,
+  } = await import("../src/scene/mud-ground.js");
+  const T = await import("../src/scene/terrain-build.js");
+  const { RIVER, RIVER_BED, RIVER_LINE, riverBedAt, riverRadius } = T;
+  // The shader's river and the terrain's agree: the same course, width, wobble and
+  // current, the same bed and banks, and the same place on it at every point.
+  for (const key of ["depth", "rise", "level", "reach"])
+    assert.deepEqual(SLATE_RIVER_BED[key], RIVER_BED[key], key);
+  for (const key of ["path", "step", "width", "wobble", "flow"])
+    assert.deepEqual(SLATE_RIVER[key], RIVER[key], key);
+  assert.deepEqual(riverLine(), RIVER_LINE);
+  for (let x = 28; x < 60; x += 1.7)
+    for (let z = 8; z < 38; z += 1.3) {
+      const a = riverAt(x, z),
+        b = T.riverAt(x, z);
+      for (const key of ["d", "s", "side", "dx", "dz", "r"]) assert.equal(a[key], b[key], key);
+      assert.equal(riverRadius(x, z), b.r);
+    }
+  // On its centreline the radius is 0; the centreline runs on from the plain
+  // past the lantern, which stands on its bank clear of the water.
+  for (const [x, z] of RIVER_LINE) assert.ok(riverRadius(x, z) < 1e-9);
+  assert.ok(RIVER_LINE.at(-1)[2] > 35, "it runs well beyond the lantern shots' frames");
   // Below the water inside its shore, level with it on the shore, above it on the bank.
   for (const r of [0, 0.3, 0.6, 0.9, 1, 1.2, 1.5, 2, 3]) {
-    assert.equal(pondShape(r), pondShapeAt(r));
-    assert.ok(r < 1 ? pondShape(r) < 0 : pondShape(r) >= 0, `${r}`);
+    assert.equal(riverBed(r), riverBedAt(r));
+    assert.ok(r < 1 ? riverBed(r) < 0 : riverBed(r) >= 0, `${r}`);
   }
-  assert.equal(pondShape(0), -SLATE_POND.depth);
-  assert.ok(pondShape(3) < SLATE_POND.rise);
+  assert.equal(riverBed(0), -SLATE_RIVER_BED.depth);
+  assert.ok(riverBed(3) < SLATE_RIVER_BED.rise);
   // The shore and the shape in the shader are the JS shape's.
   const material = new MeshStandardMaterial();
   const compile = (maps) => {
@@ -330,14 +348,25 @@ test("the pond's water lies only below its shore, as the terrain carves it, and 
   const plain = compile({});
   assert.ok(
     plain.fragment.includes(
-      `float slatePondShape(float r){return r<1.?-${SLATE_POND.depth}*(1.-r*r):`,
+      `float slateRiverBed(float r){return r<1.?-${SLATE_RIVER_BED.depth}*(1.-r*r):`,
     ),
   );
   assert.ok(
     plain.fragment.includes(
-      "float slateLanternPuddle = slatePuddle*(1.0-smoothstep(1.0, 1.4, slatePondR(vMudWorld.xz)));",
+      "float slateLanternPuddle = slatePuddle*(1.0-smoothstep(1.0, 1.4, slateRiverR));",
     ),
   );
+  // The river is found once a fragment, its segments in runs, each tried only
+  // within its box grown by the bank's widest reach.
+  assert.ok(
+    plain.fragment.includes(
+      "vec2 slateRiverDir;\n      vec4 slateRiverQ = slateRiver(vMudWorld.xz, slateRiverDir);\n      float slateRiverR = slateRiverQ.x;",
+    ),
+  );
+  const segments = RIVER_LINE.length - 1;
+  assert.equal(plain.fragment.match(/pa=p-vec2\(/g).length, segments, "every segment once");
+  assert.equal(plain.fragment.match(/if\(p\.x>/g).length, Math.ceil(segments / 8), "runs of 8");
+  assert.equal(plain.fragment.match(/slateRiver\(vMudWorld\.xz/g).length, 1, "found once");
   assert.doesNotMatch(plain.fragment, /slateGrit|slateRelief/, "no close soil without its maps");
   assert.ok(!plain.key.includes("+soil"));
   // With its grit and relief maps the close soil fades in near the lens, and its relief fades
@@ -487,7 +516,7 @@ test("each ground shading has its own program cache key; the slate's shading nee
   // receiving the lantern override; parentheses preserve the 1 - fade mask.
   assert.match(
     fragment,
-    /float slateLanternPuddle = slatePuddle\*\(1\.0-smoothstep\(1\.0, 1\.4, slatePondR\(vMudWorld\.xz\)\)\);/,
+    /float slateLanternPuddle = slatePuddle\*\(1\.0-smoothstep\(1\.0, 1\.4, slateRiverR\)\);/,
   );
   assert.equal(SLATE_PUDDLES.lantern.specular, 0.8);
   assert.equal(SLATE_PUDDLES.lantern.roughness, 0.2);
@@ -562,7 +591,7 @@ test("each ground shading has its own program cache key; the slate's shading nee
   // (a fifth), and there the soil's own highlights pass a knee: text stays at
   // 5:1 over the wet ground. The name's reach is wide, so the moon's glare on
   // the wet plain fades out along it instead of ending beside the name; the
-  // small label's stays short, clear of the pond's image of the lantern.
+  // small label's stays short, clear of the river's image of the lantern.
   const [share, knee, reach, aboutReach] = SLATE_WATER.text;
   assert.ok(share > 0 && share < 1 && knee > 0 && knee <= 0.05);
   assert.ok(reach >= 0.4 && reach <= 0.6, "reach");
@@ -697,11 +726,11 @@ test("each ground shading has its own program cache key; the slate's shading nee
   assert.match(fragment, /float slateDry = footingDry;/);
   assert.match(fragment, /float slateWet = clamp\([^;]*\)\*\(1\.0-slateDry\);/);
   // The puddles fill fuller, Portrait's foreground puddle among them; the
-  // pond (zones[0]) takes its own level from its shape beside theirs.
-  assert.equal(SLATE_PUDDLES.zones.length, 4);
+  // river takes its own level from its shape beside theirs.
+  assert.equal(SLATE_PUDDLES.zones.length, 3);
   assert.match(
     fragment,
-    /\*\(0\.62\+\.4\*slateNoise\(vMudWorld\.xz\*\.9\)\)-slateH, mix\(-slatePondShape\(slatePondR\(vMudWorld\.xz\)\)\*3\.0/,
+    /\*\(0\.62\+\.4\*slateNoise\(vMudWorld\.xz\*\.9\)\)-slateH, mix\(-slateRiverBed\(slateRiverR\)\*3\.0/,
   );
   assert.match(fragment, /length\(\(vMudWorld\.xz-vec2\(52\.32,20\.34\)\)\)\/1\.5\)/);
   // Puddles fill the detail map's low texels, glassy and darker, and mirror

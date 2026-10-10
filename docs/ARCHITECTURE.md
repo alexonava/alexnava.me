@@ -135,7 +135,7 @@ Build, development and authoring helpers in `tools/`. None is published.
 | `og-card.html`          | Source of the share card, `public/og.png`                                                           |
 | `og-card-backdrop.webp` | The share card's backdrop, a still of the live scene                                                |
 
-`node tools/bake-root-shade.mjs` prints the three constants from both tree variants, deterministically; paste them over the ones in [terrain-build.js](../src/scene/terrain-build.js) whenever one of its inputs changes: the tree models, the tree's seating (`TREE_FOOTING`, `TREE_SINK`), the root lines and lattice, the key-light direction (`KEY_LIGHT`), the terrain, or the ground the tables must leave untouched (the lantern clearing about `LANTERN_FOOT`, the pond to its reach (`POND`, and `SLATE_PUDDLES.zones[0]` in mud-ground.js) and the puddles in `PUDDLE_ZONES`). `test/terrain-build.test.mjs` re-bakes and fails on any difference.
+`node tools/bake-root-shade.mjs` prints the three constants from both tree variants, deterministically; paste them over the ones in [terrain-build.js](../src/scene/terrain-build.js) whenever one of its inputs changes: the tree models, the tree's seating (`TREE_FOOTING`, `TREE_SINK`), the root lines and lattice, the key-light direction (`KEY_LIGHT`), the terrain, or the ground the tables must leave untouched (the lantern clearing about `LANTERN_FOOT`, the river to its reach (`RIVER`, `RIVER_BED`, restating `SLATE_RIVER` and `SLATE_RIVER_BED` in mud-ground.js) and the puddles in `PUDDLE_ZONES`). `test/terrain-build.test.mjs` re-bakes and fails on any difference.
 
 ## Scene lifecycle
 

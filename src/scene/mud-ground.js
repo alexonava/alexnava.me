@@ -57,7 +57,7 @@ export const SLATE_WET = Object.freeze({
   indirect: Object.freeze([0.18, 0.6]), // the soil's own sky reflection kept: dry, wet
   // Up close damp soil reads matte (the owner's note of 2026-10-04: "too
   // glossy"): fully within near[0] of the lens and gone by near[1], the soil
-  // (never the pond, puddles or streams) eases to `roughness`, keeps `film`
+  // (never the river, puddles or streams) eases to `roughness`, keeps `film`
   // of its water film, `specular` of its direct highlights and `sky` of its
   // own sky reflection.
   close: Object.freeze({
@@ -165,26 +165,17 @@ export const SLATE_FAR = Object.freeze({
   near: Object.freeze([12, 40]),
 });
 
-// The small pond in front of the lantern, where its reflection lands in both
-// lantern shots (SLATE_PUDDLES.zones[0] is its footprint, SLATE_POND its
-// basin), and moonlit puddles along the tree's drip line and in Portrait's
-// right foreground: zone anchors
-// and angles as estatePoint() takes them, radius in units, stretched along a
-// world angle. Water fills the detail map's low texels first (fill: the zone's
-// level over them), so edges follow the cracks. Puddles are glassy, darker and
-// calmer, catch the existing moon and lantern lights, and mirror the night sky
-// (the film's environment, SLATE_WATER); zenith is the sky the lantern
-// puddle's mirror falls back to without it.
+// Moonlit puddles along the tree's drip line and in Portrait's right
+// foreground: zone anchors and angles as estatePoint() takes them, radius in
+// units. Water fills the detail map's low texels first (fill: the zone's
+// level over them), so edges follow the cracks. Puddles and the river
+// (SLATE_RIVER) are glassy, darker and calmer, catch the existing moon and
+// lantern lights, and mirror the night sky (the film's environment,
+// SLATE_WATER); the river, where the lantern's image lands, keeps its own
+// roughness and highlight (lantern), and zenith is the sky its mirror falls
+// back to without the environment.
 export const SLATE_PUDDLES = Object.freeze({
   zones: Object.freeze([
-    Object.freeze({
-      anchor: "lantern",
-      deg: -115,
-      dist: 2.1,
-      radius: 2.2,
-      stretch: 0.47,
-      along: -115,
-    }),
     Object.freeze({ anchor: "tree", deg: 185, dist: 8.0, radius: 1.6 }),
     Object.freeze({ anchor: "tree", deg: 75, dist: 9.0, radius: 2.5 }),
     Object.freeze({ anchor: "tree", deg: -100, dist: 16.0, radius: 1.5 }),
@@ -198,19 +189,16 @@ export const SLATE_PUDDLES = Object.freeze({
   zenith: Object.freeze([0.07, 0.085, 0.13]),
 });
 
-// The pond (SLATE_PUDDLES.zones[0]): a shallow basin whose shore is the
-// footprint's ellipse (2.2 across the lantern shots' view, 1.03 along it),
-// wobbled by three and five lobes (wobble) so it never reads as a drawn
-// ellipse. Its water lies `level` below the lantern's foot; the floor falls to
-// `depth` below the water at its centre (a parabola in the footprint's
-// normalised radius) and the bank rises toward `rise` above it, smoothly from
-// the shore, until it meets the ground (terrain-build.js carves it, within
-// reach[1] radii; the lantern's footing stays level). The shader finds the
-// water from the same shape: its level is the depth times `shore` (the
-// puddles' level units), the detail map's texels moving the shore a little
-// (`texel`), and it is no zone beyond reach[0] to reach[1] radii.
-export const SLATE_POND = Object.freeze({
-  wobble: Object.freeze([0.08, 0.05]),
+// The river's bed and banks (SLATE_RIVER), across it: its water lies `level`
+// below the lantern's foot; the bed falls to `depth` below the water down its
+// middle (a parabola in the normalised radius) and the bank rises toward
+// `rise` above it, smoothly from the shore, until it meets the ground
+// (terrain-build.js carves it within reach[1] radii, inside the fine grid; the
+// lantern's footing stays level). The shader finds the water from the same
+// shape: its level is the depth times `shore` (the puddles' level units), the
+// detail map's texels moving the shore a little (`texel`), and it is no water
+// beyond reach[0] to reach[1] radii.
+export const SLATE_RIVER_BED = Object.freeze({
   depth: 0.18,
   rise: 0.15,
   level: -0.04,
@@ -219,7 +207,7 @@ export const SLATE_POND = Object.freeze({
   reach: Object.freeze([1.25, 1.55]),
 });
 // Rain streams: thin trickles that run off the roots between them and into the
-// pond, each a polyline of [dx, dz] offsets from the lantern's foot, `width`
+// river, each a polyline of [dx, dz] offsets from the lantern's foot, `width`
 // units wide at its head and its mouth. They meander by a noise (`meander`
 // units at `wobble` cycles per unit) and fill like the puddles, in the detail
 // map's low texels first (`fill` times the puddles' level), so they follow
@@ -232,18 +220,21 @@ export const SLATE_STREAMS = Object.freeze({
       [2.28, -1.06],
       [1.08, -1.56],
       [0.08, -1.86],
+      [-0.3, -2.85],
     ]),
     Object.freeze([
       [2.28, 1.24],
       [1.38, 0.64],
       [0.98, -0.36],
       [0.1, -1.7],
+      [-0.25, -2.8],
     ]),
     Object.freeze([
       [4.48, -2.36],
       [3.08, -1.96],
       [1.68, -2.06],
       [0.48, -2.06],
+      [0.15, -3.05],
     ]),
   ]),
   width: Object.freeze([0.14, 0.34]),
@@ -251,9 +242,99 @@ export const SLATE_STREAMS = Object.freeze({
   wobble: 1.6,
   fill: 1.25,
 });
-// The pond's height above its water at normalised radius r (1 on the shore).
-export function pondShape(r) {
-  const { depth, rise } = SLATE_POND;
+// The river past the lantern (the owner's pick of 2026-10-10: a broad, slow
+// river, 4 units wide): it comes in from the plain to the west, runs about
+// 4.3 units in front of the lantern on the lantern shots' side, and bends away
+// south toward their lens, clear of the roots, the rocks and the puddles. Its
+// course is a smooth centreline through `path` ([dx, dz] offsets from the
+// lantern's foot, upstream first), sampled every `step` units; its half-width
+// is `width` (the normalised radius is 1 on its shore), wobbled along its
+// length (`wobble`) so its banks never run parallel. Its bed and banks are
+// SLATE_RIVER_BED, and its water runs downstream at `flow` units a second.
+export const SLATE_RIVER = Object.freeze({
+  path: Object.freeze(
+    [
+      [-21, 0.4],
+      [-13, -0.9],
+      [-8.6, -3.1],
+      [-4.4, -3.8],
+      [-1.9, -3.9],
+      [-0.6, -5.4],
+      [-1.5, -7.8],
+      [-3.5, -10.2],
+      [-5.1, -12.4],
+      [-6.7, -15.8],
+      [-7.1, -21],
+    ].map((p) => Object.freeze(p)),
+  ),
+  step: 0.9,
+  width: 2,
+  wobble: Object.freeze([0.08, 0.05]),
+  flow: 0.25,
+});
+// The river's centreline, sampled (Catmull-Rom through `path`): world [x, z]
+// points and the distance along the river at each.
+export function riverLine({ path, step } = SLATE_RIVER) {
+  const { x: lx, z: lz } = estateLantern(),
+    p = path.map(([dx, dz]) => [lx + dx, lz + dz]),
+    at = (i) => p[Math.max(0, Math.min(p.length - 1, i))],
+    points = [];
+  for (let i = 0; i + 1 < p.length; i++) {
+    const [a, b, c, d] = [at(i - 1), at(i), at(i + 1), at(i + 2)],
+      pieces = Math.max(1, Math.ceil(Math.hypot(c[0] - b[0], c[1] - b[1]) / step));
+    for (let k = 0; k < pieces; k++) {
+      const t = k / pieces,
+        t2 = t * t,
+        t3 = t2 * t,
+        f = (q) =>
+          0.5 *
+          (2 * b[q] +
+            (c[q] - a[q]) * t +
+            (2 * a[q] - 5 * b[q] + 4 * c[q] - d[q]) * t2 +
+            (3 * b[q] - a[q] - 3 * c[q] + d[q]) * t3);
+      points.push([f(0), f(1)]);
+    }
+  }
+  points.push(p.at(-1));
+  let s = 0;
+  return points.map(([x, z], i) => {
+    if (i) s += Math.hypot(x - points[i - 1][0], z - points[i - 1][1]);
+    return Object.freeze([+x.toFixed(3), +z.toFixed(3), +s.toFixed(3)]);
+  });
+}
+const RIVER_LINE = riverLine();
+// A world point's place on the river: its distance from the centreline (d),
+// how far downstream (s), which bank (side, +1 left of the flow) and the flow's
+// direction there; r is the normalised radius (1 on its wobbled shore).
+export function riverAt(x, z, line = RIVER_LINE, river = SLATE_RIVER) {
+  let best = { d: Infinity };
+  for (let k = 1; k < line.length; k++) {
+    const [ax, az, s0] = line[k - 1],
+      [bx, bz] = line[k],
+      ex = bx - ax,
+      ez = bz - az,
+      len = Math.hypot(ex, ez),
+      h = Math.min(1, Math.max(0, ((x - ax) * ex + (z - az) * ez) / (len * len))),
+      d = Math.hypot(x - ax - ex * h, z - az - ez * h);
+    if (d < best.d)
+      best = {
+        d,
+        s: s0 + h * len,
+        side: Math.sign(ex * (z - az) - ez * (x - ax)) || 1,
+        dx: ex / len,
+        dz: ez / len,
+      };
+  }
+  const { width, wobble } = river;
+  best.r =
+    best.d /
+    (width *
+      (1 + wobble[0] * Math.sin(0.9 * best.s + 1.3) + wobble[1] * Math.sin(2.3 * best.s + 0.4)));
+  return best;
+}
+// The river's bed and banks above its water at normalised radius r (1 on the shore).
+export function riverBed(r) {
+  const { depth, rise } = SLATE_RIVER_BED;
   return r < 1 ? -depth * (1 - r * r) : rise * (1 - Math.exp((-(r - 1) * 2 * depth) / rise));
 }
 
@@ -323,7 +404,7 @@ export const SLATE_LIGHT = Object.freeze({
 // end the wet plain's moon glare in a hard wall beside the name. Half the
 // screen's smaller side, the clouds' reach (estate-sky.js CLOUD_RESHAPE.text),
 // lets the glare fade out along the plain; the small About label keeps a fifth,
-// so on phones the pond's image of the lantern above it stays bright.
+// so on phones the river's image of the lantern above it stays bright.
 export const SLATE_WATER = Object.freeze({
   f0: 0.02,
   text: Object.freeze([0.3, 0.035, 0.5, 0.2]),
@@ -585,15 +666,9 @@ const PUDDLE_ZONES_GLSL = SLATE_PUDDLES.zones.map(
     return `1.-smoothstep(.5,1.,length(${local})/${glslNumber(radius)})`;
   },
 );
-// The drip-line and Portrait puddles' zones; the pond (zones[0]) takes its own
-// level and mask from its shape (SLATE_POND).
-const PUDDLE_GLSL = PUDDLE_ZONES_GLSL.slice(1).reduce((all, zone) => `max(${all},${zone})`);
-const POND_ZONE = SLATE_PUDDLES.zones[0],
-  POND_CENTRE = glslPoint(estatePoint(POND_ZONE.anchor, POND_ZONE.deg, POND_ZONE.dist)),
-  POND_C = +Math.cos((POND_ZONE.along * Math.PI) / 180).toFixed(4),
-  POND_S = +Math.sin((POND_ZONE.along * Math.PI) / 180).toFixed(4);
-// slatePondR(): the normalised radius in the pond's footprint, 1 on its
-// wobbled shore; slatePondShape(): its height above the water there.
+// The drip-line and Portrait puddles' zones; the river takes its own level
+// and mask from its shape (SLATE_RIVER_BED).
+const PUDDLE_GLSL = PUDDLE_ZONES_GLSL.reduce((all, zone) => `max(${all},${zone})`);
 // The streams' weight at a world point: 1 within their middle, easing to 0
 // at their edge (SLATE_STREAMS), times their fill.
 const LANTERN_AT = estateLantern();
@@ -616,10 +691,47 @@ const STREAM_GLSL = (() => {
 float slateStreams(vec2 p){p+=(vec2(slateNoise(p*${glslNumber(wobble)}),slateNoise(p*${glslNumber(wobble)}+7.3))-.5)*${glslNumber(meander * 2)};vec2 q;float w=0.;${body}return w*${glslNumber(fill)};}
 `;
 })();
-const POND_GLSL = `float slatePondR(vec2 p){vec2 q=mat2(${[POND_C, -POND_S, POND_S, POND_C].map(glslNumber)})*(p-${POND_CENTRE})/vec2(${glslNumber(POND_ZONE.stretch)},1.)/${glslNumber(POND_ZONE.radius)};float a=atan(q.y,q.x);return length(q)/(1.+${glslNumber(SLATE_POND.wobble[0])}*sin(3.*a+1.3)+${glslNumber(SLATE_POND.wobble[1])}*sin(5.*a+.4));}
-float slatePondShape(float r){return r<1.?${glslNumber(-SLATE_POND.depth)}*(1.-r*r):${glslNumber(SLATE_POND.rise)}*(1.-exp(-(r-1.)*${glslNumber(+((2 * SLATE_POND.depth) / SLATE_POND.rise).toFixed(4))}));}
+// slateRiver(p, dir): the river at a world point, as riverAt() finds it:
+// (normalised radius, distance downstream, signed distance across, distance),
+// and the flow's direction in dir. Its segments go in runs of RIVER_RUN, each
+// tried only within its box grown by the bank's widest reach (beyond that the
+// point is no river), so a point tries about one run; outside them all, the
+// radius is about 1e9.
+const RIVER_RUN = 8;
+const RIVER_GLSL = (() => {
+  const { width, wobble } = SLATE_RIVER,
+    pad = width * SLATE_RIVER_BED.reach[1] * (1 + wobble[0] + wobble[1]) + 0.5;
+  const n = (v) => glslNumber(+v.toFixed(4));
+  const segment = (k) => {
+    const [ax, az, s0] = RIVER_LINE[k],
+      [bx, bz] = RIVER_LINE[k + 1],
+      ex = bx - ax,
+      ez = bz - az,
+      len = Math.hypot(ex, ez);
+    return `pa=p-vec2(${n(ax)},${n(az)});ba=vec2(${n(ex)},${n(ez)});h=clamp(dot(pa,ba)*${n(1 / (len * len))},0.,1.);d=length(pa-ba*h);if(d<b){b=d;s=${n(s0)}+h*${n(len)};dir=ba*${n(1 / len)};c=pa.x*ba.y-pa.y*ba.x<0.?1.:-1.;}`;
+  };
+  const runs = [];
+  for (let k = 0; k + 1 < RIVER_LINE.length; k += RIVER_RUN) {
+    const ends = RIVER_LINE.slice(k, Math.min(k + RIVER_RUN, RIVER_LINE.length - 1) + 1),
+      xs = ends.map(([x]) => x),
+      zs = ends.map(([, z]) => z);
+    runs.push(
+      `if(p.x>${n(Math.min(...xs) - pad)}&&p.x<${n(Math.max(...xs) + pad)}&&p.y>${n(Math.min(...zs) - pad)}&&p.y<${n(Math.max(...zs) + pad)}){\n${ends
+        .slice(1)
+        .map((_, j) => segment(k + j))
+        .join("\n")}}`,
+    );
+  }
+  return `vec4 slateRiver(vec2 p,out vec2 dir){dir=vec2(1.,0.);
+vec2 pa,ba;float h,d,b=1e9,s=0.,c=1.;
+${runs.join("\n")}
+return vec4(b/(${n(width)}*(1.+${n(wobble[0])}*sin(.9*s+1.3)+${n(wobble[1])}*sin(2.3*s+.4))),s,c*b,b);}
 `;
-const POND_LEVEL = `mix(-slatePondShape(slatePondR(vMudWorld.xz))*${glslNumber(SLATE_POND.shore)}-(slateH-.5)*${glslNumber(SLATE_POND.texel)},-1.,smoothstep(${SLATE_POND.reach.map(glslNumber)},slatePondR(vMudWorld.xz)))`;
+})();
+const RIVER_BED_GLSL = `${RIVER_GLSL}float slateRiverBed(float r){return r<1.?${glslNumber(-SLATE_RIVER_BED.depth)}*(1.-r*r):${glslNumber(SLATE_RIVER_BED.rise)}*(1.-exp(-(r-1.)*${glslNumber(+((2 * SLATE_RIVER_BED.depth) / SLATE_RIVER_BED.rise).toFixed(4))}));}
+`;
+// The river's water level (slateRiverR is its normalised radius, found once).
+const RIVER_LEVEL = `mix(-slateRiverBed(slateRiverR)*${glslNumber(SLATE_RIVER_BED.shore)}-(slateH-.5)*${glslNumber(SLATE_RIVER_BED.texel)},-1.,smoothstep(${SLATE_RIVER_BED.reach.map(glslNumber)},slateRiverR))`;
 const unitGlsl = (values) => {
   const length = Math.hypot(...values);
   return glslVec(values.map((value) => +(value / length).toFixed(4)));
@@ -853,7 +965,7 @@ uniform vec3 babelFlashKey;
 uniform vec4 babelFlash, babelFlashLight, babelFlashSky;
 #define SLATE_TEXT_KNEE ${glslNumber(WATER.text[1])}
 uniform vec4 slateText, slateAbout;
-${authored ? "uniform sampler2D slateDetail;\n" : ""}${close ? "uniform sampler2D slateGrit, slateRelief;\n" : ""}${POND_GLSL}float slateHash(vec2 p){vec3 q=fract(p.xyx*.1031);q+=dot(q,q.yzx+33.33);return fract((q.x+q.y)*q.z);}
+${authored ? "uniform sampler2D slateDetail;\n" : ""}${close ? "uniform sampler2D slateGrit, slateRelief;\n" : ""}${RIVER_BED_GLSL}float slateHash(vec2 p){vec3 q=fract(p.xyx*.1031);q+=dot(q,q.yzx+33.33);return fract((q.x+q.y)*q.z);}
 float slateNoise(vec2 p){vec2 i=floor(p),f=fract(p);f*=f*(3.-2.*f);return mix(mix(slateHash(i),slateHash(i+vec2(1,0)),f.x),mix(slateHash(i+vec2(0,1)),slateHash(i+1.),f.x),f.y);}
 ${STREAM_GLSL}
 ${SLATE_TEXT_GLSL}${LOOK_GLSL}${mistOn ? `uniform mat4 projectionMatrix;\n${MIST_PARS}` : ""}`
@@ -910,8 +1022,11 @@ ${SLATE_TEXT_GLSL}${LOOK_GLSL}${mistOn ? `uniform mat4 projectionMatrix;\n${MIST
       float slateTree = length(vMudWorld.xz-${TREE_GLSL});
       float slateDry = footingDry;
       float slateWet = clamp(max(slateHollow, slateCrack*${glslNumber(SLATE_WET.crackWeight)}) + (1.0-smoothstep(${SLATE_WET.halo.map(glslNumber)}, slateTree))*${glslNumber(SLATE_WET.haloWeight)}, 0.0, 1.0)*(1.0-slateDry);
-      float slatePuddle = smoothstep(-.04, .04, max(max(${PUDDLE_GLSL}, slateStreams(vMudWorld.xz))*(${glslNumber(SLATE_PUDDLES.fill)}+.4*slateNoise(vMudWorld.xz*.9))-slateH, ${POND_LEVEL}))*(1.0-slateDry);
-      float slateLanternPuddle = slatePuddle*(1.0-smoothstep(1.0, 1.4, slatePondR(vMudWorld.xz)));
+      vec2 slateRiverDir;
+      vec4 slateRiverQ = slateRiver(vMudWorld.xz, slateRiverDir);
+      float slateRiverR = slateRiverQ.x;
+      float slatePuddle = smoothstep(-.04, .04, max(max(${PUDDLE_GLSL}, slateStreams(vMudWorld.xz))*(${glslNumber(SLATE_PUDDLES.fill)}+.4*slateNoise(vMudWorld.xz*.9))-slateH, ${RIVER_LEVEL}))*(1.0-slateDry);
+      float slateLanternPuddle = slatePuddle*(1.0-smoothstep(1.0, 1.4, slateRiverR));
       slateWet = max(slateWet, slatePuddle);
       roughnessFactor = mix(mix(roughnessFactor, ${glslNumber(SLATE_WET.roughness)}, slateWet*${glslNumber(SLATE_WET.roughnessWeight)}), ${glslNumber(SLATE_PUDDLES.roughness)}, slatePuddle);
       roughnessFactor = mix(roughnessFactor, ${glslNumber(SLATE_PUDDLES.lantern.roughness)}, slateLanternPuddle);
