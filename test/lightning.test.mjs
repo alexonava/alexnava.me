@@ -40,7 +40,10 @@ function busiestSecond(peaks) {
 test("the storm's lightning is occasional, bold and off nothing but a debug override", () => {
   assert.equal(LIGHTNING.enabled, true);
   assert.deepEqual([...LIGHTNING.forceAt], [], "captures force flashes; the site never does");
-  assert.ok(LIGHTNING.interval[0] >= 10 && LIGHTNING.interval[1] <= 30, "an event every 10-30 s");
+  assert.ok(
+    LIGHTNING.interval[0] >= 3 && LIGHTNING.interval[1] <= 15,
+    "an event every 4-12 s (the owner asked for more, 2026-10-09)",
+  );
   assert.ok(LIGHTNING.pulses[0] >= 1 && LIGHTNING.pulses[1] <= 3, "1-3 pulses");
   assert.equal(LIGHTNING.perSecond, 3, "WCAG 2.3.1: never more than three flashes a second");
   assert.ok(
@@ -63,7 +66,8 @@ test("the schedule is seeded, so every capture of a phase is the same", () => {
   const a = createLightningSchedule(LIGHTNING).until(300);
   const b = createLightningSchedule(LIGHTNING).until(300);
   assert.deepEqual(a, b);
-  assert.ok(a.length >= 300 / 30 - 1 && a.length <= 300 / 10 + 1, `${a.length} events in 300 s`);
+  const [near, far] = LIGHTNING.interval;
+  assert.ok(a.length >= 300 / far - 1 && a.length <= 300 / near + 1, `${a.length} events in 300 s`);
   assert.equal(a[0].start, LIGHTNING.first);
   for (let i = 1; i < a.length; i++) {
     const apart = a[i].start - a[i - 1].start;
