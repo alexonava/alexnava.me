@@ -50,8 +50,8 @@ test("the storm's lightning is occasional, bold and off nothing but a debug over
   assert.equal(LIGHTNING.enabled, true);
   assert.deepEqual([...LIGHTNING.forceAt], [], "captures force flashes; the site never does");
   assert.ok(
-    LIGHTNING.interval[0] >= 3 && LIGHTNING.interval[1] <= 15,
-    "an event every 4-12 s (the owner asked for more, 2026-10-09)",
+    LIGHTNING.interval[0] >= 2 && LIGHTNING.interval[1] <= 8,
+    "an event every 2-6 s (the owner asked for more, twice, 2026-10-09)",
   );
   assert.ok(LIGHTNING.pulses[0] >= 1 && LIGHTNING.pulses[1] <= 3, "1-3 pulses");
   assert.equal(LIGHTNING.perSecond, 3, "WCAG 2.3.1: never more than three flashes a second");
