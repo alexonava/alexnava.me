@@ -23,7 +23,7 @@ export { estatePathDistance };
 // acceptance there, `dry` on open slate) and never stand in the water.
 export const BLADE_VERTICES = 8;
 export const GROWTH = Object.freeze({
-  tufts: 540,
+  tufts: 580,
   balanced: 0.4,
   blades: Object.freeze([10, 18]),
   size: Object.freeze([0.2, 0.52]),
