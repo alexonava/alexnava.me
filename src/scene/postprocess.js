@@ -145,7 +145,7 @@ export const LENS_FX = Object.freeze({
   heat: Object.freeze({
     on: 1,
     star: Object.freeze({
-      amount: 0.028,
+      amount: 0.01,
       ring: Object.freeze([0.92, 1.2, 1.9, 3]),
       scale: 2.6,
       rise: 0.45,
@@ -167,22 +167,18 @@ export const LENS_FX = Object.freeze({
   // 1600x900 frame's corners (scaled with the frame's diagonal), and `star` px
   // apart across the star's fire edge.
   aberration: Object.freeze({ on: 1, edge: 1.2, star: 0.6 }),
-  // Flare, only while the star is in frame: a soft shine about it (`shine` at
+  // Flare, only while the star is in frame: a faint shine about it (`shine` at
   // the limb, falling off over `shineReach` radii, `shineDisc` of it over the
-  // disc) in `color`, and ghosts along the line from the star through the
+  // disc) in `color`, and any ghosts along the line from the star through the
   // frame's centre: [t along it (1 at the centre), radius in frame heights,
-  // r, g, b, strength].
+  // r, g, b, strength] (none since the sun was calmed, 2026-10-10).
   flare: Object.freeze({
     on: 1,
-    shine: 0.1,
+    shine: 0.03,
     shineReach: 1.3,
     shineDisc: 0.25,
     color: Object.freeze([1, 0.6, 0.3]),
-    ghosts: Object.freeze([
-      Object.freeze([0.32, 0.011, 1, 0.68, 0.38, 0.06]),
-      Object.freeze([0.62, 0.02, 0.36, 0.62, 0.56, 0.04]),
-      Object.freeze([1.2, 0.034, 0.5, 0.46, 0.8, 0.04]),
-    ]),
+    ghosts: Object.freeze([]),
   }),
   // None of it reaches the text: it eases out over `text[0]` of the screen's
   // smaller side about the name and intro, and `text[1]` about About.
@@ -309,9 +305,7 @@ vec3 lensFlare(vec2 v, vec4 star, vec4 keep) {
   if (shown <= 0.0) return vec3(0.0);
   float r = length((v - star.xy) * aspect) / star.z;
   vec3 c = ${lensVec3(LENS_FLARE.color)} * (${lensNumber(LENS_FLARE.shine)} * exp(-max(r - 1.0, 0.0) / ${lensNumber(LENS_FLARE.shineReach)}) * mix(${lensNumber(LENS_FLARE.shineDisc)}, 1.0, smoothstep(0.7, 1.0, r)));
-  vec2 g;
-  float e;
-${LENS_FLARE.ghosts
+${LENS_FLARE.ghosts.length ? "  vec2 g;\n  float e;\n" : ""}${LENS_FLARE.ghosts
   .map(
     ([t, size, red, green, blue, strength]) => `  g = star.xy + (0.5 - star.xy) * ${lensNumber(t)};
   e = length((v - g) * aspect) / ${lensNumber(size)};

@@ -8,7 +8,7 @@ import { applyFilmGrade, materialFor, sourceMesh } from "./architecture.js";
 import { DEPTH_LAYER, stampDepthLayer } from "./depth-layers.js";
 import { DIRECTED_SHOTS } from "./directed-shots.js";
 import { ESTATE, estateLantern, estatePathDistance, estatePoint } from "./estate-layout.js";
-import { SLATE_CONTACTS } from "./mud-ground.js";
+import { SLATE_CONTACTS, SLATE_STREAMS } from "./mud-ground.js";
 import { createDeferredQualityStep } from "./runtime.js";
 
 // The film's scattered rocks: the two authored Meshy stones, placed from a table
@@ -53,16 +53,24 @@ export const ROCK_CLUSTERS = Object.freeze(
 export const PEBBLE_UNDER = 2;
 
 // Where growth must not stand (estate-ground-detail.js): each cluster rock's
-// widest stretched footprint, and for a tall rock the ring its pebble may take.
+// widest stretched footprint, and for a tall rock the ring its pebble may take;
+// and each of the stream's stones (SLATE_STREAMS.stones).
 export function rockKeepouts() {
-  return ROCK_CLUSTERS.map(([, anchor, deg, dist, type, height]) => {
-    const [fx, fz] = ROCK_TYPES[type].footprint,
-      radius = 0.5 * Math.hypot(fx * 1.25, fz) * height;
-    return {
-      ...estatePoint(anchor, deg, dist),
-      radius: height >= PEBBLE_UNDER ? 2.6 * radius + 0.3 : radius,
-    };
-  });
+  const lantern = estateLantern();
+  return [
+    ...ROCK_CLUSTERS.map(([, anchor, deg, dist, type, height]) => {
+      const [fx, fz] = ROCK_TYPES[type].footprint,
+        radius = 0.5 * Math.hypot(fx * 1.25, fz) * height;
+      return {
+        ...estatePoint(anchor, deg, dist),
+        radius: height >= PEBBLE_UNDER ? 2.6 * radius + 0.3 : radius,
+      };
+    }),
+    ...SLATE_STREAMS.stones.list.map(([dx, dz, height, type]) => {
+      const [fx, fz] = ROCK_TYPES[type].footprint;
+      return { x: lantern.x + dx, z: lantern.z + dz, radius: 0.5 * Math.hypot(fx, fz) * height };
+    }),
+  ];
 }
 
 // The ground's contact darkening (mud-ground.js slateContacts): the tree's
@@ -94,6 +102,7 @@ export const ROCK_LIB = Object.freeze({
   ROCK_TYPES,
   ROCK_CLUSTERS,
   PEBBLE_UNDER,
+  STREAM_STONES: SLATE_STREAMS.stones,
   ESTATE,
   DIRECTED_SHOTS,
   DEPTH_LAYER,

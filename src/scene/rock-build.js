@@ -98,6 +98,27 @@ export function rockFootprints(lib, seed = 91357) {
       }
     }
   }
+  // The creek's stones, as authored (no draws, so the rest keep their places).
+  const stones = lib.STREAM_STONES,
+    lantern = lib.estateLantern();
+  stones?.list.forEach(([dx, dz, height, type, yaw], i) => {
+    const [fx, fz] = ROCK_TYPES[type].footprint;
+    rocks.push({
+      id: `S${i + 1}`,
+      type,
+      height,
+      x: lantern.x + dx,
+      z: lantern.z + dz,
+      stream: true,
+      yaw: (yaw * Math.PI) / 180,
+      stretch: 1,
+      lift: 1,
+      tone: stones.tone,
+      sink: stones.sink,
+      radius: 0.5 * Math.hypot(fx, fz) * height,
+      half: 0.25 * (fx + fz) * height,
+    });
+  });
   return rocks;
 }
 
