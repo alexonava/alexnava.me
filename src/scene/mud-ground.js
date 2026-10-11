@@ -429,11 +429,17 @@ export function streamLines({ courses, step, bed } = SLATE_STREAMS) {
     });
   });
 }
-// The river past the lantern (the owner's pick of 2026-10-10: a broad, slow
-// river, 4 units wide): it comes in from the plain to the west, runs about
-// 4.3 units in front of the lantern on the lantern shots' side, and bends away
-// south toward their lens, clear of the roots, the rocks and the puddles. Its
-// course is a smooth centreline through `path` ([dx, dz] offsets from the
+// The river through the set (the owner's picks of 2026-10-10, a broad, slow
+// river past the lantern, and 2026-10-11, "much more water", carried through
+// the set across Portrait's foreground and into a lake behind the lookout): it
+// comes off the north-east plain behind the tree, rounds a meander north-west
+// of the lantern, runs 4 units wide about 4.3 units in front of the lantern on
+// the lantern shots' side and bends away south toward their lens, as before,
+// clear of the roots, the rocks and the puddles; then it crosses Portrait's
+// foreground, rounds past its lens, passes well south of the lookout (its
+// water 10 units beyond the lookout's grass) and widens across The watch's
+// plain into a lake 60 units across, before running off the plain toward the
+// summit. Its course is a smooth centreline through `path` ([dx, dz] offsets from the
 // lantern's foot, upstream first), sampled every `step` units; its half-width
 // is `width` (the normalised radius is 1 on its shore), wobbled along its
 // length (`wobble`) so its banks never run parallel. A point may carry its own
@@ -448,7 +454,18 @@ export function streamLines({ courses, step, bed } = SLATE_STREAMS) {
 export const SLATE_RIVER = Object.freeze({
   path: Object.freeze(
     [
-      [-21, 0.4],
+      [99.1, 171.6, 6, 12],
+      [73.1, 118.6, 5.5, 12],
+      [51.1, 78.6, 4.6, 8],
+      [33.1, 52.6, 3.9, 5],
+      [17.1, 36.6, 3.3, 3],
+      [1.1, 30.6, 2.9, 3],
+      [-14.9, 32.6, 2.8, 3],
+      [-29.9, 30.6, 2.7, 3],
+      [-41.9, 23.6, 2.5, 2.5],
+      [-43.9, 14.6, 2.3, 2],
+      [-36.9, 9.1, 2.1, 1.5],
+      [-21, 0.4, 2, 0.9],
       [-13, -0.9],
       [-8.6, -3.1],
       [-4.4, -3.8],
@@ -458,15 +475,40 @@ export const SLATE_RIVER = Object.freeze({
       [-3.5, -10.2],
       [-5.1, -12.4],
       [-6.7, -15.8],
-      [-7.1, -21],
+      [-7.1, -21, 2, 3],
+      [-6.9, -26.9, 2.4, 2],
+      [-3.4, -30.8, 2.7, 3],
+      [4.1, -31.4, 3.2, 3],
+      [12.1, -29.2, 3.6, 4],
+      [23.1, -28.4, 4, 4],
+      [35.1, -32.4, 4.4, 5],
+      [45.1, -43.4, 4.8, 6],
+      [48.1, -61.4, 5.2, 8],
+      [43.1, -83.4, 5.6, 12],
+      [25.1, -101.4, 6, 12],
+      [-4.9, -111.4, 6.6, 12],
+      [-38.9, -109.4, 7.2, 12],
+      [-70.9, -103.4, 7.8, 12],
+      [-100.9, -97.4, 8.4, 12],
+      [-134.9, -89.4, 9.2, 8],
+      [-147.9, -81.4, 14, 8],
+      [-155.9, -67.4, 24, 7],
+      [-159.9, -49.4, 30, 7],
+      [-161.9, -29.4, 27, 7],
+      [-165.9, -11.4, 18, 8],
+      [-173.9, 6.6, 11, 10],
+      [-186.9, 24.6, 10, 12],
+      [-205.9, 44.6, 10, 12],
+      [-226.9, 66.6, 10, 12],
+      [-250.9, 90.6, 10, 12],
     ].map((p) => Object.freeze(p)),
   ),
   step: 0.9,
   width: 2,
   wobble: Object.freeze([0.08, 0.05]),
   flow: 0.25,
-  datum: Object.freeze([0, 0]),
-  valley: null,
+  datum: Object.freeze([12, 8.109509849439533]),
+  valley: Object.freeze({ floor: 1.6, shoulder: 30 }),
 });
 // The river's centreline, sampled (Catmull-Rom through `path`): world [x, z]
 // points, the distance along the river at each, its half-width there and its
@@ -504,7 +546,7 @@ const RIVER_LINE = riverLine();
 // units, each with its box and its widest half-width: a point measures only
 // the runs that could hold its nearest segment.
 const RIVER_RUN = 8,
-  RIVER_RUN_LENGTH = 24;
+  RIVER_RUN_LENGTH = 40;
 const courseRuns = (() => {
   const known = new WeakMap();
   return (line) => {

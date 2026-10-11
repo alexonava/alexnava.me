@@ -622,7 +622,18 @@ export const RIVER_BED = Object.freeze({
 export const RIVER = Object.freeze({
   path: Object.freeze(
     [
-      [-21, 0.4],
+      [99.1, 171.6, 6, 12],
+      [73.1, 118.6, 5.5, 12],
+      [51.1, 78.6, 4.6, 8],
+      [33.1, 52.6, 3.9, 5],
+      [17.1, 36.6, 3.3, 3],
+      [1.1, 30.6, 2.9, 3],
+      [-14.9, 32.6, 2.8, 3],
+      [-29.9, 30.6, 2.7, 3],
+      [-41.9, 23.6, 2.5, 2.5],
+      [-43.9, 14.6, 2.3, 2],
+      [-36.9, 9.1, 2.1, 1.5],
+      [-21, 0.4, 2, 0.9],
       [-13, -0.9],
       [-8.6, -3.1],
       [-4.4, -3.8],
@@ -632,15 +643,40 @@ export const RIVER = Object.freeze({
       [-3.5, -10.2],
       [-5.1, -12.4],
       [-6.7, -15.8],
-      [-7.1, -21],
+      [-7.1, -21, 2, 3],
+      [-6.9, -26.9, 2.4, 2],
+      [-3.4, -30.8, 2.7, 3],
+      [4.1, -31.4, 3.2, 3],
+      [12.1, -29.2, 3.6, 4],
+      [23.1, -28.4, 4, 4],
+      [35.1, -32.4, 4.4, 5],
+      [45.1, -43.4, 4.8, 6],
+      [48.1, -61.4, 5.2, 8],
+      [43.1, -83.4, 5.6, 12],
+      [25.1, -101.4, 6, 12],
+      [-4.9, -111.4, 6.6, 12],
+      [-38.9, -109.4, 7.2, 12],
+      [-70.9, -103.4, 7.8, 12],
+      [-100.9, -97.4, 8.4, 12],
+      [-134.9, -89.4, 9.2, 8],
+      [-147.9, -81.4, 14, 8],
+      [-155.9, -67.4, 24, 7],
+      [-159.9, -49.4, 30, 7],
+      [-161.9, -29.4, 27, 7],
+      [-165.9, -11.4, 18, 8],
+      [-173.9, 6.6, 11, 10],
+      [-186.9, 24.6, 10, 12],
+      [-205.9, 44.6, 10, 12],
+      [-226.9, 66.6, 10, 12],
+      [-250.9, 90.6, 10, 12],
     ].map((p) => Object.freeze(p)),
   ),
   step: 0.9,
   width: 2,
   wobble: Object.freeze([0.08, 0.05]),
   flow: 0.25,
-  datum: Object.freeze([0, 0]),
-  valley: null,
+  datum: Object.freeze([12, 8.109509849439533]),
+  valley: Object.freeze({ floor: 1.6, shoulder: 30 }),
 });
 // Sampled: [x, z, distance along, half-width, the wobble's phase less that
 // distance] (mud-ground.js riverLine()).
@@ -684,7 +720,7 @@ export const RIVER_LINE = (() => {
 // litter tries it thousands of times while the terrain settles, inside the
 // reveal's early window). `from` is the first segment's end.
 const RIVER_SPAN = 8,
-  RIVER_SPAN_LENGTH = 24;
+  RIVER_SPAN_LENGTH = 40;
 export const RIVER_RUNS = (() => {
   const runs = [],
     length = (k) =>
@@ -1597,7 +1633,7 @@ export const PUDDLE_MIRROR = Object.freeze({
   // Where set, the plane eases back to the water's own place from plane[0] to
   // plane[1] units from the lantern: far water lies at the plain's level, not
   // the lantern's, and mirrors no trunk or lantern.
-  plane: null,
+  plane: Object.freeze([14, 28]),
   cloud: 0.22,
   // hill-silhouette.js TERRAIN_HORIZON and SLATE_PUDDLES.zenith (mud-ground.js).
   horizon: Object.freeze([0.062, 0.065, 0.073]),
@@ -1719,7 +1755,7 @@ export const RIVER_RIPPLE = Object.freeze({
   coarse: Object.freeze([0.6, 1.6]),
   fine: Object.freeze([1.8, 4]),
   tilt: Object.freeze([0.018, 0.007]),
-  fade: null,
+  fade: Object.freeze([1.5, 3]),
 });
 // The streams' current (STREAMS.current), on the same octaves' terms.
 const SC = STREAMS.current;
