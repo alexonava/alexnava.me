@@ -27,6 +27,7 @@ import {
   createSlateContacts,
   SLATE_CONTACTS,
   slateCalmFor,
+  streamLines,
 } from "../src/scene/mud-ground.js";
 import {
   createHillSilhouette,
@@ -363,9 +364,20 @@ test("the river's water lies only below its shore, as the terrain carves it, and
       "vec2 slateRiverDir;\n      vec4 slateRiverQ = slateRiver(vMudWorld.xz, slateRiverDir);\n      float slateRiverR = slateRiverQ.x;",
     ),
   );
-  const segments = RIVER_LINE.length - 1;
-  assert.equal(plain.fragment.match(/pa=p-vec2\(/g).length, segments, "every segment once");
-  assert.equal(plain.fragment.match(/if\(p\.x>/g).length, Math.ceil(segments / 8), "runs of 8");
+  // The streams go the same way, one box a course.
+  const segments = RIVER_LINE.length - 1,
+    courses = streamLines(),
+    streamSegments = courses.reduce((sum, { points }) => sum + points.length - 1, 0);
+  assert.equal(
+    plain.fragment.match(/pa=p-vec2\(/g).length,
+    segments + streamSegments,
+    "every segment once",
+  );
+  assert.equal(
+    plain.fragment.match(/if\(p\.x>/g).length,
+    Math.ceil(segments / 8) + courses.length,
+    "runs of 8, a box a course",
+  );
   assert.equal(plain.fragment.match(/slateRiver\(vMudWorld\.xz/g).length, 1, "found once");
   assert.doesNotMatch(plain.fragment, /slateGrit|slateRelief/, "no close soil without its maps");
   assert.ok(!plain.key.includes("+soil"));
@@ -402,8 +414,13 @@ test("the river's water lies only below its shore, as the terrain carves it, and
     : String(SLATE_CLOSE.crumb.height);
   assert.ok(soil.fragment.includes(`slateCH += slateCrumb*${crumbHeight}*slateKW;`));
   assert.doesNotMatch(soil.fragment, /slateKO = fract\(sin/);
-  // The rain streams fill like the puddles, in the detail map's low texels.
-  assert.ok(soil.fragment.includes("float slateStreams(vec2 p)"));
+  // The streams fill like the puddles, in the detail map's low texels, found once a fragment.
+  assert.ok(soil.fragment.includes("vec4 slateStreamAt(vec2 p,out vec2 dir,out float join)"));
+  assert.equal(
+    soil.fragment.match(/slateStreamAt\(vMudWorld\.xz/g).length,
+    1,
+    "streams found once",
+  );
   assert.ok(soil.fragment.includes("max(max("));
 });
 
