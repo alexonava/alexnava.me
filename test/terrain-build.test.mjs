@@ -2790,3 +2790,39 @@ test("the drifting leaves ride the stream on the drips' clock and hold when it h
   }
   leaves.dispose();
 });
+
+test("the water's banks join the scene after the shading's switch, in idle slices, where they cannot show mid-shot", async () => {
+  const clock = frames(),
+    r = linkRig({ revealed: true }),
+    tour = { running: true, transition: { cut: false } };
+  try {
+    let invalidations = 0;
+    settleRoots(r.terrain, r.ground, r.rendering, r.base, () => invalidations++, tour);
+    const banks = () => r.tufts.mesh.getObjectByName("estate-water-banks");
+    // Not before the switch: the rushes are there, the banks are not.
+    assert.ok(r.tufts.mesh.getObjectByName("estate-river-rushes"));
+    assert.equal(banks(), undefined);
+    r.links[0].finish();
+    tour.transition.cut = true;
+    await clock.step(2);
+    assert.equal(r.material.customProgramCacheKey(), "moonlit-slate-v3+root");
+    assert.equal(invalidations, 1);
+    // Built in slices after it, they wait for a cut.
+    tour.transition.cut = false;
+    for (let i = 0; i < 200 && !banks(); i++) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      await clock.step();
+    }
+    assert.equal(banks(), undefined, "never mid-shot");
+    tour.transition.cut = true;
+    await clock.step(2);
+    assert.ok(banks(), "on the cut");
+    for (const name of ["estate-stream-reeds", "estate-drift-leaves"])
+      assert.ok(r.tufts.mesh.getObjectByName(name), name);
+    assert.equal(invalidations, 2, "a still frame redraws with them");
+    r.terrain.dispose();
+    assert.equal(banks(), undefined, "withdrawn with the terrain");
+  } finally {
+    clock.restore();
+  }
+});

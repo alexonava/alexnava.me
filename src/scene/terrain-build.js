@@ -2968,6 +2968,14 @@ export const WATER_BANKS = Object.freeze({
   }),
 });
 export function scatterBanks(surface, groundColor) {
+  const steps = bankSteps(surface, groundColor);
+  for (;;) {
+    const next = steps.next();
+    if (next.done) return next.value;
+  }
+}
+// The same, a few pieces at a time (settleRoots() builds it in idle slices).
+function* bankSteps(surface, groundColor) {
   const B = WATER_BANKS,
     G = B.gravel,
     D = B.debris,
@@ -3081,7 +3089,7 @@ export function scatterBanks(surface, groundColor) {
       [k * (1 + warm), k, k * (1 - warm)],
       (p, q, r, rgb, n) => triangle(p, q, r, rgb, n),
     );
-    placed++;
+    if (++placed % 64 === 0) yield;
   }
   // Leaves and twigs at the waterline, and in the eddy behind each stone.
   const level = groundAt(LANTERN_FOOT.x, LANTERN_FOOT.z, 0) + STREAMS.bed.level + 0.004;
@@ -3105,6 +3113,7 @@ export function scatterBanks(surface, groundColor) {
     if (rootCovered(x, z)) continue;
     debris.push([x, z, false]);
   }
+  yield;
   for (const [sx, sz, eddy] of debris) {
     let x = sx,
       z = sz;
@@ -3351,6 +3360,10 @@ export function settleRoots(
     rushes = null,
     drift = null;
   const extras = [];
+  // The water's banks, built in idle slices once the shading has switched
+  // (commit()), so they never hold its early switch.
+  let buildBanks = () => {},
+    seatBanks = () => {};
   if (growth?.geometry.attributes.position) {
     settleTufts(growth, liftAt);
     litter = new Mesh(
@@ -3365,29 +3378,55 @@ export function settleRoots(
     growth.add(litter);
     rushes = new Mesh(plantRushes(terrainHeight(terrain)), growth.material);
     rushes.name = "estate-river-rushes";
-    // The stream's reeds and the water's banks (gravel, leaves and twigs).
-    const reeds = new Mesh(plantReeds(terrainHeight(terrain)), growth.material),
-      banks = new Mesh(
-        scatterBanks(terrainHeight(terrain), material.color ?? { r: 0.36, g: 0.31, b: 0.28 }),
-        growth.material,
-      );
-    reeds.name = "estate-stream-reeds";
-    banks.name = "estate-water-banks";
-    // The stream's drifting leaves, at the water's height.
-    drift = new Mesh(
-      driftLeaves(terrainHeight(terrain)(LANTERN_FOOT.x, LANTERN_FOOT.z) + STREAMS.bed.level),
-      growth.material,
-    );
-    drift.name = "estate-drift-leaves";
-    extras.push(reeds, banks, drift);
-    for (const mesh of [rushes, reeds, banks, drift]) {
+    const seat = (mesh) => {
       mesh.receiveShadow = true;
       mesh.castShadow = false;
       mesh.matrixAutoUpdate = false;
       mesh.updateMatrix();
       growth.add(mesh);
-    }
+    };
+    seat(rushes);
     growth.userData.retier?.();
+    // The stream's reeds, the water's banks (gravel, leaves and twigs) and its
+    // drifting leaves follow the shading's switch in idle slices, so they never
+    // hold its early switch, and join the scene only where that cannot show
+    // mid-shot (unseen(): in the fade-in, on a cut or while the tour is still).
+    const surface = terrainHeight(terrain),
+      soil = material.color ?? { r: 0.36, g: 0.31, b: 0.28 },
+      landable = unseen(rendering, tour);
+    seatBanks = (built) => {
+      built.forEach(seat);
+      extras.push(...built);
+      drift = built[2];
+      growth.userData.retier?.();
+    };
+    buildBanks = () =>
+      inSlices(
+        (function* () {
+          const reeds = plantReeds(surface);
+          yield;
+          const banks = yield* bankSteps(surface, soil);
+          return [
+            [reeds, "estate-stream-reeds"],
+            [banks, "estate-water-banks"],
+            [
+              driftLeaves(surface(LANTERN_FOOT.x, LANTERN_FOOT.z) + STREAMS.bed.level),
+              "estate-drift-leaves",
+            ],
+          ].map(([geometry, name]) => Object.assign(new Mesh(geometry, growth.material), { name }));
+        })(),
+        null,
+        () => false,
+        () => !live,
+      ).then((built) => {
+        if (!built) return;
+        (function land() {
+          if (!live) return built.forEach((mesh) => mesh.geometry.dispose());
+          if (!landable()) return nextFrame(land);
+          seatBanks(built);
+          invalidate();
+        })();
+      });
   }
   const renderer = rendering.renderer,
     scene = rendering.homeScene,
@@ -3567,6 +3606,8 @@ export function settleRoots(
   function commit() {
     material.userData.slateRoot = shadeSlateGround;
     material.needsUpdate = true;
+    // Then the water's banks are built, in idle slices.
+    if (!clocked) buildBanks();
     // The water first shows now: its drips start in a calm gap.
     if (!clocked) {
       clocked = true;
