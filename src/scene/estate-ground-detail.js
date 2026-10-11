@@ -11,7 +11,7 @@ import { flashHook } from "./film-light.js";
 import { ESTATE, estatePathDistance, estatePoint } from "./estate-layout.js";
 import { GRASS_MOOD } from "./film-light.js";
 import { rockKeepouts } from "./rock-scatter.js";
-import { SLATE_PUDDLES, SLATE_RIVER, SLATE_STREAMS, riverAt, streamLines } from "./mud-ground.js";
+import { SLATE_PUDDLES, SLATE_STREAMS, riverAt, streamLines } from "./mud-ground.js";
 
 // The same winding approach stays clear in every camera and quality tier.
 // Its centerline joins the tower's entrance side to the tree's lantern clearing.
@@ -191,11 +191,12 @@ export function createEstateGroundDetail(groundHeight) {
     const x = anchor.x + Math.cos(angle) * radius;
     const z = anchor.z + Math.sin(angle) * radius;
     // The river in units outside its wobbled shore, the puddles and the streams.
-    const water = Math.min(
-      (riverAt(x, z).r - 1) * SLATE_RIVER.width,
-      ...WATER.map((zone) => outside(zone, x, z)),
-      streamDistance(x, z),
-    );
+    const river = riverAt(x, z),
+      water = Math.min(
+        (river.r - 1) * river.w,
+        ...WATER.map((zone) => outside(zone, x, z)),
+        streamDistance(x, z),
+      );
     const wet = water < 0 ? 0 : Math.exp(-Math.pow(water / GROWTH.bank, 2));
     const degrees = (angle * 180) / Math.PI - 360,
       front = !tree || (degrees >= GROWTH.front[0] && degrees <= GROWTH.front[1]),

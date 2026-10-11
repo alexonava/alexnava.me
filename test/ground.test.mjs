@@ -319,7 +319,9 @@ test("the river's water lies only below its shore, as the terrain carves it, and
     SLATE_CLOSE,
     riverAt,
     riverBed,
+    riverGlsl,
     riverLine,
+    riverRuns,
   } = await import("../src/scene/mud-ground.js");
   const T = await import("../src/scene/terrain-build.js");
   const { RIVER, RIVER_BED, RIVER_LINE, riverBedAt, riverRadius } = T;
@@ -327,16 +329,28 @@ test("the river's water lies only below its shore, as the terrain carves it, and
   // current, the same bed and banks, and the same place on it at every point.
   for (const key of ["depth", "rise", "level", "reach"])
     assert.deepEqual(SLATE_RIVER_BED[key], RIVER_BED[key], key);
-  for (const key of ["path", "step", "width", "wobble", "flow"])
+  for (const key of ["path", "step", "width", "wobble", "flow", "datum", "valley"])
     assert.deepEqual(SLATE_RIVER[key], RIVER[key], key);
   assert.deepEqual(riverLine(), RIVER_LINE);
-  for (let x = 28; x < 60; x += 1.7)
-    for (let z = 8; z < 38; z += 1.3) {
-      const a = riverAt(x, z),
-        b = T.riverAt(x, z);
-      for (const key of ["d", "s", "side", "dx", "dz", "r"]) assert.equal(a[key], b[key], key);
-      assert.equal(riverRadius(x, z), b.r);
-    }
+  // About the lantern, over the whole plain, and across the river at every sample.
+  const same = (x, z) => {
+    const a = riverAt(x, z),
+      b = T.riverAt(x, z);
+    for (const key of ["d", "s", "side", "dx", "dz", "w", "r"]) assert.equal(a[key], b[key], key);
+    assert.equal(riverRadius(x, z), b.r);
+  };
+  for (let x = 28; x < 60; x += 1.7) for (let z = 8; z < 38; z += 1.3) same(x, z);
+  for (let x = -190; x < 190; x += 6.1) for (let z = -190; z < 190; z += 6.1) same(x, z);
+  for (let k = 0; k + 1 < RIVER_LINE.length; k++) {
+    const [ax, az, , w] = RIVER_LINE[k],
+      [bx, bz] = RIVER_LINE[k + 1],
+      len = Math.hypot(bx - ax, bz - az);
+    for (const across of [-2.2, -1, 1, 2.2])
+      same(
+        (ax + bx) / 2 - ((bz - az) / len) * across * w,
+        (az + bz) / 2 + ((bx - ax) / len) * across * w,
+      );
+  }
   // On its centreline the radius is 0; the centreline runs on from the plain
   // past the lantern, which stands on its bank clear of the water.
   for (const [x, z] of RIVER_LINE) assert.ok(riverRadius(x, z) < 1e-9);
@@ -382,20 +396,42 @@ test("the river's water lies only below its shore, as the terrain carves it, and
       "vec2 slateRiverDir;\n      vec4 slateRiverQ = slateRiver(vMudWorld.xz, slateRiverDir);\n      float slateRiverR = slateRiverQ.x;",
     ),
   );
-  // The streams go the same way, one box a course.
+  // Its segments (every one once, in constant arrays) and its runs' boxes are walked by loops, so the
+  // long course compiles about as fast as a short one; the streams' segments are written out, one box
+  // a course.
   const segments = RIVER_LINE.length - 1,
+    runs = riverRuns().length,
     courses = streamLines(),
     streamSegments = courses.reduce((sum, { points }) => sum + points.length - 1, 0);
+  assert.ok(plain.fragment.includes(`const vec4 slateRiverA[${segments}]=vec4[](`));
+  assert.ok(plain.fragment.includes(`const vec4 slateRiverB[${segments}]=vec4[](`));
+  assert.ok(plain.fragment.includes(`const vec4 slateRiverBox[${runs}]=vec4[](`));
+  assert.ok(plain.fragment.includes(`const ivec2 slateRiverSpan[${runs}]=ivec2[](`));
   assert.equal(
     plain.fragment.match(/pa=p-vec2\(/g).length,
-    segments + streamSegments,
-    "every segment once",
+    streamSegments,
+    "every stream segment once",
   );
   assert.equal(
     plain.fragment.match(/if\(p\.x>/g).length,
-    Math.ceil(segments / 8) + courses.length,
-    "runs of 8, a box a course",
+    1 + courses.length,
+    "a box a run, a box a course",
   );
+  assert.equal(runs, T.RIVER_RUNS.length, "the terrain's runs are the shader's");
+  assert.ok(segments <= 200 && riverGlsl().length <= 20 * 1024, `${segments} segments`);
+  // While the river is one width all along, its segments are written out, the nearest by distance
+  // (its text before it widened); where it widens, the nearest in half-widths, its wobble stretching
+  // with it.
+  const narrow = {
+    ...SLATE_RIVER,
+    path: SLATE_RIVER.path.map(([dx, dz]) => [dx, dz]),
+    datum: [0, 0],
+  };
+  const even = riverGlsl(riverLine(narrow), narrow);
+  assert.match(even, /d=length\(pa-ba\*h\);if\(d<b\)/);
+  assert.doesNotMatch(even, /slateRiverA|e=length/);
+  assert.match(riverGlsl(), /e=length\(pa-ba\*h\),d=e\*2\.0\/\(B\.y\+h\*B\.z\)/);
+  assert.match(riverGlsl(), /sin\(\.9\*\(s\+g\)\+1\.3\)/);
   assert.equal(plain.fragment.match(/slateRiver\(vMudWorld\.xz/g).length, 1, "found once");
   assert.doesNotMatch(plain.fragment, /slateGrit|slateRelief/, "no close soil without its maps");
   assert.ok(!plain.key.includes("+soil"));

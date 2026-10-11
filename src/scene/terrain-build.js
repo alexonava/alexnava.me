@@ -316,14 +316,19 @@ export const STREAMS = Object.freeze({
     ),
   }),
 });
-// A smooth course through world points (Catmull-Rom; mud-ground.js
-// smoothCourse()), sampled about every `step` units: [x, z, distance along].
-function smoothCourse(p, step) {
+// A smooth curve through world points (Catmull-Rom; mud-ground.js
+// courseSamples()), each span cut into pieces about `step` units long, or the
+// span's own step where its first point carries one ([x, z, half-width,
+// step]): the samples ([x, z], and the half-width where the points carry one)
+// and the sample each point's span starts at.
+function courseSamples(p, step) {
   const at = (i) => p[Math.max(0, Math.min(p.length - 1, i))],
-    points = [];
+    points = [],
+    starts = [];
   for (let i = 0; i + 1 < p.length; i++) {
     const [a, b, c, d] = [at(i - 1), at(i), at(i + 1), at(i + 2)],
-      pieces = Math.max(1, Math.ceil(Math.hypot(c[0] - b[0], c[1] - b[1]) / step));
+      pieces = Math.max(1, Math.ceil(Math.hypot(c[0] - b[0], c[1] - b[1]) / (b[3] ?? step)));
+    starts.push(points.length);
     for (let k = 0; k < pieces; k++) {
       const t = k / pieces,
         t2 = t * t,
@@ -334,10 +339,17 @@ function smoothCourse(p, step) {
             (c[q] - a[q]) * t +
             (2 * a[q] - 5 * b[q] + 4 * c[q] - d[q]) * t2 +
             (3 * b[q] - a[q] - 3 * c[q] + d[q]) * t3);
-      points.push([f(0), f(1)]);
+      points.push(b.length > 2 ? [f(0), f(1), b[2] + (c[2] - b[2]) * t] : [f(0), f(1)]);
     }
   }
-  points.push(p.at(-1));
+  starts.push(points.length);
+  points.push(p.at(-1).slice(0, 3));
+  return { points, starts };
+}
+// A smooth course through world points (Catmull-Rom; mud-ground.js
+// smoothCourse()), sampled about every `step` units: [x, z, distance along].
+function smoothCourse(p, step) {
+  const { points } = courseSamples(p, step);
   let s = 0;
   return points.map(([x, z], i) => {
     if (i) s += Math.hypot(x - points[i - 1][0], z - points[i - 1][1]);
@@ -610,7 +622,18 @@ export const RIVER_BED = Object.freeze({
 export const RIVER = Object.freeze({
   path: Object.freeze(
     [
-      [-21, 0.4],
+      [99.1, 171.6, 6, 12],
+      [73.1, 118.6, 5.5, 12],
+      [51.1, 78.6, 4.6, 8],
+      [33.1, 52.6, 3.9, 5],
+      [17.1, 36.6, 3.3, 3],
+      [1.1, 30.6, 2.9, 3],
+      [-14.9, 32.6, 2.8, 3],
+      [-29.9, 30.6, 2.7, 3],
+      [-41.9, 23.6, 2.5, 2.5],
+      [-43.9, 14.6, 2.3, 2],
+      [-36.9, 9.1, 2.1, 1.5],
+      [-21, 0.4, 2, 0.9],
       [-13, -0.9],
       [-8.6, -3.1],
       [-4.4, -3.8],
@@ -620,45 +643,122 @@ export const RIVER = Object.freeze({
       [-3.5, -10.2],
       [-5.1, -12.4],
       [-6.7, -15.8],
-      [-7.1, -21],
+      [-7.1, -21, 2, 3],
+      [-6.9, -26.9, 2.4, 2],
+      [-3.4, -30.8, 2.7, 3],
+      [4.1, -31.4, 3.2, 3],
+      [12.1, -29.2, 3.6, 4],
+      [23.1, -28.4, 4, 4],
+      [35.1, -32.4, 4.4, 5],
+      [45.1, -43.4, 4.8, 6],
+      [48.1, -61.4, 5.2, 8],
+      [43.1, -83.4, 5.6, 12],
+      [25.1, -101.4, 6, 12],
+      [-4.9, -111.4, 6.6, 12],
+      [-38.9, -109.4, 7.2, 12],
+      [-70.9, -103.4, 7.8, 12],
+      [-100.9, -97.4, 8.4, 12],
+      [-134.9, -89.4, 9.2, 8],
+      [-147.9, -81.4, 14, 8],
+      [-155.9, -67.4, 24, 7],
+      [-159.9, -49.4, 30, 7],
+      [-161.9, -29.4, 27, 7],
+      [-165.9, -11.4, 18, 8],
+      [-173.9, 6.6, 11, 10],
+      [-186.9, 24.6, 10, 12],
+      [-205.9, 44.6, 10, 12],
+      [-226.9, 66.6, 10, 12],
+      [-250.9, 90.6, 10, 12],
     ].map((p) => Object.freeze(p)),
   ),
   step: 0.9,
   width: 2,
   wobble: Object.freeze([0.08, 0.05]),
   flow: 0.25,
+  datum: Object.freeze([12, 8.109509849439533]),
+  valley: Object.freeze({ floor: 1.6, shoulder: 30 }),
 });
-export const RIVER_LINE = Object.freeze(
-  smoothCourse(
-    RIVER.path.map(([dx, dz]) => [LANTERN_FOOT.x + dx, LANTERN_FOOT.z + dz]),
-    RIVER.step,
-  ),
-);
-// Its segments in runs of RIVER_SPAN, each boxed, so riverAt() measures only
-// the runs that could hold the nearest segment (the litter tries it thousands
-// of times while the terrain settles, inside the reveal's early window).
-const RIVER_SPAN = 8;
-const RIVER_RUNS = Object.freeze(
-  Array.from({ length: Math.ceil((RIVER_LINE.length - 1) / RIVER_SPAN) }, (_, j) => {
-    const from = 1 + j * RIVER_SPAN,
-      to = Math.min(RIVER_LINE.length, from + RIVER_SPAN),
-      points = RIVER_LINE.slice(from - 1, to),
+// Sampled: [x, z, distance along, half-width, the wobble's phase less that
+// distance] (mud-ground.js riverLine()).
+export const RIVER_LINE = (() => {
+  const { path, step, width, datum } = RIVER,
+    { points, starts } = courseSamples(
+      path.map(([dx, dz, w = width, own = step]) => [
+        LANTERN_FOOT.x + dx,
+        LANTERN_FOOT.z + dz,
+        w,
+        own,
+      ]),
+      step,
+    ),
+    along = [0],
+    phase = [0];
+  for (let i = 1; i < points.length; i++)
+    along.push(
+      along[i - 1] + Math.hypot(points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1]),
+    );
+  const k0 = starts[datum[0]],
+    slow = (i, j) => (along[j] - along[i]) * ((2 * width) / (points[i][2] + points[j][2]) - 1);
+  phase[k0] = 0;
+  for (let i = k0 + 1; i < points.length; i++) phase[i] = phase[i - 1] + slow(i - 1, i);
+  for (let i = k0 - 1; i >= 0; i--) phase[i] = phase[i + 1] - slow(i, i + 1);
+  return Object.freeze(
+    points.map(([x, z, w], i) =>
+      Object.freeze([
+        +x.toFixed(3),
+        +z.toFixed(3),
+        +(along[i] - along[k0] + datum[1]).toFixed(3),
+        +w.toFixed(4),
+        +phase[i].toFixed(4),
+      ]),
+    ),
+  );
+})();
+// Its segments in runs of at most RIVER_SPAN segments and RIVER_SPAN_LENGTH
+// units (mud-ground.js courseRuns()), each boxed with its widest half-width,
+// so riverAt() measures only the runs that could hold the nearest segment (the
+// litter tries it thousands of times while the terrain settles, inside the
+// reveal's early window). `from` is the first segment's end.
+const RIVER_SPAN = 8,
+  RIVER_SPAN_LENGTH = 40;
+export const RIVER_RUNS = (() => {
+  const runs = [],
+    length = (k) =>
+      Math.hypot(RIVER_LINE[k + 1][0] - RIVER_LINE[k][0], RIVER_LINE[k + 1][1] - RIVER_LINE[k][1]);
+  for (let start = 0; start + 1 < RIVER_LINE.length;) {
+    let end = start + 1,
+      span = length(start);
+    while (
+      end + 1 < RIVER_LINE.length &&
+      end - start < RIVER_SPAN &&
+      span + length(end) <= RIVER_SPAN_LENGTH
+    )
+      span += length(end++);
+    const points = RIVER_LINE.slice(start, end + 1),
       xs = points.map(([px]) => px),
       zs = points.map(([, pz]) => pz);
-    return Object.freeze({
-      from,
-      to,
-      box: Object.freeze([Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs)]),
-    });
-  }),
-);
-// The nearest segment (riverK, the point riverH along it, riverD away), the
-// first of equals along the river: the run nearest the point first, then any
-// other whose box is no farther than the best so far. It allocates nothing.
+    runs.push(
+      Object.freeze({
+        from: start + 1,
+        to: end + 1,
+        box: Object.freeze([Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs)]),
+        widest: Math.max(...points.map(([, , , w]) => w)),
+      }),
+    );
+    start = end;
+  }
+  return Object.freeze(runs);
+})();
+// The nearest segment (riverK, the point riverH along it, riverD away in
+// half-widths, riverE in units), the first of equals along the river: the run
+// nearest the point first, then any other whose box is no farther than the
+// best so far. While the river is `width` wide, riverD is riverE. It allocates
+// nothing.
 const riverNear = new Float64Array(RIVER_RUNS.length);
 let riverK = 0,
   riverH = 0,
-  riverD = Infinity;
+  riverD = Infinity,
+  riverE = Infinity;
 function riverMeasure(x, z, { from, to }) {
   for (let k = from; k < to; k++) {
     const a = RIVER_LINE[k - 1],
@@ -667,9 +767,11 @@ function riverMeasure(x, z, { from, to }) {
       ez = b[1] - a[1],
       len = Math.hypot(ex, ez),
       h = Math.min(1, Math.max(0, ((x - a[0]) * ex + (z - a[1]) * ez) / (len * len))),
-      d = Math.hypot(x - a[0] - ex * h, z - a[1] - ez * h);
+      e = Math.hypot(x - a[0] - ex * h, z - a[1] - ez * h),
+      d = e * (RIVER.width / (a[3] + h * (b[3] - a[3])));
     if (d < riverD || (d === riverD && k < riverK)) {
       riverD = d;
+      riverE = e;
       riverK = k;
       riverH = h;
     }
@@ -678,24 +780,35 @@ function riverMeasure(x, z, { from, to }) {
 function riverNearest(x, z) {
   let first = 0;
   for (let j = 0; j < RIVER_RUNS.length; j++) {
-    const box = RIVER_RUNS[j].box;
-    riverNear[j] = Math.hypot(
-      Math.max(box[0] - x, 0, x - box[1]),
-      Math.max(box[2] - z, 0, z - box[3]),
-    );
+    const { box, widest } = RIVER_RUNS[j];
+    riverNear[j] =
+      Math.hypot(Math.max(box[0] - x, 0, x - box[1]), Math.max(box[2] - z, 0, z - box[3])) *
+      (RIVER.width / widest);
     if (riverNear[j] < riverNear[first]) first = j;
   }
   riverK = 0;
   riverH = 0;
   riverD = Infinity;
+  riverE = Infinity;
   riverMeasure(x, z, RIVER_RUNS[first]);
   for (let j = 0; j < RIVER_RUNS.length; j++)
     if (j !== first && riverNear[j] <= riverD + 1e-9) riverMeasure(x, z, RIVER_RUNS[j]);
 }
-// The river's half-width at distance s downstream.
-const riverSpan = (s) =>
+// The river's wobbled half-width, in units of `width`, at the wobble's phase
+// t (the distance downstream, while it is `width` wide).
+const riverSpan = (t) =>
   RIVER.width *
-  (1 + RIVER.wobble[0] * Math.sin(0.9 * s + 1.3) + RIVER.wobble[1] * Math.sin(2.3 * s + 0.4));
+  (1 + RIVER.wobble[0] * Math.sin(0.9 * t + 1.3) + RIVER.wobble[1] * Math.sin(2.3 * t + 0.4));
+// The nearest segment's distance downstream, half-width and wobble phase.
+const riverDown = () => {
+  const a = RIVER_LINE[riverK - 1],
+    b = RIVER_LINE[riverK];
+  return a[2] + riverH * Math.hypot(b[0] - a[0], b[1] - a[1]);
+};
+const riverWidth = () =>
+  RIVER_LINE[riverK - 1][3] + riverH * (RIVER_LINE[riverK][3] - RIVER_LINE[riverK - 1][3]);
+const riverPhase = () =>
+  RIVER_LINE[riverK - 1][4] + riverH * (RIVER_LINE[riverK][4] - RIVER_LINE[riverK - 1][4]);
 export function riverAt(x, z) {
   riverNearest(x, z);
   const a = RIVER_LINE[riverK - 1],
@@ -705,31 +818,30 @@ export function riverAt(x, z) {
     len = Math.hypot(ex, ez),
     s = a[2] + riverH * len;
   return {
-    d: riverD,
+    d: riverE,
     s,
     side: Math.sign(ex * (z - a[1]) - ez * (x - a[0])) || 1,
     dx: ex / len,
     dz: ez / len,
-    r: riverD / riverSpan(s),
+    w: riverWidth(),
+    r: riverD / riverSpan(s + riverPhase()),
   };
 }
 // The normalised radius across the river at a world x/z, 1 on its wobbled
 // shore (as the ground shader's slateRiver()).
 export function riverRadius(x, z) {
   riverNearest(x, z);
-  const a = RIVER_LINE[riverK - 1],
-    b = RIVER_LINE[riverK];
-  return riverD / riverSpan(a[2] + riverH * Math.hypot(b[0] - a[0], b[1] - a[1]));
+  return riverD / riverSpan(riverDown() + riverPhase());
 }
 // Whether x/z lies inside normalised radius `within` (riverRadius(x, z) <
 // within). Where every run's box is farther than the river could reach there
 // (its widest wobble), it is not, without measuring a segment: the litter asks
 // this for thousands of candidates, most of them far out on the plain.
-const RIVER_WIDEST = RIVER.width * (1 + Math.abs(RIVER.wobble[0]) + Math.abs(RIVER.wobble[1]));
+const RIVER_WOBBLE = 1 + Math.abs(RIVER.wobble[0]) + Math.abs(RIVER.wobble[1]);
 export function riverWithin(x, z, within) {
-  const reach = within * RIVER_WIDEST + 1e-6;
   for (let j = 0; j < RIVER_RUNS.length; j++) {
-    const box = RIVER_RUNS[j].box;
+    const { box, widest } = RIVER_RUNS[j],
+      reach = within * (widest * RIVER_WOBBLE) + 1e-6;
     if (x > box[0] - reach && x < box[1] + reach && z > box[2] - reach && z < box[3] + reach)
       return riverRadius(x, z) < within;
   }
@@ -772,12 +884,12 @@ const riverInside = (x, z) =>
     TREE_FOOTING.z + FINE_WINDOW.z[1] - z,
   );
 export function riverBounds() {
-  const pad = RIVER.width * RIVER_BED.reach[1] * (1 + RIVER.wobble[0] + RIVER.wobble[1]);
   let x0 = Infinity,
     x1 = -Infinity,
     z0 = Infinity,
     z1 = -Infinity;
-  for (const [x, z] of RIVER_LINE) {
+  for (const [x, z, , w] of RIVER_LINE) {
+    const pad = w * RIVER_BED.reach[1] * (1 + RIVER.wobble[0] + RIVER.wobble[1]);
     if (riverInside(x, z) < -pad) continue;
     x0 = Math.min(x0, x - pad);
     x1 = Math.max(x1, x + pad);
@@ -797,6 +909,25 @@ export function riverBounds() {
     Math.max(z0, TREE_FOOTING.z + FINE_WINDOW.z[0] + 1.5),
     Math.min(z1, TREE_FOOTING.z + FINE_WINDOW.z[1] - 1.5),
   ];
+}
+// How far the foothills open along the river (RIVER.valley): fully within
+// `floor` half-widths of its centreline, closing over `shoulder` units beyond;
+// 0 without a valley. The foothills are nil inside the fine grid's window, so
+// it never reaches the carved river or the supports.
+export function valleyGap(x, z) {
+  const { valley } = RIVER;
+  if (!valley) return 0;
+  const { floor, shoulder } = valley;
+  if (
+    !RIVER_RUNS.some(({ box, widest }) => {
+      const reach = floor * widest + shoulder;
+      return x > box[0] - reach && x < box[1] + reach && z > box[2] - reach && z < box[3] + reach;
+    })
+  )
+    return 0;
+  riverNearest(x, z);
+  const open = floor * riverWidth();
+  return 1 - ease(open, open + shoulder, riverE);
 }
 // How far the river lowers the ground at x/z (0 or less), over the base
 // height `base` there and the lantern's foot `foot`.
@@ -1499,6 +1630,10 @@ export const PUDDLE_MIRROR = Object.freeze({
   darken: Object.freeze([0.3, 0.75]),
   // The level water plane, relative to the lantern's foot: the river's (RIVER_BED.level).
   water: -0.04,
+  // Where set, the plane eases back to the water's own place from plane[0] to
+  // plane[1] units from the lantern: far water lies at the plain's level, not
+  // the lantern's, and mirrors no trunk or lantern.
+  plane: Object.freeze([14, 28]),
   cloud: 0.22,
   // hill-silhouette.js TERRAIN_HORIZON and SLATE_PUDDLES.zenith (mud-ground.js).
   horizon: Object.freeze([0.062, 0.065, 0.073]),
@@ -1613,11 +1748,14 @@ export function dripAt(t, aim = () => null) {
 const zoneGlsl = (zone) => glslVec(+zone.x.toFixed(2), +zone.z.toFixed(2));
 // The river's current on the water (MIRROR): two octaves of ripples, each
 // [along, across] cycles per unit (drawn out along the flow), and the tilt of
-// each.
+// each. Where `fade` is set, the coarse octave fades as the fine one does,
+// where its ripples would fall under fade[0] to fade[1] pixels of ground, so
+// far water keeps the sky still instead of shimmering.
 export const RIVER_RIPPLE = Object.freeze({
   coarse: Object.freeze([0.6, 1.6]),
   fine: Object.freeze([1.8, 4]),
   tilt: Object.freeze([0.018, 0.007]),
+  fade: Object.freeze([1.5, 3]),
 });
 // The streams' current (STREAMS.current), on the same octaves' terms.
 const SC = STREAMS.current;
@@ -1680,7 +1818,7 @@ if (slateWater > 0.0) {
       vec2 slateFU = vec2(slateRiverQ.y-slateFlow*${glsl(RIVER.flow)}, slateRiverQ.z);
       float slateFP = slatePx*slateView/max(abs(dot(normal, normalize(vViewPosition))), .3);
       vec3 slateF1 = slateNoiseD(slateFU*${glslVec(...RIVER_RIPPLE.coarse)}), slateF2 = slateNoiseD(slateFU*${glslVec(...RIVER_RIPPLE.fine)}+13.0);
-      vec2 slateFG = slateF1.yz*${glslVec(...RIVER_RIPPLE.coarse)}*${glsl(RIVER_RIPPLE.tilt[0])}+slateF2.yz*${glslVec(...RIVER_RIPPLE.fine)}*${glsl(RIVER_RIPPLE.tilt[1])}*smoothstep(1.5, 3.0, ${glsl(1 / RIVER_RIPPLE.fine[1])}/slateFP);
+      vec2 slateFG = slateF1.yz*${glslVec(...RIVER_RIPPLE.coarse)}*${glsl(RIVER_RIPPLE.tilt[0])}${RIVER_RIPPLE.fade ? `*smoothstep(${glsl(RIVER_RIPPLE.fade[0])}, ${glsl(RIVER_RIPPLE.fade[1])}, ${glsl(+(1 / RIVER_RIPPLE.coarse[1]).toFixed(4))}/slateFP)` : ""}+slateF2.yz*${glslVec(...RIVER_RIPPLE.fine)}*${glsl(RIVER_RIPPLE.tilt[1])}*smoothstep(1.5, 3.0, ${glsl(1 / RIVER_RIPPLE.fine[1])}/slateFP);
       slateG += (slateRiverDir*slateFG.x+vec2(-slateRiverDir.y, slateRiverDir.x)*slateFG.y)*(1.0-smoothstep(.8, 1.1, slateRiverR));
     }
     // The streams' current: steeper, finer ripples drawn out along each course drift down it at STREAMS.flow, each
@@ -1708,7 +1846,12 @@ if (slateWater > 0.0) {
   vec3 slateP = vMudWorld;
   if (dot(slateLamp, slateLamp) > 0.0${SLOPED.map((zone) => ` && length(vMudWorld.xz-${zoneGlsl(zone)}) > ${glsl(zone.radius + 0.1)}`).join("")})
     slateP = cameraPosition+(vMudWorld-cameraPosition)*((cameraPosition.y-slateLampW.y+${glsl(LAMP_FOOT - M.water)})/max(cameraPosition.y-vMudWorld.y, .01));
-  // The night sky (the film's environment, night-environment.js) at its sharpest, brighter in a lightning flash away from the text (film-light.js FLASH_GROUND); without it, a sky from the horizon, fog and zenith colours.
+${
+  M.plane
+    ? `  slateP = mix(slateP, vMudWorld, smoothstep(${glsl(M.plane[0])}, ${glsl(M.plane[1])}, length(vMudWorld.xz-${LANTERN_GLSL})));
+`
+    : ""
+}  // The night sky (the film's environment, night-environment.js) at its sharpest, brighter in a lightning flash away from the text (film-light.js FLASH_GROUND); without it, a sky from the horizon, fog and zenith colours.
   #ifdef USE_ENVMAP
   vec3 slateSkyW = textureCubeUV(envMap, slateR, 0.0).rgb*envMapIntensity*${glsl(M.sky)}*(babelFlash.y > 0.0 ? 1.0+babelFlash.y*(1.0-slateBehindText()) : 1.0);
   #else
@@ -3728,10 +3871,13 @@ function* coarseSurface(baseHeight, EARTH) {
   // not evaluated there.
   const groundHeight = (x, z) => {
     const t = Math.min(1, Math.max(0, (Math.hypot(x, z) - 88) / 25));
+    // The foothills open where the river crosses them (valleyGap()).
+    let hills = foothillHeight(x, z);
+    if (hills > 0 && RIVER.valley) hills *= 1 - valleyGap(x, z);
     return (
       TERRAIN_BASE +
       (t < 1 ? (baseHeight(x, z) - TERRAIN_BASE) * (1 - t * t * (3 - 2 * t)) : 0) +
-      foothillHeight(x, z)
+      hills
     );
   };
   // First reconstruct the pre-support surface, including its triangle planes

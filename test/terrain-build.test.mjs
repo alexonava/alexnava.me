@@ -97,10 +97,12 @@ import {
   TERRAIN_BASE,
   terrainHeight,
   terrainLift,
+  terrainSurface,
   TREE_FOOTING,
   TREE_SINK,
   TRUNK,
   TUFTS,
+  valleyGap,
   zoneDistance,
 } from "../src/scene/terrain-build.js";
 import {
@@ -123,6 +125,8 @@ import {
   streamLines,
 } from "../src/scene/mud-ground.js";
 import { TERRAIN_HORIZON } from "../src/scene/hill-silhouette.js";
+import { rockKeepouts } from "../src/scene/rock-scatter.js";
+import { farFireLayout } from "../src/scene/far-fires.js";
 import { LANTERN_AUTHORING_HEIGHT } from "../src/scene/lantern.js";
 import { createEstateGroundDetail } from "../src/scene/estate-ground-detail.js";
 import { createFilmScene } from "../src/scene/film-scene.js";
@@ -404,8 +408,10 @@ test("the river lowers only its channel and banks: the lantern's footing and the
   assert.ok(footing > 30 && beyond > 150 && basin > 400, `${footing} ${beyond} ${basin}`);
   // Deep down its middle, as deep as the shape says.
   assert.ok(Math.abs(b.at(cx, cz).point.y - (water + riverBedAt(riverRadius(cx, cz)))) < 0.015);
-  // Out on the plain, beyond the fine grid, its water lies on the uncarved soil.
-  const [wx, wz] = RIVER_LINE[2];
+  // Out on the plain, beyond the fine grid (and inside the dunes' reach), its water lies on the uncarved soil.
+  const [wx, wz] = RIVER_LINE.find(
+    ([x, z]) => x < TREE_FOOTING.x + FINE_WINDOW.x[0] - 6 && Math.hypot(x, z) < 80,
+  );
   assert.ok(wx < TREE_FOOTING.x + FINE_WINDOW.x[0] && riverRadius(wx, wz) < 1e-9);
   assert.ok(riverCarve(wx, wz, base(wx, wz), foot) === 0, "no carve on the plain");
   assert.ok(Math.abs(b.at(wx, wz).point.y - a.at(wx, wz).point.y) < 0.000002);
@@ -2825,4 +2831,110 @@ test("the water's banks join the scene after the shading's switch, in idle slice
   } finally {
     clock.restore();
   }
+});
+
+test("the river runs through the set: today's reach past the lantern, wider out on the plain, clear of all that stands, the foothills opening along it", () => {
+  // Today's reach past the lantern (the owner's pick of 2026-10-10): its points, width and step, and
+  // its distance downstream, measured from the same point as before the river ran on.
+  const near = [
+    [-13, -0.9],
+    [-8.6, -3.1],
+    [-4.4, -3.8],
+    [-1.9, -3.9],
+    [-0.6, -5.4],
+    [-1.5, -7.8],
+    [-3.5, -10.2],
+    [-5.1, -12.4],
+    [-6.7, -15.8],
+  ];
+  const at = RIVER.path.findIndex(([dx, dz]) => dx === -13 && dz === -0.9);
+  assert.deepEqual(RIVER.path.slice(at, at + near.length), near);
+  assert.deepEqual(RIVER.path[at - 1], [-21, 0.4, RIVER.width, RIVER.step]);
+  assert.deepEqual(RIVER.datum, [at, 8.109509849439533]);
+  assert.ok(Math.abs(RIVER_NEAR - 19.8236) < 1e-3, `${RIVER_NEAR}`);
+  // About the tree, as far as the supports, pins, drips, rushes and banks reach, it is \`width\` wide.
+  for (const [x, z, , w, phase] of RIVER_LINE)
+    if (Math.hypot(x - TREE_FOOTING.x, z - TREE_FOOTING.z) < 25) {
+      assert.equal(w, RIVER.width);
+      assert.equal(phase, 0);
+    }
+  // Its course: no bend tighter than its banks' reach (beyond the fold after the lantern, out of
+  // every frame), no sharp turn, its width easing (but for the lake), no stretch of it near another.
+  const wobble = 1 + RIVER.wobble[0] + RIVER.wobble[1],
+    reach = RIVER_BED.reach[1] * wobble;
+  for (let k = 1; k + 1 < RIVER_LINE.length; k++) {
+    const [ax, az] = RIVER_LINE[k - 1],
+      [bx, bz, , w] = RIVER_LINE[k],
+      [cx, cz] = RIVER_LINE[k + 1],
+      u = [bx - ax, bz - az],
+      v = [cx - bx, cz - bz],
+      angle = Math.abs(Math.atan2(u[0] * v[1] - u[1] * v[0], u[0] * v[0] + u[1] * v[1]));
+    if (Math.hypot(bx - LANTERN_FOOT.x, bz - LANTERN_FOOT.z) < 12) continue;
+    assert.ok(angle < (25 * Math.PI) / 180, `turn at ${bx},${bz}`);
+    assert.ok(
+      (Math.hypot(...u) + Math.hypot(...v)) / 2 / Math.max(angle, 1e-9) > w * reach,
+      `fold at ${bx},${bz}`,
+    );
+  }
+  for (let i = 0; i < RIVER_LINE.length; i++)
+    for (let j = i + 1; j < RIVER_LINE.length; j++) {
+      const [xi, zi, si, wi] = RIVER_LINE[i],
+        [xj, zj, sj, wj] = RIVER_LINE[j];
+      if (sj - si > 3 * (wi + wj) * reach)
+        assert.ok(Math.hypot(xi - xj, zi - zj) > (wi + wj) * reach, `${xi},${zi} near ${xj},${zj}`);
+    }
+  // Both ends run off the plain, past its edge; the lake is the widest, 60 units across.
+  const out = ([x, z]) => Math.max(Math.abs(x), Math.abs(z));
+  assert.ok(out(RIVER_LINE[0]) > 192 && out(RIVER_LINE.at(-1)) > 192);
+  assert.equal(Math.max(...RIVER_LINE.map(([, , , w]) => w)), 30);
+  // Its water keeps 10 units beyond the lookout's grass (its tufts grow 10.5 to 27.5 out), so no
+  // tuft about the lookout or the tree moves; and every rock and its pebbles stand out of the water.
+  for (const [x, z, , w] of RIVER_LINE)
+    assert.ok(Math.hypot(x, z) - w * wobble > 37.5, `${x},${z}`);
+  for (const rock of rockKeepouts()) {
+    if (Math.hypot(rock.x - LANTERN_FOOT.x, rock.z - LANTERN_FOOT.z) < 12) continue; // the stream's own stones
+    const { d, w } = riverAt(rock.x, rock.z);
+    assert.ok(d - w * wobble > rock.radius, `rock at ${rock.x},${rock.z}`);
+  }
+  // The foothills open along it: flat on its floor, closing over the shoulder; there are no foothills
+  // within 3 units of the fine grid's window, so the carved river and the supports keep their ground;
+  // and out on the plain its water lies at the plain's level.
+  const { floor, shoulder } = RIVER.valley;
+  for (let x = FINE_WINDOW.x[0] - 3; x <= FINE_WINDOW.x[1] + 3; x += 0.75)
+    for (let z = FINE_WINDOW.z[0] - 3; z <= FINE_WINDOW.z[1] + 3; z += 0.75)
+      assert.equal(foothillHeight(TREE_FOOTING.x + x, TREE_FOOTING.z + z), 0);
+  const surface = terrainSurface(groundBase());
+  let far = 0;
+  for (const [x, z, , w] of RIVER_LINE) {
+    if (out([x, z]) > 185) continue;
+    if (foothillHeight(x, z) > 0) assert.equal(valleyGap(x, z), 1, `${x},${z}`);
+    if (Math.hypot(x, z) > 113) {
+      assert.ok(Math.abs(surface(x, z) - TERRAIN_BASE) < 0.02, `${x},${z}: ${surface(x, z)}`);
+      far++;
+    }
+    // Beyond the shoulder the ridges keep their height.
+    const [nx, nz] = [x + (floor * w + shoulder + 1), z],
+      beside = riverAt(nx, nz);
+    if (beside.d > floor * beside.w + shoulder) assert.equal(valleyGap(nx, nz), 0);
+  }
+  assert.ok(far > 20, `${far} samples out on the far plain`);
+  // The far fires stand on the foothills' full height, never in the gap.
+  for (const fire of farFireLayout())
+    if (Math.abs(fire.x) < 192 && Math.abs(fire.z) < 192 && foothillHeight(fire.x, fire.z) > 0)
+      assert.equal(valleyGap(fire.x, fire.z), 0, `fire at ${fire.x},${fire.z}`);
+  // Far water keeps the sky still: the coarse current fades where it would fall under a few pixels,
+  // and the mirror's lantern plane eases back to the water's own place away from the lantern.
+  assert.deepEqual(RIVER_RIPPLE.fade, [1.5, 3]);
+  assert.deepEqual(PUDDLE_MIRROR.plane, [14, 28]);
+  const material = new MeshStandardMaterial();
+  configureGroundShading(material, true, { detail: { isTexture: true } });
+  const shader = PHYSICAL();
+  material.onBeforeCompile(shader);
+  shadeSlateGround(shader);
+  assert.ok(shader.fragmentShader.includes("*smoothstep(1.5, 3.0, 0.625/slateFP)+"));
+  assert.match(
+    shader.fragmentShader,
+    /slateP = mix\(slateP, vMudWorld, smoothstep\(14\.0, 28\.0, length\(vMudWorld\.xz-vec2\(50\.92, ?33\.36\)\)\)\);/,
+  );
+  material.dispose();
 });
