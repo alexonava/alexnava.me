@@ -1021,7 +1021,8 @@ test("a shot's tilt pitches the camera from its cut to the next, and holds the m
   // A shot without a tilt looks straight at its target.
   const watch = at({ tourPhase: 0 });
   assert.equal(f.controller.shot.name, "The watch");
-  assert.equal(f.controller.shot.tilt, undefined);
+  // (On a 1440x900 window The watch keeps a level camera: its tilt is for wider windows.)
+  assert.ok(!f.controller.shot.tilt);
   closeTo(watch.forward.angleTo(watch.look), 0, 1e-6);
 
   assert.equal(f.controller.setPreviewShot("tower", 4), true);
@@ -1275,9 +1276,15 @@ test("widescreen bars cut desktops to 2.39:1, never phones, portrait, narrow or 
   for (const base of [...DIRECTED_SHOTS.tower, ...DIRECTED_SHOTS.tree]) {
     const boxed = resolveDirectedShot(base, 1440, 900);
     if (base.letterbox) {
+      // Narrower or shorter than NARROW_LETTERBOX (1440x900, 1920x1080) a letterbox's own
+      // `narrow` settings apply over it; wider and taller windows (1992x1020) take it whole.
+      const { narrow, ...letterbox } = base.letterbox;
       assert.notEqual(boxed, base);
-      assert.deepEqual({ ...boxed }, { ...base, ...base.letterbox });
+      assert.deepEqual({ ...boxed }, { ...base, ...letterbox, ...narrow });
       assert.equal(resolveDirectedShot(base, 1920, 1080), boxed, `${base.name}: built once`);
+      const wide = resolveDirectedShot(base, 1992, 1020);
+      assert.deepEqual({ ...wide }, { ...base, ...letterbox });
+      assert.equal(resolveDirectedShot(base, 2000, 1000), wide, `${base.name}: built once`);
     } else assert.equal(boxed, base, base.name);
     // Without bars the base shot shows on a wide desktop.
     assert.equal(resolveDirectedShot(base, 2560, 1080), base);

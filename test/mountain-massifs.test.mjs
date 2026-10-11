@@ -205,7 +205,8 @@ test("the composed skyline keeps the sun saddle, Close-up and Threshold clear an
   ])
     assert.ok(highest(from, to) <= cap, `${from}-${to} rises to ${highest(from, to)}`);
   for (const [from, to, least] of [
-    [141, 164, 7],
+    // The watch's summit sits lower so the sky leads (owner, 2026-10-11), still the tallest peak.
+    [141, 164, 6],
     [5, 17, 5.4],
   ])
     assert.ok(highest(from, to) >= least, `${from}-${to} peaks at ${highest(from, to)}`);

@@ -592,7 +592,8 @@ export const RANGE_LAYERS = Object.freeze([
   Object.freeze([244, 258]),
 ]);
 export const RANGE_BACKDROP = Object.freeze({ ranges: Object.freeze([3, 4]), capScale: 1 });
-// The watch's summit leads (about 9 degrees) with a smaller one right of the
+// The watch's summit leads (about 6 degrees, set lower so the sky leads,
+// 2026-10-11) with a smaller one right of the
 // tower; Portrait's crown meets open cloud (from 96 to 120 degrees no massif
 // carries snow: the bare near layer, its neighbours' flanks and the hazed
 // backdrop ring); snowy massifs rise
@@ -603,7 +604,7 @@ export const RANGE_BACKDROP = Object.freeze({ ranges: Object.freeze([3, 4]), cap
 // [id, role, layer, azimuth, distance, yaw, mirror, sink, squash, snow]
 export const RANGE_PLACEMENTS = Object.freeze(
   [
-    ["watch", "mountain-summit", 2, 155, 3.8, 0, false, 0.28, 1, 2.4],
+    ["watch", "mountain-summit", 2, 155, 3.8, 0, false, 0.5, 1, 2.4],
     ["east", "mountain-ridge", 1, 196, 4.8, -25, true, 0.4, 0.85, 2.2],
     ["bridge", "mountain-summit", 2, 127, 5, 25, true, 0.4, 0.9, 2],
     ["lantern", "mountain-summit", 2, 62, 6, -10, false, 0.5, 0.8, 2.6],

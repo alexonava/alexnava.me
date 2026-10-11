@@ -453,6 +453,38 @@ const LAYOUTS = [
     hero: { left: 141, right: 465, top: 613, bottom: 886 },
     nav: { top: 962 },
   },
+  // Maximised browsers (measured 2026-10-11): a 1080p desktop and a wider window, where
+  // The watch tilts up; a 16:9 window, a MacBook and a 125%-scaled laptop, where it keeps level.
+  {
+    width: 1992,
+    height: 1020,
+    hero: { left: 110, right: 434, top: 555, bottom: 828 },
+    nav: { top: 902 },
+  },
+  {
+    width: 1920,
+    height: 960,
+    hero: { left: 106, right: 430, top: 501, bottom: 774 },
+    nav: { top: 842 },
+  },
+  {
+    width: 1680,
+    height: 950,
+    hero: { left: 250, right: 574, top: 492, bottom: 765 },
+    nav: { top: 832 },
+  },
+  {
+    width: 1440,
+    height: 800,
+    hero: { left: 130, right: 454, top: 357, bottom: 630 },
+    nav: { top: 682 },
+  },
+  {
+    width: 1536,
+    height: 730,
+    hero: { left: 178, right: 502, top: 294, bottom: 567 },
+    nav: { top: 612 },
+  },
   // A small landscape phone sets the name top-left beside the subject; a
   // portrait monitor sets it bottom-left, below the subject.
   {

@@ -16,9 +16,30 @@ export const DIRECTED_SHOTS = {
   tower: [
     {
       name: "The watch",
-      letterbox: { height: 0.8, targetHeight: 0.82 },
+      // Desktop (letterboxed) tilts and fits only the cab and upper legs (region from 0.62);
+      // its lower legs leave the frame.
+      letterbox: {
+        height: 0.8,
+        targetHeight: 0.82,
+        region: [0.62, 1],
+        margin: 0.48,
+        // The tilt carries the aim down after the fit: it starts a little above the
+        // area's middle so the cab stays inside through the push-in.
+        anchor: [0.5, 0.47],
+        tilt: [3, 4],
+        // Narrower or shorter windows (the owner's pick): the name stands higher in their cut
+        // frame, and any tilt brought the far ranges' snow caps up behind it; they keep a level
+        // camera, aimed at the area's middle, and the rest of the look.
+        narrow: { anchor: [0.5, 0.5], tilt: null },
+      },
       move: { zoom: [32, 26], dollyZoom: true, ease: 0.6 },
-      light: { key: 1.2, fill: 0.85, rim: 1 },
+      // Sky first (the owner's pick of 2026-10-11, "3 Silhouette": "too much going on… i want
+      // [the artsy sky] to mostly always be the focus"): on desktop the camera tilts up (3
+      // degrees at the cut, 4 by the end of the push-in; more puts the ranges' snow behind the name) and the lookout sits smaller and lower,
+      // so the sky fills about two thirds of the frame; everywhere the lookout is a dark shape
+      // against it (its key and fill dimmed, its moonlit rim kept), the plain lies under a
+      // heavier mist and its far fires stay out of the shot (far-fires.js FAR_FIRES.shots).
+      light: { key: 0.4, fill: 0.45, rim: 1.3 },
       // The slimmer timber lookout fits closer than the stone tower did, so its roof
       // reached the fixed sun on desktop. A wider, slightly higher view three
       // degrees round restores the camera distance and sky gap. Higher than 0.68
@@ -31,7 +52,7 @@ export const DIRECTED_SHOTS = {
       height: 0.68,
       arc: 2,
       hold: 9,
-      ground: AFTER_RAIN,
+      ground: { ...AFTER_RAIN, mist: { ...AFTER_RAIN.mist, amount: 0.75 } },
       portrait: { region: [0.62, 1], targetHeight: 1.11, azimuth: -4, height: 0.66 },
       // Landscape phones hold the intro over the upper third, where the snowy
       // range projected; lower and further round, it runs between text and tower.
@@ -52,7 +73,7 @@ export const DIRECTED_SHOTS = {
       name: "Threshold",
       move: { crane: [-0.18, 0.1], dolly: [1.06, 0.94], ease: 0.6 },
       light: { fill: 0.8, rim: 1.8 },
-      lens: { blur: 5 },
+      // No lens blur: the clouds behind the lookout read sharp (sky first, below).
       // The lookout's threshold: the ladder on its +Z access side arriving
       // through the gap in the gallery railing. Nearer the ladder's face than 82
       // degrees brings the sun behind the name on landscape phones. The region
@@ -64,12 +85,16 @@ export const DIRECTED_SHOTS = {
       // grazing them.
       region: [0.64, 0.93],
       fov: 36,
-      azimuth: 86,
+      // Two degrees further round than before (86), so on ultrawide screens the
+      // smaller lookout's wider view keeps the sun whole or out of frame.
+      azimuth: 88,
       height: 0.5,
       arc: 2,
       hold: 7,
       focus: { width: 0.3, depth: [0.06, 0.34] },
-      margin: 0.87,
+      // Sky first (the owner's pick of 2026-10-11, "A sky open"): the lookout fits
+      // smaller (0.87 before).
+      margin: 0.76,
       anchor: [0.47, 0.52],
       ground: AFTER_RAIN,
       portrait: { region: [0.62, 0.9], focus: { width: 0.22, depth: [0.06, 0.34] } },
@@ -178,6 +203,9 @@ export const DIRECTED_SHOTS = {
       portrait: {
         move: { dolly: [1.06, 0.94], crane: [0, 0.08], ease: 0.6 },
         anchor: [0.5, 0.66],
+        // Phones keep their open-sky framing: no tilt, the tree at its own size.
+        margin: 0.93,
+        tilt: null,
       },
       // The crown in moonlight (the owner's pick of 2026-10-09): its pale,
       // bleached limbs read cool grey, not pink-beige (pale). The
@@ -203,7 +231,13 @@ export const DIRECTED_SHOTS = {
       height: 0.12,
       arc: 4,
       hold: 9,
-      margin: 0.93,
+      // Sky first (the owner's pick of 2026-10-11, "A sky open"): the tree fits
+      // smaller (0.93 before) and the camera tilts up 3 degrees at the cut, 4 by the
+      // end of the move, so more of the clouds stand over it; the aim starts a
+      // little high, so the tilt keeps the whole tree inside the frame.
+      margin: 0.82,
+      anchor: [0.5, 0.42],
+      tilt: [3, 4],
       ground: {
         burn: { amount: 0.45, reach: [0.4, 0.95] },
         flatten: 0.5,
@@ -271,7 +305,7 @@ export const DIRECTED_SHOTS = {
       // of the limbs reaching left stood behind the name (3.97:1 at 1440x900),
       // and the trunk's behind About on phones and portrait monitors.
       light: { fill: 0.7, rim: 2, rimText: 1 },
-      lens: { blur: 10 },
+      // No lens blur: the clouds behind the crown read sharp (sky first, below).
       move: { truck: [-0.1, 0.1], ease: 0.5 },
       // The crown: low under the fork high on the trunk, looking up at the
       // limbs against the sky, open sky beside the name.
@@ -282,7 +316,10 @@ export const DIRECTED_SHOTS = {
       arc: 2,
       hold: 6,
       focus: { width: 0.32, depth: [-0.15, 0.2] },
-      margin: 0.92,
+      // Sky first (the owner's pick of 2026-10-11, "A sky open"): the crown fits
+      // smaller (0.92 before; phones keep it, or the roots enter their frame) and the
+      // lens no longer softens the sky.
+      margin: 0.8,
       anchor: [0.58, 0.45],
       // Phones push in: a sideways truck this close takes the lens into the
       // trunk. Their aim sits a little high, which lifts the far range's snow
@@ -291,6 +328,7 @@ export const DIRECTED_SHOTS = {
         focus: { width: 0.26, depth: [-0.15, 0.2] },
         anchor: [0.5, 0.4],
         move: { dolly: [1.1, 0.94], ease: 0.5 },
+        margin: 0.92,
       },
       // Landscape phones keep the drift (no room about the name for a move),
       // from higher, so the roots stay below the short frame.
@@ -357,6 +395,12 @@ export const SQUAT_LANDSCAPE = 1.55;
 // (short landscapes keep their own variants): the frame is cut to
 // LETTERBOX.ratio, each bar a share of the height, none under 2% of it.
 export const LETTERBOX = Object.freeze({ ratio: 2.39, minWidth: 1000 });
+// A letterbox variant may carry its own `narrow` settings for letterboxed
+// windows narrower than NARROW_LETTERBOX or shorter than NARROW_LETTERBOX_HEIGHT
+// (16:9 and 16:10 screens, laptops; a maximised browser on a 1080p desktop is
+// about 2:1 and 960 tall): there the name stands higher in the cut frame.
+export const NARROW_LETTERBOX = 1.9;
+export const NARROW_LETTERBOX_HEIGHT = 900;
 export function letterboxShare(width, height) {
   if (
     isStackedLayout(width, height) ||
@@ -372,8 +416,14 @@ const variantShots = new WeakMap();
 export function resolveDirectedShot(shot, width, height) {
   const short = height <= 500,
     squat = short && width > height && width < SQUAT_LANDSCAPE * height;
-  const variant =
-    shot.letterbox && letterboxShare(width, height) > 0
+  const letterbox = shot.letterbox && letterboxShare(width, height) > 0,
+    narrow =
+      letterbox &&
+      shot.letterbox.narrow &&
+      (width < NARROW_LETTERBOX * height || height < NARROW_LETTERBOX_HEIGHT);
+  const variant = narrow
+    ? shot.letterbox.narrow
+    : letterbox
       ? shot.letterbox
       : squat && shot.squat
         ? shot.squat
@@ -382,7 +432,11 @@ export function resolveDirectedShot(shot, width, height) {
           : short && ((width < 600 && shot.compact) || shot.landscape);
   if (!variant) return shot;
   let resolved = variantShots.get(variant);
-  if (!resolved) variantShots.set(variant, (resolved = { ...shot, ...variant }));
+  if (!resolved) {
+    resolved = narrow ? { ...shot, ...shot.letterbox, ...variant } : { ...shot, ...variant };
+    delete resolved.narrow;
+    variantShots.set(variant, resolved);
+  }
   return resolved;
 }
 

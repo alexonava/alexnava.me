@@ -69,15 +69,15 @@ import { MIST_KEEP, MIST_PARS, MIST_UNIFORMS, mistOn } from "./drifting-mist.js"
 // balanced: the share of fires kept (each cluster's first ones), the pool's
 // gain and the halo's scale.
 // shots: per shot, a canvas UV rect (x0, y0, x1, y1, y up) the fires keep out
-// of: The watch's reference clouds (STYLE.md, the 1100x440 top-left crop at
-// 1600x900).
+// of: all of The watch, whose plain stays quiet under the sky (the owner's
+// direction of 2026-10-11, "sky first"; STYLE.md).
 export const FAR_FIRES = Object.freeze({
   enabled: true,
   seed: 5113,
   lift: 0.5,
   gap: 0.005,
   clusters: Object.freeze([
-    // The watch: between the name and the lookout, and right of it.
+    // Far out west of the lookout (The watch keeps them out of its frame; other views see them).
     Object.freeze([156, 560, 16, 4, 0.9]),
     Object.freeze([162, 1500, 40, 6, 1]),
     Object.freeze([152, 980, 22, 2, 0.75]),
@@ -125,7 +125,7 @@ export const FAR_FIRES = Object.freeze({
   }),
   balanced: Object.freeze({ share: 0.5, pool: 0, halo: 0.8 }),
   shots: Object.freeze({
-    "The watch": Object.freeze({ clear: Object.freeze([0, 0.47, 0.72, 1]) }),
+    "The watch": Object.freeze({ clear: Object.freeze([0, 0, 1, 1]) }),
   }),
 });
 
