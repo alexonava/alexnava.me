@@ -2950,7 +2950,7 @@ export const WATER_BANKS = Object.freeze({
   }),
   debris: Object.freeze({
     count: 60,
-    eddy: 3,
+    eddy: 2,
     waterline: Object.freeze([0.92, 1.12]),
     twigs: 0.3,
     twig: Object.freeze([0.18, 0.42]),
@@ -3145,7 +3145,8 @@ export function scatterBanks(surface, groundColor) {
       width = length * between([0.45, 0.62]),
       cup = width * between([0.12, 0.3]),
       age = random(),
-      rgb = F.leafTone.map((c, k) => c * (0.45 + 0.4 * age) * (k === 1 ? 1 - 0.15 * age : 1));
+      // Darker than the litter's leaves: wet, and lit by the lantern beside the water.
+      rgb = F.leafTone.map((c, k) => c * (0.32 + 0.33 * age) * (k === 1 ? 1 - 0.15 * age : 1));
     const [[, A], [L1, M1, R1], [L2, M2, R2], [, T]] = [
       [0, 0],
       [0.3, 0.46],
@@ -3204,7 +3205,8 @@ export function driftLeaves(level) {
       width = length * between([0.45, 0.62]),
       cup = width * between([0.12, 0.3]),
       age = random(),
-      rgb = F.leafTone.map((c, k) => c * (0.45 + 0.4 * age) * (k === 1 ? 1 - 0.15 * age : 1));
+      // Darker than the litter's leaves: wet, and lit by the lantern beside the water.
+      rgb = F.leafTone.map((c, k) => c * (0.32 + 0.33 * age) * (k === 1 ? 1 - 0.15 * age : 1));
     const [[, A], [L1, M1, R1], [L2, M2, R2], [, T]] = [
       [0, 0],
       [0.3, 0.46],
