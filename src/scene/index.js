@@ -19,6 +19,7 @@ import {
   LANTERN_MOOD,
   PALE_MOOD,
   RIM_UNIFORMS,
+  STONE_MOOD,
   setRim,
   shotLight,
 } from "./film-light.js";
@@ -572,6 +573,7 @@ const ORBIT_SPEED = 0.06;
         anisotropy: chooseAnisotropy(6),
         compile: () => rendering.compileShaders(),
         contacts: groundContacts.slateContacts.value,
+        textGuard: groundContacts,
         onStatus: (status) => {
           if (qualityDebug) qualityDebug.rocks = status;
         },
@@ -1052,6 +1054,7 @@ const ORBIT_SPEED = 0.06;
           PALE_MOOD.value = filmActive ? mood.pale : 0;
           GLINT_MOOD.value = filmActive ? mood.glintText : 0;
           GRASS_MOOD.value = filmActive ? mood.grassInside : 0;
+          STONE_MOOD.value = filmActive ? mood.stoneText : 0;
           groundContacts.slatePoolAbout.value = filmActive ? mood.poolAbout : 0;
           camera.updateMatrixWorld();
           RIM_UNIFORMS.babelKeyView.value

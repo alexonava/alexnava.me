@@ -230,9 +230,13 @@ export const DIRECTED_SHOTS = {
       // reads its colour inside the blades (film-light.js GRASS_MOOD): a
       // rush's tip read past its edge, lit by the lantern, sparkled on the
       // name's top edge (4.19:1 at 1920x1080, phase 24.4 of the move). Its
-      // pool is kept off About: on a portrait monitor the push-in carries the
-      // pool's lit cobble crests across the label (3.92:1 at 1080x1920), so
-      // there the pool passes its knee (mud-ground.js SLATE_LIGHT.poolKnee).
+      // stones' lamplight passes a knee behind the name and intro
+      // (film-light.js STONE_TEXT): the lantern lit the near face of a stone
+      // in the stream at the corner of the name's box (4.76:1 at 1440x900,
+      // phase 32.35). Its pool is kept off About: on a portrait monitor the
+      // push-in carries the pool's lit cobble crests across the label (3.92:1
+      // at 1080x1920), so there the pool passes its knee (mud-ground.js
+      // SLATE_LIGHT.poolKnee).
       light: {
         key: 0.55,
         fill: 0.65,
@@ -240,6 +244,7 @@ export const DIRECTED_SHOTS = {
         rim: 0.7,
         grassInside: 1,
         glintText: 1,
+        stoneText: 1,
         poolAbout: 1,
       },
       lens: { blur: 8 },

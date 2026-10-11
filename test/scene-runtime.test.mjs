@@ -1534,6 +1534,7 @@ test("a shot's light mood merges over the neutral default and never shares it", 
     rimText: 0,
     grassInside: 0,
     glintText: 0,
+    stoneText: 0,
     poolAbout: 0,
   });
   for (const shot of [null, undefined, {}, { light: null }])
@@ -1548,6 +1549,7 @@ test("a shot's light mood merges over the neutral default and never shares it", 
     rimText: 0,
     grassInside: 0,
     glintText: 0,
+    stoneText: 0,
     poolAbout: 0,
   });
   assert.notEqual(shotLight(null), SHOT_LIGHT_DEFAULT, "a fresh object each time");
@@ -1591,6 +1593,13 @@ test("a shot's light mood merges over the neutral default and never shares it", 
     .filter((shot) => shotLight(shot).poolAbout > 0)
     .map((shot) => [shot.name, shotLight(shot).poolAbout]);
   assert.deepEqual(pool, [["Lantern study", 1]]);
+  // Only Lantern study keeps its stones' lamplight off its text, wholly: the
+  // lantern lit a stone in the stream at the corner of its name's box
+  // (4.76:1 at 1440x900).
+  const stone = [...DIRECTED_SHOTS.tower, ...DIRECTED_SHOTS.tree]
+    .filter((shot) => shotLight(shot).stoneText > 0)
+    .map((shot) => [shot.name, shotLight(shot).stoneText]);
+  assert.deepEqual(stone, [["Lantern study", 1]]);
   // Only the lantern shots read their grass inside the blades, wholly: a
   // blade's tip read past its edge sparkled on Lantern study's name (lit by
   // the lantern, 4.19:1) and under Root and lantern's intro (lit by the moon,
@@ -1647,6 +1656,15 @@ test("each frame applies the shot's light, lens, bars and grain, holding the gra
   const moodAt = index.indexOf("const mood = shotLight(");
   assert.ok(pool > moodAt, "after the mood");
   assert.ok(pool < index.indexOf("camera.updateMatrixWorld();", moodAt), "in the mood's block");
+  // So does the stones' lamplight knee behind the name and intro, on the
+  // rocks that read the ground's text boxes.
+  const stone = index.indexOf("STONE_MOOD.value = filmActive ? mood.stoneText : 0;");
+  assert.ok(stone > moodAt && stone < index.indexOf("camera.updateMatrixWorld();", moodAt));
+  assert.ok(
+    index.includes(
+      "contacts: groundContacts.slateContacts.value, textGuard: groundContacts, onStatus: (status) => { if (qualityDebug) qualityDebug.rocks = status;",
+    ),
+  );
   assert.ok(
     index.includes(
       "RIM_UNIFORMS.babelKeyView.value .set(...WORLD.SUN_DIRECTION) .transformDirection(camera.matrixWorldInverse);",

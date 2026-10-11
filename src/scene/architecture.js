@@ -31,6 +31,8 @@ import {
   PALE_MOOD,
   RIM,
   RIM_UNIFORMS,
+  STONE_MOOD,
+  STONE_TEXT,
   flashHook,
 } from "./film-light.js";
 
@@ -156,6 +158,35 @@ if (babelBehind > 0.0) {
 // pull-back). At 0, every other shot, nothing runs.
 export const BARK_TEXT_GLINT = `float babelGlintBehind = babelGlint*slateBehind(slateText, vSlateClip.xy/vSlateClip.w*.5+.5, ${GLINT.reach.toFixed(2)});
 if (babelGlintBehind > 0.0) reflectedLight.directSpecular = slateTextKnee(reflectedLight.directSpecular, babelGlintBehind);
+`;
+
+// Behind the name and intro, by the shot's share (babelStone, its mood's
+// stoneText), the stones' lamplight passes a luminance knee (film-light.js
+// STONE_TEXT), easing out over its reach: the point lights' direct diffuse and
+// highlight, taken again as RE_Direct_Physical takes them (the lamps cast no
+// shadow), keep 1/(1+L/knee) of themselves at their luminance L. In Lantern
+// study the lantern lights the near face of a stone in the stream at the
+// corner of the name's box (4.76:1 at 1440x900, phase 32.35 of the move). At
+// 0, every other shot, nothing runs.
+export const ROCK_TEXT_LIGHTS = `float babelStoneBehind = babelStone*slateBehind(slateText, vSlateClip.xy/vSlateClip.w*.5+.5, ${STONE_TEXT.reach.toFixed(2)});
+#if NUM_POINT_LIGHTS > 0
+if (babelStoneBehind > 0.0) {
+  vec3 babelLampDiffuse = vec3(0.0), babelLampSpecular = vec3(0.0), babelLampIrradiance;
+  IncidentLight babelLight;
+  #pragma unroll_loop_start
+  for ( int i = 0; i < NUM_POINT_LIGHTS; i ++ ) {
+    getPointLightInfo(pointLights[ i ], geometryPosition, babelLight);
+    babelLampIrradiance = saturate(dot(geometryNormal, babelLight.direction))*babelLight.color;
+    babelLampDiffuse += babelLampIrradiance*BRDF_Lambert(material.diffuseColor);
+    babelLampSpecular += babelLampIrradiance*BRDF_GGX(babelLight.direction, geometryViewDir, geometryNormal, material);
+  }
+  #pragma unroll_loop_end
+  float babelLampLuma = dot(babelLampDiffuse+babelLampSpecular, vec3(.2126, .7152, .0722));
+  float babelLampOff = babelStoneBehind*(2.0-babelStoneBehind)*(1.0-1.0/(1.0+babelLampLuma/${STONE_TEXT.knee.toFixed(3)}));
+  reflectedLight.directDiffuse -= babelLampDiffuse*babelLampOff;
+  reflectedLight.directSpecular -= babelLampSpecular*babelLampOff;
+}
+#endif
 `;
 
 // The bark's moon rim behind the text, a factor on the rim: the shot's share
@@ -307,6 +338,7 @@ export function materialFor(asset, anisotropy, role, textGuard = null) {
 roughnessFactor = mix(roughnessFactor, ${ROOT_MOSS.roughness.toFixed(2)}, babelMoss);`
         : "");
     const guarded = role === "tree" && Boolean(textGuard);
+    const stoneGuarded = role === "rock" && Boolean(textGuard);
     const uniforms = {
       babelSaturation: { value: profile.saturation ?? 1 },
       babelHighlights: { value: profile.highlights ?? 0 },
@@ -318,7 +350,7 @@ roughnessFactor = mix(roughnessFactor, ${ROOT_MOSS.roughness.toFixed(2)}, babelM
     };
     material.userData.babelGrade = { role, uniforms };
     material.customProgramCacheKey = () =>
-      `babel-estate-material-v9-${role}-${roughnessFloor}-${roughnessCeiling}-${directRoughness}${guarded ? "-text" : ""}`;
+      `babel-estate-material-v9-${role}-${roughnessFloor}-${roughnessCeiling}-${directRoughness}${guarded || stoneGuarded ? "-text" : ""}`;
     const rimmed = role === "tower" || role === "tree";
     material.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, uniforms);
@@ -403,12 +435,13 @@ ${ROOT_MOSS_MAP}`
           reflectedLight.indirectSpecular += fogColor*(babelWet*${WET_BARK.sheen.toFixed(2)}*pow(1.0-saturate(dot(geometryNormal, geometryViewDir)), 3.0));
           #endif`,
         );
-      if (guarded) {
+      if (guarded || stoneGuarded) {
+        const mood = guarded ? "babelGlint" : "babelStone";
         Object.assign(shader.uniforms, {
           slateText: textGuard.slateText,
           slateAbout: textGuard.slateAbout,
           slateAspect: textGuard.slateAspect,
-          babelGlint: GLINT_MOOD,
+          [mood]: guarded ? GLINT_MOOD : STONE_MOOD,
         });
         shader.vertexShader = shader.vertexShader
           .replace("#include <common>", "#include <common>\nvarying vec4 vSlateClip;")
@@ -416,12 +449,14 @@ ${ROOT_MOSS_MAP}`
             "#include <project_vertex>",
             "#include <project_vertex>\nvSlateClip = gl_Position;",
           );
+        shader.fragmentShader = shader.fragmentShader.replace(
+          "#include <common>",
+          () =>
+            `#include <common>\nvarying vec4 vSlateClip;\nuniform float ${mood};\n${SLATE_TEXT_GUARD}`,
+        );
+      }
+      if (guarded)
         shader.fragmentShader = shader.fragmentShader
-          .replace(
-            "#include <common>",
-            () =>
-              `#include <common>\nvarying vec4 vSlateClip;\nuniform float babelGlint;\n${SLATE_TEXT_GUARD}`,
-          )
           .replace(
             "#include <lights_fragment_begin>",
             () => `#include <lights_fragment_begin>\n${BARK_TEXT_LIGHTS}`,
@@ -430,7 +465,12 @@ ${ROOT_MOSS_MAP}`
             "#include <lights_fragment_end>",
             () => `#include <lights_fragment_end>\n${BARK_TEXT_GLINT}`,
           );
-      }
+      // The stones' lamplight behind the name and intro (ROCK_TEXT_LIGHTS).
+      if (stoneGuarded)
+        shader.fragmentShader = shader.fragmentShader.replace(
+          "#include <lights_fragment_end>",
+          () => `#include <lights_fragment_end>\n${ROCK_TEXT_LIGHTS}`,
+        );
     };
     if (material.normalScale && profile.normalScale) {
       material.normalScale.set(profile.normalScale, profile.normalScale);

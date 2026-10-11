@@ -182,7 +182,10 @@ export function writeRockContacts(contacts, rocks) {
 
 // Loads the two stones and builds one InstancedMesh per stone with no
 // instances. Their programs link through compile(); take() then commits the
-// instances on a tour cut, under the dissolve's kept frame.
+// instances on a tour cut, under the dissolve's kept frame. With textGuard
+// (the ground's text boxes, mud-ground.js createSlateContacts()) the stones
+// take the shot's lamplight knee behind the name and intro (architecture.js
+// ROCK_TEXT_LIGHTS).
 export function createRocks(
   lib,
   {
@@ -192,6 +195,7 @@ export function createRocks(
     anisotropy = 4,
     compile = () => false,
     contacts = null,
+    textGuard = null,
     loadAsset = lib.loadArchitectureAsset,
     urls = lib.ARCHITECTURE_ASSET_URLS,
     onStatus = () => {},
@@ -236,7 +240,7 @@ export function createRocks(
     Object.keys(lib.ROCK_TYPES).forEach((type, index) => {
       const rocks = layout.filter((rock) => rock.type === type),
         material = lib.stampDepthLayer(
-          lib.materialFor(assets[index], anisotropy, "rock"),
+          lib.materialFor(assets[index], anisotropy, "rock", textGuard),
           lib.DEPTH_LAYER.ground,
         );
       materials.push(material);
