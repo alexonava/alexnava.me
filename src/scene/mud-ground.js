@@ -1017,26 +1017,55 @@ const STREAM_LEVEL = `mix(-slateStreamBed(slateStreamR,slateStreamQ.w,clamp(2.*s
 // (normalised radius, distance downstream, signed distance across, distance),
 // and the flow's direction in dir. Its segments go in its runs (courseRuns()),
 // each tried only within its box grown by the bank's widest reach there
-// (beyond that the point is no river), so a point tries about one run; past
-// RIVER_GROUP runs they are boxed again in fours. Outside them all, the radius
-// is about 1e9. While the river is `width` wide all along, a segment is the
-// nearest by distance; else by distance in half-widths.
+// (beyond that the point is no river), so a point tries about one run.
+// Outside them all, the radius is about 1e9. While the river is `width` wide
+// all along, a segment is the nearest by distance and every segment is written
+// out (past RIVER_GROUP runs, boxed again in fours); else the nearest in
+// half-widths, its segments and boxes in constant arrays walked by loops, so a
+// long course compiles about as fast as a short one.
 const RIVER_GROUP = 8;
 export function riverGlsl(line = RIVER_LINE, river = SLATE_RIVER, bed = SLATE_RIVER_BED) {
   const { width, wobble } = river,
     even = line.every(([, , , w, c]) => w === width && c === 0),
     reach = (widest) => widest * bed.reach[1] * (1 + wobble[0] + wobble[1]) + 0.5;
   const n = (v) => glslNumber(+v.toFixed(4));
+  if (!even) {
+    // A long course compiles slowly unrolled (a driver's compile time grows with every segment):
+    // its segments ([start, step] and [distance down, half-width, its change, wobble phase]) and
+    // run boxes go in constant arrays instead, walked by two loops. A segment's length and its
+    // wobble phase's change (riverLine()) follow from those.
+    const all = courseRuns(line),
+      v4 = (values) => `vec4(${values.map(n).join(",")})`,
+      seg = [[], []];
+    for (let k = 0; k + 1 < line.length; k++) {
+      const [ax, az, s0, wa, ca] = line[k],
+        [bx, bz, , wb] = line[k + 1];
+      seg[0].push(v4([ax, az, bx - ax, bz - az]));
+      seg[1].push(v4([s0, wa, wb - wa, ca]));
+    }
+    const boxes = all.map(({ box, widest }) => {
+        const pad = reach(widest);
+        return v4([box[0] - pad, box[1] + pad, box[2] - pad, box[3] + pad]);
+      }),
+      spans = all.map(({ from, to }) => `ivec2(${from},${to})`);
+    return `const vec4 slateRiverBox[${all.length}]=vec4[](${boxes.join(",")});
+const ivec2 slateRiverSpan[${all.length}]=ivec2[](${spans.join(",")});
+const vec4 slateRiverA[${seg[0].length}]=vec4[](${seg[0].join(",")});
+const vec4 slateRiverB[${seg[0].length}]=vec4[](${seg[1].join(",")});
+vec4 slateRiver(vec2 p,out vec2 dir){dir=vec2(1.,0.);
+float b=1e9,s=0.,g=0.,c=1e9;
+for(int r=0;r<${all.length};r++){vec4 q=slateRiverBox[r];if(p.x>q.x&&p.x<q.y&&p.y>q.z&&p.y<q.w){ivec2 u=slateRiverSpan[r];for(int k=u.x;k<u.y;k++){vec4 A=slateRiverA[k],B=slateRiverB[k];vec2 pa=p-A.xy,ba=A.zw;float l=dot(ba,ba),h=clamp(dot(pa,ba)/l,0.,1.),e=length(pa-ba*h),d=e*${n(width)}/(B.y+h*B.z);if(d<b){l=sqrt(l);b=d;s=B.x+h*l;g=B.w+h*l*(${n(2 * width)}/(2.*B.y+B.z)-1.);dir=ba/l;c=pa.x*ba.y-pa.y*ba.x<0.?e:-e;}}}}
+return vec4(b/(${n(width)}*(1.+${n(wobble[0])}*sin(.9*(s+g)+1.3)+${n(wobble[1])}*sin(2.3*(s+g)+.4))),s,c,abs(c));}
+`;
+  }
+  // One width all along: each segment unrolled, the nearest by distance.
   const segment = (k) => {
-    const [ax, az, s0, wa, ca] = line[k],
-      [bx, bz, , wb, cb] = line[k + 1],
+    const [ax, az, s0] = line[k],
+      [bx, bz] = line[k + 1],
       ex = bx - ax,
       ez = bz - az,
-      len = Math.hypot(ex, ez),
-      head = `pa=p-vec2(${n(ax)},${n(az)});ba=vec2(${n(ex)},${n(ez)});h=clamp(dot(pa,ba)*${n(1 / (len * len))},0.,1.);`;
-    return even
-      ? `${head}d=length(pa-ba*h);if(d<b){b=d;s=${n(s0)}+h*${n(len)};dir=ba*${n(1 / len)};c=pa.x*ba.y-pa.y*ba.x<0.?1.:-1.;}`
-      : `${head}e=length(pa-ba*h);d=e*${n(width)}/(${n(wa)}+h*${n(wb - wa)});if(d<b){b=d;s=${n(s0)}+h*${n(len)};g=${n(ca)}+h*${n(cb - ca)};dir=ba*${n(1 / len)};c=pa.x*ba.y-pa.y*ba.x<0.?e:-e;}`;
+      len = Math.hypot(ex, ez);
+    return `pa=p-vec2(${n(ax)},${n(az)});ba=vec2(${n(ex)},${n(ez)});h=clamp(dot(pa,ba)*${n(1 / (len * len))},0.,1.);d=length(pa-ba*h);if(d<b){b=d;s=${n(s0)}+h*${n(len)};dir=ba*${n(1 / len)};c=pa.x*ba.y-pa.y*ba.x<0.?1.:-1.;}`;
   };
   const boxed = (box, pad, body) =>
     `if(p.x>${n(box[0] - pad)}&&p.x<${n(box[1] + pad)}&&p.y>${n(box[2] - pad)}&&p.y<${n(box[3] + pad)}){\n${body}}`;
@@ -1070,16 +1099,10 @@ export function riverGlsl(line = RIVER_LINE, river = SLATE_RIVER, bed = SLATE_RI
       );
     }
   }
-  return even
-    ? `vec4 slateRiver(vec2 p,out vec2 dir){dir=vec2(1.,0.);
+  return `vec4 slateRiver(vec2 p,out vec2 dir){dir=vec2(1.,0.);
 vec2 pa,ba;float h,d,b=1e9,s=0.,c=1.;
 ${body.join("\n")}
 return vec4(b/(${n(width)}*(1.+${n(wobble[0])}*sin(.9*s+1.3)+${n(wobble[1])}*sin(2.3*s+.4))),s,c*b,b);}
-`
-    : `vec4 slateRiver(vec2 p,out vec2 dir){dir=vec2(1.,0.);
-vec2 pa,ba;float h,d,e,b=1e9,s=0.,g=0.,c=1e9;
-${body.join("\n")}
-return vec4(b/(${n(width)}*(1.+${n(wobble[0])}*sin(.9*(s+g)+1.3)+${n(wobble[1])}*sin(2.3*(s+g)+.4))),s,c,abs(c));}
 `;
 }
 const RIVER_GLSL = riverGlsl();

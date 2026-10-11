@@ -396,27 +396,32 @@ test("the river's water lies only below its shore, as the terrain carves it, and
       "vec2 slateRiverDir;\n      vec4 slateRiverQ = slateRiver(vMudWorld.xz, slateRiverDir);\n      float slateRiverR = slateRiverQ.x;",
     ),
   );
-  // The streams go the same way, one box a course.
+  // Its segments (every one once, in constant arrays) and its runs' boxes are walked by loops, so the
+  // long course compiles about as fast as a short one; the streams' segments are written out, one box
+  // a course.
   const segments = RIVER_LINE.length - 1,
+    runs = riverRuns().length,
     courses = streamLines(),
     streamSegments = courses.reduce((sum, { points }) => sum + points.length - 1, 0);
+  assert.ok(plain.fragment.includes(`const vec4 slateRiverA[${segments}]=vec4[](`));
+  assert.ok(plain.fragment.includes(`const vec4 slateRiverB[${segments}]=vec4[](`));
+  assert.ok(plain.fragment.includes(`const vec4 slateRiverBox[${runs}]=vec4[](`));
+  assert.ok(plain.fragment.includes(`const ivec2 slateRiverSpan[${runs}]=ivec2[](`));
   assert.equal(
     plain.fragment.match(/pa=p-vec2\(/g).length,
-    segments + streamSegments,
-    "every segment once",
+    streamSegments,
+    "every stream segment once",
   );
-  // Its runs are boxed again in fours once there are more than eight.
-  const runs = riverRuns().length;
   assert.equal(
     plain.fragment.match(/if\(p\.x>/g).length,
-    runs + (runs > 8 ? Math.ceil(runs / 4) : 0) + courses.length,
+    1 + courses.length,
     "a box a run, a box a course",
   );
   assert.equal(runs, T.RIVER_RUNS.length, "the terrain's runs are the shader's");
-  // Within budget: the whole course stays a modest function.
-  assert.ok(segments <= 200 && riverGlsl().length <= 44 * 1024, `${segments} segments`);
-  // While the river is one width all along, its segments are the nearest by distance (its text
-  // before it widened); where it widens, the nearest in half-widths, its wobble stretching with it.
+  assert.ok(segments <= 200 && riverGlsl().length <= 20 * 1024, `${segments} segments`);
+  // While the river is one width all along, its segments are written out, the nearest by distance
+  // (its text before it widened); where it widens, the nearest in half-widths, its wobble stretching
+  // with it.
   const narrow = {
     ...SLATE_RIVER,
     path: SLATE_RIVER.path.map(([dx, dz]) => [dx, dz]),
@@ -424,8 +429,8 @@ test("the river's water lies only below its shore, as the terrain carves it, and
   };
   const even = riverGlsl(riverLine(narrow), narrow);
   assert.match(even, /d=length\(pa-ba\*h\);if\(d<b\)/);
-  assert.doesNotMatch(even, /e=length/);
-  assert.match(riverGlsl(), /e=length\(pa-ba\*h\);d=e\*2\.0\//);
+  assert.doesNotMatch(even, /slateRiverA|e=length/);
+  assert.match(riverGlsl(), /e=length\(pa-ba\*h\),d=e\*2\.0\/\(B\.y\+h\*B\.z\)/);
   assert.match(riverGlsl(), /sin\(\.9\*\(s\+g\)\+1\.3\)/);
   assert.equal(plain.fragment.match(/slateRiver\(vMudWorld\.xz/g).length, 1, "found once");
   assert.doesNotMatch(plain.fragment, /slateGrit|slateRelief/, "no close soil without its maps");
