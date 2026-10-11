@@ -178,7 +178,8 @@ test("the rock scatter waits for the reveal, film, tree and tier, loads its chun
     assert.equal(loads, 0);
     idle.dispose();
   }
-  const contacts = estateContacts();
+  const contacts = estateContacts(),
+    textGuard = createSlateContacts();
   const rocks = createRockScatter({
     tier: "balanced",
     parent,
@@ -186,6 +187,7 @@ test("the rock scatter waits for the reveal, film, tree and tier, loads its chun
     load,
     loadAsset,
     contacts,
+    textGuard,
     compile: () => true,
     onStatus: (status) => statuses.push(status.status),
   });
@@ -207,6 +209,20 @@ test("the rock scatter waits for the reveal, film, tree and tier, loads its chun
   assert.ok(root.children.every((mesh) => mesh.castShadow && mesh.receiveShadow));
   assert.equal(root.visible, false);
   assert.ok(contacts[8 + 3] > 0, "rock contacts are written before they show");
+  // The stones read the ground's text boxes: the shot's lamplight knee behind
+  // the name and intro (architecture.js ROCK_TEXT_LIGHTS).
+  for (const mesh of root.children) {
+    const shader = {
+      uniforms: {},
+      vertexShader: ShaderLib.physical.vertexShader,
+      fragmentShader: ShaderLib.physical.fragmentShader,
+    };
+    mesh.material.onBeforeCompile(shader);
+    assert.equal(shader.uniforms.slateText, textGuard.slateText);
+    assert.ok(
+      shader.fragmentShader.includes("float babelStoneBehind = babelStone*slateBehind(slateText,"),
+    );
+  }
   // The link is queued, then the instances land on a tour cut.
   assert.equal(
     rocks.take({ cut: false, running: true, nowMs: 0 }),

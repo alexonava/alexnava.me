@@ -9,10 +9,11 @@ export const FILM_LIGHT = Object.freeze({ key: 1.12, fill: 1.15, hemisphere: 0.8
 // the rim, sets how much of the tree's pale wood reads moonlit grey (pale),
 // the share of the tree's rim kept off the text (rimText), the share of the
 // grass's colour read inside its blades (grassInside), the share of the bark's
-// glints kept off the name and intro (glintText) and the share of the
-// lantern's pool on the ground that passes its knee behind About (poolAbout,
-// mud-ground.js SLATE_LIGHT.poolKnee), all 0 by default; it
-// follows the shot on screen, so it changes on a cut.
+// glints kept off the name and intro (glintText), the share of the stones'
+// lamplight that passes its knee behind the name and intro (stoneText,
+// STONE_TEXT) and the share of the lantern's pool on the ground that passes
+// its knee behind About (poolAbout, mud-ground.js SLATE_LIGHT.poolKnee), all 0
+// by default; it follows the shot on screen, so it changes on a cut.
 export const SHOT_LIGHT_DEFAULT = Object.freeze({
   key: 1,
   fill: 1,
@@ -22,6 +23,7 @@ export const SHOT_LIGHT_DEFAULT = Object.freeze({
   rimText: 0,
   grassInside: 0,
   glintText: 0,
+  stoneText: 0,
   poolAbout: 0,
 });
 export function shotLight(shot) {
@@ -174,6 +176,15 @@ export const PALE_MOOD = { value: 0 };
 // `reach` of the screen's smaller side. Off (0) unless a shot asks for it.
 export const GLINT = Object.freeze({ reach: 0.2 });
 export const GLINT_MOOD = { value: 0 };
+
+// The stones' lamplight behind the name and intro under a shot's `stoneText`
+// (architecture.js ROCK_TEXT_LIGHTS): the point lights' direct light on the
+// scattered rocks and the stream's stones (the lantern's, and the crown's
+// fill), diffuse and highlight together, passes a luminance knee (`knee`, on
+// that light's linear luminance) by that share, easing out over `reach` of the
+// screen's smaller side. Off (0) unless a shot asks for it.
+export const STONE_TEXT = Object.freeze({ knee: 2, reach: 0.2 });
+export const STONE_MOOD = { value: 0 };
 
 // The grass's colour inside its blades under a shot's `grassInside`
 // (estate-ground-detail.js grassMaterial). High's film is multisampled, and a

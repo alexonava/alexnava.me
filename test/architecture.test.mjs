@@ -22,6 +22,7 @@ import {
   BARK_TEXT_LIGHTS,
   BARK_RIM_TEXT,
   ENVIRONMENT_ROLES,
+  ROCK_TEXT_LIGHTS,
   LANTERN_REACH,
   LANTERN_FILM_INTENSITY,
   FLAME_STREAK,
@@ -46,6 +47,8 @@ import {
   PALE_MOOD,
   RIM,
   RIM_UNIFORMS,
+  STONE_MOOD,
+  STONE_TEXT,
 } from "../src/scene/film-light.js";
 
 const asset = () => {
@@ -719,11 +722,13 @@ test("beside About the bark's highlights from the lantern and the crown's fill p
   assert.doesNotMatch(unguarded.fragmentShader, /babelRimText/);
   assert.match(unguarded.fragmentShader, /babelRimLight\.rgb\*babelFilm\*babelRim\*mix\(/);
   assert.notEqual(material.customProgramCacheKey(), plainMaterial.customProgramCacheKey());
-  // The tower and the rocks never take it.
+  // The tower and the rocks never take it (the rocks' own guard is
+  // ROCK_TEXT_LIGHTS).
   const rock = materialFor(boxAsset(), 1, "rock", contacts),
     rockShader = physical();
   rock.onBeforeCompile(rockShader);
-  assert.doesNotMatch(rockShader.fragmentShader, /slateBehind/);
+  assert.doesNotMatch(rockShader.fragmentShader, /babelBehind\b|slateBehindAbout\(vSlate|babelRim/);
+  assert.ok(!rockShader.fragmentShader.includes(BARK_TEXT_LIGHTS));
   rock.dispose();
   // The lookout's rim stays whole.
   const tower = materialFor(boxAsset(), 1, "tower", contacts),
@@ -807,6 +812,93 @@ test("behind the name and intro the bark's glints pass the same knee, by the sho
   }
   tree.dispose();
   plain.dispose();
+});
+
+test("behind the name and intro the stones' lamplight passes a knee, by the shot's share", () => {
+  const contacts = createSlateContacts(),
+    physical = () => ({
+      uniforms: {},
+      vertexShader: ShaderLib.physical.vertexShader,
+      fragmentShader: ShaderLib.physical.fragmentShader,
+    });
+  const rock = materialFor(boxAsset(), 1, "rock", contacts),
+    shader = physical();
+  rock.onBeforeCompile(shader);
+  // The ground's own boxes, and the shot's share as a shared uniform: a cut
+  // recompiles nothing, and it is off until a shot asks.
+  for (const name of ["slateText", "slateAbout", "slateAspect"])
+    assert.equal(shader.uniforms[name], contacts[name], name);
+  assert.equal(shader.uniforms.babelStone, STONE_MOOD);
+  assert.equal(STONE_MOOD.value, 0);
+  assert.match(shader.vertexShader, /#include <project_vertex>\nvSlateClip = gl_Position;/);
+  // After all the lights: the point lights' direct diffuse and highlight,
+  // taken again as RE_Direct_Physical takes them, keep 1/(1+L/knee) of
+  // themselves behind the name and intro's box, easing out over a fifth of the
+  // screen's smaller side.
+  const glsl = shader.fragmentShader;
+  assert.ok(glsl.includes(`#include <lights_fragment_end>\n${ROCK_TEXT_LIGHTS}`));
+  assert.ok(Object.isFrozen(STONE_TEXT));
+  assert.deepEqual(STONE_TEXT, { knee: 2, reach: 0.2 });
+  assert.ok(
+    ROCK_TEXT_LIGHTS.startsWith(
+      "float babelStoneBehind = babelStone*slateBehind(slateText, vSlateClip.xy/vSlateClip.w*.5+.5, 0.20);\n#if NUM_POINT_LIGHTS > 0\nif (babelStoneBehind > 0.0) {",
+    ),
+    "at 0, every other shot, nothing runs",
+  );
+  const loop = ROCK_TEXT_LIGHTS.match(
+    /#pragma unroll_loop_start\s+for \( int i = 0; i < NUM_POINT_LIGHTS; i \+\+ \) \{([^}]*)\}\s+#pragma unroll_loop_end/,
+  );
+  assert.ok(loop, "one unrolled loop over the point lights");
+  assert.match(
+    loop[1],
+    /getPointLightInfo\(pointLights\[ i \], geometryPosition, babelLight\);\s+babelLampIrradiance = saturate\(dot\(geometryNormal, babelLight\.direction\)\)\*babelLight\.color;\s+babelLampDiffuse \+= babelLampIrradiance\*BRDF_Lambert\(material\.diffuseColor\);\s+babelLampSpecular \+= babelLampIrradiance\*BRDF_GGX\(babelLight\.direction, geometryViewDir, geometryNormal, material\);/,
+  );
+  // Unrolled, a declaration in the loop's body would be declared once per light.
+  assert.doesNotMatch(loop[1], /\b(?:vec[234]|float|IncidentLight)\s+\w+/);
+  assert.ok(
+    ROCK_TEXT_LIGHTS.includes(
+      "float babelLampOff = babelStoneBehind*(2.0-babelStoneBehind)*(1.0-1.0/(1.0+babelLampLuma/2.000));",
+    ),
+  );
+  assert.ok(
+    ROCK_TEXT_LIGHTS.includes("reflectedLight.directDiffuse -= babelLampDiffuse*babelLampOff;"),
+  );
+  assert.ok(
+    ROCK_TEXT_LIGHTS.includes("reflectedLight.directSpecular -= babelLampSpecular*babelLampOff;"),
+  );
+  assert.doesNotMatch(ROCK_TEXT_LIGHTS, /slateAbout|indirect|directionalLights|spotLights/);
+  // Everything it reads is declared before main().
+  const main = glsl.indexOf("void main()");
+  for (const declared of [
+    "uniform float babelStone;",
+    "varying vec4 vSlateClip;",
+    "uniform vec4 slateText, slateAbout;",
+    "float slateBehind(vec4 r,vec2 v,float d){",
+  ])
+    assert.ok(glsl.indexOf(declared) >= 0 && glsl.indexOf(declared) < main, declared);
+  assert.ok(glsl.indexOf(ROCK_TEXT_LIGHTS) > main);
+  // Without the ground's uniforms the stones are as they were, on their own program.
+  const plain = materialFor(boxAsset(), 1, "rock"),
+    unguarded = physical();
+  plain.onBeforeCompile(unguarded);
+  assert.doesNotMatch(unguarded.fragmentShader + unguarded.vertexShader, /babelStone|vSlateClip/);
+  assert.equal(unguarded.uniforms.babelStone, undefined);
+  assert.notEqual(rock.customProgramCacheKey(), plain.customProgramCacheKey());
+  // The bark and the lookout never take it.
+  const tree = createTreeArchitecture({
+    asset: boxAsset(),
+    groundHeight: () => 0,
+    textGuard: contacts,
+  });
+  const bark = physical();
+  tree.root.getObjectByName("meshy-tree").material.onBeforeCompile(bark);
+  assert.doesNotMatch(bark.fragmentShader, /babelStone/);
+  const tower = materialFor(boxAsset(), 1, "tower", contacts),
+    towerShader = physical();
+  tower.onBeforeCompile(towerShader);
+  assert.doesNotMatch(towerShader.fragmentShader, /babelStone/);
+  for (const material of [rock, plain, tower]) material.dispose();
+  tree.dispose();
 });
 
 test("the lantern is an iron post lantern with glass, candle and flame, authored 2.48 units tall and fully owned", () => {
