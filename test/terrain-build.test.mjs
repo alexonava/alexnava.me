@@ -48,6 +48,15 @@ import {
   riverPoint,
   riverBounds,
   riverCarve,
+  channelCarve,
+  driftLeaves,
+  plantReeds,
+  scatterBanks,
+  STREAM_REEDS,
+  streamBedAt,
+  streamCarve,
+  streamRadius,
+  WATER_BANKS,
   riverRadius,
   riverBedAt,
   plantRushes,
@@ -339,10 +348,11 @@ test("the river lowers only its channel and banks: the lantern's footing and the
       const r = riverRadius(x, z),
         before = a.at(x, z),
         after = b.at(x, z);
-      // The pinned ground a sub-grid cell (0.25, up to 0.35 radii) beyond the river's reach,
+      // The pinned ground a sub-grid cell (0.25, up to 0.35 radii) beyond the river's and the stream's reach,
       // all the triangles about it pinned too.
       const pinned =
         r > RIVER_BED.reach[1] + 0.35 &&
+        streamRadius(x, z) > STREAMS.bed.reach[1] + 0.35 &&
         [-0.8, 0, 0.8].every((u) => [-0.8, 0, 0.8].every((v) => pinKeep(x + u, z + v) === 0));
       if (Math.hypot(x - lamp.x, z - lamp.z) < 0.6 || pinned) {
         // The lantern's footing, and the pinned ground beyond the river.
@@ -371,7 +381,8 @@ test("the river lowers only its channel and banks: the lantern's footing and the
             [0, 0.3],
             [0, -0.3],
           ].some(([u, v]) => Math.abs(riverAt(x + u, z + v).s - here) > 1);
-        const expected = before.point.y + riverCarve(x, z, before.point.y, foot);
+        // Where the stream pours in, the deeper of the two channels.
+        const expected = before.point.y + channelCarve(x, z, before.point.y, foot);
         if (!fold) assert.ok(Math.abs(after.point.y - expected) < 0.012, `basin at ${x},${z}`);
         // Where the channel is carved in full (it eases out over 2.5 units inside the fine
         // grid's edge, beyond the lantern shots' frames), its bed lies under its water.
@@ -530,9 +541,12 @@ test("the knoll: soil rises toward the footing where the roots touch down, with 
       const [b, knoll, shape, lip, channel] = rootSupportLifts(x, z, base);
       assert.equal(b, base(x, z));
       assert.ok(Math.abs(height(x, z) - (b + knoll + shape + lip + channel)) < 1e-12);
-      // The river only lowers, and only within its reach.
+      // The river and the stream only lower, and only within their reach.
       assert.ok(
-        channel <= 0 && (channel === 0 || riverRadius(x, z) < RIVER_BED.reach[1]),
+        channel <= 0 &&
+          (channel === 0 ||
+            riverRadius(x, z) < RIVER_BED.reach[1] ||
+            streamRadius(x, z) < STREAMS.bed.reach[1]),
         `${x},${z}`,
       );
       // The knoll only fills: up to the footing, a little more toward the
@@ -2071,9 +2085,8 @@ test("the fine litter (leaves, clods, grit) lies on the foreground soil, never u
   terrain.dispose();
 });
 
-test("the streams restate the ground shader's: rills off the roots gather into a creek that pours into the river", () => {
-  for (const key of ["courses", "step", "meander", "flow", "current", "foam"])
-    assert.deepEqual(STREAMS[key], SLATE_STREAMS[key], key);
+test("the stream restates the ground shader's: it comes out from under the roots and pours into the river", () => {
+  assert.deepEqual(STREAMS, SLATE_STREAMS);
   assert.deepEqual(STREAM_LINES, streamLines(), "sampled alike");
   const creek = STREAMS.courses.filter(({ path }) => {
     const [mx, mz] = path.at(-1);
@@ -2673,4 +2686,143 @@ test("failed or disposed optional terrain retains the borrowed fallback without 
   failed.ground.material.dispose();
   late.ground.geometry.dispose();
   late.ground.material.dispose();
+});
+
+test("the stream's channel leans through its bends and never reaches the lantern's footing", () => {
+  const { depth, rise, cut } = STREAMS.bed;
+  // Under its water inside its banks, level with it on them, above it beyond.
+  for (const side of [-0.6, 0, 0.6])
+    for (const r of [0, 0.5, 0.9, 1, 1.3, 2]) {
+      const h = streamBedAt(r, Infinity, side);
+      assert.ok(r < 1 ? h < 0 : h >= 0, `${r} ${side}`);
+    }
+  // Deeper and steeper under the outside (cut) bank than up the inside (point) bar.
+  assert.ok(streamBedAt(0.6, Infinity, 0.6) < streamBedAt(0.6, Infinity, -0.6));
+  assert.ok(streamBedAt(1.5, Infinity, 0.6) > streamBedAt(1.5, Infinity, -0.6));
+  assert.ok(streamBedAt(4, Infinity, 1) <= rise * cut + 1e-9);
+  assert.ok(Math.abs(streamBedAt(0, Infinity, 0) + depth) < 1e-12);
+  // The bends are signed turns within -1..1, both ways along this course.
+  const { bends } = STREAM_LINES[0];
+  assert.ok(bends.every((b) => b >= -1 && b <= 1));
+  assert.ok(Math.min(...bends) < -0.3 && Math.max(...bends) > 0.3);
+  // Nothing is carved within the footing's keep, and the lantern's foot stays clear of the water.
+  const base = () => 0;
+  for (let a = 0; a < 360; a += 10)
+    for (const d of [0.3, 0.8, 1.25]) {
+      const x = LANTERN_FOOT.x + d * Math.cos((a * Math.PI) / 180),
+        z = LANTERN_FOOT.z + d * Math.sin((a * Math.PI) / 180);
+      assert.ok(streamCarve(x, z, 0, 0) === 0, `carved at ${x},${z}`);
+      assert.ok(Math.abs(channelCarve(x, z, base(x, z), 0) - riverCarve(x, z, 0, 0)) < 1e-12);
+    }
+  for (let a = 0; a < 360; a += 5) {
+    const x = LANTERN_FOOT.x + 1.4 * Math.cos((a * Math.PI) / 180),
+      z = LANTERN_FOOT.z + 1.4 * Math.sin((a * Math.PI) / 180);
+    assert.ok(streamRadius(x, z) > 1, `water within 1.4 of the lantern at ${x},${z}`);
+  }
+});
+
+test("the water's banks: gravel bars, reeds and debris stay out of the water, off the lantern and the roots, on their own seeds", () => {
+  const surface = () => 0,
+    soil = { r: 0.36, g: 0.31, b: 0.28 };
+  const banks = scatterBanks(surface, soil),
+    again = scatterBanks(surface, soil);
+  assert.deepEqual(banks.attributes.position.array, again.attributes.position.array);
+  const p = banks.attributes.position,
+    c = banks.attributes.color;
+  assert.equal(banks.userData.gravel, WATER_BANKS.gravel.count);
+  assert.ok(banks.userData.debris > WATER_BANKS.debris.count * 0.8);
+  // A share of whole pieces for balanced (estate-ground-detail.js).
+  assert.deepEqual(banks.userData.fine, [0, p.count]);
+  assert.equal(banks.userData.finePieces[0], 0);
+  assert.ok(p.count / 3 < 36000, `${p.count / 3} triangles`);
+  const pieces = banks.userData.finePieces;
+  let inWater = 0;
+  for (let k = 0; k < pieces.length; k++) {
+    // Each piece's first vertex lies within its footprint.
+    const i = pieces[k],
+      x = p.getX(i),
+      z = p.getZ(i);
+    assert.ok(
+      Math.hypot(x - LANTERN_FOOT.x, z - LANTERN_FOOT.z) > WATER_BANKS.gravel.lantern - 0.15,
+    );
+    assert.equal(rootCovered(x, z), false, `piece ${k} under a root`);
+    if (streamRadius(x, z) < 0.8 && riverRadius(x, z) < 0.8) inWater++;
+  }
+  // Only the eddy leaves and twigs behind the stones float on the stream.
+  assert.ok(
+    inWater <= STREAMS.stones.list.length * WATER_BANKS.debris.eddy,
+    `${inWater} in the water`,
+  );
+  for (let i = 0; i < c.count; i++)
+    assert.ok(Math.max(c.getX(i), c.getY(i), c.getZ(i)) < 0.25, "never brighter than wet gravel");
+  banks.dispose();
+  again.dispose();
+  // The reeds: the rushes' clumps on the stream's banks, never in its water.
+  const reeds = plantReeds(surface),
+    q = reeds.attributes.position;
+  assert.equal(reeds.userData.clumps, STREAM_REEDS.clumps);
+  assert.deepEqual(plantReeds(surface).attributes.position.array, q.array);
+  for (let i = 0; i < q.count; i += 2) {
+    const x = q.getX(i),
+      z = q.getZ(i);
+    if (q.getY(i) > 0.05) continue; // a stem's foot
+    assert.ok(streamRadius(x, z) > 1, `a reed stands in the stream at ${x},${z}`);
+    assert.ok(Math.hypot(x - LANTERN_FOOT.x, z - LANTERN_FOOT.z) > STREAM_REEDS.lantern - 0.3);
+  }
+  reeds.dispose();
+});
+
+test("the drifting leaves ride the stream on the drips' clock and hold when it holds", () => {
+  const leaves = driftLeaves(0),
+    p = leaves.attributes.position,
+    update = leaves.userData.update;
+  assert.equal(p.count, WATER_BANKS.drift.count * 24);
+  update(3);
+  const at3 = Float32Array.from(p.array);
+  update(3);
+  assert.deepEqual(Float32Array.from(p.array), at3, "a held clock holds them still");
+  update(4);
+  assert.notDeepEqual(Float32Array.from(p.array), at3, "a running clock carries them");
+  // On the water's height, within the stream's banks.
+  for (let i = 0; i < p.count; i += 24) {
+    assert.ok(Math.abs(p.getY(i) - 0.006) < 0.05);
+    assert.ok(streamRadius(p.getX(i), p.getZ(i)) < 1.3, `a leaf off the stream at ${i}`);
+  }
+  leaves.dispose();
+});
+
+test("the water's banks join the scene after the shading's switch, in idle slices, where they cannot show mid-shot", async () => {
+  const clock = frames(),
+    r = linkRig({ revealed: true }),
+    tour = { running: true, transition: { cut: false } };
+  try {
+    let invalidations = 0;
+    settleRoots(r.terrain, r.ground, r.rendering, r.base, () => invalidations++, tour);
+    const banks = () => r.tufts.mesh.getObjectByName("estate-water-banks");
+    // Not before the switch: the rushes are there, the banks are not.
+    assert.ok(r.tufts.mesh.getObjectByName("estate-river-rushes"));
+    assert.equal(banks(), undefined);
+    r.links[0].finish();
+    tour.transition.cut = true;
+    await clock.step(2);
+    assert.equal(r.material.customProgramCacheKey(), "moonlit-slate-v3+root");
+    assert.equal(invalidations, 1);
+    // Built in slices after it, they wait for a cut.
+    tour.transition.cut = false;
+    for (let i = 0; i < 200 && !banks(); i++) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      await clock.step();
+    }
+    assert.equal(banks(), undefined, "never mid-shot");
+    tour.transition.cut = true;
+    await clock.step(2);
+    assert.ok(banks(), "on the cut");
+    for (const name of ["estate-stream-reeds", "estate-drift-leaves"])
+      assert.ok(r.tufts.mesh.getObjectByName(name), name);
+    assert.equal(invalidations, 2, "a still frame redraws with them");
+    r.terrain.dispose();
+    assert.equal(banks(), undefined, "withdrawn with the terrain");
+  } finally {
+    clock.restore();
+  }
 });

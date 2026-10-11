@@ -41,9 +41,9 @@ export const SOLAR_LOOK = Object.freeze({
   core: Object.freeze([1, 0.97, 0.62]),
   rim: Object.freeze([1, 0.36, 0.05]),
   halo: Object.freeze({
-    aura: 0.4,
+    aura: 0.3,
     auraFalloff: 6,
-    glow: 0.22,
+    glow: 0.17,
     falloff: 1.3,
     reach: 2.6,
     fade: 0.9,
@@ -57,10 +57,12 @@ export const SOLAR_LOOK = Object.freeze({
   churn: 0.07,
   plane: 7,
 });
-// The anamorphic streak across the star: SOLAR_RADIUS times length and height.
-export const SOLAR_STREAK = Object.freeze({ length: 26, height: 1.4, strength: 0.32 });
-// The star's fire, a living corona like the Eye of Sauron's (the owner's pick of
-// 2026-10-09): flames stream out from the limb, layered noise in polar
+// The thin, faint anamorphic streak across the star: SOLAR_RADIUS times length
+// and height.
+export const SOLAR_STREAK = Object.freeze({ length: 12, height: 1.1, strength: 0.1 });
+// The star's fire, a faint living corona (the Eye of Sauron's, the owner's pick
+// of 2026-10-09, calmed on the owner's ask of 2026-10-10, "tone down the sun",
+// to Calm): short flames stream out from the limb, layered noise in polar
 // coordinates advected outward at `rise` radii a second and curling as they rise
 // (`curl`). Their body falls off over `length` radii from the limb with a ragged,
 // tongued edge, and slow licks (`licks`, on a `lickRate` clock) lengthen it; fine
@@ -80,18 +82,18 @@ export const SOLAR_STREAK = Object.freeze({ length: 26, height: 1.4, strength: 0
 // star as it was.
 export const SOLAR_FIRE = Object.freeze({
   on: 1,
-  strength: 0.95,
-  length: 0.42,
-  licks: 1.3,
+  strength: 0.32,
+  length: 0.16,
+  licks: 0.5,
   lickRate: 0.08,
-  reach: 2.2,
+  reach: 1.45,
   wide: 0,
   rise: 0.2,
   curl: 1,
   filaments: 12,
   octaves: Object.freeze({ high: 3, balanced: 2, low: 1 }),
-  wisps: 0.8,
-  strands: 0.85,
+  wisps: 0.2,
+  strands: 0.6,
   quiet: 1,
   knee: 0.6,
   mask: 6,

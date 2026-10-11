@@ -5,7 +5,13 @@ import test from "node:test";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import { BoxGeometry, Group, Mesh, MeshStandardMaterial, Box3, ShaderLib, Vector3 } from "three";
-import { ESTATE, estatePathDistance, estatePoint } from "../src/scene/estate-layout.js";
+import {
+  ESTATE,
+  estateLantern,
+  estatePathDistance,
+  estatePoint,
+} from "../src/scene/estate-layout.js";
+import { streamRadius } from "../src/scene/terrain-build.js";
 import { DIRECTED_SHOTS } from "../src/scene/directed-shots.js";
 import {
   createRockScatter,
@@ -63,14 +69,26 @@ test("rock placement is seeded, clear of the estate and every directed shot, and
     b = rockFootprints(ROCK_LIB);
   assert.deepEqual(a, b);
   const tall = ROCK_CLUSTERS.filter(([, , , , , height]) => height >= PEBBLE_UNDER).length;
-  const pebbles = a.filter((rock) => rock.pebble);
-  assert.equal(a.length - pebbles.length, ROCK_CLUSTERS.length);
+  const pebbles = a.filter((rock) => rock.pebble),
+    stones = a.filter((rock) => rock.stream);
+  assert.equal(a.length - pebbles.length - stones.length, ROCK_CLUSTERS.length);
+  // The stream's stones, as authored, last (they draw nothing, so the rest keep their places).
+  assert.equal(stones.length, ROCK_LIB.STREAM_STONES.list.length);
+  assert.deepEqual(a.slice(-stones.length), stones);
   assert.ok(pebbles.length >= tall - 1 && pebbles.length <= tall, `${pebbles.length} pebbles`);
   for (const rock of a) {
     // Generated pebbles pass every keep-out; the authored clusters clear the
     // tower and tree (the lantern stones are placed at the lantern's foot).
     if (rock.pebble) assert.ok(rockClear(ROCK_LIB, rock.x, rock.z, rock.radius), rock.id);
-    else if (!rock.lanternStone) {
+    else if (rock.stream) {
+      // In the stream's water, clear of the lantern's footing.
+      assert.ok(streamRadius(rock.x, rock.z) < 1, `${rock.id} out of the water`);
+      assert.ok(
+        Math.hypot(rock.x - estateLantern().x, rock.z - estateLantern().z) > 1.8,
+        `${rock.id} at the lantern`,
+      );
+      assert.ok(rock.height < 0.3, `${rock.id} takes a contact slot`);
+    } else if (!rock.lanternStone) {
       assert.ok(
         Math.hypot(rock.x - ESTATE.tower.x, rock.z - ESTATE.tower.z) >
           ESTATE.tower.clear + rock.radius,
@@ -414,8 +432,12 @@ test("the river's water lies only below its shore, as the terrain carves it, and
     : String(SLATE_CLOSE.crumb.height);
   assert.ok(soil.fragment.includes(`slateCH += slateCrumb*${crumbHeight}*slateKW;`));
   assert.doesNotMatch(soil.fragment, /slateKO = fract\(sin/);
-  // The streams fill like the puddles, in the detail map's low texels, found once a fragment.
-  assert.ok(soil.fragment.includes("vec4 slateStreamAt(vec2 p,out vec2 dir,out float join)"));
+  // The stream is found once a fragment: its place, flow, join, radius and bend.
+  assert.ok(
+    soil.fragment.includes(
+      "vec4 slateStreamAt(vec2 p,out vec2 dir,out float join,out float r,out float bend)",
+    ),
+  );
   assert.equal(
     soil.fragment.match(/slateStreamAt\(vMudWorld\.xz/g).length,
     1,
@@ -514,11 +536,11 @@ test("each ground shading has its own program cache key; the slate's shading nee
     /reflectedLight\.directSpecular \*= mix\(1\.0, 0\.45, slateMatte\)\*\(1\.0 \+ 1\.6\*slateWet\)\*\(1\.0 \+ 4\.0\*slatePuddle - 3\.2\*slateLanternPuddle\);/,
   );
   assert.match(fragment, /roughnessFactor = mix\(roughnessFactor, 0\.2, slateLanternPuddle\);/);
-  // Up close the damp soil is matte (never the water): rougher, a thinner
-  // film and smaller highlights within SLATE_WET.close.near of the lens.
+  // Up close the damp soil is matte (never the water or its wet banks): rougher,
+  // a thinner film and smaller highlights within SLATE_WET.close.near of the lens.
   assert.match(
     fragment,
-    /float slateMatte = \(1\.0-smoothstep\(6\.0,18\.0, length\(vViewPosition\)\)\)\*\(1\.0-slatePuddle\);/,
+    /float slateMatte = \(1\.0-smoothstep\(6\.0,18\.0, length\(vViewPosition\)\)\)\*\(1\.0-slatePuddle\)\*\(1\.0-slateBank\);/,
   );
   assert.match(
     fragment,
@@ -743,11 +765,11 @@ test("each ground shading has its own program cache key; the slate's shading nee
   assert.match(fragment, /float slateDry = footingDry;/);
   assert.match(fragment, /float slateWet = clamp\([^;]*\)\*\(1\.0-slateDry\);/);
   // The puddles fill fuller, Portrait's foreground puddle among them; the
-  // river takes its own level from its shape beside theirs.
+  // stream and the river take their own levels from their shapes beside theirs.
   assert.equal(SLATE_PUDDLES.zones.length, 3);
   assert.match(
     fragment,
-    /\*\(0\.62\+\.4\*slateNoise\(vMudWorld\.xz\*\.9\)\)-slateH, mix\(-slateRiverBed\(slateRiverR\)\*3\.0/,
+    /\*\(0\.62\+\.4\*slateNoise\(vMudWorld\.xz\*\.9\)\)-slateH, mix\(-slateStreamBed\(slateStreamR,slateStreamQ\.w,clamp\(2\.\*slateStreamQ\.z,-1\.,1\.\)\*slateStreamBend\)\*3\.0[^;]*\), mix\(-slateRiverBed\(slateRiverR\)\*3\.0/,
   );
   assert.match(fragment, /length\(\(vMudWorld\.xz-vec2\(52\.32,20\.34\)\)\)\/1\.5\)/);
   // Puddles fill the detail map's low texels, glassy and darker, and mirror

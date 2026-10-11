@@ -116,7 +116,7 @@ _lazy_ marks a chunk loaded on demand.
 | `mud-ground.js`           | Slate, wetness, puddles, contacts and text boxes (`createSlateContacts`) |
 | `drifting-mist.js`        | Drifting ground mist after each film material's fog (`MIST_DRIFT`)       |
 | `estate-ground-detail.js` | Grass clumps, their wind and the winding path                            |
-| `terrain-build.js`        | _lazy_ Terrain, root supports, puddle mirror, litter, rushes             |
+| `terrain-build.js`        | _lazy_ Terrain, root supports, puddle mirror, litter, rushes, banks      |
 | `rock-scatter.js`         | Rock clusters and contacts                                               |
 | `rock-build.js`           | _lazy_ Rock placement and instancing                                     |
 
@@ -135,7 +135,7 @@ Build, development and authoring helpers in `tools/`. None is published.
 | `og-card.html`          | Source of the share card, `public/og.png`                                                           |
 | `og-card-backdrop.webp` | The share card's backdrop, a still of the live scene                                                |
 
-`node tools/bake-root-shade.mjs` prints the three constants from both tree variants, deterministically; paste them over the ones in [terrain-build.js](../src/scene/terrain-build.js) whenever one of its inputs changes: the tree models, the tree's seating (`TREE_FOOTING`, `TREE_SINK`), the root lines and lattice, the key-light direction (`KEY_LIGHT`), the terrain, or the ground the tables must leave untouched (the lantern clearing about `LANTERN_FOOT`, the river to its reach (`RIVER`, `RIVER_BED`, restating `SLATE_RIVER` and `SLATE_RIVER_BED` in mud-ground.js) and the puddles in `PUDDLE_ZONES`). `test/terrain-build.test.mjs` re-bakes and fails on any difference.
+`node tools/bake-root-shade.mjs` prints the three constants from both tree variants, deterministically; paste them over the ones in [terrain-build.js](../src/scene/terrain-build.js) whenever one of its inputs changes: the tree models, the tree's seating (`TREE_FOOTING`, `TREE_SINK`), the root lines and lattice, the key-light direction (`KEY_LIGHT`), the terrain, or the ground the tables must leave untouched (the lantern clearing about `LANTERN_FOOT`, the river to its reach (`RIVER`, `RIVER_BED`, restating `SLATE_RIVER` and `SLATE_RIVER_BED` in mud-ground.js) and the puddles in `PUDDLE_ZONES`), or the stream's channel (`STREAMS`, restating `SLATE_STREAMS`). `test/terrain-build.test.mjs` re-bakes and fails on any difference.
 
 ## Scene lifecycle
 
