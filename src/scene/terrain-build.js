@@ -1781,16 +1781,18 @@ if (slateWater > 0.0) {
 }
 #endif
 `;
-// White water on the streams (STREAMS.foam): streaks drawn out along each
-// course drift down it with the current, over more of the water where the
-// courses meet and where the creek pours into the river. It is rough, pale
+// The stream's water body and white water. As it deepens its water hides the
+// cracks under silt and darkens (STREAMS.body), easing into the river's own
+// water where it pours in. Its white water (STREAMS.foam) is a lace of bubble
+// rafts drifting down it with the current, in clumps where it churns: most
+// about its stones, a little where it pours into the river. It is rough, pale
 // froth lit like the soil, not water: the mirror and the water's gloss give
 // way to it.
 const SF = STREAMS.foam;
 const SB = STREAMS.body;
-// The white water about the creek's stones: a ring hugging each at the
+// The white water about the stream's stones: a ring hugging each at the
 // waterline and a wake trailing downstream, widening as it goes, that raises
-// the churn of the streaks (STREAMS.stones).
+// the churn of the lace (STREAMS.stones).
 const ST = STREAMS.stones;
 const STONE_FOAM = ST.list
   .map(([dx, dz, height]) => {
@@ -1815,9 +1817,9 @@ if (slateStreamQ.x > 0.0) {
   ${STONE_FOAM}
   float slateChurn = max(${glsl(SF.amount)}, max(${glsl(SF.join)}*smoothstep(.2, .8, slateStreamJoin), ${glsl(SF.mouth)}*(1.0-smoothstep(${glsl(SF.reach[0])}, ${glsl(SF.reach[1])}, slateRiverR))))*(.2+1.6*slateNoise(slateSU*${glslVec(...SF.patch)}+23.0));
   slateChurn = max(slateChurn, slateStone*(.5+.5*slateNoise(slateSU*${glslVec(...SF.patch)}*2.0+5.0)));
-  // Streaks finer than about two pixels give way to a faint share of their cover, so they never alias nor wash a far
-  // creek pale; out in the river the plume thins as it spreads (SF.plume of it toward the river's middle).
-  // The lace: the borders of cells drifting with the current, thicker and closer where it churns.
+  // The lace: the borders of cells drifting with the current, thicker and closer where it churns. Where its cells fall
+  // under about two pixels it gives way to a faint share of its churn, so it never aliases nor washes a far stream
+  // pale; out in the river the plume thins as it spreads (SF.plume of it toward the river's middle).
   vec2 slateLC = slateSU*${glslVec(...SF.lace)};
   slateLC += ${glsl(SF.warp)}*vec2(slateNoise(slateLC*.45+3.0), slateNoise(slateLC*.45+9.0))*2.0;
   vec2 slateLI = floor(slateLC), slateLF = fract(slateLC);

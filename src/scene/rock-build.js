@@ -98,7 +98,7 @@ export function rockFootprints(lib, seed = 91357) {
       }
     }
   }
-  // The creek's stones, as authored (no draws, so the rest keep their places).
+  // The stream's stones, as authored (no draws, so the rest keep their places).
   const stones = lib.STREAM_STONES,
     lantern = lib.estateLantern();
   stones?.list.forEach(([dx, dz, height, type, yaw], i) => {
