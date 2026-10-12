@@ -1,17 +1,71 @@
 import { Box3, Group, Mesh, Vector3 } from "three";
 import { editableGeometry } from "./architecture.js";
-import { flashHook } from "./film-light.js";
+import { CAGE_MOOD, CAGE_TEXT, flashHook } from "./film-light.js";
+import { SLATE_TEXT_GUARD } from "./mud-ground.js";
 
 export const LANTERN_AUTHORING_HEIGHT = 2.48;
 // The lantern's iron and glass mirror the film's night sky (night-environment.js)
 // at this share: cool glints on the cap and the glass, the metal still dark.
 export const LANTERN_ENVIRONMENT = 0.7;
 
+// Behind the name and intro, by the shot's share (babelCage, its mood's
+// cageText), the lantern's direct light passes a luminance knee (film-light.js
+// CAGE_TEXT), easing out over its reach: all the direct diffuse and highlight
+// there keep 1/(1+L/knee) of themselves at their luminance L. On the iron that
+// is the flame's light a hand's width away (lantern-flame.js adds its near
+// field at the same chunk, before this) with the moon's faint share. The
+// macros' tall frames stand the cage's lit posts behind the name and intro
+// (Lantern study 4.66:1 and Root and lantern 4.07:1 at 1080x1920). At 0, every
+// other shot, nothing runs.
+export const LANTERN_TEXT_LIGHTS = `float babelCageBehind = babelCage*slateBehind(slateText, vSlateClip.xy/vSlateClip.w*.5+.5, ${CAGE_TEXT.reach.toFixed(2)});
+if (babelCageBehind > 0.0) {
+  float babelCageLuma = dot(reflectedLight.directDiffuse+reflectedLight.directSpecular, vec3(.2126, .7152, .0722));
+  float babelCageOff = babelCageBehind*(2.0-babelCageBehind)*(1.0-1.0/(1.0+babelCageLuma/${CAGE_TEXT.knee.toFixed(3)}));
+  reflectedLight.directDiffuse *= 1.0-babelCageOff;
+  reflectedLight.directSpecular *= 1.0-babelCageOff;
+}
+`;
+
+// The text guard on a lantern material: the ground's text boxes (textGuard,
+// createSlateContacts()) and the shot's share, after the lights.
+function cageTextHook(material, textGuard) {
+  const before = material.onBeforeCompile,
+    key = material.customProgramCacheKey;
+  material.onBeforeCompile = function (shader, renderer) {
+    before?.call(this, shader, renderer);
+    Object.assign(shader.uniforms, {
+      slateText: textGuard.slateText,
+      slateAbout: textGuard.slateAbout,
+      slateAspect: textGuard.slateAspect,
+      babelCage: CAGE_MOOD,
+    });
+    shader.vertexShader = shader.vertexShader
+      .replace("#include <common>", "#include <common>\nvarying vec4 vSlateClip;")
+      .replace("#include <project_vertex>", "#include <project_vertex>\nvSlateClip = gl_Position;");
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        "#include <common>",
+        () =>
+          `#include <common>\nvarying vec4 vSlateClip;\nuniform float babelCage;\n${SLATE_TEXT_GUARD}`,
+      )
+      .replace(
+        "#include <lights_fragment_end>",
+        () => `#include <lights_fragment_end>\n${LANTERN_TEXT_LIGHTS}`,
+      );
+  };
+  material.customProgramCacheKey = function () {
+    return `${key?.call(this) ?? ""}|cage-text`;
+  };
+  return material;
+}
+
 // The asset controller owns the GLB and its maps. This assembly owns only its
 // geometry/material clones; its authored PBR and masked emission receive no
 // tower/tree grade. Normalize in world space so imported node transforms and
-// off-centre Meshy origins cannot move the existing ground anchor.
-export function createLanternArchitecture({ asset, anisotropy = 4 }) {
+// off-centre Meshy origins cannot move the existing ground anchor. textGuard:
+// the ground's createSlateContacts() uniforms, for the iron's text guard
+// (LANTERN_TEXT_LIGHTS); without it the materials are as authored.
+export function createLanternArchitecture({ asset, anisotropy = 4, textGuard = null }) {
   const root = new Group();
   root.name = "supplied-meshy-lantern";
   const geometries = new Set(),
@@ -37,6 +91,7 @@ export function createLanternArchitecture({ asset, anisotropy = 4 }) {
       if (!material) {
         // A lightning flash lights it too (film-light.js flashHook()).
         material = flashHook(source.clone());
+        if (textGuard) cageTextHook(material, textGuard);
         material.envMapIntensity = LANTERN_ENVIRONMENT;
         clonedMaterials.set(source, material);
         materials.add(material);
@@ -104,6 +159,7 @@ export function createLanternArchitecture({ asset, anisotropy = 4 }) {
 export function createLanternMount({
   anisotropy = 4,
   camera,
+  textGuard = null,
   onChange = () => {},
   onPrepared = () => {},
   loadFlame = () => import("./lantern-flame.js"),
@@ -139,7 +195,7 @@ export function createLanternMount({
     },
     stage(asset) {
       if (disposed) return () => {};
-      const next = createLanternArchitecture({ asset, anisotropy });
+      const next = createLanternArchitecture({ asset, anisotropy, textGuard });
       restore();
       release(replacement);
       replacement = next;

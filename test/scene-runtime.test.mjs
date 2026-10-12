@@ -1535,6 +1535,7 @@ test("a shot's light mood merges over the neutral default and never shares it", 
     grassInside: 0,
     glintText: 0,
     stoneText: 0,
+    cageText: 0,
     poolAbout: 0,
   });
   for (const shot of [null, undefined, {}, { light: null }])
@@ -1550,6 +1551,7 @@ test("a shot's light mood merges over the neutral default and never shares it", 
     grassInside: 0,
     glintText: 0,
     stoneText: 0,
+    cageText: 0,
     poolAbout: 0,
   });
   assert.notEqual(shotLight(null), SHOT_LIGHT_DEFAULT, "a fresh object each time");
@@ -1600,6 +1602,17 @@ test("a shot's light mood merges over the neutral default and never shares it", 
     .filter((shot) => shotLight(shot).stoneText > 0)
     .map((shot) => [shot.name, shotLight(shot).stoneText]);
   assert.deepEqual(stone, [["Lantern study", 1]]);
+  // Only the lantern macros keep their lantern's light on its own iron off
+  // their text, wholly: on a portrait monitor the cage's flame-lit posts stood
+  // behind Lantern study's name and Root and lantern's name and intro (4.66:1
+  // and 4.07:1 at 1080x1920).
+  const cage = [...DIRECTED_SHOTS.tower, ...DIRECTED_SHOTS.tree]
+    .filter((shot) => shotLight(shot).cageText > 0)
+    .map((shot) => [shot.name, shotLight(shot).cageText]);
+  assert.deepEqual(cage, [
+    ["Lantern study", 1],
+    ["Root and lantern", 1],
+  ]);
   // Only the lantern shots read their grass inside the blades, wholly: a
   // blade's tip read past its edge sparkled on Lantern study's name (lit by
   // the lantern, 4.19:1) and under Root and lantern's intro (lit by the moon,
@@ -1660,6 +1673,15 @@ test("each frame applies the shot's light, lens, bars and grain, holding the gra
   // rocks that read the ground's text boxes.
   const stone = index.indexOf("STONE_MOOD.value = filmActive ? mood.stoneText : 0;");
   assert.ok(stone > moodAt && stone < index.indexOf("camera.updateMatrixWorld();", moodAt));
+  // And the lantern's light on its own iron, on the supplied lantern the mount
+  // hands the ground's text boxes.
+  const cage = index.indexOf("CAGE_MOOD.value = filmActive ? mood.cageText : 0;");
+  assert.ok(cage > moodAt && cage < index.indexOf("camera.updateMatrixWorld();", moodAt));
+  assert.ok(
+    index.includes(
+      "const lanternMount = createLanternMount({ anisotropy: chooseAnisotropy(6), camera, textGuard: groundContacts, onPrepared: invalidateContent,",
+    ),
+  );
   assert.ok(
     index.includes(
       "contacts: groundContacts.slateContacts.value, textGuard: groundContacts, onStatus: (status) => { if (qualityDebug) qualityDebug.rocks = status;",

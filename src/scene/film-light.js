@@ -11,9 +11,11 @@ export const FILM_LIGHT = Object.freeze({ key: 1.12, fill: 1.15, hemisphere: 0.8
 // grass's colour read inside its blades (grassInside), the share of the bark's
 // glints kept off the name and intro (glintText), the share of the stones'
 // lamplight that passes its knee behind the name and intro (stoneText,
-// STONE_TEXT) and the share of the lantern's pool on the ground that passes
-// its knee behind About (poolAbout, mud-ground.js SLATE_LIGHT.poolKnee), all 0
-// by default; it follows the shot on screen, so it changes on a cut.
+// STONE_TEXT), the share of the lantern's light on its own iron that passes
+// its knee there (cageText, CAGE_TEXT) and the share of the lantern's pool on
+// the ground that passes its knee behind About (poolAbout, mud-ground.js
+// SLATE_LIGHT.poolKnee), all 0 by default; it follows the shot on screen, so
+// it changes on a cut.
 export const SHOT_LIGHT_DEFAULT = Object.freeze({
   key: 1,
   fill: 1,
@@ -24,6 +26,7 @@ export const SHOT_LIGHT_DEFAULT = Object.freeze({
   grassInside: 0,
   glintText: 0,
   stoneText: 0,
+  cageText: 0,
   poolAbout: 0,
 });
 export function shotLight(shot) {
@@ -185,6 +188,15 @@ export const GLINT_MOOD = { value: 0 };
 // screen's smaller side. Off (0) unless a shot asks for it.
 export const STONE_TEXT = Object.freeze({ knee: 2, reach: 0.2 });
 export const STONE_MOOD = { value: 0 };
+
+// The lantern's light on its own iron behind the name and intro under a shot's
+// `cageText` (lantern.js LANTERN_TEXT_LIGHTS): all the supplied lantern's
+// direct light there (its flame's, a hand's width from the cage, near field
+// included), diffuse and highlight together, passes a luminance knee (`knee`,
+// on that light's linear luminance) by that share, easing out over `reach` of
+// the screen's smaller side. Off (0) unless a shot asks for it.
+export const CAGE_TEXT = Object.freeze({ knee: 0.5, reach: 0.2 });
+export const CAGE_MOOD = { value: 0 };
 
 // The grass's colour inside its blades under a shot's `grassInside`
 // (estate-ground-detail.js grassMaterial). High's film is multisampled, and a

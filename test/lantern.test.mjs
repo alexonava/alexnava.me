@@ -14,10 +14,16 @@ import {
   Vector3,
   BufferGeometry,
   PointLight,
+  ShaderLib,
 } from "three";
-import { createLanternArchitecture, createLanternMount } from "../src/scene/lantern.js";
+import {
+  createLanternArchitecture,
+  createLanternMount,
+  LANTERN_TEXT_LIGHTS,
+} from "../src/scene/lantern.js";
 import { createTreeArchitecture, LANTERN_FILM_INTENSITY } from "../src/scene/architecture.js";
-import { LANTERN_MOOD } from "../src/scene/film-light.js";
+import { CAGE_MOOD, CAGE_TEXT, LANTERN_MOOD } from "../src/scene/film-light.js";
+import { createSlateContacts } from "../src/scene/mud-ground.js";
 import { createPropScale } from "../src/scene/prop-scale.js";
 import { createCinematicCamera, cinematicSafeArea } from "../src/scene/cinematic.js";
 import { DIRECTED_SHOTS, measureShot } from "../src/scene/directed-shots.js";
@@ -538,6 +544,99 @@ test("flame v3 keeps the pinned hooks, adds the near field and owns no borrowed 
   assert.equal(f.material.onBeforeCompile, initial.hook);
   assert.equal(f.material.customProgramCacheKey, initial.key);
   assert.equal(borrowedDisposals, 0);
+});
+
+test("behind the name and intro the lantern's light on its own iron passes a knee, by the shot's share", async () => {
+  const contacts = createSlateContacts(),
+    physical = () => ({
+      uniforms: {},
+      vertexShader: ShaderLib.physical.vertexShader,
+      fragmentShader: ShaderLib.physical.fragmentShader,
+    });
+  const lantern = createLanternArchitecture({ asset: asset(), textGuard: contacts }),
+    material = lantern.root.children[0].material,
+    shader = physical();
+  material.onBeforeCompile(shader, {});
+  // The ground's own boxes, and the shot's share as a shared uniform: a cut
+  // recompiles nothing, and it is off until a shot asks.
+  for (const name of ["slateText", "slateAbout", "slateAspect"])
+    assert.equal(shader.uniforms[name], contacts[name], name);
+  assert.equal(shader.uniforms.babelCage, CAGE_MOOD);
+  assert.equal(CAGE_MOOD.value, 0);
+  assert.match(shader.vertexShader, /#include <project_vertex>\nvSlateClip = gl_Position;/);
+  // After all the lights: the direct diffuse and highlight keep 1/(1+L/knee)
+  // of themselves behind the name and intro's box, easing out over a fifth of
+  // the screen's smaller side; the flame's emission and the sky's light stay.
+  const glsl = shader.fragmentShader;
+  assert.ok(glsl.includes(`#include <lights_fragment_end>\n${LANTERN_TEXT_LIGHTS}`));
+  assert.ok(Object.isFrozen(CAGE_TEXT));
+  assert.deepEqual(CAGE_TEXT, { knee: 0.5, reach: 0.2 });
+  assert.ok(
+    LANTERN_TEXT_LIGHTS.startsWith(
+      "float babelCageBehind = babelCage*slateBehind(slateText, vSlateClip.xy/vSlateClip.w*.5+.5, 0.20);\nif (babelCageBehind > 0.0) {",
+    ),
+    "at 0, every other shot, nothing runs",
+  );
+  assert.ok(
+    LANTERN_TEXT_LIGHTS.includes(
+      "float babelCageLuma = dot(reflectedLight.directDiffuse+reflectedLight.directSpecular, vec3(.2126, .7152, .0722));",
+    ),
+  );
+  assert.ok(
+    LANTERN_TEXT_LIGHTS.includes(
+      "float babelCageOff = babelCageBehind*(2.0-babelCageBehind)*(1.0-1.0/(1.0+babelCageLuma/0.500));",
+    ),
+  );
+  assert.ok(LANTERN_TEXT_LIGHTS.includes("reflectedLight.directDiffuse *= 1.0-babelCageOff;"));
+  assert.ok(LANTERN_TEXT_LIGHTS.includes("reflectedLight.directSpecular *= 1.0-babelCageOff;"));
+  assert.doesNotMatch(LANTERN_TEXT_LIGHTS, /slateAbout|indirect|Emissive/);
+  // Everything it reads is declared before main().
+  const main = glsl.indexOf("void main()");
+  for (const declared of [
+    "uniform float babelCage;",
+    "varying vec4 vSlateClip;",
+    "uniform vec4 slateText, slateAbout;",
+    "float slateBehind(vec4 r,vec2 v,float d){",
+  ])
+    assert.ok(glsl.indexOf(declared) >= 0 && glsl.indexOf(declared) < main, declared);
+  assert.ok(glsl.indexOf(LANTERN_TEXT_LIGHTS) > main);
+  assert.ok(material.customProgramCacheKey().endsWith("|cage-text"), "its own program");
+  // The flame's near field joins the same chunk before the guard, so the
+  // guard takes the flame's whole light on the cage.
+  const flame = createLanternFlame({ root: lantern.root, camera: new PerspectiveCamera() }),
+    lit = physical();
+  material.onBeforeCompile(lit, {});
+  const nearAt = lit.fragmentShader.indexOf("lanternNearGain"),
+    guardAt = lit.fragmentShader.indexOf(LANTERN_TEXT_LIGHTS);
+  assert.ok(nearAt > 0 && guardAt > nearAt, "the near field, then the guard");
+  flame.dispose();
+  lantern.dispose();
+  // The mount hands the ground's boxes to the lantern it stages.
+  const f = treeFixture(),
+    mount = readyMount({
+      textGuard: contacts,
+      loadFlame: () => Promise.reject(new Error("flame chunk unavailable")),
+    });
+  mount.setTree(f.tree);
+  mount.stage(asset());
+  await mount.ready;
+  assert.equal(mount.take(), true);
+  const mounted = physical();
+  f.tree.root
+    .getObjectByName("supplied-meshy-lantern")
+    .children[0].material.onBeforeCompile(mounted, {});
+  assert.equal(mounted.uniforms.babelCage, CAGE_MOOD);
+  assert.equal(mounted.uniforms.slateText, contacts.slateText);
+  mount.dispose();
+  f.dispose();
+  // Without the ground's uniforms the lantern is as authored, on its own program.
+  const plain = createLanternArchitecture({ asset: asset() }),
+    unguarded = physical();
+  plain.root.children[0].material.onBeforeCompile(unguarded, {});
+  assert.doesNotMatch(unguarded.fragmentShader + unguarded.vertexShader, /babelCage|vSlateClip/);
+  assert.equal(unguarded.uniforms.babelCage, undefined);
+  assert.doesNotMatch(plain.root.children[0].material.customProgramCacheKey(), /cage-text/);
+  plain.dispose();
 });
 
 test("the exported profile is frozen, self-consistent and is what the shader draws", () => {
