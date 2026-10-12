@@ -8,6 +8,7 @@ import {
   resolveDirectedShot,
   fitPoses,
   shotPose,
+  shotClearance,
   PUSH_IN,
   LETTERBOX,
   letterboxShare,
@@ -195,7 +196,7 @@ export function createCinematicCamera({
         {
           const x = measured.target.x + Math.cos(yaw) * reach - Math.sin(yaw) * side,
             z = measured.target.z + Math.sin(yaw) * reach + Math.cos(yaw) * side;
-          clearanceY = Math.max(clearanceY, getGroundY(x, z) + 0.8 - lift);
+          clearanceY = Math.max(clearanceY, getGroundY(x, z) + shotClearance(shot) - lift);
           // A low camera can be above the earth yet look through a hill.
           // Keep footing views clear without moving or resizing the subject.
           if (shot.region[0] === 0) {
@@ -363,7 +364,8 @@ export function createCinematicCamera({
       // cut; the fit keeps a 15% margin.
       const phase = Math.min(1, Math.max(0, tourPhase ?? 0));
       let fov = shot.fov,
-        nearest = fitted.distance;
+        nearest = fitted.distance,
+        pitch = null;
       if (shot.move) {
         // A move travels its path through a tour hold; without a tour it
         // breathes out and back over the 48-second arc; reduced motion holds
@@ -389,6 +391,7 @@ export function createCinematicCamera({
         aim.set(target.x + rightX, target.y, target.z + rightZ);
         camera.lookAt(aim);
         fov = pose.fov;
+        if (shot.tilt) pitch = pose.tilt;
         nearest = fitted.distance * nearestScale(shot);
       } else {
         const arc = reducedMotion
@@ -411,17 +414,19 @@ export function createCinematicCamera({
         camera.lookAt(target);
       }
       // A shot's tilt pitches the camera from tilt[0] at its cut to tilt[1] at
-      // the next; without a tour it breathes between them over the 48-second arc.
-      if (shot.tilt) {
+      // the next. A move carries it on its own path and ease (shotPose); a
+      // drifting shot's tilt runs linearly through a tour hold and without a
+      // tour breathes between its ends over the 48-second arc.
+      if (shot.tilt && pitch === null) {
         const [from, to] = shot.tilt;
-        const pitch = reducedMotion
+        pitch = reducedMotion
           ? (from + to) / 2
           : tourPhase !== null
             ? from + (to - from) * phase
             : (from + to) / 2 +
               ((to - from) / 2) * Math.sin(((elapsedSeconds - started) * Math.PI * 2) / 48);
-        camera.rotateX((pitch * Math.PI) / 180);
       }
+      if (pitch) camera.rotateX((pitch * Math.PI) / 180);
       // The aim lands on the shot's anchor in the safe area (its centre unless
       // the shot places it). A kept fit becomes a crop anchored to the top of
       // the canvas: the pixel scale and the subject's distance from the top

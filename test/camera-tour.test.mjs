@@ -3,7 +3,7 @@ import test from "node:test";
 import { BoxGeometry, Group, Mesh, MeshBasicMaterial, PerspectiveCamera } from "three";
 import { createCinematicCamera, PUSH_IN } from "../src/scene/cinematic.js";
 import * as tourModule from "../src/scene/camera-tour.js";
-import { DIRECTED_SHOTS } from "../src/scene/directed-shots.js";
+import { DIRECTED_SHOTS, shotAnchor } from "../src/scene/directed-shots.js";
 import { createPostprocessPipeline } from "../src/scene/postprocess.js";
 
 const {
@@ -648,9 +648,11 @@ test("tour shots open without black and dissolve the kept outgoing frame into ea
   assert.equal(pass.enabled, true, "grading alone adds the final pass for the crossfade");
   assert.equal(pass.uniforms.uProgress.value, 1);
   assert.ok(pass.uniforms.tPrev.value, "grading's output is kept");
-  // The kept frame pushes in about the safe-area centre, in UV from the bottom.
-  closeTo(pass.uniforms.uPrevOrigin.value.x, (450 + 940 / 2) / 1440, 1e-6);
-  closeTo(pass.uniforms.uPrevOrigin.value.y, 1 - (32 + 720 / 2) / 900, 1e-6);
+  // The kept frame pushes in about the shot's aim (its anchor in the safe area), in UV from
+  // the bottom.
+  const [across, down] = shotAnchor(f.controller.shot);
+  closeTo(pass.uniforms.uPrevOrigin.value.x, (450 + 940 * across) / 1440, 1e-6);
+  closeTo(pass.uniforms.uPrevOrigin.value.y, 1 - (32 + 720 * down) / 900, 1e-6);
   pipeline.setQualityProfile(GRADING_ONLY);
   assert.equal(pass.enabled, true, "a quality step keeps the crossfade");
 

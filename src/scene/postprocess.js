@@ -185,8 +185,10 @@ export const LENS_FX = Object.freeze({
   text: Object.freeze([0.1, 0.05]),
   // Nor The watch's reference banks (STYLE.md, Sky) on desktop landscape frames: the
   // frame's share [x0, y0, x1, y1] from its top-left corner, kept whole, with
-  // the lens easing in over `keepSoft` frame heights beyond it.
-  keep: Object.freeze({ "The watch": Object.freeze([0, 0, 0.6875, 0.4889]) }),
+  // the lens easing in over `keepSoft` frame heights beyond it. Looking up toward the star,
+  // The watch sees them over the left of the frame, behind the name, top to bottom (to 0.46
+  // of the width at 1992x1020, 0.5 on ultrawide).
+  keep: Object.freeze({ "The watch": Object.freeze([0, 0, 0.5, 1]) }),
   keepSoft: 0.03,
 });
 
