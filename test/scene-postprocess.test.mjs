@@ -16,6 +16,7 @@ import {
   LAYER_STAGGER,
   LENS_FX,
   lensSource,
+  lensKeepRect,
 } from "../src/scene/postprocess.js";
 import { compactShaderSource } from "../tools/shader-compact.mjs";
 
@@ -1014,6 +1015,25 @@ test("the kept frame's lens stays on its own star and flame as the frame pushes 
   const off = Math.hypot((shown[0] - star[0]) * 1600, (shown[1] - star[1]) * 900);
   assert.ok(off > 5, `${off.toFixed(1)} px`);
   pipeline.dispose();
+});
+
+test("a kept rect ends its lens's star radii short of the star beside it", () => {
+  const keep = [0, 0, 0.5, 1],
+    out = [9, 9, 9, 9];
+  assert.equal(lensKeepRect(null, [0.6, 0.5, 0.04, 1], 2, out), null);
+  // No star, or one left of the rect: kept whole.
+  assert.deepEqual(lensKeepRect(keep, null, 2), [0, 0, 0.5, 1]);
+  assert.deepEqual(lensKeepRect(keep, [0.6, 0.5, 0.04, 0], 2), [0, 0, 0.5, 1]);
+  // A star at 0.52 (radius 0.04 of the frame's height, on a 2:1 frame): the rect ends 3 radii,
+  // 0.06 of the width, short of it.
+  const near = lensKeepRect(keep, [0.52, 0.5, 0.04, 1], 2, out);
+  assert.equal(near, out);
+  assert.ok(Math.abs(near[2] - (0.52 - (LENS_FX.keepStar * 0.04) / 2)) < 1e-12);
+  assert.deepEqual([near[0], near[1], near[3]], [0, 0, 1]);
+  // Far to the right, the rect keeps its own edge; never past its left edge.
+  assert.equal(lensKeepRect(keep, [0.9, 0.5, 0.04, 1], 2)[2], 0.5);
+  assert.equal(lensKeepRect(keep, [0.02, 0.5, 0.04, 1], 2)[2], 0);
+  assert.deepEqual(LENS_FX.keep["The watch"], [0.08, 0.36, 0.78, 1]);
 });
 
 test("the lens sees a source at its screen centre, its radius in frame heights, and none behind it", () => {

@@ -7,6 +7,7 @@ import { sceneGround } from "./support/ground.mjs";
 import { glbAsset, modelBytes } from "./support/glb.mjs";
 import {
   Group,
+  Matrix4,
   Mesh,
   MeshStandardMaterial,
   PerspectiveCamera,
@@ -53,6 +54,20 @@ const ground = sceneGround;
 // The delivered models' actual normalized, quantized vertices: texture
 // decoding is irrelevant to projection; component types and normalization are not.
 const asset = async (name, tier = "high") => glbAsset(modelBytes(name, tier));
+
+// The lantern mounted on a tree, as the live scene stages it.
+async function lanternFor(tree, tier = "high") {
+  let prepared;
+  const ready = new Promise((resolve) => {
+    prepared = resolve;
+  });
+  const lantern = createLanternMount({ onPrepared: prepared });
+  lantern.setTree(tree);
+  lantern.stage(await asset("lantern", tier));
+  await ready;
+  lantern.take();
+  return lantern;
+}
 
 function screen(camera, point, width, height) {
   const p = point.clone().project(camera);
@@ -107,6 +122,19 @@ for (const tier of ["high", "balanced"])
           1920,
           null,
           { hero: { left: 16, right: 283, top: 1496, bottom: 1726 }, nav: { top: 1838 } },
+        ],
+        // Maximised browsers, cut to 2.39:1, where the shots' tilt is fitted with them.
+        [
+          1992,
+          1020,
+          null,
+          { hero: { left: 110, right: 434, top: 555, bottom: 828 }, nav: { top: 902 } },
+        ],
+        [
+          1920,
+          960,
+          null,
+          { hero: { left: 106, right: 430, top: 501, bottom: 774 }, nav: { top: 842 } },
         ],
       ]) {
         const hero =
@@ -226,10 +254,6 @@ for (const tier of ["high", "balanced"])
           }
         }
         assert.ok(
-          distances["Gallery detail"] < distances["The watch"] * 0.65,
-          `${tier} ${width} gallery repeated the roof-wide view`,
-        );
-        assert.ok(
           distances["Close-up"] < distances.Portrait * 0.65,
           `${tier} ${width} close-up backed out to whole tree`,
         );
@@ -300,35 +324,30 @@ test("The watch resolves its landscape variant only for short landscape viewport
     [1440, 500],
     [780, 499],
   ]) {
+    // Landscape phones keep the giant's view from the lookout's foot, fitted from a little
+    // higher up (its footing below the short frame), and drift.
     const shot = resolveDirectedShot(watch, width, height);
-    assert.equal(shot.height, 0.55);
-    assert.equal(shot.azimuth, -12);
-    assert.equal(shot.region, watch.region);
+    assert.notEqual(shot, watch);
+    assert.equal(shot.height, watch.height);
+    assert.equal(shot.azimuth, watch.azimuth);
+    assert.equal(shot.region, watch.landscape.region);
+    assert.ok(shot.region[0] > watch.region[0]);
     // No room about the name for a move: landscape phones keep the drift.
     assert.equal(shot.move, null);
     assert.equal(shot.fov, watch.fov);
     assert.equal(resolveDirectedShot(watch, width, height), shot, "each variant is built once");
   }
-  // Taller desktops are cut to 2.39:1 and take the letterbox variant; one too
-  // wide for bars keeps the base shot.
+  // Desktops, cut to 2.39:1 or not, take the base shot: it has no letterbox variant.
   for (const [width, height] of [
     [1440, 501],
     [2560, 1080],
-  ])
-    assert.equal(resolveDirectedShot(watch, width, height), watch);
-  for (const [width, height] of [
     [1440, 900],
     [1024, 768],
-  ]) {
-    const shot = resolveDirectedShot(watch, width, height);
-    assert.ok(letterboxShare(width, height) > 0);
-    assert.equal(shot.height, watch.letterbox.height);
-    assert.equal(shot.targetHeight, watch.letterbox.targetHeight);
-    assert.equal(shot.move, watch.move, "the letterbox keeps the dolly zoom");
-    assert.equal(resolveDirectedShot(watch, width, height), shot);
-  }
-  // Squarish short windows (narrower than SQUAT_LANDSCAPE) take the portrait
-  // variant, which keeps the sun in frame; every landscape phone is wider.
+    [1992, 1020],
+  ])
+    assert.equal(resolveDirectedShot(watch, width, height), watch);
+  // Squarish short windows (narrower than SQUAT_LANDSCAPE) take its squat variant: a little
+  // further round, still, the star whole clear of the cab; every landscape phone is wider.
   assert.equal(SQUAT_LANDSCAPE, 1.55);
   for (const [width, height] of [
     [599, 499],
@@ -336,8 +355,12 @@ test("The watch resolves its landscape variant only for short landscape viewport
     [700, 480],
     [560, 450],
     [760, 499],
-  ])
-    assert.equal(resolveDirectedShot(watch, width, height), resolveDirectedShot(watch, 430, 932));
+  ]) {
+    const shot = resolveDirectedShot(watch, width, height);
+    assert.equal(shot.azimuth, watch.squat.azimuth ?? watch.azimuth);
+    assert.equal(shot.move, null);
+    assert.equal(resolveDirectedShot(watch, width, height), resolveDirectedShot(watch, 700, 480));
+  }
   for (const [width, height] of [
     [568, 320],
     [667, 375],
@@ -346,18 +369,20 @@ test("The watch resolves its landscape variant only for short landscape viewport
     [932, 430],
   ])
     assert.ok(width >= SQUAT_LANDSCAPE * height, `${width}x${height} is a landscape phone`);
-  assert.equal(resolveDirectedShot(watch, 430, 932).height, 0.66, "portrait keeps its own variant");
-  // A portrait monitor sets the name below the subject, but keeps the portrait shot.
-  assert.equal(resolveDirectedShot(watch, 1080, 1920).height, 0.66);
-  assert.equal(resolveDirectedShot(watch, 1080, 1920), resolveDirectedShot(watch, 430, 932));
-  // Landscape phones under 600px wide take a compact variant, lower again.
+  // Portrait screens, phones and monitors alike, take the portrait variant: the lookout left of
+  // centre, the star whole to its right.
+  const portrait = resolveDirectedShot(watch, 430, 932);
+  assert.equal(portrait.azimuth, watch.portrait.azimuth);
+  assert.ok(portrait.anchor[0] < 0.5);
+  assert.equal(resolveDirectedShot(watch, 1080, 1920), portrait);
+  // Landscape phones under 600px wide take a compact variant: a drift, a little nearer the
+  // star's bearing.
   for (const [width, height] of [
     [568, 320],
     [599, 360],
   ]) {
     const shot = resolveDirectedShot(watch, width, height);
-    assert.equal(shot.height, 0.4);
-    assert.equal(shot.azimuth, -12);
+    assert.equal(shot.azimuth, watch.compact.azimuth ?? watch.azimuth);
     assert.equal(shot.move, null);
     assert.equal(resolveDirectedShot(watch, width, height), shot);
   }
@@ -371,7 +396,6 @@ test("The watch resolves its landscape variant only for short landscape viewport
     assert.equal(resolved, shot.landscape ? resolveDirectedShot(shot, 932, 430) : shot);
     assert.equal(resolved.move, null, `${shot.name} ${width}x${height}`);
   }
-  assert.equal(resolveDirectedShot(DIRECTED_SHOTS.tower[1], 844, 390).azimuth, 82);
 });
 
 test("every moving shot holds still on landscape phones and keeps a move on desktops and portrait", () => {
@@ -507,9 +531,31 @@ const LAYOUTS = [
     hero: { left: 12, right: 261, top: 12, bottom: 148 },
     nav: { top: 406 },
   },
+  // 4:3 and 5:4 screens, landscape iPads and taller 16:10 windows (the hero measured
+  // 2026-10-12): deep bars, and the longest reaches from a subject. Measured for the lookout's
+  // giants (`lookout`); the tree's shots keep their framings there as they were, and Close-up's
+  // far snow can stand behind the name on 5:4 and landscape-iPad screens.
+  ...[
+    [1024, 768, 16, 283, 381, 601],
+    [1280, 1024, 50, 355, 564, 832],
+    [1180, 820, 16, 297, 400, 648],
+    [1366, 1024, 93, 417, 559, 832],
+    [1680, 1050, 250, 574, 583, 856],
+    [1920, 1200, 106, 430, 733, 1006],
+    [1280, 800, 50, 355, 362, 630],
+  ].map(([width, height, left, right, top, bottom]) => ({
+    width,
+    height,
+    hero: { left, right, top, bottom },
+    nav: { top: height - 118 },
+    lookout: true,
+  })),
 ];
 
 const PHASES = [0, 0.5, 1];
+// The lookout's giants under the milky sky (the owner's direction of 2026-10-11); the tree's
+// shots keep their own framings by the water (the owner's call of 2026-10-12).
+const GIANTS = Object.freeze(["The watch", "Threshold"]);
 
 // The film mountains follow the camera, so their framing depends only on where each
 // directed shot puts it: fit the real tower and tree, then project the crest line.
@@ -540,6 +586,8 @@ test("the camera-centred ranges frame every tour shot: sun, roof lane, tree shot
   scale.setActive(true);
   tree.setFilmTreatment(true);
   tree.applyQuality({ tier: "high" });
+  // The lantern stands by the tree as live: the lantern shots fit it alone.
+  const lantern = await lanternFor(tree);
   tower.root.updateMatrixWorld(true);
   // The roof: the top 6% of the lookout.
   const towerPoints = [];
@@ -563,7 +611,9 @@ test("the camera-centred ranges frame every tour shot: sun, roof lane, tree shot
     for (const layout of LAYOUTS) {
       const { width, height, hero, nav } = layout,
         desktop = width >= 1000,
-        portrait = height > width;
+        portrait = height > width,
+        // What the bars cover is hidden.
+        bar = letterboxShare(width, height) * height;
       for (const name of TOUR_ORDER) {
         const kind = DIRECTED_SHOTS.tower.some((shot) => shot.name === name) ? "tower" : "tree",
           angle = DIRECTED_SHOTS[kind].findIndex((shot) => shot.name === name);
@@ -607,7 +657,10 @@ test("the camera-centred ranges frame every tour shot: sun, roof lane, tree shot
           // Landscape phones keep the opening shot's snow out from behind the intro too.
           // snowReach mirrors the shader's snowline: the vertex's elevation against
           // its massif (aTerrain.w), with the jitter and gully tongue at their most generous.
-          if (desktop || (name === "The watch" && height < 500))
+          if (
+            (desktop || (name === "The watch" && height < 500)) &&
+            (!layout.lookout || GIANTS.includes(name))
+          )
             for (let v = 0; v < terrain.count; v++) {
               if (!snowReach(elevationOf(v), terrain.getW(v))) continue;
               const p = screen(vertex(v));
@@ -615,11 +668,21 @@ test("the camera-centred ranges frame every tour shot: sun, roof lane, tree shot
                 p.depth <= 0 ||
                   p.x < hero.left ||
                   p.x > hero.right ||
-                  p.y < hero.top ||
-                  p.y > hero.bottom,
+                  p.y < Math.max(hero.top, bar) ||
+                  p.y > Math.min(hero.bottom, height - bar),
                 label + " puts snow behind the name",
               );
             }
+          // Under the milky sky: on landscape desktops the lookout's giants look up from its
+          // foot, the horizon below the name. (A portrait monitor sets the name under it.)
+          if (desktop && !portrait && GIANTS.includes(name)) {
+            const forward = camera.getWorldDirection(new Vector3()).setY(0).normalize();
+            const level = screen(forward.multiplyScalar(1000).add(camera.position));
+            assert.ok(
+              level.depth > 0 && level.y > hero.bottom,
+              `${label} horizon at ${level.y.toFixed(0)} px, above the name's foot (${hero.bottom})`,
+            );
+          }
           if (name === "The watch") {
             // The star's glow (SOLAR_GLOW_RADIUS, its furthest reach) stays clear of every crest.
             const s = screen(sun),
@@ -642,18 +705,6 @@ test("the camera-centred ranges frame every tour shot: sun, roof lane, tree shot
                   p.y >= roofTop + 15,
                   `${label} crest ${(roofTop - p.y).toFixed(1)} px above the roof top`,
                 );
-            if (portrait) {
-              // Phones: the ranges show above the bottom bar across most of the width.
-              let clear = 0;
-              for (let x = 0; x < width; x++) {
-                const column = crest.filter((p) => Math.abs(p.x - x) <= 1);
-                if (column.length && Math.min(...column.map((p) => p.y)) < nav.top - 30) clear++;
-              }
-              assert.ok(
-                clear >= width / 2,
-                `${label} ranges clear the bottom bar over ${clear} px`,
-              );
-            }
           }
           if (name === "Lantern study" || name === "Root and lantern") {
             // Sky stays open above the ranges: never a wall behind the tree.
@@ -666,6 +717,7 @@ test("the camera-centred ranges frame every tour shot: sun, roof lane, tree shot
     }
   } finally {
     mountains.dispose();
+    lantern.dispose();
     scale.dispose();
     tower.dispose();
     tree.dispose();
@@ -708,6 +760,8 @@ test("the Meshy massifs frame every tour shot: sun, roof lane, open sky over the
   scale.setActive(true);
   tree.setFilmTreatment(true);
   tree.applyQuality({ tier: "high" });
+  // The lantern stands by the tree as live: the lantern shots fit it alone.
+  const lantern = await lanternFor(tree);
   tower.root.updateMatrixWorld(true);
   const towerPoints = [];
   tower.root.traverse((o) => {
@@ -770,7 +824,9 @@ test("the Meshy massifs frame every tour shot: sun, roof lane, open sky over the
     for (const layout of LAYOUTS) {
       const { width, height, hero, nav } = layout,
         desktop = width >= 1000,
-        portrait = height > width;
+        portrait = height > width,
+        // What the bars cover is hidden.
+        bar = letterboxShare(width, height) * height;
       for (const name of TOUR_ORDER) {
         const kind = DIRECTED_SHOTS.tower.some((shot) => shot.name === name) ? "tower" : "tree",
           angle = DIRECTED_SHOTS[kind].findIndex((shot) => shot.name === name);
@@ -802,18 +858,31 @@ test("the Meshy massifs frame every tour shot: sun, roof lane, open sky over the
             .map((d) => screen(d.clone().add(camera.position)))
             .filter((p) => p.depth > 0 && p.x >= -2 && p.x <= width + 2);
           assert.ok(crest.length > 0, label + " shows no mountains");
-          if (desktop || (name === "The watch" && height < 500))
+          if (
+            (desktop || (name === "The watch" && height < 500)) &&
+            (!layout.lookout || GIANTS.includes(name))
+          )
             for (const point of snowy) {
               const p = screen(point.clone().add(camera.position));
               assert.ok(
                 p.depth <= 0 ||
                   p.x < hero.left ||
                   p.x > hero.right ||
-                  p.y < hero.top ||
-                  p.y > hero.bottom,
+                  p.y < Math.max(hero.top, bar) ||
+                  p.y > Math.min(hero.bottom, height - bar),
                 label + " puts snow behind the name",
               );
             }
+          // Under the milky sky: on landscape desktops the lookout's giants look up from its
+          // foot, the horizon below the name. (A portrait monitor sets the name under it.)
+          if (desktop && !portrait && GIANTS.includes(name)) {
+            const forward = camera.getWorldDirection(new Vector3()).setY(0).normalize();
+            const level = screen(forward.multiplyScalar(1000).add(camera.position));
+            assert.ok(
+              level.depth > 0 && level.y > hero.bottom,
+              `${label} horizon at ${level.y.toFixed(0)} px, above the name's foot (${hero.bottom})`,
+            );
+          }
           if (name === "The watch") {
             // The star's glow stays clear of every crest.
             const s = screen(sun),
@@ -835,17 +904,6 @@ test("the Meshy massifs frame every tour shot: sun, roof lane, open sky over the
                   p.y >= roofTop + 15,
                   `${label} crest ${(roofTop - p.y).toFixed(1)} px above the roof top`,
                 );
-            if (portrait) {
-              let clear = 0;
-              for (let x = 0; x < width; x++) {
-                const column = crest.filter((p) => Math.abs(p.x - x) <= 1);
-                if (column.length && Math.min(...column.map((p) => p.y)) < nav.top - 30) clear++;
-              }
-              assert.ok(
-                clear >= width / 2,
-                `${label} ranges clear the bottom bar over ${clear} px`,
-              );
-            }
           }
           if (name === "Lantern study" || name === "Root and lantern") {
             const highest = Math.min(...crest.map((p) => p.y));
@@ -910,6 +968,225 @@ test("the Meshy massifs frame every tour shot: sun, roof lane, open sky over the
     }
   } finally {
     Object.values(composed.geometries).forEach((geometry) => geometry.dispose());
+    lantern.dispose();
+    scale.dispose();
+    tower.dispose();
+    tree.dispose();
+    for (const item of Object.values(assets))
+      item.scene.traverse((mesh) => {
+        mesh.geometry?.dispose();
+        mesh.material?.dispose();
+      });
+  }
+});
+
+// Under the milky sky (the owner's direction of 2026-10-11). On every measured layout and
+// through every move of every tour shot: the lens never leaves the sky's reach (each ray through
+// the picture meets the sky shell, so its rim never shows), and the star stands whole, clear of
+// the text and unhidden by the lookout or the tree, or out of frame. The lookout's giants also
+// keep their lens clear of both landmarks and the tree out of their picture, and on landscape
+// desktops look up at the lookout (at least 15 degrees), the lookout on the right of the frame,
+// the name in the open sky on its left.
+test("under the milky sky the lookout's giants look up at it, and every tour shot keeps the star whole or absent", async () => {
+  const window = { BabelSite: {} };
+  vm.runInNewContext(await readFile(new URL("../src/scene/world.js", import.meta.url), "utf8"), {
+    window,
+  });
+  const { SUN_POSITION, CAMERA_FAR, SKY_DOME_RADIUS } = window.BabelSite.scene.WORLD,
+    sun = new Vector3(...SUN_POSITION);
+  const assets = { tower: await asset("tower"), tree: await asset("tree") };
+  const tower = createCompleteTowerArchitecture({
+    asset: assets.tower,
+    groundY: ground(0, 0),
+    footingOffset: -0.22,
+  });
+  const tree = createTreeArchitecture({
+    asset: assets.tree,
+    groundHeight: ground,
+    anchor: [55.1, 36.1],
+  });
+  const groundRoot = new Group();
+  groundRoot.add(tree.root);
+  const scale = createPropScale({ groundRoot, groundHeight: ground });
+  scale.setTree(tree);
+  scale.setActive(true);
+  tree.setFilmTreatment(true);
+  tree.applyQuality({ tier: "high" });
+  const lantern = await lanternFor(tree);
+  for (const root of [tower.root, tree.root]) {
+    root.updateMatrixWorld(true);
+    root.traverse((o) => {
+      if (o.isMesh) o.material.side = DoubleSide;
+    });
+  }
+  const rad = Math.PI / 180;
+  // The lookout's and the tree's vertices (not the lantern's), for the giants' lens clearance.
+  const solid = [];
+  for (const root of [tower.root, tree.root])
+    root.traverse((mesh) => {
+      if (!mesh.isMesh || /lantern/i.test(mesh.name) || /lantern/i.test(mesh.parent?.name ?? ""))
+        return;
+      const p = mesh.geometry.attributes.position;
+      for (let i = 0; i < p.count; i++)
+        solid.push(new Vector3().fromBufferAttribute(p, i).applyMatrix4(mesh.matrixWorld));
+    });
+  const nearest = (o) => Math.sqrt(Math.min(...solid.map((v) => v.distanceToSquared(o))));
+  // Each landmark's vertices, flat, so a frame can look for the other landmark in its picture.
+  const flatten = (root) => {
+    const out = [];
+    root.traverse((mesh) => {
+      if (!mesh.isMesh || /lantern/i.test(mesh.name) || /lantern/i.test(mesh.parent?.name ?? ""))
+        return;
+      const p = mesh.geometry.attributes.position,
+        v = new Vector3();
+      for (let i = 0; i < p.count; i++) {
+        v.fromBufferAttribute(p, i).applyMatrix4(mesh.matrixWorld);
+        out.push(v.x, v.y, v.z);
+      }
+    });
+    return new Float32Array(out);
+  };
+  const landmarks = { tower: flatten(tower.root), tree: flatten(tree.root) };
+  try {
+    for (const { width, height, hero, nav } of LAYOUTS) {
+      const landscapeDesktop = width >= 1000 && width > height && height > 500,
+        bar = letterboxShare(width, height) * height;
+      for (const name of TOUR_ORDER) {
+        const kind = DIRECTED_SHOTS.tower.some((shot) => shot.name === name) ? "tower" : "tree",
+          angle = DIRECTED_SHOTS[kind].findIndex((shot) => shot.name === name);
+        const camera = new PerspectiveCamera(38, width / height, 0.1, CAMERA_FAR);
+        const controller = createCinematicCamera({
+          camera,
+          selected: kind,
+          angle,
+          getSafeArea: () => cinematicSafeArea(width, height, hero, nav),
+          getGroundY: ground,
+        });
+        for (const [subject, object] of [
+          ["tower", tower],
+          ["tree", tree],
+        ]) {
+          controller.setSubject(subject, object.root);
+          controller.setStatus({ kind: subject, status: "ready" });
+        }
+        const shot = resolveDirectedShot(DIRECTED_SHOTS[kind][angle], width, height),
+          measured = measureShot(kind === "tree" ? tree.root : tower.root, shot);
+        for (const tourPhase of [0, 0.25, 0.5, 0.75, 1]) {
+          controller.apply({ width, height, tourPhase });
+          camera.updateMatrixWorld(true);
+          const label = `${name} ${width}x${height} phase ${tourPhase}`;
+          const screen = (point) => {
+            const depth = -point.clone().applyMatrix4(camera.matrixWorldInverse).z,
+              p = point.clone().project(camera);
+            return { x: ((p.x + 1) * width) / 2, y: ((1 - p.y) * height) / 2, depth };
+          };
+          const giant = GIANTS.includes(name);
+          if (giant)
+            assert.ok(nearest(camera.position) >= 6, `${label} lens inside the lookout or tree`);
+          // One landmark a giant: the tree never stands in its picture (between the bars).
+          if (giant) {
+            const m = new Matrix4().multiplyMatrices(
+                camera.projectionMatrix,
+                camera.matrixWorldInverse,
+              ).elements,
+              other = landmarks[kind === "tower" ? "tree" : "tower"],
+              top = 1 - (2 * bar) / height;
+            let shown = 0,
+              where = "";
+            for (let i = 0; i < other.length; i += 3) {
+              const x = other[i],
+                y = other[i + 1],
+                z = other[i + 2],
+                w = m[3] * x + m[7] * y + m[11] * z + m[15];
+              if (w <= 0) continue;
+              const nx = (m[0] * x + m[4] * y + m[8] * z + m[12]) / w,
+                ny = (m[1] * x + m[5] * y + m[9] * z + m[13]) / w;
+              if (Math.abs(nx) < 1 && Math.abs(ny) < top) {
+                shown++;
+                where = `${nx.toFixed(3)},${ny.toFixed(3)}`;
+              }
+            }
+            assert.equal(shown, 0, `${label} shows the other landmark (${shown}, at ${where})`);
+          }
+          // The sky shell's rim never shows.
+          for (let gy = 0; gy <= 6; gy++)
+            for (let gx = 0; gx <= 6; gx++) {
+              const y = bar + ((height - 2 * bar) * gy) / 6;
+              const d = new Vector3((gx / 6) * 2 - 1, 1 - (y / height) * 2, 0.5)
+                .unproject(camera)
+                .sub(camera.position)
+                .normalize();
+              const b = camera.position.dot(d),
+                disc = b * b - (camera.position.lengthSq() - SKY_DOME_RADIUS ** 2);
+              assert.ok(disc > 0 && Math.sqrt(disc) - b > 0, `${label} looks past the sky shell`);
+            }
+          // The star: whole and clear, or out of frame.
+          const s = screen(sun),
+            radius = (((4.2 * camera.projectionMatrix.elements[5]) / s.depth) * height) / 2;
+          const out =
+            s.depth <= 0 ||
+            s.x + radius < 0 ||
+            s.x - radius > width ||
+            s.y + radius < bar ||
+            s.y - radius > height - bar;
+          if (!out) {
+            assert.ok(
+              s.x - radius > 10 &&
+                s.x + radius < width - 10 &&
+                s.y - radius > bar + 10 &&
+                s.y + radius < Math.min(nav.top, height - bar) - 10,
+              label + " crops the star",
+            );
+            const text = Math.hypot(
+              s.x - Math.max(hero.left, Math.min(s.x, hero.right)),
+              s.y - Math.max(hero.top, Math.min(s.y, hero.bottom)),
+            );
+            assert.ok(
+              text > (radius * SOLAR_GLOW_RADIUS) / 4.2 + 4,
+              label + " star glow on the text",
+            );
+            const right = new Vector3(1, 0, 0).applyQuaternion(camera.quaternion),
+              up = new Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+            for (let i = 0; i < 9; i++) {
+              const point = sun.clone();
+              if (i)
+                point
+                  .addScaledVector(right, 4.2 * Math.cos((i * Math.PI) / 4))
+                  .addScaledVector(up, 4.2 * Math.sin((i * Math.PI) / 4));
+              const delta = point.sub(camera.position);
+              const ray = new Raycaster(
+                camera.position,
+                delta.clone().normalize(),
+                0,
+                delta.length(),
+              );
+              assert.equal(
+                ray.intersectObjects([tower.root, tree.root], true).length,
+                0,
+                label + " hides the star",
+              );
+            }
+          }
+          if (!landscapeDesktop || !GIANTS.includes(name)) continue;
+          // Looking up at the giant, the giant on the right.
+          const forward = camera.getWorldDirection(new Vector3());
+          const pitch = Math.atan2(forward.y, Math.hypot(forward.x, forward.z)) / rad;
+          assert.ok(pitch >= 15, `${label} looks up only ${pitch.toFixed(1)} degrees`);
+          let left = Infinity,
+            right = -Infinity;
+          for (let i = 0; i < measured.points.length; i += 3) {
+            const p = screen(new Vector3().fromArray(measured.points, i));
+            left = Math.min(left, p.x);
+            right = Math.max(right, p.x);
+          }
+          assert.ok((left + right) / 2 > width / 2, `${label} giant left of centre`);
+          assert.ok(left > hero.right, `${label} giant behind the name`);
+        }
+        controller.dispose();
+      }
+    }
+  } finally {
+    lantern.dispose();
     scale.dispose();
     tower.dispose();
     tree.dispose();
