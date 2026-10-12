@@ -7,6 +7,7 @@ import { sceneGround } from "./support/ground.mjs";
 import { glbAsset, modelBytes } from "./support/glb.mjs";
 import {
   Group,
+  Matrix4,
   Mesh,
   MeshStandardMaterial,
   PerspectiveCamera,
@@ -193,7 +194,9 @@ for (const tier of ["high", "balanced"])
                 label + " root support lens clearance",
               );
               let minY = Infinity,
-                maxY = -Infinity;
+                maxY = -Infinity,
+                minX = Infinity,
+                maxX = -Infinity;
               for (let i = 0; i < measured.points.length; i += 3) {
                 const p = screen(
                   camera,
@@ -210,9 +213,13 @@ for (const tier of ["high", "balanced"])
                 );
                 minY = Math.min(minY, p.y);
                 maxY = Math.max(maxY, p.y);
+                minX = Math.min(minX, p.x);
+                maxX = Math.max(maxX, p.x);
               }
               distances[shot.name] = controller.frame.distance;
-              sizes[shot.name] = (maxY - minY) / area.height;
+              // How much of the safe area the focal volume fills, whichever way binds (a
+              // phone's narrow frame fits the lantern by its width).
+              sizes[shot.name] = Math.max((maxY - minY) / area.height, (maxX - minX) / area.width);
               if (shot.name === "The watch" && height > width) {
                 const footing = measureShot(tower.root, {
                   region: [0, 0.025],
@@ -387,7 +394,7 @@ test("The watch resolves its landscape variant only for short landscape viewport
     [599, 360],
   ]) {
     const shot = resolveDirectedShot(watch, width, height);
-    assert.equal(shot.azimuth, watch.compact.azimuth);
+    assert.equal(shot.azimuth, watch.compact.azimuth ?? watch.azimuth);
     assert.equal(shot.move, null);
     assert.equal(resolveDirectedShot(watch, width, height), shot);
   }
@@ -1028,6 +1035,22 @@ test("under the milky sky every tour shot looks up at its giant, the star whole 
         solid.push(new Vector3().fromBufferAttribute(p, i).applyMatrix4(mesh.matrixWorld));
     });
   const nearest = (o) => Math.sqrt(Math.min(...solid.map((v) => v.distanceToSquared(o))));
+  // Each landmark's vertices, flat, so a frame can look for the other landmark in its picture.
+  const flatten = (root) => {
+    const out = [];
+    root.traverse((mesh) => {
+      if (!mesh.isMesh || /lantern/i.test(mesh.name) || /lantern/i.test(mesh.parent?.name ?? ""))
+        return;
+      const p = mesh.geometry.attributes.position,
+        v = new Vector3();
+      for (let i = 0; i < p.count; i++) {
+        v.fromBufferAttribute(p, i).applyMatrix4(mesh.matrixWorld);
+        out.push(v.x, v.y, v.z);
+      }
+    });
+    return new Float32Array(out);
+  };
+  const landmarks = { tower: flatten(tower.root), tree: flatten(tree.root) };
   try {
     for (const { width, height, hero, nav } of LAYOUTS) {
       const landscapeDesktop = width >= 1000 && width > height && height > 500,
@@ -1063,6 +1086,31 @@ test("under the milky sky every tour shot looks up at its giant, the star whole 
           };
           const reach = shot.subject ? 0.5 : kind === "tree" ? 3 : 6;
           assert.ok(nearest(camera.position) >= reach, `${label} lens inside a subject`);
+          // One landmark a shot: the other never stands in its picture (between the bars).
+          {
+            const m = new Matrix4().multiplyMatrices(
+                camera.projectionMatrix,
+                camera.matrixWorldInverse,
+              ).elements,
+              other = landmarks[kind === "tower" ? "tree" : "tower"],
+              top = 1 - (2 * bar) / height;
+            let shown = 0,
+              where = "";
+            for (let i = 0; i < other.length; i += 3) {
+              const x = other[i],
+                y = other[i + 1],
+                z = other[i + 2],
+                w = m[3] * x + m[7] * y + m[11] * z + m[15];
+              if (w <= 0) continue;
+              const nx = (m[0] * x + m[4] * y + m[8] * z + m[12]) / w,
+                ny = (m[1] * x + m[5] * y + m[9] * z + m[13]) / w;
+              if (Math.abs(nx) < 1 && Math.abs(ny) < top) {
+                shown++;
+                where = `${nx.toFixed(3)},${ny.toFixed(3)}`;
+              }
+            }
+            assert.equal(shown, 0, `${label} shows the other landmark (${shown}, at ${where})`);
+          }
           // The sky shell's rim never shows.
           for (let gy = 0; gy <= 6; gy++)
             for (let gx = 0; gx <= 6; gx++) {

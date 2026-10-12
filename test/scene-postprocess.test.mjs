@@ -1033,7 +1033,7 @@ test("a kept rect ends its lens's star radii short of the star beside it", () =>
   // Far to the right, the rect keeps its own edge; never past its left edge.
   assert.equal(lensKeepRect(keep, [0.9, 0.5, 0.04, 1], 2)[2], 0.5);
   assert.equal(lensKeepRect(keep, [0.02, 0.5, 0.04, 1], 2)[2], 0);
-  assert.deepEqual(LENS_FX.keep["The watch"], [0, 0, 0.5, 1]);
+  assert.deepEqual(LENS_FX.keep["The watch"], [0.08, 0.36, 0.78, 1]);
 });
 
 test("the lens sees a source at its screen centre, its radius in frame heights, and none behind it", () => {

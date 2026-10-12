@@ -44,10 +44,10 @@ export const DIRECTED_SHOTS = {
       name: "The watch",
       // The opener: the lookout from the foot of its legs, its cab and upper legs fitted
       // (region from 0.5), the lower legs leaving the frame, right of the frame's middle; it
-      // faces the star (230 degrees), so the star and its maelstrom stand whole between the
-      // lookout and the name. The tree stands behind the lens, at 33 degrees: nearer that
-      // bearing a 4:3 screen's longer reach took the lens into its crown, and its twigs into
-      // the frame. Its
+      // faces the star from the east (164 degrees), the star and its maelstrom whole beyond
+      // the lookout's right shoulder, the name in the open sky on its left. (Threshold faces
+      // the star from round the other side; from there, nearer the tree's bearing of 33
+      // degrees, a 4:3 screen's longer reach took the lens into the tree's crown.) Its
       // flourish of the shared move is the dolly zoom: the lookout keeps its size while the
       // sky behind it swells.
       ...GIANT,
@@ -57,12 +57,12 @@ export const DIRECTED_SHOTS = {
       light: { key: 0.4, fill: 0.45, rim: 1.3 },
       region: [0.5, 1],
       targetHeight: 0.66,
-      azimuth: 50,
-      anchor: [0.7, 0.54],
+      azimuth: -16,
+      anchor: [0.45, 0.54],
       hold: 9,
       ground: { ...AFTER_RAIN, mist: { ...AFTER_RAIN.mist, amount: 0.75 } },
-      // Portrait screens, narrower, tuck the star behind the lattice from that bearing: there
-      // the lookout stands left of centre from further round, the star whole to its right.
+      // Portrait screens, narrower, stand the lookout left of centre, the star whole to its
+      // right.
       portrait: {
         azimuth: -12,
         anchor: [0.28, 0.54],
@@ -71,30 +71,38 @@ export const DIRECTED_SHOTS = {
       },
       // Landscape phones fit from a little higher up the lookout, so its footing stays below
       // the short frame.
-      // Under 600px wide a little nearer the star keeps its glow off the intro.
-      landscape: { move: null, region: [0.56, 1], anchor: [0.6, 0.62] },
-      compact: { azimuth: 45, move: null, region: [0.56, 1], anchor: [0.6, 0.62] },
-      // Squarish short windows keep the aim at 0.6, the star clear of the cab and the intro.
-      squat: { move: null, anchor: [0.6, 0.54] },
+      landscape: { move: null, region: [0.56, 1], anchor: [0.5, 0.62] },
+      compact: { move: null, region: [0.56, 1], anchor: [0.5, 0.62] },
+      // Squarish short windows aim further left, so the star stays whole inside the right edge.
+      squat: { move: null, anchor: [0.35, 0.54] },
     },
     {
       name: "Threshold",
       // Under the star too (the owner's pick of 2026-10-12): from round the lookout's other
       // shoulder, its timber pale in the moon behind the lens, the star and its maelstrom
-      // beside it; the ladder on its +Z access side climbs the frame.
+      // beside it; the ladder on its +Z access side climbs the frame. Nearer the tree's bearing
+      // (33 degrees) a 4:3 screen's or a phone's longer reach stood the tree between the lens
+      // and the lookout.
       ...GIANT,
       light: { fill: 0.8, rim: 1.8 },
       region: [0.5, 1],
       targetHeight: 0.66,
-      azimuth: 46,
+      azimuth: 52,
       hold: 7,
       anchor: [0.64, 0.54],
       ground: AFTER_RAIN,
-      // Portrait screens keep the bearing; the star stays just out of their frame.
-      portrait: { anchor: [0.5, 0.56], margin: 0.88, focus: { width: 0.22, depth: [-0.3, 0.3] } },
+      // Portrait screens come further round, the star just out of their frame.
+      portrait: {
+        azimuth: 64,
+        anchor: [0.5, 0.56],
+        margin: 0.88,
+        focus: { width: 0.22, depth: [-0.3, 0.3] },
+      },
       // Landscape phones fit from a little higher up the lookout, so the legs' footing stays
       // below the short frame.
       landscape: { move: null, region: [0.56, 1], anchor: [0.64, 0.62] },
+      // Under 600px wide a little nearer the star keeps its glow off the intro.
+      compact: { azimuth: 46, move: null, region: [0.56, 1], anchor: [0.64, 0.62] },
       squat: { azimuth: 52, move: null },
     },
     {
@@ -259,7 +267,8 @@ export const DIRECTED_SHOTS = {
       // The lantern as a lighthouse: the lens just above the soil (clearance 0.25), a few units
       // off, looking up at the lantern alone against the sky, a branch over its cap; the tree
       // stands behind the lens's right shoulder (at 115 degrees a pale stone by the lens
-      // filled the left of the frame).
+      // filled the left of the frame; nearer 100 the lookout's cab reached an ultrawide
+      // frame's corner).
       // Lantern-led, its bark's glints off the text: the lantern's glint on a
       // wet root beside the name at the end of the push-in (4.67:1 at
       // 1920x1080) passes the ground's knee (film-light.js GLINT). Its grass
@@ -288,7 +297,7 @@ export const DIRECTED_SHOTS = {
       region: [0.55, 1],
       targetHeight: 0.95,
       clearance: 0.25,
-      azimuth: 100,
+      azimuth: 108,
       hold: 6,
       anchor: [0.62, 0.32],
       ground: AFTER_RAIN,
