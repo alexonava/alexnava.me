@@ -281,10 +281,7 @@ export const DIRECTED_SHOTS = {
       // phase 32.35). Its pool is kept off About: on a portrait monitor the
       // push-in carries the pool's lit cobble crests across the label (3.92:1
       // at 1080x1920), so there the pool passes its knee (mud-ground.js
-      // SLATE_LIGHT.poolKnee). On that monitor the macro also stands the
-      // cage's flame-lit post behind the name at the start of the push-in
-      // (4.66:1), so the lantern's light on its own iron passes a knee behind
-      // the name and intro (film-light.js CAGE_TEXT).
+      // SLATE_LIGHT.poolKnee).
       light: {
         key: 0.55,
         fill: 0.65,
@@ -293,7 +290,6 @@ export const DIRECTED_SHOTS = {
         grassInside: 1,
         glintText: 1,
         stoneText: 1,
-        cageText: 1,
         poolAbout: 1,
       },
       ...GIANT,
@@ -341,19 +337,8 @@ export const DIRECTED_SHOTS = {
       // grass reads its colour inside the blades (film-light.js GRASS_MOOD),
       // as in Lantern study: a blade's tip read past its edge, lit by the
       // moon, sparkled under the intro (4.21:1 at 1440x900, phase 24.1 of the
-      // move). On a portrait monitor the macro stands the cage's flame-lit
-      // posts behind the name and intro late in the push-in (4.07:1 and 4.79:1
-      // at 1080x1920), so its iron's lamplight passes a knee there too, as in
-      // Lantern study (film-light.js CAGE_TEXT).
-      light: {
-        key: 0.6,
-        fill: 0.75,
-        lantern: 1.4,
-        rim: 0.9,
-        grassInside: 1,
-        glintText: 1,
-        cageText: 1,
-      },
+      // move).
+      light: { key: 0.6, fill: 0.75, lantern: 1.4, rim: 0.9, grassInside: 1, glintText: 1 },
       ...GIANT,
       subject: "tree-lantern",
       region: [0.55, 1],

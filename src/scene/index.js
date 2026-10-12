@@ -14,7 +14,6 @@ import {
   layoutRect,
 } from "./cinematic.js";
 import {
-  CAGE_MOOD,
   GLINT_MOOD,
   GRASS_MOOD,
   LANTERN_MOOD,
@@ -695,7 +694,6 @@ const ORBIT_SPEED = 0.06;
       const lanternMount = createLanternMount({
         anisotropy: chooseAnisotropy(6),
         camera,
-        textGuard: groundContacts,
         onPrepared: invalidateContent,
         onChange({ committed, tree }) {
           if (runtimeDisposed) return;
@@ -1059,7 +1057,6 @@ const ORBIT_SPEED = 0.06;
           GLINT_MOOD.value = filmActive ? mood.glintText : 0;
           GRASS_MOOD.value = filmActive ? mood.grassInside : 0;
           STONE_MOOD.value = filmActive ? mood.stoneText : 0;
-          CAGE_MOOD.value = filmActive ? mood.cageText : 0;
           groundContacts.slatePoolAbout.value = filmActive ? mood.poolAbout : 0;
           camera.updateMatrixWorld();
           RIM_UNIFORMS.babelKeyView.value
