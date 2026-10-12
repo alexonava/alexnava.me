@@ -488,26 +488,22 @@ test("large height changes, rotation, a moved hero and still framing refit at on
   ])
     assert.equal(refits(resize), expected, label);
 
-  // A loosely framed shot stays on the canvas, so the 20% share alone decides: Watch and tree
-  // with a slack phone margin stands in for one (restored below).
-  const authored = DIRECTED_SHOTS.tower[4];
-  DIRECTED_SHOTS.tower[4] = { ...authored, portrait: { ...authored.portrait, margin: 0.56 } };
-  const loose = terrainSetup(390, 844);
-  assert.equal(loose.controller.setPreviewShot("tower", 4), true);
-  loose.apply(390, 844);
-  const kept = loose.controller.frame;
-  assert.equal(loose.controller.shot.name, "Watch and tree");
-  loose.apply(390, 676);
-  assert.equal(loose.controller.frame, kept, "a 19.9% drop keeps the fit");
-  loose.apply(390, 844);
-  loose.apply(390, 666);
-  assert.notEqual(loose.controller.frame, kept, "a 21% drop refits");
-  loose.dispose();
-  DIRECTED_SHOTS.tower[4] = authored;
+  // A loosely framed shot stays on the canvas, so the 20% share alone decides.
+  const lantern = terrainSetup(390, 844);
+  assert.equal(lantern.controller.setPreviewShot("tree", 1), true);
+  lantern.apply(390, 844);
+  const kept = lantern.controller.frame;
+  assert.equal(lantern.controller.shot.name, "Lantern study");
+  lantern.apply(390, 676);
+  assert.equal(lantern.controller.frame, kept, "a 19.9% drop keeps the fit");
+  lantern.apply(390, 844);
+  lantern.apply(390, 666);
+  assert.notEqual(lantern.controller.frame, kept, "a 21% drop refits");
+  lantern.dispose();
 
-  // The tour's giants stand on the bottom of their frame, yet on a phone (the name as
-  // measured, 390x844) an address bar's 10% keeps every one's fit: the crop takes a little
-  // more of the subject's foot, already cut by the bottom edge.
+  // On a phone (the name as measured, 390x844) an address bar's 10% keeps every tour shot's
+  // fit, the lookout's giants included, though they stand on the bottom of their frame: the
+  // crop takes a little more of the lookout's foot, already cut by the bottom edge.
   for (const name of TOUR_ORDER) {
     const f = terrainSetup(390, 844);
     f.hero.bottom = 177;
@@ -526,7 +522,7 @@ test("large height changes, rotation, a moved hero and still framing refit at on
 
 const close = (a, b) => assert.ok(Math.abs(a - b) < 1e-5, `${a} != ${b}`);
 
-test("directed framing clips actual geometry and measures a selected prop on its own", () => {
+test("directed framing clips actual geometry and includes the entire lantern", () => {
   const root = new Group();
   const trunk = new Mesh(new BoxGeometry(5, 20, 5), new MeshStandardMaterial());
   trunk.name = "meshy-tree";
@@ -535,9 +531,8 @@ test("directed framing clips actual geometry and measures a selected prop on its
   lantern.name = "tree-lantern";
   lantern.position.set(7, 2, 0);
   root.add(trunk, lantern);
-  // Lantern study's macro fits the lantern's upper part alone (its foot leaves the frame).
   const measured = measureShot(root, DIRECTED_SHOTS.tree[1]);
-  close(measured.region.min.y, 4 * DIRECTED_SHOTS.tree[1].region[0]);
+  close(measured.region.min.y, 0);
   close(measured.region.max.y, 4);
   close(measured.region.max.x, 7.5);
   close(measured.cameraY, 4 * DIRECTED_SHOTS.tree[1].height);
@@ -1001,8 +996,9 @@ test("a move carries the camera along shotPose's path through a tour hold, and h
         closeTo(offset.dot(right), expected.truck * reach, 1e-6);
         closeTo(got.y, frame.cameraY + expected.crane * measured.height, 1e-6);
         closeTo(got.fov, expected.fov, 1e-9);
-        // The camera looks back along its yaw: a truck slides its aim with it.
-        if (!shot.tilt) {
+        // The camera looks back along its yaw: a truck slides its aim with it. (A tilt
+        // pitches it off that aim.)
+        if (!shot.tilt && !shot.move.tilt) {
           const aim = f.controller.target.clone().addScaledVector(right, expected.truck * reach);
           closeTo(got.forward.angleTo(aim.sub(got.position).normalize()), 0, 1e-6);
         }
@@ -1021,7 +1017,7 @@ test("a move carries the camera along shotPose's path through a tour hold, and h
   f.controller.dispose();
 });
 
-test("a shot's tilt pitches the camera from its cut to the next on its move's ease, and holds the midpoint with reduced motion", () => {
+test("a shot's tilt pitches the camera from its cut to the next, a move's on its ease, and holds the midpoint with reduced motion", () => {
   const f = tourSetup(5);
   const forward = new Vector3(),
     look = new Vector3();
@@ -1041,11 +1037,19 @@ test("a shot's tilt pitches the camera from its cut to the next on its move's ea
     f.controller.apply({ width: 1440, height: 900, elapsedSeconds: 0, ...flags });
     return pose();
   };
-  // The watch's cut opens level (its tilt starts at 0): the lens looks straight at its target.
+  // The watch's cut opens level (its move's tilt starts at 0): the lens looks straight at its
+  // target. It has no tilt of its own.
   const watch = at({ tourPhase: 0 });
   assert.equal(f.controller.shot.name, "The watch");
-  assert.equal(f.controller.shot.tilt[0], 0);
+  assert.ok(!f.controller.shot.tilt);
   closeTo(watch.forward.angleTo(watch.look), 0, 1e-6);
+  // A move's tilt (the lookout's giants) lifts the gaze on the move's eased path (shotPose).
+  const lift = f.controller.shot.move.tilt,
+    quarter = at({ tourPhase: 0.25 });
+  assert.deepEqual(lift, [0, 2.5]);
+  closeTo(quarter.pitch, shotPose(f.controller.shot, 0.25).tilt, 1e-6);
+  assert.ok(Math.abs(quarter.pitch - lift[1] * 0.25) > 0.05, "eased, not linear");
+  closeTo(at({ tourPhase: 1 }).pitch, lift[1], 1e-6);
 
   assert.equal(f.controller.setPreviewShot("tower", 4), true);
   // Driven by the tour: the cut opens at tilt[0]. A 1440x900 desktop is cut to
@@ -1067,10 +1071,6 @@ test("a shot's tilt pitches the camera from its cut to the next on its move's ea
   closeTo(start.pitch, from, 1e-6);
   closeTo(middle.pitch, half, 1e-6);
   closeTo(end.pitch, to, 1e-6);
-  // Between them it follows the move's eased path (shotPose), not a straight line.
-  const quarter = at({ tourPhase: 0.25 });
-  closeTo(quarter.pitch, shotPose(f.controller.shot, 0.25).tilt, 1e-6);
-  assert.ok(Math.abs(quarter.pitch - (from + (to - from) * 0.25)) > 0.05, "eased, not linear");
   assert.ok(start.forward.y < end.forward.y, "the cut looks lower than the next cut");
   // At the next cut the lens sits `to` degrees off its aim.
   closeTo(end.forward.angleTo(end.look), (Math.abs(to) * Math.PI) / 180, 1e-6);
@@ -1174,8 +1174,8 @@ test("a move's truck, crane, dolly and zoom run from their first value at the cu
     near(end.fov, move.zoom?.[1] ?? shot.fov);
     near(start.scale, (move.dolly?.[0] ?? 1) * dollyZoom(start.fov));
     near(end.scale, (move.dolly?.[1] ?? 1) * dollyZoom(end.fov));
-    near(start.tilt, shot.tilt?.[0] ?? 0);
-    near(end.tilt, shot.tilt?.[1] ?? 0);
+    near(start.tilt, move.tilt?.[0] ?? 0);
+    near(end.tilt, move.tilt?.[1] ?? 0);
     // The fit holds the move's sampled phases.
     const poses = fitPoses(shot);
     assert.equal(poses.length, MOVE_PHASES.length);
@@ -1183,22 +1183,35 @@ test("a move's truck, crane, dolly and zoom run from their first value at the cu
   }
   assert.deepEqual(MOVE_PHASES, [0, 0.25, 0.5, 0.75, 1]);
   assert.ok(Object.isFrozen(MOVE_PHASES));
-  // One move (under the milky sky): every tour shot pushes in as its gaze lifts, on one ease,
-  // with no truck or crane (a crane under a fixed aim would flatten the look up); The watch
-  // makes its push a dolly zoom.
-  for (const name of TOUR_ORDER)
+  // The spec'd moves: Portrait trucks left to right and cranes up while pushing in.
+  const portrait = DIRECTED_SHOTS.tree[0];
+  near(shotPose(portrait, 0).truck, -0.07);
+  near(shotPose(portrait, 1).truck, 0.07);
+  near(shotPose(portrait, 1).crane, 0.13);
+  near(shotPose(portrait, 1).scale, 0.92);
+  // Root and lantern pulls back.
+  const root = DIRECTED_SHOTS.tree[3];
+  assert.ok(shotPose(root, 1).scale > shotPose(root, 0).scale);
+  // The lookout's giants (under the milky sky) share one move: a push-in as the gaze lifts,
+  // on one ease, with no truck or crane (a crane under a fixed aim would flatten the look
+  // up); The watch makes its push a dolly zoom.
+  for (const name of ["The watch", "Threshold"])
     for (const [w, h] of [
       [1440, 900],
       [390, 844],
     ]) {
-      const base = [...DIRECTED_SHOTS.tower, ...DIRECTED_SHOTS.tree].find((s) => s.name === name),
-        shot = resolveDirectedShot(base, w, h),
+      const shot = resolveDirectedShot(
+          DIRECTED_SHOTS.tower.find((s) => s.name === name),
+          w,
+          h,
+        ),
         start = shotPose(shot, 0),
         end = shotPose(shot, 1),
         label = `${name} ${w}x${h}`;
       assert.equal(shot.move.ease, 0.6, label);
       assert.equal(start.truck + end.truck + start.crane + end.crane, 0, label);
-      assert.ok(end.tilt >= start.tilt, `${label} lifts its gaze`);
+      assert.deepEqual(shot.move.tilt, [0, 2.5], label);
+      assert.ok(end.tilt > start.tilt, `${label} lifts its gaze`);
       if (name === "The watch") {
         // Its push is a dolly zoom: the lens narrows as the camera backs off.
         assert.equal(shot.move.dollyZoom, true);

@@ -27,8 +27,6 @@ import {
   DIRECTED_SHOTS,
   measureShot,
   resolveDirectedShot,
-  shotClearance,
-  CLEARANCE,
   SQUAT_LANDSCAPE,
 } from "../src/scene/directed-shots.js";
 import {
@@ -180,23 +178,16 @@ for (const tier of ["high", "balanced"])
               camera.updateMatrixWorld(true);
               const label = `${shot.name} ${tier} ${width}x${height} ${JSON.stringify(sample)}`;
               assert.ok(
-                camera.position.y >=
-                  ground(camera.position.x, camera.position.z) + shotClearance(shot) - 0.005,
+                camera.position.y >= ground(camera.position.x, camera.position.z) + 0.795,
                 label + " ground clearance",
               );
-              // The roots' and banks' soil, the ground the lens really meets near the tree: a
-              // lens set low for a macro (its own clearance) stays above it by more than the
-              // near plane.
               assert.ok(
                 camera.position.y >=
-                  rootSupportHeight(camera.position.x, camera.position.z, ground) +
-                    (shotClearance(shot) < CLEARANCE ? 0.15 : 0.3),
+                  rootSupportHeight(camera.position.x, camera.position.z, ground) + 0.3,
                 label + " root support lens clearance",
               );
               let minY = Infinity,
-                maxY = -Infinity,
-                minX = Infinity,
-                maxX = -Infinity;
+                maxY = -Infinity;
               for (let i = 0; i < measured.points.length; i += 3) {
                 const p = screen(
                   camera,
@@ -213,13 +204,9 @@ for (const tier of ["high", "balanced"])
                 );
                 minY = Math.min(minY, p.y);
                 maxY = Math.max(maxY, p.y);
-                minX = Math.min(minX, p.x);
-                maxX = Math.max(maxX, p.x);
               }
               distances[shot.name] = controller.frame.distance;
-              // How much of the safe area the focal volume fills, whichever way binds (a
-              // phone's narrow frame fits the lantern by its width).
-              sizes[shot.name] = Math.max((maxY - minY) / area.height, (maxX - minX) / area.width);
+              sizes[shot.name] = (maxY - minY) / area.height;
               if (shot.name === "The watch" && height > width) {
                 const footing = measureShot(tower.root, {
                   region: [0, 0.025],
@@ -236,14 +223,11 @@ for (const tier of ["high", "balanced"])
                   label + ` hero ${hero.bottom} shows the tower footing at ${highestFooting}`,
                 );
               }
-              // The lantern macros: the lens stands a few units off the lantern, which fills
-              // the frame from the bottom edge (its foot cut, its cap and glass in view).
-              if (shot.subject === "tree-lantern") {
-                assert.ok(controller.frame.distance < 7, label + " lantern macro backed off");
-                const lantern = measureShot(tree.root, { ...shot, region: [0.7, 1] });
+              if (shot.name === "Root and lantern") {
+                const lantern = measureShot(tree.root, DIRECTED_SHOTS.tree[1]);
                 for (let i = 0; i < lantern.points.length; i += 3) {
                   const p = new Vector3().fromArray(lantern.points, i).project(camera);
-                  assert.ok(Math.abs(p.x) < 1 && Math.abs(p.y) < 1, label + " crops the cap");
+                  assert.ok(Math.abs(p.x) < 1 && Math.abs(p.y) < 1, label + " crops the lantern");
                 }
               }
               if (shot.name === "Close-up") {
@@ -272,6 +256,10 @@ for (const tier of ["high", "balanced"])
         assert.ok(
           distances["Close-up"] < distances.Portrait * 0.65,
           `${tier} ${width} close-up backed out to whole tree`,
+        );
+        assert.ok(
+          distances["Lantern study"] < distances["Root and lantern"] * 0.65,
+          `${tier} ${width} lantern study repeated the roots view`,
         );
         assert.ok(
           sizes["Lantern study"] > 0.55,
@@ -544,7 +532,9 @@ const LAYOUTS = [
     nav: { top: 406 },
   },
   // 4:3 and 5:4 screens, landscape iPads and taller 16:10 windows (the hero measured
-  // 2026-10-12): deep bars, and the longest reaches from a subject.
+  // 2026-10-12): deep bars, and the longest reaches from a subject. Measured for the lookout's
+  // giants (`lookout`); the tree's shots keep their framings there as they were, and Close-up's
+  // far snow can stand behind the name on 5:4 and landscape-iPad screens.
   ...[
     [1024, 768, 16, 283, 381, 601],
     [1280, 1024, 50, 355, 564, 832],
@@ -558,12 +548,14 @@ const LAYOUTS = [
     height,
     hero: { left, right, top, bottom },
     nav: { top: height - 118 },
+    lookout: true,
   })),
 ];
 
 const PHASES = [0, 0.5, 1];
-// The tour's one wide shot (the owner's pick of 2026-10-12): it keeps its horizon.
-const WIDE_SHOT = "Portrait";
+// The lookout's giants under the milky sky (the owner's direction of 2026-10-11); the tree's
+// shots keep their own framings by the water (the owner's call of 2026-10-12).
+const GIANTS = Object.freeze(["The watch", "Threshold"]);
 
 // The film mountains follow the camera, so their framing depends only on where each
 // directed shot puts it: fit the real tower and tree, then project the crest line.
@@ -665,7 +657,10 @@ test("the camera-centred ranges frame every tour shot: sun, roof lane, tree shot
           // Landscape phones keep the opening shot's snow out from behind the intro too.
           // snowReach mirrors the shader's snowline: the vertex's elevation against
           // its massif (aTerrain.w), with the jitter and gully tongue at their most generous.
-          if (desktop || (name === "The watch" && height < 500))
+          if (
+            (desktop || (name === "The watch" && height < 500)) &&
+            (!layout.lookout || GIANTS.includes(name))
+          )
             for (let v = 0; v < terrain.count; v++) {
               if (!snowReach(elevationOf(v), terrain.getW(v))) continue;
               const p = screen(vertex(v));
@@ -678,10 +673,9 @@ test("the camera-centred ranges frame every tour shot: sun, roof lane, tree shot
                 label + " puts snow behind the name",
               );
             }
-          // Under the milky sky: on landscape desktops every tour shot but the one wide shot
-          // looks up from its subject's foot, the horizon below the name. (A portrait monitor
-          // sets the name under its subject.)
-          if (desktop && !portrait && name !== WIDE_SHOT) {
+          // Under the milky sky: on landscape desktops the lookout's giants look up from its
+          // foot, the horizon below the name. (A portrait monitor sets the name under it.)
+          if (desktop && !portrait && GIANTS.includes(name)) {
             const forward = camera.getWorldDirection(new Vector3()).setY(0).normalize();
             const level = screen(forward.multiplyScalar(1000).add(camera.position));
             assert.ok(
@@ -864,7 +858,10 @@ test("the Meshy massifs frame every tour shot: sun, roof lane, open sky over the
             .map((d) => screen(d.clone().add(camera.position)))
             .filter((p) => p.depth > 0 && p.x >= -2 && p.x <= width + 2);
           assert.ok(crest.length > 0, label + " shows no mountains");
-          if (desktop || (name === "The watch" && height < 500))
+          if (
+            (desktop || (name === "The watch" && height < 500)) &&
+            (!layout.lookout || GIANTS.includes(name))
+          )
             for (const point of snowy) {
               const p = screen(point.clone().add(camera.position));
               assert.ok(
@@ -876,10 +873,9 @@ test("the Meshy massifs frame every tour shot: sun, roof lane, open sky over the
                 label + " puts snow behind the name",
               );
             }
-          // Under the milky sky: on landscape desktops every tour shot but the one wide shot
-          // looks up from its subject's foot, the horizon below the name. (A portrait monitor
-          // sets the name under its subject.)
-          if (desktop && !portrait && name !== WIDE_SHOT) {
+          // Under the milky sky: on landscape desktops the lookout's giants look up from its
+          // foot, the horizon below the name. (A portrait monitor sets the name under it.)
+          if (desktop && !portrait && GIANTS.includes(name)) {
             const forward = camera.getWorldDirection(new Vector3()).setY(0).normalize();
             const level = screen(forward.multiplyScalar(1000).add(camera.position));
             assert.ok(
@@ -984,13 +980,14 @@ test("the Meshy massifs frame every tour shot: sun, roof lane, open sky over the
   }
 });
 
-// Under the milky sky (the owner's direction of 2026-10-11): one grammar for the tour. On every
-// measured layout and through every move: the lens never leaves the sky's reach (each ray
-// through the picture meets the sky shell, so its rim never shows), and the star stands whole,
-// clear of the text and unhidden by the lookout or the tree, or out of frame, in the tree shots
-// too. On landscape desktops every shot but the one wide shot looks up at its giant (at least
-// 15 degrees), the giant on the right of the frame, the name in the open sky on its left.
-test("under the milky sky every tour shot looks up at its giant, the star whole or absent", async () => {
+// Under the milky sky (the owner's direction of 2026-10-11). On every measured layout and
+// through every move of every tour shot: the lens never leaves the sky's reach (each ray through
+// the picture meets the sky shell, so its rim never shows), and the star stands whole, clear of
+// the text and unhidden by the lookout or the tree, or out of frame. The lookout's giants also
+// keep their lens clear of both landmarks and the tree out of their picture, and on landscape
+// desktops look up at the lookout (at least 15 degrees), the lookout on the right of the frame,
+// the name in the open sky on its left.
+test("under the milky sky the lookout's giants look up at it, and every tour shot keeps the star whole or absent", async () => {
   const window = { BabelSite: {} };
   vm.runInNewContext(await readFile(new URL("../src/scene/world.js", import.meta.url), "utf8"), {
     window,
@@ -1023,8 +1020,7 @@ test("under the milky sky every tour shot looks up at its giant, the star whole 
     });
   }
   const rad = Math.PI / 180;
-  // The lookout's and the tree's vertices (not the lantern's), for the lens's clearance: the
-  // giants stand a few units off at least (the lantern macros only clear the soil and roots).
+  // The lookout's and the tree's vertices (not the lantern's), for the giants' lens clearance.
   const solid = [];
   for (const root of [tower.root, tree.root])
     root.traverse((mesh) => {
@@ -1084,10 +1080,11 @@ test("under the milky sky every tour shot looks up at its giant, the star whole 
               p = point.clone().project(camera);
             return { x: ((p.x + 1) * width) / 2, y: ((1 - p.y) * height) / 2, depth };
           };
-          const reach = shot.subject ? 0.5 : kind === "tree" ? 3 : 6;
-          assert.ok(nearest(camera.position) >= reach, `${label} lens inside a subject`);
-          // One landmark a shot: the other never stands in its picture (between the bars).
-          {
+          const giant = GIANTS.includes(name);
+          if (giant)
+            assert.ok(nearest(camera.position) >= 6, `${label} lens inside the lookout or tree`);
+          // One landmark a giant: the tree never stands in its picture (between the bars).
+          if (giant) {
             const m = new Matrix4().multiplyMatrices(
                 camera.projectionMatrix,
                 camera.matrixWorldInverse,
@@ -1170,7 +1167,7 @@ test("under the milky sky every tour shot looks up at its giant, the star whole 
               );
             }
           }
-          if (!landscapeDesktop || name === WIDE_SHOT) continue;
+          if (!landscapeDesktop || !GIANTS.includes(name)) continue;
           // Looking up at the giant, the giant on the right.
           const forward = camera.getWorldDirection(new Vector3());
           const pitch = Math.atan2(forward.y, Math.hypot(forward.x, forward.z)) / rad;

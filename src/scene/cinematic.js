@@ -8,7 +8,6 @@ import {
   resolveDirectedShot,
   fitPoses,
   shotPose,
-  shotClearance,
   PUSH_IN,
   LETTERBOX,
   letterboxShare,
@@ -196,7 +195,7 @@ export function createCinematicCamera({
         {
           const x = measured.target.x + Math.cos(yaw) * reach - Math.sin(yaw) * side,
             z = measured.target.z + Math.sin(yaw) * reach + Math.cos(yaw) * side;
-          clearanceY = Math.max(clearanceY, getGroundY(x, z) + shotClearance(shot) - lift);
+          clearanceY = Math.max(clearanceY, getGroundY(x, z) + 0.8 - lift);
           // A low camera can be above the earth yet look through a hill.
           // Keep footing views clear without moving or resizing the subject.
           if (shot.region[0] === 0) {
@@ -391,7 +390,7 @@ export function createCinematicCamera({
         aim.set(target.x + rightX, target.y, target.z + rightZ);
         camera.lookAt(aim);
         fov = pose.fov;
-        if (shot.tilt) pitch = pose.tilt;
+        if (shot.move.tilt) pitch = pose.tilt;
         nearest = fitted.distance * nearestScale(shot);
       } else {
         const arc = reducedMotion
@@ -413,10 +412,10 @@ export function createCinematicCamera({
         );
         camera.lookAt(target);
       }
-      // A shot's tilt pitches the camera from tilt[0] at its cut to tilt[1] at
-      // the next. A move carries it on its own path and ease (shotPose); a
-      // drifting shot's tilt runs linearly through a tour hold and without a
-      // tour breathes between its ends over the 48-second arc.
+      // A move's tilt travels its path and ease (shotPose), inside the fit. A
+      // shot's own tilt pitches the camera after the fit, from tilt[0] at its
+      // cut to tilt[1] at the next; without a tour it breathes between them
+      // over the 48-second arc.
       if (shot.tilt && pitch === null) {
         const [from, to] = shot.tilt;
         pitch = reducedMotion

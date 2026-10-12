@@ -7,17 +7,21 @@ import { Box3, Vector3 } from "three";
 //
 // Under the milky sky (the owner's direction of 2026-10-11: "make this more about the artsy
 // background milky theme, with bigger than life close up scenes… one cohesive idea"): the
-// tour is one film, its sky the subject. Every tour shot but one obeys the same grammar
-// (GIANT, below): the lens stands low at the subject's foot and looks up, so on desktops the
-// horizon, the plain and the ranges fall below the name and the painted banks fill the frame
-// behind it; a wide lens close in makes the subject a giant, cut by the bottom edge and
-// rising beside the name; every shot travels the same move, a dolly-in as the gaze lifts;
-// no lens softens the sky. The aim stands high in the frame (anchor about a third down), so
-// the subject hangs into it from above the lens and its low, far parts still fit. Portrait is
-// the one wide shot (the owner's pick): the tree whole on the plain and the river, under the
-// sky, on the same move. The watch and Threshold look toward the star (its maelstrom whole
-// beside the lookout); the two lantern shots are macros, the lens just above the soil.
-const GIANT_MOVE = Object.freeze({ dolly: Object.freeze([1.04, 0.94]), ease: 0.6 });
+// tour alternates the lookout under the sky and the tree by the water. The lookout's shots
+// obey one grammar (GIANT, below): the lens stands low at the lookout's foot and looks up,
+// so on desktops the horizon, the plain and the ranges fall below the name and the painted
+// banks fill the frame behind it; a wide lens close in makes the lookout a giant, cut by the
+// bottom edge and rising beside the name, toward the star (its maelstrom whole beside it);
+// both travel the same move, a dolly-in as the gaze lifts, and no lens softens the sky. The
+// aim stands high in the frame (anchor about a third down), so the lookout hangs into it
+// from above the lens and its low, far parts still fit. The tree's shots keep their own
+// framings, which show the plain, the river and the stream (the owner's call of 2026-10-12:
+// "i liked the tree shots how they were. they showed the water more").
+const GIANT_MOVE = Object.freeze({
+  dolly: Object.freeze([1.04, 0.94]),
+  tilt: Object.freeze([0, 2.5]),
+  ease: 0.6,
+});
 const GIANT = Object.freeze({
   fov: 44,
   height: 0.1,
@@ -25,11 +29,7 @@ const GIANT = Object.freeze({
   margin: 0.9,
   anchor: Object.freeze([0.6, 0.54]),
   move: GIANT_MOVE,
-  tilt: Object.freeze([0, 2.5]),
 });
-// Short landscape phones keep a drift: no room about the name for a move. Each shot needs
-// its own variant object (resolveDirectedShot caches by it).
-const still = () => ({ move: null });
 // After the rain (the owner's picks of 2026-10-09): every wide shot's plain
 // catches the sky (Portrait's gloss, but untinted, so the plain keeps main's
 // warmth) and a light, warm grey mist lies on the ranges' feet, so the plain
@@ -51,7 +51,7 @@ export const DIRECTED_SHOTS = {
       // flourish of the shared move is the dolly zoom: the lookout keeps its size while the
       // sky behind it swells.
       ...GIANT,
-      move: { zoom: [44, 38], dollyZoom: true, ease: 0.6 },
+      move: { zoom: [44, 38], dollyZoom: true, tilt: GIANT_MOVE.tilt, ease: 0.6 },
       // The lookout is a dark shape against the sky (its key and fill dimmed, its moonlit
       // rim kept); far fires stay out of the shot (far-fires.js FAR_FIRES.shots).
       light: { key: 0.4, fill: 0.45, rim: 1.3 },
@@ -103,7 +103,7 @@ export const DIRECTED_SHOTS = {
       landscape: { move: null, region: [0.56, 1], anchor: [0.64, 0.62] },
       // Under 600px wide a little nearer the star keeps its glow off the intro.
       compact: { azimuth: 46, move: null, region: [0.56, 1], anchor: [0.64, 0.62] },
-      squat: { azimuth: 52, move: null },
+      squat: { azimuth: 48, move: null },
     },
     {
       // The name and URL are retained; for the timber lookout it is a
@@ -162,32 +162,31 @@ export const DIRECTED_SHOTS = {
       // in a wide frame, so the plain is calmed (as Portrait's) and the camera
       // tilts up through the hold (tilt: degrees of pitch at the cut and at the
       // next), the range staying above the name. Further out, the cut opens on
-      // the hard top-left edge of the cloud cover at these bearings.
+      // the hard top-left edge of the cloud cover at these bearings (it showed
+      // at margin 0.55 from 66 degrees).
       region: [0, 1],
       fov: 34,
       azimuth: 70,
       height: 0.2,
       arc: 2,
       hold: 7,
-      // The fit holds its pitched poses, so its margins (0.76, and its variants') keep the
-      // distance it had when its tilt came after the fit.
-      margin: 0.76,
+      margin: 0.66,
       anchor: [0.36, 0.62],
       tilt: [-6, -3],
       // Phones and portrait monitors keep the lookout on the left third and the
       // tree whole to its right (portrait monitors crop its farthest twigs); the
-      // star is out of their view. Further out the cut opens on the cloud
-      // cover's edge behind the lookout. Landscape phones turn a little
+      // star is out of their view. Further out (margin 0.52) the cut opens on
+      // the cloud cover's edge behind the lookout. Landscape phones turn a little
       // further round. Squat and the
       // smallest landscape windows, the name above the subject's left, see the
       // pair mirrored from across the plain: the tree left, the lookout right,
       // the star whole beyond it.
-      portrait: { azimuth: 55, margin: 0.8, anchor: [0.21, 0.62], tilt: [-1, 2] },
-      landscape: { azimuth: 75, margin: 0.76, anchor: [0.5, 0.55], tilt: [-3, 0], move: null },
-      compact: { azimuth: -15, margin: 0.76, anchor: [0.6, 0.55], tilt: [-3, 0], move: null },
+      portrait: { azimuth: 55, margin: 0.56, anchor: [0.21, 0.62], tilt: [-1, 2] },
+      landscape: { azimuth: 75, margin: 0.6, anchor: [0.5, 0.55], tilt: [-3, 0], move: null },
+      compact: { azimuth: -15, margin: 0.6, anchor: [0.6, 0.55], tilt: [-3, 0], move: null },
       squat: {
         azimuth: -15,
-        margin: 0.8,
+        margin: 0.6,
         anchor: [0.6, 0.55],
         tilt: [-5, 0],
         move: { dolly: [1.08, 0.94], ease: 0.5 },
@@ -203,11 +202,9 @@ export const DIRECTED_SHOTS = {
   tree: [
     {
       name: "Portrait",
-      // The one wide shot (the owner's pick of 2026-10-12, "keep one wide shot"): the tree
-      // whole on the plain and the river under the sky, low, on the shared move; no snow
-      // stands behind the name. Phones set the tree on the lower third, open sky above it.
+      // Phones set the tree on the lower third, open sky above it.
       portrait: {
-        move: GIANT_MOVE,
+        move: { dolly: [1.06, 0.94], crane: [0, 0.08], ease: 0.6 },
         anchor: [0.5, 0.66],
         // Phones keep their open-sky framing: no tilt, the tree at its own size.
         margin: 0.93,
@@ -221,7 +218,7 @@ export const DIRECTED_SHOTS = {
       // the edges toward it. Its rays are the tree's own.
       light: { fill: 0.85, rim: 1.3, pale: 0.75 },
       shafts: { gobo: { color: [0.6, 0.78, 1.2], gain: 3.4, wrap: 0.1, rim: 5 } },
-      move: GIANT_MOVE,
+      move: { truck: [-0.07, 0.07], crane: [0, 0.13], dolly: [1.05, 0.92], ease: 0.6 },
       // Low (0.12), so the plain ahead is foreshortened under the ranges, and
       // calmed: the near slate burned down, its texture and glints quietened
       // beyond the moonlit clearing about the tree (slateCalmFor()). The
@@ -239,11 +236,10 @@ export const DIRECTED_SHOTS = {
       hold: 9,
       // Sky first (the owner's pick of 2026-10-11, "A sky open"): the tree fits
       // smaller (0.93 before) and the camera tilts up 3 degrees at the cut, 4 by the
-      // end of the move, so more of the clouds stand over it. The fit holds the tilt; the
-      // aim stands a third down the safe area, so the tilted tree keeps its size and the
-      // lens stays within the sky's shell on 4:3 screens.
+      // end of the move, so more of the clouds stand over it; the aim starts a
+      // little high, so the tilt keeps the whole tree inside the frame.
       margin: 0.82,
-      anchor: [0.5, 0.36],
+      anchor: [0.5, 0.42],
       tilt: [3, 4],
       ground: {
         burn: { amount: 0.45, reach: [0.4, 0.95] },
@@ -260,15 +256,11 @@ export const DIRECTED_SHOTS = {
         gloss: { film: 0.32, gain: 1.9 },
         shadow: [12, 30],
       },
-      landscape: still(),
+      // Landscape phones keep the drift: no room about the name for a move.
+      landscape: { move: null },
     },
     {
       name: "Lantern study",
-      // The lantern as a lighthouse: the lens just above the soil (clearance 0.25), a few units
-      // off, looking up at the lantern alone against the sky, a branch over its cap; the tree
-      // stands behind the lens's right shoulder (at 115 degrees a pale stone by the lens
-      // filled the left of the frame; nearer 100 the lookout's cab reached an ultrawide
-      // frame's corner).
       // Lantern-led, its bark's glints off the text: the lantern's glint on a
       // wet root beside the name at the end of the push-in (4.67:1 at
       // 1920x1080) passes the ground's knee (film-light.js GLINT). Its grass
@@ -292,17 +284,23 @@ export const DIRECTED_SHOTS = {
         stoneText: 1,
         poolAbout: 1,
       },
-      ...GIANT,
+      lens: { blur: 8 },
+      move: { dolly: [1.2, 0.85], ease: 0.6 },
       subject: "tree-lantern",
-      region: [0.55, 1],
-      targetHeight: 0.95,
-      clearance: 0.25,
-      azimuth: 108,
+      // Across the river, a little round from the -115° axis and with the
+      // lantern right of the area's centre, so less of the root flare stands
+      // behind the name at the end of the push-in. Phones keep that axis.
+      region: [0, 1],
+      fov: 34,
+      azimuth: -125,
+      height: 0.62,
+      arc: 2,
       hold: 6,
-      anchor: [0.62, 0.32],
+      margin: 0.7,
+      anchor: [0.56, 0.5],
       ground: AFTER_RAIN,
-      portrait: { anchor: [0.5, 0.36], margin: 0.95 },
-      landscape: still(),
+      landscape: { move: null, azimuth: -115, anchor: [0.5, 0.5] },
+      portrait: { move: { dolly: [1.1, 0.9], ease: 0.6 }, azimuth: -115, anchor: [0.5, 0.5] },
     },
     {
       name: "Close-up",
@@ -310,28 +308,38 @@ export const DIRECTED_SHOTS = {
       // of the limbs reaching left stood behind the name (3.97:1 at 1440x900),
       // and the trunk's behind About on phones and portrait monitors.
       light: { fill: 0.7, rim: 2, rimText: 1 },
-      // Under the crown: the lens at the trunk's foot looks steeply up into the limbs, the
-      // moon behind them (ideal backlight, its rims full), the brightest banks between. Only
-      // the crown's core is fitted (focus): its outer limbs leave the frame; the far ones,
-      // lowest on screen, are trimmed from the fit (depth) so the lens stands close.
-      ...GIANT,
-      region: [0.6, 1],
-      targetHeight: 0.92,
+      // No lens blur: the clouds behind the crown read sharp (sky first, below).
+      move: { truck: [-0.1, 0.1], ease: 0.5 },
+      // The crown: low under the fork high on the trunk, looking up at the
+      // limbs against the sky, open sky beside the name.
+      region: [0.5, 0.78],
+      fov: 32,
       azimuth: -155,
+      height: 0.28,
+      arc: 2,
       hold: 6,
-      focus: { width: 0.35, depth: [-0.25, 0.15] },
-      margin: 0.95,
-      anchor: [0.6, 0.32],
-      tilt: [0, 3],
-      portrait: { focus: { width: 0.25, depth: [-0.25, 0.15] }, anchor: [0.5, 0.36] },
-      landscape: still(),
+      focus: { width: 0.32, depth: [-0.15, 0.2] },
+      // Sky first (the owner's pick of 2026-10-11, "A sky open"): the crown fits
+      // smaller (0.92 before; phones keep it, or the roots enter their frame) and the
+      // lens no longer softens the sky.
+      margin: 0.8,
+      anchor: [0.58, 0.45],
+      // Phones push in: a sideways truck this close takes the lens into the
+      // trunk. Their aim sits a little high, which lifts the far range's snow
+      // clear above the name on portrait monitors.
+      portrait: {
+        focus: { width: 0.26, depth: [-0.15, 0.2] },
+        anchor: [0.5, 0.4],
+        move: { dolly: [1.1, 0.94], ease: 0.5 },
+        margin: 0.92,
+      },
+      // Landscape phones keep the drift (no room about the name for a move),
+      // from higher, so the roots stay below the short frame.
+      landscape: { move: null, margin: 0.83, height: 0.5, anchor: [0.5, 0.5] },
     },
     {
       name: "Root and lantern",
-      // The giant's foot: the same low lens beside the lantern, turned to the tree, the root
-      // flare and trunk towering behind the lantern's upper half; round to -162 degrees the
-      // trunk stands right of it and open sky behind the name, and the aim high in the frame
-      // keeps the horizon under the name on 4:3 screens too.
+      move: { dolly: [0.86, 1.05], crane: [0, 0.03], ease: 0.6 },
       // The moon's glint on a wet root under the intro's end at the start of
       // the pull-back (4.32:1 at 1440x900) passes the ground's knee, and its
       // grass reads its colour inside the blades (film-light.js GRASS_MOOD),
@@ -339,19 +347,29 @@ export const DIRECTED_SHOTS = {
       // moon, sparkled under the intro (4.21:1 at 1440x900, phase 24.1 of the
       // move).
       light: { key: 0.6, fill: 0.75, lantern: 1.4, rim: 0.9, grassInside: 1, glintText: 1 },
-      ...GIANT,
-      subject: "tree-lantern",
-      region: [0.55, 1],
-      targetHeight: 0.95,
-      clearance: 0.25,
-      azimuth: -162,
+      lens: { blur: 8 },
+      // Round from the -115° axis, so the trunk stands right of centre and
+      // the lantern on the right third, the plain behind the name; the aim
+      // sits low, which keeps the ranges under the top edge's open band.
+      // Phones set the lantern low on that third.
+      region: [0, 0.16],
+      fov: 32,
+      azimuth: -120,
+      height: 0.14,
+      arc: 1,
       hold: 6,
-      anchor: [0.66, 0.24],
+      focus: { width: 0.3, depth: [-0.1, 0.32] },
+      margin: 0.91,
+      anchor: [0.52, 0.64],
       ground: AFTER_RAIN,
-      // Portrait screens come back to -150 degrees and fit more of the lantern, which keeps
-      // the plain's far snow under a portrait monitor's name.
-      portrait: { azimuth: -150, anchor: [0.55, 0.34], region: [0.4, 1] },
-      landscape: still(),
+      portrait: {
+        focus: { width: 0.25, depth: [-0.1, 0.32] },
+        anchor: [0.55, 0.66],
+        move: { dolly: [0.92, 1.06], ease: 0.6 },
+      },
+      // Landscape phones keep the drift (no room about the name for a move)
+      // and the -115° axis.
+      landscape: { move: null, azimuth: -115, anchor: [0.5, 0.5] },
     },
   ],
 };
@@ -515,17 +533,16 @@ export const PUSH_IN = 0.045;
 // A shot's `move`: its camera travels through the hold, each part a [from, to]
 // pair from the cut to the next. `dolly` scales the fitted distance, `crane`
 // raises the camera by a share of the subject's height, `truck` slides camera
-// and aim sideways by a share of the distance (positive to the camera's left), and
+// and aim sideways by a share of the distance (positive to the camera's left),
 // `zoom` sets the lens in degrees; with `dollyZoom` the distance follows the
-// lens so the subject keeps its size while the background swells or sinks.
-// `ease` (0-1) eases the travel in and out, keeping 1 - ease of the mean speed
-// at the cuts, so the camera never stops. A shot's `tilt` ([from, to] degrees
-// of pitch, positive up) travels with the move, on the same ease. Shots without
-// a move keep the constant drift and the PUSH_IN dolly, their tilt linear.
+// lens so the subject keeps its size while the background swells or sinks; and
+// `tilt` pitches the camera in degrees (positive up) about its own horizontal
+// axis, which the fit holds. `ease` (0-1) eases the travel in and out, keeping
+// 1 - ease of the mean speed at the cuts, so the camera never stops. Shots
+// without a move keep the constant drift and the PUSH_IN dolly.
 export const MOVE_PHASES = Object.freeze([0, 0.25, 0.5, 0.75, 1]);
 export function shotPose(shot, phase) {
-  const move = shot.move,
-    tiltAt = (e) => (shot.tilt ? shot.tilt[0] + (shot.tilt[1] - shot.tilt[0]) * e : 0);
+  const move = shot.move;
   if (!move)
     return {
       yaw: (phase - 0.5) * shot.arc,
@@ -533,7 +550,7 @@ export function shotPose(shot, phase) {
       crane: 0,
       truck: 0,
       fov: shot.fov,
-      tilt: tiltAt(phase),
+      tilt: 0,
     };
   const ease = move.ease ?? 0,
     e = phase + ease * (phase * phase * (3 - 2 * phase) - phase),
@@ -548,35 +565,34 @@ export function shotPose(shot, phase) {
     crane: along(move.crane, 0),
     truck: along(move.truck, 0),
     fov,
-    tilt: tiltAt(e),
+    tilt: along(move.tilt, 0),
   };
 }
 // The poses a fit must hold: a move's sampled phases, or the drift's extremes
-// (the 48-second breath without a tour swings the full arc either way, and
-// its tilt breathes between both ends).
+// (the 48-second breath without a tour swings the full arc either way).
 export function fitPoses(shot) {
-  if (shot.move) return MOVE_PHASES.map((phase) => shotPose(shot, phase));
-  const tilts = shot.tilt ? [...new Set(shot.tilt)] : [0];
-  return [-shot.arc, 0, shot.arc].flatMap((yaw) =>
-    tilts.map((tilt) => ({ yaw, scale: 1, crane: 0, truck: 0, fov: shot.fov, tilt })),
-  );
+  return shot.move
+    ? MOVE_PHASES.map((phase) => shotPose(shot, phase))
+    : [-shot.arc, 0, shot.arc].map((yaw) => ({
+        yaw,
+        scale: 1,
+        crane: 0,
+        truck: 0,
+        fov: shot.fov,
+        tilt: 0,
+      }));
 }
 
 // A shot's `anchor`: where its aim lands in the safe area, as shares of the
 // area's width from its left edge and of its height from its top, so a subject
 // can stand on a third rather than at the centre. The fit keeps the focal
-// volume inside the area on every side of that point, its `tilt` included: the
-// pitch turns the view about the camera after it looks at the aim.
+// volume inside the area on every side of that point, a move's tilt included:
+// the pitch turns the view about the camera after it looks at the aim. A
+// shot's own `tilt` pitches the camera after the fit, moving the aim off its
+// anchor; leave margin for it.
 export const CENTRE = Object.freeze([0.5, 0.5]);
 export function shotAnchor(shot) {
   return shot.anchor ?? CENTRE;
-}
-// How far the lens stays above the soil along a shot's path: CLEARANCE, or a
-// shot's own `clearance`, which may sit lower only for a close look up at a
-// small prop.
-export const CLEARANCE = 0.8;
-export function shotClearance(shot) {
-  return shot.clearance ?? CLEARANCE;
 }
 
 export function fitShot(measured, shot, area, width, height) {
