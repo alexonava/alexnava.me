@@ -190,6 +190,9 @@ export const LENS_FX = Object.freeze({
   // of the width at 1992x1020, 0.5 on ultrawide).
   keep: Object.freeze({ "The watch": Object.freeze([0, 0, 0.5, 1]) }),
   keepSoft: 0.03,
+  // A kept rect ends this many of the star's radii short of it (lensKeepRect()), so the star
+  // beside it keeps its whole heat ring and fringe.
+  keepStar: 3,
 });
 
 const lensNumber = (value) => (Number.isInteger(value) ? value.toFixed(1) : String(value));
@@ -474,6 +477,20 @@ export function lensSource(camera, position, radius = 1, out = [0, 0, 0, 0]) {
   out[1] = (lensPoint.y + 1) / 2;
   out[2] = (radius * camera.projectionMatrix.elements[5]) / depth / 2;
   out[3] = 1;
+  return out;
+}
+
+// The rect the lens keeps whole this frame (frame shares from the top-left corner), or null:
+// a shot's LENS_FX.keep, its right edge ended short of the star (a lensSource()) by
+// LENS_FX.keepStar of its radii when the star stands to the rect's right.
+export function lensKeepRect(keep, star, aspect, out = [0, 0, 0, 0]) {
+  if (!keep) return null;
+  out[0] = keep[0];
+  out[1] = keep[1];
+  out[2] = keep[2];
+  out[3] = keep[3];
+  if (star?.[3] > 0 && star[0] > keep[0])
+    out[2] = Math.max(keep[0], Math.min(keep[2], star[0] - (LENS_FX.keepStar * star[2]) / aspect));
   return out;
 }
 

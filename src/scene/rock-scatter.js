@@ -23,9 +23,9 @@ export const ROCK_TYPES = Object.freeze({
 });
 
 // [id, anchor, world angle atan2(z, x) in degrees, distance, type, height].
-// A: right of the tower base in The watch. G: a distant silhouette in the fog.
-// C: behind Root and lantern and Portrait. D: behind the lantern, to the right,
-// in Lantern study on landscape phones (desktops look past it, from -125). F: the right side of Portrait. E: at the lantern's foot.
+// A: by the tower base (below the giants' frames since the tour looks up). G: a distant
+// silhouette in the fog. C: behind Portrait. D: beside the lantern, behind the lens of its
+// macros. F: the right side of Portrait. E: at the lantern's foot.
 // N: beyond the tree's north root, right of the trunk in Portrait, behind the
 // lantern.
 export const ROCK_CLUSTERS = Object.freeze(

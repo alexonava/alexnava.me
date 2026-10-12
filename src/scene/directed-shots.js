@@ -43,8 +43,11 @@ export const DIRECTED_SHOTS = {
     {
       name: "The watch",
       // The opener: the lookout from the foot of its legs, its cab and upper legs fitted
-      // (region from 0.5), the lower legs leaving the frame; it faces the star (213 degrees),
-      // so the star and its maelstrom stand whole between the lookout and the name. Its
+      // (region from 0.5), the lower legs leaving the frame, right of the frame's middle; it
+      // faces the star (230 degrees), so the star and its maelstrom stand whole between the
+      // lookout and the name. The tree stands behind the lens, at 33 degrees: nearer that
+      // bearing a 4:3 screen's longer reach took the lens into its crown, and its twigs into
+      // the frame. Its
       // flourish of the shared move is the dolly zoom: the lookout keeps its size while the
       // sky behind it swells.
       ...GIANT,
@@ -54,7 +57,8 @@ export const DIRECTED_SHOTS = {
       light: { key: 0.4, fill: 0.45, rim: 1.3 },
       region: [0.5, 1],
       targetHeight: 0.66,
-      azimuth: 33,
+      azimuth: 50,
+      anchor: [0.7, 0.54],
       hold: 9,
       ground: { ...AFTER_RAIN, mist: { ...AFTER_RAIN.mist, amount: 0.75 } },
       // Portrait screens, narrower, tuck the star behind the lattice from that bearing: there
@@ -65,10 +69,13 @@ export const DIRECTED_SHOTS = {
         margin: 0.88,
         focus: { width: 0.22, depth: [-0.3, 0.3] },
       },
-      landscape: still(),
-      compact: still(),
-      // Squarish short windows: a little further round keeps the star clear of the cab.
-      squat: { azimuth: 36, move: null },
+      // Landscape phones fit from a little higher up the lookout, so its footing stays below
+      // the short frame.
+      // Under 600px wide a little nearer the star keeps its glow off the intro.
+      landscape: { move: null, region: [0.56, 1], anchor: [0.6, 0.62] },
+      compact: { azimuth: 45, move: null, region: [0.56, 1], anchor: [0.6, 0.62] },
+      // Squarish short windows keep the aim at 0.6, the star clear of the cab and the intro.
+      squat: { move: null, anchor: [0.6, 0.54] },
     },
     {
       name: "Threshold",
@@ -224,10 +231,11 @@ export const DIRECTED_SHOTS = {
       hold: 9,
       // Sky first (the owner's pick of 2026-10-11, "A sky open"): the tree fits
       // smaller (0.93 before) and the camera tilts up 3 degrees at the cut, 4 by the
-      // end of the move, so more of the clouds stand over it; the aim starts a
-      // little high, so the tilt keeps the whole tree inside the frame.
+      // end of the move, so more of the clouds stand over it. The fit holds the tilt; the
+      // aim stands a third down the safe area, so the tilted tree keeps its size and the
+      // lens stays within the sky's shell on 4:3 screens.
       margin: 0.82,
-      anchor: [0.5, 0.42],
+      anchor: [0.5, 0.36],
       tilt: [3, 4],
       ground: {
         burn: { amount: 0.45, reach: [0.4, 0.95] },
@@ -312,8 +320,9 @@ export const DIRECTED_SHOTS = {
     {
       name: "Root and lantern",
       // The giant's foot: the same low lens beside the lantern, turned to the tree, the root
-      // flare and trunk towering behind the lantern; round to -150 degrees the trunk stands
-      // right of it and open sky behind the name.
+      // flare and trunk towering behind the lantern's upper half; round to -162 degrees the
+      // trunk stands right of it and open sky behind the name, and the aim high in the frame
+      // keeps the horizon under the name on 4:3 screens too.
       // The moon's glint on a wet root under the intro's end at the start of
       // the pull-back (4.32:1 at 1440x900) passes the ground's knee, and its
       // grass reads its colour inside the blades (film-light.js GRASS_MOOD),
@@ -323,16 +332,16 @@ export const DIRECTED_SHOTS = {
       light: { key: 0.6, fill: 0.75, lantern: 1.4, rim: 0.9, grassInside: 1, glintText: 1 },
       ...GIANT,
       subject: "tree-lantern",
-      region: [0.4, 1],
+      region: [0.55, 1],
       targetHeight: 0.95,
       clearance: 0.25,
-      azimuth: -150,
+      azimuth: -162,
       hold: 6,
-      anchor: [0.66, 0.34],
+      anchor: [0.66, 0.24],
       ground: AFTER_RAIN,
-      // A little higher on portrait screens keeps the plain's far snow under a portrait
-      // monitor's name.
-      portrait: { anchor: [0.55, 0.34] },
+      // Portrait screens come back to -150 degrees and fit more of the lantern, which keeps
+      // the plain's far snow under a portrait monitor's name.
+      portrait: { azimuth: -150, anchor: [0.55, 0.34], region: [0.4, 1] },
       landscape: still(),
     },
   ],

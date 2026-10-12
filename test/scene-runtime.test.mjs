@@ -1690,12 +1690,7 @@ test("each frame applies the shot's light, lens, bars and grain, holding the gra
   // the flame in the shots that look at it, and The watch's kept banks on desktops.
   assert.ok(
     index.includes(
-      "const shot = filmActive && cinematicApplied ? cinematic.shot : null, flame = shot && treeArchitecture?.light && LENS_FX.heat.flameShots.includes(shot.name);",
-    ),
-  );
-  assert.ok(
-    index.includes(
-      "star: shot ? lensSource(camera, solarBody.root.getWorldPosition(lensPoint), SOLAR_RADIUS, lensStar) : null,",
+      "const shot = filmActive && cinematicApplied ? cinematic.shot : null, flame = shot && treeArchitecture?.light && LENS_FX.heat.flameShots.includes(shot.name), star = shot ? lensSource(camera, solarBody.root.getWorldPosition(lensPoint), SOLAR_RADIUS, lensStar) : null;",
     ),
   );
   assert.ok(
@@ -1703,9 +1698,10 @@ test("each frame applies the shot's light, lens, bars and grain, holding the gra
       "flame: flame ? lensSource(camera, treeArchitecture.light.getWorldPosition(lensPoint), 1, lensFlame) : null,",
     ),
   );
+  // The kept rect ends short of the star beside it (lensKeepRect).
   assert.ok(
     index.includes(
-      "keep: shot && viewport.width >= 1000 && viewport.width > 1.2 * viewport.height ? (LENS_FX.keep[shot.name] ?? null) : null });",
+      "keep: shot && viewport.width >= 1000 && viewport.width > 1.2 * viewport.height ? lensKeepRect(LENS_FX.keep[shot.name], star, viewport.width / viewport.height, lensKeep) : null });",
     ),
   );
   // It reads the ground's own text boxes.

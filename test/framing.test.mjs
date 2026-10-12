@@ -329,12 +329,14 @@ test("The watch resolves its landscape variant only for short landscape viewport
     [1440, 500],
     [780, 499],
   ]) {
-    // Landscape phones keep the giant's framing from the lookout's foot, and drift.
+    // Landscape phones keep the giant's view from the lookout's foot, fitted from a little
+    // higher up (its footing below the short frame), and drift.
     const shot = resolveDirectedShot(watch, width, height);
     assert.notEqual(shot, watch);
     assert.equal(shot.height, watch.height);
     assert.equal(shot.azimuth, watch.azimuth);
-    assert.equal(shot.region, watch.region);
+    assert.equal(shot.region, watch.landscape.region);
+    assert.ok(shot.region[0] > watch.region[0]);
     // No room about the name for a move: landscape phones keep the drift.
     assert.equal(shot.move, null);
     assert.equal(shot.fov, watch.fov);
@@ -360,7 +362,7 @@ test("The watch resolves its landscape variant only for short landscape viewport
     [760, 499],
   ]) {
     const shot = resolveDirectedShot(watch, width, height);
-    assert.equal(shot.azimuth, watch.squat.azimuth);
+    assert.equal(shot.azimuth, watch.squat.azimuth ?? watch.azimuth);
     assert.equal(shot.move, null);
     assert.equal(resolveDirectedShot(watch, width, height), resolveDirectedShot(watch, 700, 480));
   }
@@ -378,13 +380,14 @@ test("The watch resolves its landscape variant only for short landscape viewport
   assert.equal(portrait.azimuth, watch.portrait.azimuth);
   assert.ok(portrait.anchor[0] < 0.5);
   assert.equal(resolveDirectedShot(watch, 1080, 1920), portrait);
-  // Landscape phones under 600px wide take a compact variant: the same drift.
+  // Landscape phones under 600px wide take a compact variant: a drift, a little nearer the
+  // star's bearing.
   for (const [width, height] of [
     [568, 320],
     [599, 360],
   ]) {
     const shot = resolveDirectedShot(watch, width, height);
-    assert.equal(shot.azimuth, watch.azimuth);
+    assert.equal(shot.azimuth, watch.compact.azimuth);
     assert.equal(shot.move, null);
     assert.equal(resolveDirectedShot(watch, width, height), shot);
   }
@@ -533,6 +536,22 @@ const LAYOUTS = [
     hero: { left: 12, right: 261, top: 12, bottom: 148 },
     nav: { top: 406 },
   },
+  // 4:3 and 5:4 screens, landscape iPads and taller 16:10 windows (the hero measured
+  // 2026-10-12): deep bars, and the longest reaches from a subject.
+  ...[
+    [1024, 768, 16, 283, 381, 601],
+    [1280, 1024, 50, 355, 564, 832],
+    [1180, 820, 16, 297, 400, 648],
+    [1366, 1024, 93, 417, 559, 832],
+    [1680, 1050, 250, 574, 583, 856],
+    [1920, 1200, 106, 430, 733, 1006],
+    [1280, 800, 50, 355, 362, 630],
+  ].map(([width, height, left, right, top, bottom]) => ({
+    width,
+    height,
+    hero: { left, right, top, bottom },
+    nav: { top: height - 118 },
+  })),
 ];
 
 const PHASES = [0, 0.5, 1];
@@ -593,7 +612,9 @@ test("the camera-centred ranges frame every tour shot: sun, roof lane, tree shot
     for (const layout of LAYOUTS) {
       const { width, height, hero, nav } = layout,
         desktop = width >= 1000,
-        portrait = height > width;
+        portrait = height > width,
+        // What the bars cover is hidden.
+        bar = letterboxShare(width, height) * height;
       for (const name of TOUR_ORDER) {
         const kind = DIRECTED_SHOTS.tower.some((shot) => shot.name === name) ? "tower" : "tree",
           angle = DIRECTED_SHOTS[kind].findIndex((shot) => shot.name === name);
@@ -645,8 +666,8 @@ test("the camera-centred ranges frame every tour shot: sun, roof lane, tree shot
                 p.depth <= 0 ||
                   p.x < hero.left ||
                   p.x > hero.right ||
-                  p.y < hero.top ||
-                  p.y > hero.bottom,
+                  p.y < Math.max(hero.top, bar) ||
+                  p.y > Math.min(hero.bottom, height - bar),
                 label + " puts snow behind the name",
               );
             }
@@ -802,7 +823,9 @@ test("the Meshy massifs frame every tour shot: sun, roof lane, open sky over the
     for (const layout of LAYOUTS) {
       const { width, height, hero, nav } = layout,
         desktop = width >= 1000,
-        portrait = height > width;
+        portrait = height > width,
+        // What the bars cover is hidden.
+        bar = letterboxShare(width, height) * height;
       for (const name of TOUR_ORDER) {
         const kind = DIRECTED_SHOTS.tower.some((shot) => shot.name === name) ? "tower" : "tree",
           angle = DIRECTED_SHOTS[kind].findIndex((shot) => shot.name === name);
@@ -841,8 +864,8 @@ test("the Meshy massifs frame every tour shot: sun, roof lane, open sky over the
                 p.depth <= 0 ||
                   p.x < hero.left ||
                   p.x > hero.right ||
-                  p.y < hero.top ||
-                  p.y > hero.bottom,
+                  p.y < Math.max(hero.top, bar) ||
+                  p.y > Math.min(hero.bottom, height - bar),
                 label + " puts snow behind the name",
               );
             }
@@ -993,6 +1016,18 @@ test("under the milky sky every tour shot looks up at its giant, the star whole 
     });
   }
   const rad = Math.PI / 180;
+  // The lookout's and the tree's vertices (not the lantern's), for the lens's clearance: the
+  // giants stand a few units off at least (the lantern macros only clear the soil and roots).
+  const solid = [];
+  for (const root of [tower.root, tree.root])
+    root.traverse((mesh) => {
+      if (!mesh.isMesh || /lantern/i.test(mesh.name) || /lantern/i.test(mesh.parent?.name ?? ""))
+        return;
+      const p = mesh.geometry.attributes.position;
+      for (let i = 0; i < p.count; i++)
+        solid.push(new Vector3().fromBufferAttribute(p, i).applyMatrix4(mesh.matrixWorld));
+    });
+  const nearest = (o) => Math.sqrt(Math.min(...solid.map((v) => v.distanceToSquared(o))));
   try {
     for (const { width, height, hero, nav } of LAYOUTS) {
       const landscapeDesktop = width >= 1000 && width > height && height > 500,
@@ -1026,6 +1061,8 @@ test("under the milky sky every tour shot looks up at its giant, the star whole 
               p = point.clone().project(camera);
             return { x: ((p.x + 1) * width) / 2, y: ((1 - p.y) * height) / 2, depth };
           };
+          const reach = shot.subject ? 0.5 : kind === "tree" ? 3 : 6;
+          assert.ok(nearest(camera.position) >= reach, `${label} lens inside a subject`);
           // The sky shell's rim never shows.
           for (let gy = 0; gy <= 6; gy++)
             for (let gx = 0; gx <= 6; gx++) {
