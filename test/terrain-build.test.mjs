@@ -1374,15 +1374,29 @@ test("settling the roots seats the tufts at once and never holds the reveal for 
 
 test("the shaded ground switches early in the canvas's fade-in, on a still frame, or links again after a change", async () => {
   const clock = frames(),
-    style = globalThis.getComputedStyle;
+    style = globalThis.getComputedStyle,
+    { now, getEntriesByName } = performance;
+  // The fade runs on a stand-in clock that moves only where the test moves it,
+  // from stand-in reveal marks: a loaded runner's own time (settleRoots()
+  // builds the litter and rushes at once) never carries a switch past
+  // SHADING_EARLY.
+  let at = now.call(performance);
+  const marks = [],
+    reveal = () => marks.push({ name: "babel:reveal", entryType: "mark", startTime: at });
+  performance.now = () => at;
+  performance.getEntriesByName = (name, type) =>
+    name === "babel:reveal" && type === "mark"
+      ? marks.slice()
+      : getEntriesByName.call(performance, name, type);
   try {
     // During the reveal's 480 ms fade-in over the title card, timed from its mark.
     globalThis.getComputedStyle = () => ({ transitionDuration: "0.48s" });
     const fade = linkRig({ revealed: true }),
       tour = { running: true, transition: { cut: false } };
-    performance.mark("babel:reveal");
+    reveal();
     settleRoots(fade.terrain, fade.ground, fade.rendering, fade.base, () => {}, tour);
     assert.equal(fade.links.length, 1);
+    at += SHADING_EARLY - 30;
     fade.links[0].finish();
     await clock.step(2);
     assert.equal(
@@ -1393,16 +1407,16 @@ test("the shaded ground switches early in the canvas's fade-in, on a still frame
     // Later in the fade the canvas is mostly opaque (a pop on shots that open
     // at the tree, review 2026-09-28): a link that settles then waits for a cut.
     const slow = linkRig({ revealed: true });
-    performance.mark("babel:reveal");
+    reveal();
     settleRoots(slow.terrain, slow.ground, slow.rendering, slow.base, () => {}, tour);
-    await new Promise((resolve) => setTimeout(resolve, SHADING_EARLY + 30));
+    at += SHADING_EARLY + 30;
     slow.links[0].finish();
     await clock.step(2);
     assert.equal(slow.material.customProgramCacheKey(), "moonlit-slate-v3", "not late in the fade");
     // Where programs cannot link in parallel the switch's draw links them: never
     // in the fade, which the light shafts' own links need.
     const serialFade = linkRig({ revealed: true, parallel: false });
-    performance.mark("babel:reveal");
+    reveal();
     settleRoots(
       serialFade.terrain,
       serialFade.ground,
@@ -1420,6 +1434,7 @@ test("the shaded ground switches early in the canvas's fade-in, on a still frame
     // After the fade, only a cut; a light that joins the scene since the link
     // (the tree's) changes the program, so it links again before switching.
     delete globalThis.getComputedStyle;
+    at += 480;
     const late = linkRig({ revealed: true });
     settleRoots(late.terrain, late.ground, late.rendering, late.base, () => {}, tour);
     late.links[0].finish();
@@ -1480,7 +1495,8 @@ test("the shaded ground switches early in the canvas's fade-in, on a still frame
     }
   } finally {
     clock.restore();
-    performance.clearMarks("babel:reveal");
+    performance.now = now;
+    performance.getEntriesByName = getEntriesByName;
     if (style) globalThis.getComputedStyle = style;
     else delete globalThis.getComputedStyle;
   }
