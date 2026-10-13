@@ -7,16 +7,17 @@ export const DEFAULT_TOUR_INTERVAL = TOUR_PER_SHOT;
 const TOUR_INTERVALS = Object.freeze([3, 5, 20]);
 export const TOUR_HOLD_FALLBACK = 7;
 // The tour opens on The watch and alternates the lookout and the tree while
-// it can: two lookout shots and four of the tree leave two pairs of tree shots
-// together, Portrait then Lantern study and Close-up then Root and lantern,
-// each a change of height and bearing (Lantern study and Root and lantern
-// nearly share both, so they are kept apart).
+// it can: three lookout shots and four of the tree leave one pair of tree shots
+// together, Portrait then Lantern study, a change of height and bearing
+// (Lantern study and Root and lantern nearly share both, so they are kept
+// apart); Against the moon parts Close-up from Root and lantern.
 export const TOUR_ORDER = Object.freeze([
   "The watch",
   "Portrait",
   "Lantern study",
   "Threshold",
   "Close-up",
+  "Against the moon",
   "Root and lantern",
 ]);
 const directedViews = Object.entries(DIRECTED_SHOTS).flatMap(([subject, shots]) =>

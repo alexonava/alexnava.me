@@ -388,6 +388,14 @@ export function createCinematicCamera({
           target.z + Math.sin(yaw) * reach + rightZ,
         );
         aim.set(target.x + rightX, target.y, target.z + rightZ);
+        // A pan turns the view to the right about the camera, which stays put.
+        if (pose.pan) {
+          const p = (pose.pan * Math.PI) / 180,
+            dx = aim.x - camera.position.x,
+            dz = aim.z - camera.position.z;
+          aim.x = camera.position.x + dx * Math.cos(p) - dz * Math.sin(p);
+          aim.z = camera.position.z + dz * Math.cos(p) + dx * Math.sin(p);
+        }
         camera.lookAt(aim);
         fov = pose.fov;
         if (shot.move.tilt) pitch = pose.tilt;
