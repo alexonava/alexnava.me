@@ -49,6 +49,7 @@ import {
   CLOUD_VORTEX_GLSL,
   cloudFieldGLSL,
   cloudVortexCenter,
+  cloudVortexInSeason,
   cloudVortexReach,
   createEstateSkyMaterial,
   FILM_SKY_GLSL,
@@ -1013,7 +1014,8 @@ test("the cloud vortex turns about the star's eye, never over the reference bank
   // untouched: both sit in branches the reference never takes.
   assert.ok(shader.includes("vec2 bv=b;\nif(vxA>0.){vec2 vxS=vec2(cos(vxA),sin(vxA))"));
   assert.ok(shader.includes("float blv=max(length(bv),.001);\nfloat cloudOut=blv-1.5;"));
-  assert.match(shader, /if\(vxW>0\.\)\{vec2 vxL=L\*clamp\(bl\*\.1,\.1,\.2\);/);
+  // Out of season (uVortex.z below 0) neither the turn nor the density is taken.
+  assert.match(shader, /if\(vxW>0\.&&uVortex\.z>=0\.\)\{vec2 vxL=L\*clamp\(bl\*\.1,\.1,\.2\);/);
   // The turn is a rotation of the local frame by that angle; the arms turn rigidly on
   // the drift clock, a turn in many minutes.
   assert.match(shader, /vxF=vec2\(vxS\.x\*vxE\.x-vxS\.y\*vxE\.y,vxS\.y\*vxE\.x\+vxS\.x\*vxE\.y\)/);
@@ -1265,6 +1267,39 @@ test("film stars hide behind the sky's cloud banks, on the sky's own clock and s
   assert.equal(bare.root.material.uniforms.uFilm.value, 0);
   assert.equal(bare.root.material.uniforms.uClouds.value, 0);
   bare.dispose();
+});
+
+test("the maelstrom is spooky October's, with the lightning, by one date the scene starts with", () => {
+  assert.deepEqual([...CLOUD_VORTEX.months], [10], "the owner's call of 2026-10-13");
+  for (const [date, season] of [
+    [new Date(2026, 9, 1), true],
+    [new Date(2026, 9, 31, 23, 59), true],
+    [new Date(2026, 8, 30, 23, 59), false],
+    [new Date(2026, 10, 1), false],
+    [new Date(2027, 0, 15), false],
+  ])
+    assert.equal(cloudVortexInSeason(date), season, String(date));
+  // Gentler since the quiet cut: it frames the star without shouting.
+  assert.ok(
+    CLOUD_VORTEX.twist <= 3.5 && CLOUD_VORTEX.arms[2] <= 0.15 && CLOUD_VORTEX.ring[0] <= 0.2,
+  );
+  const index = flat(source("src/scene/index.js"));
+  assert.match(
+    index,
+    /const sceneDate = new Date\(\); const vortexSeason = cloudVortexInSeason\(sceneDate\);/,
+  );
+  assert.equal(index.match(/new Date\(/g).length, 1, "one date for the whole storm");
+  // Out of season the reach stays below 0, at the start and on every cut and refit.
+  assert.equal(
+    index.match(/if \(!vortexSeason\) skyShell\.material\.uniforms\.uVortex\.value\.z = -1;/g)
+      .length,
+    2,
+  );
+  assert.match(
+    index,
+    /cloudVortexCenter\(camera\.getWorldPosition\(vortexEye\), WORLD\.SUN_POSITION, WORLD\.SKY_DOME_RADIUS, skyShell\.material\.uniforms\.uVortex\.value\); if \(!vortexSeason\)/,
+  );
+  assert.match(index, /createLightning\(\{[^}]*date: sceneDate,? \}\)/);
 });
 
 test("the bootstrap hands the stars the sky shell's uniforms and radius", () => {

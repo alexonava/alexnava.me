@@ -14,8 +14,10 @@ import { CLOUD_RESHAPE, FLASH_REFERENCE } from "./estate-sky.js";
 import { MIST_UNIFORMS } from "./drifting-mist.js";
 import { FLASH_GROUND, FLASH_UNIFORMS, lendFlashText } from "./film-light.js";
 
-// Bold lightning in the film's night storm (the owner's pick of the storm
-// effects, 2026-10-09: Bold): large flashes that light the cloud banks from inside,
+// Lightning in the film's night storm, spooky October's (the owner's pick of the
+// storm effects, 2026-10-09: Bold, made more frequent twice; then calmed in the
+// owner's quiet cut of 2026-10-13: rarer, its bolts thinner and further off, its
+// cold flash on the subjects softer, so the gallery stays quiet): flashes that light the cloud banks from inside,
 // most of them sending down a bright, branching cold bolt behind the ranges, and a cold flash of light on
 // the subjects and the wet ground from the flash's side. No light, pass or
 // texture is added: the sky shell draws the banks' glow (estate-sky.js
@@ -67,15 +69,19 @@ import { FLASH_GROUND, FLASH_UNIFORMS, lendFlashText } from "./film-light.js";
 //   water mirror, and `mist`, its light scattered in the drifting mist.
 // - `tiers`: per-tier overrides (balanced draws no bolt and a plain glow), and
 //   `shots`: per-shot ones, by shot name (DIRECTED_SHOTS), over the tier's.
+// - `months`: the calendar months (1-12, by the visitor's own date when the scene
+//   starts) the storm comes in: spooky October only (the owner's call of
+//   2026-10-13); any other month the night is still, with no flash or bolt.
 // - `forceAt`: a debug override for captures, empty in use: scene seconds (or
 //   { at, u, v, bolt, strength, pulses, shot, tall }) at which an event's first
 //   pulse peaks; u, v place it on the canvas (0-1, v up; `tall`'s on a canvas
 //   taller than wide), `shot` only in that shot.
 export const LIGHTNING = Object.freeze({
   enabled: true,
+  months: Object.freeze([10]),
   seed: 277,
-  first: 2,
-  interval: Object.freeze([2, 6]),
+  first: 4,
+  interval: Object.freeze([6, 14]),
   pulses: Object.freeze([1, 3]),
   gap: Object.freeze([0.08, 0.2]),
   attack: 0.025,
@@ -92,7 +98,7 @@ export const LIGHTNING = Object.freeze({
   tries: 12,
   sky: Object.freeze({
     radius: Object.freeze([0.5, 0.95]),
-    gain: 0.85,
+    gain: 0.6,
     core: 1.6,
     clear: 0.4,
     thin: 0.5,
@@ -102,18 +108,18 @@ export const LIGHTNING = Object.freeze({
   }),
   bolt: Object.freeze({
     draw: true,
-    chance: 0.6,
+    chance: 0.35,
     strength: 0.85,
-    top: Object.freeze([26, 40]),
+    top: Object.freeze([16, 26]),
     bottom: -1.5,
     lean: 7,
     rough: 0.3,
     detail: 6,
-    branches: Object.freeze([5, 9]),
-    core: 3.6,
-    halo: 22,
-    glow: 0.5,
-    brightness: 2.4,
+    branches: Object.freeze([3, 6]),
+    core: 2.2,
+    halo: 12,
+    glow: 0.35,
+    brightness: 1.5,
     color: Object.freeze([0.85, 0.91, 1]),
     leader: 0.04,
     leaderGlow: 0.3,
@@ -125,13 +131,13 @@ export const LIGHTNING = Object.freeze({
   }),
   relight: Object.freeze({
     color: Object.freeze([0.74, 0.83, 1]),
-    fill: 3,
+    fill: 1.8,
     hemisphere: 0.35,
     ambient: 0.2,
-    rim: 2.2,
+    rim: 1.4,
     rimColor: Object.freeze([0.5, 0.66, 1]),
-    sky: 0.7,
-    water: 1.2,
+    sky: 0.5,
+    water: 0.8,
     mist: 0.6,
     text: Object.freeze([0.25, 0.15]),
   }),
@@ -542,7 +548,10 @@ export function createLightning({
   profile = {},
   config = LIGHTNING,
   skyRadius = 130,
+  date = new Date(),
 }) {
+  // In season, by the calendar month the scene starts in.
+  const season = !config.months || config.months.includes(date.getMonth() + 1);
   let tier = profile.tier === "balanced" ? "balanced" : "high",
     settings = lightningTier(config, tier),
     schedule = createLightningSchedule(settings);
@@ -556,7 +565,8 @@ export function createLightning({
     return perShot.get(name);
   }
   lendFlashText(textGuard);
-  const bolt = parent ? createBolt() : null;
+  // Out of season no bolt is built, so its program never links.
+  const bolt = parent && season ? createBolt() : null;
   if (bolt) parent.add(bolt);
   let time = 0,
     disposed = false,
@@ -569,7 +579,7 @@ export function createLightning({
     point = new Vector3(),
     shell = new Vector3(),
     view = new Vector3();
-  const state = { time: 0, level: 0, event: null };
+  const state = { time: 0, level: 0, event: null, season };
 
   // Where the camera's ray `r` meets the sky shell, as the shell's direction.
   function shellDirection(r, out) {
@@ -766,7 +776,8 @@ export function createLightning({
       if (!reducedMotion && !motionPaused && Number.isFinite(deltaSeconds))
         time += Math.max(0, Math.min(0.1, deltaSeconds));
       state.time = time;
-      const event = settings.enabled && !reducedMotion && film() ? schedule.at(time, shot()) : null;
+      const event =
+        season && settings.enabled && !reducedMotion && film() ? schedule.at(time, shot()) : null;
       if (bolt) bolt.visible = false;
       if (!event) {
         state.level = 0;

@@ -79,10 +79,10 @@ export const SOLAR_STREAK = Object.freeze({ length: 12, height: 1.1, strength: 0
 // share of the corona's aura, inner glow and streamers under it (below 1 the
 // bloom, and so the banks, change). Its light writes the star mask at `mask` times
 // its luminance, so the clouds' cel step never bands its wisps. `on` 0 keeps the
-// star as it was.
+// star as it was. Calmer since the owner's quiet cut of 2026-10-13 (0.32 before).
 export const SOLAR_FIRE = Object.freeze({
   on: 1,
-  strength: 0.32,
+  strength: 0.24,
   length: 0.16,
   licks: 0.5,
   lickRate: 0.08,

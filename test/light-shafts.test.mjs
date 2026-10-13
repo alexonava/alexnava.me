@@ -773,7 +773,12 @@ test("under the crown (Close-up) its air keeps to short, softer shafts, and outs
   h.camera.position.set(90, 30, 90);
   h.shafts.update({ deltaSeconds: 0 });
   assert.equal(h.debug.shafts.shown, "tree-moon");
-  const own = { x: SHAFTS.moon.reach[0], y: SHAFTS.moon.reach[1], z: sky[0], w: sky[1] };
+  const own = {
+    x: SHAFTS.moon.tree.air.reach[0],
+    y: SHAFTS.moon.tree.air.reach[1],
+    z: sky[0],
+    w: sky[1],
+  };
   assert.deepEqual([box.shaftReach.value, march.shaftReach.value], [own, own]);
   assert.equal(box.shaftGain.value, SHAFTS.moon.tree.air.gain);
   h.shafts.dispose();
@@ -1432,16 +1437,19 @@ test("the rays streak about the light's own place on screen and ease off behind 
   assert.equal(moon.shaftJitter.value, SHAFTS.moon.tree.air.jitter);
   assert.ok(SHAFTS.moon.tree.air.jitter > 0 && SHAFTS.moon.jitter > 0, "every moonbeam wanders");
   // Clear moonbeams (the owner's call of 2026-10-13, then "fewer, wider" on
-  // the crown): crisp shafts with dark between, a high contrast and a narrow
-  // edge (where a streak starts to where it is full), the crown's a little
-  // finer than the cabin's and as strong.
+  // the crown) laid like brush strokes (the quiet cut, the same day): dark
+  // between them (a high contrast), a feathered edge, never a hard bar nor a
+  // smear (where a streak starts to where it is full), the crown's a little
+  // finer than the cabin's and as strong, tapering in past the limbs.
   const [ownContrast, ownPeriod, ownStart, ownFull] = SHAFTS.moon.tree.air.rays,
     [contrast, period, start, full] = SHAFTS.moon.rays;
   assert.equal(moon.shaftSource.value.w, ownContrast);
   assert.deepEqual([moon.shaftStreak.value.y, moon.shaftStreak.value.z], [ownStart, ownFull]);
   assert.ok(ownPeriod < period && ownContrast >= contrast);
-  assert.ok(contrast >= 0.9 && ownContrast >= 0.9, "dark between the shafts");
-  assert.ok(full - start <= 0.15 && ownFull - ownStart <= 0.15, "crisp edges");
+  assert.ok(contrast >= 0.8 && ownContrast >= 0.8, "dark between the shafts");
+  for (const edge of [full - start, ownFull - ownStart])
+    assert.ok(edge >= 0.3 && edge <= 0.45, `a feathered edge, not a bar or a smear (${edge})`);
+  assert.ok(SHAFTS.moon.tree.air.rise > 8, "the crown's taper in");
   assert.equal("rays" in SHAFTS.moon.tower.air, false, "the cabin keeps the treatment's");
   delete window.document;
   h.shafts.dispose();

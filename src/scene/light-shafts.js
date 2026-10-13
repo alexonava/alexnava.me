@@ -224,9 +224,10 @@ export const SHAFTS = Object.freeze({
   // cast shadows: slim shafts through the gaps of the crown or past the
   // cabin, and broken moonlight in large patches on the bark and timber.
   // Clear moonbeams (the owner's call of 2026-10-13: the soft ones read
-  // "smeared, blotchy. not really clear enough"): each shaft crisp, with dark
-  // between (a high streak contrast and a narrow edge), read barely blurred
-  // (penumbra, maxLod) over more steps, their spacing wandering.
+  // "smeared, blotchy. not really clear enough"): each shaft clear, with dark
+  // between, read barely blurred (penumbra, maxLod) over more steps, their
+  // spacing wandering; laid like brush strokes (the owner's quiet cut, the same
+  // day): a feathered edge, never a hard bar.
   moon: Object.freeze({
     color: [0.62, 0.74, 1],
     gain: 0.07,
@@ -245,7 +246,7 @@ export const SHAFTS = Object.freeze({
     steps: [16, 8],
     sub: 0.3,
     drift: [0.006, 100],
-    rays: [0.9, 0.04, 0.6, 0.72],
+    rays: [0.8, 0.04, 0.45, 0.8],
     jitter: 0.9,
     sparse: null,
     rise: 0,
@@ -300,12 +301,15 @@ export const SHAFTS = Object.freeze({
       pad: 3,
       shellWindow: [0.125, 1],
       core: 1.2,
+      // The crown's own: fewer and wider (the owner's pick), brush strokes that
+      // taper in past the limbs (rise) and end short of the open sky (reach).
       air: Object.freeze({
-        gain: 0.16,
+        gain: 0.13,
+        reach: [8, 8],
         sky: [1, 3],
-        rays: [0.95, 0.02, 0.6, 0.7],
+        rays: [0.8, 0.02, 0.4, 0.82],
         jitter: 0.9,
-        rise: 8,
+        rise: 14,
         tie: 1,
         hull: [0, 1, 0, 3],
         fade: [3, 4],
