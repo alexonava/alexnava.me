@@ -21,6 +21,7 @@ import {
   rasterizeLightMap,
   shaftDrift,
   shaftTreatment,
+  SHAFT_DITHER,
   SHAFT_MARK,
 } from "../src/scene/light-shafts.js";
 import { SHAFT_LAYER, STAR_LAYER } from "../src/scene/depth-layers.js";
@@ -1065,7 +1066,14 @@ test("the march reads its maps at a named level, keeps to the lit core and start
     null,
     "every read goes through shaftTex",
   );
-  assert.match(glsl, /shaftTex\(shaftNoise,gl_FragCoord\.xy\/32\.,0\.\)\.r/);
+  // The march's start wanders a fifth of a step about its middle over near
+  // ground (SHAFT_DITHER): half a step drew the star's air beside the cabin as
+  // speckle where the quad average stops at a depth step (2026-10-13).
+  assert.equal(SHAFT_DITHER, 0.2);
+  assert.ok(
+    glsl.includes("j=.5+ground*(0.20*shaftTex(shaftNoise,gl_FragCoord.xy/32.,0.).r-0.10)"),
+    "the start's offset, centred on the step's middle",
+  );
   assert.match(glsl, /uniform vec4 shaftCore;/, "the lit cylinder about the light's axis");
   assert.match(
     glsl,
@@ -1350,7 +1358,9 @@ test("the rays streak about the light's own place on screen and ease off behind 
     [0.02, 0.04, 0.07, 0.08],
     "About's box, the visible label's",
   );
-  assert.equal(uniforms.shaftJitter.value, 0, "the star's streaks keep their even fan");
+  // The star's faint streaks wander too (2026-10-13), so none reads as an even bar.
+  assert.equal(uniforms.shaftJitter.value, SHAFTS.star.jitter);
+  assert.ok(SHAFTS.star.jitter > 0);
   // Portrait's spacing wanders over groups of four streaks, so no two read
   // as even bars; a whole number of groups meets without a seam.
   await h.until(() => h.debug.shafts.status === "ready");
@@ -1361,17 +1371,18 @@ test("the rays streak about the light's own place on screen and ease off behind 
   assert.equal(h.debug.shafts.shown, "tree-moon");
   assert.equal(moon.shaftStreak.value.x % 4, 0);
   assert.equal(moon.shaftJitter.value, SHAFTS.moon.tree.air.jitter);
-  assert.ok(
-    SHAFTS.moon.tree.air.jitter > 0 && SHAFTS.moon.jitter === 0,
-    "the crown's only; the cabin keeps its shafts where they were",
-  );
-  // The crown's own rays (the owner's pick of 2026-10-09): finer and denser
-  // than the cabin's (a shorter period, more of them lit), as strong.
+  assert.ok(SHAFTS.moon.tree.air.jitter > 0 && SHAFTS.moon.jitter > 0, "every moonbeam wanders");
+  // Clear moonbeams (the owner's call of 2026-10-13, then "fewer, wider" on
+  // the crown): crisp shafts with dark between, a high contrast and a narrow
+  // edge (where a streak starts to where it is full), the crown's a little
+  // finer than the cabin's and as strong.
   const [ownContrast, ownPeriod, ownStart, ownFull] = SHAFTS.moon.tree.air.rays,
-    [contrast, period, start] = SHAFTS.moon.rays;
+    [contrast, period, start, full] = SHAFTS.moon.rays;
   assert.equal(moon.shaftSource.value.w, ownContrast);
   assert.deepEqual([moon.shaftStreak.value.y, moon.shaftStreak.value.z], [ownStart, ownFull]);
-  assert.ok(ownPeriod < period && ownStart < start && ownContrast >= contrast);
+  assert.ok(ownPeriod < period && ownContrast >= contrast);
+  assert.ok(contrast >= 0.9 && ownContrast >= 0.9, "dark between the shafts");
+  assert.ok(full - start <= 0.15 && ownFull - ownStart <= 0.15, "crisp edges");
   assert.equal("rays" in SHAFTS.moon.tower.air, false, "the cabin keeps the treatment's");
   delete window.document;
   h.shafts.dispose();

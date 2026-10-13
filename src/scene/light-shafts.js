@@ -8,11 +8,12 @@
 //
 // The treatment by shot: warm star shafts in The watch and Threshold, where the
 // star stands in frame beside the lookout; cool moonbeams along the real moon key light
-// on the other shots; nothing in the two lantern shots. The light reads as
+// on the other shots; nothing in the two lantern shots. The star's reads as
 // natural light through the gaps (the owner's direction of 2026-10-09): warm
-// light with faint streaks through the cabin and lattice, slim moon shafts through the
-// crown and past the cabin, larger broken-moonlight patches on bark and
-// timber, and no light on the sky.
+// light shaped by the cabin's and lattice's own gaps, its streaks faint. The
+// moon's are clear (2026-10-13): broad, crisp shafts through the crown and
+// past the cabin with dark between, larger broken-moonlight patches on bark
+// and timber, and no light on the sky.
 //
 // Technique: once per subject and light, the CPU rasterises the subject's own
 // triangles into a small light-space map in idle slices (no pass, no download):
@@ -39,7 +40,7 @@
 // the tower (hull) and is weighted by the depth layer behind it (layer), so
 // none of it lands on the sky or the plain beside the tower. The march keeps to the lit core (a cylinder about the
 // light's axis that holds its whole window), starts at a blue-noise offset per
-// pixel (within the middle half of a step; none over the sky, where the
+// pixel (within a fifth of a step about its middle, SHAFT_DITHER; none over the sky, where the
 // grade's cel band would turn faint grain into dots), and is averaged over
 // each 2 x 2 pixel quad where depth allows. The rays streak by angle about the
 // light's place on screen, as crepuscular rays do. Additive colour (for the
@@ -54,6 +55,11 @@ import { BufferAttribute, BufferGeometry, DataTexture, Mesh, ShaderMaterial, Vec
 // (depth-layers.js SHAFT_LAYER, which a test holds equal; restated here so this
 // chunk imports nothing but three).
 export const SHAFT_MARK = Object.freeze({ gain: 1.5, cap: 0.03 });
+// How far (in steps) the march's start wanders by pixel over near ground, from
+// a blue-noise tile, so its few steps never band. Half a step drew the edge of
+// the star's air beside the cabin as speckle, where the quad average stops at a
+// depth step (2026-10-13); a fifth keeps it smooth there with no banding.
+export const SHAFT_DITHER = 0.2;
 // Three constants, written as values so this chunk adds no shared export.
 const BACK_SIDE = 1,
   CUSTOM_BLENDING = 5,
@@ -99,9 +105,10 @@ export function shaftTreatment(shotName) {
 // even); drift: the window's and the streaks' slow sway, [amplitude in map
 // units on each axis, period in seconds], bounded so the look holds however
 // long the page stays open; rays: the streaks by angle about the light's
-// place on screen, [contrast (low: natural light through the gaps, the owner's
-// direction of 2026-10-09, not drawn bars), period in the subject's screen height, noise
-// levels where a streak starts and is full (sparse for slim shafts)]; jitter:
+// place on screen, [contrast (the star's low: natural light through the gaps,
+// the owner's direction of 2026-10-09, not drawn bars; the moon's high: crisp
+// shafts with dark between, 2026-10-13), period in the subject's screen height, noise
+// levels where a streak starts and is full (sparse for slim shafts, close for crisp edges)]; jitter:
 // how far (in streaks) their spacing wanders, so no two read as even bars;
 // sparse: the streaks on balanced (phones), [contrast, noise levels, gain
 // scale]: fewer, with darker gaps and a little more light each, so a small
@@ -156,29 +163,32 @@ export const SHAFTS = Object.freeze({
   // Warm crepuscular rays from the visible star through the cabin's openings
   // and the lattice's gaps toward the eye, only where the eye looks through
   // the tower (hull), so none lies over the open sky or the plain beside it.
+  // Warm light through the gaps (the owner's pick of 2026-10-13, "A, gentle"):
+  // it reads, shaped mostly by the lattice's own gaps (tie) with faint,
+  // wandering streaks, a little crisper than before.
   star: Object.freeze({
     color: [1, 0.66, 0.4],
-    gain: 0.036,
+    gain: 0.09,
     over: 1,
     phase: 0.35,
     front: 1,
-    penumbra: 0.2,
-    maxLod: 2.5,
+    penumbra: 0.12,
+    maxLod: 2,
     reach: [20, 14],
     sky: [0, 3],
     ground: [18, 30],
-    ceil: 0.35,
+    ceil: 0.5,
     edge: [0.02, 0.02, 0.02],
     fade: [2, 1],
     mist: 0,
     steps: [12, 6],
     sub: 0.5,
     drift: [0.01, 130],
-    rays: [0.3, 0.036, 0.2, 0.8],
+    rays: [0.2, 0.03, 0.25, 0.75],
     sparse: [0.35, 0.3, 0.8, 1.5],
-    jitter: 0,
+    jitter: 0.9,
     rise: 0,
-    tie: 0,
+    tie: 0.85,
     hull: [1, 1, 0, 0],
     layer: 1.5,
     peak: 1,
@@ -205,26 +215,30 @@ export const SHAFTS = Object.freeze({
   // Cool moonbeams through a break in the cloud, parallel to the moon's real
   // cast shadows: slim shafts through the gaps of the crown or past the
   // cabin, and broken moonlight in large patches on the bark and timber.
+  // Clear moonbeams (the owner's call of 2026-10-13: the soft ones read
+  // "smeared, blotchy. not really clear enough"): each shaft crisp, with dark
+  // between (a high streak contrast and a narrow edge), read barely blurred
+  // (penumbra, maxLod) over more steps, their spacing wandering.
   moon: Object.freeze({
     color: [0.62, 0.74, 1],
     gain: 0.07,
     over: 1,
     phase: 0,
     front: 1,
-    penumbra: 0.15,
-    maxLod: 2.5,
+    penumbra: 0.03,
+    maxLod: 0.5,
     reach: [14, 10],
     sky: [2, 6],
     ground: [15, 30],
-    ceil: 0.3,
+    ceil: 0.5,
     edge: [0.02, 0.02, 0.02],
     fade: [3, 1],
     mist: 0,
-    steps: [9, 6],
+    steps: [16, 8],
     sub: 0.3,
     drift: [0.006, 100],
-    rays: [0.3, 0.04, 0.62, 0.84],
-    jitter: 0,
+    rays: [0.9, 0.04, 0.6, 0.72],
+    jitter: 0.9,
     sparse: null,
     rise: 0,
     tie: 0,
@@ -235,8 +249,10 @@ export const SHAFTS = Object.freeze({
     // just outside its closed outline (erode < 0). No march of its own in
     // front of the timber (over 0): over the whole tower in Threshold it
     // costs more than the faint streaks it adds, so the box's shafts carry it.
-    // Over the sky its air is weighted down where the eye's ray misses the
-    // cabin's own outline, so no cloud band above the roof steps a cel band.
+    // Over the sky its air keeps to the eye's rays through the cabin's own
+    // outline, so no cloud band above the roof steps a cel band and, seen
+    // toward the moon, no curtain of streaks hangs beside the cabin (Against
+    // the moon, 2026-10-13).
     tower: Object.freeze({
       gap: [0.7, 12, 12, 0.35],
       lit: [0.5, 1.2, 0.2],
@@ -247,18 +263,18 @@ export const SHAFTS = Object.freeze({
       erode: -6,
       core: 1.2,
       air: Object.freeze({
-        gain: 0.1,
+        gain: 0.18,
         over: 0,
         sky: [4, 8],
         reach: [22, 12],
-        hull: [0, 0.4, 1, 0],
+        hull: [0, 1, 1, 0],
       }),
     }),
     // Slim shafts through the crown that fade in past its front, take part
     // of their structure from its own gaps and, over the sky, keep to the
     // view rays through the crown (a soft edge), so none starts in open sky.
-    // Its own rays (the owner's picks of 2026-10-09): finer and more varied
-    // than the cabin's, faint streaks through the branches, their spacing
+    // Its own rays (the owner's picks of 2026-10-09 and 2026-10-13, "fewer,
+    // wider"): broad, crisp shafts through the branches, their spacing
     // wandering, and over the open sky they fade sooner.
     // Its shell rounds the closed silhouette and smooths the hull, so the
     // shafts end over the open sky in smooth fades, never in stair-steps or
@@ -276,12 +292,12 @@ export const SHAFTS = Object.freeze({
       shellWindow: [0.125, 1],
       core: 1.2,
       air: Object.freeze({
-        gain: 0.06,
+        gain: 0.16,
         sky: [1, 3],
-        rays: [0.3, 0.014, 0.48, 0.82],
+        rays: [0.95, 0.02, 0.6, 0.7],
         jitter: 0.9,
         rise: 8,
-        tie: 0.8,
+        tie: 1,
         hull: [0, 1, 0, 3],
         fade: [3, 4],
       }),
@@ -433,7 +449,7 @@ float z0=dot(ro-shaftOrigin,shaftA),dz=dot(rd,shaftA),zb=mix(shaftDepths.z+shaft
 if(abs(dz)>1e-4){float za=(shaftDepths.x-z0)/dz;zb=(zb-z0)/dz;t0=max(t0,min(za,zb));t1=min(t1,max(za,zb));}
 else if(z0<shaftDepths.x||z0>zb)return vec3(0.);
 if(t1<=t0)return vec3(0.);
-float dt=(t1-t0)/n,j=.5+ground*(.5*shaftTex(shaftNoise,gl_FragCoord.xy/32.,0.).r-.25);
+float dt=(t1-t0)/n,j=.5+ground*(${SHAFT_DITHER.toFixed(2)}*shaftTex(shaftNoise,gl_FragCoord.xy/32.,0.).r-${(SHAFT_DITHER / 2).toFixed(2)});
 float lod=log2(max(length(shaftUv(ro+rd*t1).xy-shaftUv(ro+rd*t0).xy)*shaftRes/n,1.))+1.,soft=max(shaftAir.x,.6*dt*abs(dot(rd,shaftA)));
 vec3 l=shaftPoint>.5?normalize(ro+rd*(.5*(t0+t1))-shaftOrigin):shaftA;
 float g=shaftPhase*shaftPhase,acc=0.,s=.5,r=0.;
