@@ -32,6 +32,7 @@ import {
   shotPose,
 } from "../src/scene/directed-shots.js";
 import { createCameraTour, TOUR_ORDER } from "../src/scene/camera-tour.js";
+import { MOON_LIGHTS } from "../src/scene/mud-ground.js";
 
 const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-6, `${a} != ${b}`);
 
@@ -114,8 +115,8 @@ test("valid angle overrides remain reproducible and missing or invalid angles se
   const unexpectedRandom = () => {
     throw new Error("opening angle must not use RNG");
   };
-  // The tower has five angles (Watch and tree is ?angle=5), the tree four.
-  const counts = { tower: 5, tree: 4 };
+  // The tower has six angles (Watch and tree is ?angle=5, Against the moon 6), the tree four.
+  const counts = { tower: 6, tree: 4 };
   for (const [view, count] of Object.entries(counts)) {
     assert.equal(DIRECTED_SHOTS[view].length, count);
     for (let angle = 1; angle <= count; angle++)
@@ -758,6 +759,82 @@ test("an anchor sets the aim on its point of the safe area and the fit holds the
   mesh.material.dispose();
 });
 
+test("a move's pan turns the lens in place to the right, and the fit holds the sweep", () => {
+  const [w, h] = [1600, 900],
+    area = cinematicSafeArea(w, h, { right: 420, bottom: 220 }, { top: h - 105 });
+  // A wide subject, so the sweep binds across the frame.
+  const root = new Group(),
+    mesh = new Mesh(new BoxGeometry(44, 20, 12), new MeshStandardMaterial());
+  mesh.position.y = 10;
+  root.add(mesh);
+  const base = { name: "Pan probe", region: [0, 1], fov: 40, azimuth: 90, height: 0.5, arc: 2 };
+  const run = (move) => {
+    const shot = { ...base, move };
+    DIRECTED_SHOTS.tower.push(shot);
+    const camera = new PerspectiveCamera(45, w / h, 0.1, 1000),
+      controller = createCinematicCamera({
+        camera,
+        selected: "tower",
+        angle: DIRECTED_SHOTS.tower.length - 1,
+        getSafeArea: () => area,
+      });
+    try {
+      controller.setSubject("tower", root);
+      controller.setStatus({ kind: "tower", status: "ready" });
+      return MOVE_PHASES.map((tourPhase) => {
+        controller.apply({ width: w, height: h, elapsedSeconds: 0, tourPhase });
+        camera.updateMatrixWorld();
+        const measured = measureShot(root, shot),
+          points = [];
+        for (let i = 0; i < measured.points.length; i += 3) {
+          const v = new Vector3(...measured.points.slice(i, i + 3)).project(camera);
+          points.push([((v.x + 1) * w) / 2, ((1 - v.y) * h) / 2]);
+        }
+        return {
+          offset: camera.position.clone().sub(controller.target),
+          forward: camera.getWorldDirection(new Vector3()),
+          distance: controller.frame.distance,
+          pan: shotPose(shot, tourPhase).pan,
+          points,
+        };
+      });
+    } finally {
+      controller.dispose();
+      DIRECTED_SHOTS.tower.pop();
+    }
+  };
+  const level = run({ dolly: [1, 0.96], ease: 0.6 }),
+    panned = run({ dolly: [1, 0.96], pan: [8, 0], ease: 0.6 });
+  // Turning right raises the bearing atan2(z, x) of the view.
+  const bearing = (v) => (Math.atan2(v.z, v.x) * 180) / Math.PI;
+  // The fit holds every pose of the sweep, so the panned shot stands further back.
+  assert.ok(panned[0].distance > level[0].distance);
+  const scale = panned[0].distance / level[0].distance;
+  MOVE_PHASES.forEach((phase, k) => {
+    const a = level[k],
+      b = panned[k],
+      label = `phase ${phase}`;
+    // The camera stands where the unpanned move puts it (at its own fitted distance).
+    closeTo(b.offset.distanceTo(a.offset.clone().multiplyScalar(scale)), 0, 1e-6);
+    // Its view turns right by the pan, level as before.
+    closeTo(bearing(b.forward) - bearing(a.forward), b.pan, 1e-6);
+    closeTo(b.forward.y, a.forward.y, 1e-6);
+    for (const [x, y] of b.points)
+      assert.ok(
+        x >= area.left - 0.01 &&
+          x <= area.left + area.width + 0.01 &&
+          y >= area.top - 0.01 &&
+          y <= area.top + area.height + 0.01,
+        `${label} keeps the volume in the safe area`,
+      );
+  });
+  // It opens 8 degrees right and settles on the unpanned composition at the next cut.
+  closeTo(panned[0].pan, 8, 1e-9);
+  closeTo(panned.at(-1).pan, 0, 1e-9);
+  mesh.geometry.dispose();
+  mesh.material.dispose();
+});
+
 test("low shots retain terrain clearance throughout the bounded camera arc", () => {
   const camera = new PerspectiveCamera(),
     root = new Group();
@@ -996,11 +1073,15 @@ test("a move carries the camera along shotPose's path through a tour hold, and h
         closeTo(offset.dot(right), expected.truck * reach, 1e-6);
         closeTo(got.y, frame.cameraY + expected.crane * measured.height, 1e-6);
         closeTo(got.fov, expected.fov, 1e-9);
-        // The camera looks back along its yaw: a truck slides its aim with it. (A tilt
-        // pitches it off that aim.)
+        // The camera looks back along its yaw: a truck slides its aim with it, and a pan
+        // turns the view to the right of it. (A tilt pitches it off that aim.)
         if (!shot.tilt && !shot.move.tilt) {
-          const aim = f.controller.target.clone().addScaledVector(right, expected.truck * reach);
-          closeTo(got.forward.angleTo(aim.sub(got.position).normalize()), 0, 1e-6);
+          const aim = f.controller.target
+            .clone()
+            .addScaledVector(right, expected.truck * reach)
+            .sub(got.position)
+            .applyAxisAngle(new Vector3(0, -1, 0), (expected.pan * Math.PI) / 180);
+          closeTo(got.forward.angleTo(aim.normalize()), 0, 1e-6);
         }
         assert.ok(Number.isFinite(got.y), label);
       }
@@ -1082,7 +1163,7 @@ test("a shot's tilt pitches the camera from its cut to the next, a move's on its
   f.controller.dispose();
 });
 
-test("the nine directed shots keep their names and distinct viewpoints", () => {
+test("the ten directed shots keep their names and distinct viewpoints", () => {
   const all = [...DIRECTED_SHOTS.tower, ...DIRECTED_SHOTS.tree];
   assert.deepEqual(
     all.map((s) => s.name),
@@ -1092,6 +1173,7 @@ test("the nine directed shots keep their names and distinct viewpoints", () => {
       "Masonry study",
       "Gallery detail",
       "Watch and tree",
+      "Against the moon",
       "Portrait",
       "Lantern study",
       "Close-up",
@@ -1099,7 +1181,14 @@ test("the nine directed shots keep their names and distinct viewpoints", () => {
     ],
   );
   const keys = new Set(all.map((s) => `${s.azimuth}/${s.height}/${s.region.join()}`));
-  assert.equal(keys.size, 9);
+  assert.equal(keys.size, 10);
+  // Against the moon looks toward the moon key (its bearing atan2(z, x)) within 5 degrees, so
+  // the lookout stands against it, backlit; on phones it turns further round.
+  const moon = DIRECTED_SHOTS.tower.find((shot) => shot.name === "Against the moon"),
+    key = (Math.atan2(MOON_LIGHTS.key[2], MOON_LIGHTS.key[0]) * 180) / Math.PI,
+    looks = moon.azimuth + 180;
+  assert.ok(Math.abs(((looks - key + 540) % 360) - 180) < 5, `looks toward ${looks}, key ${key}`);
+  assert.equal(TOUR_ORDER.indexOf("Against the moon"), TOUR_ORDER.indexOf("Close-up") + 1);
   for (const shot of all) {
     assert.ok(shot.height >= 0.1 && shot.height <= 0.7);
     assert.ok(shot.fov >= 30 && shot.fov <= 46);
@@ -1176,6 +1265,8 @@ test("a move's truck, crane, dolly and zoom run from their first value at the cu
     near(end.scale, (move.dolly?.[1] ?? 1) * dollyZoom(end.fov));
     near(start.tilt, move.tilt?.[0] ?? 0);
     near(end.tilt, move.tilt?.[1] ?? 0);
+    near(start.pan, move.pan?.[0] ?? 0);
+    near(end.pan, move.pan?.[1] ?? 0);
     // The fit holds the move's sampled phases.
     const poses = fitPoses(shot);
     assert.equal(poses.length, MOVE_PHASES.length);
@@ -1213,12 +1304,18 @@ test("a move's truck, crane, dolly and zoom run from their first value at the cu
       assert.deepEqual(shot.move.tilt, [0, 2.5], label);
       assert.ok(end.tilt > start.tilt, `${label} lifts its gaze`);
       if (name === "The watch") {
-        // Its push is a dolly zoom: the lens narrows as the camera backs off.
+        // Its push is a dolly zoom: the lens narrows as the camera backs off, more widely
+        // on desktops (the owner's pick of 2026-10-12) than on phones.
         assert.equal(shot.move.dollyZoom, true);
         assert.ok(end.fov < start.fov && end.scale > start.scale, label);
+        assert.deepEqual(shot.move.zoom, w > h ? [46, 36] : [44, 38], label);
       } else {
         assert.deepEqual(shot.move.dolly, [1.04, 0.94], label);
         assert.ok(end.scale < start.scale, `${label} pushes in`);
+        // It opens turned toward the star, left and away from the name, and pans onto the
+        // lookout, less on phones.
+        assert.ok(start.pan < 0 && end.pan === 0, label);
+        assert.equal(start.pan, w > h ? -5 : -2, label);
       }
     }
   // A drift's fit holds the arc's extremes either way at the fitted distance.

@@ -69,6 +69,14 @@ test("the storm's lightning is occasional, bold and off nothing but a debug over
   assert.equal(balanced.sky.thin, 0, "and a plain glow");
   assert.equal(lightningTier(LIGHTNING, "high"), LIGHTNING);
   assert.equal(balanced.relight.fill, LIGHTNING.relight.fill, "a tier overrides only its own");
+  // The lookout's giants look up at least 15 degrees, so their flickers rise into the frame
+  // (2026-10-12); every other shot keeps the storm low over the ranges.
+  assert.deepEqual(Object.keys(LIGHTNING.shots), ["The watch", "Threshold"]);
+  for (const over of Object.values(LIGHTNING.shots)) {
+    assert.deepEqual(Object.keys(over), ["altitude"]);
+    assert.deepEqual([...over.altitude], [12, 24]);
+    assert.ok(over.altitude[0] > LIGHTNING.altitude[0] && over.altitude[1] > LIGHTNING.altitude[1]);
+  }
 });
 
 test("the schedule is seeded, so every capture of a phase is the same", () => {

@@ -357,7 +357,8 @@ test("a point source's map holds angles, so a nearer occluder shadows a wider co
 });
 
 test("each directed shot takes its hybrid treatment: warm star, cool moon or none", () => {
-  assert.deepEqual(SHAFT_SHOTS.star, ["The watch"]);
+  // The lookout's giants face the star (2026-10-12, one night).
+  assert.deepEqual(SHAFT_SHOTS.star, ["The watch", "Threshold"]);
   assert.deepEqual(SHAFT_SHOTS.off, ["Lantern study", "Root and lantern"]);
   const treatments = Object.fromEntries(
     Object.values(DIRECTED_SHOTS)
@@ -366,10 +367,11 @@ test("each directed shot takes its hybrid treatment: warm star, cool moon or non
   );
   assert.deepEqual(treatments, {
     "The watch": "star",
-    Threshold: "moon",
+    Threshold: "star",
     "Masonry study": "moon",
     "Gallery detail": "moon",
     "Watch and tree": "moon",
+    "Against the moon": "moon",
     Portrait: "moon",
     "Lantern study": null,
     "Close-up": "moon",
@@ -687,7 +689,7 @@ test("a running tour switches treatment only on a cut, or while the canvas fades
   // takes longer over the maps).
   await new Promise((resolve) => setTimeout(resolve, 250));
   await h.until(() => h.debug.shafts.status === "ready");
-  h.cinematic.shot = { name: "Threshold" };
+  h.cinematic.shot = { name: "Against the moon" };
   h.shafts.update({ deltaSeconds: 0 });
   assert.equal(h.debug.shafts.shown, "tower-star", "never mid-hold");
   tour.transition.cut = true;
@@ -927,7 +929,7 @@ test("a quality step sets the march length from the tier it applies, ahead of re
   assert.equal(steps(), SHAFTS.star.steps[1]);
   registry.applyQuality({ tier: "high", shadows: { enabled: true } });
   assert.equal(steps(), SHAFTS.star.steps[0]);
-  h.cinematic.shot = { name: "Threshold" };
+  h.cinematic.shot = { name: "Against the moon" };
   h.shafts.update({ deltaSeconds: 0 });
   assert.equal(steps(), SHAFTS.moon.steps[0], "each treatment keeps its own length");
   // Balanced (phones) draws the star's sparser streaks, a little brighter
@@ -959,7 +961,7 @@ test("a quality step sets the march length from the tier it applies, ahead of re
 test("a quality step on the cut into a subject not yet shown clears the last shot's light, then brings the new one in", async () => {
   // index.js takes adaptive steps on cut frames, before the subsystems
   // update: the tree's programs, linked with the key light casting, must link
-  // again first, and the tower's light from Threshold must not stay on for
+  // again first, and the tower's light from Against the moon must not stay on for
   // the whole Portrait hold.
   const tour = { running: true, transition: { cut: true, progress: 1 } };
   const h = harness({ shot: "The watch", tour });
@@ -972,7 +974,7 @@ test("a quality step on the cut into a subject not yet shown clears the last sho
   });
   registry.register(h.shafts);
   await h.until(() => h.debug.shafts?.status === "ready" && h.debug.shafts.shown === "tower-star");
-  h.cinematic.shot = { name: "Threshold" };
+  h.cinematic.shot = { name: "Against the moon" };
   h.shafts.update({ deltaSeconds: 1 / 60 });
   tour.transition.cut = false;
   assert.equal(h.debug.shafts.shown, "tower-moon");
@@ -981,7 +983,7 @@ test("a quality step on the cut into a subject not yet shown clears the last sho
   tour.transition.cut = true;
   registry.applyQuality({ shadows: { enabled: false } });
   h.shafts.update({ deltaSeconds: 1 / 60 });
-  assert.equal(h.debug.shafts.shown, "", "the Threshold light leaves with the cut");
+  assert.equal(h.debug.shafts.shown, "", "the lookout's moonlight leaves with the cut");
   assert.deepEqual(h.visible(), []);
   tour.transition.cut = false;
   await h.until(() => h.debug.shafts.shown === "tree-moon", { deltaSeconds: 1 / 60 });
@@ -1092,7 +1094,7 @@ test("the march reads its maps at a named level, keeps to the lit core and start
 });
 
 test("the moon on the tower keeps to its box: no march of its own over the timber", async () => {
-  const h = harness({ shot: "Threshold" });
+  const h = harness({ shot: "Against the moon" });
   const shader = {
     uniforms: {},
     vertexShader: "#include <common>\n#include <project_vertex>",
@@ -1129,15 +1131,16 @@ test("Portrait catches the moon on the crown its own way; a cut to Close-up rest
     closeUp = DIRECTED_SHOTS.tree.find((shot) => shot.name === "Close-up"),
     own = portrait.shafts.gobo,
     tree = SHAFTS.moon.tree.gobo;
-  // Only Portrait has its own catch (the owner's pick of 2026-10-09):
+  // Only Portrait has its own moon catch (the owner's pick of 2026-10-09):
   // barely wrapped, with a stronger, cooler catch on the edges toward the moon.
-  // (Gallery detail's own gobo only eases off behind About.)
+  // The lookout's giants tune the star's (one night, 2026-10-12); Gallery
+  // detail's own gobo only eases off behind About.
   assert.deepEqual(
     Object.values(DIRECTED_SHOTS)
       .flat()
       .filter((shot) => shot.shafts?.gobo?.gain)
       .map((shot) => shot.name),
-    ["Portrait"],
+    ["The watch", "Threshold", "Portrait"],
   );
   assert.ok(own.wrap < tree.wrap && own.rim > tree.rim && own.gain > tree.gain);
   assert.ok(own.color[2] > own.color[0], "cool");
@@ -1173,7 +1176,7 @@ test("Portrait catches the moon on the crown its own way; a cut to Close-up rest
 test("Gallery detail's moonlight on the timber eases off behind About; a cut away restores it", async () => {
   const gallery = DIRECTED_SHOTS.tower.find((shot) => shot.name === "Gallery detail"),
     masonry = DIRECTED_SHOTS.tower.find((shot) => shot.name === "Masonry study"),
-    threshold = DIRECTED_SHOTS.tower.find((shot) => shot.name === "Threshold");
+    moon = DIRECTED_SHOTS.tower.find((shot) => shot.name === "Against the moon");
   // Only Masonry study and Gallery detail ask, wholly: portrait phones saw the
   // lattice's lit leg edges behind About (4.83:1 and 4.24:1 at 390x844).
   assert.deepEqual(
@@ -1216,7 +1219,7 @@ test("Gallery detail's moonlight on the timber eases off behind About; a cut awa
     "after the name and intro's ease, before the light lands; at 0 nothing runs",
   );
   // A cut to another shot of the lookout keeps it whole behind About.
-  h.cinematic.shot = threshold;
+  h.cinematic.shot = moon;
   await h.until(() => h.debug.shafts.shown === "tower-moon" && h.debug.shafts.level === 1);
   assert.equal(u.shaftGoboAbout.value, 0);
   h.shafts.dispose();

@@ -6,8 +6,8 @@
 // Keep first-party imports out of this chunk: everything it needs arrives as
 // arguments, and its Three.js imports reuse the shared chunk.
 //
-// The treatment by shot: warm star shafts only in The watch, where the star
-// stands in frame beside the lookout; cool moonbeams along the real moon key light
+// The treatment by shot: warm star shafts in The watch and Threshold, where the
+// star stands in frame beside the lookout; cool moonbeams along the real moon key light
 // on the other shots; nothing in the two lantern shots. The light reads as
 // natural light through the gaps (the owner's direction of 2026-10-09): warm
 // light with faint streaks through the cabin and lattice, slim moon shafts through the
@@ -67,10 +67,10 @@ const BACK_SIDE = 1,
   LINEAR_MIPMAP_LINEAR = 1008,
   RG_FORMAT = 1030;
 
-// Treatments by directed shot name (directed-shots.js). The watch frames the
-// star beside the lookout; the lantern shots stay lit by the lantern alone.
+// Treatments by directed shot name (directed-shots.js). The watch and Threshold
+// frame the star beside the lookout; the lantern shots stay lit by the lantern alone.
 export const SHAFT_SHOTS = Object.freeze({
-  star: Object.freeze(["The watch"]),
+  star: Object.freeze(["The watch", "Threshold"]),
   off: Object.freeze(["Lantern study", "Root and lantern"]),
 });
 export function shaftTreatment(shotName) {

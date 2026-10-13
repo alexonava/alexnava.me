@@ -48,13 +48,18 @@ export const DIRECTED_SHOTS = {
       // the lookout's right shoulder, the name in the open sky on its left. (Threshold faces
       // the star from round the other side; from there, nearer the tree's bearing of 33
       // degrees, a 4:3 screen's longer reach took the lens into the tree's crown.) Its
-      // flourish of the shared move is the dolly zoom: the lookout keeps its size while the
-      // sky behind it swells.
+      // flourish of the shared move is the dolly zoom (46 to 36 degrees on desktops, the
+      // owner's pick of 2026-10-12): the lookout keeps its size while the sky and the star
+      // swell behind it. (A longer tilt would make the fit back off and lower the cut's look up
+      // on 4:3 screens.)
       ...GIANT,
-      move: { zoom: [44, 38], dollyZoom: true, tilt: GIANT_MOVE.tilt, ease: 0.6 },
-      // The lookout is a dark shape against the sky (its key and fill dimmed, its moonlit
-      // rim kept); far fires stay out of the shot (far-fires.js FAR_FIRES.shots).
-      light: { key: 0.4, fill: 0.45, rim: 1.3 },
+      move: { zoom: [46, 36], dollyZoom: true, tilt: GIANT_MOVE.tilt, ease: 0.6 },
+      // One night (the owner's pick of 2026-10-12): the lookout is a dark shape against the
+      // sky (its key and fill dimmed), its one warm light the star's catch on its star-side
+      // edges (shafts.gobo), the moon rim a little under it; far fires stay out of the shot
+      // (far-fires.js FAR_FIRES.shots).
+      light: { key: 0.4, fill: 0.45, rim: 1.1 },
+      shafts: { gobo: { gain: 1.3, rim: 3.5 } },
       region: [0.5, 1],
       targetHeight: 0.66,
       azimuth: -16,
@@ -62,12 +67,13 @@ export const DIRECTED_SHOTS = {
       hold: 9,
       ground: { ...AFTER_RAIN, mist: { ...AFTER_RAIN.mist, amount: 0.75 } },
       // Portrait screens, narrower, stand the lookout left of centre, the star whole to its
-      // right.
+      // right, and keep the gentler dolly zoom (the wider one crops the star there).
       portrait: {
         azimuth: -12,
         anchor: [0.28, 0.54],
         margin: 0.88,
         focus: { width: 0.22, depth: [-0.3, 0.3] },
+        move: { zoom: [44, 38], dollyZoom: true, tilt: GIANT_MOVE.tilt, ease: 0.6 },
       },
       // Landscape phones fit from a little higher up the lookout, so its footing stays below
       // the short frame.
@@ -82,21 +88,28 @@ export const DIRECTED_SHOTS = {
       // shoulder, its timber pale in the moon behind the lens, the star and its maelstrom
       // beside it; the ladder on its +Z access side climbs the frame. Nearer the tree's bearing
       // (33 degrees) a 4:3 screen's or a phone's longer reach stood the tree between the lens
-      // and the lookout.
+      // and the lookout. Its move opens turned 5 degrees toward the star, away from the name,
+      // and pans onto the lookout as it pushes in and looks up.
       ...GIANT,
-      light: { fill: 0.8, rim: 1.8 },
+      move: { ...GIANT_MOVE, pan: [-5, 0] },
+      // One night: facing the star, it takes the star's warm light through the lattice
+      // (light-shafts.js SHAFT_SHOTS.star) on its star-side edges; the fill, a backlight here,
+      // and the moon rim come down so the warm catch leads.
+      light: { fill: 0.65, rim: 1.3 },
+      shafts: { gobo: { gain: 0.85, rim: 2.5 } },
       region: [0.5, 1],
       targetHeight: 0.66,
       azimuth: 52,
       hold: 7,
       anchor: [0.64, 0.54],
       ground: AFTER_RAIN,
-      // Portrait screens come further round, the star just out of their frame.
+      // Portrait screens come further round, the star just out of their frame, and pan less.
       portrait: {
         azimuth: 64,
         anchor: [0.5, 0.56],
         margin: 0.88,
         focus: { width: 0.22, depth: [-0.3, 0.3] },
+        move: { ...GIANT_MOVE, pan: [-2, 0] },
       },
       // Landscape phones fit from a little higher up the lookout, so the legs' footing stays
       // below the short frame.
@@ -198,6 +211,35 @@ export const DIRECTED_SHOTS = {
         ...AFTER_RAIN,
       },
     },
+    {
+      name: "Against the moon",
+      // The only shot facing the moon (the owner's pick of 2026-10-12): from the far side of the
+      // lookout, low on the plain, its lattice a silhouette with the strongest moon rim, the wet
+      // plain shining toward the light, the tree small and apart on the right; the star stands
+      // behind the lens. Appended to the lookout's shots, so earlier URLs keep their angles.
+      region: [0, 1],
+      fov: 38,
+      azimuth: -160,
+      height: 0.15,
+      arc: 2,
+      hold: 7,
+      margin: 0.75,
+      anchor: [0.4, 0.5],
+      move: { truck: [-0.05, 0.05], dolly: [1.02, 0.96], ease: 0.6 },
+      // One night: the moon keys it from ahead, so the key at full strength draws its rim and
+      // the plain's sheen; the fill, from behind the lens, comes down.
+      light: { key: 1, fill: 0.55, rim: 1.6 },
+      ground: AFTER_RAIN,
+      // Phones turn further round, so the star overhead stays out of their tall frame.
+      portrait: {
+        azimuth: -135,
+        anchor: [0.5, 0.62],
+        margin: 0.85,
+        move: { dolly: [1.02, 0.96], ease: 0.6 },
+      },
+      // Landscape phones keep the drift: no room about the name for a move.
+      landscape: { move: null },
+    },
   ],
   tree: [
     {
@@ -215,8 +257,9 @@ export const DIRECTED_SHOTS = {
       // moon catches it its own way (shafts.gobo over the tree's,
       // light-shafts.js): barely wrapped, so it falls on the faces turned to
       // the moon and leaves the rest dark, with a strong cool silver catch on
-      // the edges toward it. Its rays are the tree's own.
-      light: { fill: 0.85, rim: 1.3, pale: 0.75 },
+      // the edges toward it. Its rays are the tree's own. One night (2026-10-12): the lantern
+      // a little stronger at the trunk's foot, leading into Lantern study.
+      light: { fill: 0.85, rim: 1.3, pale: 0.75, lantern: 1.2 },
       shafts: { gobo: { color: [0.6, 0.78, 1.2], gain: 3.4, wrap: 0.1, rim: 5 } },
       move: { truck: [-0.07, 0.07], crane: [0, 0.13], dolly: [1.05, 0.92], ease: 0.6 },
       // Low (0.12), so the plain ahead is foreshortened under the ranges, and
@@ -235,12 +278,13 @@ export const DIRECTED_SHOTS = {
       arc: 4,
       hold: 9,
       // Sky first (the owner's pick of 2026-10-11, "A sky open"): the tree fits
-      // smaller (0.93 before) and the camera tilts up 3 degrees at the cut, 4 by the
-      // end of the move, so more of the clouds stand over it; the aim starts a
-      // little high, so the tilt keeps the whole tree inside the frame.
+      // smaller (0.93 before) so more of the clouds stand over it; the aim starts a
+      // little high, so the tilt keeps the whole tree inside the frame. Water to sky
+      // (the owner's pick of 2026-10-12): the camera opens tilted 1 degree down onto
+      // the river and lifts 4 degrees up into the crown by the end of the move.
       margin: 0.82,
       anchor: [0.5, 0.42],
-      tilt: [3, 4],
+      tilt: [-1, 4],
       ground: {
         burn: { amount: 0.45, reach: [0.4, 0.95] },
         flatten: 0.5,
@@ -273,19 +317,23 @@ export const DIRECTED_SHOTS = {
       // phase 32.35). Its pool is kept off About: on a portrait monitor the
       // push-in carries the pool's lit cobble crests across the label (3.92:1
       // at 1080x1920), so there the pool passes its knee (mud-ground.js
-      // SLATE_LIGHT.poolKnee).
+      // SLATE_LIGHT.poolKnee). One night (2026-10-12): less of the frontal fill,
+      // so the lantern models the scene and the moon's backlight separates the
+      // trunk; the lantern at the tree shots' one level, 1.4.
       light: {
         key: 0.55,
-        fill: 0.65,
-        lantern: 1.45,
-        rim: 0.7,
+        fill: 0.5,
+        lantern: 1.4,
+        rim: 0.8,
         grassInside: 1,
         glintText: 1,
         stoneText: 1,
         poolAbout: 1,
       },
       lens: { blur: 8 },
-      move: { dolly: [1.2, 0.85], ease: 0.6 },
+      // From the water up to the flame: the push-in lifts from the river (its image of the
+      // lantern) to the flame (the owner's pick of 2026-10-12).
+      move: { dolly: [1.2, 0.85], tilt: [-1.5, 0], ease: 0.6 },
       subject: "tree-lantern",
       // Across the river, a little round from the -115° axis and with the
       // lantern right of the area's centre, so less of the root flare stands
@@ -300,16 +348,23 @@ export const DIRECTED_SHOTS = {
       anchor: [0.56, 0.5],
       ground: AFTER_RAIN,
       landscape: { move: null, azimuth: -115, anchor: [0.5, 0.5] },
-      portrait: { move: { dolly: [1.1, 0.9], ease: 0.6 }, azimuth: -115, anchor: [0.5, 0.5] },
+      portrait: {
+        move: { dolly: [1.1, 0.9], tilt: [-1.5, 0], ease: 0.6 },
+        azimuth: -115,
+        anchor: [0.5, 0.5],
+      },
     },
     {
       name: "Close-up",
       // Rim-led, its rim off the text: at the start of the move the lit edges
       // of the limbs reaching left stood behind the name (3.97:1 at 1440x900),
       // and the trunk's behind About on phones and portrait monitors.
-      light: { fill: 0.7, rim: 2, rimText: 1 },
-      // No lens blur: the clouds behind the crown read sharp (sky first, below).
-      move: { truck: [-0.1, 0.1], ease: 0.5 },
+      // One night (2026-10-12): a pure backlight, the rim leading; less frontal fill.
+      light: { fill: 0.6, rim: 2, rimText: 1 },
+      // No lens blur: the clouds behind the crown read sharp (sky first, below). A tracking
+      // pan (the owner's pick of 2026-10-12): the camera slides to its left while the lens
+      // turns to hold the crown, so the limbs slide across the clouds behind it.
+      move: { truck: [-0.1, 0.1], pan: [-2, 2], ease: 0.5 },
       // The crown: low under the fork high on the trunk, looking up at the
       // limbs against the sky, open sky beside the name.
       region: [0.5, 0.78],
@@ -339,14 +394,17 @@ export const DIRECTED_SHOTS = {
     },
     {
       name: "Root and lantern",
-      move: { dolly: [0.86, 1.05], crane: [0, 0.03], ease: 0.6 },
+      // It pulls back and lifts toward the river behind the trunk (the owner's pick of
+      // 2026-10-12).
+      move: { dolly: [0.86, 1.05], crane: [0, 0.05], tilt: [-2, 1.5], ease: 0.6 },
       // The moon's glint on a wet root under the intro's end at the start of
       // the pull-back (4.32:1 at 1440x900) passes the ground's knee, and its
       // grass reads its colour inside the blades (film-light.js GRASS_MOOD),
       // as in Lantern study: a blade's tip read past its edge, lit by the
       // moon, sparkled under the intro (4.21:1 at 1440x900, phase 24.1 of the
       // move).
-      light: { key: 0.6, fill: 0.75, lantern: 1.4, rim: 0.9, grassInside: 1, glintText: 1 },
+      // One night (2026-10-12): less of the frontal fill, as in Lantern study.
+      light: { key: 0.6, fill: 0.6, lantern: 1.4, rim: 0.9, grassInside: 1, glintText: 1 },
       lens: { blur: 8 },
       // Round from the -115° axis, so the trunk stands right of centre and
       // the lantern on the right third, the plain behind the name; the aim
@@ -535,9 +593,11 @@ export const PUSH_IN = 0.045;
 // raises the camera by a share of the subject's height, `truck` slides camera
 // and aim sideways by a share of the distance (positive to the camera's left),
 // `zoom` sets the lens in degrees; with `dollyZoom` the distance follows the
-// lens so the subject keeps its size while the background swells or sinks; and
+// lens so the subject keeps its size while the background swells or sinks;
 // `tilt` pitches the camera in degrees (positive up) about its own horizontal
-// axis, which the fit holds. `ease` (0-1) eases the travel in and out, keeping
+// axis; and `pan` turns it in place in degrees (positive to the right), the
+// camera standing still while the view sweeps across the sky and the plain.
+// The fit holds both. `ease` (0-1) eases the travel in and out, keeping
 // 1 - ease of the mean speed at the cuts, so the camera never stops. Shots
 // without a move keep the constant drift and the PUSH_IN dolly.
 export const MOVE_PHASES = Object.freeze([0, 0.25, 0.5, 0.75, 1]);
@@ -551,6 +611,7 @@ export function shotPose(shot, phase) {
       truck: 0,
       fov: shot.fov,
       tilt: 0,
+      pan: 0,
     };
   const ease = move.ease ?? 0,
     e = phase + ease * (phase * phase * (3 - 2 * phase) - phase),
@@ -566,6 +627,7 @@ export function shotPose(shot, phase) {
     truck: along(move.truck, 0),
     fov,
     tilt: along(move.tilt, 0),
+    pan: along(move.pan, 0),
   };
 }
 // The poses a fit must hold: a move's sampled phases, or the drift's extremes
@@ -580,14 +642,16 @@ export function fitPoses(shot) {
         truck: 0,
         fov: shot.fov,
         tilt: 0,
+        pan: 0,
       }));
 }
 
 // A shot's `anchor`: where its aim lands in the safe area, as shares of the
 // area's width from its left edge and of its height from its top, so a subject
 // can stand on a third rather than at the centre. The fit keeps the focal
-// volume inside the area on every side of that point, a move's tilt included:
-// the pitch turns the view about the camera after it looks at the aim. A
+// volume inside the area on every side of that point, a move's tilt and pan
+// included: the pan turns the view about the camera before it looks at the
+// aim, the pitch after. A
 // shot's own `tilt` pitches the camera after the fit, moving the aim off its
 // anchor; leave margin for it.
 export const CENTRE = Object.freeze([0.5, 0.5]);
@@ -627,7 +691,7 @@ export function fitShot(measured, shot, area, width, height) {
   }
   const fits = (distance) => {
     for (let k = 0; k < poses.length; k++) {
-      const { scale, crane, truck, tilt = 0 } = poses[k],
+      const { scale, crane, truck, tilt = 0, pan = 0 } = poses[k],
         [left, right, above, below] = limits[k],
         reach = distance * scale,
         rise = dy + crane * measured.height,
@@ -637,14 +701,29 @@ export function fitShot(measured, shot, area, width, height) {
         s = rise / length,
         ct = Math.cos((tilt * Math.PI) / 180),
         st = Math.sin((tilt * Math.PI) / 180),
+        cp = Math.cos((pan * Math.PI) / 180),
+        sp = Math.sin((pan * Math.PI) / 180),
         points = projected[k];
       // Across is positive to the camera's left, up is positive upward; the
-      // tilt pitches the view up about the camera's own horizontal axis.
+      // pan turns the view right about the camera's vertical axis, then the
+      // tilt pitches it up about its own horizontal axis. Without a pan the
+      // arithmetic is the unpanned form exactly.
       for (let i = 0; i < points.length; i += 3) {
-        const level = length - points[i + 2] * c - points[i + 1] * s,
-          rising = points[i + 1] * c - points[i + 2] * s,
-          depth = level * ct + rising * st,
-          across = points[i] - side,
+        let level, rising, across;
+        if (pan) {
+          const ahead = reach - points[i + 2],
+            aside = points[i] - side,
+            forward = ahead * cp - aside * sp,
+            y = points[i + 1] - rise;
+          across = aside * cp + ahead * sp;
+          level = forward * c - y * s;
+          rising = y * c + forward * s;
+        } else {
+          level = length - points[i + 2] * c - points[i + 1] * s;
+          rising = points[i + 1] * c - points[i + 2] * s;
+          across = points[i] - side;
+        }
+        const depth = level * ct + rising * st,
           up = rising * ct - level * st;
         if (
           depth <= 0.1 ||
