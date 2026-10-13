@@ -185,9 +185,15 @@ export const LENS_FX = Object.freeze({
   text: Object.freeze([0.1, 0.05]),
   // Nor The watch's reference banks (STYLE.md, Sky) on desktop landscape frames: the
   // frame's share [x0, y0, x1, y1] from its top-left corner, kept whole, with
-  // the lens easing in over `keepSoft` frame heights beyond it.
-  keep: Object.freeze({ "The watch": Object.freeze([0, 0, 0.6875, 0.4889]) }),
+  // the lens easing in over `keepSoft` frame heights beyond it. Looking up toward the star
+  // from the east, The watch sees them across the lower middle of the frame, behind the name
+  // and under the lookout (0.09-0.76 of the width, from 0.37 of the height down, at 1440x800
+  // to 2560x1080); the star stands to their right.
+  keep: Object.freeze({ "The watch": Object.freeze([0.08, 0.36, 0.78, 1]) }),
   keepSoft: 0.03,
+  // A kept rect ends this many of the star's radii short of it (lensKeepRect()), so the star
+  // beside it keeps its whole heat ring and fringe.
+  keepStar: 3,
 });
 
 const lensNumber = (value) => (Number.isInteger(value) ? value.toFixed(1) : String(value));
@@ -472,6 +478,20 @@ export function lensSource(camera, position, radius = 1, out = [0, 0, 0, 0]) {
   out[1] = (lensPoint.y + 1) / 2;
   out[2] = (radius * camera.projectionMatrix.elements[5]) / depth / 2;
   out[3] = 1;
+  return out;
+}
+
+// The rect the lens keeps whole this frame (frame shares from the top-left corner), or null:
+// a shot's LENS_FX.keep, its right edge ended short of the star (a lensSource()) by
+// LENS_FX.keepStar of its radii when the star stands to the rect's right.
+export function lensKeepRect(keep, star, aspect, out = [0, 0, 0, 0]) {
+  if (!keep) return null;
+  out[0] = keep[0];
+  out[1] = keep[1];
+  out[2] = keep[2];
+  out[3] = keep[3];
+  if (star?.[3] > 0 && star[0] > keep[0])
+    out[2] = Math.max(keep[0], Math.min(keep[2], star[0] - (LENS_FX.keepStar * star[2]) / aspect));
   return out;
 }
 

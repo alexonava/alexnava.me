@@ -1,6 +1,6 @@
 import "./quality.js";
 import { createSolarBody, SOLAR_RADIUS } from "./solar-body.js";
-import { LENS_FX, lensSource } from "./postprocess.js";
+import { LENS_FX, lensKeepRect, lensSource } from "./postprocess.js";
 import { createStarfield } from "./starfield.js";
 import { readTourInterval, createCameraTour, TOUR_IDLE } from "./camera-tour.js";
 import { createFilmScene } from "./film-scene.js";
@@ -922,10 +922,12 @@ const ORBIT_SPEED = 0.06;
       const adaptiveSteps = createDeferredQualityStep({
         prepare: (profile) => rendering.prepareQuality(profile),
       });
-      // The lens's sources on screen (postprocess.js lensSource()), reused each frame.
+      // The lens's sources on screen (postprocess.js lensSource()) and its kept rect
+      // (lensKeepRect()), reused each frame.
       const lensPoint = new Vector3(),
         lensStar = [0, 0, 0, 0],
-        lensFlame = [0, 0, 0, 0];
+        lensFlame = [0, 0, 0, 0],
+        lensKeep = [0, 0, 0, 0];
       function updateSceneFrame({
         deltaSeconds,
         elapsedSeconds: elapsedTime,
@@ -1078,22 +1080,28 @@ const ORBIT_SPEED = 0.06;
         // watch's reference banks on desktop landscape frames). They change with the shot.
         {
           const shot = filmActive && cinematicApplied ? cinematic.shot : null,
-            flame = shot && treeArchitecture?.light && LENS_FX.heat.flameShots.includes(shot.name);
-          post.setLensSources?.({
-            star: shot
+            flame = shot && treeArchitecture?.light && LENS_FX.heat.flameShots.includes(shot.name),
+            star = shot
               ? lensSource(
                   camera,
                   solarBody.root.getWorldPosition(lensPoint),
                   SOLAR_RADIUS,
                   lensStar,
                 )
-              : null,
+              : null;
+          post.setLensSources?.({
+            star,
             flame: flame
               ? lensSource(camera, treeArchitecture.light.getWorldPosition(lensPoint), 1, lensFlame)
               : null,
             keep:
               shot && viewport.width >= 1000 && viewport.width > 1.2 * viewport.height
-                ? (LENS_FX.keep[shot.name] ?? null)
+                ? lensKeepRect(
+                    LENS_FX.keep[shot.name],
+                    star,
+                    viewport.width / viewport.height,
+                    lensKeep,
+                  )
                 : null,
           });
         }
