@@ -706,17 +706,76 @@ test("a running tour switches treatment only on a cut, or while the canvas fades
   h.shafts.dispose();
 });
 
-test("inside the box the air is off and only the light on the subject stays", async () => {
-  const h = harness({ shot: "Close-up", current: "tree", eye: [55, 12, 36] });
-  await h.until(() => h.debug.shafts?.status === "ready");
-  h.shafts.update({ deltaSeconds: 0 });
-  assert.equal(h.debug.shafts.shown, "tree-moon:inside");
+// The subject's own march, read through its hooked program.
+const marchUniforms = (h, mesh) => {
+  const shader = {
+    uniforms: {},
+    vertexShader: "#include <common>\n#include <project_vertex>",
+    fragmentShader: "#include <common>\n#include <lights_fragment_begin>\n#include <fog_fragment>",
+  };
+  h[mesh].material.onBeforeCompile(shader, {});
+  return shader.uniforms;
+};
+const boxUniforms = (h, name) =>
+  h.volumes().find((mesh) => mesh.name === `light-shafts-${name}`).material.uniforms;
+
+test("inside the moon's box on the lookout the air is off and only the light on the subject stays", async () => {
+  // Beside the lattice, inside the moon's box (its pad and the unit of margin).
+  const h = harness({ shot: "Against the moon", eye: [0, 20, 4] });
+  await h.until(() => h.debug.shafts?.shown === "tower-moon:inside" && h.debug.shafts.level === 1);
+  assert.equal(SHAFTS.moon.inside, null);
   assert.deepEqual(h.visible(), []);
+  assert.equal(marchUniforms(h, "tower").shaftGain.value, 0, "no march of its own");
   assert.match(
-    h.tree.material.customProgramCacheKey(),
+    h.tower.material.customProgramCacheKey(),
     /\|light-shafts-0$/,
-    "the gobo is on the bark",
+    "the gobo is on the timber",
   );
+  h.shafts.dispose();
+});
+
+test("the star keeps its air with the eye inside its box, as The watch opens on most desktops", async () => {
+  const h = harness({ eye: [0, 20, 4] });
+  await h.until(() => h.debug.shafts?.shown === "tower-star:inside" && h.debug.shafts.level === 1);
+  assert.deepEqual(SHAFTS.star.inside, {}, "as outside");
+  assert.deepEqual(h.visible(), ["light-shafts-star-tower"]);
+  const box = boxUniforms(h, "star-tower");
+  assert.equal(box.shaftGain.value, SHAFTS.star.gain, "the box's air, whole");
+  assert.equal(
+    marchUniforms(h, "tower").shaftGain.value,
+    SHAFTS.star.gain * SHAFTS.star.over,
+    "the lattice's own march",
+  );
+  assert.deepEqual(box.shaftReach.value, {
+    x: SHAFTS.star.reach[0],
+    y: SHAFTS.star.reach[1],
+    z: SHAFTS.star.sky[0],
+    w: SHAFTS.star.sky[1],
+  });
+  h.shafts.dispose();
+});
+
+test("under the crown (Close-up) its air keeps to short, softer shafts, and outside it takes its own again", async () => {
+  const h = harness({ shot: "Close-up", current: "tree", eye: [55, 12, 36] });
+  await h.until(() => h.debug.shafts?.shown === "tree-moon:inside" && h.debug.shafts.level === 1);
+  const { gain, reach } = SHAFTS.moon.tree.air.inside;
+  const { sky } = SHAFTS.moon.tree.air;
+  assert.ok(gain < SHAFTS.moon.tree.air.gain, "softer");
+  assert.ok(reach[0] + reach[1] < (SHAFTS.moon.reach[0] + SHAFTS.moon.reach[1]) / 2, "shorter");
+  assert.deepEqual(h.visible(), ["light-shafts-moon-tree"]);
+  const box = boxUniforms(h, "moon-tree"),
+    march = marchUniforms(h, "tree");
+  assert.equal(box.shaftGain.value, gain);
+  assert.equal(march.shaftGain.value, gain * SHAFTS.moon.over);
+  const short = { x: reach[0], y: reach[1], z: sky[0], w: sky[1] };
+  assert.deepEqual([box.shaftReach.value, march.shaftReach.value], [short, short]);
+  // A still frame (no tour) takes the change at once.
+  h.camera.position.set(90, 30, 90);
+  h.shafts.update({ deltaSeconds: 0 });
+  assert.equal(h.debug.shafts.shown, "tree-moon");
+  const own = { x: SHAFTS.moon.reach[0], y: SHAFTS.moon.reach[1], z: sky[0], w: sky[1] };
+  assert.deepEqual([box.shaftReach.value, march.shaftReach.value], [own, own]);
+  assert.equal(box.shaftGain.value, SHAFTS.moon.tree.air.gain);
   h.shafts.dispose();
 });
 

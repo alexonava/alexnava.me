@@ -126,7 +126,14 @@ export function shaftTreatment(shotName) {
 // none lands on the sky (0: unweighted); peak: 1 to take the soft cap at
 // the streaks' peak, so the dark between streaks keeps its share and a bright
 // lattice never becomes a veil (the star), 0 to cap the streaked air as it
-// is, which keeps sparse slim shafts broad and full (the moon).
+// is, which keeps sparse slim shafts broad and full (the moon); inside: the
+// air with the eye inside the box, where the march starts at the eye and
+// fades its first units in: null for none (only the light on the subject
+// stays), or the air's own gain and reach there (none given: as outside).
+// The star keeps its air whole, so The watch, which opens inside the star's
+// box on most desktops, shows the warm light the owner picked from its first
+// frame; the crown's keeps short soft shafts under its limbs, off the open
+// sky past them (Close-up, the owner's "softer, off the sky", 2026-10-13).
 // Per subject: aim: the light's aim as a share of the subject's height (the
 // star); ext: the map's half-width about the subject; gap: the break in the
 // cloud the air takes light through, [height share, radii, core]; lit: how far
@@ -192,6 +199,7 @@ export const SHAFTS = Object.freeze({
     hull: [1, 1, 0, 0],
     layer: 1.5,
     peak: 1,
+    inside: Object.freeze({}),
     tower: Object.freeze({
       aim: 0.45,
       ext: 26,
@@ -245,6 +253,7 @@ export const SHAFTS = Object.freeze({
     hull: [0, 0, 0, 0],
     layer: 0,
     peak: 0,
+    inside: null,
     // The cabin is solid to the moon: its shafts graze past it, in a ring
     // just outside its closed outline (erode < 0). No march of its own in
     // front of the timber (over 0): over the whole tower in Threshold it
@@ -300,6 +309,10 @@ export const SHAFTS = Object.freeze({
         tie: 1,
         hull: [0, 1, 0, 3],
         fade: [3, 4],
+        // Close-up's eye stands under the crown, inside its box, the moon
+        // behind the limbs: short, softer shafts hang from them and fade
+        // before they fan across the open sky or reach the name.
+        inside: Object.freeze({ gain: 0.1, reach: [3, 6] }),
       }),
       // Broken cloud light across the bark: large, soft breaks, but mostly
       // whole (a high floor; the owner's pick of 2026-10-09), so the crown
@@ -1380,6 +1393,11 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
       gobo,
       gain: T.gain,
       over: T.over,
+      inside: T.inside,
+      // The reach with the eye inside the box (the air's own there, if given).
+      insideReach: T.inside?.reach
+        ? { x: T.inside.reach[0], y: T.inside.reach[1], z: T.sky[0], w: T.sky[1] }
+        : values.shaftReach,
       rays: T.rays,
       jitter: T.jitter || 0,
       center: b.center,
@@ -1614,7 +1632,7 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
   }
 
   // The treatment the shot on screen calls for, and whether the eye sits in
-  // its box: then its light would fill the lens, so only the gobo stays.
+  // its box: there the air takes its inside settings (none: only the gobo stays).
   function wanted() {
     const kind = shaftTreatment(cinematic.shot?.name),
       part = parts[cinematic.current];
@@ -1646,7 +1664,7 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
     for (const part of Object.values(parts)) {
       const set = part.sets.find((s) => s.key === key);
       for (const each of part.sets)
-        each.volume.visible = each === set && !state.endsWith(":inside");
+        each.volume.visible = each === set && (Boolean(set.inside) || !state.endsWith(":inside"));
       if (!part.hook) continue;
       // The light landing on the subject: its own, under the shot's.
       const gobo = set && own ? { ...set.gobo, ...own } : set?.gobo;
@@ -1660,6 +1678,8 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
       if (!set) continue;
       const { uniforms } = part;
       for (const [name, value] of Object.entries(set.values)) uniforms[name].value = value;
+      const reach = state.endsWith(":inside") ? set.insideReach : set.values.shaftReach;
+      uniforms.shaftReach.value = set.volume.material.uniforms.shaftReach.value = reach;
       uniforms.shaftGoboWrap.value = { x: gobo.wrap, y: gobo.rim };
       uniforms.shaftGoboClip.value = { x: gobo.clip[0], y: gobo.clip[1] };
       uniforms.shaftGoboShadow.value = set.kind === "moon" && gobo.shadow !== false ? 1 : 0;
@@ -1764,10 +1784,11 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
     }
     for (const [part, set, gobo] of lit) {
       // Sparser streaks on balanced carry a little more light each.
-      const air = set.gain * ((!high && config[set.kind].sparse?.[3]) || 1);
+      const gain = inside ? (set.inside ? (set.inside.gain ?? set.gain) : 0) : set.gain,
+        air = gain * ((!high && config[set.kind].sparse?.[3]) || 1);
       set.volume.material.uniforms.shaftGain.value = air * level * blend;
       part.uniforms.shaftGoboGain.value = gobo.gain * level * blend;
-      part.uniforms.shaftGain.value = inside ? 0 : air * set.over * level * blend;
+      part.uniforms.shaftGain.value = air * set.over * level * blend;
     }
   }
   function whenRevealed() {
