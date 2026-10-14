@@ -100,7 +100,7 @@ _lazy_ marks a chunk loaded on demand.
 | `solar-body.js`      | The star, its fire, glow and prominences, and their unrest (`SOLAR_LOOK`, `SOLAR_FIRE`)                                                           |
 | `hill-silhouette.js` | Baseline hill ring, the rings' and the Meshy massifs' materials, loading the massifs, ranges stand-in, far plain air (`HORIZON_AIR`)              |
 | `mountain-build.js`  | _lazy_ Film mountain geometry: the massifs' placements (`RANGE_PLACEMENTS`), the backdrop rings, the five-ring fallback                           |
-| `light-shafts.js`    | _lazy_ Star rays and moonbeams (WebGL2)                                                                                                           |
+| `light-shafts.js`    | _lazy_ The star's warm air and the moon's distinct beams (WebGL2)                                                                                 |
 | `lightning.js`       | The storm's lightning (`LIGHTNING`): its seeded schedule, the bolt, and the flash on the sky shell, the film's materials, the ground and the mist |
 | `far-fires.js`       | Distant firelights on the far plain and the foothills (`FAR_FIRES`)                                                                               |
 

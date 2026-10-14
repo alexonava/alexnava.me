@@ -18,6 +18,7 @@ import {
   blueNoise,
   goboHook,
   lightShafts,
+  pickBeams,
   rasterizeLightMap,
   shaftDrift,
   shaftTreatment,
@@ -548,9 +549,12 @@ function harness({
     assert.ok(condition(), `timed out waiting in status ${debug.shafts?.status}`);
   };
   state.volumes = () => root.children.filter((object) => /^light-shafts-/.test(object.name));
+  // The boxes and the beams drawn.
+  state.drawn = () => root.children.filter((object) => /^light-(shafts|beams)-/.test(object.name));
+  state.beams = () => root.children.filter((object) => /^light-beams-/.test(object.name));
   state.visible = () =>
     state
-      .volumes()
+      .drawn()
       .filter((object) => object.visible)
       .map((object) => object.name);
   return state;
@@ -628,10 +632,16 @@ test("the box adds colour only and leaves the film depth layer in alpha untouche
     assert.ok(material.uniforms.shaftFade.value.x >= 0.05);
   }
   // Each subject links its hooked program on a detached stand-in and the box
-  // program once, against the composer target and with the scene's lights.
+  // and beam programs once, against the composer target and with the scene's lights.
   assert.deepEqual(
     h.counts.linked.map(({ name }) => name),
-    ["stand-in", "light-shafts-star-tower", "stand-in", "light-shafts-moon-tree"],
+    [
+      "stand-in",
+      "light-shafts-star-tower",
+      "stand-in",
+      "light-shafts-moon-tree",
+      "light-beams-moon-tree",
+    ],
   );
   for (const { target, eye, lightsFrom } of h.counts.linked) {
     assert.equal(target?.name, "composer read buffer");
@@ -657,13 +667,14 @@ test("per shot: warm star in The watch, moon elsewhere, nothing in the lantern s
     /\|light-shafts-0$/,
     "the warm catch lands on the tower",
   );
+  // The moon's light in the air is its distinct beams alone: its box is not drawn.
   h.cinematic.shot = { name: "Gallery detail" };
   h.shafts.update({ deltaSeconds: 0 });
-  assert.deepEqual(h.visible(), ["light-shafts-moon-tower"]);
+  assert.deepEqual(h.visible(), ["light-beams-moon-tower"]);
   h.cinematic.shot = { name: "Portrait" };
   h.cinematic.current = "tree";
   h.shafts.update({ deltaSeconds: 0 });
-  assert.deepEqual(h.visible(), ["light-shafts-moon-tree"]);
+  assert.deepEqual(h.visible(), ["light-beams-moon-tree"]);
   for (const name of ["Lantern study", "Root and lantern"]) {
     h.cinematic.shot = { name };
     h.shafts.update({ deltaSeconds: 0 });
@@ -719,12 +730,12 @@ const marchUniforms = (h, mesh) => {
 const boxUniforms = (h, name) =>
   h.volumes().find((mesh) => mesh.name === `light-shafts-${name}`).material.uniforms;
 
-test("inside the moon's box on the lookout the air is off and only the light on the subject stays", async () => {
+test("inside the moon's box on the lookout no air is drawn; its beams and the light on the subject stay", async () => {
   // Beside the lattice, inside the moon's box (its pad and the unit of margin).
   const h = harness({ shot: "Against the moon", eye: [0, 20, 4] });
   await h.until(() => h.debug.shafts?.shown === "tower-moon:inside" && h.debug.shafts.level === 1);
   assert.equal(SHAFTS.moon.inside, null);
-  assert.deepEqual(h.visible(), []);
+  assert.deepEqual(h.visible(), ["light-beams-moon-tower"]);
   assert.equal(marchUniforms(h, "tower").shaftGain.value, 0, "no march of its own");
   assert.match(
     h.tower.material.customProgramCacheKey(),
@@ -755,32 +766,115 @@ test("the star keeps its air with the eye inside its box, as The watch opens on 
   h.shafts.dispose();
 });
 
-test("under the crown (Close-up) its air keeps to short, softer shafts, and outside it takes its own again", async () => {
+test("under the crown (Close-up) the moon draws no air, only its beams, from any eye", async () => {
   const h = harness({ shot: "Close-up", current: "tree", eye: [55, 12, 36] });
   await h.until(() => h.debug.shafts?.shown === "tree-moon:inside" && h.debug.shafts.level === 1);
-  const { gain, reach } = SHAFTS.moon.tree.air.inside;
-  const { sky } = SHAFTS.moon.tree.air;
-  assert.ok(gain < SHAFTS.moon.tree.air.gain, "softer");
-  assert.ok(reach[0] + reach[1] < (SHAFTS.moon.reach[0] + SHAFTS.moon.reach[1]) / 2, "shorter");
-  assert.deepEqual(h.visible(), ["light-shafts-moon-tree"]);
-  const box = boxUniforms(h, "moon-tree"),
-    march = marchUniforms(h, "tree");
-  assert.equal(box.shaftGain.value, gain);
-  assert.equal(march.shaftGain.value, gain * SHAFTS.moon.over);
-  const short = { x: reach[0], y: reach[1], z: sky[0], w: sky[1] };
-  assert.deepEqual([box.shaftReach.value, march.shaftReach.value], [short, short]);
-  // A still frame (no tour) takes the change at once.
+  assert.equal(SHAFTS.moon.gain, 0, "the moon's air is its beams alone");
+  assert.equal("gain" in SHAFTS.moon.tree.air, false);
+  assert.equal("gain" in SHAFTS.moon.tower.air, false);
+  assert.deepEqual(h.visible(), ["light-beams-moon-tree"], "the beams stand in the world");
+  assert.equal(marchUniforms(h, "tree").shaftGain.value, 0, "no march over the bark");
+  const beams = h.beams().find(({ name }) => name === "light-beams-moon-tree");
+  assert.equal(beams.material.uniforms.beamGain.value, SHAFTS.moon.beams.gain);
+  // Outside the box it is the same.
   h.camera.position.set(90, 30, 90);
   h.shafts.update({ deltaSeconds: 0 });
   assert.equal(h.debug.shafts.shown, "tree-moon");
-  const own = {
-    x: SHAFTS.moon.tree.air.reach[0],
-    y: SHAFTS.moon.tree.air.reach[1],
-    z: sky[0],
-    w: sky[1],
+  assert.deepEqual(h.visible(), ["light-beams-moon-tree"]);
+  h.shafts.dispose();
+});
+
+test("the beams' openings: the most open and widest first, kept apart, never outside the silhouette", () => {
+  const res = 40,
+    data = new Uint8Array(res * res * 4);
+  // Inside the closed silhouette everywhere (A < 255), closed (B 0), but for open discs.
+  for (let c = 0; c < res * res; c++) data[c * 4 + 3] = 100;
+  const open = (cx, cy, r, outside = false) => {
+    for (let y = 0; y < res; y++)
+      for (let x = 0; x < res; x++)
+        if (Math.hypot(x - cx, y - cy) <= r) {
+          data[(y * res + x) * 4 + 2] = 255;
+          if (outside) data[(y * res + x) * 4 + 3] = 255;
+        }
   };
-  assert.deepEqual([box.shaftReach.value, march.shaftReach.value], [own, own]);
-  assert.equal(box.shaftGain.value, SHAFTS.moon.tree.air.gain);
+  open(10, 10, 4);
+  open(28, 26, 3);
+  open(13, 13, 2.5); // overlapping the first: too near to count again
+  open(32, 6, 4, true); // open, but outside the silhouette
+  const picks = pickBeams(data, res, { count: 6, open: 0.5, spacing: 1 }, 5);
+  assert.ok(picks.length >= 2);
+  const near = (p, x, y, d) => Math.hypot(p.x - 0.5 - x, p.y - 0.5 - y) <= d;
+  assert.ok(near(picks[0], 10, 10, 2), "the widest first");
+  assert.ok(picks.some((p) => near(p, 28, 26, 2)));
+  assert.ok(!picks.some((p) => near(p, 32, 6, 5)), "none outside the closed silhouette");
+  for (const p of picks)
+    for (const q of picks)
+      if (p !== q) assert.ok(Math.hypot(p.x - q.x, p.y - q.y) >= p.r + q.r, "kept apart");
+  assert.ok(picks.every((p) => p.r >= 2.5 && p.r <= 5.5 && p.light >= 0.5));
+  assert.equal(
+    pickBeams(data, res, { count: 1, open: 0.5, spacing: 1 }, 5).length,
+    1,
+    "at most count",
+  );
+});
+
+test("the moon's distinct beams stand along its light, from inside the subject to the ground or their length", async () => {
+  const h = harness({ shot: "Portrait", current: "tree" });
+  await h.until(() => h.debug.shafts?.status === "ready");
+  assert.equal(SHAFTS.star.beams, null, "the star has none (the owner's call, 2026-10-13)");
+  assert.deepEqual(
+    h
+      .beams()
+      .map(({ name }) => name)
+      .sort(),
+    ["light-beams-moon-tower", "light-beams-moon-tree"],
+  );
+  const B = SHAFTS.moon.beams;
+  const light = new Vector3(-32, -28, -14).normalize();
+  for (const beams of h.beams()) {
+    const { geometry, material } = beams;
+    const from = geometry.getAttribute("beamA"),
+      to = geometry.getAttribute("beamB");
+    assert.ok(geometry.instanceCount > 0 && geometry.instanceCount <= B.count);
+    for (let i = 0; i < geometry.instanceCount; i++) {
+      const a = new Vector3(from.getX(i), from.getY(i), from.getZ(i)),
+        b = new Vector3(to.getX(i), to.getY(i), to.getZ(i)),
+        length = a.distanceTo(b);
+      assert.ok(b.clone().sub(a).normalize().dot(light) > 0.9999, "along the moon's light");
+      assert.ok(length >= 2 && length <= B.length + 1e-6);
+      assert.ok(b.y >= 0, "never under the ground");
+      assert.ok(from.getW(i) >= B.width[0] * 0.75 - 1e-6 && from.getW(i) <= B.width[1] + 1e-6);
+      assert.ok(to.getW(i) >= 0.6 && to.getW(i) <= 1, "each its own strength");
+    }
+    // Drawn as the box's air is: additive colour, a small mark in the depth
+    // layer, its back faces against the depth, kept off the text.
+    assert.equal(material.blending, 5);
+    assert.deepEqual([material.blendSrc, material.blendDst], [201, 201]);
+    assert.equal(material.depthWrite, false);
+    assert.equal(material.side, 1);
+    assert.equal(beams.frustumCulled, false, "its instances stand far from the unit cylinder");
+    assert.match(material.fragmentShader, /shaftBehindText\(vClip\.xy\/vClip\.w\*\.5\+\.5\)/);
+    assert.match(material.fragmentShader, /if\(q>=1\.\)discard;/);
+    assert.ok(material.fragmentShader.includes(SHAFT_MARK.cap.toFixed(3)));
+    assert.equal(material.uniforms.shaftText, h.volumes()[0].material.uniforms.shaftText);
+  }
+  h.shafts.dispose();
+  assert.deepEqual(h.beams(), [], "dispose takes them away");
+});
+
+test("the beams fade in with their light mid-hold, as the air does", async () => {
+  const tour = { running: true, transition: { cut: false } };
+  const h = harness({ shot: "Lantern study", current: "tree", tour });
+  await h.until(() => h.debug.shafts?.status === "ready");
+  h.cinematic.shot = { name: "Portrait" };
+  tour.transition.cut = true;
+  h.shafts.update({ deltaSeconds: 0 });
+  tour.transition.cut = false;
+  const gain = () =>
+    h.beams().find(({ name }) => name === "light-beams-moon-tree").material.uniforms.beamGain.value;
+  await h.until(() => h.debug.shafts.shown === "tree-moon");
+  assert.equal(h.debug.shafts.level, 1, "on a cut it shows at once");
+  assert.equal(gain(), SHAFTS.moon.beams.gain);
   h.shafts.dispose();
 });
 
@@ -880,7 +974,7 @@ test("programs linked before new lights arrive are linked again before the first
   for (let i = 0; i < 30; i++) h.shafts.update({ deltaSeconds: 0 });
   assert.deepEqual(
     h.counts.linked.slice(linked).map(({ name }) => name),
-    ["stand-in", "light-shafts-star-tower", "light-shafts-moon-tower"],
+    ["stand-in", "light-shafts-star-tower", "light-shafts-moon-tower", "light-beams-moon-tower"],
     "checked twice a second",
   );
   await new Promise((resolve) => setTimeout(resolve, 10));
@@ -891,7 +985,7 @@ test("programs linked before new lights arrive are linked again before the first
   const before = h.counts.linked.length;
   h.shafts.update({ deltaSeconds: 0 });
   assert.equal(h.debug.shafts.shown, "", "no commit with programs that predate the lights");
-  assert.equal(h.counts.linked.length, before + 3);
+  assert.equal(h.counts.linked.length, before + 4);
   await h.until(() => h.debug.shafts.shown === "tower-star");
   // Once committed, the scene's own warm-ups link the hooked programs.
   const committed = h.counts.linked.length;
@@ -1053,7 +1147,7 @@ test("a quality step on the cut into a subject not yet shown clears the last sho
   tour.transition.cut = false;
   await h.until(() => h.debug.shafts.shown === "tree-moon", { deltaSeconds: 1 / 60 });
   assert.ok(h.debug.shafts.level < 1, "the relinked tree's light fades in mid-hold");
-  assert.deepEqual(h.visible(), ["light-shafts-moon-tree"]);
+  assert.deepEqual(h.visible(), ["light-beams-moon-tree"]);
   registry.dispose();
 });
 
@@ -1165,30 +1259,22 @@ test("the march reads its maps at a named level, keeps to the lit core and start
       assert.ok(clip[0] + clip[1] <= 0.62, `${kind}: lit timber stays under ~0.6`);
 });
 
-test("the moon on the tower keeps to its box: no march of its own over the timber", async () => {
+test("the moon on the tower draws its beams past the cabin, no air and no march over the timber", async () => {
   const h = harness({ shot: "Against the moon" });
-  const shader = {
-    uniforms: {},
-    vertexShader: "#include <common>\n#include <project_vertex>",
-    fragmentShader: "#include <common>\n#include <lights_fragment_begin>\n#include <fog_fragment>",
-  };
   await h.until(() => h.debug.shafts?.shown === "tower-moon" && h.debug.shafts.level === 1);
-  h.tower.material.onBeforeCompile(shader, {});
   const box = h.volumes().find(({ name }) => name === "light-shafts-moon-tower").material.uniforms
     .shaftGain.value;
   assert.equal(SHAFTS.moon.tower.air.over, 0);
-  assert.ok(box > 0, "the box's shafts past the cabin");
-  assert.equal(shader.uniforms.shaftGain.value, 0, "the tower's own march is skipped");
-  // The cabin's streaks are the treatment's, not the crown's own.
-  const streaks = h.volumes().find(({ name }) => name === "light-shafts-moon-tower")
-    .material.uniforms;
-  assert.equal(streaks.shaftSource.value.w, SHAFTS.moon.rays[0]);
-  assert.deepEqual(
-    [streaks.shaftStreak.value.y, streaks.shaftStreak.value.z],
-    [SHAFTS.moon.rays[2], SHAFTS.moon.rays[3]],
+  assert.equal(box, 0, "no air in the box");
+  assert.equal(marchUniforms(h, "tower").shaftGain.value, 0, "the tower's own march is skipped");
+  assert.deepEqual(h.visible(), ["light-beams-moon-tower"]);
+  assert.ok(
+    h.beams().find(({ name }) => name === "light-beams-moon-tower").material.uniforms.beamGain
+      .value > 0,
+    "its beams past the cabin",
   );
   assert.ok(
-    shader.uniforms.shaftGoboGain.value > 0,
+    marchUniforms(h, "tower").shaftGoboGain.value > 0,
     "its broken moonlight still lands on the timber",
   );
   assert.ok(

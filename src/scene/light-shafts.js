@@ -49,7 +49,16 @@
 // SHAFT_LAYER), so the grade leaves the air out of the clouds' cel step.
 // The subject's material also takes the light where it lands (the "gobo"),
 // under a soft shoulder that keeps lit timber from reading as a spotlight.
-import { BufferAttribute, BufferGeometry, DataTexture, Mesh, ShaderMaterial, Vector3 } from "three";
+import {
+  BufferAttribute,
+  BufferGeometry,
+  DataTexture,
+  InstancedBufferAttribute,
+  InstancedBufferGeometry,
+  Mesh,
+  ShaderMaterial,
+  Vector3,
+} from "three";
 
 // The air's mark in the film depth layer: its luma times gain, at most cap
 // (depth-layers.js SHAFT_LAYER, which a test holds equal; restated here so this
@@ -200,6 +209,9 @@ export const SHAFTS = Object.freeze({
     layer: 1.5,
     peak: 1,
     inside: Object.freeze({}),
+    // No distinct beams (the owner's call of 2026-10-13, "the sun beams are too
+    // much"): the star's light stays this warm air through the lattice.
+    beams: null,
     tower: Object.freeze({
       aim: 0.45,
       ext: 26,
@@ -223,14 +235,15 @@ export const SHAFTS = Object.freeze({
   // Cool moonbeams through a break in the cloud, parallel to the moon's real
   // cast shadows: slim shafts through the gaps of the crown or past the
   // cabin, and broken moonlight in large patches on the bark and timber.
-  // Clear moonbeams (the owner's call of 2026-10-13: the soft ones read
-  // "smeared, blotchy. not really clear enough"): each shaft clear, with dark
-  // between, read barely blurred (penumbra, maxLod) over more steps, their
-  // spacing wandering; laid like brush strokes (the owner's quiet cut, the same
-  // day): a feathered edge, never a hard bar.
+  // Individual moonbeams (the owner's call of 2026-10-13: the air "read as ONE
+  // giant morphing mess of light. they should all read like individual
+  // distinctive BEAMS"): the moon draws no air (gain 0, so its box is never
+  // drawn and its march settings below go unused); its light in the air is its
+  // distinct beams (beams), one through each opening in the crown or past the
+  // cabin, standing in the world from inside the subject to the ground.
   moon: Object.freeze({
     color: [0.62, 0.74, 1],
-    gain: 0.07,
+    gain: 0,
     over: 1,
     phase: 0,
     front: 1,
@@ -255,6 +268,24 @@ export const SHAFTS = Object.freeze({
     layer: 0,
     peak: 0,
     inside: null,
+    beams: Object.freeze({
+      count: 10,
+      start: 0.5,
+      layer: 0,
+      width: Object.freeze([0.3, 0.95]),
+      spacing: 1.6,
+      open: 0.5,
+      rise: 4,
+      length: 60,
+      fade: 0.55,
+      edge: 0.4,
+      gain: 0.2,
+      cap: 5,
+      phase: 0.3,
+      dust: 0.25,
+      near: Object.freeze([2, 8]),
+      ceil: 0.6,
+    }),
     // The cabin is solid to the moon: its shafts graze past it, in a ring
     // just outside its closed outline (erode < 0). No march of its own in
     // front of the timber (over 0): over the whole tower in Threshold it
@@ -273,7 +304,6 @@ export const SHAFTS = Object.freeze({
       erode: -6,
       core: 1.2,
       air: Object.freeze({
-        gain: 0.18,
         over: 0,
         sky: [4, 8],
         reach: [22, 12],
@@ -304,7 +334,6 @@ export const SHAFTS = Object.freeze({
       // The crown's own: fewer and wider (the owner's pick), brush strokes that
       // taper in past the limbs (rise) and end short of the open sky (reach).
       air: Object.freeze({
-        gain: 0.13,
         reach: [8, 8],
         sky: [1, 3],
         rays: [0.8, 0.02, 0.4, 0.82],
@@ -313,10 +342,6 @@ export const SHAFTS = Object.freeze({
         tie: 1,
         hull: [0, 1, 0, 3],
         fade: [3, 4],
-        // Close-up's eye stands under the crown, inside its box, the moon
-        // behind the limbs: short, softer shafts hang from them and fade
-        // before they fan across the open sky or reach the name.
-        inside: Object.freeze({ gain: 0.1, reach: [3, 6] }),
       }),
       // Broken cloud light across the bark: large, soft breaks, but mostly
       // whole (a high floor; the owner's pick of 2026-10-09), so the crown
@@ -973,6 +998,123 @@ export function* rasterizeLightMap({
   };
 }
 
+// Distinct beams (`beams`): soft volumetric cylinders along the light, one per
+// opening the light comes through (pickBeams()), drawn instanced by their back
+// faces with the depth test on. Each is shaded by the length the view ray runs
+// inside it (capped, so one seen end on never blooms), a soft edge, its rise
+// out of the subject and its fade toward its end, slow motes along it and
+// forward scattering; nothing near the lens, and easing off behind the text.
+// They stay put in the world, so they move with the camera as light does.
+const BEAM_VERTEX = `attribute vec4 beamA;attribute vec4 beamB;
+varying vec3 vWorld;varying vec4 vClip;varying vec3 vA;varying vec3 vB;varying vec2 vRS;
+void main(){
+vec3 a=(modelMatrix*vec4(beamA.xyz,1.)).xyz,b=(modelMatrix*vec4(beamB.xyz,1.)).xyz,w=normalize(b-a);
+vec3 t=normalize(cross(w,abs(w.y)<.99?vec3(0.,1.,0.):vec3(1.,0.,0.))),s=cross(t,w);
+vec3 p=a+(b-a)*position.y+(t*position.x+s*position.z)*beamA.w;
+vWorld=p;vA=a;vB=b;vRS=vec2(beamA.w,beamB.w);vClip=projectionMatrix*viewMatrix*vec4(p,1.);gl_Position=vClip;}`;
+const BEAM = `uniform vec3 beamColor;uniform float beamGain;uniform vec4 beamShape;uniform vec4 beamLook;uniform float beamCeil;uniform float beamLayer;
+uniform vec4 shaftText;uniform float shaftTextProtection;uniform vec4 shaftSource;uniform vec2 shaftDrift;
+varying vec3 vWorld;varying vec4 vClip;varying vec3 vA;varying vec3 vB;varying vec2 vRS;
+float shaftBehindText(vec2 v){vec2 f=max(max(shaftText.xy-v,v-shaftText.zw),0.)*vec2(shaftSource.z,1.)/min(shaftSource.z,1.);return 1.-smoothstep(0.,.2,length(f));}
+float beamHash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float beamNoise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(beamHash(i),beamHash(i+vec2(1.,0.)),f.x),mix(beamHash(i+vec2(0.,1.)),beamHash(i+vec2(1.,1.)),f.x),f.y);}
+void main(){
+vec3 ro=cameraPosition,rd=normalize(vWorld-cameraPosition),ab=vB-vA;float len=length(ab);vec3 w=ab/len,m=ro-vA;
+float c=dot(rd,w),den=max(1.-c*c,1e-4),t=max((c*dot(m,w)-dot(m,rd))/den,0.);
+vec3 p=ro+rd*t;float y=clamp(dot(p-vA,w),0.,len),q=length(p-vA-w*y)/vRS.x;
+if(q>=1.)discard;
+float chord=min(2.*vRS.x*sqrt(1.-q*q)/sqrt(den),beamShape.w);
+float prof=1.-smoothstep(beamShape.x,1.,q);
+float along=smoothstep(0.,beamShape.y,y)*(1.-smoothstep(len*beamShape.z,len,y));
+float near=smoothstep(beamLook.z,beamLook.w,t);
+float dust=1.-beamLook.y+beamLook.y*beamNoise(vec2(y*.5-shaftDrift.x*40.,vRS.y*37.));
+float g=beamLook.x,ph=pow((1.+g*g)/max(1.+g*g-2.*g*dot(rd,-w),1e-3),1.5);
+float a=beamGain*vRS.y*prof*along*near*dust*chord*ph;
+a=a/(1.+a/beamCeil);
+vec3 s=beamColor*beamLayer*a*(1.-shaftBehindText(vClip.xy/vClip.w*.5+.5)*mix(.9,1.,shaftTextProtection));
+if(s.r+s.g+s.b<=0.)discard;
+gl_FragColor=vec4(s,min(dot(s,vec3(.2126,.7152,.0722))*${SHAFT_MARK.gain.toFixed(2)},${SHAFT_MARK.cap.toFixed(3)}));
+}`;
+
+// A unit cylinder about +y from 0 to 1, capped, its faces wound outward.
+function beamCylinder(sides = 12) {
+  const geometry = new BufferGeometry(),
+    p = [],
+    ix = [];
+  for (let i = 0; i < sides; i++) {
+    const angle = (i / sides) * Math.PI * 2;
+    p.push(Math.cos(angle), 0, Math.sin(angle));
+  }
+  for (let i = 0; i < sides; i++) {
+    const angle = (i / sides) * Math.PI * 2;
+    p.push(Math.cos(angle), 1, Math.sin(angle));
+  }
+  p.push(0, 0, 0, 0, 1, 0);
+  for (let i = 0; i < sides; i++) {
+    const j = (i + 1) % sides;
+    ix.push(i, sides + i, j, j, sides + i, sides + j);
+    ix.push(2 * sides, i, j, 2 * sides + 1, sides + j, sides + i);
+  }
+  geometry.setAttribute("position", new BufferAttribute(new Float32Array(p), 3));
+  geometry.setIndex(ix);
+  return geometry;
+}
+
+// The openings a light map lets light through, for its distinct beams. data:
+// the map's RGBA8 texels (A the closed silhouette's front, 255 outside it; B
+// the light let through). Each opening is a local peak of the light let
+// through over a five-texel box, at least `open`; its radius (texels) grows
+// while the box about it stays that open, up to `most`. The most open and
+// widest come first, each kept `spacing` times the sum of the two radii from
+// the others, up to `count`. Returns [{ x, y, r, light }] in texels.
+export function pickBeams(data, res, { count, open, spacing }, most = 4) {
+  const W = res + 1,
+    sum = new Float64Array(W * W);
+  for (let y = 0; y < res; y++) {
+    let row = 0;
+    for (let x = 0; x < res; x++) {
+      const c = y * res + x;
+      row += data[c * 4 + 3] < 255 ? data[c * 4 + 2] / 255 : 0;
+      sum[(y + 1) * W + x + 1] = sum[y * W + x + 1] + row;
+    }
+  }
+  const mean = (x, y, k) => {
+    const x0 = Math.max(0, x - k),
+      x1 = Math.min(res, x + k + 1),
+      y0 = Math.max(0, y - k),
+      y1 = Math.min(res, y + k + 1);
+    return (
+      (sum[y1 * W + x1] - sum[y0 * W + x1] - sum[y1 * W + x0] + sum[y0 * W + x0]) /
+      ((x1 - x0) * (y1 - y0))
+    );
+  };
+  const found = [];
+  for (let y = 2; y < res - 2; y++)
+    for (let x = 2; x < res - 2; x++) {
+      const light = mean(x, y, 2);
+      if (light < open) continue;
+      let peak = true;
+      for (let j = -1; j <= 1 && peak; j++)
+        for (let i = -1; i <= 1; i++)
+          if ((i || j) && mean(x + i, y + j, 2) > light) {
+            peak = false;
+            break;
+          }
+      if (!peak) continue;
+      let r = 2;
+      while (r < most && mean(x, y, r + 1) >= open) r++;
+      found.push({ x: x + 0.5, y: y + 0.5, r: r + 0.5, light });
+    }
+  found.sort((p, q) => q.light * q.r - p.light * p.r || p.y - q.y || p.x - q.x);
+  const picked = [];
+  for (const each of found) {
+    if (picked.length >= count) break;
+    if (picked.every((p) => Math.hypot(p.x - each.x, p.y - each.y) >= spacing * (p.r + each.r)))
+      picked.push(each);
+  }
+  return picked;
+}
+
 function boxGeometry() {
   const geometry = new BufferGeometry(),
     p = [],
@@ -1385,12 +1527,119 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
       polygonOffsetFactor: -1,
       polygonOffsetUnits: -4,
     });
+    // Its distinct beams (beams): one through each opening the map finds, along
+    // the light from the subject's front to the ground or their length.
+    const B = { ...T.beams, ...cfg.beams };
+    let beamMesh = null;
+    if (B.count > 0) {
+      const data = map.texture.image.data,
+        backs = map.backTexture.image.data,
+        res = cfg.res,
+        texel = (2 * look.half) / res,
+        reachOut = star ? (look.t0 + look.t1) / 2 : 1;
+      const picks = pickBeams(
+        data,
+        res,
+        B,
+        Math.max(2, Math.ceil(B.width[1] / (texel * reachOut))),
+      );
+      const ends = [];
+      for (const pick of picks) {
+        const X = ((pick.x / res) * 2 - 1) * look.half,
+          Y = ((pick.y / res) * 2 - 1) * look.half,
+          c = Math.floor(pick.y) * res + Math.floor(pick.x),
+          front = look.t0 + (data[c * 4 + 3] / 254) * (look.t1 - look.t0),
+          back = backs[c * 2] < 255 ? look.t0 + (backs[c * 2] / 254) * (look.t1 - look.t0) : front,
+          // It starts its share (start) of the way through the subject there.
+          enter = front + B.start * Math.max(0, back - front);
+        const dir = star
+          ? look.a.clone().addScaledVector(map.u, X).addScaledVector(map.v, Y).normalize()
+          : look.a.clone();
+        const along = star ? enter / dir.dot(look.a) : enter;
+        const start = star
+          ? look.origin.clone().addScaledVector(dir, along)
+          : look.origin
+              .clone()
+              .addScaledVector(map.u, X)
+              .addScaledVector(map.v, Y)
+              .addScaledVector(look.a, enter);
+        let length = B.length;
+        for (let t = 0; t <= B.length; t += 0.5) {
+          const p = start.clone().addScaledVector(dir, t);
+          // It ends at its last step above the ground.
+          if (p.y < height(p.x, p.z) + 0.2) {
+            length = Math.max(0, t - 0.5);
+            break;
+          }
+        }
+        if (length < 2) continue;
+        // A little uneven, so no two read as one bar's copies.
+        const radius =
+          Math.min(B.width[1], Math.max(B.width[0], pick.r * texel * (star ? along : 1))) *
+          (0.75 + 0.25 * nz(pick.x * 0.37, pick.y * 0.53));
+        const strength =
+          0.6 + 0.4 * Math.min(1, (pick.light - B.open) / Math.max(1e-3, 1 - B.open));
+        ends.push([start, start.clone().addScaledVector(dir, length), radius, strength]);
+      }
+      if (ends.length) {
+        const base = beamCylinder(),
+          geometry = new InstancedBufferGeometry(),
+          from = new Float32Array(ends.length * 4),
+          to = new Float32Array(ends.length * 4);
+        geometry.setIndex(base.index);
+        geometry.setAttribute("position", base.getAttribute("position"));
+        ends.forEach(([a, b, r, k], i) => {
+          from.set([a.x, a.y, a.z, r], i * 4);
+          to.set([b.x, b.y, b.z, k], i * 4);
+        });
+        geometry.setAttribute("beamA", new InstancedBufferAttribute(from, 4));
+        geometry.setAttribute("beamB", new InstancedBufferAttribute(to, 4));
+        geometry.instanceCount = ends.length;
+        beamMesh = new Mesh(
+          geometry,
+          new ShaderMaterial({
+            name: "LightBeams",
+            vertexShader: BEAM_VERTEX,
+            fragmentShader: BEAM,
+            uniforms: {
+              beamColor: { value: new Vector3(...(B.color ?? T.color)) },
+              beamGain: { value: 0 },
+              beamShape: { value: { x: B.edge, y: B.rise, z: B.fade, w: B.cap } },
+              beamLook: { value: { x: B.phase, y: B.dust, z: B.near[0], w: B.near[1] } },
+              beamCeil: { value: B.ceil },
+              beamLayer: { value: B.layer || 1 },
+              shaftText: shared.shaftText,
+              shaftTextProtection: shared.shaftTextProtection,
+              shaftSource: shared.shaftSource,
+              shaftDrift: shared.shaftDrift,
+            },
+            side: BACK_SIDE,
+            transparent: true,
+            depthWrite: false,
+            // As the box's air: times the film depth layer behind it where the
+            // treatment keeps its light off the sky (layer).
+            blending: CUSTOM_BLENDING,
+            blendSrc: B.layer ? DST_ALPHA : ONE,
+            blendDst: ONE,
+            blendSrcAlpha: ONE,
+            blendDstAlpha: ONE,
+          }),
+        );
+        beamMesh.name = `light-beams-${kind}-${subject}`;
+        // Its instances stand far from the unit cylinder's own bounds.
+        beamMesh.frustumCulled = false;
+        beamMesh.renderOrder = 21;
+        beamMesh.visible = false;
+      }
+    }
     const gobo = { ...T.gobo, ...cfg.gobo };
     return {
       key: `${subject}-${kind}`,
       kind,
       subject,
       volume,
+      beams: beamMesh,
+      beamGain: B.gain,
       values,
       lo,
       hi,
@@ -1419,8 +1668,11 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
     part.installed = false;
     const materials = part.probe ? [part.probe.material] : [];
     for (const set of part.sets.splice(0)) {
-      set.volume.removeFromParent();
-      materials.push(set.volume.material);
+      for (const object of drawn(set)) {
+        object.removeFromParent();
+        materials.push(object.material);
+      }
+      set.beams?.geometry.dispose();
     }
     const free = () => materials.forEach((material) => material.dispose());
     if (part.linking) part.linking.then(free);
@@ -1533,6 +1785,7 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
       if (!set) continue;
       part.sets.push(set);
       root.add(set.volume);
+      if (set.beams) root.add(set.beams);
       if (!part.hook) {
         // New programs link once the canvas shows, so they never compete with
         // the reveal's own warm-up; linking starts a slice of its own.
@@ -1543,6 +1796,11 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
       invalidate();
     }
   }
+  // A set's air gain, with the eye inside its box or not (none: its box is not drawn).
+  const airGain = (set, inside) =>
+    inside ? (set.inside ? (set.inside.gain ?? set.gain) : 0) : set.gain;
+  // A set's own drawn objects: its box and its beams.
+  const drawn = (set) => (set.beams ? [set.volume, set.beams] : [set.volume]);
   function link(part, set) {
     const mesh = part.mesh;
     // The subject's own uniform objects: show() copies a treatment's values in.
@@ -1563,7 +1821,7 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
     part.probe = new Mesh(mesh.geometry, mesh.material.clone());
     part.hook.install(part.probe.material);
     part.lights = lightKey();
-    return linkPrograms(part, [part.probe, set.volume]).then((linked) => {
+    return linkPrograms(part, [part.probe, ...drawn(set)]).then((linked) => {
       part.linked = linked;
     });
   }
@@ -1590,7 +1848,7 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
       part.ready = false;
       part.relinking = true;
       part.lights = key;
-      linkPrograms(part, [part.probe, ...part.sets.map((set) => set.volume)]).then((linked) => {
+      linkPrograms(part, [part.probe, ...part.sets.flatMap(drawn)]).then((linked) => {
         part.relinking = false;
         if (parts[part.subject] !== part) return;
         part.linked = linked;
@@ -1668,7 +1926,9 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
     for (const part of Object.values(parts)) {
       const set = part.sets.find((s) => s.key === key);
       for (const each of part.sets)
-        each.volume.visible = each === set && (Boolean(set.inside) || !state.endsWith(":inside"));
+        each.volume.visible = each === set && airGain(set, state.endsWith(":inside")) > 0;
+      // The beams stand in the world, so they show inside the box too.
+      for (const each of part.sets) if (each.beams) each.beams.visible = each === set;
       if (!part.hook) continue;
       // The light landing on the subject: its own, under the shot's.
       const gobo = set && own ? { ...set.gobo, ...own } : set?.gobo;
@@ -1788,9 +2048,9 @@ export function lightShafts(rendering, cinematic, tour, film, root, invalidate =
     }
     for (const [part, set, gobo] of lit) {
       // Sparser streaks on balanced carry a little more light each.
-      const gain = inside ? (set.inside ? (set.inside.gain ?? set.gain) : 0) : set.gain,
-        air = gain * ((!high && config[set.kind].sparse?.[3]) || 1);
+      const air = airGain(set, inside) * ((!high && config[set.kind].sparse?.[3]) || 1);
       set.volume.material.uniforms.shaftGain.value = air * level * blend;
+      if (set.beams) set.beams.material.uniforms.beamGain.value = set.beamGain * level * blend;
       part.uniforms.shaftGoboGain.value = gobo.gain * level * blend;
       part.uniforms.shaftGain.value = air * set.over * level * blend;
     }

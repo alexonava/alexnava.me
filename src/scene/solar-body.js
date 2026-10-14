@@ -57,9 +57,10 @@ export const SOLAR_LOOK = Object.freeze({
   churn: 0.07,
   plane: 7,
 });
-// The thin, faint anamorphic streak across the star: SOLAR_RADIUS times length
-// and height.
-export const SOLAR_STREAK = Object.freeze({ length: 12, height: 1.1, strength: 0.1 });
+// The thin anamorphic streak across the star, a film lens's (the owner's ask of
+// 2026-10-13, "more lens artifacts"; 12 long at 0.1 before): SOLAR_RADIUS times
+// length and height.
+export const SOLAR_STREAK = Object.freeze({ length: 20, height: 1.1, strength: 0.3 });
 // The star's fire, a faint living corona (the Eye of Sauron's, the owner's pick
 // of 2026-10-09, calmed on the owner's ask of 2026-10-10, "tone down the sun",
 // to Calm): short flames stream out from the limb, layered noise in polar

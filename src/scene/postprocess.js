@@ -184,21 +184,30 @@ export const LENS_FX = Object.freeze({
   // Chromatic aberration: red read outward and blue inward, growing with the
   // square of the distance from the frame's centre to `edge` CSS px apart at a
   // 1600x900 frame's corners (scaled with the frame's diagonal), and `star` px
-  // apart across the star's fire edge; half what it was before the owner's quiet
-  // cut of 2026-10-13, a fringe felt rather than seen.
-  aberration: Object.freeze({ on: 1, edge: 0.6, star: 0.3 }),
+  // apart across the star's fire edge: a film lens (the owner's ask of
+  // 2026-10-13, "more lens artifacts"), stronger about the star.
+  aberration: Object.freeze({ on: 1, edge: 1.2, star: 1 }),
   // Flare, only while the star is in frame: a faint shine about it (`shine` at
   // the limb, falling off over `shineReach` radii, `shineDisc` of it over the
   // disc) in `color`, and any ghosts along the line from the star through the
   // frame's centre: [t along it (1 at the centre), radius in frame heights,
-  // r, g, b, strength] (none since the sun was calmed, 2026-10-10).
+  // r, g, b, strength]: a film lens's few soft ghosts (the owner's pick of
+  // 2026-10-13), amber, blue, a small green dot past the centre, a large faint
+  // violet ring and an amber disc, spread far enough along the line that they
+  // never bunch about a star near the centre.
   flare: Object.freeze({
     on: 1,
-    shine: 0.02,
+    shine: 0.045,
     shineReach: 1.3,
     shineDisc: 0.25,
     color: Object.freeze([1, 0.6, 0.3]),
-    ghosts: Object.freeze([]),
+    ghosts: Object.freeze([
+      Object.freeze([0.35, 0.03, 1, 0.62, 0.3, 0.18]),
+      Object.freeze([0.75, 0.06, 0.45, 0.7, 1, 0.09]),
+      Object.freeze([1.35, 0.018, 0.6, 1, 0.7, 0.16]),
+      Object.freeze([1.9, 0.1, 0.9, 0.5, 1, 0.06]),
+      Object.freeze([2.6, 0.04, 1, 0.75, 0.4, 0.12]),
+    ]),
   }),
   // None of it reaches the text: it eases out over `text[0]` of the screen's
   // smaller side about the name and intro, and `text[1]` about About.
