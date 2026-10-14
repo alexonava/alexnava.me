@@ -607,17 +607,25 @@ test("the massif shader is the ranges' moonlit style on the models' own relief",
   // its crisp terminator from the smoothest, so neither bumps nor flutes mark it.
   assert.ok(MASSIF_SNOW.hold > 0 && MASSIF_SNOW.hold < MASSIF_SNOW.soft);
   assert.ok(MASSIF_SNOW.soft < MASSIF_SNOW.edge && MASSIF_SNOW.rib > 0);
+  // The source's broad whiteness (its blurred mask) leans the hold only a little, so its dark
+  // blotches never open round bare holes in the cap; over them the snow lies thinner instead.
+  assert.ok(MASSIF_SNOW.white > 0 && MASSIF_SNOW.white <= 0.1);
+  assert.ok(MASSIF_SNOW.thin > 0 && MASSIF_SNOW.thin <= 0.25);
   const float = (v) => (Number.isInteger(v) ? v.toFixed(1) : String(v));
   for (const pin of [
     `vec3 nh=relief(${float(MASSIF_SNOW.hold)}), ns=relief(${float(MASSIF_SNOW.soft)}), ne=relief(${float(MASSIF_SNOW.edge)});`,
     "float rib=mk.x-texture2D(uMask,vU,3.).r;",
-    `float hold=nh.y+.3*(wv-.5)+${float(MASSIF_SNOW.rib)}*rib,`,
+    "float wv=smoothstep(.45,.85,mb.x), gully=max(wv,smoothstep(.95,.75,mb.y));",
+    `float hold=nh.y+${float(MASSIF_SNOW.white)}*(wv-.5)+${float(MASSIF_SNOW.rib)}*rib,`,
     "float sk=mix(smoothstep(-.3,1.,dot(ns,K)),smoothstep(.3-tk,.3+tk,ke),.5);",
+    `c=mix(c,sn,snow*(1.-mist)*(${float(1 - MASSIF_SNOW.thin)}+${float(MASSIF_SNOW.thin)}*wv));}`,
   ])
     assert.ok(fragmentShader.includes(pin), pin);
+  // The fine mask reaches the hold only through the ribs.
+  assert.ok(!fragmentShader.includes("wv=smoothstep(.45,.85,mk.x)"));
   // Every derivative (and the biased, implicitly derived samples) runs outside the branch.
   const branch = fragmentShader.indexOf("if(vT.z>.5&&cap>0.)"),
-    close = fragmentShader.indexOf("c=mix(c,sn,snow*(1.-mist));}", branch);
+    close = fragmentShader.indexOf("c=mix(c,sn,snow*(1.-mist)*(", branch);
   assert.ok(branch > 0 && close > branch);
   assert.doesNotMatch(fragmentShader.slice(branch, close), /fwidth|texture2D/);
   for (const derived of [
@@ -638,7 +646,7 @@ test("the massif shader is the ranges' moonlit style on the models' own relief",
   // Snow from each copy's own snowline (aTerrain.z), only where it has one.
   assert.ok(
     fragmentShader.includes(
-      `float cap=clamp((vT.w-vT.z)*${MASSIF_SNOW.depth},0.,${MASSIF_SNOW.max}),`,
+      `float cap=clamp((vT.w-vT.z)*${MASSIF_SNOW.depth},0.,${MASSIF_SNOW.max});`,
     ),
   );
   assert.ok(fragmentShader.includes("if(vT.z>.5&&cap>0.)"));

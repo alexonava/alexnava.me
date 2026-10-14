@@ -69,7 +69,10 @@ export const SNOW = Object.freeze({
 // `soft` levels down and its crisp terminator from `edge` levels down, so the
 // source's small bumps never punch round holes in it and its flutes never
 // stripe it; `rib` x the source's fine whiteness (the mask less its blur)
-// carves the bare ribs down the fall line.
+// carves the bare ribs down the fall line. The source's broad whiteness (its
+// mask 2.5 levels down) leans the hold by only `white` either way, so its dark
+// blotches never open round bare holes in the cap; over them the snow lies
+// thinner instead, `thin` of the rock showing through.
 export const MASSIF_SNOW = Object.freeze({
   ...SNOW,
   depth: 0.7,
@@ -80,6 +83,8 @@ export const MASSIF_SNOW = Object.freeze({
   soft: 3,
   edge: 5,
   rib: 2.5,
+  white: 0.1,
+  thin: 0.2,
 });
 // JS mirror of the shader's snowline: whether snow can reach `elevation`
 // degrees on a massif `massif` degrees high, with the jitter and gully tongue
@@ -602,27 +607,27 @@ vec2 nr=nearer(az);
 float under=mix(nr.x,nr.y,step(1.5,vT.y)), rise=el+vT.x-under;
 float mist=(1.-smoothstep(0.,min(.9,.6*max(rise,.05)),el-under))*far*.7;
 c=mix(c,mix(air,s,.9),mist);
-float cap=clamp((vT.w-vT.z)*${glslFloat(MASSIF_SNOW.depth)},0.,${glslFloat(MASSIF_SNOW.max)}), wv=smoothstep(.45,.85,mk.x);
+float cap=clamp((vT.w-vT.z)*${glslFloat(MASSIF_SNOW.depth)},0.,${glslFloat(MASSIF_SNOW.max)});
 // The tongues follow the mask a few mip levels down, so they never step with its texels.
 // The snowline, its edge and the hold are derived outside the branch below.
 vec2 mb=texture2D(uMask,vU,2.5).rg;
-float gully=max(smoothstep(.45,.85,mb.x),smoothstep(.95,.75,mb.y));
+float wv=smoothstep(.45,.85,mb.x), gully=max(wv,smoothstep(.95,.75,mb.y));
 float line=vT.w-cap*(1.+${glslFloat(MASSIF_SNOW.tongue)}*gully)-max(cap*${glslFloat(MASSIF_SNOW.jitter)},${glslFloat(MASSIF_SNOW.jitterMin)})*vn(vec2(az*1.7,el*.8));
 float se=el-line, sw=max(fwidth(se),.5/ppd);
 // Snow lies smoother than the rock under it. Above the line it holds where the smoothed
-// relief is not near-vertical, a little steeper where the source is white, and off the
-// source's fine dark ribs, which run down the fall line; with a crisp, anti-aliased edge
-// to the bare rock. Its light comes from smoother relief still, so the source's flutes
-// never stripe it.
+// relief is not near-vertical, a little steeper where the source is broadly white, and off
+// the source's fine dark ribs, which run down the fall line; with a crisp, anti-aliased edge
+// to the bare rock. Over the source's dark blotches it lies thinner rather than bare. Its
+// light comes from smoother relief still, so the source's flutes never stripe it.
 vec3 nh=relief(${glslFloat(MASSIF_SNOW.hold)}), ns=relief(${glslFloat(MASSIF_SNOW.soft)}), ne=relief(${glslFloat(MASSIF_SNOW.edge)});
 float rib=mk.x-texture2D(uMask,vU,3.).r;
-float hold=nh.y+.3*(wv-.5)+${glslFloat(MASSIF_SNOW.rib)}*rib, hw=max(1.5*fwidth(hold),.04);
+float hold=nh.y+${glslFloat(MASSIF_SNOW.white)}*(wv-.5)+${glslFloat(MASSIF_SNOW.rib)}*rib, hw=max(1.5*fwidth(hold),.04);
 float ke=dot(ne,K), tk=max(.05,1.5*fwidth(ke));
 if(vT.z>.5&&cap>0.){float snow=smoothstep(0.,1.6*sw,se)*clamp((hold+.04)/hw+.5,0.,1.);
 float sk=mix(smoothstep(-.3,1.,dot(ns,K)),smoothstep(.3-tk,.3+tk,ke),.5);
 vec3 sn=mix(vec3(.8485,1.0027,1.4193)*${glslFloat(MASSIF_SNOW.shade)},vec3(.9691,1.0014,1.0768)*${glslFloat(MASSIF_SNOW.lit)},sk)*sL;
 sn=mix(air,sn,mix(1.,T,.55));
-c=mix(c,sn,snow*(1.-mist));}
+c=mix(c,sn,snow*(1.-mist)*(${glslFloat(1 - MASSIF_SNOW.thin)}+${glslFloat(MASSIF_SNOW.thin)}*wv));}
 ${GLOW_GLSL}
 ${FAR_PLAIN_GLSL}
 ${MOUNTAIN_MIST}${RANGE_MIST_GLSL}
