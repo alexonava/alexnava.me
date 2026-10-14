@@ -61,7 +61,12 @@ import {
   setMistShot,
   setMistTier,
 } from "./drifting-mist.js";
-import { CLOUD_VORTEX, cloudVortexCenter, createEstateSkyMaterial } from "./estate-sky.js";
+import {
+  CLOUD_VORTEX,
+  cloudVortexCenter,
+  cloudVortexInSeason,
+  createEstateSkyMaterial,
+} from "./estate-sky.js";
 import { createSceneRendering } from "./rendering.js";
 import {
   createDeferredQualityStep,
@@ -339,6 +344,11 @@ const ORBIT_SPEED = 0.06;
       });
       subsystemRegistry.register(atmosphereSystem);
       applyActiveQualityProfile(qualityState.getProfile(), "initial");
+      // Spooky October's storm, the lightning and the maelstrom, comes by the
+      // visitor's own calendar month when the scene starts (lightning.js
+      // LIGHTNING.months, estate-sky.js CLOUD_VORTEX.months).
+      const sceneDate = new Date();
+      const vortexSeason = cloudVortexInSeason(sceneDate);
       // The slate's contact darkening (tree roots, lantern, rocks) and detail map
       // slot: uniforms, so rocks arriving or shadows switching never recompile.
       // Its text boxes also guard the sky's cloud banks (and the stars behind them).
@@ -349,6 +359,8 @@ const ORBIT_SPEED = 0.06;
       );
       skyShell.renderOrder = -1;
       skyShell.material.depthWrite = false;
+      // Out of season the maelstrom's reach stays below 0: none of it (estate-sky.js).
+      if (!vortexSeason) skyShell.material.uniforms.uVortex.value.z = -1;
       atmosphereSystem.root.add(skyShell);
       atmosphereSystem.setSkyMaterial(skyShell.material);
       // The film's environment is captured from this shell's film sky.
@@ -385,6 +397,7 @@ const ORBIT_SPEED = 0.06;
         shot: () => cinematic.shot?.name ?? null,
         profile: state.profile,
         skyRadius: WORLD.SKY_DOME_RADIUS,
+        date: sceneDate,
       });
       subsystemRegistry.register(lightning);
       if (qualityDebug) qualityDebug.lightning = lightning.state;
@@ -1038,6 +1051,7 @@ const ORBIT_SPEED = 0.06;
             WORLD.SKY_DOME_RADIUS,
             skyShell.material.uniforms.uVortex.value,
           );
+          if (!vortexSeason) skyShell.material.uniforms.uVortex.value.z = -1;
           skyShell.material.uniforms.uVortex.value.w = CLOUD_VORTEX.guardShots.includes(
             vortexShot?.name,
           )

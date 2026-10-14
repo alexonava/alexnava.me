@@ -132,6 +132,25 @@ void main() {
 // weight stays in 0..1, a mix of two frames, so no frame can go black.
 export const LAYER_STAGGER = Object.freeze({ step: 0.2, window: 0.4 });
 
+// The dissolve as a wash of paint: within its layer's window each pixel takes its turn
+// from a soft field of long patches laid along a brush's direction (`angle` degrees;
+// `stretch`: the patches' frequency [along, across] the screen's height, a finer
+// `detail` share at `fine` times it), with a slight `sweep` across the frame, so the
+// incoming shot bleeds in through brush-like strokes rather than evenly; a pixel
+// turns over `edge` of the window, softly. Every turn ends by the window's end, so the
+// subject still settles as the transition ends. `on`: 0 dissolves evenly. The
+// owner's pick of 2026-10-13 ("wash between shots"): every shot of the gallery is
+// painted into the next.
+export const DISSOLVE_BRUSH = Object.freeze({
+  on: 1,
+  angle: -12,
+  stretch: Object.freeze([2.5, 12]),
+  detail: 0.35,
+  fine: 2.6,
+  sweep: 0.25,
+  edge: 0.4,
+});
+
 // The lens (the owner's pick of the Eye breakdown, 2026-10-09), all of it in the
 // final pass, in film only; each part switches off with its `on`.
 export const LENS_FX = Object.freeze({
@@ -165,20 +184,30 @@ export const LENS_FX = Object.freeze({
   // Chromatic aberration: red read outward and blue inward, growing with the
   // square of the distance from the frame's centre to `edge` CSS px apart at a
   // 1600x900 frame's corners (scaled with the frame's diagonal), and `star` px
-  // apart across the star's fire edge.
-  aberration: Object.freeze({ on: 1, edge: 1.2, star: 0.6 }),
+  // apart across the star's fire edge: a film lens (the owner's ask of
+  // 2026-10-13, "more lens artifacts"), stronger about the star.
+  aberration: Object.freeze({ on: 1, edge: 1.2, star: 1 }),
   // Flare, only while the star is in frame: a faint shine about it (`shine` at
   // the limb, falling off over `shineReach` radii, `shineDisc` of it over the
   // disc) in `color`, and any ghosts along the line from the star through the
   // frame's centre: [t along it (1 at the centre), radius in frame heights,
-  // r, g, b, strength] (none since the sun was calmed, 2026-10-10).
+  // r, g, b, strength]: a film lens's few soft ghosts (the owner's pick of
+  // 2026-10-13), amber, blue, a small green dot past the centre, a large faint
+  // violet ring and an amber disc, spread far enough along the line that they
+  // never bunch about a star near the centre.
   flare: Object.freeze({
     on: 1,
-    shine: 0.03,
+    shine: 0.045,
     shineReach: 1.3,
     shineDisc: 0.25,
     color: Object.freeze([1, 0.6, 0.3]),
-    ghosts: Object.freeze([]),
+    ghosts: Object.freeze([
+      Object.freeze([0.35, 0.03, 1, 0.62, 0.3, 0.18]),
+      Object.freeze([0.75, 0.06, 0.45, 0.7, 1, 0.09]),
+      Object.freeze([1.35, 0.018, 0.6, 1, 0.7, 0.16]),
+      Object.freeze([1.9, 0.1, 0.9, 0.5, 1, 0.06]),
+      Object.freeze([2.6, 0.04, 1, 0.75, 0.4, 0.12]),
+    ]),
   }),
   // None of it reaches the text: it eases out over `text[0]` of the screen's
   // smaller side about the name and intro, and `text[1]` about About.
@@ -411,6 +440,23 @@ float hash(vec2 p) {
   return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
 }
 
+${
+  DISSOLVE_BRUSH.on
+    ? `float brushNoise(vec2 x) {
+  vec2 i = floor(x), f = fract(x);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+float brushTurn(vec2 uv) {
+  float aspect = uCodeTexel.y / uCodeTexel.x, c = cos(${lensNumber((DISSOLVE_BRUSH.angle * Math.PI) / 180)}), s = sin(${lensNumber((DISSOLVE_BRUSH.angle * Math.PI) / 180)});
+  vec2 p = vec2(uv.x * aspect, uv.y), q = vec2(c * p.x + s * p.y, c * p.y - s * p.x);
+  vec2 k = vec2(${lensNumber(DISSOLVE_BRUSH.stretch[0])}, ${lensNumber(DISSOLVE_BRUSH.stretch[1])});
+  float wash = mix(brushNoise(q * k), brushNoise(q * k * ${lensNumber(DISSOLVE_BRUSH.fine)} + 17.0), ${lensNumber(DISSOLVE_BRUSH.detail)});
+  return clamp((1.0 - ${lensNumber(DISSOLVE_BRUSH.sweep)}) * smoothstep(0.2, 0.8, wash) + ${lensNumber(DISSOLVE_BRUSH.sweep)} * clamp(p.x / aspect, 0.0, 1.0), 0.0, 1.0);
+}
+`
+    : ""
+}
 float layerCode(sampler2D map, vec2 uv) {
   vec2 x = vec2(uCodeTexel.x, 0.0), y = vec2(0.0, uCodeTexel.y);
   return max(max(texture2D(map, uv).a, max(texture2D(map, uv - x).a, texture2D(map, uv + x).a)),
@@ -429,7 +475,14 @@ void main() {
     float start = 0.0, span = 1.0;
     if (uLayered > 0.5) {
       start = 3.0 * uStagger.x * clamp(max(layerCode(tPrev, prevUv), layerCode(tDiffuse, vUv)), 0.0, 1.0);
-      span = uStagger.y;
+      span = uStagger.y;${
+        DISSOLVE_BRUSH.on
+          ? `
+      // The wash (DISSOLVE_BRUSH): this pixel's own turn within its layer's window.
+      start += span * (1.0 - ${lensNumber(DISSOLVE_BRUSH.edge)}) * brushTurn(vUv);
+      span *= ${lensNumber(DISSOLVE_BRUSH.edge)};`
+          : ""
+      }
     }
     w = smoothstep(start, start + span, uProgress);
     texel = mix(uLayered > 0.5 ? lensView(tPrev, prevUv, prevUv, uBlurPrev, uStarPrev, uFlamePrev, uKeepPrev, guard) : texture2D(tPrev, prevUv), texel, w);

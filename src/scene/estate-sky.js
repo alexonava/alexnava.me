@@ -88,18 +88,24 @@ export const FLASH_REFERENCE = Object.freeze({
 //   unchanged and spills nothing new into the reference banks; the eye clears about them;
 // - `protect`: the density's protection (the reference banks' CLOUD_RESHAPE.wedge,
 //   radius) eases out over these azimuths, so it is exactly 0 over The watch's crop.
+// - `months`: the calendar months (1-12) it comes in, with the lightning: the maelstrom
+//   is spooky October's (the owner's call of 2026-10-13); out of season the scene sets
+//   uVortex.z below 0 (cloudVortexInSeason()) and the banks lie calm about the star.
 // Like the reshaping, uCloudReshape scales it (0 in the environment's capture), and
 // behind the name and intro (cloudText) it takes nothing. `on`: 0 emits none of it.
+// Gentler since the owner's quiet cut of 2026-10-13 (twist 5, arm density 0.24 and
+// ring 0.32 before), so it frames the star without shouting.
 export const CLOUD_VORTEX = Object.freeze({
   on: 1,
+  months: Object.freeze([10]),
   radius: 0.4,
   squash: 0.75,
   fade: 0.4,
   shift: Object.freeze([0.6, 0.3]),
-  twist: 5,
-  arms: Object.freeze([4, 3.2, 0.24, 480]),
+  twist: 3.2,
+  arms: Object.freeze([4, 3.2, 0.14, 480]),
   eye: Object.freeze([0.1, 0.16, 0.45]),
-  ring: Object.freeze([0.32, 0.17, 0.035]),
+  ring: Object.freeze([0.18, 0.17, 0.035]),
   hole: Object.freeze([0.09, 0.12]),
   guardShots: Object.freeze(["The watch"]),
   protect: Object.freeze([176, 179]),
@@ -111,6 +117,11 @@ const { wedge, radius, bend, horizon, scale, banks, lanes, swirl, text } = CLOUD
 const horizonZero = (Math.sqrt(horizon[0] ** 2 + 0.04) - horizon[0]).toFixed(6);
 const VX = CLOUD_VORTEX;
 const vortexOn = Boolean(VX.on);
+
+// Whether the maelstrom comes at `date` (CLOUD_VORTEX.months, by its calendar month).
+export function cloudVortexInSeason(date = new Date()) {
+  return !VX.months || VX.months.includes(date.getMonth() + 1);
+}
 // The plane point and radius the reshaping's coordinates start from: the vortex's
 // turned ones (bv, blv) when it is on.
 const B = vortexOn ? "bv" : "b",
@@ -118,7 +129,8 @@ const B = vortexOn ? "bv" : "b",
 
 // The vortex's density at local coordinates e (CLOUD_VORTEX): its arms and ring, less
 // its eye. Declared once beside each shader that runs cloudFieldGLSL (the shell, the
-// stars), with uVortex: xy the eye on the cloud plane, z the turn's reach, w its guard.
+// stars), with uVortex: xy the eye on the cloud plane, z the turn's reach (below 0: out
+// of season, none of it), w its guard.
 export const CLOUD_VORTEX_GLSL = vortexOn
   ? `uniform vec4 uVortex;
 float cloudVortex(vec2 e,float t){float r=length(e),a=atan(e.y,e.x+1e-6);
@@ -150,7 +162,7 @@ float blv=max(length(bv),.001);
 // Its density, lit as the banks are: once here and once toward the sun (da).
 const VORTEX_DENSITY = vortexOn
   ? `
-if(vxW>0.){vec2 vxL=L*clamp(bl*.1,.1,.2);
+if(vxW>0.&&uVortex.z>=0.){vec2 vxL=L*clamp(bl*.1,.1,.2);
 float vxK=vxW*(1.-cloudText);
 d+=vxK*cloudVortex(vxE,T); da+=vxK*cloudVortex(vxE+vec2(dot(vxL,vxT),dot(vxL,vxR)*${glslFloat(VX.squash)}),T);}`
   : "";

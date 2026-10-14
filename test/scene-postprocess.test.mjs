@@ -13,6 +13,7 @@ import {
 import { DEPTH_LAYER, STAR_LAYER } from "../src/scene/depth-layers.js";
 import {
   createPostprocessPipeline,
+  DISSOLVE_BRUSH,
   LAYER_STAGGER,
   LENS_FX,
   lensSource,
@@ -845,6 +846,47 @@ test("the dissolve stages sky, mountains, ground and subject over the transition
   }
   assert.equal(layerWeight(1, 1, 1), 1);
   assert.equal(layerWeight(0, 0, 0), 0);
+});
+
+// JS restatement of the wash (DISSOLVE_BRUSH): a pixel's turn (0-1, brushTurn) moves its
+// start within its layer's window and narrows its own change to `edge` of it.
+function washWeight(progress, code, turn) {
+  const span = LAYER_STAGGER.window,
+    start = 3 * LAYER_STAGGER.step * code + span * (1 - DISSOLVE_BRUSH.edge) * turn;
+  return glslSmoothstep(start, start + span * DISSOLVE_BRUSH.edge, progress);
+}
+
+test("the wash paints each layer in through brush-direction patches, each done by its window's end", () => {
+  assert.equal(DISSOLVE_BRUSH.on, 1, "the owner's pick of 2026-10-13");
+  assert.ok(Object.isFrozen(DISSOLVE_BRUSH));
+  assert.ok(DISSOLVE_BRUSH.stretch[0] < DISSOLVE_BRUSH.stretch[1], "long patches along the brush");
+  const pipeline = createPipeline(GRADING_ONLY);
+  const shader = pipeline.passes.vignetteGrain.material.fragmentShader;
+  // Only in film, inside the layer's own window.
+  assert.match(
+    shader,
+    /span = uStagger\.y;\s*\/\/ The wash[^\n]*\n\s*start \+= span \* \(1\.0 - 0\.4\) \* brushTurn\(vUv\);\s*span \*= 0\.4;\s*\}\s*w = smoothstep/,
+  );
+  const turn = shader.slice(shader.indexOf("float brushTurn("), shader.indexOf("float layerCode("));
+  assert.match(turn, /return clamp\(/, "a turn within 0..1");
+  assert.ok(shader.indexOf("float hash(") < shader.indexOf("float brushNoise("));
+  const codes = [DEPTH_LAYER.sky, DEPTH_LAYER.mountains, DEPTH_LAYER.ground, "1.0"].map(Number);
+  for (const code of codes) {
+    const start = 3 * LAYER_STAGGER.step * code,
+      end = start + LAYER_STAGGER.window;
+    for (const t of [0, 0.25, 0.5, 0.75, 1]) {
+      assert.equal(washWeight(start, code, t), 0, "nothing before the layer's window");
+      assert.equal(washWeight(end, code, t), 1, "every patch done by its end");
+      let last = 0;
+      for (let progress = 0; progress <= 1.0001; progress += 0.01) {
+        const w = washWeight(progress, code, t);
+        assert.ok(w >= last && w >= 0 && w <= 1, "a mix of the two frames, only forward");
+        last = w;
+      }
+    }
+  }
+  assert.equal(washWeight(1, 1, 1), 1, "the subject settles as the transition ends");
+  pipeline.dispose();
 });
 
 test("the final pass decodes each frame's layer from a 5-tap cross and mixes by it", () => {

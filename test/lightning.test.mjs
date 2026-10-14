@@ -46,18 +46,22 @@ function busiestSecond(peaks) {
   return most;
 }
 
-test("the storm's lightning is occasional, bold and off nothing but a debug override", () => {
+test("the storm's lightning is occasional, calm and off nothing but a debug override", () => {
   assert.equal(LIGHTNING.enabled, true);
   assert.deepEqual([...LIGHTNING.forceAt], [], "captures force flashes; the site never does");
   assert.ok(
-    LIGHTNING.interval[0] >= 2 && LIGHTNING.interval[1] <= 8,
-    "an event every 2-6 s (the owner asked for more, twice, 2026-10-09)",
+    LIGHTNING.interval[0] >= 5 && LIGHTNING.interval[1] <= 15,
+    "an event every 6-14 s (the owner's quiet cut, 2026-10-13; 2-6 s before)",
   );
   assert.ok(LIGHTNING.pulses[0] >= 1 && LIGHTNING.pulses[1] <= 3, "1-3 pulses");
   assert.equal(LIGHTNING.perSecond, 3, "WCAG 2.3.1: never more than three flashes a second");
   assert.ok(
-    LIGHTNING.bolt.chance > 0.5 && LIGHTNING.bolt.chance < 1,
-    "most events send a bolt, some flicker in the banks",
+    LIGHTNING.bolt.chance > 0.2 && LIGHTNING.bolt.chance < 0.5,
+    "a third of the events send a bolt, the rest flicker in the banks",
+  );
+  assert.ok(
+    LIGHTNING.bolt.top[1] <= 30 && LIGHTNING.bolt.core <= 2.5 && LIGHTNING.bolt.brightness <= 1.6,
+    "thin, distant bolts",
   );
   assert.ok(
     LIGHTNING.strength[0] < LIGHTNING.strength[1] && LIGHTNING.skew > 1,
@@ -206,6 +210,8 @@ function lightningRig({
   shot = "Portrait",
   tier = "high",
   textGuard = null,
+  // In season: the storm comes only in October.
+  date = new Date(2026, 9, 13),
   ...rest
 } = {}) {
   const sky = skyUniforms();
@@ -227,6 +233,7 @@ function lightningRig({
     shot: () => state.shot,
     profile: { tier },
     config: { ...LIGHTNING, forceAt, ...rest },
+    date,
   });
   lightning.resize({ width: 1600, height: 900 });
   const step = (seconds, options = {}) => {
@@ -235,6 +242,25 @@ function lightningRig({
   };
   return { lightning, sky, state, step, bolt: parent.children[0] };
 }
+
+test("the storm comes only in October, by the visitor's own calendar", () => {
+  assert.deepEqual([...LIGHTNING.months], [10], "spooky October (the owner's call, 2026-10-13)");
+  const forced = [{ at: 1, u: 0.7, v: 0.6, bolt: true, strength: 1 }];
+  for (const [date, season] of [
+    [new Date(2026, 9, 1, 0, 0), true],
+    [new Date(2026, 9, 31, 23, 59), true],
+    [new Date(2026, 8, 30, 23, 59), false],
+    [new Date(2026, 10, 1, 0, 0), false],
+    [new Date(2027, 5, 15), false],
+  ]) {
+    const rig = lightningRig({ forceAt: forced, date });
+    rig.step(1);
+    assert.equal(rig.lightning.state.season, season, String(date));
+    assert.equal(rig.lightning.state.level > 0, season, `a flash in season only (${date})`);
+    assert.equal(Boolean(rig.bolt), season, "out of season no bolt is built");
+    rig.lightning.dispose();
+  }
+});
 
 test("a flash lights the banks, the film's materials, the ground and the mist, then nothing", () => {
   setRim(1, 0);
