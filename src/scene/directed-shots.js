@@ -55,11 +55,9 @@ export const DIRECTED_SHOTS = {
       ...GIANT,
       move: { zoom: [46, 36], dollyZoom: true, tilt: GIANT_MOVE.tilt, ease: 0.6 },
       // One night (the owner's pick of 2026-10-12): the lookout is a dark shape against the
-      // sky (its key and fill dimmed), its one warm light the star's catch on its star-side
-      // edges (shafts.gobo), the moon rim a little under it; far fires stay out of the shot
-      // (far-fires.js FAR_FIRES.shots).
+      // sky (its key and fill dimmed, its moon rim a touch stronger); far fires stay out of
+      // the shot (far-fires.js FAR_FIRES.shots).
       light: { key: 0.4, fill: 0.45, rim: 1.1 },
-      shafts: { gobo: { gain: 1.3, rim: 3.5 } },
       region: [0.5, 1],
       targetHeight: 0.66,
       azimuth: -16,
@@ -92,11 +90,8 @@ export const DIRECTED_SHOTS = {
       // and pans onto the lookout as it pushes in and looks up.
       ...GIANT,
       move: { ...GIANT_MOVE, pan: [-5, 0] },
-      // One night: facing the star, it takes the star's warm light through the lattice
-      // (light-shafts.js SHAFT_SHOTS.star) on its star-side edges; the fill, a backlight here,
-      // and the moon rim come down so the warm catch leads.
+      // One night: facing the star, its fill (a backlight here) comes down.
       light: { fill: 0.65, rim: 1.3 },
-      shafts: { gobo: { gain: 0.85, rim: 2.5 } },
       region: [0.5, 1],
       targetHeight: 0.66,
       azimuth: 52,
@@ -135,10 +130,6 @@ export const DIRECTED_SHOTS = {
       margin: 0.87,
       ground: AFTER_RAIN,
       portrait: { focus: { width: 0.16, depth: [0.13, 0.36] } },
-      // Its broken moonlight eases off behind About (light-shafts.js): with no
-      // cel step or ink on the timber, a lit leg edge beside it on portrait
-      // phones reached 4.83:1 at 390x844.
-      shafts: { gobo: { about: 1 } },
     },
     {
       name: "Gallery detail",
@@ -160,9 +151,6 @@ export const DIRECTED_SHOTS = {
       focus: { width: 0.27, depth: [0.13, 0.41] },
       margin: 0.91,
       portrait: { azimuth: -90, focus: { width: 0.2, depth: [0.13, 0.41] } },
-      // Its broken moonlight eases off behind About (light-shafts.js), where
-      // portrait phones see the lattice's lit leg edges (4.24:1 at 390x844).
-      shafts: { gobo: { about: 1 } },
     },
     {
       name: "Watch and tree",
@@ -253,14 +241,10 @@ export const DIRECTED_SHOTS = {
         tilt: null,
       },
       // The crown in moonlight (the owner's pick of 2026-10-09): its pale,
-      // bleached limbs read cool grey, not pink-beige (pale). The
-      // moon catches it its own way (shafts.gobo over the tree's,
-      // light-shafts.js): barely wrapped, so it falls on the faces turned to
-      // the moon and leaves the rest dark, with a strong cool silver catch on
-      // the edges toward it. Its rays are the tree's own. One night (2026-10-12): the lantern
-      // a little stronger at the trunk's foot, leading into Lantern study.
+      // bleached limbs read cool grey, not pink-beige (pale). One night
+      // (2026-10-12): the lantern a little stronger at the trunk's foot,
+      // leading into Lantern study.
       light: { fill: 0.85, rim: 1.3, pale: 0.75, lantern: 1.2 },
-      shafts: { gobo: { color: [0.6, 0.78, 1.2], gain: 3.4, wrap: 0.1, rim: 5 } },
       move: { truck: [-0.07, 0.07], crane: [0, 0.13], dolly: [1.05, 0.92], ease: 0.6 },
       // Low (0.12), so the plain ahead is foreshortened under the ranges, and
       // calmed: the near slate burned down, its texture and glints quietened

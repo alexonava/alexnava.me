@@ -149,8 +149,7 @@ void main() {
   // The ground (depth code 2/3) takes no band: its soil, cracks and water stay
   // continuous, close up and far.
   float groundLayer = uLayerRelief * (1.0 - smoothstep(0.04, 0.12, abs(texel.a - 0.6667)));
-  // The star and its glow, and the light shafts' air over the sky
-  // (depth-layers.js STAR_LAYER and SHAFT_LAYER over the sky's 0), stay
+  // The star and its glow (depth-layers.js STAR_LAYER over the sky's 0) stay
   // continuous: the cloud banks' steps never ring them.
   float starLayer = uLayerRelief * smoothstep(0.0005, 0.006, texel.a) * (1.0 - smoothstep(0.22, 0.28, texel.a));
   // In film the step's bands and the ink are the sky's alone (the owner's direction
@@ -174,7 +173,7 @@ void main() {
   float inkContour = smoothstep(0.2, 0.48, max(horizontalEdge, verticalEdge));
   float nearest = max(max(e1.a, e2.a), max(e3.a, e4.a));
   // In film only where the pixel and its four neighbours are all bare sky: the
-  // clouds' own edges, never an outline on a subject, a crest, the ground or a shaft.
+  // clouds' own edges, never an outline on a subject, a crest or the ground.
   float skyInk = mix(1.0, (1.0 - smoothstep(0.0, 0.006, texel.a)) * (1.0 - step(0.006, nearest)), uLayerRelief);
   // A brush's line: its weight thickens and thins along the clouds' edges.
   float inkWeight = 1.0 + uInkVary.x * (2.0 * inkNoise(vUv * vec2(uTexelSize.y / uTexelSize.x, 1.0) * uInkVary.y) - 1.0);

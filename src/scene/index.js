@@ -443,11 +443,11 @@ const ORBIT_SPEED = 0.06;
       // the reveal links through compileAsync instead of blocking the first draw.
       let warmGround = null;
       // The name and intro, and About, on the canvas, in its UV (y up), where
-      // the ground's water eases off (mud-ground.js SLATE_WATER.text), as the
-      // light shafts' air does, and beside About the bark's lantern highlights
-      // pass the same knee (the tree takes these uniforms); the sky's reshaped
-      // banks ease out behind the name and intro too (estate-sky.js); measured
-      // on resize, on font loads and every 30th frame.
+      // the ground's water eases off (mud-ground.js SLATE_WATER.text), and
+      // beside About the bark's lantern highlights pass the same knee (the tree
+      // takes these uniforms); the sky's reshaped banks ease out behind the name
+      // and intro too (estate-sky.js); measured on resize, on font loads and
+      // every 30th frame.
       function measureGroundText() {
         const canvas = renderer.domElement?.getBoundingClientRect?.();
         const box = (text, selectors) => {
@@ -643,26 +643,6 @@ const ORBIT_SPEED = 0.06;
         },
       });
       subsystemRegistry.register(filmScene);
-      // Light shafts: a lazy chunk for high and balanced film on WebGL2 only
-      // (light-shafts.js). A failed import leaves the scene as it is; a late one
-      // registers nothing.
-      if (renderer.capabilities.isWebGL2) {
-        import("./light-shafts.js").then(
-          ({ lightShafts }) =>
-            subsystemRegistry.disposed ||
-            subsystemRegistry.register(
-              lightShafts(
-                rendering,
-                cinematic,
-                cameraTour,
-                filmScene,
-                environmentRoot,
-                invalidateContent,
-              ),
-            ),
-          () => {},
-        );
-      }
       // A failed scene cannot be revealed or retried. Leave the static title card
       // rather than a partial scene or a loop waiting on a status. A scene never
       // shown also hides its host, which retires the title card's loading line

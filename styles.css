@@ -220,9 +220,9 @@ main:focus {
 }
 
 /* The live scene fades in over the title card at its reveal. Keep this single
-   480ms opacity transition: terrain-build.js, mountain-build.js and
-   light-shafts.js read its transitionDuration to time work under the fade, and
-   the loading line (.scene-loader.is-done) finishes within it. */
+   480ms opacity transition: terrain-build.js and mountain-build.js read its
+   transitionDuration to time work under the fade, and the loading line
+   (.scene-loader.is-done) finishes within it. */
 .scene-canvas {
   z-index: 1;
   opacity: 0;

@@ -1414,7 +1414,7 @@ test("the shaded ground switches early in the canvas's fade-in, on a still frame
     await clock.step(2);
     assert.equal(slow.material.customProgramCacheKey(), "moonlit-slate-v3", "not late in the fade");
     // Where programs cannot link in parallel the switch's draw links them: never
-    // in the fade, which the light shafts' own links need.
+    // in the fade.
     const serialFade = linkRig({ revealed: true, parallel: false });
     reveal();
     settleRoots(
@@ -1555,7 +1555,7 @@ test("the film terrain builds in idle slices and arrives only where it cannot sh
     ])
       assert.equal(terrainLift(arrived)(x, z), terrainLift(direct)(x, z));
     // Before the reveal it arrives as soon as it is built (in idle slices
-    // then: terrainSlicing, below).
+    // then, below).
     names.clear();
     tour.transition.cut = false;
     const early = await createEarthGeometry(base, undefined, rendering, tour);
@@ -1568,7 +1568,7 @@ test("the film terrain builds in idle slices and arrives only where it cannot sh
   }
 });
 
-test("while the terrain slices it holds the shafts off, idles while the canvas is hidden, rushes while it fades in, and stops when disposed", async () => {
+test("while the terrain slices it idles while the canvas is hidden, rushes while it fades in, and stops when disposed", async () => {
   const idle = globalThis.requestIdleCallback,
     style = globalThis.getComputedStyle;
   let idles = 0;
@@ -1589,20 +1589,9 @@ test("while the terrain slices it holds the shafts off, idles while the canvas i
       invalidateShadows() {},
     };
     // Hidden canvas (the chunk arrives well before a warm load's reveal): the
-    // build takes idle time only, so the reveal's own work goes first, and
-    // holds the shafts' promise until it is built.
-    const hidden = createEarthGeometry(base, undefined, rendering, tour);
-    const slicing = rendering.terrainSlicing;
-    assert.ok(slicing instanceof Promise, "light-shafts.js sees the build");
-    let released = false;
-    slicing.then(() => {
-      released = true;
-    });
-    const geometry = await hidden;
+    // build takes idle time only, so the reveal's own work goes first.
+    const geometry = await createEarthGeometry(base, undefined, rendering, tour);
     assert.ok(geometry?.attributes.slateRoot, "it lands at once while hidden");
-    assert.equal(rendering.terrainSlicing, null);
-    await Promise.resolve();
-    assert.ok(released, "and lets the shafts go");
     assert.ok(idles > 3, `${idles} idle slices before the reveal, none back to back`);
     // Fading in over the title card: the build rushes, slices back to back.
     names.add("is-ready");
@@ -1621,8 +1610,7 @@ test("while the terrain slices it holds the shafts off, idles while the canvas i
     const later = await settled;
     assert.ok(idles > 3, `${idles} idle slices after the fade`);
     tour.transition.cut = false;
-    // Disposed first: the build stops and resolves to nothing; the shafts
-    // are let go.
+    // Disposed first: the build stops and resolves to nothing.
     let gone = false;
     const cancelled = await createEarthGeometry(
       base,
@@ -1632,7 +1620,6 @@ test("while the terrain slices it holds the shafts off, idles while the canvas i
       () => gone || !(gone = true),
     );
     assert.equal(cancelled, undefined);
-    assert.equal(rendering.terrainSlicing, null);
     for (const each of [geometry, later]) each.dispose();
   } finally {
     if (idle) globalThis.requestIdleCallback = idle;

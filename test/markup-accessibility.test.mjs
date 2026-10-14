@@ -158,8 +158,8 @@ test("the canvas keeps one 480ms fade over the title card, and the loading line 
   assert.match(canvas, /opacity:\s*0;/);
   assert.match(canvas, /transition:\s*opacity 480ms ease-out;/);
   assert.match(cssRule(styles, ".scene-canvas.is-ready"), /opacity:\s*1;/);
-  // terrain-build.js, mountain-build.js and light-shafts.js read the canvas's
-  // one transitionDuration, so no other rule may add or change a transition.
+  // terrain-build.js and mountain-build.js read the canvas's one
+  // transitionDuration, so no other rule may add or change a transition.
   const canvasTransitions = cssRules(styles, (selector) =>
     selector.split(",").some((part) => /^\.scene-canvas(?:\.is-ready)?$/.test(part.trim())),
   ).flatMap(({ body }) =>

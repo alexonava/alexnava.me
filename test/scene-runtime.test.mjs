@@ -1629,7 +1629,7 @@ test("setRim scales the cool rim colour and keeps the moon-facing floor", () => 
     assert.equal(RIM_UNIFORMS.babelRimText.value, 0, "the rim stays on the text by default");
     setRim(2, 1);
     assert.equal(RIM_UNIFORMS.babelRimText.value, 1);
-    // Off the text over a fifth of the screen's smaller side, as the air light.
+    // Off the text over a fifth of the screen's smaller side.
     assert.equal(RIM.textReach, 0.2);
     setRim();
     assert.deepEqual(light.toArray(), [0, 0, 0, RIM.floor], "no strength, no rim");

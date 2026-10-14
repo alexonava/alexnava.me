@@ -953,8 +953,8 @@ function fading(rendering, hidden = true) {
 // How the ranges enter once built, in seconds of fade-in. At once (0) where
 // the change cannot show mid-shot: before the reveal, on a tour cut under the
 // dissolve's kept frame, or on any frame while the tour is not running (the
-// rule terrain-build.js and light-shafts.js follow). Under the canvas's fade-in
-// over the title card, which is already partly opaque, over `fade`; and mid-shot,
+// rule terrain-build.js follows). Under the canvas's fade-in over the title
+// card, which is already partly opaque, over `fade`; and mid-shot,
 // where a slow phone missed both, over `late`, rather than leaving the horizon
 // bare until the next cut (up to a whole 9 s hold).
 export const MOUNTAIN_ENTRANCE = Object.freeze({ fade: 0.45, late: 1.8 });
@@ -1064,28 +1064,6 @@ export function showRanges(mesh, ranges, seconds = 0) {
   return true;
 }
 
-// The film backdrop takes the idle time before the light shafts, which wait
-// while rendering.terrainSlicing holds a promise (light-shafts.js): the ranges
-// should land under the fade or on a cut, while a shaft can fade in
-// mid-hold. The slot is shared with the terrain's build (terrain-build.js):
-// while both slice it holds a promise for both, and it clears once both end.
-function holdSlot(rendering, work) {
-  if (!rendering) return () => {};
-  let held = null;
-  const claim = () => {
-    const current = rendering.terrainSlicing;
-    if (current && current === held) return;
-    held = current ? Promise.all([current, work]) : work;
-    rendering.terrainSlicing = held;
-    const mine = held;
-    mine.then(() => {
-      if (rendering.terrainSlicing === mine) rendering.terrainSlicing = null;
-    });
-  };
-  claim();
-  return claim;
-}
-
 // The film mountains in slices of a few milliseconds, never a long task (the
 // terrain's schedule, terrain-build.js): while the canvas fades in over the
 // title card, slices of up to 12 ms run back to back, so the ranges land inside
@@ -1139,18 +1117,9 @@ export function buildMountains({
       : (task) => setTimeout(task, 0);
   const rush = fading(rendering, false),
     enter = entrance(rendering, tour);
-  let done,
-    longest = 0,
+  let longest = 0,
     sliced = 0;
-  const slicing = new Promise((resolve) => {
-    done = resolve;
-  });
-  const claim = holdSlot(rendering, slicing);
   return new Promise((resolve, reject) => {
-    const finish = (settle, value) => {
-      done();
-      settle(value);
-    };
     const land = (built) => {
       if (cancelled()) {
         free(built);
@@ -1184,8 +1153,7 @@ export function buildMountains({
     // fit several steps. The first rushed slices take half the time: the engine
     // optimizes the hot loops there, which added about 6 ms at 4x CPU throttle.
     const slice = (deadline) => {
-      if (cancelled()) return finish(resolve, null);
-      claim();
+      if (cancelled()) return resolve(null);
       const early = rush();
       const until =
         performance.now() +
@@ -1203,15 +1171,12 @@ export function buildMountains({
           const began = performance.now(),
             next = steps.next(),
             now = performance.now();
-          if (next.done) {
-            done();
-            return land(next.value);
-          }
+          if (next.done) return land(next.value);
           longest = Math.max(now - began, 0.8 * longest);
           if (now + longest >= until) break;
         }
       } catch (error) {
-        return finish(reject, error);
+        return reject(error);
       }
       post();
     };

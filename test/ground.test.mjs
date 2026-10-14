@@ -677,7 +677,7 @@ test("each ground shading has its own program cache key; the slate's shading nee
     assert.ok(lobe.knee > 0 && lobe.knee <= 0.4 && lobe.roughness >= 0.15);
   }
   assert.ok(SLATE_WATER.moon.knee <= 0.08, "the moon's glints stay low behind the name and intro");
-  // Like the light shafts' air, the water eases off behind the name and intro
+  // The water eases off behind the name and intro
   // (over half the screen's smaller side, the clouds' reach) and behind About
   // (a fifth), and there the soil's own highlights pass a knee: text stays at
   // 5:1 over the wet ground. The name's reach is wide, so the moon's glare on

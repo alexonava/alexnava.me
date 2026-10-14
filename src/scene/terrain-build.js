@@ -2151,7 +2151,7 @@ function fading(rendering, hidden = true) {
 // Whether a change to the ground can land now without showing mid-shot: before
 // the reveal or during the canvas's fade-in over the title card, on a tour cut
 // under the dissolve's kept frame, or on any frame while the tour is not
-// running. light-shafts.js switches its treatments by the same rule.
+// running.
 function unseen(rendering, tour) {
   const early = fading(rendering);
   return () => !tour?.running || tour.transition.cut || early();
@@ -3483,10 +3483,9 @@ function streamAlong(x, z, line = STREAM_LINES[0]) {
 // or in the fade-in's first SHADING_EARLY ms. A light, map or quality change
 // that alters the ground's program meanwhile links it again first. Where
 // programs cannot link in parallel, the switch's own draw links it, on a cut
-// (or a still frame), never in the fade-in, which the light shafts' own
-// links need (light-shafts.js). From the switch on,
-// each draw of the ground brings the moon key's view direction up to date and
-// advances the drips' clock. Disposing the terrain withdraws all of it.
+// (or a still frame), never in the fade-in. From the switch on, each draw of
+// the ground brings the moon key's view direction up to date and advances the
+// drips' clock. Disposing the terrain withdraws all of it.
 export function settleRoots(
   terrain,
   ground,
@@ -3558,7 +3557,6 @@ export function settleRoots(
             ],
           ].map(([geometry, name]) => Object.assign(new Mesh(geometry, growth.material), { name }));
         })(),
-        null,
         () => false,
         () => !live,
       ).then((built) => {
@@ -4326,30 +4324,16 @@ function* earthSteps(groundHeight, EARTH) {
 // and after it they take idle time, and less where the idle wait timed out,
 // as nothing else is idle. index.js requests this chunk with the scene, so
 // the build starts as the tower arrives, well before a warm load's reveal.
-// The terrain has the idle time first: while it slices, rendering.terrainSlicing
-// holds a promise the light shafts' own build waits on (light-shafts.js), as
-// the terrain can land only under the fade or on a cut while the warm star can
-// fade in mid-hold. A cancelled build (the film scene disposed) stops and
-// resolves to nothing.
-function inSlices(steps, rendering = null, early = () => false, cancelled = () => false) {
+// A cancelled build (the film scene disposed) stops and resolves to nothing.
+function inSlices(steps, early = () => false, cancelled = () => false) {
   const idle =
     typeof globalThis.requestIdleCallback === "function"
       ? (task) => globalThis.requestIdleCallback(task, { timeout: 100 })
       : (task) => setTimeout(task, 0);
-  let done;
-  const slicing = new Promise((resolve) => {
-    done = resolve;
-  });
-  if (rendering) rendering.terrainSlicing = slicing;
   return new Promise((resolve, reject) => {
-    const finish = (settle, value) => {
-      if (rendering?.terrainSlicing === slicing) rendering.terrainSlicing = null;
-      done();
-      settle(value);
-    };
     // Without idle callbacks (Safari), short tasks leave room for the frames.
     const slice = (deadline) => {
-      if (cancelled()) return finish(resolve, null);
+      if (cancelled()) return resolve(null);
       const rush = early();
       const until =
         performance.now() +
@@ -4363,11 +4347,11 @@ function inSlices(steps, rendering = null, early = () => false, cancelled = () =
       try {
         for (;;) {
           const next = steps.next();
-          if (next.done) return finish(resolve, next.value);
+          if (next.done) return resolve(next.value);
           if (performance.now() >= until) break;
         }
       } catch (error) {
-        return finish(reject, error);
+        return reject(error);
       }
       if (rush) setTimeout(slice, 0);
       else idle(slice);
@@ -4396,7 +4380,7 @@ export function createEarthGeometry(
     }
   }
   const allowed = unseen(rendering, tour);
-  return inSlices(steps, rendering, fading(rendering, false), cancelled).then(
+  return inSlices(steps, fading(rendering, false), cancelled).then(
     (geometry) =>
       new Promise((resolve) => {
         (function check() {

@@ -492,8 +492,8 @@ test("in film the grade's cel step and ink are the sky's alone; everything else 
   assert.equal(g.uLayerRelief.value, 0, "outside film the grade is unchanged");
   pipeline.setFilmTreatment(true);
   assert.equal(g.uLayerRelief.value, 1);
-  // The ground and the star and shafts' marks (depth-layers.js STAR_LAYER and
-  // SHAFT_LAYER, 0.0005-0.28 over the sky's 0) take no band.
+  // The ground and the star's mark (depth-layers.js STAR_LAYER, 0.0005-0.28
+  // over the sky's 0) take no band.
   assert.match(
     shader,
     /float starLayer = uLayerRelief \* smoothstep\(0\.0005, 0\.006, texel\.a\) \* \(1\.0 - smoothstep\(0\.22, 0\.28, texel\.a\)\);/,

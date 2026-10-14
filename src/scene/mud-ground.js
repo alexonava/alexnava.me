@@ -695,13 +695,13 @@ export const SLATE_LIGHT = Object.freeze({
 // The moon and the lantern light the film as water too: a sharper lobe each
 // (roughness, gain and a luminance knee that bounds it), so the moon glints
 // across the wet soil toward its side and the lantern's glints run in streaks
-// toward the eye, while the soil's own highlight stays clamped. Like the light
-// shafts' air, the water's mirror and glints (and the soil's relaxed sky
-// reflection) ease off behind the name and intro and behind About, text[0] of
-// them, over text[2] of the screen's smaller side about the name and intro and
-// text[3] about About (index.js measures the text: slateText, slateAbout);
-// there all the ground reflects, the water and the soil's own highlights (a
-// puddle's moon glint among them), then passes a luminance knee, text[1];
+// toward the eye, while the soil's own highlight stays clamped. The water's
+// mirror and glints (and the soil's relaxed sky reflection) ease off behind
+// the name and intro and behind About, text[0] of them, over text[2] of the
+// screen's smaller side about the name and intro and text[3] about About
+// (index.js measures the text: slateText, slateAbout); there all the ground
+// reflects, the water and the soil's own highlights (a puddle's moon glint
+// among them), then passes a luminance knee, text[1];
 // beside About so do the bark's highlights from the lantern and the crown's
 // fill (architecture.js, through SLATE_TEXT_GUARD). The knee is blended in
 // over the whole reach (slateTextKnee()), never scaled into its divisor, where
