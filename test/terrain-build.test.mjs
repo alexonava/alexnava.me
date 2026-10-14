@@ -987,6 +987,17 @@ test("the lazy ground shading extends only the slate's program, under its own ke
     // environment cube, night-environment.js).
     assert.equal(count(fragment, "texture2D("), count(before.fragmentShader, "texture2D("));
     assert.equal(count(vertex, "texture2D("), count(before.vertexShader, "texture2D("));
+    // The tree in the water: its trunk tapering to the crotch and two limbs leaning
+    // apart above it, its edges soft (never under 1.5 pixels, softer the farther the
+    // tree stands from the water), never a box with level ends.
+    const { tree } = PUDDLE_MIRROR;
+    assert.ok(tree.radius[1] < tree.radius[0] && tree.lean[1] > 0 && tree.top[1] > tree.crotch[1]);
+    assert.ok(
+      fragment.includes(
+        "float slateTS = max(0.3+0.02*slateT, 1.5*slatePx*(slateView+slateT));\n    slateTrunk = max(max((1.0-smoothstep(-slateTS, slateTS, slateTD-mix(2.4, 1.9, clamp(slateTH/11.5, 0.0, 1.0))))",
+      ),
+    );
+    assert.ok(fragment.includes("abs(slateTD-1.1-0.55*max(slateTH-7.5, 0.0))"));
     // The river's current: ripples drawn out along the flow, drifting downstream
     // at RIVER.flow on the drips' clock (the same uniform, so they hold as the
     // drips do), easing out toward the shore; the finer octave fades out

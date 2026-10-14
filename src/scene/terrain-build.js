@@ -1496,7 +1496,8 @@ vec2 slateVO = vMudWorld.xz-${glslVec(+(TREE_FOOTING.x + TRUNK[0]).toFixed(2), +
 float slateVA = max(dot(slateVR.xz, slateVR.xz), 1e-4), slateVT = -dot(slateVO, slateVR.xz)/slateVA;
 if (slateVT > 0.0) {
   float slateVH = slateVT*slateVR.y, slateVD = length(slateVO+slateVT*slateVR.xz);
-  slateWaterVeil = max((1.0-smoothstep(${glsl(PUDDLE_MIRROR.trunk[0])}, ${glsl(PUDDLE_MIRROR.trunk[1])}, slateVD))*(1.0-smoothstep(${glsl(PUDDLE_MIRROR.trunk[2])}, ${glsl(PUDDLE_MIRROR.trunk[3])}, slateVH)), (1.0-smoothstep(${glsl(PUDDLE_MIRROR.flare[0])}, ${glsl(PUDDLE_MIRROR.flare[1])}, slateVD))*(1.0-smoothstep(${glsl(PUDDLE_MIRROR.flare[2])}, ${glsl(PUDDLE_MIRROR.flare[3])}, slateVH)));
+  float slateVS = ${glsl(PUDDLE_MIRROR.tree.soft[0])}+${glsl(PUDDLE_MIRROR.tree.soft[1])}*slateVT;
+  slateWaterVeil = ${treeVeil("slateVD", "slateVH", "slateVS")};
   slateWaterBark = ${glslVec(...PUDDLE_MIRROR.bark)};
 }
 float slatePoolNear = slatePoolW*(1.0-smoothstep(${glsl(PUDDLE_MIRROR.undulationFade[0])}, ${glsl(PUDDLE_MIRROR.undulationFade[1])}, length(vViewPosition)));
@@ -1638,12 +1639,39 @@ export const PUDDLE_MIRROR = Object.freeze({
   // hill-silhouette.js TERRAIN_HORIZON and SLATE_PUDDLES.zenith (mud-ground.js).
   horizon: Object.freeze([0.062, 0.065, 0.073]),
   zenith: Object.freeze([0.07, 0.085, 0.13]),
-  // The trunk above TREE_FOOTING + TRUNK: radius and height, and its root
-  // flare (measured on the tree), and their colour.
-  trunk: Object.freeze([1.9, 2.5, 10, 12.5]),
+  // The tree above TREE_FOOTING + TRUNK as the water sees it (treeVeil()): its
+  // root flare (radius and height ranges, measured on the tree); its trunk,
+  // `radius` [at the foot, at the crotch] tapering up to the crotch, which ends
+  // over [from, to] in height; its two limbs leaning apart above it, their
+  // middles `lean` [from the axis, per unit up] out and half `width` [at the
+  // crotch, at the top], fading out over `top`; edges `soft` [units, share of
+  // the reflected ray's length] wide, never under 1.5 pixels; and its colour.
   flare: Object.freeze([3, 4.2, 0.8, 1.8]),
+  tree: Object.freeze({
+    radius: Object.freeze([2.4, 1.9]),
+    crotch: Object.freeze([8.5, 11.5]),
+    lean: Object.freeze([1.1, 0.55]),
+    width: Object.freeze([0.8, 0.35]),
+    top: Object.freeze([11.5, 14]),
+    soft: Object.freeze([0.3, 0.02]),
+  }),
   bark: Object.freeze([0.045, 0.048, 0.05]),
 });
+// The tree's silhouette in the water's mirror (PUDDLE_MIRROR.flare and tree), a
+// GLSL expression: where a ray off the water passes `d` from the trunk's axis at
+// `h` above the water, with edges `aa` units soft. The flare, the trunk tapering
+// to its crotch and two limbs leaning apart above it, so its image reads as a
+// tree's, never as a box with level ends.
+function treeVeil(d, h, aa) {
+  const { flare } = PUDDLE_MIRROR,
+    { radius, crotch, lean, width, top } = PUDDLE_MIRROR.tree,
+    n = (v) => glsl(+v.toFixed(4)),
+    fork = crotch[0] - 1;
+  const trunk = `(1.0-smoothstep(-${aa}, ${aa}, ${d}-mix(${n(radius[0])}, ${n(radius[1])}, clamp(${h}/${n(crotch[1])}, 0.0, 1.0))))*(1.0-smoothstep(${n(crotch[0])}-${aa}, ${n(crotch[1])}+${aa}, ${h}))`,
+    limbs = `(1.0-smoothstep(-${aa}, ${aa}, abs(${d}-${n(lean[0])}-${n(lean[1])}*max(${h}-${n(fork)}, 0.0))-mix(${n(width[0])}, ${n(width[1])}, smoothstep(${n(fork)}, ${n(top[1])}, ${h}))))*smoothstep(${n(fork - 1)}, ${n(fork)}, ${h})*(1.0-smoothstep(${n(top[0])}, ${n(top[1])}+${aa}, ${h}))`,
+    root = `(1.0-smoothstep(${n(flare[0])}, ${n(flare[1])}, ${d}))*(1.0-smoothstep(${n(flare[2])}, ${n(flare[3])}, ${h}))`;
+  return `max(max(${trunk}, ${limbs}), ${root})`;
+}
 // The supplied lantern in its own units (lantern.js LANTERN_AUTHORING_HEIGHT
 // 2.48, drawn 1.98 tall): the light sits at its luminous centre, and the
 // flame (lantern-flame.js FLAME and FLAME_BASE) stands on the wick at 0.49,
@@ -1862,7 +1890,8 @@ ${
   vec2 slateO = slateP.xz-${TRUNK_GLSL};
   float slateT = -dot(slateO, slateR.xz)/slateRA, slateTH = slateT*slateR.y, slateTD = length(slateO+slateT*slateR.xz), slateTrunk = 0.0;
   if (slateT > 0.0) {
-    slateTrunk = max((1.0-smoothstep(${glsl(M.trunk[0])}, ${glsl(M.trunk[1])}, slateTD))*(1.0-smoothstep(${glsl(M.trunk[2])}, ${glsl(M.trunk[3])}, slateTH)), (1.0-smoothstep(${glsl(M.flare[0])}, ${glsl(M.flare[1])}, slateTD))*(1.0-smoothstep(${glsl(M.flare[2])}, ${glsl(M.flare[3])}, slateTH)));
+    float slateTS = max(${glsl(M.tree.soft[0])}+${glsl(M.tree.soft[1])}*slateT, 1.5*slatePx*(slateView+slateT));
+    slateTrunk = ${treeVeil("slateTD", "slateTH", "slateTS")};
     slateSkyW = mix(slateSkyW, ${glslVec(...M.bark)}, slateTrunk);
   }
   vec3 slateMirror = slateSkyW, slateFlameW = vec3(0.0);
