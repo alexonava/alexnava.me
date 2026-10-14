@@ -22,6 +22,7 @@ import {
   lensKeepRect,
 } from "../src/scene/postprocess.js";
 import { compactShaderSource } from "../tools/shader-compact.mjs";
+import { flat, source } from "./support/code.mjs";
 
 function createRendererMock() {
   return {
@@ -913,7 +914,7 @@ test("the final pass decodes each frame's layer from a 5-tap cross and mixes by 
   assert.match(layerCode, /vec2 x = vec2\(uCodeTexel\.x, 0\.0\), y = vec2\(0\.0, uCodeTexel\.y\);/);
   assert.match(
     shader,
-    /start = 3\.0 \* uStagger\.x \* clamp\(max\(layerCode\(tPrev, prevUv\), layerCode\(tDiffuse, fv\)\), 0\.0, 1\.0\);\s*span = uStagger\.y;/,
+    /start = 3\.0 \* uStagger\.x \* clamp\(max\(layerCode\(tPrev, prevUv\), layerCode\(tDiffuse, vUv\)\), 0\.0, 1\.0\);\s*span = uStagger\.y;/,
   );
   // In film the kept frame dissolves through the outgoing shot's lens: its focus,
   // and its heat, fringes and kept rect (LENS_FX).
@@ -923,7 +924,7 @@ test("the final pass decodes each frame's layer from a 5-tap cross and mixes by 
   );
   assert.match(
     shader,
-    /vec2 fv = vUv \+ uWeave;\s*vec4 texel = uLayered > 0\.5 \? lensView\(tDiffuse, fv, fv, uBlur, uStar, uFlame, uKeep, guard\) : texture2D\(tDiffuse, vUv\);/,
+    /vec4 texel = uLayered > 0\.5 \? lensView\(tDiffuse, vUv, vUv, uBlur, uStar, uFlame, uKeep, guard\) : texture2D\(tDiffuse, vUv\);/,
   );
   assert.match(
     shader,
@@ -1053,7 +1054,7 @@ test("the kept frame's lens stays on its own star and flame as the frame pushes 
   const shader = pipeline.passes.vignetteGrain.material.fragmentShader;
   // The pixel at vUv shows the kept frame's own pixel prevUv; its heat, fringes,
   // kept rect and flare are all evaluated there, with the outgoing sources.
-  assert.match(shader, /vec2 prevUv = uPrevOrigin \+ \(fv - uPrevOrigin\) \* uPrevScale;/);
+  assert.match(shader, /vec2 prevUv = uPrevOrigin \+ \(vUv - uPrevOrigin\) \* uPrevScale;/);
   assert.ok(shader.indexOf("vec2 prevUv =") < shader.indexOf("lensView(tPrev, prevUv, prevUv,"));
   assert.ok(shader.indexOf("vec2 prevUv =") < shader.indexOf("lensFlare(prevUv, uStarPrev,"));
   assert.doesNotMatch(shader, /lensView\(tPrev, prevUv, vUv,|lensFlare\(vUv, uStarPrev/);
@@ -1214,23 +1215,55 @@ test("the film look: halation where bloom draws, a print toe, midtone grain, a g
   const grading = pipeline.passes.grading.material.fragmentShader;
   // Both land before the soft shoulder, which stays the last step.
   const shoulder = grading.indexOf("vec3 over = max(color - 0.75, 0.0);");
-  assert.ok(grading.indexOf("texture2D(tHalation, vUv).rgb * uHalation") < shoulder);
+  assert.ok(grading.indexOf("color += halo * uHalation") < shoulder);
+  // Only warm light bleeds: the halo's weight eases in with its red's lead over its blue.
+  assert.match(
+    grading,
+    /smoothstep\(0\.100, 0\.350, \(halo\.r - halo\.b\) \/ max\(halo\.r, 1e-4\)\)/,
+  );
+  assert.deepEqual([...FILM_LOOK.halation.warm], [0.1, 0.35]);
   assert.ok(grading.indexOf("uPrintTint * uPrint.x") < shoulder);
-  // The gate weave: up to its amount in CSS px, stepped at 24 frames a second.
+  // The gate weave: up to its amount in CSS px, stepped at 24 frames a second, for the
+  // scene to offset its camera's projection by; no pass resamples the finished frame.
   pipeline.resize(1600, 900);
   const reach = FILM_LOOK.weave.amount;
+  let moved = 0;
   for (const t of [0, 0.5, 1.02, 7.3, 60]) {
     pipeline.setFilmTime(t);
-    assert.ok(Math.abs(final.uWeave.value.x) <= reach / 1600 + 1e-9);
-    assert.ok(Math.abs(final.uWeave.value.y) <= reach / 900 + 1e-9);
+    const [x, y] = pipeline.weaveOffset();
+    assert.ok(Math.abs(x) <= reach + 1e-9 && Math.abs(y) <= reach + 1e-9);
+    moved = Math.max(moved, Math.abs(x), Math.abs(y));
   }
+  assert.ok(moved > 0, "it wanders in film");
   pipeline.setFilmTime(1.02);
-  const held = final.uWeave.value.clone();
+  const held = [...pipeline.weaveOffset()];
   pipeline.setFilmTime(1.04);
-  assert.deepEqual(final.uWeave.value.toArray(), held.toArray(), "held within a frame");
+  assert.deepEqual([...pipeline.weaveOffset()], held, "held within a frame");
   pipeline.setFilmTreatment(false);
-  assert.deepEqual(final.uWeave.value.toArray(), [0, 0], "no weave out of film");
+  assert.deepEqual([...pipeline.weaveOffset()], [0, 0], "no weave out of film");
+  pipeline.setFilmTime(7.3);
+  assert.deepEqual([...pipeline.weaveOffset()], [0, 0], "nor once the clock moves");
   const shader = pipeline.passes.vignetteGrain.material.fragmentShader;
+  assert.doesNotMatch(shader, /uWeave|vUv \+ uWeave/);
+  assert.equal(final.uWeave, undefined);
+  // The scene adds it to the shot's lens shift (cinematic.js rewrites that on every applied
+  // frame), before the lens reads its sources, and only while a shot is applied in film.
+  // Never a view offset: it rebuilds the projection and drops the shot's shift.
+  const index = flat(source("src/scene/index.js"));
+  const weaveAt = index.indexOf(
+    "const weave = filmActive && cinematicApplied ? post.weaveOffset?.() : null;",
+  );
+  assert.ok(weaveAt > index.indexOf("const cinematicApplied = cinematic.apply("));
+  assert.ok(
+    index.includes(
+      "shift[8] += (2 * weave[0]) / viewport.width; shift[9] += (2 * weave[1]) / viewport.height;",
+    ),
+  );
+  assert.ok(
+    weaveAt < index.indexOf("const shot = filmActive && cinematicApplied ? cinematic.shot : null,"),
+    "before the lens sources",
+  );
+  assert.doesNotMatch(index, /setViewOffset/);
   // Film grain: in CSS-pixel cells, each channel a little apart, weighted toward the midtones.
   assert.match(shader, /floor\(vUv \/ \(uCssTexel \* 1\.5\)\)/);
   assert.match(shader, /mix\(0\.25, 1\.0, 4\.0 \* gl \* \(1\.0 - gl\)\)/);

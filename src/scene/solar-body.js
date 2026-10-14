@@ -509,7 +509,8 @@ export function createSolarBody({ parent, camera, position, profile = {} }) {
   corona.renderOrder = 102;
   root.add(corona);
   // The lens's anamorphic streak: a thin warm line across the star, breathing
-  // with it (SOLAR_STREAK: length and height in radii, strength).
+  // with it (SOLAR_STREAK: length and height in radii, strength). Its mask code
+  // saturates early (line * 8), so its faint tail stays out of the banks' cel step too.
   const streakMaterial = new ShaderMaterial({
     name: "SolarStreak",
     uniforms: { uBreath, uStrength: { value: SOLAR_STREAK.strength } },
@@ -520,7 +521,7 @@ varying vec2 vUv;
 void main(){
 float x=abs(vUv.x), y=abs(vUv.y);
 float line=exp(-y*y*28.)*(exp(-x*3.2)*.8+exp(-x*x*40.)*.6)*(1.-smoothstep(.85,1.,x));
-gl_FragColor=vec4(vec3(1.,.62,.32)*line*uStrength*uBreath,min(line,1.));
+gl_FragColor=vec4(vec3(1.,.62,.32)*line*uStrength*uBreath,min(line*8.,1.));
 }`,
     transparent: true,
     depthWrite: false,

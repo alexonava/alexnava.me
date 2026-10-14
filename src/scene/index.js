@@ -1069,6 +1069,19 @@ const ORBIT_SPEED = 0.06;
           !document.body.hasAttribute("data-panel-open")
         )
           post.setFilmTime?.(elapsedTime);
+        // The gate weave (FILM_LOOK.weave) moves the lens, not the finished frame: the
+        // shot's lens shift (cinematic.js, rewritten on every applied frame) takes a
+        // fraction of a CSS px more, so fine detail never softens and sharpens with the
+        // wander, and the lens's sources below follow it.
+        {
+          const weave = filmActive && cinematicApplied ? post.weaveOffset?.() : null;
+          if (weave && (weave[0] || weave[1])) {
+            const shift = camera.projectionMatrix.elements;
+            shift[8] += (2 * weave[0]) / viewport.width;
+            shift[9] += (2 * weave[1]) / viewport.height;
+            camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
+          }
+        }
         // The lens follows its sources on screen (LENS_FX): the star, the lantern's
         // flame in the shots that look at it, and the rect it keeps whole (The
         // watch's reference banks on desktop landscape frames). They change with the shot.

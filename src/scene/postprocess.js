@@ -32,9 +32,11 @@ void main() {
 // The motion-picture film look (the owner's ask of 2026-10-14, "lean in slightly further to
 // go for a motion picture film look"), in film only; each part switches off with its `on`.
 // - `halation`: the warm glow film stock bleeds about bright lights (the star, the
-//   lantern's flame, the moonlit rims): the bloom's own light (its composite, already drawn
-//   on high; no pass of its own) added again in `color` times `strength`. None where
-//   bloom is off (balanced).
+//   lantern's flame): the bloom's own light (its composite, already drawn on high; no pass
+//   of its own) added again in `color` times `strength`, only as far as that light is
+//   warm: its red's lead over its blue, as a share of its red, eases in across `warm`, so
+//   cool moon glints and moonlit bark keep their colour (the review of 2026-10-14). None
+//   where bloom is off (balanced).
 // - `print`: a print film's toe, the blacks lifted `lift` toward `tint` (cool, milky)
 //   below `toe` graded luma, and the grade's split tone a little stronger in film
 //   (`cool` shadows, `warm` highlights).
@@ -45,7 +47,12 @@ void main() {
 //   a second, as film running through a gate; the bars, the text band and the page's
 //   text stay put, and it holds whenever the grain does.
 export const FILM_LOOK = Object.freeze({
-  halation: Object.freeze({ on: 1, strength: 1.2, color: Object.freeze([1, 0.32, 0.12]) }),
+  halation: Object.freeze({
+    on: 1,
+    strength: 1.2,
+    color: Object.freeze([1, 0.32, 0.12]),
+    warm: Object.freeze([0.1, 0.35]),
+  }),
   print: Object.freeze({
     on: 1,
     lift: 0.022,
@@ -179,8 +186,10 @@ void main() {
   float inkWeight = 1.0 + uInkVary.x * (2.0 * inkNoise(vUv * vec2(uTexelSize.y / uTexelSize.x, 1.0) * uInkVary.y) - 1.0);
   color = mix(color, vec3(0.035, 0.055, 0.095), clamp(inkContour * uInkMix * skyInk * inkWeight, 0.0, 1.0));
   }
-  // Halation: the bloom's light again, tinted, as film stock bleeds about bright lights.
-  color += texture2D(tHalation, vUv).rgb * uHalation;
+  // Halation: the bloom's light again, tinted, as film stock bleeds about bright lights,
+  // only from warm ones (FILM_LOOK.halation.warm).
+  vec3 halo = texture2D(tHalation, vUv).rgb;
+  color += halo * uHalation * smoothstep(${FILM_LOOK.halation.warm[0].toFixed(3)}, ${FILM_LOOK.halation.warm[1].toFixed(3)}, (halo.r - halo.b) / max(halo.r, 1e-4));
   // A print film's toe: the blacks lift toward a cool, milky tint.
   color += uPrintTint * uPrint.x * (1.0 - smoothstep(0.0, uPrint.y, dot(color, vec3(0.299, 0.587, 0.114))));
   // A soft shoulder: highlights past the knee roll off toward white, not clip.
@@ -445,7 +454,6 @@ const VIGNETTE_GRAIN_SHADER = {
     uBars: { value: 0 },
     uGrainTime: { value: 0 },
     // The gate weave (FILM_LOOK.weave): the frame's offset in UV.
-    uWeave: { value: new Vector2() },
     // The lens (LENS_FX): its sources on screen, as (x, y) in UV, a size in frame
     // heights (the star's radius; a world unit at the flame) and whether it is on,
     // and the kept rect, for the live frame and the kept one.
@@ -485,7 +493,6 @@ uniform float uBlur;
 uniform float uBlurPrev;
 uniform float uBars;
 uniform float uGrainTime;
-uniform vec2 uWeave;
 varying vec2 vUv;
 
 // The lens's shallow focus: the sky and the ranges (film depth layers below
@@ -538,19 +545,16 @@ float layerCode(sampler2D map, vec2 uv) {
 ${LENS_GLSL}
 void main() {
   float guard = uLayered > 0.5 ? max(lensBehind(slateText, vUv, ${lensNumber(LENS_FX.text[0])}), lensBehind(slateAbout, vUv, ${lensNumber(LENS_FX.text[1])})) : 0.0;
-  // The film weaves in the gate (uWeave): the frame and its lens move; the guard, the
-  // vignette, the text band and the bars stay put.
-  vec2 fv = vUv + uWeave;
-  vec4 texel = uLayered > 0.5 ? lensView(tDiffuse, fv, fv, uBlur, uStar, uFlame, uKeep, guard) : texture2D(tDiffuse, vUv);
+  vec4 texel = uLayered > 0.5 ? lensView(tDiffuse, vUv, vUv, uBlur, uStar, uFlame, uKeep, guard) : texture2D(tDiffuse, vUv);
   // The kept frame pushes in about its origin: here it shows its own pixel prevUv,
   // so its lens (heat, fringes, kept rect and flare) is placed in its own UV and
   // stays on its own star and flame.
-  vec2 prevUv = uPrevOrigin + (fv - uPrevOrigin) * uPrevScale;
+  vec2 prevUv = uPrevOrigin + (vUv - uPrevOrigin) * uPrevScale;
   float protection = uTextProtection, w = 1.0;
   if (uProgress < 1.0) {
     float start = 0.0, span = 1.0;
     if (uLayered > 0.5) {
-      start = 3.0 * uStagger.x * clamp(max(layerCode(tPrev, prevUv), layerCode(tDiffuse, fv)), 0.0, 1.0);
+      start = 3.0 * uStagger.x * clamp(max(layerCode(tPrev, prevUv), layerCode(tDiffuse, vUv)), 0.0, 1.0);
       span = uStagger.y;${
         DISSOLVE_BRUSH.on
           ? `
@@ -567,14 +571,14 @@ void main() {
   vec3 color = texel.rgb;
   // The star's flare, dissolving with each frame's own.
   if (uLayered > 0.5 && uLens.z > 0.0) {
-    vec3 flare = lensFlare(fv, uStar, uKeep);
+    vec3 flare = lensFlare(vUv, uStar, uKeep);
     if (uProgress < 1.0) flare = mix(lensFlare(prevUv, uStarPrev, uKeepPrev), flare, w);
     color += flare * (uLens.z * (1.0 - guard));
   }
 
   // The painted sky's canvas (SKY_INK.canvas): a woven tooth on the bare sky, on the film.
   if (uLayered > 0.5) {
-    vec2 cv = fv * vec2(uCssTexel.y / uCssTexel.x, 1.0) * ${lensNumber(SKY_INK.canvas[1] / 2)};
+    vec2 cv = vUv * vec2(uCssTexel.y / uCssTexel.x, 1.0) * ${lensNumber(SKY_INK.canvas[1] / 2)};
     float weft = sin(cv.x * 6.2832) * step(0.5, fract(cv.y * 0.5)), warp = sin(cv.y * 6.2832) * (1.0 - step(0.5, fract(cv.x * 0.5)));
     color *= 1.0 + ${lensNumber(SKY_INK.canvas[0])} * (weft + warp) * 0.5 * (1.0 - smoothstep(0.0, 0.006, texel.a));
   }
@@ -746,6 +750,8 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
 
   let reducedTransparency = Boolean(transparencyQuery?.matches);
   let film = false;
+  // The gate weave in CSS px, [right, up] (setFilmTime, weaveOffset()).
+  const weave = [0, 0];
 
   // Tour crossfade: IDLE → ARMED (a capture is due) → CAPTURED (grading drew
   // the outgoing frame into prevTarget) → BLENDING (the cut) → IDLE.
@@ -862,7 +868,7 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
       FILM_LOOK.print.toe,
     );
     gradingPass.uniforms.uPrintTint.value.set(...FILM_LOOK.print.tint);
-    if (!film) finalUniforms.uWeave.value.set(0, 0);
+    if (!film) weave[0] = weave[1] = 0;
     gradingPass.uniforms.uContrast.value = settings.contrast ?? 1.06;
     gradingPass.uniforms.uHighlightWarmMix.value = settings.highlightWarmMix ?? 0.14;
     gradingPass.uniforms.uShadowCoolMix.value = settings.shadowCoolMix ?? 0.25;
@@ -1015,16 +1021,21 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
     // The grain's frame, 24 a second; held while the scene holds still.
     setFilmTime(seconds = 0) {
       finalUniforms.uGrainTime.value = Math.floor(seconds * 24) % 997;
-      // The gate's slow wander (FILM_LOOK.weave), stepped at 24 frames a second.
+      // The gate's slow wander (FILM_LOOK.weave), stepped at 24 frames a second, in CSS px
+      // (x right, y up); the scene moves its lens by it (weaveOffset()).
       const frame = Math.floor(seconds * 24) / 24,
-        reach = FILM_LOOK.weave.on ? FILM_LOOK.weave.amount : 0,
-        texel = finalUniforms.uCssTexel.value;
-      finalUniforms.uWeave.value.set(
-        (Math.sin(frame * 2.1) * 0.6 + Math.sin(frame * 5.3 + 1.7) * 0.4) * reach * texel.x,
-        (Math.sin(frame * 1.7 + 0.5) * 0.6 + Math.sin(frame * 4.1 + 2.3) * 0.4) * reach * texel.y,
-      );
+        reach = film && FILM_LOOK.weave.on ? FILM_LOOK.weave.amount : 0;
+      weave[0] = (Math.sin(frame * 2.1) * 0.6 + Math.sin(frame * 5.3 + 1.7) * 0.4) * reach;
+      weave[1] = (Math.sin(frame * 1.7 + 0.5) * 0.6 + Math.sin(frame * 4.1 + 2.3) * 0.4) * reach;
       // The heat flows on the same clock, smoothly, wrapping each hour.
       finalUniforms.uLensTime.value = seconds % 3600;
+    },
+    // The gate weave this frame in CSS px, [right, up]: [0, 0] out of film. The scene
+    // offsets its camera's projection by it, so the whole frame and its lens move a fraction
+    // of a pixel as rendered, and no pass resamples the finished frame (which would soften
+    // and sharpen fine twigs in step with the wander).
+    weaveOffset() {
+      return weave;
     },
     // The lens's sources this frame (lensSource()): the star and the flame as
     // [x, y, size, on], or null for none, and the rect it keeps whole as the
