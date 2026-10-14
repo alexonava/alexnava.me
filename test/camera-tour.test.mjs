@@ -435,13 +435,13 @@ test("the upcoming shot is prepared once per shot, after its dissolve and never 
   assert.deepEqual(calls.slice(4), [["tree", 2]]);
   f.dispose();
 
-  // Without the tree, Threshold is followed by Against the moon; a URL's
-  // Gallery detail or Watch and tree is followed by The watch.
+  // Without the tree, Threshold is followed by The watch (Against the moon is the tree's);
+  // a URL's Gallery detail or Watch and tree is followed by The watch.
   assert.equal(DIRECTED_SHOTS.tower[2].tour, false);
   assert.equal(DIRECTED_SHOTS.tower[3].tour, false);
   assert.equal(DIRECTED_SHOTS.tower[4].tour, false);
   for (const [angle, upcoming] of [
-    [1, ["tower", 5]],
+    [1, ["tower", 0]],
     [4, ["tower", 0]],
     [3, ["tower", 0]],
   ]) {
@@ -462,19 +462,19 @@ test("unavailable subjects are skipped, loading holds, and disposal blocks later
   f.controller.setSubject("tree", null);
   f.controller.setStatus({ kind: "tree", status: "fallback" });
   for (const t of [0, 5, 5.05, 10.05, 10.1]) f.render(t);
-  assert.equal(f.name, "Against the moon");
+  assert.equal(f.name, "The watch");
   f.controller.setStatus({ kind: "tower", status: "loading" });
   f.render(16);
   assert.equal(f.tour.running, false);
   f.render(50);
   f.controller.setStatus({ kind: "tower", status: "ready" });
   f.render(51);
-  assert.equal(f.name, "Against the moon", "a loading pause keeps the shot it held");
+  assert.equal(f.name, "The watch", "a loading pause keeps the shot it held");
   f.tour.dispose();
   f.tour.next();
   f.tour.prepareNext();
   f.render(99);
-  assert.equal(f.name, "Against the moon");
+  assert.equal(f.name, "The watch");
   f.dispose();
 });
 
@@ -499,20 +499,14 @@ test("a URL's Masonry study or Gallery detail is followed by The watch without r
     assert.equal(f.tour.state.index, 1);
     f.dispose();
   }
-  // Watch and tree joined after Gallery detail, and Against the moon after it,
-  // so the retained URLs keep their angles: Gallery detail is still angle 4
-  // (index 3), Watch and tree 5 and Against the moon 6.
+  // Watch and tree joined after Gallery detail, so the retained URLs keep their angles:
+  // Gallery detail is still angle 4 (index 3), Watch and tree 5. Against the moon is the
+  // tree's last (angle 5).
   assert.deepEqual(
     DIRECTED_SHOTS.tower.map((shot) => shot.name),
-    [
-      "The watch",
-      "Threshold",
-      "Masonry study",
-      "Gallery detail",
-      "Watch and tree",
-      "Against the moon",
-    ],
+    ["The watch", "Threshold", "Masonry study", "Gallery detail", "Watch and tree"],
   );
+  assert.equal(DIRECTED_SHOTS.tree.at(-1).name, "Against the moon");
   // Out of the tour, it too is followed by The watch.
   const f = setup(TOUR_PER_SHOT);
   assert.equal(f.controller.setPreviewShot("tower", 4), true);
@@ -544,7 +538,12 @@ test("the tour order alternates subjects while it can, opens on The watch and ke
     assert.equal(TOUR_ORDER.includes(name), shot.tour !== false, `${name} membership`);
   const pairs = TOUR_ORDER.map((name, i) => [name, TOUR_ORDER[(i + 1) % TOUR_ORDER.length]]);
   const together = pairs.filter(([a, b]) => subjects.get(a).subject === subjects.get(b).subject);
-  assert.deepEqual(together, [["Portrait", "Lantern study"]]);
+  // Against the moon frames the tree with the lookout's legs, so it bridges the two.
+  assert.deepEqual(together, [
+    ["Portrait", "Lantern study"],
+    ["Close-up", "Against the moon"],
+    ["Against the moon", "Root and lantern"],
+  ]);
   assert.equal(subjects.get("Close-up").subject, "tree");
   for (const [a, b] of pairs)
     assert.notDeepEqual([a, b].sort(), ["Lantern study", "Root and lantern"]);
