@@ -361,6 +361,12 @@ test("estate layers preserve artwork proportions without masking labels", async 
     css,
     /\.scene-entry\[hidden\], \[data-scene-fallback\]\[hidden\] \{ display: none; \}/,
   );
+  // The paper fill behind the art keeps inside its opaque paper: the torn edge
+  // reaches about 3% in on both maps, so a 4% inset never shows a straight edge
+  // or square corner past the tear.
+  const backing = cssRule(css, ".estate-home-map .estate-map::after");
+  assert.match(backing, /inset: 4%;/);
+  assert.match(backing, /z-index: -2;/);
 });
 
 test("paper and estate surfaces are declared once", async () => {
@@ -931,11 +937,31 @@ test("on tablets the intro keeps its own text scrim", async () => {
       Math.abs(alpha - 0.6 * (1 - t * t) ** 2) < 0.006,
       `a smooth (1 - t²)² falloff at ${t}`,
     );
+  // Over the live scene only: it shows while hero.js marks the hero
+  // is-over-scene (the scene host is ready) and fades with the canvas's own
+  // 480ms fade, at once for reduced motion, so the title card's night never
+  // shows it as a shape.
+  const canvasFade = cssRule(styles, ".scene-canvas").match(/transition:\s*opacity (\d+ms) /)[1];
+  assert.match(scrim, /opacity:\s*0;/);
+  assert.match(scrim, new RegExp(`transition:\\s*opacity ${canvasFade} ease-out;`));
+  assert.match(
+    cssRule(tablet, ".hero-minimal.is-over-scene .hero-intro::before"),
+    /^\s*opacity:\s*1;\s*$/,
+  );
+  assert.match(
+    mediaBlock(styles, "(prefers-reduced-motion: reduce)"),
+    /\.hero-intro::before\s*\{\s*transition:\s*none;/,
+  );
+  // The name paints above the intro, so the oval's upward reach never dims its
+  // feet: the name keeps #f7f1ea.
+  const name = cssRule(tablet, ".hero h1");
+  assert.match(name, /position:\s*relative;/);
+  assert.match(name, /z-index:\s*1;/);
   // Only there: phones, desktops and landscape keep the hero's scrim alone, and
   // forced colours drop it with the others.
   assert.equal(
-    cssRules(styles, (selector) => selector.includes(".hero-intro::before")).filter(
-      ({ body }) => !/display:\s*none/.test(body),
+    cssRules(styles, (selector) => selector.includes(".hero-intro::before")).filter(({ body }) =>
+      /background:/.test(body),
     ).length,
     1,
   );
@@ -959,6 +985,10 @@ test("the estate map's controls are drawn in its ink", async () => {
   assert.match(close, /background:\s*transparent;/);
   assert.match(close, /box-shadow:\s*none;/);
   assert.match(close, /border-color:\s*rgba\(48, 37, 24, 0\.42\);/);
+  // 16px from the visible paper, not the box: the box's outer 2% is the art's
+  // torn edge, so the ring and its 2px focus ring 3px out keep clear of it.
+  assert.match(close, /top:\s*calc\(16px \+ 2%\);/);
+  assert.match(close, /right:\s*calc\(16px \+ 2%\);/);
   assert.match(
     mediaBlock(styles, "(hover: hover)"),
     /\.panel-estate \.panel-close:hover\s*\{\s*background:/,
@@ -1333,6 +1363,12 @@ test("the 404 is a centered cotton-paper sheet with dark ink", async () => {
     (selector) => cssRule(styles, selector).match(/(?:^|[;\s])color:\s*(#[0-9a-f]{6});/i)[1],
   );
   for (const ink of inks) assert.ok(contrast(ink, paper) >= 4.5, `${ink} on paper`);
+  // Phones turned sideways take a shorter sheet and heading, so the paper fits
+  // the screen's height (a 568x320 phone included) and stays centred.
+  const sideways = flatCss(mediaBlock(styles, "(orientation: landscape) and (max-height: 500px)"));
+  assert.match(sideways, /\.not-found \.section \{ padding-block: 12px; \}/);
+  assert.match(sideways, /\.not-found \.story-shell \{ padding-block: 36px; \}/);
+  assert.match(sideways, /\.not-found \.story-shell h1 \{ font-size: 34px; \}/);
 });
 
 const root = new URL("../", import.meta.url);

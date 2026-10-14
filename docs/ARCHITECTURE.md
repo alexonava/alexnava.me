@@ -41,7 +41,7 @@ _lazy_ marks a chunk loaded on demand.
 | ----------------------- | ------------------------------------------------------------------------------------------------------------ |
 | `app.js`                | UI entry: imports the modules below, then main.js                                                            |
 | `main.js`               | Boot, static gates, scene and early model requests                                                           |
-| `ui/hero.js`            | Hero chrome and scroll state                                                                                 |
+| `ui/hero.js`            | Hero chrome and scroll state; the hero is `is-over-scene` while the scene host is ready                      |
 | `ui/panels.js`          | The About menu and category dialogs: focus, Back and Escape, `inert`, `data-panel-open`, `babel:panelchange` |
 | `ui/scene-menu.js`      | Swaps the no-JavaScript About for the About button once `initPanels()` succeeds; warms the dialogs' art      |
 | `ui/deep-links.js`      | `#about`, `#profile`, `#experience`, `#contact` and their `-text` aliases                                    |

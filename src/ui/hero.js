@@ -50,6 +50,25 @@
     onScroll();
     apply(current);
 
+    // The tablet intro's text scrim guards the line over the live scene only
+    // (styles.css): the hero is is-over-scene while the scene host is ready,
+    // and the oval fades with the canvas. Without MutationObserver it stays
+    // on, so the line keeps its guard; without a host there is no scene.
+    const host = document.getElementById("home-scene");
+    if (host) {
+      const sync = () =>
+        hero.classList.toggle("is-over-scene", host.classList.contains("is-ready"));
+      if (typeof window.MutationObserver === "function") {
+        new window.MutationObserver(sync).observe(host, {
+          attributes: true,
+          attributeFilter: ["class"],
+        });
+        sync();
+      } else {
+        hero.classList.add("is-over-scene");
+      }
+    }
+
     window.addEventListener(
       "resize",
       () => {
