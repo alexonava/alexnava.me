@@ -105,10 +105,12 @@ export const SLATE_TILING = Object.freeze({
 // reads. Near the lens the slate's own mid-scale blotches, enlarged there, give
 // way to its broad tone (`calm` of it: the tile `blur` mip levels down, and
 // its relief calmed alike). The grit moves the soil's albedo by up to `albedo` about it; the
-// relief, `relief` units high, tilts its normal through its screen
-// derivatives. Both are full within near[0] of the lens and gone by near[1],
-// and the relief fades where a texel shrinks below `footprint` pixels and
-// under water.
+// relief, `relief` units high, tilts its normal by its slope worked out at
+// each pixel (the map's own texel differences and the crumbs' exact slope),
+// never by screen derivatives, which step in two-pixel blocks along the lit
+// crests. Both are full within near[0] of the lens and gone by near[1], and
+// the relief fades where a texel (one of `texels` across the tile) shrinks
+// below `footprint` pixels and under water.
 export const SLATE_CLOSE = Object.freeze({
   tile: 6.6,
   second: Object.freeze({
@@ -123,10 +125,19 @@ export const SLATE_CLOSE = Object.freeze({
   calm: 0.9,
   near: Object.freeze([7, 24]),
   footprint: Object.freeze([0.8, 2]),
+  texels: 1024,
   // Crumbs: a cellular noise of `cell`-unit grains on the close soil's relief
   // (`height`, in relief-map units) and albedo (`albedo`), so it reads as
-  // crumbly earth; gone where a cell shrinks under `fade` pixels.
-  crumb: Object.freeze({ cell: 0.075, height: 1, albedo: 0.6, fade: Object.freeze([1.6, 4]) }),
+  // crumbly earth; gone where a cell shrinks under `fade` pixels. Neighbouring
+  // grains meet in a valley rounded by a smooth minimum (`round`: its
+  // sharpness), so no crease cuts a hard line along a lit crest.
+  crumb: Object.freeze({
+    cell: 0.075,
+    height: 1,
+    albedo: 0.6,
+    fade: Object.freeze([1.6, 4]),
+    round: 12,
+  }),
 });
 
 // The far plain's own structure (the owner's pick of 2026-10-09, "detailed"):
@@ -911,7 +922,8 @@ const PATH_LENGTH = glslNumber(
 );
 const SECOND = SLATE_TILING.second,
   DETAIL = SLATE_TILING.detail,
-  CLOSE = SLATE_CLOSE;
+  CLOSE = SLATE_CLOSE,
+  CLOSE_TEXEL = glslNumber(1 / SLATE_CLOSE.texels);
 const FAR = SLATE_FAR,
   FAR_SWATHE = FAR.swathes.cells
     .map((cell, i) => {
@@ -930,33 +942,45 @@ const FAR = SLATE_FAR,
 const CLOSE_PRE = `
       vec2 slateCU = vMudWorld.xz/${glslNumber(CLOSE.tile)}, slateCV = mat2(${CLOSE.second.turn.map(glslNumber)})*slateCU*${glslNumber(CLOSE.second.scale)}+${glslVec(CLOSE.second.offset)};
       float slateCW = smoothstep(.3, .7, slateNoise(vMudWorld.xz/${glslNumber(CLOSE.blendCell)})), slateCN = 1.-smoothstep(${CLOSE.near.map(glslNumber)}, length(vViewPosition));
-      float slateCG = mix(texture2D(slateGrit, slateCU).r, texture2D(slateGrit, slateCV).r, slateCW), slateCH = mix(texture2D(slateRelief, slateCU).r, texture2D(slateRelief, slateCV).r, slateCW);
-      vec2 slateKP = vMudWorld.xz/${glslNumber(CLOSE.crumb.cell)}, slateKI = floor(slateKP), slateKF = fract(slateKP);
+      float slateCHU = texture2D(slateRelief, slateCU).r, slateCHV = texture2D(slateRelief, slateCV).r;
+      float slateCG = mix(texture2D(slateGrit, slateCU).r, texture2D(slateGrit, slateCV).r, slateCW), slateCH = mix(slateCHU, slateCHV, slateCW);
+      // The relief's slope per world unit, from each lookup's next texels (the second's turned and scaled back).
+      vec2 slateCDH = mix(vec2(texture2D(slateRelief, slateCU+vec2(${CLOSE_TEXEL}, 0.)).r, texture2D(slateRelief, slateCU+vec2(0., ${CLOSE_TEXEL})).r)-slateCHU,
+        (vec2(texture2D(slateRelief, slateCV+vec2(${CLOSE_TEXEL}, 0.)).r, texture2D(slateRelief, slateCV+vec2(0., ${CLOSE_TEXEL})).r)-slateCHV)*mat2(${CLOSE.second.turn.map(glslNumber)})*${glslNumber(CLOSE.second.scale)}, slateCW)*${glslNumber(CLOSE.texels / CLOSE.tile)};
+      vec2 slateKP = vMudWorld.xz/${glslNumber(CLOSE.crumb.cell)}, slateKI = floor(slateKP), slateKF = fract(slateKP), slateKD = vec2(0.);
       float slateKW = slateCN*smoothstep(${CLOSE.crumb.fade.map(glslNumber)}, 1./max(length(fwidth(slateKP)), 1e-4)), slateK1 = 1.;
-      // Only where the crumbs show (near the lens, a cell over a few pixels).
+      // Only where the crumbs show (near the lens, a cell over a few pixels): the
+      // nearest grain by a smooth minimum, and its slope per world unit.
       if (slateKW > 0.) {
+        float slateKS = 0.;
         for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
           vec2 slateKG = vec2(float(i), float(j));
           vec3 slateKH = fract(vec3(slateKI+slateKG, slateKI.x+slateKG.x)*vec3(.1031, .103, .0973));
           slateKH += dot(slateKH, slateKH.yzx+33.33);
           vec2 slateKO = fract((slateKH.xx+slateKH.yz)*slateKH.zy)-slateKF+slateKG;
-          slateK1 = min(slateK1, dot(slateKO, slateKO));
+          float slateKE = exp(-${glslNumber(CLOSE.crumb.round)}*dot(slateKO, slateKO));
+          slateKS += slateKE;
+          slateKD += slateKE*slateKO;
         }
+        slateK1 = -log(slateKS)/${glslNumber(CLOSE.crumb.round)};
+        slateKD *= -2./(slateKS*${glslNumber(CLOSE.crumb.cell)});
       }
-      float slateCrumb = (1.-smoothstep(0., .6, slateK1))-.4;
+      float slateCrumb = (1.-smoothstep(0., .6, slateK1))-.4, slateKT = clamp(slateK1/.6, 0., 1.);
       slateCH += slateCrumb*${glslNumber(CLOSE.crumb.height)}*slateKW;
+      slateCDH -= 10.*slateKT*(1.-slateKT)*slateKD*${glslNumber(CLOSE.crumb.height)}*slateKW;
       slateCG += slateCrumb*${glslNumber(CLOSE.crumb.albedo)}*slateKW;
       sampledDiffuseColor.rgb = mix(sampledDiffuseColor.rgb, mix(texture2D(map, vMapUv, ${glslNumber(CLOSE.blur)}).rgb, texture2D(map, slateUvB, ${glslNumber(CLOSE.blur)}).rgb, slateW)*(.93+.14*slateNoise(vMudWorld.xz/${glslNumber(SLATE_TILING.macroCell)})), ${glslNumber(CLOSE.calm)}*slateCN);
       `;
 const CLOSE_MAP = `
       diffuseColor.rgb *= 1.+(slateCG-.5)*${glslNumber(CLOSE.albedo)}*slateCN;`;
-// Its relief on the normal, from the height's screen derivatives (as three's
-// perturbNormalArb()), faded where a texel shrinks below a pixel and under water.
+// Its relief on the normal (as three's perturbNormalArb()), the height's change
+// across a pixel taken from its slope at that pixel (and the lookups' slowly
+// varying blend), faded where a texel shrinks below a pixel and under water.
 const CLOSE_NORMAL = `
-      float slateCF = slateCN*smoothstep(${CLOSE.footprint.map(glslNumber)}, 1./max(length(fwidth(slateCU))*1024., 1e-4))*(1.-slatePuddle);
+      float slateCF = slateCN*smoothstep(${CLOSE.footprint.map(glslNumber)}, 1./max(length(fwidth(slateCU))*${glslNumber(CLOSE.texels)}, 1e-4))*(1.-slatePuddle);
       vec3 slateSX = dFdx(-vViewPosition), slateSY = dFdy(-vViewPosition), slateR1 = cross(slateSY, normal), slateR2 = cross(normal, slateSX);
       float slateDet = dot(slateSX, slateR1);
-      vec2 slateDH = vec2(dFdx(slateCH), dFdy(slateCH))*${glslNumber(CLOSE.relief)}*slateCF;
+      vec2 slateDH = (vec2(dot(slateCDH, dFdx(vMudWorld.xz)), dot(slateCDH, dFdy(vMudWorld.xz)))+vec2(dFdx(slateCW), dFdy(slateCW))*(slateCHV-slateCHU))*${glslNumber(CLOSE.relief)}*slateCF;
       // The silt bar's ripple marks, across the flow (SLATE_BANKS.silt.ripple).
       float slateRipple = sin(6.2832*(slateStreamQ.y*${glslNumber(SLATE_BANKS.silt.ripple[0])}+.35*slateNoise(vec2(slateStreamQ.y*1.7, slateStreamQ.z*slateStreamQ.w*2.3))))*${glslNumber(SLATE_BANKS.silt.ripple[1])}*slateSilt*slateCN;
       slateDH += vec2(dFdx(slateRipple), dFdy(slateRipple));

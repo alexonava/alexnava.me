@@ -471,14 +471,26 @@ test("the river's water lies only below its shore, as the terrain carves it, and
   assert.ok(soil.fragment.includes("*(1.-slatePuddle);"));
   assert.match(
     soil.fragment,
-    /slateDH = vec2\(dFdx\(slateCH\), dFdy\(slateCH\)\)\*[\d.]+\*slateCF;/,
+    /slateDH = \(vec2\(dot\(slateCDH, dFdx\(vMudWorld\.xz\)\), dot\(slateCDH, dFdy\(vMudWorld\.xz\)\)\)\+vec2\(dFdx\(slateCW\), dFdy\(slateCW\)\)\*\(slateCHV-slateCHU\)\)\*[\d.]+\*slateCF;/,
+  );
+  // That slope is worked out at each pixel, from the map's next texels and the crumbs'
+  // exact slope, never from the height's screen derivatives, which step in two-pixel
+  // blocks along the lit crests; the grains meet in valleys rounded by a smooth minimum.
+  assert.doesNotMatch(soil.fragment, /dFd[xy]\(slateCH\)/);
+  assert.ok(soil.fragment.includes(`vec2(${1 / SLATE_CLOSE.texels}, 0.)`));
+  assert.ok(SLATE_CLOSE.crumb.round >= 8);
+  assert.ok(
+    soil.fragment.includes(`slateK1 = -log(slateKS)/${SLATE_CLOSE.crumb.round.toFixed(1)};`),
   );
   // Near the lens the slate's blotches give way to its blurred tone.
   assert.ok(soil.fragment.includes(`texture2D(map, vMapUv, ${SLATE_CLOSE.blur}.0)`));
   assert.ok(SLATE_CLOSE.calm > 0 && SLATE_CLOSE.calm < 1);
   // Crumbs: a cellular noise on the close soil's relief and grit, worked out
   // only where they show (near the lens, a cell over a few pixels).
-  assert.match(soil.fragment, /if \(slateKW > 0\.\) \{\s*for \(int j = -1; j <= 1; j\+\+\)/);
+  assert.match(
+    soil.fragment,
+    /if \(slateKW > 0\.\) \{\s*float slateKS = 0\.;\s*for \(int j = -1; j <= 1; j\+\+\)/,
+  );
   const crumbHeight = Number.isInteger(SLATE_CLOSE.crumb.height)
     ? SLATE_CLOSE.crumb.height.toFixed(1)
     : String(SLATE_CLOSE.crumb.height);
