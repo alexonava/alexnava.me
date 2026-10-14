@@ -9,8 +9,9 @@
 // class arrives in `lib` (rock-scatter.js ROCK_LIB).
 
 // Reach of each directed shot's view wedge from its subject; other tower shots 45.
-// Against the moon takes none: a wedge of its own would reseed the pebbles in every
-// other shot.
+// Against the moon (added 2026-10-12) takes none: a wedge of its own would reseed
+// the pebbles in every other shot; its view keeps cluster G's rock as a foreground
+// silhouette below the lookout.
 const SHOT_REACH = {
   "The watch": 160,
   Portrait: 95,

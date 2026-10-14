@@ -1416,10 +1416,10 @@ test("Portrait takes the whole look on its plain (a moonlit clearing, low mist, 
     "Threshold",
     "Masonry study",
     "Watch and tree",
+    "Against the moon",
     "Portrait",
     "Lantern study",
     "Root and lantern",
-    "Against the moon",
   ];
   assert.deepEqual(
     names((g) => g.mist),

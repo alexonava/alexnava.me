@@ -426,9 +426,8 @@ test("every moving shot holds still on landscape phones and keeps a move on desk
       assert.ok(resolveDirectedShot(shot, width, height).move, `${shot.name} ${width}x${height}`);
   }
   // Phones and portrait monitors take moves without a sideways truck: this
-  // close, a truck takes the lens into the trunk. Against the moon stands far from
-  // the trunk, behind the lookout's foot, and its truck brings the lookout's legs in.
-  for (const shot of DIRECTED_SHOTS.tree.filter((s) => s.move && s.name !== "Against the moon"))
+  // close, a truck takes the lens into the trunk.
+  for (const shot of DIRECTED_SHOTS.tree.filter((s) => s.move))
     for (const [width, height] of [
       [390, 844],
       [1080, 1920],

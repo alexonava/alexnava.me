@@ -199,6 +199,36 @@ export const DIRECTED_SHOTS = {
         ...AFTER_RAIN,
       },
     },
+    {
+      name: "Against the moon",
+      // The only shot facing the moon (the owner's pick of 2026-10-12): from the far side of the
+      // lookout, low on the plain, its lattice a silhouette with the strongest moon rim, the wet
+      // plain shining toward the light, the tree small and apart on the right; the star stands
+      // behind the lens. Appended to the lookout's shots, so earlier URLs keep their angles.
+      tour: false, // Out of the tour (owner, 2026-10-14); its URL is retained.
+      region: [0, 1],
+      fov: 38,
+      azimuth: -160,
+      height: 0.15,
+      arc: 2,
+      hold: 7,
+      margin: 0.75,
+      anchor: [0.4, 0.5],
+      move: { truck: [-0.05, 0.05], dolly: [1.02, 0.96], ease: 0.6 },
+      // One night: the moon keys it from ahead, so the key at full strength draws its rim and
+      // the plain's sheen; the fill, from behind the lens, comes down.
+      light: { key: 1, fill: 0.55, rim: 1.6 },
+      ground: AFTER_RAIN,
+      // Phones turn further round, so the star overhead stays out of their tall frame.
+      portrait: {
+        azimuth: -135,
+        anchor: [0.5, 0.62],
+        margin: 0.85,
+        move: { dolly: [1.02, 0.96], ease: 0.6 },
+      },
+      // Landscape phones keep the drift: no room about the name for a move.
+      landscape: { move: null },
+    },
   ],
   tree: [
     {
@@ -210,6 +240,10 @@ export const DIRECTED_SHOTS = {
         // Phones keep their open-sky framing: no tilt, the tree at its own size.
         margin: 0.93,
         tilt: null,
+        // The tall frame reaches high into the sky, clear at -72 degrees ("for this one the
+        // sky cannot be seen"), so phones turn toward the banks (the owner's pick of
+        // 2026-10-14, -30 nudged to -38 so no massif's snow stands behind the crown).
+        azimuth: -38,
       },
       // The crown in moonlight (the owner's pick of 2026-10-09): its pale,
       // bleached limbs read cool grey, not pink-beige (pale). One night
@@ -383,41 +417,6 @@ export const DIRECTED_SHOTS = {
       // Landscape phones keep the drift (no room about the name for a move)
       // and the -115° axis.
       landscape: { move: null, azimuth: -115, anchor: [0.5, 0.5] },
-    },
-    {
-      name: "Against the moon",
-      // The tree against the moon (the owner's call of 2026-10-14: "bring the camera closer
-      // to the tower so that the subject is the tree. then while moving camera to the left the
-      // tower legs appear on screen"): the lens stands low a few units behind the lookout's
-      // foot, a little round from the line to the tree, so the tree, nearly toward the moon
-      // from there (its bearing 33 degrees, the moon's 24), is backlit on the right and the
-      // lookout's nearest leg stands at the left edge. As the camera trucks left, the legs
-      // and a brace slide in and frame it, dark beside the name. Appended to the tree's
-      // shots, so earlier URLs keep their angles.
-      region: [0, 1],
-      fov: 35,
-      azimuth: -155,
-      height: 0.15,
-      arc: 2,
-      hold: 7,
-      margin: 0.9,
-      anchor: [0.64, 0.5],
-      move: { truck: [-0.06, 0], ease: 0.6 },
-      // One night: the moon keys it from ahead, so the key at full strength draws the
-      // limbs' rim and the plain's sheen; the fill, from behind the lens, comes down.
-      light: { key: 1, fill: 0.55, rim: 1.6 },
-      ground: AFTER_RAIN,
-      // Phones take a wider lens, fitted to the trunk and lower limbs (the whole crown
-      // would back the lens far off), the tree low in the middle and the legs sliding in.
-      portrait: {
-        fov: 60,
-        margin: 0.95,
-        widthBelow: 0.4,
-        anchor: [0.5, 0.6],
-        move: { truck: [-0.05, 0], ease: 0.6 },
-      },
-      // Landscape phones keep the drift: no room about the name for a move.
-      landscape: { move: null },
     },
   ],
 };

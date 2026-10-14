@@ -115,8 +115,8 @@ test("valid angle overrides remain reproducible and missing or invalid angles se
   const unexpectedRandom = () => {
     throw new Error("opening angle must not use RNG");
   };
-  // The tower has five angles (Watch and tree is ?angle=5), the tree five (Against the moon 5).
-  const counts = { tower: 5, tree: 5 };
+  // The tower has six angles (Watch and tree is ?angle=5, Against the moon 6), the tree four.
+  const counts = { tower: 6, tree: 4 };
   for (const [view, count] of Object.entries(counts)) {
     assert.equal(DIRECTED_SHOTS[view].length, count);
     for (let angle = 1; angle <= count; angle++)
@@ -1173,22 +1173,22 @@ test("the ten directed shots keep their names and distinct viewpoints", () => {
       "Masonry study",
       "Gallery detail",
       "Watch and tree",
+      "Against the moon",
       "Portrait",
       "Lantern study",
       "Close-up",
       "Root and lantern",
-      "Against the moon",
     ],
   );
   const keys = new Set(all.map((s) => `${s.azimuth}/${s.height}/${s.region.join()}`));
   assert.equal(keys.size, 10);
-  // Against the moon looks from the lookout's foot toward the moon key (its bearing atan2(z,
-  // x)) within 5 degrees, so the tree stands against it, backlit.
-  const moon = DIRECTED_SHOTS.tree.find((shot) => shot.name === "Against the moon"),
+  // Against the moon looks toward the moon key (its bearing atan2(z, x)) within 5 degrees, so
+  // the lookout stands against it, backlit; on phones it turns further round.
+  const moon = DIRECTED_SHOTS.tower.find((shot) => shot.name === "Against the moon"),
     key = (Math.atan2(MOON_LIGHTS.key[2], MOON_LIGHTS.key[0]) * 180) / Math.PI,
     looks = moon.azimuth + 180;
   assert.ok(Math.abs(((looks - key + 540) % 360) - 180) < 5, `looks toward ${looks}, key ${key}`);
-  assert.equal(TOUR_ORDER.indexOf("Against the moon"), TOUR_ORDER.indexOf("Close-up") + 1);
+  assert.equal(TOUR_ORDER.includes("Against the moon"), false, "out of the tour since 2026-10-14");
   for (const shot of all) {
     assert.ok(shot.height >= 0.1 && shot.height <= 0.7);
     assert.ok(shot.fov >= 30 && shot.fov <= 46);
