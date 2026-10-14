@@ -29,6 +29,48 @@ void main() {
 }
 `;
 
+// The motion-picture film look (the owner's ask of 2026-10-14, "lean in slightly further to
+// go for a motion picture film look"), in film only; each part switches off with its `on`.
+// - `halation`: the warm glow film stock bleeds about bright lights (the star, the
+//   lantern's flame, the moonlit rims): the bloom's own light (its composite, already drawn
+//   on high; no pass of its own) added again in `color` times `strength`. None where
+//   bloom is off (balanced).
+// - `print`: a print film's toe, the blacks lifted `lift` toward `tint` (cool, milky)
+//   below `toe` graded luma, and the grade's split tone a little stronger in film
+//   (`cool` shadows, `warm` highlights).
+// - `grain`: `strength` at mid-grey, weighted toward the midtones (`floor` of it in the
+//   deep shade and the highlights), in cells `cell` CSS px across, each channel `chroma`
+//   apart; at 24 frames a second and held with the scene.
+// - `weave`: the frame drifts up to `amount` CSS px on a slow wander, stepped at 24 frames
+//   a second, as film running through a gate; the bars, the text band and the page's
+//   text stay put, and it holds whenever the grain does.
+export const FILM_LOOK = Object.freeze({
+  halation: Object.freeze({ on: 1, strength: 1.2, color: Object.freeze([1, 0.32, 0.12]) }),
+  print: Object.freeze({
+    on: 1,
+    lift: 0.022,
+    toe: 0.12,
+    tint: Object.freeze([0.8, 0.92, 1.2]),
+    cool: 0.2,
+    warm: 0.15,
+  }),
+  grain: Object.freeze({ on: 1, strength: 0.03, floor: 0.25, cell: 1.5, chroma: 0.35 }),
+  weave: Object.freeze({ on: 1, amount: 0.35 }),
+});
+
+// The painted sky's ink (the owner's ask of 2026-10-14, "a paint brush sky theme"): in film
+// its clouds' edges take `mix`, its weight thickening and thinning by up to `vary` over a
+// slow noise `scale` cells across the frame's height, as a brush's line does. Its
+// `canvas`, [amount, threads]: a woven canvas tooth under the painted sky in the final
+// pass (after the grade's bands, so none steps along its threads), `threads` across the
+// frame's height, lightening and darkening the bare sky (its depth code) by `amount`.
+export const SKY_INK = Object.freeze({
+  mix: 0.2,
+  vary: 0.5,
+  scale: 9,
+  canvas: Object.freeze([0.02, 90]),
+});
+
 const GRADING_SHADER = {
   name: "BabelGradingShader",
   uniforms: {
@@ -40,10 +82,22 @@ const GRADING_SHADER = {
     uShadowCoolMix: { value: 0.34 },
     uTexelSize: { value: new Vector2(1, 1) },
     uLayerRelief: { value: 0 },
+    // The film look (FILM_LOOK): the bloom's composite and its halation tint (0: none),
+    // the print toe (lift, toe) and its tint, and the ink's brush weight (vary, scale).
+    tHalation: { value: null },
+    uHalation: { value: new Vector3() },
+    uPrint: { value: new Vector2(0, 0.12) },
+    uPrintTint: { value: new Vector3(1, 1, 1) },
+    uInkVary: { value: new Vector2(0, 9) },
   },
   vertexShader: PASS_VERTEX_SHADER,
   fragmentShader: `
 uniform sampler2D tDiffuse;
+uniform sampler2D tHalation;
+uniform vec3 uHalation;
+uniform vec2 uPrint;
+uniform vec3 uPrintTint;
+uniform vec2 uInkVary;
 uniform float uCelMix;
 uniform float uInkMix;
 uniform float uContrast;
@@ -52,6 +106,17 @@ uniform float uShadowCoolMix;
 uniform vec2 uTexelSize;
 uniform float uLayerRelief;
 varying vec2 vUv;
+
+float inkHash(vec2 p) {
+  vec3 q = fract(vec3(p.xyx) * 0.1031);
+  q += dot(q, q.yzx + 33.33);
+  return fract((q.x + q.y) * q.z);
+}
+float inkNoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(inkHash(i), inkHash(i + vec2(1.0, 0.0)), f.x), mix(inkHash(i + vec2(0.0, 1.0)), inkHash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
 
 vec3 saturateColor(vec3 color, float amount) {
   float luma = dot(color, vec3(0.299, 0.587, 0.114));
@@ -111,8 +176,14 @@ void main() {
   // In film only where the pixel and its four neighbours are all bare sky: the
   // clouds' own edges, never an outline on a subject, a crest, the ground or a shaft.
   float skyInk = mix(1.0, (1.0 - smoothstep(0.0, 0.006, texel.a)) * (1.0 - step(0.006, nearest)), uLayerRelief);
-  color = mix(color, vec3(0.035, 0.055, 0.095), inkContour * uInkMix * skyInk);
+  // A brush's line: its weight thickens and thins along the clouds' edges.
+  float inkWeight = 1.0 + uInkVary.x * (2.0 * inkNoise(vUv * vec2(uTexelSize.y / uTexelSize.x, 1.0) * uInkVary.y) - 1.0);
+  color = mix(color, vec3(0.035, 0.055, 0.095), clamp(inkContour * uInkMix * skyInk * inkWeight, 0.0, 1.0));
   }
+  // Halation: the bloom's light again, tinted, as film stock bleeds about bright lights.
+  color += texture2D(tHalation, vUv).rgb * uHalation;
+  // A print film's toe: the blacks lift toward a cool, milky tint.
+  color += uPrintTint * uPrint.x * (1.0 - smoothstep(0.0, uPrint.y, dot(color, vec3(0.299, 0.587, 0.114))));
   // A soft shoulder: highlights past the knee roll off toward white, not clip.
   vec3 over = max(color - 0.75, 0.0);
   color = mix(color, min(color, 0.75) + 0.25 * (1.0 - exp(-over / 0.25)), uLayerRelief);
@@ -374,6 +445,8 @@ const VIGNETTE_GRAIN_SHADER = {
     uBlurPrev: { value: 0 },
     uBars: { value: 0 },
     uGrainTime: { value: 0 },
+    // The gate weave (FILM_LOOK.weave): the frame's offset in UV.
+    uWeave: { value: new Vector2() },
     // The lens (LENS_FX): its sources on screen, as (x, y) in UV, a size in frame
     // heights (the star's radius; a world unit at the flame) and whether it is on,
     // and the kept rect, for the live frame and the kept one.
@@ -413,6 +486,7 @@ uniform float uBlur;
 uniform float uBlurPrev;
 uniform float uBars;
 uniform float uGrainTime;
+uniform vec2 uWeave;
 varying vec2 vUv;
 
 // The lens's shallow focus: the sky and the ranges (film depth layers below
@@ -465,16 +539,19 @@ float layerCode(sampler2D map, vec2 uv) {
 ${LENS_GLSL}
 void main() {
   float guard = uLayered > 0.5 ? max(lensBehind(slateText, vUv, ${lensNumber(LENS_FX.text[0])}), lensBehind(slateAbout, vUv, ${lensNumber(LENS_FX.text[1])})) : 0.0;
-  vec4 texel = uLayered > 0.5 ? lensView(tDiffuse, vUv, vUv, uBlur, uStar, uFlame, uKeep, guard) : texture2D(tDiffuse, vUv);
+  // The film weaves in the gate (uWeave): the frame and its lens move; the guard, the
+  // vignette, the text band and the bars stay put.
+  vec2 fv = vUv + uWeave;
+  vec4 texel = uLayered > 0.5 ? lensView(tDiffuse, fv, fv, uBlur, uStar, uFlame, uKeep, guard) : texture2D(tDiffuse, vUv);
   // The kept frame pushes in about its origin: here it shows its own pixel prevUv,
   // so its lens (heat, fringes, kept rect and flare) is placed in its own UV and
   // stays on its own star and flame.
-  vec2 prevUv = uPrevOrigin + (vUv - uPrevOrigin) * uPrevScale;
+  vec2 prevUv = uPrevOrigin + (fv - uPrevOrigin) * uPrevScale;
   float protection = uTextProtection, w = 1.0;
   if (uProgress < 1.0) {
     float start = 0.0, span = 1.0;
     if (uLayered > 0.5) {
-      start = 3.0 * uStagger.x * clamp(max(layerCode(tPrev, prevUv), layerCode(tDiffuse, vUv)), 0.0, 1.0);
+      start = 3.0 * uStagger.x * clamp(max(layerCode(tPrev, prevUv), layerCode(tDiffuse, fv)), 0.0, 1.0);
       span = uStagger.y;${
         DISSOLVE_BRUSH.on
           ? `
@@ -491,9 +568,16 @@ void main() {
   vec3 color = texel.rgb;
   // The star's flare, dissolving with each frame's own.
   if (uLayered > 0.5 && uLens.z > 0.0) {
-    vec3 flare = lensFlare(vUv, uStar, uKeep);
+    vec3 flare = lensFlare(fv, uStar, uKeep);
     if (uProgress < 1.0) flare = mix(lensFlare(prevUv, uStarPrev, uKeepPrev), flare, w);
     color += flare * (uLens.z * (1.0 - guard));
+  }
+
+  // The painted sky's canvas (SKY_INK.canvas): a woven tooth on the bare sky, on the film.
+  if (uLayered > 0.5) {
+    vec2 cv = fv * vec2(uCssTexel.y / uCssTexel.x, 1.0) * ${lensNumber(SKY_INK.canvas[1] / 2)};
+    float weft = sin(cv.x * 6.2832) * step(0.5, fract(cv.y * 0.5)), warp = sin(cv.y * 6.2832) * (1.0 - step(0.5, fract(cv.x * 0.5)));
+    color *= 1.0 + ${lensNumber(SKY_INK.canvas[0])} * (weft + warp) * 0.5 * (1.0 - smoothstep(0.0, 0.006, texel.a));
   }
 
   if (uVignetteEnabled == 1) {
@@ -503,8 +587,16 @@ void main() {
   }
 
   if (uGrainEnabled == 1) {
-    float grain = hash(floor(vUv * vec2(1280.0, 720.0)) + floor(fract(uGrainTime * vec2(0.618034, 0.414214)) * 97.0)) - 0.5;
-    color += grain * uGrainStrength;
+    if (uLayered > 0.5) {
+      // Film grain (FILM_LOOK.grain): fine cells, each channel a little apart, strongest in the midtones.
+      vec2 g = floor(vUv / (uCssTexel * ${lensNumber(FILM_LOOK.grain.cell)})) + floor(fract(uGrainTime * vec2(0.618034, 0.414214)) * 97.0);
+      vec3 grain = vec3(hash(g) - 0.5) + ${lensNumber(FILM_LOOK.grain.chroma)} * (vec3(hash(g + 17.0), hash(g + 31.0), hash(g + 47.0)) - 0.5);
+      float gl = clamp(dot(color, vec3(0.299, 0.587, 0.114)), 0.0, 1.0);
+      color += grain * uGrainStrength * mix(${lensNumber(FILM_LOOK.grain.floor)}, 1.0, 4.0 * gl * (1.0 - gl));
+    } else {
+      float grain = hash(floor(vUv * vec2(1280.0, 720.0)) + floor(fract(uGrainTime * vec2(0.618034, 0.414214)) * 97.0)) - 0.5;
+      color += grain * uGrainStrength;
+    }
   }
 
   float textShade = smoothstep(1.0 - uTextBottom - .12, 1.0 - uTextBottom + .10, vUv.y);
@@ -645,6 +737,9 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
     setBloomSize(width / ratio, height / ratio);
   };
 
+  // Halation reads the bloom's composite, which it draws anyway on high (no pass of its own).
+  gradingPass.uniforms.tHalation.value = bloomPass.renderTargetsHorizontal[0].texture;
+
   composer.addPass(renderPass);
   composer.addPass(bloomPass);
   composer.addPass(gradingPass);
@@ -741,9 +836,9 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
           ...baseline,
           bloomStrength: 0.2,
           contrast: 1.06,
-          grainStrength: 0.008,
-          highlightWarmMix: 0.12,
-          shadowCoolMix: 0.16,
+          grainStrength: FILM_LOOK.grain.on ? FILM_LOOK.grain.strength : 0.008,
+          highlightWarmMix: FILM_LOOK.print.on ? FILM_LOOK.print.warm : 0.12,
+          shadowCoolMix: FILM_LOOK.print.on ? FILM_LOOK.print.cool : 0.16,
           vignetteStrength: 0.12,
         }
       : baseline;
@@ -757,7 +852,18 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
     bloomPass.blendMaterial.blending = film ? CustomBlending : AdditiveBlending;
     gradingPass.enabled = gradingEnabled;
     gradingPass.uniforms.uCelMix.value = settings.celMix ?? 0.24;
-    gradingPass.uniforms.uInkMix.value = 0.14;
+    gradingPass.uniforms.uInkMix.value = film ? SKY_INK.mix : 0.14;
+    gradingPass.uniforms.uInkVary.value.set(film ? SKY_INK.vary : 0, SKY_INK.scale);
+    // The film look: halation only where the bloom draws.
+    const halation =
+      film && bloomEnabled && FILM_LOOK.halation.on ? FILM_LOOK.halation.strength : 0;
+    gradingPass.uniforms.uHalation.value.set(...FILM_LOOK.halation.color).multiplyScalar(halation);
+    gradingPass.uniforms.uPrint.value.set(
+      film && FILM_LOOK.print.on ? FILM_LOOK.print.lift : 0,
+      FILM_LOOK.print.toe,
+    );
+    gradingPass.uniforms.uPrintTint.value.set(...FILM_LOOK.print.tint);
+    if (!film) finalUniforms.uWeave.value.set(0, 0);
     gradingPass.uniforms.uContrast.value = settings.contrast ?? 1.06;
     gradingPass.uniforms.uHighlightWarmMix.value = settings.highlightWarmMix ?? 0.14;
     gradingPass.uniforms.uShadowCoolMix.value = settings.shadowCoolMix ?? 0.25;
@@ -910,6 +1016,14 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
     // The grain's frame, 24 a second; held while the scene holds still.
     setFilmTime(seconds = 0) {
       finalUniforms.uGrainTime.value = Math.floor(seconds * 24) % 997;
+      // The gate's slow wander (FILM_LOOK.weave), stepped at 24 frames a second.
+      const frame = Math.floor(seconds * 24) / 24,
+        reach = FILM_LOOK.weave.on ? FILM_LOOK.weave.amount : 0,
+        texel = finalUniforms.uCssTexel.value;
+      finalUniforms.uWeave.value.set(
+        (Math.sin(frame * 2.1) * 0.6 + Math.sin(frame * 5.3 + 1.7) * 0.4) * reach * texel.x,
+        (Math.sin(frame * 1.7 + 0.5) * 0.6 + Math.sin(frame * 4.1 + 2.3) * 0.4) * reach * texel.y,
+      );
       // The heat flows on the same clock, smoothly, wrapping each hour.
       finalUniforms.uLensTime.value = seconds % 3600;
     },

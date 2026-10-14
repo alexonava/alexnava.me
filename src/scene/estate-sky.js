@@ -111,6 +111,41 @@ export const CLOUD_VORTEX = Object.freeze({
   protect: Object.freeze([176, 179]),
 });
 
+// The painted sky's brush (the owner's ask of 2026-10-14, "a paint brush sky theme"), in
+// the clouds' own noise space (q, after the swirl's warp), so every stroke follows the
+// banks' flow, the maelstrom's turn and the drift, and never folds the noise. Each takes
+// [amount, along, across]: a value noise stretched along the brush (`dir`, the warp's own
+// shear in noise space, which the swirl bends) at `along` and across it at `across` (per
+// noise unit):
+// - `edge`: the banks' threshold moves by up to `amount`, so each painted band ends in
+//   ragged, dry-brush strokes (high and balanced; eased off behind the name and intro,
+//   whose guard moves density only);
+// - `streak`: faint bristle lines inside the banks, their colour lighter and darker by up
+//   to `amount` before the soft knee (high only);
+// (The canvas under the painted sky is the final pass's: postprocess.js SKY_INK.canvas, after
+// the grade's bands, which would otherwise step along its threads.)
+// uCloudReshape scales all of it (0 in the environment's capture). The reference banks
+// take it too (the owner's call of 2026-10-14, "one film over all"): their shapes and
+// places stay as authored. `on`: 0 emits none of it.
+export const CLOUD_BRUSH = Object.freeze({
+  on: 1,
+  dir: Object.freeze([0.848, -0.53]),
+  edge: Object.freeze([0.06, 0.8, 22]),
+  streak: Object.freeze([0.09, 0.8, 18]),
+});
+// A value noise on the field's own sine-free hash, at the plane point x (GLSL statements
+// leaving the float named out).
+const brushNoise = (x, out) =>
+  `vec2 ${out}x=${x},${out}i=floor(${out}x),${out}f=fract(${out}x);${out}f=${out}f*${out}f*(3.-2.*${out}f);
+vec4 ${out}cx=${out}i.x+vec4(0.,1.,0.,1.),${out}cy=${out}i.y+vec4(0.,0.,1.,1.);
+vec4 ${out}h1=fract(${out}cx*.1031),${out}h2=fract(${out}cy*.1031),${out}hd=${out}h1*(${out}h2+33.33)+${out}h2*(${out}h1+33.33)+${out}h1*(${out}h1+33.33);
+vec4 ${out}hv=fract((${out}h1+${out}h2+2.*${out}hd)*(${out}h1+${out}hd));
+float ${out}=mix(mix(${out}hv.x,${out}hv.y,${out}f.x),mix(${out}hv.z,${out}hv.w,${out}f.x),${out}f.y);
+`;
+// The plane point q in the brush's frame, stretched [along, across].
+const brushFrame = ([, along, across]) =>
+  `vec2(dot(q,vec2(${glslFloat(CLOUD_BRUSH.dir[0])},${glslFloat(CLOUD_BRUSH.dir[1])})),dot(q,vec2(${glslFloat(-CLOUD_BRUSH.dir[1])},${glslFloat(CLOUD_BRUSH.dir[0])})))*vec2(${glslFloat(along)},${glslFloat(across)})`;
+
 const glslFloat = (value) => (Number.isInteger(value) ? value.toFixed(1) : String(value));
 const { wedge, radius, bend, horizon, scale, banks, lanes, swirl, text } = CLOUD_RESHAPE;
 // The soft knee's own offset at the zenith, so the noise radius starts at 0 there.
@@ -246,7 +281,13 @@ float shape=exp(-dot(bankUV,bankUV))*.24+exp(-dot(sunBankUV,sunBankUV))*.30-gapG
 d+=shape; da+=shape;${VORTEX_DENSITY}
 float horizonFade=uNebulaLayers>1.5?smoothstep(0.,.045,altitude):smoothstep(-.03,.17,altitude);
 float w=uNebulaLayers>1.5?.034:mix(.05,.034,smoothstep(.45,.8,altitude));
-float cover=smoothstep(.548-w,.548+w,d)*horizonFade*uClouds;`;
+float brushEdge=0.;
+${
+  CLOUD_BRUSH.on
+    ? `if(uNebulaLayers>1.5){${brushNoise(brushFrame(CLOUD_BRUSH.edge), "be")}brushEdge=${glslFloat(CLOUD_BRUSH.edge[0])}*(be-.5)*2.*(1.-cloudText)*uCloudReshape;}
+`
+    : ""
+}float cover=smoothstep(.548-w,.548+w,d+brushEdge)*horizonFade*uClouds;`;
 }
 
 // The cloud field's text guard, `cloudText`: 1 behind the name and intro (slateText,
@@ -457,7 +498,12 @@ cloudCol=mix(cloudCol,vec3(1.05,1.02,1.10),smoothstep(.5,1.,lit)*(.6+.4*thick));
 cloudCol+=vec3(.07,.07,.09)*smoothstep(.5,1.,lit)*(1.-thick)*cover;
 cloudCol*=(1.0+.4*smoothstep(.55,.85,altitude))*(.86+.26*smoothstep(-.35,.45,direction.z))
 *(1.0-.14*thin)*(1.0-.3*max(gapG,eaveG));
-vec3 kn=vec3(.64,.62,.66), cap=vec3(.88,.86,.91);
+${
+  CLOUD_BRUSH.on
+    ? `if(uNebulaLayers>2.5){${brushNoise(brushFrame(CLOUD_BRUSH.streak), "bs")}cloudCol*=1.+${glslFloat(CLOUD_BRUSH.streak[0])}*(bs-.5)*2.*uCloudReshape;}
+`
+    : ""
+}vec3 kn=vec3(.64,.62,.66), cap=vec3(.88,.86,.91);
 cloudCol=min(cloudCol,kn)+(cap-kn)*(1.-exp(-max(cloudCol-kn,0.)/(cap-kn)));
 ${FLASH_GLSL}
 col+=vec3(.027,.03,.036)*smoothstep(.36,.54,d)*horizonFade*uClouds;
