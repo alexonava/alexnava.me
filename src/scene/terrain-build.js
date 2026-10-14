@@ -2697,15 +2697,37 @@ export function scatterLitter(surface, groundColor) {
 // A rounded pebble or clod, half-width `a` by `b`, `h` high: a top, a ring
 // at PEBBLE_DOME.ring of its width and a ring sunk into the soil, each ring of
 // PEBBLE_DOME.sides jittered points, smooth-shaded from its ellipsoid's normals
-// and a little darker toward the soil. `at(u, w, lift)` places a local point
-// (u along its yaw) on the ground; `turn` is [cos, sin] of that yaw.
-export const PEBBLE_DOME = Object.freeze({ sides: 6, ring: 0.62, jitter: 0.18 });
+// and a little darker toward the soil. A piece at least `large` wide (one the
+// lens can come close to) takes `round` points a ring, so its outline never
+// reads as a polygon; their jitter eases between the `sides` drawn, so every
+// piece takes the same draws and the scatter keeps its places. `at(u, w,
+// lift)` places a local point (u along its yaw) on the ground; `turn` is
+// [cos, sin] of that yaw.
+export const PEBBLE_DOME = Object.freeze({
+  sides: 6,
+  round: 12,
+  large: 0.035,
+  ring: 0.62,
+  jitter: 0.18,
+});
 function pebbleDome(a, b, h, random, at, [cy, sy], rgb, triangle) {
-  const { sides, ring, jitter } = PEBBLE_DOME,
-    spin = random() * Math.PI;
-  const point = (r, y, k) => {
-    const t = spin + (k * 2 * Math.PI) / sides,
-      j = 1 + jitter * (random() * 2 - 1),
+  const { sides, round, large, ring, jitter } = PEBBLE_DOME,
+    spin = random() * Math.PI,
+    drawn = () => Array.from({ length: sides }, () => 1 + jitter * (random() * 2 - 1)),
+    upperJitter = drawn(),
+    lowerJitter = drawn(),
+    n = Math.max(a, b) >= large ? round : sides;
+  // The jitter `k` sides round from the first drawn point, eased between them.
+  const eased = (drawnJitter, k) => {
+    const i = Math.floor(k),
+      f = k - i,
+      s = f * f * (3 - 2 * f);
+    return drawnJitter[i % sides] * (1 - s) + drawnJitter[(i + 1) % sides] * s;
+  };
+  const point = (r, y, m, offset, drawnJitter) => {
+    const k = (m * sides) / n + offset,
+      t = spin + (k * 2 * Math.PI) / sides,
+      j = eased(drawnJitter, k - offset),
       u = Math.cos(t) * a * r * j,
       w = Math.sin(t) * b * r * j;
     // The ellipsoid's normal (its centre at the sunk ring), turned to the world.
@@ -2716,20 +2738,62 @@ function pebbleDome(a, b, h, random, at, [cy, sy], rgb, triangle) {
     return [at(u, w, y), [(nu * cy - nw * sy) / l, ny / l, (nu * sy + nw * cy) / l]];
   };
   const top = [at(0, 0, h), [0, 1, 0]],
-    upper = Array.from({ length: sides }, (_, k) => point(ring, h * 0.8, k + 0.5)),
-    lower = Array.from({ length: sides }, (_, k) => point(1, -h * 0.15, k));
-  const shade = (n) => {
-    const k = 0.68 + 0.32 * Math.max(0, n[1]);
+    upper = Array.from({ length: n }, (_, m) => point(ring, h * 0.8, m, 0.5, upperJitter)),
+    lower = Array.from({ length: n }, (_, m) => point(1, -h * 0.15, m, 0, lowerJitter));
+  const shade = (normal) => {
+    const k = 0.68 + 0.32 * Math.max(0, normal[1]);
     return [rgb[0] * k, rgb[1] * k, rgb[2] * k];
   };
   const face = (p, q, r) =>
     triangle(p[0], q[0], r[0], [shade(p[1]), shade(q[1]), shade(r[1])], [p[1], q[1], r[1]]);
-  for (let k = 0; k < sides; k++) {
-    const k1 = (k + 1) % sides;
+  for (let k = 0; k < n; k++) {
+    const k1 = (k + 1) % n;
     face(top, upper[k1], upper[k]);
     face(upper[k], upper[k1], lower[k1]);
     face(upper[k], lower[k1], lower[k]);
   }
+}
+
+// A fallen leaf (LITTER.fine's, and the banks' debris): a cupped oval on a
+// midrib, `length` long and `width` wide, its rim raised by `cup` and its
+// ends by `curl`, both as drawn times FALLEN_LEAF.lie (damp leaves lie nearly
+// flat, so a low lens never looks under a raised rim), `rise` above the
+// surface `at(u, w, lift)` places it on. Its normals lean out from its middle
+// by `round` of their offset over its length and its rim is `rim` as light as
+// its midrib, so it shades over like a curled leaf, never flat as a card.
+export const FALLEN_LEAF = Object.freeze({ lie: 0.5, round: 1.2, rim: 0.8 });
+function fallenLeaf(at, length, width, cup, curl, rise, rgb, triangle) {
+  const { lie, round, rim } = FALLEN_LEAF,
+    lift = (u) => rise + curl * lie * (2 * u - 1) ** 2;
+  const [[, A], [L1, M1, R1], [L2, M2, R2], [, T]] = [
+    [0, 0],
+    [0.3, 0.46],
+    [0.65, 0.4],
+    [1, 0],
+  ].map(([u, half]) => [
+    at((u - 0.5) * length, -half * width, lift(u) + cup * lie),
+    at((u - 0.5) * length, 0, lift(u)),
+    at((u - 0.5) * length, half * width, lift(u) + cup * lie),
+  ]);
+  const centre = M1.map((v, k) => (v + M2[k]) / 2),
+    normal = ([px, , pz]) => {
+      const n = [((px - centre[0]) / length) * round, 1, ((pz - centre[2]) / length) * round],
+        l = Math.hypot(...n);
+      return n.map((v) => v / l);
+    },
+    edge = rgb.map((c) => c * rim),
+    tone = (v) => (v === M1 || v === M2 ? rgb : edge);
+  for (const [a, b, c] of [
+    [A, M1, L1],
+    [A, R1, M1],
+    [L1, M1, M2],
+    [L1, M2, L2],
+    [M1, R1, R2],
+    [M1, R2, M2],
+    [L2, M2, T],
+    [M2, R2, T],
+  ])
+    triangle(a, b, c, [tone(a), tone(b), tone(c)], [normal(a), normal(b), normal(c)]);
 }
 
 // The fine litter (LITTER.fine), appended through `triangle(a, b, c, rgb)`:
@@ -2787,45 +2851,11 @@ function scatterFine(surface, base, stones, triangle, vertices) {
         width = length * between([0.45, 0.62]),
         cup = width * between([0.12, 0.3]),
         curl = length * between([0.05, 0.22]),
-        lift = (u) => 0.008 + curl * (2 * u - 1) ** 2;
-      const [[, A], [L1, M1, R1], [L2, M2, R2], [, T]] = [
-        [0, 0],
-        [0.3, 0.46],
-        [0.65, 0.4],
-        [1, 0],
-      ].map(([u, half]) => [
-        at((u - 0.5) * length, -half * width, lift(u) + cup),
-        at((u - 0.5) * length, 0, lift(u)),
-        at((u - 0.5) * length, half * width, lift(u) + cup),
-      ]);
-      const centre = M1.map((v, k) => (v + M2[k]) / 2),
-        leafNormal = ([px, , pz]) => {
-          const n = [(px - centre[0]) * 0.8, 1, (pz - centre[2]) * 0.8],
-            l = Math.hypot(...n);
-          return n.map((v) => v / l);
-        };
-      const age = random(),
+        age = random(),
         rgb = F.leafTone.map(
           (c, k) => c * (0.6 + 0.6 * age) * dim * (k === 1 ? 1 - 0.15 * age : 1),
         );
-      for (const [a, b, c] of [
-        [A, M1, L1],
-        [A, R1, M1],
-        [L1, M1, M2],
-        [L1, M2, L2],
-        [M1, R1, R2],
-        [M1, R2, M2],
-        [L2, M2, T],
-        [M2, R2, T],
-      ])
-        // Soft, mostly upward normals: a curled leaf, not a folded card.
-        triangle(
-          a,
-          b,
-          c,
-          rgb,
-          [a, b, c].map((v) => leafNormal(v)),
-        );
+      fallenLeaf(at, length, width, cup, curl, 0.008, rgb, triangle);
       left.leaves--;
     } else {
       // A rounded, jittered dome: a soil clod or a grain of grit.
@@ -3071,7 +3101,9 @@ export function plantReeds(surface) {
 //   radii), the delta (river radii `delta` within `fan` units of the mouth) and
 //   the river's near bank (river radii `river`, within `reach` units along of
 //   where it passes the lantern but not within `clear` of it); `tone` times
-//   the soil's grey, darker (`wet`) at the water.
+//   the soil's grey, darker (`wet`) at the water. None lies in the river: a
+//   pebble inside `shore` river radii (its own width past the waterline) is
+//   left out, its draws still taken, so the rest keep their places.
 // - debris: `count` leaves and twigs at the stream's waterline (radii
 //   `waterline`) and `eddy` of them in the slack water just behind each stone.
 export const WATER_BANKS = Object.freeze({
@@ -3090,6 +3122,7 @@ export const WATER_BANKS = Object.freeze({
     reach: 7,
     clear: 1.6,
     lantern: 0.9,
+    shore: 1.04,
   }),
   debris: Object.freeze({
     count: 60,
@@ -3198,7 +3231,8 @@ function* bankSteps(surface, groundColor) {
     const y = surface(x, z);
     return Number.isFinite(y) ? y : fallback;
   };
-  let placed = 0;
+  let placed = 0,
+    drawn = 0;
   for (let attempt = 0; placed < G.count && attempt < G.count * 8; attempt++) {
     const spot = candidate();
     if (!spot) continue;
@@ -3221,7 +3255,11 @@ function* bankSteps(surface, groundColor) {
         tz = u * sy + w * cy;
       return [x + tx, groundAt(x + tx, z + tz, y) + lift, z + tz];
     };
-    pieces.push(positions.length / 3);
+    const dry = riverRadius(x, z) >= G.shore;
+    if (dry) {
+      pieces.push(positions.length / 3);
+      drawn++;
+    }
     pebbleDome(
       a,
       b,
@@ -3230,7 +3268,7 @@ function* bankSteps(surface, groundColor) {
       at,
       [cy, sy],
       [k * (1 + warm), k, k * (1 - warm)],
-      (p, q, r, rgb, n) => triangle(p, q, r, rgb, n),
+      dry ? (p, q, r, rgb, n) => triangle(p, q, r, rgb, n) : () => {},
     );
     if (++placed % 64 === 0) yield;
   }
@@ -3299,28 +3337,7 @@ function* bankSteps(surface, groundColor) {
       age = random(),
       // Darker than the litter's leaves: wet, and lit by the lantern beside the water.
       rgb = F.leafTone.map((c, k) => c * (0.32 + 0.33 * age) * (k === 1 ? 1 - 0.15 * age : 1));
-    const [[, A], [L1, M1, R1], [L2, M2, R2], [, T]] = [
-      [0, 0],
-      [0.3, 0.46],
-      [0.65, 0.4],
-      [1, 0],
-    ].map(([u, h]) => [
-      at((u - 0.5) * length, -h * width, 0.006 + cup),
-      at((u - 0.5) * length, 0, 0.006),
-      at((u - 0.5) * length, h * width, 0.006 + cup),
-    ]);
-    const up = [0, 1, 0];
-    for (const [a, b, c] of [
-      [A, M1, L1],
-      [A, R1, M1],
-      [L1, M1, M2],
-      [L1, M2, L2],
-      [M1, R1, R2],
-      [M1, R2, M2],
-      [L2, M2, T],
-      [M2, R2, T],
-    ])
-      triangle(a, b, c, rgb, [up, up, up]);
+    fallenLeaf(at, length, width, cup, 0, 0.006, rgb, triangle);
   }
   const geometry = new BufferGeometry();
   geometry.setAttribute("position", new BufferAttribute(new Float32Array(positions), 3));
@@ -3331,7 +3348,7 @@ function* bankSteps(surface, groundColor) {
     new BufferAttribute(new Float32Array((positions.length / 3) * 2), 2),
   );
   geometry.computeBoundingSphere();
-  geometry.userData.gravel = placed;
+  geometry.userData.gravel = drawn;
   geometry.userData.debris = debris.length;
   // Balanced draws GROWTH.balanced of the pieces (estate-ground-detail.js).
   geometry.userData.fine = [0, positions.length / 3];

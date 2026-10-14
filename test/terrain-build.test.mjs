@@ -61,6 +61,7 @@ import {
   riverBedAt,
   plantRushes,
   PEBBLE_DOME,
+  FALLEN_LEAF,
   RUSHES,
   STREAMS,
   STREAM_LINES,
@@ -1994,7 +1995,7 @@ test("sparse dark litter and small grey stones lie among the roots, clear of the
     );
   }
   assert.ok(
-    litterVertices / 3 > 300 && litterVertices / 3 < 1400,
+    litterVertices / 3 > 300 && litterVertices / 3 < 1700,
     `${litterVertices / 3} triangles`,
   );
   // The small stones: among the roots and about the trunk's base, clear of
@@ -2057,8 +2058,8 @@ test("the fine litter (leaves, clods, grit) lies on the foreground soil, never u
     p = litter.attributes.position,
     c = litter.attributes.color;
   // All of them found room; every piece is a leaf (8 triangles) or a rounded
-  // dome (PEBBLE_DOME: 3 triangles a side), smooth-shaded so none reads as a
-  // faceted pyramid.
+  // dome (PEBBLE_DOME: 3 triangles a side, more sides on a piece the lens can
+  // come close to), smooth-shaded so none reads as a faceted pyramid.
   const pieces = litter.userData.finePieces,
     wanted = F.counts.leaves + F.counts.clods + F.counts.gravel;
   assert.equal(pieces.length, wanted);
@@ -2069,7 +2070,10 @@ test("the fine litter (leaves, clods, grit) lies on the foreground soil, never u
   pieces.forEach((first, k) => {
     const end = pieces[k + 1] ?? litter.userData.fine[1],
       count = end - first;
-    assert.ok(count === 24 || count === PEBBLE_DOME.sides * 9, `piece ${k} has ${count} vertices`);
+    assert.ok(
+      count === 24 || count === PEBBLE_DOME.sides * 9 || count === PEBBLE_DOME.round * 9,
+      `piece ${k} has ${count} vertices`,
+    );
     if (count !== 24) domes++;
     let x = 0,
       z = 0;
@@ -2090,6 +2094,31 @@ test("the fine litter (leaves, clods, grit) lies on the foreground soil, never u
     }
   });
   assert.equal(domes, F.counts.clods + F.counts.gravel);
+  // A piece the lens can come close to (a clod, the coarser grit) is round, the
+  // finest grit keeps the few sides it needs.
+  const round = pieces.filter(
+    (first, k) => (pieces[k + 1] ?? litter.userData.fine[1]) - first === PEBBLE_DOME.round * 9,
+  ).length;
+  assert.ok(round > F.counts.clods * 0.9 && round < domes / 2, `${round} round domes`);
+  // The leaves lie damp and nearly flat, and shade over their curl: normals leaning
+  // out from the middle, the rim darker than the midrib, never a flat card.
+  assert.ok(FALLEN_LEAF.lie > 0 && FALLEN_LEAF.lie < 1 && FALLEN_LEAF.rim < 1);
+  let leaves = 0;
+  pieces.forEach((first, k) => {
+    if ((pieces[k + 1] ?? litter.userData.fine[1]) - first !== 24) return;
+    leaves++;
+    let lean = 0,
+      lo = Infinity,
+      hi = 0;
+    for (let i = first; i < first + 24; i++) {
+      lean = Math.max(lean, 1 - n.getY(i));
+      lo = Math.min(lo, c.getX(i));
+      hi = Math.max(hi, c.getX(i));
+    }
+    assert.ok(lean > 0.02, `leaf ${k} shades flat`);
+    assert.ok(lo < hi * (FALLEN_LEAF.rim + 0.01), `leaf ${k} keeps one tone`);
+  });
+  assert.equal(leaves, F.counts.leaves);
   litter.dispose();
   terrain.dispose();
 });
@@ -2738,12 +2767,16 @@ test("the water's banks: gravel bars, reeds and debris stay out of the water, of
   assert.deepEqual(banks.attributes.position.array, again.attributes.position.array);
   const p = banks.attributes.position,
     c = banks.attributes.color;
-  assert.equal(banks.userData.gravel, WATER_BANKS.gravel.count);
+  // None lies in the river: the few that would are left out.
+  assert.ok(
+    banks.userData.gravel > WATER_BANKS.gravel.count * 0.9 &&
+      banks.userData.gravel < WATER_BANKS.gravel.count,
+  );
   assert.ok(banks.userData.debris > WATER_BANKS.debris.count * 0.8);
   // A share of whole pieces for balanced (estate-ground-detail.js).
   assert.deepEqual(banks.userData.fine, [0, p.count]);
   assert.equal(banks.userData.finePieces[0], 0);
-  assert.ok(p.count / 3 < 36000, `${p.count / 3} triangles`);
+  assert.ok(p.count / 3 < 46000, `${p.count / 3} triangles`);
   const pieces = banks.userData.finePieces;
   let inWater = 0;
   for (let k = 0; k < pieces.length; k++) {
@@ -2755,6 +2788,9 @@ test("the water's banks: gravel bars, reeds and debris stay out of the water, of
       Math.hypot(x - LANTERN_FOOT.x, z - LANTERN_FOOT.z) > WATER_BANKS.gravel.lantern - 0.15,
     );
     assert.equal(rootCovered(x, z), false, `piece ${k} under a root`);
+    // A pebble's first vertex is its top, over its middle: none lies in the river.
+    if (k < banks.userData.gravel)
+      assert.ok(riverRadius(x, z) >= WATER_BANKS.gravel.shore, `pebble ${k} in the river`);
     if (streamRadius(x, z) < 0.8 && riverRadius(x, z) < 0.8) inWater++;
   }
   // Only the eddy leaves and twigs behind the stones float on the stream.
