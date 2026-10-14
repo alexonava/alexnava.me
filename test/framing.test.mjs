@@ -369,12 +369,37 @@ test("The watch resolves its landscape variant only for short landscape viewport
     [932, 430],
   ])
     assert.ok(width >= SQUAT_LANDSCAPE * height, `${width}x${height} is a landscape phone`);
-  // Portrait screens, phones and monitors alike, take the portrait variant: the lookout left of
-  // centre, the star whole to its right.
+  // A shot's tall variant reframes portrait monitors alone (the name below the subject),
+  // over its portrait variant; phones and tablets, the hero stacked above, keep that one.
+  {
+    const probe = {
+      name: "probe",
+      azimuth: 10,
+      anchor: [0.5, 0.5],
+      portrait: { azimuth: 20, anchor: [0.3, 0.5] },
+      tall: { anchor: [0.7, 0.4] },
+    };
+    const tall = resolveDirectedShot(probe, 1080, 1920);
+    assert.deepEqual([tall.azimuth, tall.anchor], [20, [0.7, 0.4]]);
+    assert.equal(resolveDirectedShot(probe, 1200, 1920), tall, "built once");
+    for (const [width, height] of [
+      [390, 844],
+      [820, 1180],
+      [1024, 1366],
+    ])
+      assert.deepEqual(resolveDirectedShot(probe, width, height).anchor, [0.3, 0.5]);
+    assert.equal(resolveDirectedShot(probe, 1920, 1080).anchor, probe.anchor);
+  }
+  // Portrait screens take the portrait variant: the lookout left of centre, the star whole
+  // to its right. Portrait monitors take it too, but at its earlier bearing (tall): from the
+  // phones' -9 the lookout would cover the star on their wider frame.
   const portrait = resolveDirectedShot(watch, 430, 932);
   assert.equal(portrait.azimuth, watch.portrait.azimuth);
   assert.ok(portrait.anchor[0] < 0.5);
-  assert.equal(resolveDirectedShot(watch, 1080, 1920), portrait);
+  const monitor = resolveDirectedShot(watch, 1080, 1920);
+  assert.deepEqual({ ...monitor }, { ...watch, ...watch.portrait, ...watch.tall });
+  assert.equal(monitor.azimuth, -12);
+  assert.equal(resolveDirectedShot(watch, 820, 1180), portrait, "tablets stack the hero");
   // Landscape phones under 600px wide take a compact variant: a drift, a little nearer the
   // star's bearing.
   for (const [width, height] of [

@@ -1134,12 +1134,13 @@ test("a shot's tilt pitches the camera from its cut to the next, a move's on its
 
   assert.equal(f.controller.setPreviewShot("tower", 4), true);
   // Driven by the tour: the cut opens at tilt[0]. A 1440x900 desktop is cut to
-  // 2.39:1 and keeps the base shot, which tilts from -6 to -3.
+  // 2.39:1 and takes the letterbox variant, which tilts from -5 to -2 (a degree above the
+  // base's -6 to -3, so the star keeps clear of the top bar).
   assert.equal(f.render(0), 0);
   assert.equal(f.controller.shot.name, "Watch and tree");
   assert.equal(f.controller.shot, resolveDirectedShot(DIRECTED_SHOTS.tower[4], 1440, 900));
-  assert.equal(f.controller.shot, DIRECTED_SHOTS.tower[4]);
-  assert.deepEqual(f.controller.shot.tilt, [-6, -3]);
+  assert.deepEqual(DIRECTED_SHOTS.tower[4].tilt, [-6, -3]);
+  assert.deepEqual(f.controller.shot.tilt, [-5, -2]);
   const [from, to] = f.controller.shot.tilt,
     half = (from + to) / 2;
   closeTo(pose().pitch, from, 1e-6);
@@ -1424,10 +1425,17 @@ test("widescreen bars cut desktops to 2.39:1, never phones, portrait, narrow or 
   assert.equal(phone.top, 201);
 
   // The bars pick a shot's letterbox variant, built once; shots without one keep their base
-  // form. (No directed shot carries one now: the tour's giants frame every desktop alike.)
+  // form. Only the two URL-only shots carry one (the review of 2026-10-14): Masonry study
+  // aims lower, so the snow clears the name, and Watch and tree tilts higher, so the star
+  // clears the top bar; the tour's giants frame every desktop alike.
   assert.deepEqual(
     [...DIRECTED_SHOTS.tower, ...DIRECTED_SHOTS.tree].filter((s) => s.letterbox).map((s) => s.name),
-    [],
+    ["Masonry study", "Watch and tree"],
+  );
+  assert.ok(
+    [...DIRECTED_SHOTS.tower, ...DIRECTED_SHOTS.tree]
+      .filter((s) => s.letterbox)
+      .every((s) => s.tour === false),
   );
   for (const base of [
     ...DIRECTED_SHOTS.tower,

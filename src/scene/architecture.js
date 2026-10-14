@@ -30,6 +30,7 @@ import {
   PALE,
   PALE_MOOD,
   RIM,
+  RIM_THIN,
   RIM_UNIFORMS,
   STONE_MOOD,
   STONE_TEXT,
@@ -423,7 +424,7 @@ ${ROOT_MOSS_MAP}`
         shader.fragmentShader = shader.fragmentShader.replace(
           "#include <lights_fragment_end>",
           `#include <lights_fragment_end>
-          float babelRim = pow(1.0-saturate(dot(geometryNormal, geometryViewDir)), 4.0);
+          float babelRim = pow(1.0-saturate(dot(geometryNormal, geometryViewDir)), 4.0)*${RIM_THIN};
           reflectedLight.directDiffuse += babelRimLight.rgb*babelFilm*babelRim${guarded ? BARK_RIM_TEXT : ""}*mix(babelRimLight.w, 1.0, saturate(dot(-geometryViewDir, babelKeyView)));`,
         );
       // Without the environment, the wet bark's faint grazing sheen.

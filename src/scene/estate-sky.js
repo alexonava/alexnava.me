@@ -130,7 +130,7 @@ export const CLOUD_VORTEX = Object.freeze({
 export const CLOUD_BRUSH = Object.freeze({
   on: 1,
   dir: Object.freeze([0.848, -0.53]),
-  edge: Object.freeze([0.06, 0.8, 22]),
+  edge: Object.freeze([0.035, 0.6, 10]),
   streak: Object.freeze([0.09, 0.8, 18]),
 });
 // A value noise on the field's own sine-free hash, at the plane point x (GLSL statements
@@ -301,12 +301,18 @@ return 1.-smoothstep(0.,${glslFloat(text[1])},length(f));}`;
 const noText = () => ({ x: 2, y: 2, z: -1, w: -1 });
 
 const { wedge: flashWedge, radius: flashRadius } = FLASH_REFERENCE;
+// The flash's lift of the clear sky between the banks reaches only as far as their
+// density comes near the cover threshold: from `near[0]` (none) to `near[1]` (full,
+// the threshold). Deep in clear sky it is 0, so the grade's cel step never cuts a
+// lone disc or slab of light out of open sky (the review of 2026-10-14); the banks
+// still glow from inside.
+export const FLASH_SKY = Object.freeze({ near: Object.freeze([0.42, 0.548]) });
 // A lightning flash in the banks (lightning.js), drawn by the shell while uFlash.w
 // (its level) is above 0: the banks glow cold from inside about the flash's point
 // on the cloud plane (uFlash.xyz, a world direction), over uFlashGlow.x of the
 // plane, by uFlashGlow.y (and uFlashCore more in the banks' hot centre, a third of
 // that radius), their thick cores fully and their thin edges by 1 - uFlashGlow.w,
-// and the clear sky between them by uFlashGlow.z, so the grade's cel step reads
+// and the clear sky near them by uFlashGlow.z (FLASH_SKY), so the grade's cel step reads
 // the flash in the banks' own bands. It is exactly 0 over the reference banks
 // (FLASH_REFERENCE, so The watch's crop keeps every pixel) and eases off behind
 // the name and intro (the clouds' text guard) and About (uFlashTone.w of the
@@ -319,7 +325,7 @@ fa=max(max(slateAbout.xy-fa,fa-slateAbout.zw),0.)*vec2(slateAspect,1.)/min(slate
 float fg=exp(-dot(fo,fo)), fl=uFlash.w*(1.-smoothstep(${glslFloat(flashWedge[0])},${glslFloat(flashWedge[1])},cloudAz)*(1.-smoothstep(${glslFloat(flashWedge[2])},${glslFloat(flashWedge[3])},cloudAz))*smoothstep(${glslFloat(flashRadius[0])},${glslFloat(flashRadius[1])},bl))
 *(1.-max(cloudText,1.-smoothstep(0.,uFlashTone.w,length(fa))));
 cloudCol+=uFlashTone.rgb*fl*(fg+uFlashCore*pow(fg,9.))*uFlashGlow.y*mix(1.-uFlashGlow.w,1.,thick);
-col+=uFlashTone.rgb*fl*fg*uFlashGlow.z;
+col+=uFlashTone.rgb*fl*fg*uFlashGlow.z*smoothstep(${glslFloat(FLASH_SKY.near[0])},${glslFloat(FLASH_SKY.near[1])},d);
 }`;
 
 // Where a camera at `eye` sees the star (`star`, world) on the cloud plane: the sky

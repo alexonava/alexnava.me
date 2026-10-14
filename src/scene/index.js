@@ -314,6 +314,9 @@ const ORBIT_SPEED = 0.06;
             prepare: prepareTourShot,
           })
         : null;
+      // Seconds until the tour's next capture (Infinity without a running tour), set
+      // each frame; the lightning dims a flash to nothing by then (LIGHTNING.cutFade).
+      let tourCutIn = Infinity;
       if (cameraTour) subsystemRegistry.register({ dispose: () => cameraTour.dispose() });
       // The current profile's anisotropy, within the caller's maximum and the GPU's.
       function chooseAnisotropy(maximum) {
@@ -395,6 +398,7 @@ const ORBIT_SPEED = 0.06;
         textGuard: groundContacts,
         film: () => filmActive,
         shot: () => cinematic.shot?.name ?? null,
+        cutIn: () => tourCutIn,
         profile: state.profile,
         skyRadius: WORLD.SKY_DOME_RADIUS,
         date: sceneDate,
@@ -954,6 +958,11 @@ const ORBIT_SPEED = 0.06;
             panelOpen: document.body.hasAttribute("data-panel-open"),
           }) ?? null;
         const transition = cameraTour?.transition ?? TOUR_IDLE;
+        // Seconds until the tour's next capture, for the lightning (cutFade).
+        tourCutIn =
+          cameraTour?.running && tourPhase !== null
+            ? Math.max(0, (1 - tourPhase) * cameraTour.state.dwell)
+            : Infinity;
         // Each step changes the tier or, below balanced, only the pixel ratio. A
         // running tour takes it on a cut, where the crossfade's kept frame hides
         // its one-off work.

@@ -230,6 +230,22 @@ export const DISSOLVE_BRUSH = Object.freeze({
   edge: 0.4,
 });
 
+// The dissolve's mask, softened (the review of 2026-10-14: each cut first showed the
+// incoming subject as a hard-edged cut-out of the outgoing frame): each frame's layer
+// code is averaged over a disc `radius` of the frame's height across (`taps` taps about
+// the cross's maximum at its centre), so a silhouette turns over that width rather than
+// at one pixel. With `star`, the star's disc (its parts' codes stacked past `star[0]`,
+// whole by `star[1]`; the glow alone reads under it) dissolves on its own frame's code
+// alone, whole, never handed over by the other frame's horizon, root or branches, while
+// its wide glow keeps the mask, so it never opens a hole in the other frame; and the
+// lens's flare goes by the transition's progress, evenly. `on`: 0 keeps the hard mask.
+export const DISSOLVE_SOFT = Object.freeze({
+  on: 1,
+  radius: 0.03,
+  taps: 12,
+  star: Object.freeze([0.105, 0.12]),
+});
+
 // The lens (the owner's pick of the Eye breakdown, 2026-10-09), all of it in the
 // final pass, in film only; each part switches off with its `on`.
 export const LENS_FX = Object.freeze({
@@ -542,7 +558,26 @@ float layerCode(sampler2D map, vec2 uv) {
   return max(max(texture2D(map, uv).a, max(texture2D(map, uv - x).a, texture2D(map, uv + x).a)),
     max(texture2D(map, uv - y).a, texture2D(map, uv + y).a));
 }
-${LENS_GLSL}
+${
+  DISSOLVE_SOFT.on
+    ? `float softCode(sampler2D map, vec2 uv) {
+  float aspect = uCodeTexel.y / uCodeTexel.x, sum = layerCode(map, uv);
+  for (int i = 1; i <= ${DISSOLVE_SOFT.taps}; i++) {
+    float r = sqrt(float(i) / ${lensNumber(DISSOLVE_SOFT.taps)}) * ${lensNumber(DISSOLVE_SOFT.radius)}, a = float(i) * 2.39996;
+    sum += texture2D(map, uv + vec2(cos(a) / aspect, sin(a)) * r).a;
+  }
+  return sum / ${lensNumber(DISSOLVE_SOFT.taps + 1)};
+}
+`
+    : ""
+}${
+    DISSOLVE_SOFT.star
+      ? `float starCode(float code) {
+  return smoothstep(${lensNumber(DISSOLVE_SOFT.star[0])}, ${lensNumber(DISSOLVE_SOFT.star[1])}, code) * (1.0 - smoothstep(0.22, 0.28, code));
+}
+`
+      : ""
+  }${LENS_GLSL}
 void main() {
   float guard = uLayered > 0.5 ? max(lensBehind(slateText, vUv, ${lensNumber(LENS_FX.text[0])}), lensBehind(slateAbout, vUv, ${lensNumber(LENS_FX.text[1])})) : 0.0;
   vec4 texel = uLayered > 0.5 ? lensView(tDiffuse, vUv, vUv, uBlur, uStar, uFlame, uKeep, guard) : texture2D(tDiffuse, vUv);
@@ -554,7 +589,16 @@ void main() {
   if (uProgress < 1.0) {
     float start = 0.0, span = 1.0;
     if (uLayered > 0.5) {
-      start = 3.0 * uStagger.x * clamp(max(layerCode(tPrev, prevUv), layerCode(tDiffuse, vUv)), 0.0, 1.0);
+      float codePrev = ${DISSOLVE_SOFT.on ? "softCode" : "layerCode"}(tPrev, prevUv), codeNow = ${DISSOLVE_SOFT.on ? "softCode" : "layerCode"}(tDiffuse, vUv);${
+        DISSOLVE_SOFT.star
+          ? `
+      // Each frame's star dissolves on its own code: the other frame's layers never hold it.
+      float starPrev = starCode(texture2D(tPrev, prevUv).a), starNow = starCode(texture2D(tDiffuse, vUv).a);
+      codePrev *= 1.0 - starNow;
+      codeNow *= 1.0 - starPrev;`
+          : ""
+      }
+      start = 3.0 * uStagger.x * clamp(max(codePrev, codeNow), 0.0, 1.0);
       span = uStagger.y;${
         DISSOLVE_BRUSH.on
           ? `
@@ -572,7 +616,7 @@ void main() {
   // The star's flare, dissolving with each frame's own.
   if (uLayered > 0.5 && uLens.z > 0.0) {
     vec3 flare = lensFlare(vUv, uStar, uKeep);
-    if (uProgress < 1.0) flare = mix(lensFlare(prevUv, uStarPrev, uKeepPrev), flare, w);
+    if (uProgress < 1.0) flare = mix(lensFlare(prevUv, uStarPrev, uKeepPrev), flare, ${DISSOLVE_SOFT.star ? "smoothstep(0.0, 1.0, uProgress)" : "w"});
     color += flare * (uLens.z * (1.0 - guard));
   }
 

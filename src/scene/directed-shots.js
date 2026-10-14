@@ -65,9 +65,10 @@ export const DIRECTED_SHOTS = {
       hold: 9,
       ground: { ...AFTER_RAIN, mist: { ...AFTER_RAIN.mist, amount: 0.75 } },
       // Portrait screens, narrower, stand the lookout left of centre, the star whole to its
-      // right, and keep the gentler dolly zoom (the wider one crops the star there).
+      // right, and keep the gentler dolly zoom (the wider one crops the star there); from
+      // -9 the cab's corner keeps its air off a tablet's left edge (the review of 2026-10-14).
       portrait: {
-        azimuth: -12,
+        azimuth: -9,
         anchor: [0.28, 0.54],
         margin: 0.88,
         focus: { width: 0.22, depth: [-0.3, 0.3] },
@@ -79,6 +80,10 @@ export const DIRECTED_SHOTS = {
       compact: { move: null, region: [0.56, 1], anchor: [0.5, 0.62] },
       // Squarish short windows aim further left, so the star stays whole inside the right edge.
       squat: { move: null, anchor: [0.35, 0.54] },
+      // Portrait monitors keep -12: from -9 the lookout covers the star there, and moving
+      // the lookout off the name (below it on monitors) cut the star or brought snow
+      // behind the name (the review of 2026-10-14).
+      tall: { azimuth: -12 },
     },
     {
       name: "Threshold",
@@ -111,7 +116,11 @@ export const DIRECTED_SHOTS = {
       landscape: { move: null, region: [0.56, 1], anchor: [0.64, 0.62] },
       // Under 600px wide a little nearer the star keeps its glow off the intro.
       compact: { azimuth: 46, move: null, region: [0.56, 1], anchor: [0.64, 0.62] },
-      squat: { azimuth: 48, move: null },
+      // Squat windows aim 1.5 degrees up, so the ranges' snowy crests drop below the frame
+      // rather than graze its bottom edge beside About.
+      squat: { azimuth: 48, move: null, tilt: [1.5, 1.5] },
+      // Portrait monitors: the lookout right, the name on sky and ground beside its legs.
+      tall: { anchor: [0.66, 0.5] },
     },
     {
       // The name and URL are retained; for the timber lookout it is a
@@ -130,6 +139,9 @@ export const DIRECTED_SHOTS = {
       margin: 0.87,
       ground: AFTER_RAIN,
       portrait: { focus: { width: 0.16, depth: [0.13, 0.36] } },
+      // Letterboxed desktops aim a degree lower, so the massif's snow stands clear above
+      // the name at 1440x900.
+      letterbox: { tilt: [-1, -1] },
     },
     {
       name: "Gallery detail",
@@ -182,7 +194,11 @@ export const DIRECTED_SHOTS = {
       // smallest landscape windows, the name above the subject's left, see the
       // pair mirrored from across the plain: the tree left, the lookout right,
       // the star whole beyond it.
-      portrait: { azimuth: 55, margin: 0.56, anchor: [0.21, 0.62], tilt: [-1, 2] },
+      // Phones start aimed 4 degrees down, so the cut never shows the sky shell's edge in
+      // the top corner; letterboxed desktops tilt a degree higher than the base, so the
+      // star keeps clear of the top bar through the push at 1440x900.
+      portrait: { azimuth: 55, margin: 0.56, anchor: [0.21, 0.62], tilt: [-4, 2] },
+      letterbox: { tilt: [-5, -2] },
       landscape: { azimuth: 75, margin: 0.6, anchor: [0.5, 0.55], tilt: [-3, 0], move: null },
       compact: { azimuth: -15, margin: 0.6, anchor: [0.6, 0.55], tilt: [-3, 0], move: null },
       squat: {
@@ -242,14 +258,15 @@ export const DIRECTED_SHOTS = {
         tilt: null,
         // The tall frame reaches high into the sky, clear at -72 degrees ("for this one the
         // sky cannot be seen"), so phones turn toward the banks (the owner's pick of
-        // 2026-10-14, -30 nudged to -38 so no massif's snow stands behind the crown).
-        azimuth: -38,
+        // 2026-10-14, -38; -40 after the review, so the lantern's glass clears the root,
+        // no snow meets the trunk or a frame edge, and no lone puff sits by the name).
+        azimuth: -40,
       },
       // The crown in moonlight (the owner's pick of 2026-10-09): its pale,
       // bleached limbs read cool grey, not pink-beige (pale). One night
       // (2026-10-12): the lantern a little stronger at the trunk's foot,
       // leading into Lantern study.
-      light: { fill: 0.85, rim: 1.3, pale: 0.75, lantern: 1.2 },
+      light: { fill: 0.85, rim: 1.3, pale: 1, lantern: 1.2 },
       move: { truck: [-0.07, 0.07], crane: [0, 0.13], dolly: [1.05, 0.92], ease: 0.6 },
       // Low (0.12), so the plain ahead is foreshortened under the ranges, and
       // calmed: the near slate burned down, its texture and glints quietened
@@ -380,6 +397,9 @@ export const DIRECTED_SHOTS = {
       // Landscape phones keep the drift (no room about the name for a move),
       // from higher, so the roots stay below the short frame.
       landscape: { move: null, margin: 0.83, height: 0.5, anchor: [0.5, 0.5] },
+      // Portrait monitors, the name below the subject: turned 7 degrees, so the trunk's
+      // edge clears the name (shifting the aim instead let the roots in).
+      tall: { azimuth: -162 },
     },
     {
       name: "Root and lantern",
@@ -461,17 +481,27 @@ const variantShots = new WeakMap();
 export function resolveDirectedShot(shot, width, height) {
   const short = height <= 500,
     squat = short && width > height && width < SQUAT_LANDSCAPE * height;
+  // Portrait monitors (taller than wide, too wide to stack the hero) set the name
+  // below the subject, where phones set it above: a shot's `tall` variant, over its
+  // portrait one, reframes them alone.
+  const tall = shot.tall && height > width && !isStackedLayout(width, height);
   const variant =
     shot.letterbox && letterboxShare(width, height) > 0
       ? shot.letterbox
       : squat && shot.squat
         ? shot.squat
-        : height > width || isStackedLayout(width, height) || squat
-          ? shot.portrait
-          : short && ((width < 600 && shot.compact) || shot.landscape);
+        : tall
+          ? shot.tall
+          : height > width || isStackedLayout(width, height) || squat
+            ? shot.portrait
+            : short && ((width < 600 && shot.compact) || shot.landscape);
   if (!variant) return shot;
   let resolved = variantShots.get(variant);
-  if (!resolved) variantShots.set(variant, (resolved = { ...shot, ...variant }));
+  if (!resolved)
+    variantShots.set(
+      variant,
+      (resolved = tall ? { ...shot, ...shot.portrait, ...variant } : { ...shot, ...variant }),
+    );
   return resolved;
 }
 

@@ -1614,6 +1614,30 @@ test("a shot's light mood merges over the neutral default and never shares it", 
   for (const shot of inside) assert.equal(shotLight(shot).grassInside, 1);
 });
 
+test("the moon's and the flash's rims ease off twigs a pixel or two wide", () => {
+  assert.ok(Object.isFrozen(RIM.thin) && RIM.thin[0] < RIM.thin[1]);
+  // A twig w px wide turns its normal about 2/w across a pixel: beads at a pixel or two,
+  // the whole rim from a few pixels across.
+  assert.ok(RIM.thin[0] >= 0.8 && RIM.thin[1] <= 2.5);
+  const light = flat(source("src/scene/film-light.js"));
+  assert.ok(
+    light.includes(
+      "export const RIM_THIN = `(1.0-smoothstep(${RIM.thin[0].toFixed(2)}, ${RIM.thin[1].toFixed(2)}, length(fwidth(geometryNormal))))`;",
+    ),
+  );
+  assert.ok(
+    light.includes(
+      "pow(1.0-saturate(dot(geometryNormal, geometryViewDir)), 4.0)*${RIM_THIN}*mix(babelFlashRim.w",
+    ),
+  );
+  const architecture = flat(source("src/scene/architecture.js"));
+  assert.ok(
+    architecture.includes(
+      "float babelRim = pow(1.0-saturate(dot(geometryNormal, geometryViewDir)), 4.0)*${RIM_THIN};",
+    ),
+  );
+});
+
 test("setRim scales the cool rim colour and keeps the moon-facing floor", () => {
   assert.ok(Object.isFrozen(RIM) && Object.isFrozen(RIM.color));
   const light = RIM_UNIFORMS.babelRimLight.value,

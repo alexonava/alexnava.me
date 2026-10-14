@@ -14,6 +14,7 @@ import { DEPTH_LAYER, STAR_LAYER } from "../src/scene/depth-layers.js";
 import {
   createPostprocessPipeline,
   DISSOLVE_BRUSH,
+  DISSOLVE_SOFT,
   FILM_LOOK,
   LAYER_STAGGER,
   SKY_INK,
@@ -912,9 +913,23 @@ test("the final pass decodes each frame's layer from a 5-tap cross and mixes by 
   for (const tap of ["uv - x", "uv + x", "uv - y", "uv + y"])
     assert.ok(layerCode.includes(`texture2D(map, ${tap}).a`), tap);
   assert.match(layerCode, /vec2 x = vec2\(uCodeTexel\.x, 0\.0\), y = vec2\(0\.0, uCodeTexel\.y\);/);
+  // Each frame's code, softened (DISSOLVE_SOFT): the cross's maximum averaged with a disc
+  // of taps `radius` of the frame's height across, so a silhouette turns over that width.
+  assert.ok(DISSOLVE_SOFT.on && DISSOLVE_SOFT.radius > 0 && DISSOLVE_SOFT.radius <= 0.05);
+  const soft = shader.slice(shader.indexOf("float softCode("), shader.indexOf("float starCode("));
+  assert.match(soft, /float aspect = uCodeTexel\.y \/ uCodeTexel\.x, sum = layerCode\(map, uv\);/);
+  assert.ok(soft.includes(`for (int i = 1; i <= ${DISSOLVE_SOFT.taps}; i++)`));
+  assert.match(
+    soft,
+    /sum \+= texture2D\(map, uv \+ vec2\(cos\(a\) \/ aspect, sin\(a\)\) \* r\)\.a;/,
+  );
+  assert.ok(soft.includes(`return sum / ${(DISSOLVE_SOFT.taps + 1).toFixed(1)};`));
+  // The star's disc dissolves on its own frame's code, whole: the other frame's code
+  // never holds it; its glow (codes under star[0]) keeps the mask.
+  assert.ok(DISSOLVE_SOFT.star[0] < DISSOLVE_SOFT.star[1] && DISSOLVE_SOFT.star[1] < 0.22);
   assert.match(
     shader,
-    /start = 3\.0 \* uStagger\.x \* clamp\(max\(layerCode\(tPrev, prevUv\), layerCode\(tDiffuse, vUv\)\), 0\.0, 1\.0\);\s*span = uStagger\.y;/,
+    /float codePrev = softCode\(tPrev, prevUv\), codeNow = softCode\(tDiffuse, vUv\);[\s\S]*?float starPrev = starCode\(texture2D\(tPrev, prevUv\)\.a\), starNow = starCode\(texture2D\(tDiffuse, vUv\)\.a\);\s*codePrev \*= 1\.0 - starNow;\s*codeNow \*= 1\.0 - starPrev;\s*start = 3\.0 \* uStagger\.x \* clamp\(max\(codePrev, codeNow\), 0\.0, 1\.0\);\s*span = uStagger\.y;/,
   );
   // In film the kept frame dissolves through the outgoing shot's lens: its focus,
   // and its heat, fringes and kept rect (LENS_FX).
@@ -1017,10 +1032,11 @@ test("the lens's heat, fringes and flare live in the final pass, in film, off th
   // The focus's taps never sit behind a per-pixel branch: no early return in lensView.
   const view = shader.slice(shader.indexOf("vec4 lensView("), shader.indexOf("vec3 lensFlare("));
   assert.equal((view.match(/return /g) || []).length, 1);
-  // The flare dissolves with each frame's own, and only while the star is in frame.
+  // The flare dissolves with each frame's own, evenly by the transition's progress (never
+  // cut by the other frame's layers), and only while the star is in frame.
   assert.match(
     shader,
-    /if \(uProgress < 1\.0\) flare = mix\(lensFlare\(prevUv, uStarPrev, uKeepPrev\), flare, w\);/,
+    /if \(uProgress < 1\.0\) flare = mix\(lensFlare\(prevUv, uStarPrev, uKeepPrev\), flare, smoothstep\(0\.0, 1\.0, uProgress\)\);/,
   );
   assert.match(shader, /float shown = star\.w \* smoothstep\(-star\.z, 2\.0 \* star\.z, inside\);/);
   // One block per ghost, each dropped whole near the kept rect.

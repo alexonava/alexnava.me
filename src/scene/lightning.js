@@ -72,6 +72,8 @@ import { FLASH_GROUND, FLASH_UNIFORMS, lendFlashText } from "./film-light.js";
 // - `months`: the calendar months (1-12, by the visitor's own date when the scene
 //   starts) the storm comes in: spooky October only (the owner's call of
 //   2026-10-13); any other month the night is still, with no flash or bolt.
+// - `cutFade`: seconds before a tour cut's capture over which a flash dims to nothing,
+//   so the dissolve's kept frame never holds one (the review of 2026-10-14).
 // - `forceAt`: a debug override for captures, empty in use: scene seconds (or
 //   { at, u, v, bolt, strength, pulses, shot, tall }) at which an event's first
 //   pulse peaks; u, v place it on the canvas (0-1, v up; `tall`'s on a canvas
@@ -85,6 +87,7 @@ export const LIGHTNING = Object.freeze({
   pulses: Object.freeze([1, 3]),
   gap: Object.freeze([0.08, 0.2]),
   attack: 0.025,
+  cutFade: 0.35,
   decay: Object.freeze([0.06, 0.14]),
   echo: Object.freeze([0.45, 0.85]),
   perSecond: 3,
@@ -472,14 +475,17 @@ attribute vec4 aInfo;
 attribute float aGlow;
 uniform vec2 uViewport;
 uniform float uHalo;
-varying float vAcross, vGlow, vArrive, vWidth;
+varying float vAcross, vGlow, vArrive, vWidth, vAlong, vLength;
 void main(){
 vec4 a=projectionMatrix*viewMatrix*vec4(cameraPosition+position*100.,1.);
 vec4 o=projectionMatrix*viewMatrix*vec4(cameraPosition+aOther*100.,1.);
 float end=aInfo.y>.5?1.:-1.;
 vec2 d=(o.xy/o.w-a.xy/a.w)*uViewport*-end;
-d/=max(length(d),1e-4);
+float len=length(d);
+d/=max(len,1e-4);
 float w=uHalo*aInfo.w;
+// Along the segment, from one end: its overhang past each end fades as the core does.
+vAlong=end>0.?len+w*.35:-w*.35; vLength=len;
 a.xy+=(vec2(-d.y,d.x)*aInfo.x+d*end*.35)*w/uViewport*a.w;
 a.z=a.w*.99999;
 gl_Position=a;
@@ -488,9 +494,11 @@ vAcross=aInfo.x; vGlow=aGlow; vArrive=aInfo.z; vWidth=aInfo.w;
     fragmentShader: `
 uniform float uLevel, uGrow, uCore, uHalo, uGlow;
 uniform vec3 uColor;
-varying float vAcross, vGlow, vArrive, vWidth;
+varying float vAcross, vGlow, vArrive, vWidth, vAlong, vLength;
 void main(){
 float px=abs(vAcross)*uHalo*vWidth, core=uCore*vWidth;
+// Round caps: past an end the distance counts as across it, so bends join smoothly.
+px=length(vec2(px,max(max(-vAlong,vAlong-vLength),0.)));
 float c=(exp(-px*px/(core*core))+uGlow*exp(-px*px/(uHalo*uHalo*vWidth*vWidth*.16)))*vGlow*uLevel*step(vArrive,uGrow);
 gl_FragColor=vec4(uColor*c,min(c,1.)*${STAR_LAYER});
 }`,
@@ -535,8 +543,9 @@ function writeBolt(mesh, segments) {
 // uFlashTone, uFlashCore), `rendering` lends its lights' film intensities (the
 // sky and flat light the flash adds a share of, the cool fill's direction),
 // `textGuard` is the ground's text boxes (createSlateContacts(), lent to the
-// flash's materials), `film()` whether the film is on and `shot()` the shot on
-// screen. `config` defaults to LIGHTNING.
+// flash's materials), `film()` whether the film is on, `shot()` the shot on
+// screen and `cutIn()` the seconds until the tour's next capture (Infinity without
+// one). `config` defaults to LIGHTNING.
 export function createLightning({
   parent,
   camera,
@@ -545,6 +554,7 @@ export function createLightning({
   textGuard = null,
   film = () => true,
   shot = () => null,
+  cutIn = () => Infinity,
   profile = {},
   config = LIGHTNING,
   skyRadius = 130,
@@ -796,7 +806,12 @@ export function createLightning({
         return true;
       }
       const local = settingsFor(where.shot);
-      const level = event.strength * lightningLevel(event, time, local.attack);
+      // Before a cut the flash dims to nothing by the capture (cutFade).
+      const toCut = cutIn(),
+        level =
+          event.strength *
+          lightningLevel(event, time, local.attack) *
+          (local.cutFade > 0 ? smoothstep(0, local.cutFade, toCut) : 1);
       state.level = level;
       state.event = {
         k: event.k,

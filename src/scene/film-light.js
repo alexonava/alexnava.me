@@ -37,12 +37,18 @@ export function shotLight(shot) {
 // past the name, the intro and About (a share of the screen's smaller side)
 // the tree's rim eases back in where a shot takes it off the text (its mood's
 // rimText, the uniform babelRimText; only the bark has the text's boxes, so
-// the lookout's rim is whole).
+// the lookout's rim is whole); thin: across [from, to] of the normal's turn over one
+// pixel (length(fwidth(geometryNormal))) the rim eases off, so twigs a pixel or two
+// wide, whose few pixels all face grazing, never string into bright beads (the review
+// of 2026-10-14); anything a few pixels across keeps its whole rim.
 export const RIM = Object.freeze({
   color: Object.freeze([0.19, 0.24, 0.36]),
   floor: 0.2,
   textReach: 0.2,
+  thin: Object.freeze([1, 2]),
 });
+// The rim's share left on thin geometry (RIM.thin), as a GLSL factor.
+export const RIM_THIN = `(1.0-smoothstep(${RIM.thin[0].toFixed(2)}, ${RIM.thin[1].toFixed(2)}, length(fwidth(geometryNormal))))`;
 export const RIM_UNIFORMS = Object.freeze({
   babelRimLight: { value: new Vector4(0, 0, 0, RIM.floor) },
   babelKeyView: { value: new Vector3(0, 0, 1) },
@@ -124,7 +130,7 @@ const flashTerm = (rim, sky) => `if (babelFlashLight.w > 0.0) {
   reflectedLight.directDiffuse += babelFK*(babelFlashLight.rgb*saturate(dot(normal, babelFL))+(babelFlashSky.rgb*(.5+.5*dot(normal, babelFU))+babelFlashSky.w)*(${sky}))*material.diffuseColor;${
     rim
       ? `
-  reflectedLight.directDiffuse += babelFK*babelFlashRim.rgb*pow(1.0-saturate(dot(geometryNormal, geometryViewDir)), 4.0)*mix(babelFlashRim.w, 1.0, saturate(dot(-geometryViewDir, babelFlashView)));`
+  reflectedLight.directDiffuse += babelFK*babelFlashRim.rgb*pow(1.0-saturate(dot(geometryNormal, geometryViewDir)), 4.0)*${RIM_THIN}*mix(babelFlashRim.w, 1.0, saturate(dot(-geometryViewDir, babelFlashView)));`
       : ""
   }
 }`;
@@ -164,8 +170,8 @@ ${FLASH_PARS}`,
 // rather than pink-beige; the darker bark keeps its colour. Off (0) unless a
 // shot asks for it.
 export const PALE = Object.freeze({
-  luma: Object.freeze([0.1, 0.35]),
-  tint: Object.freeze([0.92, 0.98, 1.08]),
+  luma: Object.freeze([0.04, 0.22]),
+  tint: Object.freeze([0.88, 0.96, 1.12]),
 });
 export const PALE_MOOD = { value: 0 };
 
