@@ -1585,6 +1585,19 @@ test("the drifting mist lies below its ceiling on every film material, after its
   // The ranges take it only about their feet: up to ranges[1] of view slope above
   // eye level, never on their bodies against the sky.
   assert.ok(MIST_RANGES.includes(`if(md.y<${MIST_DRIFT.ranges[1]}){`));
+  // Their long rays cross hundreds of units of mist in a few steps: there each step
+  // takes the banks' mean as it grows past their cells, so no single sample rules the
+  // far plain into level bands. Every other material marches as before.
+  assert.ok(MIST_RANGES.includes("c+=(mistMarch(c,cameraPosition+md*mD,1.)-c)*"));
+  assert.ok(MIST_PARS.includes("vec3 mistOver(vec3 c,vec3 world){return mistMarch(c,world,0.);}"));
+  assert.ok(
+    MIST_PARS.includes(
+      `mix(smoothstep(${MIST_DRIFT.banks[0]},${MIST_DRIFT.banks[1]},n),mistC,mistF)`,
+    ),
+  );
+  assert.ok(MIST_PARS.includes("side=mix(side,1.,mistF);"));
+  assert.ok(MIST_DRIFT.filter[0] > 0 && MIST_DRIFT.filter[1] > MIST_DRIFT.filter[0]);
+  assert.ok(MIST_DRIFT.cover.every((c) => c > 0.15 && c < 0.4));
   // A built-in lit material takes it after its fog, at its own world point, with the
   // shared uniforms (lent, never copied) and its own key.
   const material = mistHook(new MeshStandardMaterial());

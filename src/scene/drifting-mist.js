@@ -44,7 +44,11 @@
 //   so their mist is gathered along their view ray out to [0] units, or to the plain
 //   where their body below eye level meets it, and only up to [1] of view slope above
 //   eye level: it lies about their feet and never pales their bodies above the sky
-//   behind them, from however low a lens;
+//   behind them, from however low a lens. Those rays cross hundreds of units of mist in
+//   a few steps, so a single sample would decide each screen row and rule the far plain
+//   into hard level bands: there each step's banks ease to their mean `cover` ([high,
+//   balanced]) as the step grows from `filter[0]` to `filter[1]` of the banks' cells;
+//   the nearer materials march as before;
 // - `shots`: a shot's own share of the density (1 when unlisted), set on the cut.
 // Its clock runs with drawn frames and holds for reduced motion, a visitor pause and
 // an open panel, as the grass's wind does.
@@ -74,6 +78,8 @@ export const MIST_DRIFT = Object.freeze({
   text: 0,
   textReach: Object.freeze([0.4, 0.15]),
   ranges: Object.freeze([800, 0.012]),
+  cover: Object.freeze([0.25, 0.31]),
+  filter: Object.freeze([0.5, 2]),
   shots: Object.freeze({}),
 });
 
@@ -179,7 +185,7 @@ float mistNoise(vec3 x){vec3 i=floor(x),f=fract(x);f=f*f*(3.-2.*f);
 return mix(mix(mix(mistHash(i),mistHash(i+vec3(1.,0.,0.)),f.x),mix(mistHash(i+vec3(0.,1.,0.)),mistHash(i+vec3(1.,1.,0.)),f.x),f.y),
 mix(mix(mistHash(i+vec3(0.,0.,1.)),mistHash(i+vec3(1.,0.,1.)),f.x),mix(mistHash(i+vec3(0.,1.,1.)),mistHash(i+vec3(1.,1.,1.)),f.x),f.y),f.z);}
 float mistBox(vec4 r,vec2 v,float d){vec2 f=max(max(r.xy-v,v-r.zw),0.)*vec2(mistAspect,1.)/min(mistAspect,1.);return 1.-smoothstep(0.,d,length(f));}
-vec3 mistOver(vec3 c,vec3 world){
+vec3 mistMarch(vec3 c,vec3 world,float soft){
 if(mistDrift.w<=0.||mistFrame.y<.5)return c;
 vec3 v=world-cameraPosition;float L=length(v);vec3 dir=v/max(L,1e-4);
 float hC=cameraPosition.y-mistFrame.x,hP=world.y-mistFrame.x,top=${g(M.ceiling[1])};
@@ -188,6 +194,8 @@ if(hC>=top){if(hP>=top)return c;t0=max(t0,L*(hC-top)/(hC-hP));}
 else if(hP>top)t1=L*(top-hC)/(hP-hC);
 if(t1<=t0)return c;
 float dt=(t1-t0)/mistFrame.y,tau=0.,keep=1.,flash=0.;vec3 glow=vec3(0.);
+// A ranges' step that spans whole banks takes their mean instead of one sample's.
+float mistF=soft*smoothstep(${g(M.filter[0])},${g(M.filter[1])},dt*length(vec3(dot(dir.xz,${WIND_AXIS})/${g(M.cells[0])},dir.y/${g(M.cells[2])},dot(dir.xz,${WIND_ACROSS})/${g(M.cells[1])}))),mistC=mistFrame.z>1.5?${g(M.cover[0])}:${g(M.cover[1])};
 float moonPhase=${g(1 - M.moon[1] ** 2)}/pow(1.+${g(M.moon[1] ** 2)}-${g(2 * M.moon[1])}*dot(dir,mistMoon.xyz),1.5);
 vec3 ${MOON_STEP}=vec3(dot(mistMoon.xz,${WIND_AXIS})/${g(M.cells[0])},mistMoon.y/${g(M.cells[2])},dot(mistMoon.xz,${WIND_ACROSS})/${g(M.cells[1])})*${g(M.side[1])};
 for(int i=0;i<4;i++){if(float(i)>=mistFrame.y)break;
@@ -201,7 +209,8 @@ vec3 q=vec3(dot(w,${WIND_AXIS})/${g(M.cells[0])},p.y/${g(M.cells[2])}+mistDrift.
 float n=mistNoise(q),side=1.;
 if(mistFrame.z>1.5){side=clamp(1.+${g(M.side[0])}*(n-mistNoise(q+${MOON_STEP})),.35,1.6);
 n=mix(n,mistNoise(q*2.31+vec3(5.2,1.3,7.7)),${g(M.fine)});}
-float rho=${g(M.density)}*mistDrift.w*mix(1.,${g(M.far)},far)*prof*smoothstep(${g(M.banks[0])},${g(M.banks[1])},n)*smoothstep(${g(M.near[0])},${g(M.near[1])},t);
+side=mix(side,1.,mistF);
+float rho=${g(M.density)}*mistDrift.w*mix(1.,${g(M.far)},far)*prof*mix(smoothstep(${g(M.banks[0])},${g(M.banks[1])},n),mistC,mistF)*smoothstep(${g(M.near[0])},${g(M.near[1])},t);
 float a=rho*dt;
 vec3 s=normalize(p-mistStar.xyz);float sd=length(p-mistStar.xyz)/${g(M.star[2])};
 float starPhase=${g(1 - M.star[1] ** 2)}/pow(1.+${g(M.star[1] ** 2)}+${g(2 * M.star[1])}*dot(s,dir),1.5);
@@ -218,6 +227,7 @@ glow*=1.-${g(M.text)}*max(mistBox(mistText,uv,${g(M.textReach[0])}),mistBox(mist
         : ""
     }
 return mix(c,c*keep+glow,${g(M.veil)});}
+vec3 mistOver(vec3 c,vec3 world){return mistMarch(c,world,0.);}
 `
   : "";
 
@@ -233,7 +243,7 @@ export const MIST_KEEP = mistOn
 // added as a change, so where there is none the colour stays exactly as it was.
 export const MIST_RANGES = mistOn
   ? `{vec3 md=normalize(vL);if(md.y<${g(M.ranges[1])}){float mD=${g(M.ranges[0])};if(md.y<0.)mD=min(mD,max(cameraPosition.y-mistFrame.x,0.)/-md.y);
-c+=(mistOver(c,cameraPosition+md*mD)-c)*(1.-smoothstep(0.,${g(M.ranges[1])},md.y));}}
+c+=(mistMarch(c,cameraPosition+md*mD,1.)-c)*(1.-smoothstep(0.,${g(M.ranges[1])},md.y));}}
 `
   : "";
 
