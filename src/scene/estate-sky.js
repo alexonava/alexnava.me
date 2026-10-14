@@ -122,8 +122,6 @@ export const CLOUD_VORTEX = Object.freeze({
 //   whose guard moves density only);
 // - `streak`: faint bristle lines inside the banks, their colour lighter and darker by up
 //   to `amount` before the soft knee (high only);
-// (The canvas under the painted sky is the final pass's: postprocess.js SKY_INK.canvas, after
-// the grade's bands, which would otherwise step along its threads.)
 // uCloudReshape scales all of it (0 in the environment's capture). The reference banks
 // take it too (the owner's call of 2026-10-14, "one film over all"): their shapes and
 // places stay as authored. `on`: 0 emits none of it.

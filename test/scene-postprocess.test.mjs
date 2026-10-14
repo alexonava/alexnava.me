@@ -1213,7 +1213,7 @@ test("the shot's lens blurs only in film, the bars cut the frame and the grain s
   pipeline.dispose();
 });
 
-test("the film look: halation where bloom draws, a print toe, midtone grain, a gate weave and the sky's canvas", () => {
+test("the film look: halation where bloom draws, a print toe, midtone grain, and a gate weave, no canvas over the sky", () => {
   const profile = {
     postprocessGrading: true,
     postprocessBloom: true,
@@ -1283,11 +1283,8 @@ test("the film look: halation where bloom draws, a print toe, midtone grain, a g
   // Film grain: in CSS-pixel cells, each channel a little apart, weighted toward the midtones.
   assert.match(shader, /floor\(vUv \/ \(uCssTexel \* 1\.5\)\)/);
   assert.match(shader, /mix\(0\.25, 1\.0, 4\.0 \* gl \* \(1\.0 - gl\)\)/);
-  // The canvas on the bare sky only (its depth code), on the film.
-  assert.match(
-    shader,
-    /\(weft \+ warp\) \* 0\.5 \* \(1\.0 - smoothstep\(0\.0, 0\.006, texel\.a\)\)/,
-  );
-  assert.ok(SKY_INK.canvas[0] > 0 && SKY_INK.canvas[0] <= 0.03, "a faint tooth");
+  // No canvas tooth over the sky: a woven one, fixed to the screen, read as a grid.
+  assert.doesNotMatch(shader, /weft|warp/);
+  assert.equal(SKY_INK.canvas, undefined);
   pipeline.dispose();
 });

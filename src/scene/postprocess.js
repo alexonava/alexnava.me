@@ -67,15 +67,13 @@ export const FILM_LOOK = Object.freeze({
 
 // The painted sky's ink (the owner's ask of 2026-10-14, "a paint brush sky theme"): in film
 // its clouds' edges take `mix`, its weight thickening and thinning by up to `vary` over a
-// slow noise `scale` cells across the frame's height, as a brush's line does. Its
-// `canvas`, [amount, threads]: a woven canvas tooth under the painted sky in the final
-// pass (after the grade's bands, so none steps along its threads), `threads` across the
-// frame's height, lightening and darkening the bare sky (its depth code) by `amount`.
+// slow noise `scale` cells across the frame's height, as a brush's line does. (No canvas
+// tooth: a woven one, fixed to the screen, read as a grid across a wide sky; the owner's
+// call of 2026-10-14.)
 export const SKY_INK = Object.freeze({
   mix: 0.2,
   vary: 0.5,
   scale: 9,
-  canvas: Object.freeze([0.02, 90]),
 });
 
 const GRADING_SHADER = {
@@ -618,13 +616,6 @@ void main() {
     vec3 flare = lensFlare(vUv, uStar, uKeep);
     if (uProgress < 1.0) flare = mix(lensFlare(prevUv, uStarPrev, uKeepPrev), flare, ${DISSOLVE_SOFT.star ? "smoothstep(0.0, 1.0, uProgress)" : "w"});
     color += flare * (uLens.z * (1.0 - guard));
-  }
-
-  // The painted sky's canvas (SKY_INK.canvas): a woven tooth on the bare sky, on the film.
-  if (uLayered > 0.5) {
-    vec2 cv = vUv * vec2(uCssTexel.y / uCssTexel.x, 1.0) * ${lensNumber(SKY_INK.canvas[1] / 2)};
-    float weft = sin(cv.x * 6.2832) * step(0.5, fract(cv.y * 0.5)), warp = sin(cv.y * 6.2832) * (1.0 - step(0.5, fract(cv.x * 0.5)));
-    color *= 1.0 + ${lensNumber(SKY_INK.canvas[0])} * (weft + warp) * 0.5 * (1.0 - smoothstep(0.0, 0.006, texel.a));
   }
 
   if (uVignetteEnabled == 1) {
