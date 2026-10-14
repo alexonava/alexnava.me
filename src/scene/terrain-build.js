@@ -1778,12 +1778,20 @@ const zoneGlsl = (zone) => glslVec(+zone.x.toFixed(2), +zone.z.toFixed(2));
 // [along, across] cycles per unit (drawn out along the flow), and the tilt of
 // each. Where `fade` is set, the coarse octave fades as the fine one does,
 // where its ripples would fall under fade[0] to fade[1] pixels of ground, so
-// far water keeps the sky still instead of shimmering.
+// far water keeps the sky still instead of shimmering. The lantern's image is
+// reflected off `image` of the currents' tilt (the river's and the streams'):
+// at their whole tilt each ripple shifts the reflected height by more than the
+// lantern's eave is deep, so its image broke into stacked, offset strips; at
+// this share it wavers. Where the stream pours in, its steeper ripples ease
+// into the river's own between `mouth` [0] and [1] river radii, keeping [2]
+// of them, so the plume's steep ripples never contour the river's mirror.
 export const RIVER_RIPPLE = Object.freeze({
   coarse: Object.freeze([0.6, 1.6]),
   fine: Object.freeze([1.8, 4]),
   tilt: Object.freeze([0.018, 0.007]),
   fade: Object.freeze([1.5, 3]),
+  image: 0.3,
+  mouth: Object.freeze([0.5, 1, 0.2]),
 });
 // The streams' current (STREAMS.current), on the same octaves' terms.
 const SC = STREAMS.current;
@@ -1830,7 +1838,7 @@ float slateWater = slatePuddle*slateZoneW;
 if (slateWater > 0.0) {
   // The water's own normal, for the mirror and its Fresnel only (the bottom keeps the soil's): level as it deepens, a still micro-undulation near the lens, and the drips.
   float slateDeep = smoothstep(-.01, .05, slateLevel)*(1.0-slateDry)*slateZoneW;
-  vec3 slateN = normalize(normal*mat3(viewMatrix));
+  vec3 slateN = normalize(normal*mat3(viewMatrix)), slateNI = slateN;
   float slateView = length(vViewPosition);
   if (slateDeep > 0.0) {
     vec2 slateG = vec2(0.0);
@@ -1840,6 +1848,8 @@ if (slateWater > 0.0) {
       slateG = (slateU1.yz*mat2(.8, .6, -.6, .8)+.5*slateU2.yz)*${glsl(M.undulation)}*(1.0-smoothstep(${glsl(M.undulationFade[0])}, ${glsl(M.undulationFade[1])}, slateView));
     }
     if (slateDrip.w > 0.0) slateG += slateRipples(vMudWorld.xz, slatePx*slateView/max(abs(dot(normal, normalize(vViewPosition))), .3));
+    // The currents' own tilt (slateGC), of which the lantern's image takes only RIVER_RIPPLE.image.
+    vec2 slateGC = vec2(0.0);
     // The river's current: ripples drawn out along the flow drift downstream at RIVER.flow (on the drips' clock, so they hold
     // as the drips do); the finer octave fades where it would fall under three pixels of ground. They ease out toward the shore.
     if (slateRiverR < 1.1) {
@@ -1847,21 +1857,24 @@ if (slateWater > 0.0) {
       float slateFP = slatePx*slateView/max(abs(dot(normal, normalize(vViewPosition))), .3);
       vec3 slateF1 = slateNoiseD(slateFU*${glslVec(...RIVER_RIPPLE.coarse)}), slateF2 = slateNoiseD(slateFU*${glslVec(...RIVER_RIPPLE.fine)}+13.0);
       vec2 slateFG = slateF1.yz*${glslVec(...RIVER_RIPPLE.coarse)}*${glsl(RIVER_RIPPLE.tilt[0])}${RIVER_RIPPLE.fade ? `*smoothstep(${glsl(RIVER_RIPPLE.fade[0])}, ${glsl(RIVER_RIPPLE.fade[1])}, ${glsl(+(1 / RIVER_RIPPLE.coarse[1]).toFixed(4))}/slateFP)` : ""}+slateF2.yz*${glslVec(...RIVER_RIPPLE.fine)}*${glsl(RIVER_RIPPLE.tilt[1])}*smoothstep(1.5, 3.0, ${glsl(1 / RIVER_RIPPLE.fine[1])}/slateFP);
-      slateG += (slateRiverDir*slateFG.x+vec2(-slateRiverDir.y, slateRiverDir.x)*slateFG.y)*(1.0-smoothstep(.8, 1.1, slateRiverR));
+      slateGC += (slateRiverDir*slateFG.x+vec2(-slateRiverDir.y, slateRiverDir.x)*slateFG.y)*(1.0-smoothstep(.8, 1.1, slateRiverR));
     }
     // The streams' current: steeper, finer ripples drawn out along each course drift down it at STREAMS.flow, each
-    // octave fading where it would fall under three pixels of ground.
+    // octave fading where it would fall under three pixels of ground, and easing into the river's own where it pours in
+    // (RIVER_RIPPLE.mouth).
     if (slateStreamQ.x > 0.0) {
       vec2 slateSU = vec2(slateStreamQ.y-slateFlow*${glsl(STREAMS.flow)}, slateStreamQ.z*slateStreamQ.w);
       float slateSP = slatePx*slateView/max(abs(dot(normal, normalize(vViewPosition))), .3);
       vec3 slateS1 = slateNoiseD(slateSU*${glslVec(...SC.coarse)}+5.0), slateS2 = slateNoiseD(slateSU*${glslVec(...SC.fine)}+29.0);
       vec2 slateSG = slateS1.yz*${glslVec(...SC.coarse)}*${glsl(SC.tilt[0])}*smoothstep(1.5, 3.0, ${glsl(+(1 / SC.coarse[1]).toFixed(4))}/slateSP)+slateS2.yz*${glslVec(...SC.fine)}*${glsl(SC.tilt[1])}*smoothstep(1.5, 3.0, ${glsl(+(1 / SC.fine[1]).toFixed(4))}/slateSP);
-      slateG += (slateStreamDir*slateSG.x+vec2(-slateStreamDir.y, slateStreamDir.x)*slateSG.y)*slateStreamQ.x;
+      slateGC += (slateStreamDir*slateSG.x+vec2(-slateStreamDir.y, slateStreamDir.x)*slateSG.y)*slateStreamQ.x*mix(${glsl(RIVER_RIPPLE.mouth[2])}, 1.0, smoothstep(${glsl(RIVER_RIPPLE.mouth[0])}, ${glsl(RIVER_RIPPLE.mouth[1])}, slateRiverR));
     }
+    slateG += slateGC;
+    slateNI = normalize(mix(slateN, normalize(vec3(-slateG.x+${glsl(1 - RIVER_RIPPLE.image)}*slateGC.x, 1.0, -slateG.y+${glsl(1 - RIVER_RIPPLE.image)}*slateGC.y)), slateDeep));
     slateN = normalize(mix(slateN, normalize(vec3(-slateG.x, 1.0, -slateG.y)), slateDeep));
   }
-  vec3 slateV = normalize(cameraPosition-vMudWorld), slateR = reflect(-slateV, slateN);
-  float slateF = ${glsl(M.f0)}+${glsl(1 - M.f0)}*pow(1.0-saturate(dot(slateN, slateV)), 5.0), slateRA = max(dot(slateR.xz, slateR.xz), 1e-4);
+  vec3 slateV = normalize(cameraPosition-vMudWorld), slateR = reflect(-slateV, slateN), slateRI = reflect(-slateV, slateNI);
+  float slateF = ${glsl(M.f0)}+${glsl(1 - M.f0)}*pow(1.0-saturate(dot(slateN, slateV)), 5.0), slateRA = max(dot(slateR.xz, slateR.xz), 1e-4), slateRAI = max(dot(slateRI.xz, slateRI.xz), 1e-4);
   // The lantern, found by its light's world position among the point lights.
   vec3 slateLamp = vec3(0.0), slateLampW = vec3(0.0);
   #if NUM_POINT_LIGHTS > 0
@@ -1897,10 +1910,10 @@ ${
   vec3 slateMirror = slateSkyW, slateFlameW = vec3(0.0);
   float slateFlamePk = 0.0;
   vec2 slateLO = slateP.xz-slateLampW.xz;
-  float slateLT = -dot(slateLO, slateR.xz)/slateRA;
+  float slateLT = -dot(slateLO, slateRI.xz)/slateRAI;
   if (slateLT > 0.0 && dot(slateLamp, slateLamp) > 0.0 && (slateLT < slateT || slateTrunk < .01)) {
     // Where the reflected ray passes the lantern's axis, in lantern units.
-    float slateLX = (slateLO.x*slateR.z-slateLO.y*slateR.x)/sqrt(slateRA)/${glsl(LANTERN_IMAGE.scale)}, slateLY = (slateP.y+slateLT*slateR.y-slateLampW.y)/${glsl(LANTERN_IMAGE.scale)}+${glsl(LANTERN_IMAGE.glow)};
+    float slateLX = (slateLO.x*slateRI.z-slateLO.y*slateRI.x)/sqrt(slateRAI)/${glsl(LANTERN_IMAGE.scale)}, slateLY = (slateP.y+slateLT*slateRI.y-slateLampW.y)/${glsl(LANTERN_IMAGE.scale)}+${glsl(LANTERN_IMAGE.glow)};
     vec2 slateAA = vec2(slatePx*(slateView+slateLT)/${glsl(LANTERN_IMAGE.scale)})+vec2(.012, .03)*${glsl(M.imageSoft)};
     float slateAX = abs(slateLX), ly = slateLY;
     // Only rays that pass within the lantern's bounds (its widest .59, 0 to 2.49 tall) draw its image.
@@ -1918,7 +1931,7 @@ ${
     // pixel footprints (fp) inside the flame's.
     float fp = slatePx*(slateView+slateLT)/${glsl(LANTERN_IMAGE.scale)};
     float fh = ${glsl(F.height)}*max(slateFlame.x, .01), fu = ((ly-${glsl(F.base)})/fh-${glsl(MF.mid)})*(1.0+${glsl((2 * MF.inset) / MF.span)}*fp/fh)+${glsl(MF.mid)}, fs = clamp((fu+.08)/1.08, 0.0, 1.0), fr = clamp(fu, 0.0, 1.0);
-    float fw = ${glsl(F.halfWidth * 1.45)}*sin(3.1416*pow(fs, .74))*(1.0-.22*fs), fx = abs(slateLX-(slateFlame.z*slateR.z-slateFlame.w*slateR.x)/sqrt(slateRA)*fr*fr), fq = fx/max(fw, .005), fa = max(fp-.7*fw, 1e-4);
+    float fw = ${glsl(F.halfWidth * 1.45)}*sin(3.1416*pow(fs, .74))*(1.0-.22*fs), fx = abs(slateLX-(slateFlame.z*slateRI.z-slateFlame.w*slateRI.x)/sqrt(slateRAI)*fr*fr), fq = fx/max(fw, .005), fa = max(fp-.7*fw, 1e-4);
     // The body (MIRROR_FLAME.width of the flame's) falls off as the flame's, which has no AA of its own: only where that falloff is
     // narrower than a footprint does it widen to one (fa). The base and tip keep the image's AA.
     float slateFlameM = step(.01, slateFlame.x)*(1.0-smoothstep(${glsl(0.3 * MF.width)}*fw-fa*.6, ${glsl(MF.width)}*fw+fa*.6, fx))*smoothstep(-.08-slateAA.y/fh, -.04+slateAA.y/fh, fu)*(1.0-smoothstep(.96-slateAA.y/fh, 1.0+slateAA.y/fh, fu));

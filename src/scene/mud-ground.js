@@ -182,9 +182,11 @@ export const SLATE_FAR = Object.freeze({
 // level over them), so edges follow the cracks. Puddles and the river
 // (SLATE_RIVER) are glassy, darker and calmer, catch the existing moon and
 // lantern lights, and mirror the night sky (the film's environment,
-// SLATE_WATER); the river, where the lantern's image lands, keeps its own
-// roughness and highlight (lantern), and zenith is the sky its mirror falls
-// back to without the environment.
+// SLATE_WATER); the river, where the lantern's image lands, and the stream
+// keep their own roughness and highlight (lantern), so the moon's glint on the
+// stream's ripples between its white water never flares into a flat white
+// patch, and zenith is the sky its mirror falls back to without the
+// environment.
 export const SLATE_PUDDLES = Object.freeze({
   zones: Object.freeze([
     Object.freeze({ anchor: "tree", deg: 185, dist: 8.0, radius: 1.6 }),
@@ -1431,7 +1433,7 @@ ${SLATE_TEXT_GLSL}${LOOK_GLSL}${mistOn ? `uniform mat4 projectionMatrix;\n${MIST
       float slateStreamJoin, slateStreamR, slateStreamBend;
       vec4 slateStreamQ = slateStreamAt(vMudWorld.xz, slateStreamDir, slateStreamJoin, slateStreamR, slateStreamBend);
       float slatePuddle = smoothstep(-.04, .04, max(max(${PUDDLE_GLSL}*(${glslNumber(SLATE_PUDDLES.fill)}+.4*slateNoise(vMudWorld.xz*.9))-slateH, ${STREAM_LEVEL}), ${RIVER_LEVEL}))*(1.0-slateDry);
-      float slateLanternPuddle = slatePuddle*(1.0-smoothstep(1.0, 1.4, slateRiverR));
+      float slateLanternPuddle = slatePuddle*max(1.0-smoothstep(1.0, 1.4, slateRiverR), 1.0-smoothstep(1.0, 1.4, slateStreamR));
       slateWet = max(slateWet, slatePuddle);
       // The banks (SLATE_BANKS): the wet band beyond the waterline, and through the stream's bends its cut bank (outside) and silt bar (inside).
       float slateSide = clamp(2.*slateStreamQ.z, -1., 1.)*slateStreamBend;

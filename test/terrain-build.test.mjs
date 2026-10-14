@@ -976,7 +976,7 @@ test("the lazy ground shading extends only the slate's program, under its own ke
     );
     // The water normal (undulation and drips) is paid only in the water, after the lights.
     assert.ok(
-      fragment.indexOf("vec3 slateN = normalize(normal*mat3(viewMatrix));") >
+      fragment.indexOf("vec3 slateN = normalize(normal*mat3(viewMatrix))") >
         fragment.indexOf("if (slateWater > 0.0) {"),
     );
     assert.ok(
@@ -1010,9 +1010,29 @@ test("the lazy ground shading extends only the slate's program, under its own ke
     );
     assert.match(
       fragment,
-      /slateG \+= \(slateRiverDir\*slateFG\.x\+vec2\(-slateRiverDir\.y, slateRiverDir\.x\)\*slateFG\.y\)\*\(1\.0-smoothstep\(\.8, 1\.1, slateRiverR\)\);/,
+      /slateGC \+= \(slateRiverDir\*slateFG\.x\+vec2\(-slateRiverDir\.y, slateRiverDir\.x\)\*slateFG\.y\)\*\(1\.0-smoothstep\(\.8, 1\.1, slateRiverR\)\);/,
     );
     assert.match(fragment, /\*smoothstep\(1\.5, 3\.0, [\d.]+\/slateFP\);/);
+    // The stream's steeper ripples ease into the river's where it pours in, and the
+    // lantern's image takes only RIVER_RIPPLE.image of the currents' tilt, so it
+    // wavers rather than breaking into stacked strips; the sky keeps their whole tilt.
+    assert.ok(
+      fragment.includes(
+        `*slateStreamQ.x*mix(${RIVER_RIPPLE.mouth[2]}, 1.0, smoothstep(${RIVER_RIPPLE.mouth[0]}, ${RIVER_RIPPLE.mouth[1].toFixed(1)}, slateRiverR));`,
+      ),
+    );
+    assert.ok(RIVER_RIPPLE.image > 0 && RIVER_RIPPLE.image <= 0.5);
+    assert.ok(fragment.includes("slateG += slateGC;"));
+    assert.ok(
+      fragment.includes("slateR = reflect(-slateV, slateN), slateRI = reflect(-slateV, slateNI);"),
+    );
+    const image = fragment.slice(fragment.indexOf("vec2 slateLO = slateP.xz-slateLampW.xz;"));
+    assert.ok(image.includes("float slateLT = -dot(slateLO, slateRI.xz)/slateRAI;"));
+    assert.doesNotMatch(
+      image.slice(0, image.indexOf("slateFlamePk = ")),
+      /slateR\.|slateRA\b/,
+      "the image reads only its own ray",
+    );
     assert.equal(after.uniforms.slateFlow, dripClock().uniform, "the drips' own clock");
     // Gentle: slow, the ripples drawn out along the flow, their tilt below the drips'.
     assert.ok(RIVER.flow > 0 && RIVER.flow <= 0.4);
@@ -2356,7 +2376,7 @@ test("the mirrored flame takes the flame module's draught: height and lean, none
     );
     assert.match(
       fragment,
-      /fx = abs\(slateLX-\(slateFlame\.z\*slateR\.z-slateFlame\.w\*slateR\.x\)\/sqrt\(slateRA\)\*fr\*fr\)/,
+      /fx = abs\(slateLX-\(slateFlame\.z\*slateRI\.z-slateFlame\.w\*slateRI\.x\)\/sqrt\(slateRAI\)\*fr\*fr\)/,
       "and its lean grows up the flame",
     );
     assert.match(fragment, /step\(\.01, slateFlame\.x\)/, "no flame module, no flame image");

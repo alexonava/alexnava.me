@@ -402,7 +402,7 @@ test("the river's water lies only below its shore, as the terrain carves it, and
   );
   assert.ok(
     plain.fragment.includes(
-      "float slateLanternPuddle = slatePuddle*(1.0-smoothstep(1.0, 1.4, slateRiverR));",
+      "float slateLanternPuddle = slatePuddle*max(1.0-smoothstep(1.0, 1.4, slateRiverR), 1.0-smoothstep(1.0, 1.4, slateStreamR));",
     ),
   );
   // The river is found once a fragment, its segments in runs, each tried only
@@ -615,11 +615,13 @@ test("each ground shading has its own program cache key; the slate's shading nee
     fragment,
     /reflectedLight\.directSpecular \/= 1\.0 \+ 2\.5\*dot\(reflectedLight\.directSpecular,vec3\(\.2126,\.7152,\.0722\)\)\*slateLanternPuddle;/,
   );
-  // The zone's explicit support prevents dark detail texels elsewhere from
-  // receiving the lantern override; parentheses preserve the 1 - fade mask.
+  // The zone's explicit support (the river and the stream, whose glint between
+  // its white water flared white under the puddles' gain) prevents dark detail
+  // texels elsewhere from receiving the lantern override; parentheses preserve
+  // the 1 - fade mask.
   assert.match(
     fragment,
-    /float slateLanternPuddle = slatePuddle\*\(1\.0-smoothstep\(1\.0, 1\.4, slateRiverR\)\);/,
+    /float slateLanternPuddle = slatePuddle\*max\(1\.0-smoothstep\(1\.0, 1\.4, slateRiverR\), 1\.0-smoothstep\(1\.0, 1\.4, slateStreamR\)\);/,
   );
   assert.equal(SLATE_PUDDLES.lantern.specular, 0.8);
   assert.equal(SLATE_PUDDLES.lantern.roughness, 0.2);
