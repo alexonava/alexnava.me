@@ -28,6 +28,7 @@ import {
   measureShot,
   resolveDirectedShot,
   SQUAT_LANDSCAPE,
+  TABLET_WIDTH,
 } from "../src/scene/directed-shots.js";
 import {
   createCinematicCamera,
@@ -371,6 +372,8 @@ test("The watch resolves its landscape variant only for short landscape viewport
     assert.ok(width >= SQUAT_LANDSCAPE * height, `${width}x${height} is a landscape phone`);
   // A shot's tall variant reframes portrait monitors alone (the name below the subject),
   // over its portrait variant; phones and tablets, the hero stacked above, keep that one.
+  // Its tablet variant, over the portrait one too, reframes stacked layouts from
+  // TABLET_WIDTH wide (portrait tablets and squares up to 1024px wide) alone.
   {
     const probe = {
       name: "probe",
@@ -389,17 +392,50 @@ test("The watch resolves its landscape variant only for short landscape viewport
     ])
       assert.deepEqual(resolveDirectedShot(probe, width, height).anchor, [0.3, 0.5]);
     assert.equal(resolveDirectedShot(probe, 1920, 1080).anchor, probe.anchor);
+    const both = { ...probe, tablet: { anchor: [0.4, 0.6] } };
+    assert.equal(TABLET_WIDTH, 600);
+    const tablet = resolveDirectedShot(both, 820, 1180);
+    assert.deepEqual([tablet.azimuth, tablet.anchor], [20, [0.4, 0.6]]);
+    for (const [width, height] of [
+      [600, 900],
+      [768, 1024],
+      [1024, 1366],
+      [900, 900],
+    ])
+      assert.equal(
+        resolveDirectedShot(both, width, height),
+        tablet,
+        `${width}x${height} built once`,
+      );
+    for (const [width, height, anchor] of [
+      [390, 844, [0.3, 0.5]],
+      [599, 900, [0.3, 0.5]],
+      [560, 700, [0.3, 0.5]],
+      [1080, 1920, [0.7, 0.4]],
+      [700, 480, [0.3, 0.5]],
+      [1920, 1080, [0.5, 0.5]],
+    ])
+      assert.deepEqual(
+        resolveDirectedShot(both, width, height).anchor,
+        anchor,
+        `${width}x${height}`,
+      );
   }
-  // Portrait screens take the portrait variant: the lookout left of centre, the star whole
-  // to its right. Portrait monitors take it too, but at its earlier bearing (tall): from the
-  // phones' -9 the lookout would cover the star on their wider frame.
+  // Portrait screens take the portrait variant: the lookout left of centre (-12), the star
+  // whole to its right. Portrait monitors take it as it is; tablets stand the lookout a
+  // little further right, so the deck's end keeps its air off the left edge.
   const portrait = resolveDirectedShot(watch, 430, 932);
   assert.equal(portrait.azimuth, watch.portrait.azimuth);
+  assert.equal(portrait.azimuth, -12);
   assert.ok(portrait.anchor[0] < 0.5);
   const monitor = resolveDirectedShot(watch, 1080, 1920);
-  assert.deepEqual({ ...monitor }, { ...watch, ...watch.portrait, ...watch.tall });
-  assert.equal(monitor.azimuth, -12);
-  assert.equal(resolveDirectedShot(watch, 820, 1180), portrait, "tablets stack the hero");
+  assert.equal(watch.tall, undefined);
+  assert.deepEqual({ ...monitor }, { ...watch, ...watch.portrait });
+  const tablet = resolveDirectedShot(watch, 820, 1180);
+  assert.deepEqual({ ...tablet }, { ...watch, ...watch.portrait, ...watch.tablet });
+  assert.equal(tablet.azimuth, portrait.azimuth);
+  assert.ok(tablet.anchor[0] > portrait.anchor[0] && tablet.anchor[0] < 0.5);
+  assert.equal(resolveDirectedShot(watch, 768, 1024), tablet, "tablets share one variant");
   // Landscape phones under 600px wide take a compact variant: a drift, a little nearer the
   // star's bearing.
   for (const [width, height] of [
@@ -476,8 +512,16 @@ const LAYOUTS = [
   {
     width: 450,
     height: 800,
-    hero: { left: 12, right: 345, top: 34, bottom: 270 },
-    nav: { top: 694 },
+    hero: { left: 12, right: 302, top: 34, bottom: 194 },
+    nav: { top: 722 },
+  },
+  // A portrait tablet (measured 2026-10-15): the name stacked above the subject, as on
+  // phones, in a wider frame.
+  {
+    width: 820,
+    height: 1180,
+    hero: { left: 16, right: 323, top: 48, bottom: 226 },
+    nav: { top: 1098 },
   },
   {
     width: 844,

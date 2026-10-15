@@ -65,25 +65,26 @@ export const DIRECTED_SHOTS = {
       hold: 9,
       ground: { ...AFTER_RAIN, mist: { ...AFTER_RAIN.mist, amount: 0.75 } },
       // Portrait screens, narrower, stand the lookout left of centre, the star whole to its
-      // right, and keep the gentler dolly zoom (the wider one crops the star there); from
-      // -9 the cab's corner keeps its air off a tablet's left edge (the review of 2026-10-14).
+      // right with air off the cab's corner, and keep the gentler dolly zoom (the wider one
+      // crops the star there). Portrait monitors take it as it is: from further round the
+      // lookout covers the star on their wider frame.
       portrait: {
-        azimuth: -9,
+        azimuth: -12,
         anchor: [0.28, 0.54],
         margin: 0.88,
         focus: { width: 0.22, depth: [-0.3, 0.3] },
         move: { zoom: [44, 38], dollyZoom: true, tilt: GIANT_MOVE.tilt, ease: 0.6 },
       },
+      // Tablets stand the lookout a little further right, so the deck's end keeps 20 to 40
+      // CSS px of air off the left edge through the dolly zoom (it touched it at 0.28; the
+      // review of 2026-10-14). On phones the deck's end leaves the frame.
+      tablet: { anchor: [0.31, 0.54] },
       // Landscape phones fit from a little higher up the lookout, so its footing stays below
       // the short frame.
       landscape: { move: null, region: [0.56, 1], anchor: [0.5, 0.62] },
       compact: { move: null, region: [0.56, 1], anchor: [0.5, 0.62] },
       // Squarish short windows aim further left, so the star stays whole inside the right edge.
       squat: { move: null, anchor: [0.35, 0.54] },
-      // Portrait monitors keep -12: from -9 the lookout covers the star there, and moving
-      // the lookout off the name (below it on monitors) cut the star or brought snow
-      // behind the name (the review of 2026-10-14).
-      tall: { azimuth: -12 },
     },
     {
       name: "Threshold",
@@ -479,14 +480,21 @@ export function letterboxShare(width, height) {
   const share = (height - width / LETTERBOX.ratio) / (2 * height);
   return share > 0.02 ? share : 0;
 }
+// Stacked layouts from this width (portrait tablets, and squares up to 1024px wide)
+// may take a shot's `tablet` variant over its portrait one: their frame is wider than
+// a phone's, so it reaches further round either side of the subject.
+export const TABLET_WIDTH = 600;
 const variantShots = new WeakMap();
 export function resolveDirectedShot(shot, width, height) {
   const short = height <= 500,
-    squat = short && width > height && width < SQUAT_LANDSCAPE * height;
+    squat = short && width > height && width < SQUAT_LANDSCAPE * height,
+    stacked = isStackedLayout(width, height);
   // Portrait monitors (taller than wide, too wide to stack the hero) set the name
   // below the subject, where phones set it above: a shot's `tall` variant, over its
-  // portrait one, reframes them alone.
-  const tall = shot.tall && height > width && !isStackedLayout(width, height);
+  // portrait one, reframes them alone. Tablets, the hero stacked above the subject as
+  // on phones, may take a `tablet` variant over the portrait one too.
+  const tall = shot.tall && height > width && !stacked,
+    tablet = shot.tablet && stacked && width >= TABLET_WIDTH;
   const variant =
     shot.letterbox && letterboxShare(width, height) > 0
       ? shot.letterbox
@@ -494,15 +502,18 @@ export function resolveDirectedShot(shot, width, height) {
         ? shot.squat
         : tall
           ? shot.tall
-          : height > width || isStackedLayout(width, height) || squat
-            ? shot.portrait
-            : short && ((width < 600 && shot.compact) || shot.landscape);
+          : tablet
+            ? shot.tablet
+            : height > width || stacked || squat
+              ? shot.portrait
+              : short && ((width < 600 && shot.compact) || shot.landscape);
   if (!variant) return shot;
   let resolved = variantShots.get(variant);
   if (!resolved)
     variantShots.set(
       variant,
-      (resolved = tall ? { ...shot, ...shot.portrait, ...variant } : { ...shot, ...variant }),
+      (resolved =
+        tall || tablet ? { ...shot, ...shot.portrait, ...variant } : { ...shot, ...variant }),
     );
   return resolved;
 }
