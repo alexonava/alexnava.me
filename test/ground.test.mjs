@@ -496,6 +496,15 @@ test("the river's water lies only below its shore, as the terrain carves it, and
     : String(SLATE_CLOSE.crumb.height);
   assert.ok(soil.fragment.includes(`slateCH += slateCrumb*${crumbHeight}*slateKW;`));
   assert.doesNotMatch(soil.fragment, /slateKO = fract\(sin/);
+  // Their walls tilt at most toward SLATE_CLOSE.crumb.steep (a soft limit on the
+  // slope's tangent), so the wall facing the lantern at each valley never lights
+  // into a continuous pale rim about the cobble.
+  assert.ok(SLATE_CLOSE.crumb.steep > 1 && SLATE_CLOSE.crumb.steep < 2);
+  assert.ok(
+    soil.fragment.includes(
+      `slateCDH -= slateKG/(1.+length(slateKG)*${SLATE_CLOSE.relief / SLATE_CLOSE.crumb.steep});`,
+    ),
+  );
   // The stream is found once a fragment: its place, flow, join, radius and bend.
   assert.ok(
     soil.fragment.includes(

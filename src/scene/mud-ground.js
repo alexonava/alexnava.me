@@ -130,13 +130,17 @@ export const SLATE_CLOSE = Object.freeze({
   // (`height`, in relief-map units) and albedo (`albedo`), so it reads as
   // crumbly earth; gone where a cell shrinks under `fade` pixels. Neighbouring
   // grains meet in a valley rounded by a smooth minimum (`round`: its
-  // sharpness), so no crease cuts a hard line along a lit crest.
+  // sharpness), so no crease cuts a hard line along a lit crest, and their
+  // walls tilt at most toward a slope of `steep` (a soft limit on its
+  // tangent): near-vertical, the wall facing the lantern at each valley lit
+  // into a continuous 1-2 px pale rim about the cobble.
   crumb: Object.freeze({
     cell: 0.075,
     height: 1,
     albedo: 0.6,
     fade: Object.freeze([1.6, 4]),
     round: 12,
+    steep: 1.4,
   }),
 });
 
@@ -969,7 +973,9 @@ const CLOSE_PRE = `
       }
       float slateCrumb = (1.-smoothstep(0., .6, slateK1))-.4, slateKT = clamp(slateK1/.6, 0., 1.);
       slateCH += slateCrumb*${glslNumber(CLOSE.crumb.height)}*slateKW;
-      slateCDH -= 10.*slateKT*(1.-slateKT)*slateKD*${glslNumber(CLOSE.crumb.height)}*slateKW;
+      // The crumbs' own slope, its tangent eased toward SLATE_CLOSE.crumb.steep at most.
+      vec2 slateKG = 10.*slateKT*(1.-slateKT)*slateKD*${glslNumber(CLOSE.crumb.height)}*slateKW;
+      slateCDH -= slateKG/(1.+length(slateKG)*${glslNumber(CLOSE.relief / CLOSE.crumb.steep)});
       slateCG += slateCrumb*${glslNumber(CLOSE.crumb.albedo)}*slateKW;
       sampledDiffuseColor.rgb = mix(sampledDiffuseColor.rgb, mix(texture2D(map, vMapUv, ${glslNumber(CLOSE.blur)}).rgb, texture2D(map, slateUvB, ${glslNumber(CLOSE.blur)}).rgb, slateW)*(.93+.14*slateNoise(vMudWorld.xz/${glslNumber(SLATE_TILING.macroCell)})), ${glslNumber(CLOSE.calm)}*slateCN);
       `;
