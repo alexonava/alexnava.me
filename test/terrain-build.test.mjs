@@ -1026,6 +1026,20 @@ test("the lazy ground shading extends only the slate's program, under its own ke
       ),
     );
     assert.ok(RIVER_RIPPLE.sway > 1 && RIVER_RIPPLE.sway <= 4);
+    // The stream's white water drifts at STREAMS.foam.drift of its current, as the
+    // leaves on it do, so its thin lace travels downstream from frame to frame
+    // rather than re-forming every frame; its ripples keep the whole current.
+    assert.ok(STREAMS.foam.drift >= 0.4 && STREAMS.foam.drift < 1);
+    assert.ok(
+      fragment.includes(
+        `vec2 slateSU = vec2(slateStreamQ.y-slateFlow*${STREAMS.flow * STREAMS.foam.drift}, slateStreamQ.z*slateStreamQ.w), slateSF = `,
+      ),
+    );
+    assert.ok(
+      fragment.includes(
+        `vec2 slateSU = vec2(slateStreamQ.y-slateFlow*${STREAMS.flow}, slateStreamQ.z*slateStreamQ.w);`,
+      ),
+    );
     const sway = fragment.indexOf(
       `vec2 slateSide = normalize(vec2(slateV.z, -slateV.x)+1e-6), slateGI = slateG+${RIVER_RIPPLE.sway.toFixed(1)}*dot(slateGS, slateSide)*slateSide;\n    slateNI = normalize(mix(slateN, normalize(vec3(-slateGI.x, 1.0, -slateGI.y)), slateDeep));`,
     );

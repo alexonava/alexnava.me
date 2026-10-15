@@ -238,7 +238,9 @@ export const SLATE_RIVER_BED = Object.freeze({
 // reach[0] to reach[1] of the river's radius), in drifting patches (`patch`
 // cycles per unit), covering at most `cover` of the water's colour, at albedo
 // `albedo`. It is a lace of bubble rafts, the borders of cells `lace` per unit
-// ([along, across]) drifting with the current, warped by `warp` of a cell,
+// ([along, across]) drifting at `drift` of the current (as the leaves on it
+// do; at its whole speed its thin strands moved over a quarter of a cell a
+// frame and seemed to re-form every frame), warped by `warp` of a cell,
 // their lines `edge` of a cell thick from calm to churning water, gathered in
 // clumps (where the churn passes clump[0] to clump[1]) and broken by a noise
 // `broken` cells across; where the cells are too fine to draw it eases to
@@ -295,6 +297,7 @@ export const SLATE_STREAMS = Object.freeze({
     edge: Object.freeze([0.06, 0.24]),
     clump: Object.freeze([0.45, 0.9]),
     broken: 0.8,
+    drift: 0.5,
   }),
   // The channel (as SLATE_RIVER_BED, across the course: r is 1 on its banks,
   // half its width out): its water lies `level` below the lantern's foot, its

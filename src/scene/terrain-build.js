@@ -279,6 +279,7 @@ export const STREAMS = Object.freeze({
     edge: Object.freeze([0.06, 0.24]),
     clump: Object.freeze([0.45, 0.9]),
     broken: 0.8,
+    drift: 0.5,
   }),
   bed: Object.freeze({
     depth: 0.2,
@@ -2022,7 +2023,7 @@ const STREAM_FOAM = `float slateFoam = 0.0;
 float slateStreamBody = smoothstep(0.0, ${glsl(SB.deep)}, slateLevel)*(1.0-smoothstep(.9, 1.05, slateStreamR))*smoothstep(.7, 1.1, slateRiverR)*slatePuddle;
 diffuseColor.rgb = mix(diffuseColor.rgb, ${glslVec(...SB.silt)}, ${glsl(SB.calm)}*slateStreamBody)*(1.0-${glsl(SB.darken)}*slateStreamBody);
 if (slateStreamQ.x > 0.0) {
-  vec2 slateSU = vec2(slateStreamQ.y-slateFlow*${glsl(STREAMS.flow)}, slateStreamQ.z*slateStreamQ.w), slateSF = slateSU*${glslVec(...SF.cell)};
+  vec2 slateSU = vec2(slateStreamQ.y-slateFlow*${glsl(STREAMS.flow * SF.drift)}, slateStreamQ.z*slateStreamQ.w), slateSF = slateSU*${glslVec(...SF.cell)};
   float slateSN = .6*slateNoise(slateSF)+.4*slateNoise(slateSF*2.2+11.0);
   vec2 slateSO;
   float slateSD, slateRing = 0.0, slateStone = 0.0;
