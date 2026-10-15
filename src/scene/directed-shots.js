@@ -197,11 +197,14 @@ export const DIRECTED_SHOTS = {
       // smallest landscape windows, the name above the subject's left, see the
       // pair mirrored from across the plain: the tree left, the lookout right,
       // the star whole beyond it.
-      // Phones start aimed 4 degrees down, so the cut never shows the sky shell's edge in
-      // the top corner; letterboxed desktops tilt a degree higher than the base, so the
-      // star keeps clear of the top bar through the push at 1440x900.
-      portrait: { azimuth: 55, margin: 0.56, anchor: [0.21, 0.62], tilt: [-4, 2] },
-      letterbox: { tilt: [-5, -2] },
+      // Phones aim from 4 degrees down to half a degree down, so the sky shell's edge never
+      // shows in the top corner, through the whole 48-second breath of the URL view too (from
+      // 2 degrees up it did, mid-breath). Letterboxed desktops hold about the base's mean
+      // pitch with a small swing: from -4.8, so the star keeps 22 CSS px or more below the
+      // top bar at 1440x900, to -4.5, so there the ranges' crests stay above the tops of the
+      // name's letters (from -3, or -2, they ran through "Alex" mid-breath).
+      portrait: { azimuth: 55, margin: 0.56, anchor: [0.21, 0.62], tilt: [-4, -0.5] },
+      letterbox: { tilt: [-4.8, -4.5] },
       landscape: { azimuth: 75, margin: 0.6, anchor: [0.5, 0.55], tilt: [-3, 0], move: null },
       compact: { azimuth: -15, margin: 0.6, anchor: [0.6, 0.55], tilt: [-3, 0], move: null },
       squat: {

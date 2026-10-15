@@ -1134,13 +1134,15 @@ test("a shot's tilt pitches the camera from its cut to the next, a move's on its
 
   assert.equal(f.controller.setPreviewShot("tower", 4), true);
   // Driven by the tour: the cut opens at tilt[0]. A 1440x900 desktop is cut to
-  // 2.39:1 and takes the letterbox variant, which tilts from -5 to -2 (a degree above the
-  // base's -6 to -3, so the star keeps clear of the top bar).
+  // 2.39:1 and takes the letterbox variant, which tilts from -4.8 to -4.5: about the base's
+  // mean (-6 to -3), its low end lifted so the star keeps clear of the top bar and its high
+  // end lowered so the ranges' crests keep out of the name.
   assert.equal(f.render(0), 0);
   assert.equal(f.controller.shot.name, "Watch and tree");
   assert.equal(f.controller.shot, resolveDirectedShot(DIRECTED_SHOTS.tower[4], 1440, 900));
   assert.deepEqual(DIRECTED_SHOTS.tower[4].tilt, [-6, -3]);
-  assert.deepEqual(f.controller.shot.tilt, [-5, -2]);
+  assert.deepEqual(f.controller.shot.tilt, [-4.8, -4.5]);
+  assert.ok(f.controller.shot.tilt[0] > -6 && f.controller.shot.tilt[1] < -3);
   const [from, to] = f.controller.shot.tilt,
     half = (from + to) / 2;
   closeTo(pose().pitch, from, 1e-6);
