@@ -2,21 +2,14 @@
 title: Alex Nava
 description: Alex Nava’s personal website
 url: https://alexnava.me/
-dateModified: 2026-09-22
+dateModified: 2026-10-15
 ---
 
 # Alex Nava
 
 A little about me and what I’m working on.
 
-## Profile
-
-This is my personal corner of the web.
-
-## Experience
-
-Analytics, reporting, remediation, and controls, across banking and health.
-
 ## Contact
 
-You can reach me at [alexonava@gmail.com](mailto:alexonava@gmail.com).
+- Email: [alexonava@gmail.com](mailto:alexonava@gmail.com)
+- LinkedIn: [linkedin.com/in/alex-nava](https://www.linkedin.com/in/alex-nava/)

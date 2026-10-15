@@ -305,12 +305,8 @@ test("the byte tables in Assets match the files they list", () => {
       (tier) => grouped(sum([...models(tier), ...slates(tier)])),
     ],
     [
-      /^Paper grain, paper edge and the three vignettes$/,
+      /^Paper grain and paper edge$/,
       () => grouped(sum([...sizes.keys()].filter((file) => /^images\/paper-/.test(file)))),
-    ],
-    [
-      /^Both estate maps$/,
-      () => grouped(sum([...sizes.keys()].filter((file) => /^images\/estate-map-/.test(file)))),
     ],
     [/^`public\/og\.png`$/, () => grouped(sizes.get("public/og.png"))],
   ];

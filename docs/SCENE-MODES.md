@@ -55,20 +55,20 @@ Every shot has a `portrait` variant; Portrait's changes its move (a push without
 
 ## Tour and pauses
 
-- An open dialog holds the tour at once; 450 ms later, after the dim overlay has faded in, rendering stops until the last dialog closes (a render hold).
+- Nothing on the page holds the scene, Contact included: the tour holds only for a visitor pause, reduced motion and the walk, and rendering stops only behind a visitor pause (below).
 - A hidden tab or an off-screen canvas renders nothing. Reduced motion holds camera motion whenever the live scene runs with it: forced by `quality=high|balanced` or `sceneDebug`, or turned on after the scene loaded.
 - `BabelSite.scene.setVisitorPaused(true)` holds the tour on its current shot, ends a dissolve in progress on its incoming shot, stops drift and cloud motion, and then stops rendering. `setVisitorPaused(false)` continues the same shot without a time jump. `BabelSite.scene.isVisitorPaused()` reads the state.
 - A script may set `BabelSite.scene.visitorPausedPreference = true` before the scene loads; the pause applies at the reveal and keeps the first revealed frame.
-- While paused, a resize, context restore or content change (model, map, shader, font) draws one still frame. Behind an open dialog only a resize does. Scroll never does.
+- While paused, a resize, context restore or content change (model, map, shader, font) draws one still frame. Scroll never does.
 
 ## Walk
 
 An unannounced visitor's mode ([walk.js](../src/scene/walk.js), a lazy chunk fetched on the first press; nothing on the page mentions it).
 
-- **Start.** ` or ~ (the Backquote key, or a layout that types either) over the revealed live scene with its film ground in place. It never starts on a touch-primary or coarse pointer, under reduced motion, a visitor pause, an open dialog or forced colors ([walk-key.js](../src/scene/walk-key.js)). The press captures the mouse; where the browser refuses, a held button drags the view.
+- **Start.** ` or ~ (the Backquote key, or a layout that types either) over the revealed live scene with its film ground in place. It never starts on a touch-primary or coarse pointer, under reduced motion, a visitor pause or forced colors ([walk-key.js](../src/scene/walk-key.js)). The press captures the mouse; where the browser refuses, a held button drags the view.
 - **In.** The page fades off the canvas (`body.scene-walking`, `.scene-walk-hidden`; its boxes keep their layout), the tour finishes any dissolve and holds, and from the next cut the visitor stands on the ground under the shot's camera, facing its subject, under the film's dissolve; the bars ease out with it.
 - **Controls.** The mouse looks around; W/S or the up and down arrows walk, A/D step aside, the left and right arrows turn, Shift jogs, Space jumps. The tower's base (posts, ladder feet and low braces), the trunk with its root flare, the lantern and every rock at least 0.5 tall are solid; the river and stream are wadeable. Outward motion fades between 76 and 86 units from the tower (`WALK.bound`).
-- **Out.** The same key, or Esc twice (the first frees the mouse), dissolves back to the tour's held shot without a time jump, and the page fades back. A dialog, a visitor pause, reduced motion or a lost GL context ends it at once, with a hard cut.
+- **Out.** The same key, or Esc twice (the first frees the mouse), dissolves back to the tour's held shot without a time jump, and the page fades back. A visitor pause, reduced motion or a lost GL context ends it at once, with a hard cut.
 - **While walking** no shot is on screen: the light mood, lens, lens sources, mist share and ground calm rest at their defaults, the text guards rest (there is no text), and content that lands only unseen waits for the walk's cuts. The moon's shadow follows a snapped point ahead of the walker (`WALK.shadow`), so its map redraws only on a cell change.
 
 ## sceneDebug

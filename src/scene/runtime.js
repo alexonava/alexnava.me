@@ -301,71 +301,12 @@ export function createSceneFrameScheduler({
 }
 
 /**
- * Holds scene rendering behind an open dialog through the scheduler's "panel"
- * hold. sync() runs whenever isOpen() may have changed: the hold starts delayMs
- * after a dialog opens, once its dim overlay has faded in, and ends with the
- * last dialog, calling onRelease. A resize clears the canvas, so redraw()
- * releases the hold only until frameRendered() reports the next drawn frame.
- */
-export function createPanelHold({
-  clearTimer = globalThis.clearTimeout?.bind(globalThis),
-  delayMs = 450,
-  isOpen,
-  onRelease = () => {},
-  scheduler,
-  setTimer = globalThis.setTimeout?.bind(globalThis),
-}) {
-  let held = false;
-  let redrawing = false;
-  let timer = null;
-
-  function setHeld(next) {
-    if (timer !== null) clearTimer(timer);
-    timer = null;
-    if (held === next) return;
-    held = next;
-    scheduler.setHold("panel", next);
-  }
-
-  return {
-    get held() {
-      return held;
-    },
-    sync() {
-      if (!isOpen()) {
-        const released = held || redrawing;
-        redrawing = false;
-        setHeld(false);
-        if (released) onRelease();
-      } else if (!held && !redrawing && timer === null) {
-        timer = setTimer(() => setHeld(true), delayMs);
-      }
-    },
-    redraw() {
-      if (!held) return;
-      redrawing = true;
-      setHeld(false);
-    },
-    frameRendered() {
-      if (!redrawing) return;
-      redrawing = false;
-      if (isOpen()) setHeld(true);
-    },
-    dispose() {
-      if (timer !== null) clearTimer(timer);
-      timer = null;
-      redrawing = false;
-    },
-  };
-}
-
-/**
  * Holds scene rendering for a visitor's pause through the scheduler's
- * "visitor" hold, which composes with the dialog's "panel" hold. A pause
- * before the reveal waits for it and keeps the first revealed frame; a later
- * pause draws one more frame, so a tour crossfade settles on its incoming
- * shot, then holds. As with createPanelHold(), redraw() releases the hold only
- * until frameRendered() reports the next drawn frame.
+ * "visitor" hold. A pause before the reveal waits for it and keeps the first
+ * revealed frame; a later pause draws one more frame, so a tour crossfade
+ * settles on its incoming shot, then holds. A resize clears the canvas, so
+ * redraw() releases the hold only until frameRendered() reports the next
+ * drawn frame.
  * Releasing a held pause calls onRelease.
  */
 export function createVisitorHold({ onRelease = () => {}, scheduler }) {

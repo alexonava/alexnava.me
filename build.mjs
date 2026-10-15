@@ -54,15 +54,7 @@ const STATIC_FILES = [
   { source: `${PUBLIC_DIR}/site-agents.md`, destination: "AGENTS.md" },
 ];
 const STATIC_DIRS = ["fonts", "images"];
-const FINGERPRINTED_PAPER = [
-  "paper-grain.webp",
-  "paper-edge.webp",
-  "paper-vignette-profile.webp",
-  "paper-vignette-experience.webp",
-  "paper-vignette-contact.webp",
-  "estate-map-desktop.webp",
-  "estate-map-portrait.webp",
-];
+const FINGERPRINTED_PAPER = ["paper-grain.webp", "paper-edge.webp"];
 // Sources the build publishes only as hashed copies (path relative to the
 // project root, any separator).
 export function isFingerprintedSource(file) {
@@ -415,7 +407,7 @@ async function writePayload(DIST_DIR) {
     }),
   );
   // Fingerprinted sources publish only under their hashed names: the fonts,
-  // the paper and estate maps, every model and the slate maps. Nothing the
+  // the 404's paper, every model and the slate maps. Nothing the
   // build writes names their source paths, so no plain copy is kept.
   await Promise.all(
     STATIC_DIRS.map((dir) =>
@@ -440,7 +432,7 @@ async function writePayload(DIST_DIR) {
     await writeFile(join(DIST_DIR, "images", "materials", hashedName), bytes);
   }
 
-  // New pages receive a fresh URL whenever paper or estate-map bytes change,
+  // New pages receive a fresh URL whenever the paper's bytes change,
   // independent of the browser's image cache.
   const imagePaths = {};
   for (const name of FINGERPRINTED_PAPER) {

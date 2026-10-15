@@ -62,17 +62,12 @@ The grit and relief maps are the close soil near the lens (mud-ground.js `SLATE_
 
 ## Page artwork
 
-`images/`, lossy WebP, used by [styles.css](../styles.css).
+`images/`, lossy WebP, used by [styles.css](../styles.css) for the 404's paper sheet.
 
-| File                             |  Bytes | Pixels  | Alpha | Use                                                                                                                          |
-| -------------------------------- | -----: | ------- | ----- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `paper-grain.webp`               |  1,996 | 384×384 | no    | Paper fill, tiled (dialogs and the 404)                                                                                      |
-| `paper-edge.webp`                | 89,244 | 768×768 | yes   | Paper edge, `border-image` slice 96                                                                                          |
-| `paper-vignette-profile.webp`    | 28,356 | 420×420 | yes   | Profile dialog                                                                                                               |
-| `paper-vignette-experience.webp` | 35,420 | 420×420 | yes   | Experience dialog                                                                                                            |
-| `paper-vignette-contact.webp`    | 27,978 | 420×420 | yes   | Contact dialog                                                                                                               |
-| `estate-map-desktop.webp`        | 99,920 | 960×640 | yes   | About map (3:2)                                                                                                              |
-| `estate-map-portrait.webp`       | 93,690 | 600×900 | yes   | About map on portrait viewports (squares included) up to 600 px wide, `(max-width: 600px) and (orientation: portrait)` (2:3) |
+| File               |  Bytes | Pixels  | Alpha | Use                                 |
+| ------------------ | -----: | ------- | ----- | ----------------------------------- |
+| `paper-grain.webp` |  1,996 | 384×384 | no    | Paper fill, tiled                   |
+| `paper-edge.webp`  | 89,244 | 768×768 | yes   | Paper edge, `border-image` slice 96 |
 
 ## Fonts
 
@@ -114,7 +109,6 @@ Only the share card is generated in the repository. Everything else is committed
 | Lantern                       | Repackaged by a Node script from its v1 GLB of a supplied Meshy model: positions byte-identical, normals and UVs quantized; colour, metal-roughness and the balanced normal map encoded as WebP from the supplied source; the emission map as lossless WebP of the v1 PNG pixels; the high tier's normal map kept as the v1 JPEG (`asset.generator`, `scenes[0].extras.packaging`) |
 | Slate maps                    | Baked in Blender from a supplied Meshy model                                                                                                                                                                                                                                                                                                                                       |
 | Paper textures                | Generated with OpenAI's image tool and prepared as WebP                                                                                                                                                                                                                                                                                                                            |
-| Vignettes, estate maps        | No record in the repository                                                                                                                                                                                                                                                                                                                                                        |
 | Fonts                         | Variable woff2 subsets of the two OFL fonts; the subsetting is not in the repository                                                                                                                                                                                                                                                                                               |
 | Icons                         | No generator in the repository                                                                                                                                                                                                                                                                                                                                                     |
 | `public/og.png`               | Rendered from `tools/og-card.html` over the backdrop ([below](#refresh-the-share-card))                                                                                                                                                                                                                                                                                            |
@@ -122,25 +116,24 @@ Only the share card is generated in the repository. Everything else is committed
 
 ## Budgets
 
-| Budget                                                 | Limit                                              | Now              | Enforced by                                                                                                 |
-| ------------------------------------------------------ | -------------------------------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------- |
-| Any one model, high                                    | 6 MiB (6,291,456)                                  | 2,028,412 (tree) | The loader (`ARCHITECTURE_ASSET_BUDGETS`) and `bundle-output`                                               |
-| Any one model, balanced                                | 3 MiB (3,145,728)                                  | 920,408 (tower)  | The same                                                                                                    |
-| Complete scene, high: eight models and five slate maps | 6.25 MiB (6,553,600)                               | 6,477,958        | `bundle-output`: "the complete scene fits 6.25 MiB on high and 3 MiB on balanced…"                          |
-| Complete scene, balanced                               | 3 MiB                                              | 3,063,140        | The same                                                                                                    |
-| UI bundle (`app.HASH.js`)                              | under 30 KiB                                       |                  | `bundle-output`: "UI bundle stays under the LCP budget"                                                     |
-| Scene entry and the chunks it imports statically       | under 820 KiB, exactly two files                   |                  | `bundle-output`: "scene bundle stays under the deferred-payload budget"                                     |
-| Paper grain, paper edge and the three vignettes        | 200 KiB (204,800)                                  | 182,994          | `markup-accessibility`: "three distinct transparent paper vignettes share the 200 KiB section-paper budget" |
-| Both estate maps                                       | 200 KiB (204,800)                                  | 193,610          | `bundle-output`: "estate map artwork is hashed, responsive and under 200 KiB combined"                      |
-| `public/og.png`                                        | opaque, exactly 1200×630, at most 300 KB (300,000) | 298,550          | `hosting`: "the share image is an opaque 1200x630 PNG of at most 300 KB, as its tags say"                   |
+| Budget                                                 | Limit                                              | Now              | Enforced by                                                                               |
+| ------------------------------------------------------ | -------------------------------------------------- | ---------------- | ----------------------------------------------------------------------------------------- |
+| Any one model, high                                    | 6 MiB (6,291,456)                                  | 2,028,412 (tree) | The loader (`ARCHITECTURE_ASSET_BUDGETS`) and `bundle-output`                             |
+| Any one model, balanced                                | 3 MiB (3,145,728)                                  | 920,408 (tower)  | The same                                                                                  |
+| Complete scene, high: eight models and five slate maps | 6.25 MiB (6,553,600)                               | 6,477,958        | `bundle-output`: "the complete scene fits 6.25 MiB on high and 3 MiB on balanced…"        |
+| Complete scene, balanced                               | 3 MiB                                              | 3,063,140        | The same                                                                                  |
+| UI bundle (`app.HASH.js`)                              | under 30 KiB                                       |                  | `bundle-output`: "UI bundle stays under the LCP budget"                                   |
+| Scene entry and the chunks it imports statically       | under 820 KiB, exactly two files                   |                  | `bundle-output`: "scene bundle stays under the deferred-payload budget"                   |
+| Paper grain and paper edge                             | 200 KiB (204,800)                                  | 91,240           | `markup-accessibility`: "the 404's paper grain and edge stay within their 200 KiB budget" |
+| `public/og.png`                                        | opaque, exactly 1200×630, at most 300 KB (300,000) | 298,550          | `hosting`: "the share image is an opaque 1200x630 PNG of at most 300 KB, as its tags say" |
 
 Lazy scene chunks are outside the script budget. Script sizes change with every build; `npm run build:dist` prints them.
 
 ## Publication
 
-The build publishes these sources only as `name.HASH.ext`, eight hex digits of the file's SHA-256, cached immutably for a year: the paper and estate-map artwork, every model, the slate maps and the fonts ([build.mjs](../build.mjs) `isFingerprintedSource`), besides the scripts and the stylesheet. Pages, the stylesheet and the scene name only the hashed copies. `public/` files and `fonts/OFL.txt` keep stable names and revalidate after seven days; after a release that changes one, purge its URL ([Operations](OPERATIONS.md#headers-and-caching)). Nothing in `tools/` is published.
+The build publishes these sources only as `name.HASH.ext`, eight hex digits of the file's SHA-256, cached immutably for a year: the 404's paper textures, every model, the slate maps and the fonts ([build.mjs](../build.mjs) `isFingerprintedSource`), besides the scripts and the stylesheet. Pages, the stylesheet and the scene name only the hashed copies. `public/` files and `fonts/OFL.txt` keep stable names and revalidate after seven days; after a release that changes one, purge its URL ([Operations](OPERATIONS.md#headers-and-caching)). Nothing in `tools/` is published.
 
-`test/bundle-output.test.mjs` fails when a file in `images/` is published under its plain name or is missing under its hashed name, and `test/hosting.test.mjs` expects exactly 32 fingerprinted files in `images/` (2 paper textures, 3 vignettes, 2 estate maps, 16 models and 9 slate maps); a new file there means updating that count. `.gitignore` ignores `*.png` except `og.png`, `apple-touch-icon.png`, `icon-192.png`, `icon-512.png` and `icon-maskable-512.png`, so a new PNG must be added there as an exception before Git sees it.
+`test/bundle-output.test.mjs` fails when a file in `images/` is published under its plain name or is missing under its hashed name, and `test/hosting.test.mjs` expects exactly 27 fingerprinted files in `images/` (2 paper textures, 16 models and 9 slate maps); a new file there means updating that count. `.gitignore` ignores `*.png` except `og.png`, `apple-touch-icon.png`, `icon-192.png`, `icon-512.png` and `icon-maskable-512.png`, so a new PNG must be added there as an exception before Git sees it.
 
 ## How to
 
@@ -162,9 +155,9 @@ Name the role in [build.mjs](../build.mjs) `architectureAssetManifest` and in [a
 
 Keep the nine names and exact pixel sizes (1024 or 512; the detail map 512 on both tiers), seamless tiles, and the complete-scene budgets. stone-detail.js rejects any other size at runtime.
 
-### Replace the paper, vignettes or estate maps
+### Replace the paper
 
-Keep the file names, the vignettes at 420×420 with alpha and each distinct, and the estate maps at 3:2 (desktop) and 2:3 (portrait) with alpha. Hold paper grain, paper edge and the vignettes to 200 KiB together, and the two maps to 200 KiB together. A new image needs its name in `FINGERPRINTED_PAPER` in [build.mjs](../build.mjs) and the count in `test/hosting.test.mjs`.
+Keep the file names, the grain a 384×384 tile and the edge 768×768 with alpha, sliced at 96 by its `border-image`, and hold the two to 200 KiB together. A new image needs its name in `FINGERPRINTED_PAPER` in [build.mjs](../build.mjs) and the count in `test/hosting.test.mjs`.
 
 ### Replace an icon
 

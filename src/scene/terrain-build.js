@@ -2140,8 +2140,8 @@ export function shadeSlateGround(shader) {
 }
 
 // The drips' clock: it advances by each drawn frame's time, at most 0.1 s,
-// only while the scene animates (never under reduced motion, a visitor pause
-// or an open panel: the flame's own holds), and starts in a calm gap. A gap
+// only while the scene animates (never under reduced motion or a visitor
+// pause: the flame's own holds), and starts in a calm gap. A gap
 // of a quarter second or more between drawn frames (a hold just ended, a
 // hidden page, a lost context) adds nothing, so nothing jumps on resuming.
 export function dripClock(uniform = RIPPLE_TIME, held = () => false) {
@@ -2169,16 +2169,11 @@ export function mirrorPoint(eye, light) {
   const t = (eye.y - water) / (eye.y - image);
   return [eye.x + (light.x - eye.x) * t, eye.z + (light.z - eye.z) * t];
 }
-// The same holds index.js passes the flame: reduced motion, a visitor pause
-// (scene.isVisitorPaused()) and an open panel (<body data-panel-open>).
+// The same holds index.js passes the flame: reduced motion and a visitor
+// pause (scene.isVisitorPaused()).
 function motionHeld() {
   const reduced = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)");
-  return () =>
-    Boolean(
-      reduced?.matches ||
-      globalThis.BabelSite?.scene?.isVisitorPaused?.() ||
-      globalThis.document?.body?.hasAttribute?.("data-panel-open"),
-    );
+  return () => Boolean(reduced?.matches || globalThis.BabelSite?.scene?.isVisitorPaused?.());
 }
 
 // Each film terrain's root lift at a world x/z, interpolated over the rendered
@@ -3532,8 +3527,8 @@ function* bankSteps(surface, groundColor) {
 }
 // The drifting leaves (WATER_BANKS.drift): one small mesh whose leaves
 // update(time) moves down the stream on the drips' clock (settleRoots()), so
-// they hold still with the drips (reduced motion, a visitor pause, an open
-// panel). `level` is the water's height.
+// they hold still with the drips (reduced motion, a visitor pause). `level`
+// is the water's height.
 export function driftLeaves(level) {
   const D = WATER_BANKS.drift,
     F = LITTER.fine,

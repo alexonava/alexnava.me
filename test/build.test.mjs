@@ -441,15 +441,7 @@ test("CSS asset URLs and bytes are portable across checkout line endings", async
     for (const file of ["index.html", "404.html"]) {
       await writeFile(path.join(fixture, file), '<link rel="stylesheet" href="/styles.css">');
     }
-    for (const name of [
-      "paper-grain",
-      "paper-edge",
-      "paper-vignette-profile",
-      "paper-vignette-experience",
-      "paper-vignette-contact",
-      "estate-map-desktop",
-      "estate-map-portrait",
-    ]) {
+    for (const name of ["paper-grain", "paper-edge"]) {
       await writeFile(path.join(fixture, "images", `${name}.webp`), paper);
     }
     for (const tier of ["high", "balanced"]) {

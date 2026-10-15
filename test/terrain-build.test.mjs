@@ -2580,22 +2580,18 @@ test("the mirrored flame is the flame's own light as the frame shows it, after t
   material.dispose();
 });
 
-test("the ground shading's clock reads the flame's own holds: reduced motion, a visitor pause and an open panel", async () => {
+test("the ground shading's clock reads the flame's own holds: reduced motion and a visitor pause", async () => {
   const saved = {
     matchMedia: globalThis.matchMedia,
     BabelSite: globalThis.BabelSite,
-    document: globalThis.document,
   };
-  const state = { reduced: false, paused: false, panel: false };
+  const state = { reduced: false, paused: false };
   globalThis.matchMedia = (query) => ({
     get matches() {
       return query === "(prefers-reduced-motion: reduce)" && state.reduced;
     },
   });
   globalThis.BabelSite = { scene: { isVisitorPaused: () => state.paused } };
-  globalThis.document = {
-    body: { hasAttribute: (name) => name === "data-panel-open" && state.panel },
-  };
   const r = linkRig({ revealed: true, parallel: false }),
     clock = frames();
   try {
@@ -2603,7 +2599,7 @@ test("the ground shading's clock reads the flame's own holds: reduced motion, a 
     await clock.step(2);
     const drips = r.ground.userData.slateDrips,
       camera = new PerspectiveCamera();
-    for (const hold of ["reduced", "paused", "panel"]) {
+    for (const hold of ["reduced", "paused"]) {
       state[hold] = true;
       const before = drips.uniform.value;
       for (let i = 0; i < 4; i++) {

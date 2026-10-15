@@ -317,7 +317,7 @@ export function createEstateGroundDetail(groundHeight) {
       return true;
     },
     // The wind's clock: it runs with drawn frames (at most 0.1 s a step) and
-    // holds under reduced motion, a visitor pause or an open panel.
+    // holds under reduced motion or a visitor pause.
     update({ deltaSeconds = 0, reducedMotion = false, motionPaused = false } = {}) {
       if (disposed || !active) return false;
       if (!reducedMotion && !motionPaused && Number.isFinite(deltaSeconds))

@@ -629,46 +629,24 @@ test("homepage discovers the deferred scene while its UI excludes the renderer a
   assert.doesNotMatch(html, /<script[^>]*src="[^\"]*scene[.]/);
   assert.match(app, /ensureSceneReady|initHomeScene/);
   assert.match(app, /getWebGLCapabilities/);
-  assert.match(app, /initSceneMenu/);
+  assert.match(app, /initContact/);
   assert.doesNotMatch(app, /gl_Position|WebGLRenderer|GLTFLoader|Invalid architecture GLB/);
 });
 
-test("paper textures and category vignettes are fingerprinted", async () => {
+test("the 404's paper textures are fingerprinted", async () => {
   const cssDir = path.join(distDir, "css");
   const cssName = (await readdir(cssDir)).find((name) => /^styles\.[a-f0-9]{8}\.css$/.test(name));
   const css = await readFile(path.join(cssDir, cssName), "utf8");
   assert.equal(cssName, `styles.${createHash("sha256").update(css).digest("hex").slice(0, 8)}.css`);
-  // Their 200 KiB budget is held in markup-accessibility.test.mjs ("three distinct
-  // transparent paper vignettes share the 200 KiB section-paper budget").
-  for (const name of [
-    "paper-grain",
-    "paper-edge",
-    "paper-vignette-profile",
-    "paper-vignette-experience",
-    "paper-vignette-contact",
-  ]) {
+  // Their 200 KiB budget is held in markup-accessibility.test.mjs ("the 404's
+  // paper grain and edge stay within their 200 KiB budget").
+  for (const name of ["paper-grain", "paper-edge"]) {
     const source = await readFile(path.join(projectRoot, "images", `${name}.webp`));
     const hash = createHash("sha256").update(source).digest("hex").slice(0, 8);
     assert.ok(css.includes(`/images/${name}.${hash}.webp`));
     assert.ok(!css.includes(`/images/${name}.webp`));
     assert.deepEqual(await readFile(path.join(distDir, "images", `${name}.${hash}.webp`)), source);
   }
-});
-
-test("estate map artwork is hashed, responsive and under 200 KiB combined", async () => {
-  const cssName = (await readdir(path.join(distDir, "css"))).find((n) =>
-    /^styles\.[a-f0-9]{8}\.css$/.test(n),
-  );
-  const css = await readFile(path.join(distDir, "css", cssName), "utf8");
-  let total = 0;
-  for (const name of ["estate-map-desktop", "estate-map-portrait"]) {
-    const bytes = await readFile(path.join(projectRoot, "images", name + ".webp"));
-    total += bytes.length;
-    const hash = createHash("sha256").update(bytes).digest("hex").slice(0, 8);
-    assert.ok(css.includes(`/images/${name}.${hash}.webp`));
-    assert.deepEqual(await readFile(path.join(distDir, "images", `${name}.${hash}.webp`)), bytes);
-  }
-  assert.ok(total <= 200 * 1024);
 });
 
 test("the stylesheet is published minified", async () => {

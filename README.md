@@ -1,6 +1,6 @@
 # alexnava.me
 
-Source for [alexnava.me](https://alexnava.me/), Alex Nava's website. The homepage opens on a title card and, on capable devices, a deferred Three.js night scene that tours a timber lookout tower and a twisted tree; About opens an illustrated estate map with Profile, Experience and Contact. The text and the title card stand alone when the scene cannot run.
+Source for [alexnava.me](https://alexnava.me/), Alex Nava's website. The homepage opens on a title card and, on capable devices, a deferred Three.js night scene that tours a timber lookout tower and a twisted tree; the footer's Contact shows an email address and LinkedIn. The text and the title card stand alone when the scene cannot run.
 
 ## Work locally
 
@@ -52,7 +52,7 @@ The [documentation index](docs/README.md) lists every document. The main ones:
 - [Architecture](docs/ARCHITECTURE.md): startup, modules, tools, scene lifecycle, quality, build and tests
 - [Contracts](docs/CONTRACTS.md): the names, events and attributes the UI and scene share
 - [Style](docs/STYLE.md): visual, motion and accessibility rules
-- [UI](docs/UI.md): the page's tokens, breakpoints and the scene framing that mirrors them, layers, components, motion, dialogs, deep links and the 404 page
+- [UI](docs/UI.md): the page's tokens, breakpoints and the scene framing that mirrors them, layers, components, motion, Contact and the 404 page
 - [Scene modes](docs/SCENE-MODES.md): URL parameters, shots, pauses and status objects
 - [Content](docs/CONTENT.md): where the site's words live and how to change them
 - [Assets](docs/ASSETS.md): models, maps, artwork, fonts and icons, with every budget

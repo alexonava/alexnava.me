@@ -133,15 +133,8 @@ function createHarness({
     children: [label, track],
   });
   const host = element("host", { classes: ["scene-canvas"], hidden: hostHidden });
-  const body = {
-    attributes: new Set(),
-    hasAttribute(name) {
-      return this.attributes.has(name);
-    },
-  };
   const document = {
     hidden: false,
-    body,
     getElementById(id) {
       if (id === "scene-loader") return withLoader ? loader : null;
       if (id === "home-scene") return host;
@@ -547,7 +540,7 @@ test("a hidden scene host retires the line below 100%", async () => {
   assert.equal(recovered.state().status, "static");
 });
 
-test("a run without progress for 15 visible seconds stalls; hidden and dialog time is excluded", async () => {
+test("a run without progress for 15 visible seconds stalls; hidden time is excluded", async () => {
   const h = createHarness();
   h.sceneLoader.begin({ tier: "high" });
   h.advance(10000);
@@ -555,9 +548,6 @@ test("a run without progress for 15 visible seconds stalls; hidden and dialog ti
   h.setHidden(true);
   h.advance(30000);
   h.setHidden(false);
-  h.document.body.attributes.add("data-panel-open");
-  h.advance(30000);
-  h.document.body.attributes.delete("data-panel-open");
   h.advance(4000);
   assert.equal(h.state().status, "loading", "14 visible seconds without progress");
   h.advance(2000);

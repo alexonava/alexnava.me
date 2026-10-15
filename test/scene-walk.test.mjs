@@ -119,7 +119,6 @@ test("the walk starts only over the revealed film scene on a desktop, outside ev
     ground: true,
     reducedMotion: false,
     paused: false,
-    panelOpen: false,
     finePointer: true,
     forcedColors: false,
   };
@@ -130,7 +129,6 @@ test("the walk starts only over the revealed film scene on a desktop, outside ev
     ["ground", false],
     ["reducedMotion", true],
     ["paused", true],
-    ["panelOpen", true],
     ["finePointer", false],
     ["forcedColors", true],
   ])
@@ -514,7 +512,7 @@ test("out of the walk: its frame is kept, the shot returns and dissolves in, the
   walk.dispose();
 });
 
-test("an immediate exit (a dialog, a pause, reduced motion, a lost context) cuts back at once", () => {
+test("an immediate exit (a pause, reduced motion, a lost context) cuts back at once", () => {
   for (const reason of ["exit", "lost"]) {
     const rig = walkRig(),
       { walk, site } = rig;
@@ -746,7 +744,7 @@ test("the walk holds the real tour on its shot and hands it back without a time 
   });
   // One frame as index.js runs it.
   const frame = (time) => {
-    const phase = tour.update({ elapsedSeconds: time, panelOpen: walk.holdsTour });
+    const phase = tour.update({ elapsedSeconds: time, held: walk.holdsTour });
     const transition = walk.step(time, tour.transition);
     const applied =
       !walk.drives &&
