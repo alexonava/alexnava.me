@@ -914,28 +914,64 @@ test("the final pass decodes each frame's layer from a 5-tap cross and mixes by 
     assert.ok(layerCode.includes(`texture2D(map, ${tap}).a`), tap);
   assert.match(layerCode, /vec2 x = vec2\(uCodeTexel\.x, 0\.0\), y = vec2\(0\.0, uCodeTexel\.y\);/);
   // Each frame's code, softened (DISSOLVE_SOFT): the cross's maximum averaged with a disc
-  // of taps `radius` of the frame's height across, so a silhouette turns over that width.
+  // of taps `radius` of the frame's height across, so a silhouette turns over that width;
+  // never under the layer's own code (`own`), so a subject turns whole, never outline
+  // first; in the incoming frame the sky among a subject's parts turns with it (`close`).
   assert.ok(DISSOLVE_SOFT.on && DISSOLVE_SOFT.radius > 0 && DISSOLVE_SOFT.radius <= 0.05);
-  const soft = shader.slice(shader.indexOf("float softCode("), shader.indexOf("float starCode("));
-  assert.match(soft, /float aspect = uCodeTexel\.y \/ uCodeTexel\.x, sum = layerCode\(map, uv\);/);
+  assert.equal(DISSOLVE_SOFT.own, 1);
+  assert.ok(DISSOLVE_SOFT.close[0] < DISSOLVE_SOFT.close[1] && DISSOLVE_SOFT.close[1] <= 1);
+  const softAt = shader.indexOf("float softCode(");
+  const soft = shader.slice(softAt, shader.indexOf("\n}\n", softAt));
+  assert.match(
+    soft,
+    /float aspect = uCodeTexel\.y \/ uCodeTexel\.x, own = layerCode\(map, uv\), sum = own, subject = step\(0\.9, own\);/,
+  );
   assert.ok(soft.includes(`for (int i = 1; i <= ${DISSOLVE_SOFT.taps}; i++)`));
   assert.match(
     soft,
-    /sum \+= texture2D\(map, uv \+ vec2\(cos\(a\) \/ aspect, sin\(a\)\) \* r\)\.a;/,
+    /float code = texture2D\(map, uv \+ vec2\(cos\(a\) \/ aspect, sin\(a\)\) \* r\)\.a;\s*sum \+= code;\s*subject \+= step\(0\.9, code\);/,
   );
-  assert.ok(soft.includes(`return sum / ${(DISSOLVE_SOFT.taps + 1).toFixed(1)};`));
-  // The star's disc dissolves on its own frame's code, whole: the other frame's code
-  // never holds it; its glow (codes under star[0]) keeps the mask.
-  assert.ok(DISSOLVE_SOFT.star[0] < DISSOLVE_SOFT.star[1] && DISSOLVE_SOFT.star[1] < 0.22);
+  const taps = (DISSOLVE_SOFT.taps + 1).toFixed(1);
+  assert.ok(soft.includes(`float code = max(sum / ${taps}, own * 1.0);`));
+  assert.ok(
+    soft.includes(
+      `return max(code, closing * smoothstep(${DISSOLVE_SOFT.close[0]}, ${DISSOLVE_SOFT.close[1]}, subject / ${taps}));`,
+    ),
+  );
   assert.match(
     shader,
-    /float codePrev = softCode\(tPrev, prevUv\), codeNow = softCode\(tDiffuse, vUv\);[\s\S]*?float starPrev = starCode\(texture2D\(tPrev, prevUv\)\.a\), starNow = starCode\(texture2D\(tDiffuse, vUv\)\.a\);\s*codePrev \*= 1\.0 - starNow;\s*codeNow \*= 1\.0 - starPrev;\s*start = 3\.0 \* uStagger\.x \* clamp\(max\(codePrev, codeNow\), 0\.0, 1\.0\);\s*span = uStagger\.y;/,
+    /float codePrev = softCode\(tPrev, prevUv, 0\.0\), codeNow = softCode\(tDiffuse, vUv, 1\.0\);\s*start = 3\.0 \* uStagger\.x \* clamp\(max\(codePrev, codeNow\), 0\.0, 1\.0\);\s*span = uStagger\.y;/,
   );
+  // The star turns whole (`foot`, in its disc radii from the lens's source), only where its
+  // own frame shows sky: the outgoing one with the sky's window, the incoming one when the
+  // outgoing frame's nearest layer over its disc turns. No star code is read from the alpha.
+  assert.ok(
+    DISSOLVE_SOFT.foot[0] < DISSOLVE_SOFT.foot[1] && DISSOLVE_SOFT.foot[1] >= 2.78,
+    "the glow's reach",
+  );
+  assert.doesNotMatch(shader, /starCode/);
+  const turnAt = shader.indexOf("float starTurn(");
+  const turn = shader.slice(turnAt, shader.indexOf("\n}\n", turnAt));
+  assert.match(
+    turn,
+    /float start = 3\.0 \* uStagger\.x \* clamp\(code, 0\.0, 1\.0\);\s*return smoothstep\(start, start \+ uStagger\.y, uProgress\);/,
+  );
+  assert.equal((turn.match(/texture2D\(other, /g) || []).length, 5);
+  assert.match(
+    shader,
+    /turnPrev = smoothstep\(0\.0, uStagger\.y, uProgress\);\s*w = mix\(w, turnPrev, foot\);/,
+  );
+  assert.match(
+    shader,
+    /turnNow = starTurn\(tPrev, uPrevOrigin \+ \(uStar\.xy - uPrevOrigin\) \* uPrevScale, uStar\.z \* uPrevScale, aspect\);\s*w = mix\(w, turnNow, foot\);/,
+  );
+  assert.match(shader, /\(1\.0 - smoothstep\(0\.25, 0\.3, texture2D\(tPrev, prevUv\)\.a\)\)/);
+  assert.match(shader, /\(1\.0 - smoothstep\(0\.25, 0\.3, texture2D\(tDiffuse, vUv\)\.a\)\)/);
   // In film the kept frame dissolves through the outgoing shot's lens: its focus,
   // and its heat, fringes and kept rect (LENS_FX).
   assert.match(
     shader,
-    /w = smoothstep\(start, start \+ span, uProgress\);\s*texel = mix\(uLayered > 0\.5 \? lensView\(tPrev, prevUv, prevUv, uBlurPrev, uStarPrev, uFlamePrev, uKeepPrev, guard\) : texture2D\(tPrev, prevUv\), texel, w\);\s*protection = mix\(uTextProtectionFrom, uTextProtection, w\);/,
+    /w = smoothstep\(start, start \+ span, uProgress\);[\s\S]*?texel = mix\(uLayered > 0\.5 \? lensView\(tPrev, prevUv, prevUv, uBlurPrev, uStarPrev, uFlamePrev, uKeepPrev, guard\) : texture2D\(tPrev, prevUv\), texel, w\);\s*protection = mix\(uTextProtectionFrom, uTextProtection, w\);/,
   );
   assert.match(
     shader,
@@ -1032,11 +1068,11 @@ test("the lens's heat, fringes and flare live in the final pass, in film, off th
   // The focus's taps never sit behind a per-pixel branch: no early return in lensView.
   const view = shader.slice(shader.indexOf("vec4 lensView("), shader.indexOf("vec3 lensFlare("));
   assert.equal((view.match(/return /g) || []).length, 1);
-  // The flare dissolves with each frame's own, evenly by the transition's progress (never
-  // cut by the other frame's layers), and only while the star is in frame.
+  // The flare dissolves with each frame's own star, evenly (its turn, never cut by the
+  // other frame's layers), and only while the star is in frame.
   assert.match(
     shader,
-    /if \(uProgress < 1\.0\) flare = mix\(lensFlare\(prevUv, uStarPrev, uKeepPrev\), flare, smoothstep\(0\.0, 1\.0, uProgress\)\);/,
+    /if \(uProgress < 1\.0\) flare = lensFlare\(prevUv, uStarPrev, uKeepPrev\) \* \(1\.0 - turnPrev\) \+ flare \* turnNow;/,
   );
   assert.match(shader, /float shown = star\.w \* smoothstep\(-star\.z, 2\.0 \* star\.z, inside\);/);
   // One block per ghost, each dropped whole near the kept rect.

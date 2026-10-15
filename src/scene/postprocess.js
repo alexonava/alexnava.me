@@ -232,16 +232,22 @@ export const DISSOLVE_BRUSH = Object.freeze({
 // incoming subject as a hard-edged cut-out of the outgoing frame): each frame's layer
 // code is averaged over a disc `radius` of the frame's height across (`taps` taps about
 // the cross's maximum at its centre), so a silhouette turns over that width rather than
-// at one pixel. With `star`, the star's disc (its parts' codes stacked past `star[0]`,
-// whole by `star[1]`; the glow alone reads under it) dissolves on its own frame's code
-// alone, whole, never handed over by the other frame's horizon, root or branches, while
-// its wide glow keeps the mask, so it never opens a hole in the other frame; and the
-// lens's flare goes by the transition's progress, evenly. `on`: 0 keeps the hard mask.
+// at one pixel. With `own`, a layer never turns before its own code: the average only
+// holds the farther layer beside it, so a subject arrives and leaves whole, never
+// outline first. With `close` [from, full], the incoming frame's sky between a
+// subject's parts (its subject share of the disc's taps) turns with the subject, so a
+// lattice arrives whole and the outgoing ground shows no shards through its gaps.
+// `foot` [full, gone] (the star's disc radii, from the lens's source): the star, its
+// glow and whatever sky crosses them turn on one weight, the sky's window, so the
+// star fades whole, never cut by the other shot's branches or held by them. The
+// lens's flare follows it. `on`: 0 keeps the hard mask.
 export const DISSOLVE_SOFT = Object.freeze({
   on: 1,
   radius: 0.03,
   taps: 12,
-  star: Object.freeze([0.105, 0.12]),
+  own: 1,
+  close: Object.freeze([0.2, 0.45]),
+  foot: Object.freeze([2, 3]),
 });
 
 // The lens (the owner's pick of the Eye breakdown, 2026-10-09), all of it in the
@@ -558,24 +564,33 @@ float layerCode(sampler2D map, vec2 uv) {
 }
 ${
   DISSOLVE_SOFT.on
-    ? `float softCode(sampler2D map, vec2 uv) {
-  float aspect = uCodeTexel.y / uCodeTexel.x, sum = layerCode(map, uv);
+    ? `float softCode(sampler2D map, vec2 uv, float closing) {
+  float aspect = uCodeTexel.y / uCodeTexel.x, own = layerCode(map, uv), sum = own, subject = step(0.9, own);
   for (int i = 1; i <= ${DISSOLVE_SOFT.taps}; i++) {
     float r = sqrt(float(i) / ${lensNumber(DISSOLVE_SOFT.taps)}) * ${lensNumber(DISSOLVE_SOFT.radius)}, a = float(i) * 2.39996;
-    sum += texture2D(map, uv + vec2(cos(a) / aspect, sin(a)) * r).a;
+    float code = texture2D(map, uv + vec2(cos(a) / aspect, sin(a)) * r).a;
+    sum += code;
+    subject += step(0.9, code);
   }
-  return sum / ${lensNumber(DISSOLVE_SOFT.taps + 1)};
+  float code = max(sum / ${lensNumber(DISSOLVE_SOFT.taps + 1)}, own * ${lensNumber(DISSOLVE_SOFT.own)});
+  return max(code, closing * smoothstep(${lensNumber(DISSOLVE_SOFT.close?.[0] ?? 2)}, ${lensNumber(DISSOLVE_SOFT.close?.[1] ?? 3)}, subject / ${lensNumber(DISSOLVE_SOFT.taps + 1)}));
 }
 `
     : ""
-}${
-    DISSOLVE_SOFT.star
-      ? `float starCode(float code) {
-  return smoothstep(${lensNumber(DISSOLVE_SOFT.star[0])}, ${lensNumber(DISSOLVE_SOFT.star[1])}, code) * (1.0 - smoothstep(0.22, 0.28, code));
+}${LENS_GLSL}${
+    DISSOLVE_SOFT.foot
+      ? `
+// A star's one turn: the other frame's nearest layer over the disc (its centre c and four
+// points a radius r out, in that frame's UV) decides when it turns, over the layer's window.
+float starTurn(sampler2D other, vec2 c, float r, vec2 aspect) {
+  vec2 dx = vec2(r / aspect.x, 0.0), dy = vec2(0.0, r);
+  float code = max(texture2D(other, c).a, max(max(texture2D(other, c + dx).a, texture2D(other, c - dx).a), max(texture2D(other, c + dy).a, texture2D(other, c - dy).a)));
+  float start = 3.0 * uStagger.x * clamp(code, 0.0, 1.0);
+  return smoothstep(start, start + uStagger.y, uProgress);
 }
 `
       : ""
-  }${LENS_GLSL}
+  }
 void main() {
   float guard = uLayered > 0.5 ? max(lensBehind(slateText, vUv, ${lensNumber(LENS_FX.text[0])}), lensBehind(slateAbout, vUv, ${lensNumber(LENS_FX.text[1])})) : 0.0;
   vec4 texel = uLayered > 0.5 ? lensView(tDiffuse, vUv, vUv, uBlur, uStar, uFlame, uKeep, guard) : texture2D(tDiffuse, vUv);
@@ -583,19 +598,11 @@ void main() {
   // so its lens (heat, fringes, kept rect and flare) is placed in its own UV and
   // stays on its own star and flame.
   vec2 prevUv = uPrevOrigin + (vUv - uPrevOrigin) * uPrevScale;
-  float protection = uTextProtection, w = 1.0;
+  float protection = uTextProtection, w = 1.0, turnPrev = 1.0, turnNow = 1.0;
   if (uProgress < 1.0) {
     float start = 0.0, span = 1.0;
     if (uLayered > 0.5) {
-      float codePrev = ${DISSOLVE_SOFT.on ? "softCode" : "layerCode"}(tPrev, prevUv), codeNow = ${DISSOLVE_SOFT.on ? "softCode" : "layerCode"}(tDiffuse, vUv);${
-        DISSOLVE_SOFT.star
-          ? `
-      // Each frame's star dissolves on its own code: the other frame's layers never hold it.
-      float starPrev = starCode(texture2D(tPrev, prevUv).a), starNow = starCode(texture2D(tDiffuse, vUv).a);
-      codePrev *= 1.0 - starNow;
-      codeNow *= 1.0 - starPrev;`
-          : ""
-      }
+      float codePrev = ${DISSOLVE_SOFT.on ? "softCode(tPrev, prevUv, 0.0)" : "layerCode(tPrev, prevUv)"}, codeNow = ${DISSOLVE_SOFT.on ? "softCode(tDiffuse, vUv, 1.0)" : "layerCode(tDiffuse, vUv)"};
       start = 3.0 * uStagger.x * clamp(max(codePrev, codeNow), 0.0, 1.0);
       span = uStagger.y;${
         DISSOLVE_BRUSH.on
@@ -606,7 +613,28 @@ void main() {
           : ""
       }
     }
-    w = smoothstep(start, start + span, uProgress);
+    w = smoothstep(start, start + span, uProgress);${
+      DISSOLVE_SOFT.foot
+        ? `
+    if (uLayered > 0.5) {
+      // Each frame's star (DISSOLVE_SOFT.foot), where that frame shows sky, turns as one: its disc
+      // and glow fade whole, whatever crosses them in the other frame too. The outgoing star leaves
+      // with the sky; the incoming one comes when the outgoing frame's nearest layer over its disc
+      // turns (starTurn), so it never shows through that layer early.
+      vec2 aspect = lensAspect();
+      if (uStarPrev.w > 0.0) {
+        float foot = (1.0 - smoothstep(${lensNumber(DISSOLVE_SOFT.foot[0])}, ${lensNumber(DISSOLVE_SOFT.foot[1])}, length((prevUv - uStarPrev.xy) * aspect) / uStarPrev.z)) * (1.0 - smoothstep(0.25, 0.3, texture2D(tPrev, prevUv).a));
+        turnPrev = smoothstep(0.0, uStagger.y, uProgress);
+        w = mix(w, turnPrev, foot);
+      }
+      if (uStar.w > 0.0) {
+        float foot = (1.0 - smoothstep(${lensNumber(DISSOLVE_SOFT.foot[0])}, ${lensNumber(DISSOLVE_SOFT.foot[1])}, length((vUv - uStar.xy) * aspect) / uStar.z)) * (1.0 - smoothstep(0.25, 0.3, texture2D(tDiffuse, vUv).a));
+        turnNow = starTurn(tPrev, uPrevOrigin + (uStar.xy - uPrevOrigin) * uPrevScale, uStar.z * uPrevScale, aspect);
+        w = mix(w, turnNow, foot);
+      }
+    }`
+        : ""
+    }
     texel = mix(uLayered > 0.5 ? lensView(tPrev, prevUv, prevUv, uBlurPrev, uStarPrev, uFlamePrev, uKeepPrev, guard) : texture2D(tPrev, prevUv), texel, w);
     protection = mix(uTextProtectionFrom, uTextProtection, w);
   }
@@ -614,7 +642,8 @@ void main() {
   // The star's flare, dissolving with each frame's own.
   if (uLayered > 0.5 && uLens.z > 0.0) {
     vec3 flare = lensFlare(vUv, uStar, uKeep);
-    if (uProgress < 1.0) flare = mix(lensFlare(prevUv, uStarPrev, uKeepPrev), flare, ${DISSOLVE_SOFT.star ? "smoothstep(0.0, 1.0, uProgress)" : "w"});
+    // Each frame's flare goes with its own star's turn (starTurn).
+    if (uProgress < 1.0) flare = ${DISSOLVE_SOFT.foot ? "lensFlare(prevUv, uStarPrev, uKeepPrev) * (1.0 - turnPrev) + flare * turnNow" : "mix(lensFlare(prevUv, uStarPrev, uKeepPrev), flare, w)"};
     color += flare * (uLens.z * (1.0 - guard));
   }
 
