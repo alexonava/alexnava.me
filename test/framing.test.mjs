@@ -464,13 +464,14 @@ test("every moving shot holds still on landscape phones and keeps a move on desk
       );
 });
 
-// Hero text and bottom bar measured from the live page at each size.
+// Hero text and bottom bar measured from the live page at each size (2026-10-15: the hero's
+// layout box and the bottom bar's rect, as the scene reads them).
 const LAYOUTS = [
   {
     width: 390,
     height: 844,
-    hero: { left: 32, right: 299, top: 34, bottom: 177 },
-    nav: { top: 738 },
+    hero: { left: 12, right: 299, top: 34, bottom: 177 },
+    nav: { top: 766 },
   },
   {
     width: 450,
@@ -482,57 +483,57 @@ const LAYOUTS = [
     width: 844,
     height: 390,
     hero: { left: 16, right: 262, top: 12, bottom: 138 },
-    nav: { top: 296 },
+    nav: { top: 316 },
   },
   {
     width: 1440,
     height: 900,
     hero: { left: 130, right: 454, top: 447, bottom: 720 },
-    nav: { top: 782 },
+    nav: { top: 818 },
   },
   {
     width: 1600,
     height: 900,
-    hero: { left: 210, right: 535, top: 447, bottom: 720 },
-    nav: { top: 782 },
+    hero: { left: 210, right: 534, top: 447, bottom: 720 },
+    nav: { top: 818 },
   },
   {
     width: 2560,
     height: 1080,
     hero: { left: 141, right: 465, top: 613, bottom: 886 },
-    nav: { top: 962 },
+    nav: { top: 998 },
   },
-  // Maximised browsers (measured 2026-10-11): a 1080p desktop and a wider window, where
-  // The watch tilts up; a 16:9 window, a MacBook and a 125%-scaled laptop, where it keeps level.
+  // Maximised browsers: a 1080p desktop and a wider window, where The watch tilts up; a 16:9
+  // window, a MacBook and a 125%-scaled laptop, where it keeps level.
   {
     width: 1992,
     height: 1020,
     hero: { left: 110, right: 434, top: 555, bottom: 828 },
-    nav: { top: 902 },
+    nav: { top: 938 },
   },
   {
     width: 1920,
     height: 960,
     hero: { left: 106, right: 430, top: 501, bottom: 774 },
-    nav: { top: 842 },
+    nav: { top: 878 },
   },
   {
     width: 1680,
     height: 950,
     hero: { left: 250, right: 574, top: 492, bottom: 765 },
-    nav: { top: 832 },
+    nav: { top: 868 },
   },
   {
     width: 1440,
     height: 800,
     hero: { left: 130, right: 454, top: 357, bottom: 630 },
-    nav: { top: 682 },
+    nav: { top: 718 },
   },
   {
     width: 1536,
     height: 730,
     hero: { left: 178, right: 502, top: 294, bottom: 567 },
-    nav: { top: 612 },
+    nav: { top: 648 },
   },
   // A small landscape phone sets the name top-left beside the subject; a
   // portrait monitor sets it bottom-left, below the subject.
@@ -553,7 +554,7 @@ const LAYOUTS = [
   {
     width: 700,
     height: 480,
-    hero: { left: 12, right: 261, top: 12, bottom: 148 },
+    hero: { left: 16, right: 261, top: 12, bottom: 148 },
     nav: { top: 406 },
   },
   // 4:3 and 5:4 screens, landscape iPads and taller 16:10 windows (the hero measured
@@ -572,7 +573,7 @@ const LAYOUTS = [
     width,
     height,
     hero: { left, right, top, bottom },
-    nav: { top: height - 118 },
+    nav: { top: height - 82 },
     lookout: true,
   })),
 ];
