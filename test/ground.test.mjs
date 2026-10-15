@@ -1610,9 +1610,32 @@ test("the drifting mist lies below its ceiling on every film material, after its
   assert.ok(MIST_RANGES.includes(`if(md.y<${MIST_DRIFT.ranges[1]}){`));
   // Their long rays cross hundreds of units of mist in a few steps: there each step
   // takes the banks' mean as it grows past their cells, so no single sample rules the
-  // far plain into level bands. Every other material marches as before.
+  // far plain into level bands. The terrain's far part eases into the same mean toward
+  // its edge (edge: TERRAIN_EDGE), so their veil never ends on a ruled line where they
+  // meet; nearer, every material marches as before.
   assert.ok(MIST_RANGES.includes("c+=(mistMarch(c,cameraPosition+md*mD,1.)-c)*"));
-  assert.ok(MIST_PARS.includes("vec3 mistOver(vec3 c,vec3 world){return mistMarch(c,world,0.);}"));
+  assert.equal(MIST_DRIFT.edge[0], TERRAIN_EDGE);
+  assert.ok(MIST_DRIFT.edge[1] > 0.4 && MIST_DRIFT.edge[1] < 0.8);
+  assert.ok(
+    MIST_PARS.includes(
+      `vec3 mistOver(vec3 c,vec3 world){return mistMarch(c,world,smoothstep(${+(TERRAIN_EDGE * MIST_DRIFT.edge[1]).toFixed(6)},${TERRAIN_EDGE.toFixed(1)},max(abs(world.x),abs(world.z))));}`,
+    ),
+  );
+  // On balanced, whose two steps saturate on those rays, the mean adds at most
+  // depth[1] of optical depth on the long rays (depthReach), so the far plain's top
+  // rows never lie as a pale sheet, and the rays by the terrain's edge keep their veil;
+  // high has no cap.
+  assert.equal(MIST_DRIFT.depth[0], 0);
+  assert.ok(MIST_DRIFT.depth[1] > 0 && MIST_DRIFT.depth[1] <= 1);
+  assert.ok(
+    MIST_PARS.includes(
+      `mistD=mistFrame.z>1.5?10000.0:${MIST_DRIFT.depth[1]},mistR=smoothstep(${MIST_DRIFT.depthReach.map((v) => v.toFixed(1)).join(",")},L);`,
+    ),
+  );
+  assert.ok(
+    MIST_DRIFT.depthReach[0] > TERRAIN_EDGE && MIST_DRIFT.depthReach[1] < MIST_DRIFT.ranges[0],
+  );
+  assert.ok(MIST_PARS.includes("a=mix(a,min(a,max(mistD-tau,0.)),mistF*mistR);"));
   assert.ok(
     MIST_PARS.includes(
       `mix(smoothstep(${MIST_DRIFT.banks[0]},${MIST_DRIFT.banks[1]},n),mistC,mistF)`,

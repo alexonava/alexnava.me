@@ -47,8 +47,16 @@
 //   behind them, from however low a lens. Those rays cross hundreds of units of mist in
 //   a few steps, so a single sample would decide each screen row and rule the far plain
 //   into hard level bands: there each step's banks ease to their mean `cover` ([high,
-//   balanced]) as the step grows from `filter[0]` to `filter[1]` of the banks' cells;
-//   the nearer materials march as before;
+//   balanced]) as the step grows from `filter[0]` to `filter[1]` of the banks' cells.
+//   The terrain's far part takes the same mean as it nears its edge, from `edge[1]`
+//   of its half-width `edge[0]` (hill-silhouette.js TERRAIN_EDGE) to the edge, so
+//   the ranges' even veil runs on into the plain's own march, never ending on a
+//   ruled level line where the terrain meets them; nearer, every material marches
+//   as before. On balanced, whose two steps saturate on those rays, their mean
+//   adds at most `depth` [high, balanced; 0 none] of optical depth on a ray
+//   longer than `depthReach` [from, to] units, so the far plain's top rows under
+//   the ranges never lie as a pale sheet lighter than the lit ground, while the
+//   shorter rays by the terrain's edge keep their veil and meet the plain's own;
 // - `shots`: a shot's own share of the density (1 when unlisted), set on the cut.
 // Its clock runs with drawn frames and holds for reduced motion, a visitor pause and
 // an open panel, as the grass's wind does.
@@ -79,7 +87,10 @@ export const MIST_DRIFT = Object.freeze({
   textReach: Object.freeze([0.4, 0.15]),
   ranges: Object.freeze([800, 0.012]),
   cover: Object.freeze([0.25, 0.31]),
-  filter: Object.freeze([0.5, 2]),
+  filter: Object.freeze([0.25, 1]),
+  edge: Object.freeze([192, 0.6]),
+  depth: Object.freeze([0, 0.5]),
+  depthReach: Object.freeze([300, 600]),
   shots: Object.freeze({}),
 });
 
@@ -193,7 +204,7 @@ float t0=${g(M.near[0])},t1=L;
 if(hC>=top){if(hP>=top)return c;t0=max(t0,L*(hC-top)/(hC-hP));}
 else if(hP>top)t1=L*(top-hC)/(hP-hC);
 if(t1<=t0)return c;
-float dt=(t1-t0)/mistFrame.y,tau=0.,keep=1.,flash=0.;vec3 glow=vec3(0.);
+float dt=(t1-t0)/mistFrame.y,tau=0.,keep=1.,flash=0.,mistD=mistFrame.z>1.5?${g(M.depth[0] || 1e4)}:${g(M.depth[1] || 1e4)},mistR=smoothstep(${g(M.depthReach[0])},${g(M.depthReach[1])},L);vec3 glow=vec3(0.);
 // A ranges' step that spans whole banks takes their mean instead of one sample's.
 float mistF=soft*smoothstep(${g(M.filter[0])},${g(M.filter[1])},dt*length(vec3(dot(dir.xz,${WIND_AXIS})/${g(M.cells[0])},dir.y/${g(M.cells[2])},dot(dir.xz,${WIND_ACROSS})/${g(M.cells[1])}))),mistC=mistFrame.z>1.5?${g(M.cover[0])}:${g(M.cover[1])};
 float moonPhase=${g(1 - M.moon[1] ** 2)}/pow(1.+${g(M.moon[1] ** 2)}-${g(2 * M.moon[1])}*dot(dir,mistMoon.xyz),1.5);
@@ -212,6 +223,8 @@ n=mix(n,mistNoise(q*2.31+vec3(5.2,1.3,7.7)),${g(M.fine)});}
 side=mix(side,1.,mistF);
 float rho=${g(M.density)}*mistDrift.w*mix(1.,${g(M.far)},far)*prof*mix(smoothstep(${g(M.banks[0])},${g(M.banks[1])},n),mistC,mistF)*smoothstep(${g(M.near[0])},${g(M.near[1])},t);
 float a=rho*dt;
+// The mean's optical depth stops at mistD (MIST_DRIFT.depth).
+a=mix(a,min(a,max(mistD-tau,0.)),mistF*mistR);
 vec3 s=normalize(p-mistStar.xyz);float sd=length(p-mistStar.xyz)/${g(M.star[2])};
 float starPhase=${g(1 - M.star[1] ** 2)}/pow(1.+${g(M.star[1] ** 2)}+${g(2 * M.star[1])}*dot(s,dir),1.5);
 vec3 lit=${vec3(M.color)}*mix(1.,${g(M.top)},h)*side+${vec3([0.62, 0.74, 1])}*${g(M.moon[0])}*moonPhase*(.35+.65*h)
@@ -227,7 +240,7 @@ glow*=1.-${g(M.text)}*max(mistBox(mistText,uv,${g(M.textReach[0])}),mistBox(mist
         : ""
     }
 return mix(c,c*keep+glow,${g(M.veil)});}
-vec3 mistOver(vec3 c,vec3 world){return mistMarch(c,world,0.);}
+vec3 mistOver(vec3 c,vec3 world){return mistMarch(c,world,smoothstep(${g(M.edge[0] * M.edge[1])},${g(M.edge[0])},max(abs(world.x),abs(world.z))));}
 `
   : "";
 
