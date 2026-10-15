@@ -23,6 +23,7 @@
 // flare; lantern: the lantern's post; solid: rocks this tall or taller block
 // the way (pebbles never). uiFade: the page's fade out and back (styles.css).
 // unlockGrace: an Esc this soon after the mouse is freed is the same press.
+// substep: the longest motion step; a slower frame takes several.
 export const WALK = Object.freeze({
   eye: 5.3,
   speed: Object.freeze({ walk: 6.75, jog: 13.5, back: 4.8, strafe: 5.7 }),
@@ -47,6 +48,7 @@ export const WALK = Object.freeze({
   solid: 0.5,
   uiFade: 0.42,
   unlockGrace: 0.15,
+  substep: 1 / 60,
 });
 
 // The vertical fov (degrees) that shows `horizontal` degrees across this
@@ -330,7 +332,10 @@ export function createDesktopInput({
     dragging = false,
     jump = false,
     attached = false,
-    unlockedAt = -Infinity;
+    unlockedAt = -Infinity,
+    // The capture as its change events last reported it: the Esc that frees the
+    // mouse may reach the page before its pointerlockchange, and is not a second.
+    captured = false;
   const locked = () => Boolean(canvas) && doc?.pointerLockElement === canvas;
   const held = (...codes) => (codes.some((code) => keys.has(code)) ? 1 : 0);
   function capture() {
@@ -352,7 +357,7 @@ export function createDesktopInput({
       (event) => {
         if (event.ctrlKey || event.metaKey || event.altKey) return;
         if (event.code === "Escape") {
-          if (!locked() && now() - unlockedAt > WALK.unlockGrace * 1000) onLeave();
+          if (!captured && now() - unlockedAt > WALK.unlockGrace * 1000) onLeave();
           return;
         }
         if (!MOVES.has(event.code)) return;
@@ -390,7 +395,8 @@ export function createDesktopInput({
       "pointerlockchange",
       () => {
         dragging = false;
-        if (!locked()) unlockedAt = now();
+        captured = locked();
+        if (!captured) unlockedAt = now();
       },
     ],
     [canvas, "webglcontextlost", () => onLost()],
@@ -403,6 +409,8 @@ export function createDesktopInput({
       if (attached) return;
       attached = true;
       clear();
+      // The press that started the walk may have captured the mouse already.
+      captured = locked();
       for (const [target, type, handler] of listeners) target?.addEventListener?.(type, handler);
     },
     detach() {
@@ -680,13 +688,19 @@ export function createWalk({
       look(sight, intent.dx, intent.dy, intent.locked ? c.look : c.drag, c.pitch);
       sight.yaw += intent.turn * c.turn * dt;
       refreshSolids();
-      const fromX = walker.x,
-        fromZ = walker.z;
-      integrate(walker, wish(intent, sight.yaw, c, want), intent.jump, dt, c);
-      settle(walker.x, walker.z, solids, c, point);
-      boundStep(fromX, fromZ, point[0], point[1], c, point);
-      [walker.x, walker.z] = point;
-      land(walker, ground(walker.x, walker.z), c);
+      wish(intent, sight.yaw, c, want);
+      // In steps of at most `substep` seconds (a jog's 0.225 units), so a slow
+      // frame never carries the walker past a small solid's centre or off a slope.
+      const steps = Math.max(1, Math.ceil(dt / c.substep - 1e-9));
+      for (let i = 0; i < steps; i++) {
+        const fromX = walker.x,
+          fromZ = walker.z;
+        integrate(walker, want, intent.jump && i === 0, dt / steps, c);
+        settle(walker.x, walker.z, solids, c, point);
+        boundStep(fromX, fromZ, point[0], point[1], c, point);
+        [walker.x, walker.z] = point;
+        land(walker, ground(walker.x, walker.z), c);
+      }
       // The eye climbs a step smoothly and drops at once.
       const eye = walker.y + c.eye;
       sight.eye =

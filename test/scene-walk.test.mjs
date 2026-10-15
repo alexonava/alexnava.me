@@ -369,7 +369,7 @@ function walkRig({ lock = true, tower = null, target = new Vector3(0, 10, 0) } =
     fog = new Fog(0x2d3242, 30, 120),
     shot = { position: new Vector3(40, 8, 30), target };
   let texts = 0;
-  const walk = createWalk({
+  const options = {
     camera,
     canvas: site.canvas,
     page: site.body,
@@ -391,9 +391,11 @@ function walkRig({ lock = true, tower = null, target = new Vector3(0, 10, 0) } =
     dissolve: 1,
     onText: () => texts++,
     now: site.now,
-  });
+  };
+  const walk = createWalk(options);
   return {
     walk,
+    options,
     site,
     camera,
     fog,
@@ -590,6 +592,55 @@ test("the keys walk and turn the visitor, the captured mouse looks, and Esc twic
   site.win.dispatchEvent(key("keydown", "Escape"));
   assert.equal(walk.step((t += 1 / 60), TOUR_IDLE).capture, true, "the second Esc leaves");
   walk.dispose();
+});
+
+test("the Esc that frees the mouse never leaves, even when it arrives before the lock's change event", () => {
+  const rig = walkRig(),
+    { walk, site } = rig;
+  site.canvas.requestPointerLock();
+  let t = walkIn(rig);
+  // The browser drops the lock, delivers the Esc, and only then its pointerlockchange.
+  site.doc.pointerLockElement = null;
+  site.tick(1000);
+  site.win.dispatchEvent(key("keydown", "Escape"));
+  assert.equal(walk.step((t += 2), TOUR_IDLE).capture, false, "still walking");
+  site.doc.dispatchEvent(new Event("pointerlockchange"));
+  site.tick(500);
+  site.win.dispatchEvent(key("keydown", "Escape"));
+  assert.equal(walk.step((t += 1 / 60), TOUR_IDLE).capture, true, "the second Esc leaves");
+  walk.dispose();
+});
+
+test("slow frames move in small steps: no solid is crossed and slopes keep the feet down", () => {
+  const lantern = estateLantern();
+  for (const [label, ground] of [
+    ["flat", () => 1],
+    ["downhill", (x) => 1 - 0.6 * x],
+  ]) {
+    const rig = walkRig(),
+      { walk, site, shot } = rig;
+    rig.shot.position.set(lantern.x - 8, 6, lantern.z);
+    shot.target.set(lantern.x + 20, 6, lantern.z);
+    // A 10 fps frame jogging at 13.5 would step 1.35 at once, past the lantern's centre.
+    const slow = createWalk({ ...rig.options, ground });
+    slow.enter();
+    let t = 0;
+    for (let i = 0; i < 60 && !slow.drives; i++, t += 1 / 60) slow.step(t, TOUR_IDLE);
+    site.win.dispatchEvent(key("keydown", "ShiftLeft"));
+    site.win.dispatchEvent(key("keydown", "KeyW"));
+    let airborne = 0;
+    for (let i = 0; i < 40; i++) {
+      slow.update(0.1, 1600, 900);
+      const { x, z, grounded } = slow.state;
+      if (label === "flat")
+        assert.ok(Math.hypot(x - lantern.x, z - lantern.z) >= WALK.lantern + WALK.body - 1e-6);
+      if (!grounded) airborne++;
+    }
+    if (label === "flat") assert.ok(slow.state.x < lantern.x, "held in front of the lantern");
+    else assert.equal(airborne, 0, "down a 0.6 slope at 10 fps the feet stay on the ground");
+    slow.dispose();
+    walk.dispose();
+  }
 });
 
 test("without a captured mouse a held button drags the view", () => {
