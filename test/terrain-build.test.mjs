@@ -1026,6 +1026,16 @@ test("the lazy ground shading extends only the slate's program, under its own ke
       ),
     );
     assert.ok(RIVER_RIPPLE.sway > 1 && RIVER_RIPPLE.sway <= 4);
+    // A flatter view sways a small, far image as much as a near one (RIVER_RIPPLE.swayLow),
+    // and dims its level roof underside alike.
+    assert.ok(RIVER_RIPPLE.swayLow[0] > 0 && RIVER_RIPPLE.swayLow[1] > 1);
+    assert.ok(
+      fragment.includes(
+        `slateSWG = clamp(${RIVER_RIPPLE.swayLow[0]}/max(slateV.y, .02), 1.0, ${RIVER_RIPPLE.swayLow[1].toFixed(1)});`,
+      ),
+    );
+    assert.ok(fragment.includes("*slateSWG*dot(slateGS, slateSide)*slateSide;"));
+    assert.ok(fragment.includes("/slateSWG*exp(-pow2((ly-1.49)/(.02+slateAA.y)))"));
     // The stream's white water drifts at STREAMS.foam.drift of its current, as the
     // leaves on it do, so its thin lace travels downstream from frame to frame
     // rather than re-forming every frame; its ripples keep the whole current.
@@ -1041,7 +1051,7 @@ test("the lazy ground shading extends only the slate's program, under its own ke
       ),
     );
     const sway = fragment.indexOf(
-      `vec2 slateSide = normalize(vec2(slateV.z, -slateV.x)+1e-6), slateGI = slateG+${RIVER_RIPPLE.sway.toFixed(1)}*dot(slateGS, slateSide)*slateSide;\n    slateNI = normalize(mix(slateN, normalize(vec3(-slateGI.x, 1.0, -slateGI.y)), slateDeep));`,
+      `vec2 slateGI = slateG+${RIVER_RIPPLE.sway.toFixed(1)}*slateSWG*dot(slateGS, slateSide)*slateSide;\n    slateNI = normalize(mix(slateN, normalize(vec3(-slateGI.x, 1.0, -slateGI.y)), slateDeep));`,
     );
     assert.ok(
       sway > 0 && sway < fragment.indexOf("slateG += slateGC+slateGT;"),
@@ -1075,7 +1085,7 @@ test("the lazy ground shading extends only the slate's program, under its own ke
     assert.ok(LANTERN_IMAGE.roof > 0.3 && LANTERN_IMAGE.roof < 1);
     assert.ok(
       fragment.includes(
-        `+${+(0.12 * LANTERN_IMAGE.roof).toFixed(4)}*exp(-pow2((ly-1.49)/(.02+slateAA.y)))`,
+        `+${+(0.12 * LANTERN_IMAGE.roof).toFixed(4)}/slateSWG*exp(-pow2((ly-1.49)/(.02+slateAA.y)))`,
       ),
     );
     assert.ok(

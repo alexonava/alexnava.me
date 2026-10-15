@@ -1793,7 +1793,13 @@ const zoneGlsl = (zone) => glslVec(+zone.x.toFixed(2), +zone.z.toFixed(2));
 // reflected height by more than the lantern's eave is deep and break its image
 // into stacked, offset strips. It sways instead, `sway` times the river's
 // coarse ripples' tilt across the view: its posts lean and bend by about a
-// post's width as the water drifts, slowly, the image never sliced. The
+// post's width as the water drifts, slowly, the image never sliced. A lens
+// looking down on the water sees the same ripple bend the image less, so the
+// sway grows as the view flattens, `swayLow` [0] over the sine of the view's
+// elevation, at least 1 and at most [1] times: a small, far image (a landscape
+// phone, a wide screen, the phone's Root and lantern) sways as a near one does,
+// and its lit roof underside, which would stay level while the posts sway,
+// dims by as much. The
 // moving water (the river's and the streams') mirrors the sky at `rough`
 // roughness (the environment's own prefiltered blur), and the stream up to
 // `roughTilt` more where its ripples are steepest (where it pours in): sharp,
@@ -1808,6 +1814,7 @@ export const RIVER_RIPPLE = Object.freeze({
   tilt: Object.freeze([0.018, 0.007]),
   fade: Object.freeze([1.5, 3]),
   sway: 3,
+  swayLow: Object.freeze([0.5, 5]),
   rough: 0.12,
   roughTilt: 0.3,
   mouth: Object.freeze([0.5, 1, 0.2]),
@@ -1858,7 +1865,7 @@ if (slateWater > 0.0) {
   // The water's own normal, for the mirror and its Fresnel only (the bottom keeps the soil's): level as it deepens, a still micro-undulation near the lens, and the drips.
   float slateDeep = smoothstep(-.01, .05, slateLevel)*(1.0-slateDry)*slateZoneW;
   vec3 slateN = normalize(normal*mat3(viewMatrix)), slateNI = slateN, slateV = normalize(cameraPosition-vMudWorld);
-  float slateView = length(vViewPosition), slateRough = 0.0, slateRoughT = 0.0;
+  float slateView = length(vViewPosition), slateRough = 0.0, slateRoughT = 0.0, slateSWG = 1.0;
   if (slateDeep > 0.0) {
     vec2 slateG = vec2(0.0);
     // The undulation's noise only where it has not faded; the rings only while a drip lives.
@@ -1897,7 +1904,9 @@ if (slateWater > 0.0) {
       slateGT = (slateStreamDir*slateSG.x+vec2(-slateStreamDir.y, slateStreamDir.x)*slateSG.y)*slateStreamQ.x*mix(${glsl(RIVER_RIPPLE.mouth[2])}, 1.0, smoothstep(${glsl(RIVER_RIPPLE.mouth[0])}, ${glsl(RIVER_RIPPLE.mouth[1])}, slateRiverR));
     }
     // The lantern's image: the still water's tilt, swayed across the view by the river's coarse ripples.
-    vec2 slateSide = normalize(vec2(slateV.z, -slateV.x)+1e-6), slateGI = slateG+${glsl(RIVER_RIPPLE.sway)}*dot(slateGS, slateSide)*slateSide;
+    vec2 slateSide = normalize(vec2(slateV.z, -slateV.x)+1e-6);
+    slateSWG = clamp(${glsl(RIVER_RIPPLE.swayLow[0])}/max(slateV.y, .02), 1.0, ${glsl(RIVER_RIPPLE.swayLow[1])});
+    vec2 slateGI = slateG+${glsl(RIVER_RIPPLE.sway)}*slateSWG*dot(slateGS, slateSide)*slateSide;
     slateNI = normalize(mix(slateN, normalize(vec3(-slateGI.x, 1.0, -slateGI.y)), slateDeep));
     slateG += slateGC+slateGT;
     slateN = normalize(mix(slateN, normalize(vec3(-slateG.x, 1.0, -slateG.y)), slateDeep));
@@ -1957,7 +1966,7 @@ ${
     float slateLampY = dot(slateLamp, vec3(.2126, .7152, .0722)), slateGlobe = length(vec2(slateAX/.2, (ly-.74)/.34));
     // Through the clear globe the sky and, without the flame module, a faint glow (with it, the flame's image carries the glass's light); the dark cage with the flame-lit inner faces of its posts and the roof's underside.
     vec3 slateGlassC = slateSkyW*.8+slateLamp*(.03*(1.0-smoothstep(.5, 1.0, slateGlobe))+.02*exp(-3.0*slateGlobe*slateGlobe))*(1.0-step(.01, slateFlame.x));
-    vec3 slateCageC = vec3(.012, .013, .026)+slateLamp*(.25*exp(-pow2((slateAX-.37)/(.018+slateAA.x))-pow2((ly-.8)/.55))*step(.3, ly)*step(ly, 1.52)+${glsl(0.12 * LANTERN_IMAGE.roof)}*exp(-pow2((ly-1.49)/(.02+slateAA.y))))*(1.0-smoothstep(.44-slateAA.x, .44+slateAA.x, slateAX));
+    vec3 slateCageC = vec3(.012, .013, .026)+slateLamp*(.25*exp(-pow2((slateAX-.37)/(.018+slateAA.x))-pow2((ly-.8)/.55))*step(.3, ly)*step(ly, 1.52)+${glsl(0.12 * LANTERN_IMAGE.roof)}/slateSWG*exp(-pow2((ly-1.49)/(.02+slateAA.y))))*(1.0-smoothstep(.44-slateAA.x, .44+slateAA.x, slateAX));
     // The v3 flame (lantern-flame.js lanternFire): blue cup, dark vapour cone, yellow-white core, yellow body, orange-red tip, at
     // the flame's own draught (slateFlame): its height, and its lean, which grows up the flame. Its ends sit MIRROR_FLAME.inset
     // pixel footprints (fp) inside the flame's.
