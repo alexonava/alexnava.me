@@ -131,13 +131,14 @@ export const CLOUD_BRUSH = Object.freeze({
   edge: Object.freeze([0.035, 0.6, 10]),
   streak: Object.freeze([0.09, 0.8, 18]),
 });
-// No lone islands in the banks (the re-review of 2026-10-15): the fine octaves (n1, the
-// ridged 4.3x octave, `fine`) and the brush's edge move the cover threshold only where the
-// coarse field (the density without them, at their means) comes near it. Where the coarse
-// field lies `clear` [gone, whole] below the threshold the cover fades out with it, so no
-// lone puff, oval or cut-off lobe floats in clear sky; where it lies `fill` [from, whole] above, the cover is
-// whole, so no pinhole or pit opens in a bank. The banks' edges keep their brushed detail.
-// High and balanced skies, by the reshaping (the environment's clouds stay as authored).
+// No specks in the banks (the re-reviews of 2026-10-15): the finest octaves (the ridged 4.3x
+// octave and `fine`) and the brush's edge move the cover threshold only where the rest of
+// the field (with its lanes, windows and pockets, the reference banks' too) comes near it.
+// Where that field lies `clear` [gone, whole] below the threshold the cover fades out, so
+// no lone speck, oval or puff floats in clear sky; where it lies `fill` [from, whole] above,
+// the cover is whole, so no pinhole or pit opens in a bank. Lanes, windows and the banks'
+// shapes are the coarser field's and stay as they are. High and balanced skies, by the
+// reshaping (the environment's clouds stay as authored).
 export const CLOUD_ISLANDS = Object.freeze({
   on: 1,
   clear: Object.freeze([0.07, 0.015]),
@@ -277,7 +278,7 @@ float fine=.5;
 if(uNebulaLayers>2.5) fine=NV[7]*.65+NV[8]*.35;
 d=n0*.5+n1*.27+g2*.16+fine*.07;
 da=a0*.5+a1*.27+h2*.16+fine*.07;
-fineD=(n1-.5)*.27+(g2-.62)*.16+(fine-.5)*.07;
+fineD=(g2-.62)*.16+(fine-.5)*.07;
 float bank=open*(mix(${glslFloat(banks[0])}*open,${glslFloat(banks[1])}+${glslFloat(lanes)}*(NV[2]-.5),smoothstep(${glslFloat(banks[2])},${glslFloat(banks[3])},NV[0]))-${glslFloat(text[0])}*cloudText);
 d+=bank; da+=bank;
 }

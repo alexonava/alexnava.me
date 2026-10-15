@@ -928,7 +928,8 @@ test("the clouds' reshaping never reaches the reference banks or the roof's lane
   // field comes near the threshold.
   assert.match(field, /float cover=smoothstep\(\.548-w,\.548\+w,d\+brushEdge\);\n/);
   assert.match(field, /cover\*=horizonFade\*uClouds;$/);
-  assert.ok(field.includes("fineD=(n1-.5)*.27+(g2-.62)*.16+(fine-.5)*.07;"));
+  // Only the finest octaves count: the medium one (n1) shapes lanes, windows and pockets.
+  assert.ok(field.includes("fineD=(g2-.62)*.16+(fine-.5)*.07;"));
   const [c0, c1] = CLOUD_ISLANDS.clear.map((m) => (0.548 - m).toFixed(3)),
     [f0, f1] = CLOUD_ISLANDS.fill.map((m) => (0.548 + m).toFixed(3));
   assert.ok(
