@@ -57,6 +57,11 @@
 //   longer than `depthReach` [from, to] units, the terrain's far part and the
 //   ranges' alike, so the far plain under the ranges never lies as a pale sheet
 //   lighter than the lit ground and the two still meet without a step;
+// - `horizon`: [whole, none] of view slope below eye level: where the ground stands
+//   above the plain there (a foothill's crest, a knoll), its own march runs on behind
+//   it to the plain, as the ranges' does, taking the banks' mean, wholly within [0]
+//   and easing out by [1], so the veil behind a ridge fades down over its crest
+//   rather than ending on it in a ruled level step (mistGround(), the ground's only);
 // - `shots`: a shot's own share of the density (1 when unlisted), set on the cut.
 // Its clock runs with drawn frames and holds for reduced motion, a visitor pause and
 // an open panel, as the grass's wind does.
@@ -91,6 +96,7 @@ export const MIST_DRIFT = Object.freeze({
   edge: Object.freeze([192, 0.6]),
   depth: Object.freeze([0, 0.5]),
   depthReach: Object.freeze([150, 300]),
+  horizon: Object.freeze([0.02, 0.07]),
   shots: Object.freeze({}),
 });
 
@@ -186,6 +192,17 @@ export function setMistDatum(y) {
   MIST_UNIFORMS.mistFrame.value.x = y;
 }
 
+// The far terrain's share of the ranges' filtered march (MIST_DRIFT.edge).
+const MIST_SOFT = `smoothstep(${g(M.edge[0] * M.edge[1])},${g(M.edge[0])},max(abs(world.x),abs(world.z)))`;
+// The ground's own march (mistGround, MIST_DRIFT.horizon): where the ground stands
+// above the plain near eye level (a ridge, a knoll), its ray runs on, as the ranges'
+// does, to where it would meet the plain behind it, all of it within horizon[0] of
+// view slope below eye level and none past horizon[1], taking the banks' mean there.
+const MIST_GROUND = `vec3 mistGround(vec3 c,vec3 world){float mS=${MIST_SOFT};vec3 mE=world,mV=world-cameraPosition;float mL=length(mV);vec3 mU=mV/max(mL,1e-4);
+if(mU.y<0.){float mW=1.-smoothstep(${g(M.horizon[0])},${g(M.horizon[1])},-mU.y),mD=min(${g(M.ranges[0])},max(cameraPosition.y-mistFrame.x,0.)/-mU.y);
+if(mD>mL){mE=cameraPosition+mU*mix(mL,mD,mW);mS=max(mS,mW);}}
+return mistMarch(c,mE,mS);}`;
+
 // The mist's functions, declared once beside a material's fog: mistOver(c, world)
 // returns c seen through the mist between the lens and that world point.
 export const MIST_PARS = mistOn
@@ -240,7 +257,8 @@ glow*=1.-${g(M.text)}*max(mistBox(mistText,uv,${g(M.textReach[0])}),mistBox(mist
         : ""
     }
 return mix(c,c*keep+glow,${g(M.veil)});}
-vec3 mistOver(vec3 c,vec3 world){return mistMarch(c,world,smoothstep(${g(M.edge[0] * M.edge[1])},${g(M.edge[0])},max(abs(world.x),abs(world.z))));}
+vec3 mistOver(vec3 c,vec3 world){return mistMarch(c,world,${MIST_SOFT});}
+${MIST_GROUND}
 `
   : "";
 

@@ -591,8 +591,8 @@ test("each ground shading has its own program cache key; the slate's shading nee
         `earthHorizon \\*= smoothstep\\(1\\.0, 1\\.15, dot\\(gl_FragColor\\.rgb, ${LUMA}\\)/dot\\(earthAir, ${LUMA}\\)\\);\\s*` +
         `gl_FragColor\\.rgb = mix\\(gl_FragColor\\.rgb, earthAir, earthHorizon\\);\\s*#endif\\s*` +
         `if \\(slateClearShade\\.w > 0\\.\\) \\{[^}]*\\}\\s*if \\(slateMist\\.w > 0\\.\\) \\{[^}]*\\}\\s*` +
-        // Then the drifting mist (drifting-mist.js), over the slate's own air and look.
-        `${mistOn ? "gl_FragColor\\.rgb = mistOver\\(gl_FragColor\\.rgb, vMudWorld\\);\\s*" : ""}gl_FragColor\\.a = 0\\.6667;`,
+        // Then the drifting mist (drifting-mist.js mistGround), over the slate's own air and look.
+        `${mistOn ? "gl_FragColor\\.rgb = mistGround\\(gl_FragColor\\.rgb, vMudWorld\\);\\s*" : ""}gl_FragColor\\.a = 0\\.6667;`,
     ),
   );
   // Delay distance haze so the phone foreground retains texture; the outer
@@ -1621,6 +1621,19 @@ test("the drifting mist lies below its ceiling on every film material, after its
       `vec3 mistOver(vec3 c,vec3 world){return mistMarch(c,world,smoothstep(${+(TERRAIN_EDGE * MIST_DRIFT.edge[1]).toFixed(6)},${TERRAIN_EDGE.toFixed(1)},max(abs(world.x),abs(world.z))));}`,
     ),
   );
+  // The ground's own march (mistGround): where it stands above the plain near eye level
+  // (a ridge's crest), its ray runs on to the plain behind it as the ranges' does, wholly
+  // within horizon[0] of view slope and not at all past horizon[1], so the veil behind a
+  // ridge never ends on its crest in a ruled step. Ground on the plain marches as before
+  // (its ray already ends there), and no other material takes it.
+  const [h0, h1] = MIST_DRIFT.horizon;
+  assert.ok(h0 > 0 && h1 > h0 && h1 <= 0.1, "a few degrees below eye level");
+  assert.ok(
+    MIST_PARS.includes(
+      `float mW=1.-smoothstep(${h0},${h1},-mU.y),mD=min(${MIST_DRIFT.ranges[0].toFixed(1)},max(cameraPosition.y-mistFrame.x,0.)/-mU.y);\nif(mD>mL){mE=cameraPosition+mU*mix(mL,mD,mW);mS=max(mS,mW);}}\nreturn mistMarch(c,mE,mS);}`,
+    ),
+  );
+  assert.equal(MIST_PARS.match(/vec3 mistGround\(/g).length, 1);
   // On balanced, whose two steps saturate on those rays, the mean adds at most
   // depth[1] of optical depth on the long rays (depthReach, the terrain's far part's
   // and the ranges' alike), so the far plain never lies as a pale sheet; high has no cap.

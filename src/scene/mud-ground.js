@@ -1534,7 +1534,7 @@ ${SLATE_TEXT_GLSL}${LOOK_GLSL}${mistOn ? `uniform mat4 projectionMatrix;\n${MIST
       vec3 earthAir = ${TERRAIN_HORIZON}*${glslNumber(HORIZON_AIR.ground)};
       earthHorizon *= smoothstep(1.0, 1.15, dot(gl_FragColor.rgb, ${LUMA})/dot(earthAir, ${LUMA}));
       gl_FragColor.rgb = mix(gl_FragColor.rgb, earthAir, earthHorizon);
-      #endif${LOOK_AFTER}${useWet && mistOn ? "\n      gl_FragColor.rgb = mistOver(gl_FragColor.rgb, vMudWorld);" : ""}
+      #endif${LOOK_AFTER}${useWet && mistOn ? "\n      gl_FragColor.rgb = mistGround(gl_FragColor.rgb, vMudWorld);" : ""}
       gl_FragColor.a = ${DEPTH_LAYER.ground};
     `,
         );
