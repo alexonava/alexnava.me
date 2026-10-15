@@ -3147,7 +3147,9 @@ export function plantReeds(surface) {
 //   pebble inside `shore` river radii (its own width past the waterline) is
 //   left out, its draws still taken, so the rest keep their places.
 // - debris: `count` leaves and twigs at the stream's waterline (radii
-//   `waterline`) and `eddy` of them in the slack water just behind each stone.
+//   `waterline`) and `eddy` of them in the slack water just behind each stone;
+//   as the gravel, one inside `shore` river radii is left out, its draws still
+//   taken, so none lies on the river where the stream pours in.
 export const WATER_BANKS = Object.freeze({
   seed: 47713,
   gravel: Object.freeze({
@@ -3317,6 +3319,7 @@ function* bankSteps(surface, groundColor) {
   // Leaves and twigs at the waterline, and in the eddy behind each stone.
   const level = groundAt(LANTERN_FOOT.x, LANTERN_FOOT.z, 0) + STREAMS.bed.level + 0.004;
   const debris = [];
+  let floating = 0;
   for (const [dx, dz] of STREAMS.stones.list) {
     const sx = LANTERN_FOOT.x + dx,
       sz = LANTERN_FOOT.z + dz;
@@ -3355,8 +3358,13 @@ function* bankSteps(surface, groundColor) {
       yaw = random() * Math.PI * 2,
       cy = Math.cos(yaw),
       sy = Math.sin(yaw),
-      at = (u, w, lift) => [x + u * cy - w * sy, y + lift, z + u * sy + w * cy];
-    pieces.push(positions.length / 3);
+      at = (u, w, lift) => [x + u * cy - w * sy, y + lift, z + u * sy + w * cy],
+      dry = riverRadius(x, z) >= G.shore,
+      draw = dry ? triangle : () => {};
+    if (dry) {
+      pieces.push(positions.length / 3);
+      floating++;
+    }
     if (random() < D.twigs) {
       // A twig: a long, thin, rounded stick.
       const length = between(D.twig),
@@ -3369,7 +3377,7 @@ function* bankSteps(surface, groundColor) {
         at,
         [cy, sy],
         F.leafTone.map((c) => c * k),
-        (p, q, r, rgb, n) => triangle(p, q, r, rgb, n),
+        draw,
       );
       continue;
     }
@@ -3379,7 +3387,7 @@ function* bankSteps(surface, groundColor) {
       age = random(),
       // Darker than the litter's leaves: wet, and lit by the lantern beside the water.
       rgb = F.leafTone.map((c, k) => c * (0.32 + 0.33 * age) * (k === 1 ? 1 - 0.15 * age : 1));
-    fallenLeaf(at, length, width, cup, 0, 0.006, rgb, triangle);
+    fallenLeaf(at, length, width, cup, 0, 0.006, rgb, draw);
   }
   const geometry = new BufferGeometry();
   geometry.setAttribute("position", new BufferAttribute(new Float32Array(positions), 3));
@@ -3391,7 +3399,7 @@ function* bankSteps(surface, groundColor) {
   );
   geometry.computeBoundingSphere();
   geometry.userData.gravel = drawn;
-  geometry.userData.debris = debris.length;
+  geometry.userData.debris = floating;
   // Balanced draws GROWTH.balanced of the pieces (estate-ground-detail.js).
   geometry.userData.fine = [0, positions.length / 3];
   geometry.userData.finePieces = pieces;

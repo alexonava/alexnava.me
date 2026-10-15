@@ -2803,7 +2803,11 @@ test("the water's banks: gravel bars, reeds and debris stay out of the water, of
     banks.userData.gravel > WATER_BANKS.gravel.count * 0.9 &&
       banks.userData.gravel < WATER_BANKS.gravel.count,
   );
-  assert.ok(banks.userData.debris > WATER_BANKS.debris.count * 0.8);
+  assert.ok(
+    banks.userData.debris > WATER_BANKS.debris.count * 0.8 &&
+      banks.userData.debris <
+        WATER_BANKS.debris.count + STREAMS.stones.list.length * WATER_BANKS.debris.eddy,
+  );
   // A share of whole pieces for balanced (estate-ground-detail.js).
   assert.deepEqual(banks.userData.fine, [0, p.count]);
   assert.equal(banks.userData.finePieces[0], 0);
@@ -2819,12 +2823,19 @@ test("the water's banks: gravel bars, reeds and debris stay out of the water, of
       Math.hypot(x - LANTERN_FOOT.x, z - LANTERN_FOOT.z) > WATER_BANKS.gravel.lantern - 0.15,
     );
     assert.equal(rootCovered(x, z), false, `piece ${k} under a root`);
-    // A pebble's first vertex is its top, over its middle: none lies in the river.
-    if (k < banks.userData.gravel)
-      assert.ok(riverRadius(x, z) >= WATER_BANKS.gravel.shore, `pebble ${k} in the river`);
-    if (streamRadius(x, z) < 0.8 && riverRadius(x, z) < 0.8) inWater++;
+    // Its middle: no pebble, leaf or twig lies in the river.
+    const end = pieces[k + 1] ?? p.count;
+    let mx = 0,
+      mz = 0;
+    for (let v = i; v < end; v++) {
+      mx += p.getX(v) / (end - i);
+      mz += p.getZ(v) / (end - i);
+    }
+    assert.ok(riverRadius(mx, mz) >= WATER_BANKS.gravel.shore - 0.01, `piece ${k} in the river`);
+    if (streamRadius(mx, mz) < 0.75 || riverRadius(mx, mz) < 1) inWater++;
   }
-  // Only the eddy leaves and twigs behind the stones float on the stream.
+  // Only the eddy leaves and twigs behind the stones float, on the stream (the
+  // waterline's lie at its edge), and nothing on the river.
   assert.ok(
     inWater <= STREAMS.stones.list.length * WATER_BANKS.debris.eddy,
     `${inWater} in the water`,
