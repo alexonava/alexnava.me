@@ -1622,9 +1622,8 @@ test("the drifting mist lies below its ceiling on every film material, after its
     ),
   );
   // On balanced, whose two steps saturate on those rays, the mean adds at most
-  // depth[1] of optical depth on the long rays (depthReach), so the far plain's top
-  // rows never lie as a pale sheet, and the rays by the terrain's edge keep their veil;
-  // high has no cap.
+  // depth[1] of optical depth on the long rays (depthReach, the terrain's far part's
+  // and the ranges' alike), so the far plain never lies as a pale sheet; high has no cap.
   assert.equal(MIST_DRIFT.depth[0], 0);
   assert.ok(MIST_DRIFT.depth[1] > 0 && MIST_DRIFT.depth[1] <= 1);
   assert.ok(
@@ -1633,7 +1632,9 @@ test("the drifting mist lies below its ceiling on every film material, after its
     ),
   );
   assert.ok(
-    MIST_DRIFT.depthReach[0] > TERRAIN_EDGE && MIST_DRIFT.depthReach[1] < MIST_DRIFT.ranges[0],
+    MIST_DRIFT.depthReach[0] < TERRAIN_EDGE &&
+      MIST_DRIFT.depthReach[1] > TERRAIN_EDGE &&
+      MIST_DRIFT.depthReach[1] < MIST_DRIFT.ranges[0],
   );
   assert.ok(MIST_PARS.includes("a=mix(a,min(a,max(mistD-tau,0.)),mistF*mistR);"));
   assert.ok(

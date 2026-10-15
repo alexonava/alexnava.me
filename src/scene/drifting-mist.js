@@ -54,9 +54,9 @@
 //   ruled level line where the terrain meets them; nearer, every material marches
 //   as before. On balanced, whose two steps saturate on those rays, their mean
 //   adds at most `depth` [high, balanced; 0 none] of optical depth on a ray
-//   longer than `depthReach` [from, to] units, so the far plain's top rows under
-//   the ranges never lie as a pale sheet lighter than the lit ground, while the
-//   shorter rays by the terrain's edge keep their veil and meet the plain's own;
+//   longer than `depthReach` [from, to] units, the terrain's far part and the
+//   ranges' alike, so the far plain under the ranges never lies as a pale sheet
+//   lighter than the lit ground and the two still meet without a step;
 // - `shots`: a shot's own share of the density (1 when unlisted), set on the cut.
 // Its clock runs with drawn frames and holds for reduced motion, a visitor pause and
 // an open panel, as the grass's wind does.
@@ -90,7 +90,7 @@ export const MIST_DRIFT = Object.freeze({
   filter: Object.freeze([0.25, 1]),
   edge: Object.freeze([192, 0.6]),
   depth: Object.freeze([0, 0.5]),
-  depthReach: Object.freeze([300, 600]),
+  depthReach: Object.freeze([150, 300]),
   shots: Object.freeze({}),
 });
 
