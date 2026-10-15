@@ -42,7 +42,7 @@ import {
 import { TOUR_ORDER } from "../src/scene/camera-tour.js";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
-import { MASSIF_SNOW, MASSIFS, snowReach } from "../src/scene/hill-silhouette.js";
+import { MASSIF_SNOW, MASSIFS, SNOW, snowReach } from "../src/scene/hill-silhouette.js";
 import { SOLAR_GLOW_RADIUS } from "../src/scene/solar-body.js";
 import {
   createMountainGeometry,
@@ -1535,10 +1535,13 @@ const inLantern = (object) => {
 };
 
 // Portrait on upright and squat screens (its portrait, tablet, tall and squat variants; the
-// review of 2026-10-14), through its whole push in 24 steps: the root never hides the
-// lantern's flame, and no Meshy massif's snow (at its mean snowline, above the nearer layers'
-// skyline) meets a side edge, where the frame would cut a snowy summit.
-test("Portrait on upright and squat screens keeps the lantern's flame and the massifs' snow clear through its push", async () => {
+// reviews of 2026-10-14 and 2026-10-15), through its whole push in 24 steps: the root never
+// hides the lantern's flame, and no snow (a Meshy massif's or the backdrop rings', at its mean
+// snowline and above the nearer layers' skyline) meets a side edge, where the frame would cut
+// a snowy summit. On phones (the owner's rule: the lantern first) the root hides none of the
+// lantern's glass, and no part of the tree, in front or behind, comes within 2 CSS px of the
+// flame, where its edge would run through it.
+test("Portrait on upright and squat screens keeps the lantern and the snowy summits clear through its push", async () => {
   const world = { BabelSite: {} };
   vm.runInNewContext(await readFile(new URL("../src/scene/world.js", import.meta.url), "utf8"), {
     window: world,
@@ -1569,16 +1572,25 @@ test("Portrait on upright and squat screens keeps the lantern's flame and the ma
     if (!lanternRoot && object.name === "supplied-meshy-lantern") lanternRoot = object;
   });
   assert.ok(lanternRoot, "the lantern stands by the tree");
-  // The flame's body, its lower quarter to its tip (on phones the root may graze the wick's
-  // tip, the flame's foot, for the first two seconds).
+  // The flame's body, its lower quarter to its tip.
   const flame = [0.25, 0.5, 0.75, 1].map((share) =>
     lanternRoot.localToWorld(new Vector3(0, FLAME.base + share * FLAME.height, 0)),
   );
-  const solid = [];
+  const solid = [],
+    lanternMeshes = [],
+    lanternPoints = [];
   tree.root.traverse((mesh) => {
     if (!mesh.isMesh || inLantern(mesh)) return;
     mesh.material.side = DoubleSide;
     solid.push(mesh);
+  });
+  lanternRoot.traverse((mesh) => {
+    if (!mesh.isMesh) return;
+    mesh.material.side = DoubleSide;
+    lanternMeshes.push(mesh);
+    const p = mesh.geometry.attributes.position;
+    for (let i = 0; i < p.count; i += 7)
+      lanternPoints.push(new Vector3().fromBufferAttribute(p, i).applyMatrix4(mesh.matrixWorld));
   });
   // The massifs' snow that can show: each vertex over its mean snowline (the shader's noise
   // and gully tongues average out about it) and above every nearer layer's skyline.
@@ -1619,12 +1631,44 @@ test("Portrait on upright and squat screens keeps the lantern's flame and the ma
     }
   }
   assert.ok(snow.length > 500, "the massifs carry snow");
+  // The backdrop rings' snow (the rings' own rule), where it stands above every massif.
+  const rings = createMountainGeometry({ backdrop: RANGE_BACKDROP, nearer: composed.nearer });
+  {
+    const p = rings.attributes.position,
+      terrain = rings.attributes.aTerrain;
+    let count = 0;
+    for (let v = 0; v < p.count; v++) {
+      const massif = terrain.getW(v),
+        elevation = Math.atan2(p.getY(v), Math.hypot(p.getX(v), p.getZ(v))) / rad,
+        cap = Math.min(SNOW.max, Math.max(0, (massif - SNOW.line) * SNOW.depth));
+      if (cap <= 0.001 || elevation <= massif - cap) continue;
+      if (elevation > nearer(Infinity, Math.atan2(p.getZ(v), p.getX(v)) / rad)) {
+        snow.push(new Vector3(p.getX(v), p.getY(v), p.getZ(v)));
+        count++;
+      }
+    }
+    assert.ok(count > 30, "the backdrop rings carry snow");
+  }
   const upright = LAYOUTS.filter(({ width, height }) =>
     ["390x844", "450x800", "820x1180", "1080x1920", "700x480"].includes(`${width}x${height}`),
   );
   assert.equal(upright.length, 5);
+  const phone = (width, height) => height > width && width < TABLET_WIDTH;
   const layouts = [
     ...upright,
+    {
+      width: 430,
+      height: 932,
+      hero: { left: 12, right: 301, top: 34, bottom: 189 },
+      nav: { top: 854 },
+    },
+    // A phone with its browser's bars showing.
+    {
+      width: 390,
+      height: 664,
+      hero: { left: 12, right: 299, top: 34, bottom: 177 },
+      nav: { top: 586 },
+    },
     {
       width: 599,
       height: 499,
@@ -1673,6 +1717,54 @@ test("Portrait on upright and squat screens keeps the lantern's flame and the ma
             `${label}: the root hides the lantern's flame`,
           );
         }
+        if (phone(width, height)) {
+          const screen = (point) => {
+            const p = point.clone().project(camera);
+            return { x: ((p.x + 1) * width) / 2, y: ((1 - p.y) * height) / 2 };
+          };
+          const through = (x, y) =>
+            caster.setFromCamera({ x: (x / width) * 2 - 1, y: 1 - (y / height) * 2 }, camera);
+          caster.far = Infinity;
+          // The glass: its band, from an eighth of the lantern's height above its foot to a
+          // quarter below its top, sampled on a grid; where a ray meets the lantern, no
+          // part of the tree comes first.
+          const box = lanternPoints.map(screen),
+            left = Math.min(...box.map((p) => p.x)),
+            right = Math.max(...box.map((p) => p.x)),
+            top = Math.min(...box.map((p) => p.y)),
+            foot = Math.max(...box.map((p) => p.y)),
+            tall = foot - top;
+          for (let row = 0; row <= 4; row++)
+            for (let column = 0; column <= 6; column++) {
+              through(
+                left + ((right - left) * column) / 6,
+                foot - tall * (0.12 + (0.63 * row) / 4),
+              );
+              const glass = caster.intersectObjects(lanternMeshes, false)[0];
+              if (!glass) continue;
+              caster.far = glass.distance;
+              assert.equal(
+                caster.intersectObjects(solid, false).length,
+                0,
+                `${label}: the root hides the lantern's glass`,
+              );
+              caster.far = Infinity;
+            }
+          // The flame: no part of the tree, in front or behind, within 2 CSS px of it.
+          for (const point of flame) {
+            const { x, y } = screen(point);
+            for (let k = 0; k <= 8; k++) {
+              const a = (k * Math.PI) / 4,
+                r = k === 8 ? 0 : 2;
+              through(x + r * Math.cos(a), y + r * Math.sin(a));
+              assert.equal(
+                caster.intersectObjects(solid, false).length,
+                0,
+                `${label}: the tree's edge runs within 2 px of the lantern's flame`,
+              );
+            }
+          }
+        }
         for (const point of snow) {
           const p = point.clone().add(camera.position);
           if (p.clone().applyMatrix4(camera.matrixWorldInverse).z >= 0) continue;
@@ -1681,13 +1773,14 @@ test("Portrait on upright and squat screens keeps the lantern's flame and the ma
             y = ((1 - p.y) * height) / 2;
           assert.ok(
             y < 0 || y > height || (Math.abs(x) > edge && Math.abs(x - width) > edge),
-            `${label}: a side edge cuts a massif's snow at ${x.toFixed(0)},${y.toFixed(0)}`,
+            `${label}: a side edge cuts a summit's snow at ${x.toFixed(0)},${y.toFixed(0)}`,
           );
         }
       }
       controller.dispose();
     }
   } finally {
+    rings.dispose();
     Object.values(composed.geometries).forEach((geometry) => geometry.dispose());
     lantern.dispose();
     scale.dispose();

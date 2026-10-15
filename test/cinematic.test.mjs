@@ -449,8 +449,10 @@ test("an anchored tour shot keeps its fit through an address bar while its reach
   f.apply(390, 844);
   const shot = f.controller.shot,
     locked = f.controller.frame;
-  // Portrait sets the tree on the phone's lower third, a little left of centre.
-  assert.deepEqual(shot.anchor, [0.42, 0.66]);
+  // Portrait sets the tree on the phone's lower third, a little left of centre, and lifts the
+  // camera to look over the root at the lantern.
+  assert.deepEqual(shot.anchor, [0.39, 0.66]);
+  assert.equal(shot.height, 0.38);
   const a = cinematicSafeArea(390, 844, f.hero, { top: 844 - 110 }),
     reach = a.top + a.height * 0.66 + Math.min(1, shot.margin / (1 - PUSH_IN)) * a.height * 0.34,
     edge = Math.ceil(reach + 16);

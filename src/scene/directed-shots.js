@@ -41,36 +41,49 @@ const AFTER_RAIN = Object.freeze({
 // Portrait on upright and squat screens: the tree on the lower third, open sky above it, at
 // its own size (no tilt) and pushed in without the sideways truck. The tall frame reaches
 // high into the sky, clear at the base's -72 degrees ("for this one the sky cannot be
-// seen"), so it turns toward the banks (the owner's pick of 2026-10-14, -38, then -40). On
-// phones it orbits from -41.75 to -40.25, the tree a little left of centre: the root keeps
-// clear of the lantern's flame through the push (orbiting from -42 to -38 it hid the flame
-// and most of the glass by the end), and no snowy flank meets the left edge (further round or
-// further right it did at the start on wider phones). The far range's snowy tips still pass
-// behind the trunk and meet its edge for a few seconds mid-push: keeping them off it would
-// carry the lantern behind the root, the flank into the edge or the tree off its third. (An
-// orbit of exactly 2 would also turn on the phone text band, which index.js gives arc-2 shots.)
+// seen"), so it turns toward the banks (the owner's pick of 2026-10-14, -38, then -40).
 const PORTRAIT_UPRIGHT = Object.freeze({
   move: Object.freeze({
     dolly: Object.freeze([1.06, 0.94]),
     crane: Object.freeze([0, 0.08]),
     ease: 0.6,
   }),
-  anchor: Object.freeze([0.42, 0.66]),
   margin: 0.93,
   tilt: null,
-  arc: 1.5,
-  azimuth: -41,
+});
+// Phones (the owner's rule of 2026-10-15: the lantern first): at -41.75 with a quarter-degree
+// orbit, the tree a little left of centre, the camera looks from higher (0.38 of the tree's
+// height, the base's 0.12 elsewhere) over the root at the lantern, so its glass and flame stand
+// clear of the root through the whole push, the root's edge 2 CSS px or more below the flame
+// (from 0.12 the root hid the foot and the lower glass all push and the flame lay on its edge
+// at the start). No snow meets a side edge (orbiting on to -40.25 a far cap did at the end;
+// further round a snowy horn meets the left edge, and from about -48 it rises behind the crown).
+// The far range's small snowy tips (the backdrop rings' near 137 degrees) pass behind the trunk
+// and the lower crown through the push: holding them off it would carry the lantern behind the
+// root or the horn onto the edge. (An orbit of exactly 2 would also turn on the phone text
+// band, which index.js gives arc-2 shots.)
+const PORTRAIT_PHONE = Object.freeze({
+  ...PORTRAIT_UPRIGHT,
+  anchor: Object.freeze([0.39, 0.66]),
+  margin: 0.97,
+  height: 0.38,
+  arc: 0.25,
+  azimuth: -41.75,
 });
 // Its wider frames (tablets, portrait monitors, squat windows) reach further round either side
 // of the tree, so they turn to -43.5 and orbit a degree, the tree right of centre: the snowy
 // horn on the left stands whole inside the frame, its foot clear of the edge, and no other
 // snow meets an edge through the push (from -40 their edges cut the horn or a summit on the
 // right), the horn never reaches behind the crown (from about -44.5 it does), and the lantern
-// stays clear.
+// stays clear; they keep the base's height and the upright fit. Squat windows stand half a
+// degree nearer (-43) and a little left (0.58), so a far ring's snowy cap stays inside their
+// right edge at the start (at -43.5 the edge cut it).
 const PORTRAIT_WIDE = Object.freeze({
   azimuth: -43.5,
   arc: 1,
   anchor: Object.freeze([0.6, 0.66]),
+  margin: 0.93,
+  height: 0.12,
 });
 export const DIRECTED_SHOTS = {
   tower: [
@@ -290,11 +303,11 @@ export const DIRECTED_SHOTS = {
     {
       name: "Portrait",
       // Phones set the tree on the lower third, open sky above it.
-      portrait: PORTRAIT_UPRIGHT,
+      portrait: PORTRAIT_PHONE,
       // Tablets, portrait monitors and squat windows turn a little further (PORTRAIT_WIDE).
       tablet: { ...PORTRAIT_WIDE },
       tall: { ...PORTRAIT_WIDE },
-      squat: { ...PORTRAIT_UPRIGHT, ...PORTRAIT_WIDE },
+      squat: { ...PORTRAIT_UPRIGHT, ...PORTRAIT_WIDE, azimuth: -43, anchor: [0.58, 0.66] },
       // The crown in moonlight (the owner's pick of 2026-10-09): its pale,
       // bleached limbs read cool grey, not pink-beige (pale). One night
       // (2026-10-12): the lantern a little stronger at the trunk's foot,
