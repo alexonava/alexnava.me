@@ -25,9 +25,9 @@
 // unlockGrace: an Esc this soon after the mouse is freed is the same press.
 export const WALK = Object.freeze({
   eye: 5.3,
-  speed: Object.freeze({ walk: 4.5, jog: 9, back: 3.2, strafe: 3.8 }),
-  accel: 18,
-  brake: 24,
+  speed: Object.freeze({ walk: 6.75, jog: 13.5, back: 4.8, strafe: 5.7 }),
+  accel: 27,
+  brake: 36,
   air: 0.15,
   jump: 12,
   gravity: 32,
