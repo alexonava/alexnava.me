@@ -361,7 +361,7 @@ test("every workflow action is pinned to a full commit SHA with its version in a
       assert.match(action[2], /^[a-f0-9]{40}$/, `${file}: ${action[1]} must use a full commit SHA`);
       assert.match(
         lines[index - 1],
-        new RegExp(`^\\s*# ${action[1].replace(/[./]/g, "\\$&")}@v\\d`),
+        new RegExp(`^\\s*# ${action[1].replace(/[\\^$.*+?()[\]{}|/]/g, "\\$&")}@v\\d`),
         `${file}: ${action[1]} names its version in the comment above`,
       );
     });
