@@ -38,6 +38,40 @@ const AFTER_RAIN = Object.freeze({
   mist: Object.freeze({ color: Object.freeze([0.27, 0.26, 0.29]), amount: 0.45 }),
   gloss: Object.freeze({ film: 0.32, gain: 1.9, cool: 0 }),
 });
+// Portrait on upright and squat screens: the tree on the lower third, open sky above it, at
+// its own size (no tilt) and pushed in without the sideways truck. The tall frame reaches
+// high into the sky, clear at the base's -72 degrees ("for this one the sky cannot be
+// seen"), so it turns toward the banks (the owner's pick of 2026-10-14, -38, then -40). On
+// phones it orbits from -41.75 to -40.25, the tree a little left of centre: the root keeps
+// clear of the lantern's flame through the push (orbiting from -42 to -38 it hid the flame
+// and most of the glass by the end), and no snowy flank meets the left edge (further round or
+// further right it did at the start on wider phones). The far range's snowy tips still pass
+// behind the trunk and meet its edge for a few seconds mid-push: keeping them off it would
+// carry the lantern behind the root, the flank into the edge or the tree off its third. (An
+// orbit of exactly 2 would also turn on the phone text band, which index.js gives arc-2 shots.)
+const PORTRAIT_UPRIGHT = Object.freeze({
+  move: Object.freeze({
+    dolly: Object.freeze([1.06, 0.94]),
+    crane: Object.freeze([0, 0.08]),
+    ease: 0.6,
+  }),
+  anchor: Object.freeze([0.42, 0.66]),
+  margin: 0.93,
+  tilt: null,
+  arc: 1.5,
+  azimuth: -41,
+});
+// Its wider frames (tablets, portrait monitors, squat windows) reach further round either side
+// of the tree, so they turn to -43.5 and orbit a degree, the tree right of centre: the snowy
+// horn on the left stands whole inside the frame, its foot clear of the edge, and no other
+// snow meets an edge through the push (from -40 their edges cut the horn or a summit on the
+// right), the horn never reaches behind the crown (from about -44.5 it does), and the lantern
+// stays clear.
+const PORTRAIT_WIDE = Object.freeze({
+  azimuth: -43.5,
+  arc: 1,
+  anchor: Object.freeze([0.6, 0.66]),
+});
 export const DIRECTED_SHOTS = {
   tower: [
     {
@@ -256,18 +290,11 @@ export const DIRECTED_SHOTS = {
     {
       name: "Portrait",
       // Phones set the tree on the lower third, open sky above it.
-      portrait: {
-        move: { dolly: [1.06, 0.94], crane: [0, 0.08], ease: 0.6 },
-        anchor: [0.5, 0.66],
-        // Phones keep their open-sky framing: no tilt, the tree at its own size.
-        margin: 0.93,
-        tilt: null,
-        // The tall frame reaches high into the sky, clear at -72 degrees ("for this one the
-        // sky cannot be seen"), so phones turn toward the banks (the owner's pick of
-        // 2026-10-14, -38; -40 after the review, so the lantern's glass clears the root,
-        // no snow meets the trunk or a frame edge, and no lone puff sits by the name).
-        azimuth: -40,
-      },
+      portrait: PORTRAIT_UPRIGHT,
+      // Tablets, portrait monitors and squat windows turn a little further (PORTRAIT_WIDE).
+      tablet: { ...PORTRAIT_WIDE },
+      tall: { ...PORTRAIT_WIDE },
+      squat: { ...PORTRAIT_UPRIGHT, ...PORTRAIT_WIDE },
       // The crown in moonlight (the owner's pick of 2026-10-09): its pale,
       // bleached limbs read cool grey, not pink-beige (pale). One night
       // (2026-10-12): the lantern a little stronger at the trunk's foot,

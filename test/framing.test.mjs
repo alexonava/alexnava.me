@@ -26,6 +26,7 @@ import {
 import { createPropScale } from "../src/scene/prop-scale.js";
 import { rootSupportHeight } from "../src/scene/terrain-build.js";
 import { createLanternMount } from "../src/scene/lantern.js";
+import { FLAME } from "../src/scene/lantern-flame.js";
 import {
   DIRECTED_SHOTS,
   measureShot,
@@ -1532,6 +1533,173 @@ const inLantern = (object) => {
   for (let node = object; node; node = node.parent) if (/lantern/i.test(node.name)) return true;
   return false;
 };
+
+// Portrait on upright and squat screens (its portrait, tablet, tall and squat variants; the
+// review of 2026-10-14), through its whole push in 24 steps: the root never hides the
+// lantern's flame, and no Meshy massif's snow (at its mean snowline, above the nearer layers'
+// skyline) meets a side edge, where the frame would cut a snowy summit.
+test("Portrait on upright and squat screens keeps the lantern's flame and the massifs' snow clear through its push", async () => {
+  const world = { BabelSite: {} };
+  vm.runInNewContext(await readFile(new URL("../src/scene/world.js", import.meta.url), "utf8"), {
+    window: world,
+  });
+  const { CAMERA_FAR } = world.BabelSite.scene.WORLD;
+  const assets = { tower: await asset("tower"), tree: await asset("tree") };
+  const tower = createCompleteTowerArchitecture({
+    asset: assets.tower,
+    groundY: ground(0, 0),
+    footingOffset: -0.22,
+  });
+  const tree = createTreeArchitecture({
+    asset: assets.tree,
+    groundHeight: ground,
+    anchor: [55.1, 36.1],
+  });
+  const groundRoot = new Group();
+  groundRoot.add(tree.root);
+  const scale = createPropScale({ groundRoot, groundHeight: ground });
+  scale.setTree(tree);
+  scale.setActive(true);
+  tree.setFilmTreatment(true);
+  tree.applyQuality({ tier: "high" });
+  const lantern = await lanternFor(tree);
+  groundRoot.updateMatrixWorld(true);
+  let lanternRoot = null;
+  groundRoot.traverse((object) => {
+    if (!lanternRoot && object.name === "supplied-meshy-lantern") lanternRoot = object;
+  });
+  assert.ok(lanternRoot, "the lantern stands by the tree");
+  // The flame's body, its lower quarter to its tip (on phones the root may graze the wick's
+  // tip, the flame's foot, for the first two seconds).
+  const flame = [0.25, 0.5, 0.75, 1].map((share) =>
+    lanternRoot.localToWorld(new Vector3(0, FLAME.base + share * FLAME.height, 0)),
+  );
+  const solid = [];
+  tree.root.traverse((mesh) => {
+    if (!mesh.isMesh || inLantern(mesh)) return;
+    mesh.material.side = DoubleSide;
+    solid.push(mesh);
+  });
+  // The massifs' snow that can show: each vertex over its mean snowline (the shader's noise
+  // and gully tongues average out about it) and above every nearer layer's skyline.
+  const models = {};
+  for (const role of MASSIFS.roles) {
+    const mesh = (await asset(role)).scene.children[0];
+    models[role] = {
+      position: mesh.geometry.attributes.position,
+      uv: mesh.geometry.attributes.uv,
+      index: mesh.geometry.index,
+      height: mesh.userData.height,
+    };
+  }
+  const composed = createRangeGeometry(models),
+    rad = Math.PI / 180;
+  const nearer = (layer, azimuth) => {
+    let top = -90;
+    for (const { placement, sky } of composed.placed) {
+      if (placement.layer >= layer) continue;
+      const bin = Math.floor(((((azimuth - sky.from) % 360) + 360) % 360) / RANGE_SKY.bin);
+      if (bin < sky.values.length) top = Math.max(top, sky.values[bin]);
+    }
+    return top;
+  };
+  const snow = [];
+  for (const geometry of Object.values(composed.geometries)) {
+    const p = geometry.attributes.position,
+      terrain = geometry.attributes.aTerrain;
+    for (let v = 0; v < p.count; v++) {
+      const line = terrain.getZ(v),
+        massif = terrain.getW(v);
+      if (!line) continue;
+      const elevation = Math.atan2(p.getY(v), Math.hypot(p.getX(v), p.getZ(v))) / rad,
+        cap = Math.min(MASSIF_SNOW.max, Math.max(0, (massif - line) * MASSIF_SNOW.depth));
+      if (cap <= 0.001 || elevation <= massif - cap) continue;
+      if (elevation > nearer(terrain.getY(v), Math.atan2(p.getZ(v), p.getX(v)) / rad))
+        snow.push(new Vector3(p.getX(v), p.getY(v), p.getZ(v)));
+    }
+  }
+  assert.ok(snow.length > 500, "the massifs carry snow");
+  const upright = LAYOUTS.filter(({ width, height }) =>
+    ["390x844", "450x800", "820x1180", "1080x1920", "700x480"].includes(`${width}x${height}`),
+  );
+  assert.equal(upright.length, 5);
+  const layouts = [
+    ...upright,
+    {
+      width: 599,
+      height: 499,
+      hero: { left: 12, right: 254, top: 12, bottom: 151 },
+      nav: { top: 425 },
+    },
+    {
+      width: 560,
+      height: 450,
+      hero: { left: 12, right: 253, top: 12, bottom: 143 },
+      nav: { top: 376 },
+    },
+  ];
+  const caster = new Raycaster(),
+    edge = 6;
+  try {
+    for (const { width, height, hero, nav } of layouts) {
+      const camera = new PerspectiveCamera(38, width / height, 0.1, CAMERA_FAR);
+      const controller = createCinematicCamera({
+        camera,
+        selected: "tree",
+        angle: 0,
+        getSafeArea: () => cinematicSafeArea(width, height, hero, nav),
+        getGroundY: ground,
+      });
+      for (const [subject, object] of [
+        ["tower", tower],
+        ["tree", tree],
+      ]) {
+        controller.setSubject(subject, object.root);
+        controller.setStatus({ kind: subject, status: "ready" });
+      }
+      for (let step = 0; step <= 24; step++) {
+        const tourPhase = step / 24;
+        controller.apply({ width, height, tourPhase });
+        camera.updateMatrixWorld(true);
+        const label = `Portrait ${width}x${height} phase ${tourPhase.toFixed(3)}`;
+        assert.equal(controller.shot.name, "Portrait");
+        for (const point of flame) {
+          const toward = point.clone().sub(camera.position);
+          caster.set(camera.position, toward.clone().normalize());
+          caster.far = toward.length();
+          assert.equal(
+            caster.intersectObjects(solid, false).length,
+            0,
+            `${label}: the root hides the lantern's flame`,
+          );
+        }
+        for (const point of snow) {
+          const p = point.clone().add(camera.position);
+          if (p.clone().applyMatrix4(camera.matrixWorldInverse).z >= 0) continue;
+          p.project(camera);
+          const x = ((p.x + 1) * width) / 2,
+            y = ((1 - p.y) * height) / 2;
+          assert.ok(
+            y < 0 || y > height || (Math.abs(x) > edge && Math.abs(x - width) > edge),
+            `${label}: a side edge cuts a massif's snow at ${x.toFixed(0)},${y.toFixed(0)}`,
+          );
+        }
+      }
+      controller.dispose();
+    }
+  } finally {
+    Object.values(composed.geometries).forEach((geometry) => geometry.dispose());
+    lantern.dispose();
+    scale.dispose();
+    tower.dispose();
+    tree.dispose();
+    for (const item of Object.values(assets))
+      item.scene.traverse((mesh) => {
+        mesh.geometry?.dispose();
+        mesh.material?.dispose();
+      });
+  }
+});
 
 // Watch and tree opens from its URL alone, so its move and tilt breathe over 48 s (the review
 // of 2026-10-14). Through the whole breath: on phones and tablets every corner meets the sky
