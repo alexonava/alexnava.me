@@ -499,7 +499,16 @@ test("the river's water lies only below its shore, as the terrain carves it, and
   // Their walls tilt at most toward SLATE_CLOSE.crumb.steep (a soft limit on the
   // slope's tangent), so the wall facing the lantern at each valley never lights
   // into a continuous pale rim about the cobble.
-  assert.ok(SLATE_CLOSE.crumb.steep > 1 && SLATE_CLOSE.crumb.steep < 2);
+  assert.ok(SLATE_CLOSE.crumb.steep >= 0.8 && SLATE_CLOSE.crumb.steep < 1.5);
+  // Near the lens the soil's brightest channel eases past SLATE_CLOSE.ceiling with the
+  // colour scaled whole, so a lantern-lit crest keeps its warmth instead of clipping
+  // channel by channel into a chalky grey patch.
+  assert.ok(SLATE_CLOSE.ceiling > 0.5 && SLATE_CLOSE.ceiling <= 1);
+  assert.ok(
+    soil.fragment.includes(
+      `slateCE = max(slateCM-${SLATE_CLOSE.ceiling}, 0.); gl_FragColor.rgb *= mix(1., (slateCM-slateCE+slateCE/(1.+slateCE/${SLATE_CLOSE.ceiling}))/max(slateCM, 1e-5), 1.-smoothstep(${SLATE_CLOSE.near.map((v) => v.toFixed(1)).join(",")}, length(vViewPosition)));`,
+    ),
+  );
   assert.ok(
     soil.fragment.includes(
       `slateCDH -= slateKG/(1.+length(slateKG)*${SLATE_CLOSE.relief / SLATE_CLOSE.crumb.steep});`,

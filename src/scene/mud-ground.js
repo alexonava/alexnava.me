@@ -110,7 +110,10 @@ export const SLATE_TILING = Object.freeze({
 // never by screen derivatives, which step in two-pixel blocks along the lit
 // crests. Both are full within near[0] of the lens and gone by near[1], and
 // the relief fades where a texel (one of `texels` across the tile) shrinks
-// below `footprint` pixels and under water.
+// below `footprint` pixels and under water. Near the lens (near[0] to near[1])
+// the soil's brightest channel eases past `ceiling` with the colour scaled whole
+// (the shown frame's highlight shoulder would otherwise clip the lantern-lit
+// crests channel by channel into flat, chalky grey patches).
 export const SLATE_CLOSE = Object.freeze({
   tile: 6.6,
   second: Object.freeze({
@@ -140,8 +143,9 @@ export const SLATE_CLOSE = Object.freeze({
     albedo: 0.6,
     fade: Object.freeze([1.6, 4]),
     round: 12,
-    steep: 1.4,
+    steep: 1,
   }),
+  ceiling: 0.8,
 });
 
 // The far plain's own structure (the owner's pick of 2026-10-09, "detailed"):
@@ -1528,6 +1532,9 @@ ${SLATE_TEXT_GLSL}${LOOK_GLSL}${mistOn ? `uniform mat4 projectionMatrix;\n${MIST
           "#include <fog_fragment>",
           `
       gl_FragColor.rgb *= 1.0-slateCalm.x*(1.0-smoothstep(slateCalm.y, slateCalm.z, length(vViewPosition)));
+      // Near the lens the soil's brightest channel eases past SLATE_CLOSE.ceiling, the colour scaled whole, so a lit crest keeps
+      // its warmth rather than clipping channel by channel into a chalky grey.
+      { float slateCM = max(gl_FragColor.r, max(gl_FragColor.g, gl_FragColor.b)), slateCE = max(slateCM-${glslNumber(CLOSE.ceiling)}, 0.); gl_FragColor.rgb *= mix(1., (slateCM-slateCE+slateCE/(1.+slateCE/${glslNumber(CLOSE.ceiling)}))/max(slateCM, 1e-5), 1.-smoothstep(${CLOSE.near.map(glslNumber)}, length(vViewPosition))); }
       #ifdef USE_FOG
       float earthHorizon = max(${PLAIN_EDGE},
         smoothstep(230.0, 330.0, vFogDepth));
