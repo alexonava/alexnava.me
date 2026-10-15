@@ -957,12 +957,14 @@ test("the lazy ground shading extends only the slate's program, under its own ke
       /slateWaterCover \*= 1\.0-slatePuddle\*slateZoneW;\nvec3 slateWaterRefl =/,
       "the water film's and the puddles' mirror give way to the zone's own",
     );
-    // The zone's mirror shows the night sky (the environment) at its sharpest,
-    // brighter in a lightning flash away from the text (film-light.js
-    // FLASH_GROUND), and the old horizon, fog and zenith sky only without it.
+    // The zone's mirror shows the night sky (the environment), at its sharpest in
+    // still water and a little rough where the currents move it (slateRough,
+    // RIVER_RIPPLE.rough), brighter in a lightning flash away from the text
+    // (film-light.js FLASH_GROUND), and the old horizon, fog and zenith sky only
+    // without it.
     assert.match(
       fragment,
-      /#ifdef USE_ENVMAP\s*vec3 slateSkyW = textureCubeUV\(envMap, slateR, 0\.0\)\.rgb\*envMapIntensity\*[\d.]+\*\(babelFlash\.y > 0\.0 \? 1\.0\+babelFlash\.y\*\(1\.0-slateBehindText\(\)\) : 1\.0\);\s*#else\s*vec3 slateSkyW = mix\(/,
+      /#ifdef USE_ENVMAP\s*vec3 slateSkyW = textureCubeUV\(envMap, slateR, [\d.]+\*slateRough\)\.rgb\*envMapIntensity\*[\d.]+\*\(babelFlash\.y > 0\.0 \? 1\.0\+babelFlash\.y\*\(1\.0-slateBehindText\(\)\) : 1\.0\);\s*#else\s*vec3 slateSkyW = mix\(/,
     );
     assert.match(fragment, /slatePuddle = mix\(slatePuddle, smoothstep\([^;]*\), slateZoneW\);/);
     assert.match(
@@ -1008,21 +1010,54 @@ test("the lazy ground shading extends only the slate's program, under its own ke
         `vec2 slateFU = vec2(slateRiverQ.y-slateFlow*${RIVER.flow}, slateRiverQ.z);`,
       ),
     );
-    assert.match(
-      fragment,
-      /slateGC \+= \(slateRiverDir\*slateFG\.x\+vec2\(-slateRiverDir\.y, slateRiverDir\.x\)\*slateFG\.y\)\*\(1\.0-smoothstep\(\.8, 1\.1, slateRiverR\)\);/,
+    assert.ok(
+      fragment.includes(
+        "float slateFS = 1.0-smoothstep(.8, 1.1, slateRiverR);\n      slateGC = (slateRiverDir*slateFG.x+slateFX*slateFG.y)*slateFS;\n      slateGS = (slateRiverDir*slateFC.x+slateFX*slateFC.y)*slateFS;",
+      ),
     );
     assert.match(fragment, /\*smoothstep\(1\.5, 3\.0, [\d.]+\/slateFP\);/);
     // The stream's steeper ripples ease into the river's where it pours in, and the
-    // lantern's image takes only RIVER_RIPPLE.image of the currents' tilt, so it
-    // wavers rather than breaking into stacked strips; the sky keeps their whole tilt.
+    // lantern's image takes none of the currents' tilt up or down, which would break
+    // it into stacked strips: it sways across the view with the river's coarse
+    // ripples alone (RIVER_RIPPLE.sway, slateGS); the sky keeps their whole tilt.
     assert.ok(
       fragment.includes(
         `*slateStreamQ.x*mix(${RIVER_RIPPLE.mouth[2]}, 1.0, smoothstep(${RIVER_RIPPLE.mouth[0]}, ${RIVER_RIPPLE.mouth[1].toFixed(1)}, slateRiverR));`,
       ),
     );
-    assert.ok(RIVER_RIPPLE.image > 0 && RIVER_RIPPLE.image <= 0.5);
-    assert.ok(fragment.includes("slateG += slateGC;"));
+    assert.ok(RIVER_RIPPLE.sway > 1 && RIVER_RIPPLE.sway <= 4);
+    const sway = fragment.indexOf(
+      `vec2 slateSide = normalize(vec2(slateV.z, -slateV.x)+1e-6), slateGI = slateG+${RIVER_RIPPLE.sway.toFixed(1)}*dot(slateGS, slateSide)*slateSide;\n    slateNI = normalize(mix(slateN, normalize(vec3(-slateGI.x, 1.0, -slateGI.y)), slateDeep));`,
+    );
+    assert.ok(
+      sway > 0 && sway < fragment.indexOf("slateG += slateGC+slateGT;"),
+      "the image takes no current's tilt but the sway",
+    );
+    // The moving water mirrors the sky a little rough, so the sky's fine strokes swept
+    // by its ripples never draw closed contour rings; still puddles mirror it sharp.
+    assert.ok(RIVER_RIPPLE.rough >= 0.1 && RIVER_RIPPLE.rough <= 0.2);
+    assert.ok(
+      fragment.includes(`textureCubeUV(envMap, slateR, ${RIVER_RIPPLE.rough}*slateRough).rgb`),
+    );
+    assert.ok(fragment.includes("slateRough = slateFS;"));
+    assert.ok(fragment.includes("slateRough = max(slateRough, slateStreamQ.x);"));
+    // The image's silhouette eases each step of its width, so its eave is never a
+    // rectangular tab; its lit posts and roof fade at the cage's edge rather than stop
+    // at a line; the roof's lit underside is dimmed (LANTERN_IMAGE.round, roof).
+    assert.ok(fragment.includes(`float slateHR = ${LANTERN_IMAGE.round}, slateHT = `));
+    assert.ok(
+      fragment.includes(
+        "+.155*smoothstep(1.5-slateHR, 1.5+slateHR, ly), slateHT, smoothstep(1.68-slateHR, 1.68+slateHR, ly));",
+      ),
+    );
+    assert.ok(fragment.includes("*(1.0-smoothstep(.44-slateAA.x, .44+slateAA.x, slateAX));"));
+    assert.doesNotMatch(fragment, /step\(slateAX, \.44\)/);
+    assert.ok(LANTERN_IMAGE.roof > 0.3 && LANTERN_IMAGE.roof < 1);
+    assert.ok(
+      fragment.includes(
+        `+${+(0.12 * LANTERN_IMAGE.roof).toFixed(4)}*exp(-pow2((ly-1.49)/(.02+slateAA.y)))`,
+      ),
+    );
     assert.ok(
       fragment.includes("slateR = reflect(-slateV, slateN), slateRI = reflect(-slateV, slateNI);"),
     );
@@ -3012,7 +3047,7 @@ test("the river runs through the set: today's reach past the lantern, wider out 
   const shader = PHYSICAL();
   material.onBeforeCompile(shader);
   shadeSlateGround(shader);
-  assert.ok(shader.fragmentShader.includes("*smoothstep(1.5, 3.0, 0.625/slateFP)+"));
+  assert.ok(shader.fragmentShader.includes("float slateFF = smoothstep(1.5, 3.0, 0.625/slateFP);"));
   assert.match(
     shader.fragmentShader,
     /slateP = mix\(slateP, vMudWorld, smoothstep\(14\.0, 28\.0, length\(vMudWorld\.xz-vec2\(50\.92, ?33\.36\)\)\)\);/,
