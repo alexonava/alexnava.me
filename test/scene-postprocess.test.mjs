@@ -914,42 +914,53 @@ test("the final pass decodes each frame's layer from a 5-tap cross and mixes by 
     assert.ok(layerCode.includes(`texture2D(map, ${tap}).a`), tap);
   assert.match(layerCode, /vec2 x = vec2\(uCodeTexel\.x, 0\.0\), y = vec2\(0\.0, uCodeTexel\.y\);/);
   // Each frame's code, softened (DISSOLVE_SOFT): the cross's maximum averaged with a disc
-  // of taps `radius` of the frame's height across, so a silhouette turns over that width;
-  // never under the layer's own code (`own`), so a subject turns whole, never outline
-  // first; in the incoming frame the sky among a subject's parts turns with it (`close`).
+  // of taps `radius` of the frame's height across, so a silhouette turns over that width,
+  // with its subject share of the taps.
   assert.ok(DISSOLVE_SOFT.on && DISSOLVE_SOFT.radius > 0 && DISSOLVE_SOFT.radius <= 0.05);
-  assert.equal(DISSOLVE_SOFT.own, 1);
-  assert.ok(DISSOLVE_SOFT.close[0] < DISSOLVE_SOFT.close[1] && DISSOLVE_SOFT.close[1] <= 1);
   const softAt = shader.indexOf("float softCode(");
   const soft = shader.slice(softAt, shader.indexOf("\n}\n", softAt));
-  assert.match(
-    soft,
-    /float aspect = uCodeTexel\.y \/ uCodeTexel\.x, own = layerCode\(map, uv\), sum = own, subject = step\(0\.9, own\);/,
-  );
+  assert.match(soft, /float softCode\(sampler2D map, vec2 uv, out float subject\)/);
+  assert.match(soft, /own = layerCode\(map, uv\), sum = own;\s*subject = step\(0\.9, own\);/);
   assert.ok(soft.includes(`for (int i = 1; i <= ${DISSOLVE_SOFT.taps}; i++)`));
-  assert.match(
-    soft,
-    /float code = texture2D\(map, uv \+ vec2\(cos\(a\) \/ aspect, sin\(a\)\) \* r\)\.a;\s*sum \+= code;\s*subject \+= step\(0\.9, code\);/,
-  );
   const taps = (DISSOLVE_SOFT.taps + 1).toFixed(1);
-  assert.ok(soft.includes(`float code = max(sum / ${taps}, own * 1.0);`));
-  assert.ok(
-    soft.includes(
-      `return max(code, closing * smoothstep(${DISSOLVE_SOFT.close[0]}, ${DISSOLVE_SOFT.close[1]}, subject / ${taps}));`,
-    ),
-  );
+  assert.ok(soft.includes(`subject /= ${taps};`));
+  assert.ok(soft.includes(`return sum / ${taps};`));
+  assert.doesNotMatch(shader, /, own \* |closing/, "no subject held whole against the sky");
   assert.match(
     shader,
-    /float codePrev = softCode\(tPrev, prevUv, 0\.0\), codeNow = softCode\(tDiffuse, vUv, 1\.0\);\s*start = 3\.0 \* uStagger\.x \* clamp\(max\(codePrev, codeNow\), 0\.0, 1\.0\);\s*span = uStagger\.y;/,
+    /float codePrev = min\(softCode\(tPrev, prevUv, subPrev\), layerCode\(tPrev, prevUv\)\), codeNow = softCode\(tDiffuse, vUv, subNow\);\s*start = 3\.0 \* uStagger\.x \* clamp\(max\(codePrev, codeNow\), 0\.0, 1\.0\);\s*span = uStagger\.y;/,
   );
-  // The star turns whole (`foot`, in its disc radii from the lens's source), only where its
-  // own frame shows sky: the outgoing one with the sky's window, the incoming one when the
-  // outgoing frame's nearest layer over its disc turns. No star code is read from the alpha.
+  // The incoming subject washes in on one long weight, its gaps with it (`wash`): never a
+  // stencil of the outgoing frame.
+  assert.ok(DISSOLVE_SOFT.wash[0] < DISSOLVE_SOFT.wash[1] && DISSOLVE_SOFT.wash[1] <= 1);
+  assert.ok(
+    shader.includes(
+      `if (uLayered > 0.5) w = mix(w, smoothstep(0.0, 1.0, uProgress), smoothstep(${DISSOLVE_SOFT.wash[0]}, ${DISSOLVE_SOFT.wash[1]}, subNow));`,
+    ),
+  );
+  // The outgoing star fades whole into its own frame's sky about it (`ring` radii out, only sky
+  // taps), and the place then turns as sky, `fade` later: no porthole onto the incoming shot.
   assert.ok(
     DISSOLVE_SOFT.foot[0] < DISSOLVE_SOFT.foot[1] && DISSOLVE_SOFT.foot[1] >= 2.78,
     "the glow's reach",
   );
+  assert.ok(DISSOLVE_SOFT.ring > DISSOLVE_SOFT.foot[1], "the ring lies outside the footprint");
+  assert.ok(DISSOLVE_SOFT.fade > 0 && DISSOLVE_SOFT.fade < LAYER_STAGGER.window);
   assert.doesNotMatch(shader, /starCode/);
+  const skyAt = shader.indexOf("vec3 starSky(");
+  const sky = shader.slice(skyAt, shader.indexOf("\n}\n", skyAt));
+  assert.match(sky, /for \(int i = 0; i < 8; i\+\+\)/);
+  assert.match(sky, /\(1\.0 - smoothstep\(0\.02, 0\.05, tap\.a\)\)/, "sky taps only");
+  assert.match(sky, /return weight > 1e-4 \? sum \/ weight : own;/);
+  assert.match(
+    shader,
+    /turnPrev = smoothstep\(0\.0, [0-9.]+, uProgress\);\s*if \(foot > 0\.0\) \{\s*prevTexel\.rgb = mix\(prevTexel\.rgb, starSky\(prevUv, uStarPrev\.xy, uStarPrev\.z, aspect, prevTexel\.rgb\), foot \* turnPrev\);/,
+  );
+  assert.match(
+    shader,
+    /float late = min\(start \+ [0-9.]+, 1\.0 - span\);\s*w = mix\(w, min\(w, smoothstep\(late, late \+ span, uProgress\)\), foot\);/,
+  );
+  // The incoming star turns as one when the outgoing frame's nearest layer over its disc turns.
   const turnAt = shader.indexOf("float starTurn(");
   const turn = shader.slice(turnAt, shader.indexOf("\n}\n", turnAt));
   assert.match(
@@ -957,10 +968,6 @@ test("the final pass decodes each frame's layer from a 5-tap cross and mixes by 
     /float start = 3\.0 \* uStagger\.x \* clamp\(code, 0\.0, 1\.0\);\s*return smoothstep\(start, start \+ uStagger\.y, uProgress\);/,
   );
   assert.equal((turn.match(/texture2D\(other, /g) || []).length, 5);
-  assert.match(
-    shader,
-    /turnPrev = smoothstep\(0\.0, uStagger\.y, uProgress\);\s*w = mix\(w, turnPrev, foot\);/,
-  );
   assert.match(
     shader,
     /turnNow = starTurn\(tPrev, uPrevOrigin \+ \(uStar\.xy - uPrevOrigin\) \* uPrevScale, uStar\.z \* uPrevScale, aspect\);\s*w = mix\(w, turnNow, foot\);/,
@@ -971,7 +978,7 @@ test("the final pass decodes each frame's layer from a 5-tap cross and mixes by 
   // and its heat, fringes and kept rect (LENS_FX).
   assert.match(
     shader,
-    /w = smoothstep\(start, start \+ span, uProgress\);[\s\S]*?texel = mix\(uLayered > 0\.5 \? lensView\(tPrev, prevUv, prevUv, uBlurPrev, uStarPrev, uFlamePrev, uKeepPrev, guard\) : texture2D\(tPrev, prevUv\), texel, w\);\s*protection = mix\(uTextProtectionFrom, uTextProtection, w\);/,
+    /w = smoothstep\(start, start \+ span, uProgress\);\s*vec4 prevTexel = uLayered > 0\.5 \? lensView\(tPrev, prevUv, prevUv, uBlurPrev, uStarPrev, uFlamePrev, uKeepPrev, guard\) : texture2D\(tPrev, prevUv\);[\s\S]*?texel = mix\(prevTexel, texel, w\);\s*protection = mix\(uTextProtectionFrom, uTextProtection, w\);/,
   );
   assert.match(
     shader,
@@ -979,7 +986,7 @@ test("the final pass decodes each frame's layer from a 5-tap cross and mixes by 
   );
   assert.match(
     shader,
-    /float start = 0\.0, span = 1\.0;\s*if \(uLayered > 0\.5\)/,
+    /float start = 0\.0, span = 1\.0, subPrev = 0\.0, subNow = 0\.0;\s*if \(uLayered > 0\.5\)/,
     "unlayered: smoothstep(0, 1, progress)",
   );
   assert.match(shader, /if \(uProgress < 1\.0\)/);
