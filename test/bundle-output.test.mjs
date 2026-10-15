@@ -131,13 +131,14 @@ test("scene bundle stays under the deferred-payload budget", async () => {
   );
 });
 
-test("the film's optional effects are the only lazy chunks, and Three.js ships once", async () => {
+test("the film's optional effects and the walk are the only lazy chunks, and Three.js ships once", async () => {
   const { entry, loaded, lazy } = await sceneScripts();
   assert.deepEqual(lazy.map((name) => name.replace(/\.[a-f0-9]{8}\.js$/, "")).sort(), [
     "scene.lantern-flame",
     "scene.mountain-build",
     "scene.rock-build",
     "scene.terrain-build",
+    "scene.walk",
   ]);
   const statics = [...loaded.values()].join("\n");
   const threeMarker = "Multiple instances of Three.js being imported";
@@ -183,6 +184,26 @@ test("the film's rock placement is a lazy chunk that imports nothing", async () 
     loaded.get(entry),
     new RegExp(`import\\(\\s*"\\./${rockName.replaceAll(".", "\\.")}"\\s*\\)`),
   );
+});
+
+test("the walk is a lazy chunk under 16 kB that imports nothing, fetched only on its key", async () => {
+  const { entry, loaded, lazy } = await sceneScripts();
+  const walkName = lazy.find((name) => name.startsWith("scene.walk."));
+  assert.ok(walkName, "the walk has its own hashed lazy chunk");
+  const walk = await readFile(path.join(scriptsDir, walkName), "utf8");
+  const statics = [...loaded.values()].join("\n");
+  const app = await readFile(await findHashedScript("app"), "utf8");
+  // The camera, the ground and the page arrive as arguments (walk.js createWalk()).
+  assert.deepEqual(chunkImports(walk), { static: [], dynamic: [] });
+  assert.match(walk, /scene-walk-hidden/);
+  assert.doesNotMatch(statics, /scene-walk-hidden/, "the walk leaked into the scene payload");
+  assert.doesNotMatch(app, /scene-walk/, "the walk leaked into the UI payload");
+  assert.match(
+    loaded.get(entry),
+    new RegExp(`import\\(\\s*"\\./${walkName.replaceAll(".", "\\.")}"\\s*\\)`),
+  );
+  const kb = (await stat(path.join(scriptsDir, walkName))).size / 1024;
+  assert.ok(kb < 16, `the walk is ${kb.toFixed(1)} kB; budget is 16 kB`);
 });
 
 test("the film mountains' generator is a lazy chunk that imports only Three.js", async () => {

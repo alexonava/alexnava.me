@@ -184,6 +184,8 @@ export function writeRockContacts(contacts, rocks) {
   return contacts;
 }
 
+const NONE = Object.freeze([]);
+
 // Loads the two stones and builds one InstancedMesh per stone with no
 // instances. Their programs link through compile(); take() then commits the
 // instances on a tour cut, under the dissolve's kept frame. With textGuard
@@ -216,7 +218,8 @@ export function createRocks(
   let film = false,
     disposed = false,
     queued = false,
-    committed = false;
+    committed = false,
+    placed = NONE;
   const abort = new AbortController();
   const step = lib.createDeferredQualityStep({
     prepare() {
@@ -267,6 +270,7 @@ export function createRocks(
       root.add(mesh);
     });
     if (contacts) writeRockContacts(contacts, layout);
+    placed = layout;
   }
   function release() {
     meshes.splice(0).forEach((mesh) => mesh.dispose());
@@ -296,6 +300,11 @@ export function createRocks(
     root,
     get committed() {
       return committed;
+    },
+    // The placed rocks ({x, z, half, height, pebble, ...}) once they show: the
+    // walk's solids (walk.js).
+    get footprints() {
+      return committed ? placed : NONE;
     },
     setFilmActive(active) {
       if (disposed) return;

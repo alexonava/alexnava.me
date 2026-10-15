@@ -319,6 +319,8 @@ test("the river lowers only its channel and banks: the lantern's footing and the
   assert.deepEqual(TREE_FOOTING, { x: ESTATE.tree.x, z: ESTATE.tree.z });
   // The sink prop-scale.js seats the tree with, restated for the bake.
   assert.equal(TREE_SINK, ESTATE.tree.sink);
+  // The trunk's base centre, restated where the walk's tree stands (walk.js).
+  assert.deepEqual(ESTATE.tree.trunk, TRUNK);
   assert.equal(ESTATE.lantern.offset, 5);
   // The river passes the lantern on the lantern shots' side (they look from
   // -115° to -125°), the lantern standing on its bank clear of its reach.

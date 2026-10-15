@@ -381,7 +381,7 @@ test("the bootstrap adds the fires under the ground's root and shows them with t
   const index = flat(source("src/scene/index.js"));
   assert.match(
     index,
-    /const farFires = createFarFires\(\{ parent: environmentRoot, camera, subjects: \(\) => \[completeTower\?\.root, treeArchitecture\?\.root\], shot: \(\) => cinematic\.shot, textGuard: groundContacts, profile: state\.profile \}\); subsystemRegistry\.register\(farFires\);/,
+    /const farFires = createFarFires\(\{ parent: environmentRoot, camera, subjects: \(\) => \[completeTower\?\.root, treeArchitecture\?\.root\], shot: shotOnScreen, textGuard: groundContacts, profile: state\.profile \}\); subsystemRegistry\.register\(farFires\);/,
   );
   assert.match(index, /rockScatter\.setFilmActive\(active\); farFires\.setFilmActive\(active\);/);
 });

@@ -1306,13 +1306,15 @@ test("the film look: halation where bloom draws, a print toe, midtone grain, and
   assert.doesNotMatch(shader, /uWeave|vUv \+ uWeave/);
   assert.equal(final.uWeave, undefined);
   // The scene adds it to the shot's lens shift (cinematic.js rewrites that on every applied
-  // frame), before the lens reads its sources, and only while a shot is applied in film.
+  // frame), before the lens reads its sources, and only while a shot is applied in film or
+  // the walk drives (walk.js resets its projection on every frame too).
   // Never a view offset: it rebuilds the projection and drops the shot's shift.
   const index = flat(source("src/scene/index.js"));
   const weaveAt = index.indexOf(
-    "const weave = filmActive && cinematicApplied ? post.weaveOffset?.() : null;",
+    "const weave = filmActive && (cinematicApplied || walking) ? post.weaveOffset?.() : null;",
   );
-  assert.ok(weaveAt > index.indexOf("const cinematicApplied = cinematic.apply("));
+  assert.ok(weaveAt > index.indexOf("const cinematicApplied = !walking && cinematic.apply("));
+  assert.ok(weaveAt > index.indexOf("walk.update(deltaSeconds, viewport.width, viewport.height);"));
   assert.ok(
     index.includes(
       "shift[8] += (2 * weave[0]) / viewport.width; shift[9] += (2 * weave[1]) / viewport.height;",

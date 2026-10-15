@@ -6,6 +6,8 @@
 // clear: keep-out radius for scattered rocks. root: the root contact's radius
 // (rock-scatter.js estateContacts()). sink: how far prop-scale.js sets the tree
 // into the soil below its lowest vertex (terrain-build.js TREE_SINK restates it).
+// trunk: the trunk's base centre from the tree's anchor (terrain-build.js TRUNK
+// restates it), where the walk's tree stands (walk.js).
 export const ESTATE = Object.freeze({
   tower: Object.freeze({ x: 0, z: 0, lift: 1.36, flat: 9, blend: 20, clear: 16 }),
   tree: Object.freeze({
@@ -17,6 +19,7 @@ export const ESTATE = Object.freeze({
     root: 3.2,
     clear: 8,
     sink: 0.45,
+    trunk: Object.freeze([3.9, -0.05]),
   }),
   // The lantern stands `offset` units from the tree toward the tower.
   lantern: Object.freeze({ offset: 5, clear: 1.2 }),

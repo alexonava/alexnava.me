@@ -119,6 +119,8 @@ export const ROCK_LIB = Object.freeze({
   createDeferredQualityStep,
 });
 
+const NO_ROCKS = Object.freeze([]);
+
 // Fetches rock-build.js once the scene has revealed, the film is on and the
 // tree channel has settled, on high and balanced only. Nothing about the rocks delays the reveal. terrain()
 // resolves to the film terrain's height once its root supports settle
@@ -161,6 +163,10 @@ export function createRockScatter({
   return {
     get committed() {
       return rocks?.committed === true;
+    },
+    // The rocks on show, for the walk's solids (rock-build.js); none until then.
+    get footprints() {
+      return rocks?.footprints ?? NO_ROCKS;
     },
     setFilmActive(active) {
       if (disposed) return;

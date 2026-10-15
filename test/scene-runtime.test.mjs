@@ -1673,9 +1673,10 @@ test("each frame applies the shot's light, lens, bars and grain, holding the gra
   );
   assert.ok(index.includes("post.setLens?.(cinematicApplied ? cinematic.shot?.lens : null);"));
   assert.ok(!index.includes("setGrade"), "no per-shot grade: the cel step is the sky's alone");
+  // The bars ease out under the dissolve into the walk and back in after it (walk.js bars).
   assert.ok(
     index.includes(
-      "post.setBars?.(filmActive && cinematicApplied ? letterboxShare(viewport.width, viewport.height) : 0);",
+      "post.setBars?.(filmActive && (cinematicApplied || walking) ? letterboxShare(viewport.width, viewport.height) * (walk?.bars ?? 1) : 0);",
     ),
   );
   // The grain's frame advances only while the scene moves: never under reduced
