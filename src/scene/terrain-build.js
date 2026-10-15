@@ -2794,11 +2794,12 @@ export function scatterLitter(surface, groundColor) {
 // PEBBLE_DOME.sides jittered points, smooth-shaded from its ellipsoid's normals
 // and a little darker toward the soil. A piece at least `large` wide (one the
 // lens can come close to) takes `round` points a ring, so its outline never
-// reads as a polygon; one at least `full` wide (the largest, 45-90 px near
-// the lens on a portrait monitor) takes `smooth` points a ring and its rings
-// follow its ellipsoid at `profile` degrees up from the sunk ring, so its side
-// never bends at one ring into a flat cone (a faceted nugget); the jitter of
-// every ring eases between the `sides` drawn, so every
+// reads as a polygon, and its rings follow its ellipsoid at `profile` degrees
+// up from the sunk ring, so its side never bends at one ring into a flat cone
+// (a faceted nugget); one at least `widest` wide (45-90 px near the lens on a
+// portrait monitor) takes `smooth` points a ring. A grain at least `mid` wide
+// takes `midSides`, so a bank stone near the lens on a wide screen is never a
+// hexagon. The jitter of every ring eases between the `sides` drawn, so every
 // piece takes the same draws and the scatter keeps its places. `at(u, w,
 // lift)` places a local point (u along its yaw) on the ground; `turn` is
 // [cos, sin] of that yaw.
@@ -2808,17 +2809,28 @@ export const PEBBLE_DOME = Object.freeze({
   large: 0.035,
   ring: 0.62,
   jitter: 0.18,
-  full: 0.05,
+  full: 0.035,
+  widest: 0.05,
   smooth: 16,
+  mid: 0.02,
+  midSides: 9,
   profile: Object.freeze([35, 65]),
 });
 function pebbleDome(a, b, h, random, at, [cy, sy], rgb, triangle) {
-  const { sides, round, large, full, smooth, ring, jitter, profile } = PEBBLE_DOME,
+  const { sides, round, large, full, widest, smooth, mid, midSides, ring, jitter, profile } =
+      PEBBLE_DOME,
     spin = random() * Math.PI,
     drawn = () => Array.from({ length: sides }, () => 1 + jitter * (random() * 2 - 1)),
     upperJitter = drawn(),
     lowerJitter = drawn(),
-    n = Math.max(a, b) >= full ? smooth : Math.max(a, b) >= large ? round : sides;
+    n =
+      Math.max(a, b) >= widest
+        ? smooth
+        : Math.max(a, b) >= large
+          ? round
+          : Math.max(a, b) >= mid
+            ? midSides
+            : sides;
   // The jitter `k` sides round from the first drawn point, eased between them.
   const eased = (drawnJitter, k) => {
     const i = Math.floor(k),
@@ -2884,11 +2896,15 @@ function pebbleDome(a, b, h, random, at, [cy, sy], rgb, triangle) {
 // midrib, `length` long and `width` wide, its rim raised by `cup` and its
 // ends by `curl`, both as drawn times FALLEN_LEAF.lie (damp leaves lie nearly
 // flat, so a low lens never looks under a raised rim), `rise` above the
-// surface `at(u, w, lift)` places it on. Its normals lean out from its middle
-// by `round` of their offset over its length and its rim is `rim` as light as
-// its midrib, so it shades over like a curled leaf, never flat as a card.
+// surface `at(u, w, lift)` places it on. Toward its stalk and tip, where its
+// outline narrows, the rim is raised less, as its half-width over the widest
+// to the power `ends`, so a low lens never sees a long dark underside along
+// the near rim. Its normals lean out from its middle by `round` of their
+// offset over its length and its rim is `rim` as light as its midrib, so it
+// shades over like a curled leaf, never flat as a card.
 export const FALLEN_LEAF = Object.freeze({
   lie: 0.5,
+  ends: 1.5,
   round: 1.2,
   rim: 0.8,
   // Its outline: [along the midrib, half-width] from stalk to tip, so its edge
@@ -2904,12 +2920,14 @@ export const FALLEN_LEAF = Object.freeze({
   ),
 });
 function fallenLeaf(at, length, width, cup, curl, rise, rgb, triangle) {
-  const { lie, round, rim, outline } = FALLEN_LEAF,
-    lift = (u) => rise + curl * lie * (2 * u - 1) ** 2;
+  const { lie, ends, round, rim, outline } = FALLEN_LEAF,
+    lift = (u) => rise + curl * lie * (2 * u - 1) ** 2,
+    widest = Math.max(...outline.map(([, half]) => half)),
+    raise = (half) => cup * lie * (half / widest) ** ends;
   const [[, A], ...rest] = [[0, 0], ...outline, [1, 0]].map(([u, half]) => [
-      at((u - 0.5) * length, -half * width, lift(u) + cup * lie),
+      at((u - 0.5) * length, -half * width, lift(u) + raise(half)),
       at((u - 0.5) * length, 0, lift(u)),
-      at((u - 0.5) * length, half * width, lift(u) + cup * lie),
+      at((u - 0.5) * length, half * width, lift(u) + raise(half)),
     ]),
     [, T] = rest.pop(),
     middle = new Set(rest.map(([, M]) => M));

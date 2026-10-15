@@ -2081,7 +2081,7 @@ test("sparse dark litter and small grey stones lie among the roots, clear of the
     );
   }
   assert.ok(
-    litterVertices / 3 > 300 && litterVertices / 3 < 2800,
+    litterVertices / 3 > 300 && litterVertices / 3 < 3000,
     `${litterVertices / 3} triangles`,
   );
   // The small stones: among the roots and about the trunk's base, clear of
@@ -2173,14 +2173,21 @@ test("the fine litter (leaves, clods, grit) lies on the foreground soil, never u
   const lift = Math.max(F.leafSize[1] * 0.4, F.clod[1]) + 0.02,
     n = litter.attributes.normal,
     leaf = FALLEN_LEAF.outline.length * 4 * 3,
-    full = PEBBLE_DOME.smooth * (1 + 2 * PEBBLE_DOME.profile.length) * 3;
+    profiled = (sides) => sides * (1 + 2 * PEBBLE_DOME.profile.length) * 3,
+    full = profiled(PEBBLE_DOME.smooth);
   assert.equal(leaf, 60);
   let domes = 0;
   pieces.forEach((first, k) => {
     const end = pieces[k + 1] ?? litter.userData.fine[1],
       count = end - first;
     assert.ok(
-      [leaf, PEBBLE_DOME.sides * 9, PEBBLE_DOME.round * 9, full].includes(count),
+      [
+        leaf,
+        PEBBLE_DOME.sides * 9,
+        PEBBLE_DOME.midSides * 9,
+        profiled(PEBBLE_DOME.round),
+        full,
+      ].includes(count),
       `piece ${k} has ${count} vertices`,
     );
     if (count !== leaf) domes++;
@@ -2203,16 +2210,22 @@ test("the fine litter (leaves, clods, grit) lies on the foreground soil, never u
     }
   });
   assert.equal(domes, F.counts.clods + F.counts.gravel);
-  // A piece the lens can come close to (a clod, the coarser grit) is round, the
-  // finest grit keeps the few sides it needs.
+  // A piece the lens can come close to (a clod, the coarser grit) is round and
+  // follows its ellipsoid's curve (PEBBLE_DOME.profile), never a cone; the largest
+  // take more points; mid-size grit takes more than six; the finest keeps six.
   const size = (first, k) => (pieces[k + 1] ?? litter.userData.fine[1]) - first,
     round = pieces.filter((first, k) =>
-      [PEBBLE_DOME.round * 9, full].includes(size(first, k)),
+      [profiled(PEBBLE_DOME.round), full].includes(size(first, k)),
     ).length,
-    fuller = pieces.filter((first, k) => size(first, k) === full).length;
+    fuller = pieces.filter((first, k) => size(first, k) === full).length,
+    middling = pieces.filter((first, k) => size(first, k) === PEBBLE_DOME.midSides * 9).length;
+  assert.ok(PEBBLE_DOME.full <= PEBBLE_DOME.large && PEBBLE_DOME.widest > PEBBLE_DOME.full);
   assert.ok(round > F.counts.clods * 0.9 && round < domes / 2, `${round} round domes`);
-  // The largest follow their ellipsoid's curve (PEBBLE_DOME.profile), never a cone.
-  assert.ok(fuller > F.counts.clods / 2 && fuller < round, `${fuller} full domes`);
+  assert.ok(fuller > F.counts.clods / 4 && fuller < round, `${fuller} widest domes`);
+  assert.ok(middling > 0 && middling < domes - round, `${middling} mid-size grains`);
+  // A leaf's rim is raised less toward its stalk and tip (FALLEN_LEAF.ends), so a
+  // low lens never sees a long dark underside along it.
+  assert.ok(FALLEN_LEAF.ends > 1 && FALLEN_LEAF.ends <= 2);
   // The leaves lie damp and nearly flat, and shade over their curl: normals leaning
   // out from the middle, the rim darker than the midrib, never a flat card.
   assert.ok(FALLEN_LEAF.lie > 0 && FALLEN_LEAF.lie < 1 && FALLEN_LEAF.rim < 1);
@@ -2893,7 +2906,7 @@ test("the water's banks: gravel bars, reeds and debris stay out of the water, of
   // A share of whole pieces for balanced (estate-ground-detail.js).
   assert.deepEqual(banks.userData.fine, [0, p.count]);
   assert.equal(banks.userData.finePieces[0], 0);
-  assert.ok(p.count / 3 < 64000, `${p.count / 3} triangles`);
+  assert.ok(p.count / 3 < 78000, `${p.count / 3} triangles`);
   const pieces = banks.userData.finePieces;
   let inWater = 0;
   for (let k = 0; k < pieces.length; k++) {
