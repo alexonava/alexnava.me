@@ -29,6 +29,53 @@ void main() {
 }
 `;
 
+// The motion-picture film look (the owner's ask of 2026-10-14, "lean in slightly further to
+// go for a motion picture film look"), in film only; each part switches off with its `on`.
+// - `halation`: the warm glow film stock bleeds about bright lights (the star, the
+//   lantern's flame): the bloom's own light (its composite, already drawn on high; no pass
+//   of its own) added again in `color` times `strength`, only as far as that light is
+//   warm: its red's lead over its blue, as a share of its red, eases in across `warm`, so
+//   cool moon glints and moonlit bark keep their colour (the review of 2026-10-14). None
+//   where bloom is off (balanced).
+// - `print`: a print film's toe, the blacks lifted `lift` toward `tint` (cool, milky)
+//   below `toe` graded luma, and the grade's split tone a little stronger in film
+//   (`cool` shadows, `warm` highlights).
+// - `grain`: `strength` at mid-grey, weighted toward the midtones (`floor` of it in the
+//   deep shade and the highlights), in cells `cell` CSS px across, each channel `chroma`
+//   apart; at 24 frames a second and held with the scene.
+// - `weave`: the frame drifts up to `amount` CSS px on a slow wander, stepped at 24 frames
+//   a second, as film running through a gate; the bars, the text band and the page's
+//   text stay put, and it holds whenever the grain does.
+export const FILM_LOOK = Object.freeze({
+  halation: Object.freeze({
+    on: 1,
+    strength: 1.2,
+    color: Object.freeze([1, 0.32, 0.12]),
+    warm: Object.freeze([0.1, 0.35]),
+  }),
+  print: Object.freeze({
+    on: 1,
+    lift: 0.022,
+    toe: 0.12,
+    tint: Object.freeze([0.8, 0.92, 1.2]),
+    cool: 0.2,
+    warm: 0.15,
+  }),
+  grain: Object.freeze({ on: 1, strength: 0.03, floor: 0.25, cell: 1.5, chroma: 0.35 }),
+  weave: Object.freeze({ on: 1, amount: 0.35 }),
+});
+
+// The painted sky's ink (the owner's ask of 2026-10-14, "a paint brush sky theme"): in film
+// its clouds' edges take `mix`, its weight thickening and thinning by up to `vary` over a
+// slow noise `scale` cells across the frame's height, as a brush's line does. (No canvas
+// tooth: a woven one, fixed to the screen, read as a grid across a wide sky; the owner's
+// call of 2026-10-14.)
+export const SKY_INK = Object.freeze({
+  mix: 0.2,
+  vary: 0.5,
+  scale: 9,
+});
+
 const GRADING_SHADER = {
   name: "BabelGradingShader",
   uniforms: {
@@ -40,10 +87,22 @@ const GRADING_SHADER = {
     uShadowCoolMix: { value: 0.34 },
     uTexelSize: { value: new Vector2(1, 1) },
     uLayerRelief: { value: 0 },
+    // The film look (FILM_LOOK): the bloom's composite and its halation tint (0: none),
+    // the print toe (lift, toe) and its tint, and the ink's brush weight (vary, scale).
+    tHalation: { value: null },
+    uHalation: { value: new Vector3() },
+    uPrint: { value: new Vector2(0, 0.12) },
+    uPrintTint: { value: new Vector3(1, 1, 1) },
+    uInkVary: { value: new Vector2(0, 9) },
   },
   vertexShader: PASS_VERTEX_SHADER,
   fragmentShader: `
 uniform sampler2D tDiffuse;
+uniform sampler2D tHalation;
+uniform vec3 uHalation;
+uniform vec2 uPrint;
+uniform vec3 uPrintTint;
+uniform vec2 uInkVary;
 uniform float uCelMix;
 uniform float uInkMix;
 uniform float uContrast;
@@ -52,6 +111,17 @@ uniform float uShadowCoolMix;
 uniform vec2 uTexelSize;
 uniform float uLayerRelief;
 varying vec2 vUv;
+
+float inkHash(vec2 p) {
+  vec3 q = fract(vec3(p.xyx) * 0.1031);
+  q += dot(q, q.yzx + 33.33);
+  return fract((q.x + q.y) * q.z);
+}
+float inkNoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(inkHash(i), inkHash(i + vec2(1.0, 0.0)), f.x), mix(inkHash(i + vec2(0.0, 1.0)), inkHash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
 
 vec3 saturateColor(vec3 color, float amount) {
   float luma = dot(color, vec3(0.299, 0.587, 0.114));
@@ -84,8 +154,7 @@ void main() {
   // The ground (depth code 2/3) takes no band: its soil, cracks and water stay
   // continuous, close up and far.
   float groundLayer = uLayerRelief * (1.0 - smoothstep(0.04, 0.12, abs(texel.a - 0.6667)));
-  // The star and its glow, and the light shafts' air over the sky
-  // (depth-layers.js STAR_LAYER and SHAFT_LAYER over the sky's 0), stay
+  // The star and its glow (depth-layers.js STAR_LAYER over the sky's 0) stay
   // continuous: the cloud banks' steps never ring them.
   float starLayer = uLayerRelief * smoothstep(0.0005, 0.006, texel.a) * (1.0 - smoothstep(0.22, 0.28, texel.a));
   // In film the step's bands and the ink are the sky's alone (the owner's direction
@@ -109,10 +178,18 @@ void main() {
   float inkContour = smoothstep(0.2, 0.48, max(horizontalEdge, verticalEdge));
   float nearest = max(max(e1.a, e2.a), max(e3.a, e4.a));
   // In film only where the pixel and its four neighbours are all bare sky: the
-  // clouds' own edges, never an outline on a subject, a crest, the ground or a shaft.
+  // clouds' own edges, never an outline on a subject, a crest or the ground.
   float skyInk = mix(1.0, (1.0 - smoothstep(0.0, 0.006, texel.a)) * (1.0 - step(0.006, nearest)), uLayerRelief);
-  color = mix(color, vec3(0.035, 0.055, 0.095), inkContour * uInkMix * skyInk);
+  // A brush's line: its weight thickens and thins along the clouds' edges.
+  float inkWeight = 1.0 + uInkVary.x * (2.0 * inkNoise(vUv * vec2(uTexelSize.y / uTexelSize.x, 1.0) * uInkVary.y) - 1.0);
+  color = mix(color, vec3(0.035, 0.055, 0.095), clamp(inkContour * uInkMix * skyInk * inkWeight, 0.0, 1.0));
   }
+  // Halation: the bloom's light again, tinted, as film stock bleeds about bright lights,
+  // only from warm ones (FILM_LOOK.halation.warm).
+  vec3 halo = texture2D(tHalation, vUv).rgb;
+  color += halo * uHalation * smoothstep(${FILM_LOOK.halation.warm[0].toFixed(3)}, ${FILM_LOOK.halation.warm[1].toFixed(3)}, (halo.r - halo.b) / max(halo.r, 1e-4));
+  // A print film's toe: the blacks lift toward a cool, milky tint.
+  color += uPrintTint * uPrint.x * (1.0 - smoothstep(0.0, uPrint.y, dot(color, vec3(0.299, 0.587, 0.114))));
   // A soft shoulder: highlights past the knee roll off toward white, not clip.
   vec3 over = max(color - 0.75, 0.0);
   color = mix(color, min(color, 0.75) + 0.25 * (1.0 - exp(-over / 0.25)), uLayerRelief);
@@ -149,6 +226,30 @@ export const DISSOLVE_BRUSH = Object.freeze({
   fine: 2.6,
   sweep: 0.25,
   edge: 0.4,
+});
+
+// The dissolve's mask, softened (the review of 2026-10-14: each cut first showed the
+// incoming subject as a hard-edged cut-out of the outgoing frame): each frame's layer
+// code is averaged over a disc `radius` of the frame's height across (`taps` taps about
+// the cross's maximum at its centre), so a silhouette turns over that width rather than
+// at one pixel. The incoming subject washes in on one long weight, from the sky's start to
+// the end (`wash` [from, full], its share of the disc's taps): twigs and the gaps between
+// them, a lattice's braces and the sky among them come in together and softly, never as a
+// stencil of the outgoing frame or shards of it (the re-checks of 2026-10-15). `foot` [full,
+// gone] (the star's disc radii, from the lens's source): where its frame shows sky, the
+// outgoing star (disc and glow) fades whole over `fade` of the progress into that frame's
+// own sky about it (`ring` radii out, along its ray), and the place then dissolves as sky,
+// a little after; nothing of the incoming shot shows early through it. The incoming star
+// turns as one when the outgoing frame's nearest layer over its disc turns. Each lens flare
+// goes with its own star. `on`: 0 keeps the hard mask.
+export const DISSOLVE_SOFT = Object.freeze({
+  on: 1,
+  radius: 0.03,
+  taps: 12,
+  wash: Object.freeze([0.15, 0.6]),
+  foot: Object.freeze([2, 3]),
+  ring: 3.3,
+  fade: 0.15,
 });
 
 // The lens (the owner's pick of the Eye breakdown, 2026-10-09), all of it in the
@@ -374,6 +475,7 @@ const VIGNETTE_GRAIN_SHADER = {
     uBlurPrev: { value: 0 },
     uBars: { value: 0 },
     uGrainTime: { value: 0 },
+    // The gate weave (FILM_LOOK.weave): the frame's offset in UV.
     // The lens (LENS_FX): its sources on screen, as (x, y) in UV, a size in frame
     // heights (the star's radius; a world unit at the flame) and whether it is on,
     // and the kept rect, for the live frame and the kept one.
@@ -462,7 +564,57 @@ float layerCode(sampler2D map, vec2 uv) {
   return max(max(texture2D(map, uv).a, max(texture2D(map, uv - x).a, texture2D(map, uv + x).a)),
     max(texture2D(map, uv - y).a, texture2D(map, uv + y).a));
 }
-${LENS_GLSL}
+${
+  DISSOLVE_SOFT.on
+    ? `float softCode(sampler2D map, vec2 uv, out float subject) {
+  float aspect = uCodeTexel.y / uCodeTexel.x, own = layerCode(map, uv), sum = own;
+  subject = step(0.9, own);
+  for (int i = 1; i <= ${DISSOLVE_SOFT.taps}; i++) {
+    float r = sqrt(float(i) / ${lensNumber(DISSOLVE_SOFT.taps)}) * ${lensNumber(DISSOLVE_SOFT.radius)}, a = float(i) * 2.39996;
+    float code = texture2D(map, uv + vec2(cos(a) / aspect, sin(a)) * r).a;
+    sum += code;
+    subject += step(0.9, code);
+  }
+  subject /= ${lensNumber(DISSOLVE_SOFT.taps + 1)};
+  return sum / ${lensNumber(DISSOLVE_SOFT.taps + 1)};
+}
+`
+    : ""
+}${LENS_GLSL}${
+    DISSOLVE_SOFT.foot
+      ? `
+// A star's one turn: the other frame's nearest layer over the disc (its centre c and four
+// points a radius r out, in that frame's UV) decides when it turns, over the layer's window.
+float starTurn(sampler2D other, vec2 c, float r, vec2 aspect) {
+  vec2 dx = vec2(r / aspect.x, 0.0), dy = vec2(0.0, r);
+  float code = max(texture2D(other, c).a, max(max(texture2D(other, c + dx).a, texture2D(other, c - dx).a), max(texture2D(other, c + dy).a, texture2D(other, c - dy).a)));
+  float start = 3.0 * uStagger.x * clamp(code, 0.0, 1.0);
+  return smoothstep(start, start + uStagger.y, uProgress);
+}
+// The outgoing frame's own sky about its star (centre c, radius r, in its UV), for the
+// place at uv: eight taps on a ring (DISSOLVE_SOFT.ring radii out), each weighted by how near it lies
+// to the place's own ray from the centre (evenly at the centre), and only those that read
+// sky (no star, subject or edge of the frame); none, and the place keeps its own colour.
+vec3 starSky(vec2 uv, vec2 c, float r, vec2 aspect, vec3 own) {
+  vec2 d = (uv - c) * aspect;
+  float l = length(d), even = 1.0 - smoothstep(0.0, 1.5 * r, l);
+  vec2 ray = l > 1e-5 ? d / l : vec2(1.0, 0.0);
+  vec3 sum = vec3(0.0);
+  float weight = 0.0;
+  for (int i = 0; i < 8; i++) {
+    float a = float(i) * 0.785398;
+    vec2 dir = vec2(cos(a), sin(a)), p = c + dir * r * ${lensNumber(DISSOLVE_SOFT.ring)} / aspect;
+    vec4 tap = texture2D(tPrev, p);
+    float along = dot(dir, ray), near = mix(exp(4.0 * (along - 1.0)), 1.0, even);
+    float k = near * (1.0 - smoothstep(0.02, 0.05, tap.a)) * step(0.0, p.x) * step(p.x, 1.0) * step(0.0, p.y) * step(p.y, 1.0);
+    sum += tap.rgb * k;
+    weight += k;
+  }
+  return weight > 1e-4 ? sum / weight : own;
+}
+`
+      : ""
+  }
 void main() {
   float guard = uLayered > 0.5 ? max(lensBehind(slateText, vUv, ${lensNumber(LENS_FX.text[0])}), lensBehind(slateAbout, vUv, ${lensNumber(LENS_FX.text[1])})) : 0.0;
   vec4 texel = uLayered > 0.5 ? lensView(tDiffuse, vUv, vUv, uBlur, uStar, uFlame, uKeep, guard) : texture2D(tDiffuse, vUv);
@@ -470,11 +622,14 @@ void main() {
   // so its lens (heat, fringes, kept rect and flare) is placed in its own UV and
   // stays on its own star and flame.
   vec2 prevUv = uPrevOrigin + (vUv - uPrevOrigin) * uPrevScale;
-  float protection = uTextProtection, w = 1.0;
+  float protection = uTextProtection, w = 1.0, turnPrev = 1.0, turnNow = 1.0;
   if (uProgress < 1.0) {
-    float start = 0.0, span = 1.0;
+    float start = 0.0, span = 1.0, subPrev = 0.0, subNow = 0.0;
     if (uLayered > 0.5) {
-      start = 3.0 * uStagger.x * clamp(max(layerCode(tPrev, prevUv), layerCode(tDiffuse, vUv)), 0.0, 1.0);
+      // The outgoing frame never holds a place past its own layer: the sky beside a subject
+      // turns as sky (no rim of old cloud along it), and the subject leaves from its edges in.
+      float codePrev = ${DISSOLVE_SOFT.on ? "min(softCode(tPrev, prevUv, subPrev), layerCode(tPrev, prevUv))" : "layerCode(tPrev, prevUv)"}, codeNow = ${DISSOLVE_SOFT.on ? "softCode(tDiffuse, vUv, subNow)" : "layerCode(tDiffuse, vUv)"};
+      start = 3.0 * uStagger.x * clamp(max(codePrev, codeNow), 0.0, 1.0);
       span = uStagger.y;${
         DISSOLVE_BRUSH.on
           ? `
@@ -485,14 +640,47 @@ void main() {
       }
     }
     w = smoothstep(start, start + span, uProgress);
-    texel = mix(uLayered > 0.5 ? lensView(tPrev, prevUv, prevUv, uBlurPrev, uStarPrev, uFlamePrev, uKeepPrev, guard) : texture2D(tPrev, prevUv), texel, w);
+    vec4 prevTexel = uLayered > 0.5 ? lensView(tPrev, prevUv, prevUv, uBlurPrev, uStarPrev, uFlamePrev, uKeepPrev, guard) : texture2D(tPrev, prevUv);${
+      DISSOLVE_SOFT.on
+        ? `
+    // The incoming subject washes in on one long weight, its gaps with it (DISSOLVE_SOFT.wash).
+    if (uLayered > 0.5) w = mix(w, smoothstep(0.0, 1.0, uProgress), smoothstep(${lensNumber(DISSOLVE_SOFT.wash[0])}, ${lensNumber(DISSOLVE_SOFT.wash[1])}, subNow));`
+        : ""
+    }${
+      DISSOLVE_SOFT.foot
+        ? `
+    if (uLayered > 0.5) {
+      // Each frame's star (DISSOLVE_SOFT.foot), where that frame shows sky, fades whole. The
+      // outgoing one fades into its own frame's sky about it (starSky), and the place then turns
+      // as sky, DISSOLVE_SOFT.fade later; the incoming one comes when the outgoing frame's nearest layer over
+      // its disc turns (starTurn), so it never shows through that layer early.
+      vec2 aspect = lensAspect();
+      if (uStarPrev.w > 0.0) {
+        float foot = (1.0 - smoothstep(${lensNumber(DISSOLVE_SOFT.foot[0])}, ${lensNumber(DISSOLVE_SOFT.foot[1])}, length((prevUv - uStarPrev.xy) * aspect) / uStarPrev.z)) * (1.0 - smoothstep(0.25, 0.3, texture2D(tPrev, prevUv).a));
+        turnPrev = smoothstep(0.0, ${lensNumber(DISSOLVE_SOFT.fade)}, uProgress);
+        if (foot > 0.0) {
+          prevTexel.rgb = mix(prevTexel.rgb, starSky(prevUv, uStarPrev.xy, uStarPrev.z, aspect, prevTexel.rgb), foot * turnPrev);
+          float late = min(start + ${lensNumber(DISSOLVE_SOFT.fade)}, 1.0 - span);
+          w = mix(w, min(w, smoothstep(late, late + span, uProgress)), foot);
+        }
+      }
+      if (uStar.w > 0.0) {
+        float foot = (1.0 - smoothstep(${lensNumber(DISSOLVE_SOFT.foot[0])}, ${lensNumber(DISSOLVE_SOFT.foot[1])}, length((vUv - uStar.xy) * aspect) / uStar.z)) * (1.0 - smoothstep(0.25, 0.3, texture2D(tDiffuse, vUv).a));
+        turnNow = starTurn(tPrev, uPrevOrigin + (uStar.xy - uPrevOrigin) * uPrevScale, uStar.z * uPrevScale, aspect);
+        w = mix(w, turnNow, foot);
+      }
+    }`
+        : ""
+    }
+    texel = mix(prevTexel, texel, w);
     protection = mix(uTextProtectionFrom, uTextProtection, w);
   }
   vec3 color = texel.rgb;
   // The star's flare, dissolving with each frame's own.
   if (uLayered > 0.5 && uLens.z > 0.0) {
     vec3 flare = lensFlare(vUv, uStar, uKeep);
-    if (uProgress < 1.0) flare = mix(lensFlare(prevUv, uStarPrev, uKeepPrev), flare, w);
+    // Each frame's flare goes with its own star's turn (starTurn).
+    if (uProgress < 1.0) flare = ${DISSOLVE_SOFT.foot ? "lensFlare(prevUv, uStarPrev, uKeepPrev) * (1.0 - turnPrev) + flare * turnNow" : "mix(lensFlare(prevUv, uStarPrev, uKeepPrev), flare, w)"};
     color += flare * (uLens.z * (1.0 - guard));
   }
 
@@ -503,8 +691,16 @@ void main() {
   }
 
   if (uGrainEnabled == 1) {
-    float grain = hash(floor(vUv * vec2(1280.0, 720.0)) + floor(fract(uGrainTime * vec2(0.618034, 0.414214)) * 97.0)) - 0.5;
-    color += grain * uGrainStrength;
+    if (uLayered > 0.5) {
+      // Film grain (FILM_LOOK.grain): fine cells, each channel a little apart, strongest in the midtones.
+      vec2 g = floor(vUv / (uCssTexel * ${lensNumber(FILM_LOOK.grain.cell)})) + floor(fract(uGrainTime * vec2(0.618034, 0.414214)) * 97.0);
+      vec3 grain = vec3(hash(g) - 0.5) + ${lensNumber(FILM_LOOK.grain.chroma)} * (vec3(hash(g + 17.0), hash(g + 31.0), hash(g + 47.0)) - 0.5);
+      float gl = clamp(dot(color, vec3(0.299, 0.587, 0.114)), 0.0, 1.0);
+      color += grain * uGrainStrength * mix(${lensNumber(FILM_LOOK.grain.floor)}, 1.0, 4.0 * gl * (1.0 - gl));
+    } else {
+      float grain = hash(floor(vUv * vec2(1280.0, 720.0)) + floor(fract(uGrainTime * vec2(0.618034, 0.414214)) * 97.0)) - 0.5;
+      color += grain * uGrainStrength;
+    }
   }
 
   float textShade = smoothstep(1.0 - uTextBottom - .12, 1.0 - uTextBottom + .10, vUv.y);
@@ -645,6 +841,9 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
     setBloomSize(width / ratio, height / ratio);
   };
 
+  // Halation reads the bloom's composite, which it draws anyway on high (no pass of its own).
+  gradingPass.uniforms.tHalation.value = bloomPass.renderTargetsHorizontal[0].texture;
+
   composer.addPass(renderPass);
   composer.addPass(bloomPass);
   composer.addPass(gradingPass);
@@ -652,6 +851,8 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
 
   let reducedTransparency = Boolean(transparencyQuery?.matches);
   let film = false;
+  // The gate weave in CSS px, [right, up] (setFilmTime, weaveOffset()).
+  const weave = [0, 0];
 
   // Tour crossfade: IDLE → ARMED (a capture is due) → CAPTURED (grading drew
   // the outgoing frame into prevTarget) → BLENDING (the cut) → IDLE.
@@ -741,9 +942,9 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
           ...baseline,
           bloomStrength: 0.2,
           contrast: 1.06,
-          grainStrength: 0.008,
-          highlightWarmMix: 0.12,
-          shadowCoolMix: 0.16,
+          grainStrength: FILM_LOOK.grain.on ? FILM_LOOK.grain.strength : 0.008,
+          highlightWarmMix: FILM_LOOK.print.on ? FILM_LOOK.print.warm : 0.12,
+          shadowCoolMix: FILM_LOOK.print.on ? FILM_LOOK.print.cool : 0.16,
           vignetteStrength: 0.12,
         }
       : baseline;
@@ -757,7 +958,18 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
     bloomPass.blendMaterial.blending = film ? CustomBlending : AdditiveBlending;
     gradingPass.enabled = gradingEnabled;
     gradingPass.uniforms.uCelMix.value = settings.celMix ?? 0.24;
-    gradingPass.uniforms.uInkMix.value = 0.14;
+    gradingPass.uniforms.uInkMix.value = film ? SKY_INK.mix : 0.14;
+    gradingPass.uniforms.uInkVary.value.set(film ? SKY_INK.vary : 0, SKY_INK.scale);
+    // The film look: halation only where the bloom draws.
+    const halation =
+      film && bloomEnabled && FILM_LOOK.halation.on ? FILM_LOOK.halation.strength : 0;
+    gradingPass.uniforms.uHalation.value.set(...FILM_LOOK.halation.color).multiplyScalar(halation);
+    gradingPass.uniforms.uPrint.value.set(
+      film && FILM_LOOK.print.on ? FILM_LOOK.print.lift : 0,
+      FILM_LOOK.print.toe,
+    );
+    gradingPass.uniforms.uPrintTint.value.set(...FILM_LOOK.print.tint);
+    if (!film) weave[0] = weave[1] = 0;
     gradingPass.uniforms.uContrast.value = settings.contrast ?? 1.06;
     gradingPass.uniforms.uHighlightWarmMix.value = settings.highlightWarmMix ?? 0.14;
     gradingPass.uniforms.uShadowCoolMix.value = settings.shadowCoolMix ?? 0.25;
@@ -910,8 +1122,21 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
     // The grain's frame, 24 a second; held while the scene holds still.
     setFilmTime(seconds = 0) {
       finalUniforms.uGrainTime.value = Math.floor(seconds * 24) % 997;
+      // The gate's slow wander (FILM_LOOK.weave), stepped at 24 frames a second, in CSS px
+      // (x right, y up); the scene moves its lens by it (weaveOffset()).
+      const frame = Math.floor(seconds * 24) / 24,
+        reach = film && FILM_LOOK.weave.on ? FILM_LOOK.weave.amount : 0;
+      weave[0] = (Math.sin(frame * 2.1) * 0.6 + Math.sin(frame * 5.3 + 1.7) * 0.4) * reach;
+      weave[1] = (Math.sin(frame * 1.7 + 0.5) * 0.6 + Math.sin(frame * 4.1 + 2.3) * 0.4) * reach;
       // The heat flows on the same clock, smoothly, wrapping each hour.
       finalUniforms.uLensTime.value = seconds % 3600;
+    },
+    // The gate weave this frame in CSS px, [right, up]: [0, 0] out of film. The scene
+    // offsets its camera's projection by it, so the whole frame and its lens move a fraction
+    // of a pixel as rendered, and no pass resamples the finished frame (which would soften
+    // and sharpen fine twigs in step with the wander).
+    weaveOffset() {
+      return weave;
     },
     // The lens's sources this frame (lensSource()): the star and the flame as
     // [x, y, size, on], or null for none, and the rect it keeps whole as the

@@ -105,10 +105,15 @@ export const SLATE_TILING = Object.freeze({
 // reads. Near the lens the slate's own mid-scale blotches, enlarged there, give
 // way to its broad tone (`calm` of it: the tile `blur` mip levels down, and
 // its relief calmed alike). The grit moves the soil's albedo by up to `albedo` about it; the
-// relief, `relief` units high, tilts its normal through its screen
-// derivatives. Both are full within near[0] of the lens and gone by near[1],
-// and the relief fades where a texel shrinks below `footprint` pixels and
-// under water.
+// relief, `relief` units high, tilts its normal by its slope worked out at
+// each pixel (the map's own texel differences and the crumbs' exact slope),
+// never by screen derivatives, which step in two-pixel blocks along the lit
+// crests. Both are full within near[0] of the lens and gone by near[1], and
+// the relief fades where a texel (one of `texels` across the tile) shrinks
+// below `footprint` pixels and under water. Near the lens (near[0] to near[1])
+// the soil's brightest channel eases past `ceiling` with the colour scaled whole
+// (the shown frame's highlight shoulder would otherwise clip the lantern-lit
+// crests channel by channel into flat, chalky grey patches).
 export const SLATE_CLOSE = Object.freeze({
   tile: 6.6,
   second: Object.freeze({
@@ -123,10 +128,24 @@ export const SLATE_CLOSE = Object.freeze({
   calm: 0.9,
   near: Object.freeze([7, 24]),
   footprint: Object.freeze([0.8, 2]),
+  texels: 1024,
   // Crumbs: a cellular noise of `cell`-unit grains on the close soil's relief
   // (`height`, in relief-map units) and albedo (`albedo`), so it reads as
-  // crumbly earth; gone where a cell shrinks under `fade` pixels.
-  crumb: Object.freeze({ cell: 0.075, height: 1, albedo: 0.6, fade: Object.freeze([1.6, 4]) }),
+  // crumbly earth; gone where a cell shrinks under `fade` pixels. Neighbouring
+  // grains meet in a valley rounded by a smooth minimum (`round`: its
+  // sharpness), so no crease cuts a hard line along a lit crest, and their
+  // walls tilt at most toward a slope of `steep` (a soft limit on its
+  // tangent): near-vertical, the wall facing the lantern at each valley lit
+  // into a continuous 1-2 px pale rim about the cobble.
+  crumb: Object.freeze({
+    cell: 0.075,
+    height: 1,
+    albedo: 0.6,
+    fade: Object.freeze([1.6, 4]),
+    round: 12,
+    steep: 1,
+  }),
+  ceiling: 0.8,
 });
 
 // The far plain's own structure (the owner's pick of 2026-10-09, "detailed"):
@@ -171,9 +190,11 @@ export const SLATE_FAR = Object.freeze({
 // level over them), so edges follow the cracks. Puddles and the river
 // (SLATE_RIVER) are glassy, darker and calmer, catch the existing moon and
 // lantern lights, and mirror the night sky (the film's environment,
-// SLATE_WATER); the river, where the lantern's image lands, keeps its own
-// roughness and highlight (lantern), and zenith is the sky its mirror falls
-// back to without the environment.
+// SLATE_WATER); the river, where the lantern's image lands, and the stream
+// keep their own roughness and highlight (lantern), so the moon's glint on the
+// stream's ripples between its white water never flares into a flat white
+// patch, and zenith is the sky its mirror falls back to without the
+// environment.
 export const SLATE_PUDDLES = Object.freeze({
   zones: Object.freeze([
     Object.freeze({ anchor: "tree", deg: 185, dist: 8.0, radius: 1.6 }),
@@ -221,7 +242,9 @@ export const SLATE_RIVER_BED = Object.freeze({
 // reach[0] to reach[1] of the river's radius), in drifting patches (`patch`
 // cycles per unit), covering at most `cover` of the water's colour, at albedo
 // `albedo`. It is a lace of bubble rafts, the borders of cells `lace` per unit
-// ([along, across]) drifting with the current, warped by `warp` of a cell,
+// ([along, across]) drifting at `drift` of the current (as the leaves on it
+// do; at its whole speed its thin strands moved over a quarter of a cell a
+// frame and seemed to re-form every frame), warped by `warp` of a cell,
 // their lines `edge` of a cell thick from calm to churning water, gathered in
 // clumps (where the churn passes clump[0] to clump[1]) and broken by a noise
 // `broken` cells across; where the cells are too fine to draw it eases to
@@ -278,6 +301,7 @@ export const SLATE_STREAMS = Object.freeze({
     edge: Object.freeze([0.06, 0.24]),
     clump: Object.freeze([0.45, 0.9]),
     broken: 0.8,
+    drift: 0.5,
   }),
   // The channel (as SLATE_RIVER_BED, across the course: r is 1 on its banks,
   // half its width out): its water lies `level` below the lantern's foot, its
@@ -695,13 +719,13 @@ export const SLATE_LIGHT = Object.freeze({
 // The moon and the lantern light the film as water too: a sharper lobe each
 // (roughness, gain and a luminance knee that bounds it), so the moon glints
 // across the wet soil toward its side and the lantern's glints run in streaks
-// toward the eye, while the soil's own highlight stays clamped. Like the light
-// shafts' air, the water's mirror and glints (and the soil's relaxed sky
-// reflection) ease off behind the name and intro and behind About, text[0] of
-// them, over text[2] of the screen's smaller side about the name and intro and
-// text[3] about About (index.js measures the text: slateText, slateAbout);
-// there all the ground reflects, the water and the soil's own highlights (a
-// puddle's moon glint among them), then passes a luminance knee, text[1];
+// toward the eye, while the soil's own highlight stays clamped. The water's
+// mirror and glints (and the soil's relaxed sky reflection) ease off behind
+// the name and intro and behind About, text[0] of them, over text[2] of the
+// screen's smaller side about the name and intro and text[3] about About
+// (index.js measures the text: slateText, slateAbout); there all the ground
+// reflects, the water and the soil's own highlights (a puddle's moon glint
+// among them), then passes a luminance knee, text[1];
 // beside About so do the bark's highlights from the lantern and the crown's
 // fill (architecture.js, through SLATE_TEXT_GUARD). The knee is blended in
 // over the whole reach (slateTextKnee()), never scaled into its divisor, where
@@ -911,7 +935,8 @@ const PATH_LENGTH = glslNumber(
 );
 const SECOND = SLATE_TILING.second,
   DETAIL = SLATE_TILING.detail,
-  CLOSE = SLATE_CLOSE;
+  CLOSE = SLATE_CLOSE,
+  CLOSE_TEXEL = glslNumber(1 / SLATE_CLOSE.texels);
 const FAR = SLATE_FAR,
   FAR_SWATHE = FAR.swathes.cells
     .map((cell, i) => {
@@ -930,33 +955,47 @@ const FAR = SLATE_FAR,
 const CLOSE_PRE = `
       vec2 slateCU = vMudWorld.xz/${glslNumber(CLOSE.tile)}, slateCV = mat2(${CLOSE.second.turn.map(glslNumber)})*slateCU*${glslNumber(CLOSE.second.scale)}+${glslVec(CLOSE.second.offset)};
       float slateCW = smoothstep(.3, .7, slateNoise(vMudWorld.xz/${glslNumber(CLOSE.blendCell)})), slateCN = 1.-smoothstep(${CLOSE.near.map(glslNumber)}, length(vViewPosition));
-      float slateCG = mix(texture2D(slateGrit, slateCU).r, texture2D(slateGrit, slateCV).r, slateCW), slateCH = mix(texture2D(slateRelief, slateCU).r, texture2D(slateRelief, slateCV).r, slateCW);
-      vec2 slateKP = vMudWorld.xz/${glslNumber(CLOSE.crumb.cell)}, slateKI = floor(slateKP), slateKF = fract(slateKP);
+      float slateCHU = texture2D(slateRelief, slateCU).r, slateCHV = texture2D(slateRelief, slateCV).r;
+      float slateCG = mix(texture2D(slateGrit, slateCU).r, texture2D(slateGrit, slateCV).r, slateCW), slateCH = mix(slateCHU, slateCHV, slateCW);
+      // The relief's slope per world unit, from each lookup's next texels (the second's turned and scaled back).
+      vec2 slateCDH = mix(vec2(texture2D(slateRelief, slateCU+vec2(${CLOSE_TEXEL}, 0.)).r, texture2D(slateRelief, slateCU+vec2(0., ${CLOSE_TEXEL})).r)-slateCHU,
+        (vec2(texture2D(slateRelief, slateCV+vec2(${CLOSE_TEXEL}, 0.)).r, texture2D(slateRelief, slateCV+vec2(0., ${CLOSE_TEXEL})).r)-slateCHV)*mat2(${CLOSE.second.turn.map(glslNumber)})*${glslNumber(CLOSE.second.scale)}, slateCW)*${glslNumber(CLOSE.texels / CLOSE.tile)};
+      vec2 slateKP = vMudWorld.xz/${glslNumber(CLOSE.crumb.cell)}, slateKI = floor(slateKP), slateKF = fract(slateKP), slateKD = vec2(0.);
       float slateKW = slateCN*smoothstep(${CLOSE.crumb.fade.map(glslNumber)}, 1./max(length(fwidth(slateKP)), 1e-4)), slateK1 = 1.;
-      // Only where the crumbs show (near the lens, a cell over a few pixels).
+      // Only where the crumbs show (near the lens, a cell over a few pixels): the
+      // nearest grain by a smooth minimum, and its slope per world unit.
       if (slateKW > 0.) {
+        float slateKS = 0.;
         for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
           vec2 slateKG = vec2(float(i), float(j));
           vec3 slateKH = fract(vec3(slateKI+slateKG, slateKI.x+slateKG.x)*vec3(.1031, .103, .0973));
           slateKH += dot(slateKH, slateKH.yzx+33.33);
           vec2 slateKO = fract((slateKH.xx+slateKH.yz)*slateKH.zy)-slateKF+slateKG;
-          slateK1 = min(slateK1, dot(slateKO, slateKO));
+          float slateKE = exp(-${glslNumber(CLOSE.crumb.round)}*dot(slateKO, slateKO));
+          slateKS += slateKE;
+          slateKD += slateKE*slateKO;
         }
+        slateK1 = -log(slateKS)/${glslNumber(CLOSE.crumb.round)};
+        slateKD *= -2./(slateKS*${glslNumber(CLOSE.crumb.cell)});
       }
-      float slateCrumb = (1.-smoothstep(0., .6, slateK1))-.4;
+      float slateCrumb = (1.-smoothstep(0., .6, slateK1))-.4, slateKT = clamp(slateK1/.6, 0., 1.);
       slateCH += slateCrumb*${glslNumber(CLOSE.crumb.height)}*slateKW;
+      // The crumbs' own slope, its tangent eased toward SLATE_CLOSE.crumb.steep at most.
+      vec2 slateKG = 10.*slateKT*(1.-slateKT)*slateKD*${glslNumber(CLOSE.crumb.height)}*slateKW;
+      slateCDH -= slateKG/(1.+length(slateKG)*${glslNumber(CLOSE.relief / CLOSE.crumb.steep)});
       slateCG += slateCrumb*${glslNumber(CLOSE.crumb.albedo)}*slateKW;
       sampledDiffuseColor.rgb = mix(sampledDiffuseColor.rgb, mix(texture2D(map, vMapUv, ${glslNumber(CLOSE.blur)}).rgb, texture2D(map, slateUvB, ${glslNumber(CLOSE.blur)}).rgb, slateW)*(.93+.14*slateNoise(vMudWorld.xz/${glslNumber(SLATE_TILING.macroCell)})), ${glslNumber(CLOSE.calm)}*slateCN);
       `;
 const CLOSE_MAP = `
       diffuseColor.rgb *= 1.+(slateCG-.5)*${glslNumber(CLOSE.albedo)}*slateCN;`;
-// Its relief on the normal, from the height's screen derivatives (as three's
-// perturbNormalArb()), faded where a texel shrinks below a pixel and under water.
+// Its relief on the normal (as three's perturbNormalArb()), the height's change
+// across a pixel taken from its slope at that pixel (and the lookups' slowly
+// varying blend), faded where a texel shrinks below a pixel and under water.
 const CLOSE_NORMAL = `
-      float slateCF = slateCN*smoothstep(${CLOSE.footprint.map(glslNumber)}, 1./max(length(fwidth(slateCU))*1024., 1e-4))*(1.-slatePuddle);
+      float slateCF = slateCN*smoothstep(${CLOSE.footprint.map(glslNumber)}, 1./max(length(fwidth(slateCU))*${glslNumber(CLOSE.texels)}, 1e-4))*(1.-slatePuddle);
       vec3 slateSX = dFdx(-vViewPosition), slateSY = dFdy(-vViewPosition), slateR1 = cross(slateSY, normal), slateR2 = cross(normal, slateSX);
       float slateDet = dot(slateSX, slateR1);
-      vec2 slateDH = vec2(dFdx(slateCH), dFdy(slateCH))*${glslNumber(CLOSE.relief)}*slateCF;
+      vec2 slateDH = (vec2(dot(slateCDH, dFdx(vMudWorld.xz)), dot(slateCDH, dFdy(vMudWorld.xz)))+vec2(dFdx(slateCW), dFdy(slateCW))*(slateCHV-slateCHU))*${glslNumber(CLOSE.relief)}*slateCF;
       // The silt bar's ripple marks, across the flow (SLATE_BANKS.silt.ripple).
       float slateRipple = sin(6.2832*(slateStreamQ.y*${glslNumber(SLATE_BANKS.silt.ripple[0])}+.35*slateNoise(vec2(slateStreamQ.y*1.7, slateStreamQ.z*slateStreamQ.w*2.3))))*${glslNumber(SLATE_BANKS.silt.ripple[1])}*slateSilt*slateCN;
       slateDH += vec2(dFdx(slateRipple), dFdy(slateRipple));
@@ -1407,7 +1446,7 @@ ${SLATE_TEXT_GLSL}${LOOK_GLSL}${mistOn ? `uniform mat4 projectionMatrix;\n${MIST
       float slateStreamJoin, slateStreamR, slateStreamBend;
       vec4 slateStreamQ = slateStreamAt(vMudWorld.xz, slateStreamDir, slateStreamJoin, slateStreamR, slateStreamBend);
       float slatePuddle = smoothstep(-.04, .04, max(max(${PUDDLE_GLSL}*(${glslNumber(SLATE_PUDDLES.fill)}+.4*slateNoise(vMudWorld.xz*.9))-slateH, ${STREAM_LEVEL}), ${RIVER_LEVEL}))*(1.0-slateDry);
-      float slateLanternPuddle = slatePuddle*(1.0-smoothstep(1.0, 1.4, slateRiverR));
+      float slateLanternPuddle = slatePuddle*max(1.0-smoothstep(1.0, 1.4, slateRiverR), 1.0-smoothstep(1.0, 1.4, slateStreamR));
       slateWet = max(slateWet, slatePuddle);
       // The banks (SLATE_BANKS): the wet band beyond the waterline, and through the stream's bends its cut bank (outside) and silt bar (inside).
       float slateSide = clamp(2.*slateStreamQ.z, -1., 1.)*slateStreamBend;
@@ -1493,13 +1532,16 @@ ${SLATE_TEXT_GLSL}${LOOK_GLSL}${mistOn ? `uniform mat4 projectionMatrix;\n${MIST
           "#include <fog_fragment>",
           `
       gl_FragColor.rgb *= 1.0-slateCalm.x*(1.0-smoothstep(slateCalm.y, slateCalm.z, length(vViewPosition)));
+      // Near the lens the soil's brightest channel eases past SLATE_CLOSE.ceiling, the colour scaled whole, so a lit crest keeps
+      // its warmth rather than clipping channel by channel into a chalky grey.
+      { float slateCM = max(gl_FragColor.r, max(gl_FragColor.g, gl_FragColor.b)), slateCE = max(slateCM-${glslNumber(CLOSE.ceiling)}, 0.); gl_FragColor.rgb *= mix(1., (slateCM-slateCE+slateCE/(1.+slateCE/${glslNumber(CLOSE.ceiling)}))/max(slateCM, 1e-5), 1.-smoothstep(${CLOSE.near.map(glslNumber)}, length(vViewPosition))); }
       #ifdef USE_FOG
       float earthHorizon = max(${PLAIN_EDGE},
         smoothstep(230.0, 330.0, vFogDepth));
       vec3 earthAir = ${TERRAIN_HORIZON}*${glslNumber(HORIZON_AIR.ground)};
       earthHorizon *= smoothstep(1.0, 1.15, dot(gl_FragColor.rgb, ${LUMA})/dot(earthAir, ${LUMA}));
       gl_FragColor.rgb = mix(gl_FragColor.rgb, earthAir, earthHorizon);
-      #endif${LOOK_AFTER}${useWet && mistOn ? "\n      gl_FragColor.rgb = mistOver(gl_FragColor.rgb, vMudWorld);" : ""}
+      #endif${LOOK_AFTER}${useWet && mistOn ? "\n      gl_FragColor.rgb = mistGround(gl_FragColor.rgb, vMudWorld);" : ""}
       gl_FragColor.a = ${DEPTH_LAYER.ground};
     `,
         );

@@ -61,6 +61,7 @@ import {
   riverBedAt,
   plantRushes,
   PEBBLE_DOME,
+  FALLEN_LEAF,
   RUSHES,
   STREAMS,
   STREAM_LINES,
@@ -956,12 +957,14 @@ test("the lazy ground shading extends only the slate's program, under its own ke
       /slateWaterCover \*= 1\.0-slatePuddle\*slateZoneW;\nvec3 slateWaterRefl =/,
       "the water film's and the puddles' mirror give way to the zone's own",
     );
-    // The zone's mirror shows the night sky (the environment) at its sharpest,
-    // brighter in a lightning flash away from the text (film-light.js
-    // FLASH_GROUND), and the old horizon, fog and zenith sky only without it.
+    // The zone's mirror shows the night sky (the environment), at its sharpest in
+    // still water and a little rough where the currents move it (slateRough,
+    // RIVER_RIPPLE.rough), brighter in a lightning flash away from the text
+    // (film-light.js FLASH_GROUND), and the old horizon, fog and zenith sky only
+    // without it.
     assert.match(
       fragment,
-      /#ifdef USE_ENVMAP\s*vec3 slateSkyW = textureCubeUV\(envMap, slateR, 0\.0\)\.rgb\*envMapIntensity\*[\d.]+\*\(babelFlash\.y > 0\.0 \? 1\.0\+babelFlash\.y\*\(1\.0-slateBehindText\(\)\) : 1\.0\);\s*#else\s*vec3 slateSkyW = mix\(/,
+      /#ifdef USE_ENVMAP\s*vec3 slateSkyW = textureCubeUV\(envMap, slateR, [\d.]+\*slateRough\+[\d.]+\*slateRoughT\)\.rgb\*envMapIntensity\*[\d.]+\*\(babelFlash\.y > 0\.0 \? 1\.0\+babelFlash\.y\*\(1\.0-slateBehindText\(\)\) : 1\.0\);\s*#else\s*vec3 slateSkyW = mix\(/,
     );
     assert.match(fragment, /slatePuddle = mix\(slatePuddle, smoothstep\([^;]*\), slateZoneW\);/);
     assert.match(
@@ -975,7 +978,7 @@ test("the lazy ground shading extends only the slate's program, under its own ke
     );
     // The water normal (undulation and drips) is paid only in the water, after the lights.
     assert.ok(
-      fragment.indexOf("vec3 slateN = normalize(normal*mat3(viewMatrix));") >
+      fragment.indexOf("vec3 slateN = normalize(normal*mat3(viewMatrix))") >
         fragment.indexOf("if (slateWater > 0.0) {"),
     );
     assert.ok(
@@ -986,6 +989,17 @@ test("the lazy ground shading extends only the slate's program, under its own ke
     // environment cube, night-environment.js).
     assert.equal(count(fragment, "texture2D("), count(before.fragmentShader, "texture2D("));
     assert.equal(count(vertex, "texture2D("), count(before.vertexShader, "texture2D("));
+    // The tree in the water: its trunk tapering to the crotch and two limbs leaning
+    // apart above it, its edges soft (never under 1.5 pixels, softer the farther the
+    // tree stands from the water), never a box with level ends.
+    const { tree } = PUDDLE_MIRROR;
+    assert.ok(tree.radius[1] < tree.radius[0] && tree.lean[1] > 0 && tree.top[1] > tree.crotch[1]);
+    assert.ok(
+      fragment.includes(
+        "float slateTS = max(0.3+0.02*slateT, 1.5*slatePx*(slateView+slateT));\n    slateTrunk = max(max((1.0-smoothstep(-slateTS, slateTS, slateTD-mix(2.4, 1.9, clamp(slateTH/11.5, 0.0, 1.0))))",
+      ),
+    );
+    assert.ok(fragment.includes("abs(slateTD-1.1-0.55*max(slateTH-7.5, 0.0))"));
     // The river's current: ripples drawn out along the flow, drifting downstream
     // at RIVER.flow on the drips' clock (the same uniform, so they hold as the
     // drips do), easing out toward the shore; the finer octave fades out
@@ -996,11 +1010,94 @@ test("the lazy ground shading extends only the slate's program, under its own ke
         `vec2 slateFU = vec2(slateRiverQ.y-slateFlow*${RIVER.flow}, slateRiverQ.z);`,
       ),
     );
-    assert.match(
-      fragment,
-      /slateG \+= \(slateRiverDir\*slateFG\.x\+vec2\(-slateRiverDir\.y, slateRiverDir\.x\)\*slateFG\.y\)\*\(1\.0-smoothstep\(\.8, 1\.1, slateRiverR\)\);/,
+    assert.ok(
+      fragment.includes(
+        "float slateFS = 1.0-smoothstep(.8, 1.1, slateRiverR);\n      slateGC = (slateRiverDir*slateFG.x+slateFX*slateFG.y)*slateFS;\n      slateGS = (slateRiverDir*slateFC.x+slateFX*slateFC.y)*slateFS;",
+      ),
     );
     assert.match(fragment, /\*smoothstep\(1\.5, 3\.0, [\d.]+\/slateFP\);/);
+    // The stream's steeper ripples ease into the river's where it pours in, and the
+    // lantern's image takes none of the currents' tilt up or down, which would break
+    // it into stacked strips: it sways across the view with the river's coarse
+    // ripples alone (RIVER_RIPPLE.sway, slateGS); the sky keeps their whole tilt.
+    assert.ok(
+      fragment.includes(
+        `*slateStreamQ.x*mix(${RIVER_RIPPLE.mouth[2]}, 1.0, smoothstep(${RIVER_RIPPLE.mouth[0]}, ${RIVER_RIPPLE.mouth[1].toFixed(1)}, slateRiverR));`,
+      ),
+    );
+    assert.ok(RIVER_RIPPLE.sway > 1 && RIVER_RIPPLE.sway <= 4);
+    // A flatter view sways a small, far image as much as a near one (RIVER_RIPPLE.swayLow),
+    // and dims its level roof underside alike.
+    assert.ok(RIVER_RIPPLE.swayLow[0] > 0 && RIVER_RIPPLE.swayLow[1] > 1);
+    assert.ok(
+      fragment.includes(
+        `slateSWG = clamp(${RIVER_RIPPLE.swayLow[0]}/max(slateV.y, .02), 1.0, ${RIVER_RIPPLE.swayLow[1].toFixed(1)});`,
+      ),
+    );
+    assert.ok(fragment.includes("*slateSWG*dot(slateGS, slateSide)*slateSide;"));
+    assert.ok(fragment.includes("/slateSWG*exp(-pow2((ly-1.49)/(.02+slateAA.y)))"));
+    // The stream's white water drifts at STREAMS.foam.drift of its current, as the
+    // leaves on it do, so its thin lace travels downstream from frame to frame
+    // rather than re-forming every frame; its ripples keep the whole current.
+    assert.ok(STREAMS.foam.drift >= 0.4 && STREAMS.foam.drift < 1);
+    assert.ok(
+      fragment.includes(
+        `vec2 slateSU = vec2(slateStreamQ.y-slateFlow*${STREAMS.flow * STREAMS.foam.drift}, slateStreamQ.z*slateStreamQ.w), slateSF = `,
+      ),
+    );
+    assert.ok(
+      fragment.includes(
+        `vec2 slateSU = vec2(slateStreamQ.y-slateFlow*${STREAMS.flow}, slateStreamQ.z*slateStreamQ.w);`,
+      ),
+    );
+    const sway = fragment.indexOf(
+      `vec2 slateGI = slateG+${RIVER_RIPPLE.sway.toFixed(1)}*slateSWG*dot(slateGS, slateSide)*slateSide;\n    slateNI = normalize(mix(slateN, normalize(vec3(-slateGI.x, 1.0, -slateGI.y)), slateDeep));`,
+    );
+    assert.ok(
+      sway > 0 && sway < fragment.indexOf("slateG += slateGC+slateGT;"),
+      "the image takes no current's tilt but the sway",
+    );
+    // The moving water mirrors the sky a little rough, so the sky's fine strokes swept
+    // by its ripples never draw closed contour rings; still puddles mirror it sharp.
+    assert.ok(RIVER_RIPPLE.rough >= 0.1 && RIVER_RIPPLE.rough <= 0.2);
+    assert.ok(
+      fragment.includes(
+        `textureCubeUV(envMap, slateR, ${RIVER_RIPPLE.rough}*slateRough+${RIVER_RIPPLE.roughTilt}*slateRoughT).rgb`,
+      ),
+    );
+    assert.ok(fragment.includes("slateRough = slateFS;"));
+    assert.ok(fragment.includes("slateRough = max(slateRough, slateStreamQ.x);"));
+    // Where the stream's ripples are steepest (where it pours in) it mirrors the sky up
+    // to RIVER_RIPPLE.roughTilt rougher, so its steep ripples draw no crisp rings there.
+    assert.ok(RIVER_RIPPLE.roughTilt > 0 && RIVER_RIPPLE.roughTilt <= 0.4);
+    assert.ok(fragment.includes("slateRoughT = min(length(slateSG)/.08, 1.0)*slateStreamQ.x;"));
+    // The image's silhouette eases each step of its width, so its eave is never a
+    // rectangular tab; its lit posts and roof fade at the cage's edge rather than stop
+    // at a line; the roof's lit underside is dimmed (LANTERN_IMAGE.round, roof).
+    assert.ok(fragment.includes(`float slateHR = ${LANTERN_IMAGE.round}, slateHT = `));
+    assert.ok(
+      fragment.includes(
+        "+.155*smoothstep(1.5-slateHR, 1.5+slateHR, ly), slateHT, smoothstep(1.68-slateHR, 1.68+slateHR, ly));",
+      ),
+    );
+    assert.ok(fragment.includes("*(1.0-smoothstep(.44-slateAA.x, .44+slateAA.x, slateAX));"));
+    assert.doesNotMatch(fragment, /step\(slateAX, \.44\)/);
+    assert.ok(LANTERN_IMAGE.roof > 0.3 && LANTERN_IMAGE.roof < 1);
+    assert.ok(
+      fragment.includes(
+        `+${+(0.12 * LANTERN_IMAGE.roof).toFixed(4)}/slateSWG*exp(-pow2((ly-1.49)/(.02+slateAA.y)))`,
+      ),
+    );
+    assert.ok(
+      fragment.includes("slateR = reflect(-slateV, slateN), slateRI = reflect(-slateV, slateNI);"),
+    );
+    const image = fragment.slice(fragment.indexOf("vec2 slateLO = slateP.xz-slateLampW.xz;"));
+    assert.ok(image.includes("float slateLT = -dot(slateLO, slateRI.xz)/slateRAI;"));
+    assert.doesNotMatch(
+      image.slice(0, image.indexOf("slateFlamePk = ")),
+      /slateR\.|slateRA\b/,
+      "the image reads only its own ray",
+    );
     assert.equal(after.uniforms.slateFlow, dripClock().uniform, "the drips' own clock");
     // Gentle: slow, the ripples drawn out along the flow, their tilt below the drips'.
     assert.ok(RIVER.flow > 0 && RIVER.flow <= 0.4);
@@ -1414,7 +1511,7 @@ test("the shaded ground switches early in the canvas's fade-in, on a still frame
     await clock.step(2);
     assert.equal(slow.material.customProgramCacheKey(), "moonlit-slate-v3", "not late in the fade");
     // Where programs cannot link in parallel the switch's draw links them: never
-    // in the fade, which the light shafts' own links need.
+    // in the fade.
     const serialFade = linkRig({ revealed: true, parallel: false });
     reveal();
     settleRoots(
@@ -1555,7 +1652,7 @@ test("the film terrain builds in idle slices and arrives only where it cannot sh
     ])
       assert.equal(terrainLift(arrived)(x, z), terrainLift(direct)(x, z));
     // Before the reveal it arrives as soon as it is built (in idle slices
-    // then: terrainSlicing, below).
+    // then, below).
     names.clear();
     tour.transition.cut = false;
     const early = await createEarthGeometry(base, undefined, rendering, tour);
@@ -1568,7 +1665,7 @@ test("the film terrain builds in idle slices and arrives only where it cannot sh
   }
 });
 
-test("while the terrain slices it holds the shafts off, idles while the canvas is hidden, rushes while it fades in, and stops when disposed", async () => {
+test("while the terrain slices it idles while the canvas is hidden, rushes while it fades in, and stops when disposed", async () => {
   const idle = globalThis.requestIdleCallback,
     style = globalThis.getComputedStyle;
   let idles = 0;
@@ -1589,20 +1686,9 @@ test("while the terrain slices it holds the shafts off, idles while the canvas i
       invalidateShadows() {},
     };
     // Hidden canvas (the chunk arrives well before a warm load's reveal): the
-    // build takes idle time only, so the reveal's own work goes first, and
-    // holds the shafts' promise until it is built.
-    const hidden = createEarthGeometry(base, undefined, rendering, tour);
-    const slicing = rendering.terrainSlicing;
-    assert.ok(slicing instanceof Promise, "light-shafts.js sees the build");
-    let released = false;
-    slicing.then(() => {
-      released = true;
-    });
-    const geometry = await hidden;
+    // build takes idle time only, so the reveal's own work goes first.
+    const geometry = await createEarthGeometry(base, undefined, rendering, tour);
     assert.ok(geometry?.attributes.slateRoot, "it lands at once while hidden");
-    assert.equal(rendering.terrainSlicing, null);
-    await Promise.resolve();
-    assert.ok(released, "and lets the shafts go");
     assert.ok(idles > 3, `${idles} idle slices before the reveal, none back to back`);
     // Fading in over the title card: the build rushes, slices back to back.
     names.add("is-ready");
@@ -1621,8 +1707,7 @@ test("while the terrain slices it holds the shafts off, idles while the canvas i
     const later = await settled;
     assert.ok(idles > 3, `${idles} idle slices after the fade`);
     tour.transition.cut = false;
-    // Disposed first: the build stops and resolves to nothing; the shafts
-    // are let go.
+    // Disposed first: the build stops and resolves to nothing.
     let gone = false;
     const cancelled = await createEarthGeometry(
       base,
@@ -1632,7 +1717,6 @@ test("while the terrain slices it holds the shafts off, idles while the canvas i
       () => gone || !(gone = true),
     );
     assert.equal(cancelled, undefined);
-    assert.equal(rendering.terrainSlicing, null);
     for (const each of [geometry, later]) each.dispose();
   } finally {
     if (idle) globalThis.requestIdleCallback = idle;
@@ -2007,7 +2091,7 @@ test("sparse dark litter and small grey stones lie among the roots, clear of the
     );
   }
   assert.ok(
-    litterVertices / 3 > 300 && litterVertices / 3 < 1400,
+    litterVertices / 3 > 300 && litterVertices / 3 < 3000,
     `${litterVertices / 3} triangles`,
   );
   // The small stones: among the roots and about the trunk's base, clear of
@@ -2021,7 +2105,26 @@ test("sparse dark litter and small grey stones lie among the roots, clear of the
   const [fineStart, fineEnd] = litter.userData.fine;
   assert.equal(fineEnd, p.count);
   const perStone = (fineStart - litterVertices) / stones.length;
-  assert.equal(perStone, 240, "a smooth icosphere each");
+  assert.equal(perStone, 960, "a smooth icosphere each");
+  // Rounded, never a faceted nugget: no face turns more than 40 degrees from
+  // the smooth normals at its corners (the once-subdivided sphere's bumps
+  // turned some by 60).
+  const normal = litter.attributes.normal;
+  for (let i = litterVertices; i < fineStart; i += 3) {
+    const [a, b, q] = [i, i + 1, i + 2].map((v) => [p.getX(v), p.getY(v), p.getZ(v)]),
+      u = b.map((v, k) => v - a[k]),
+      w = q.map((v, k) => v - a[k]),
+      face = [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]],
+      length = Math.hypot(...face);
+    for (let k = 0; k < 3; k++) {
+      const cos =
+        (face[0] * normal.getX(i + k) +
+          face[1] * normal.getY(i + k) +
+          face[2] * normal.getZ(i + k)) /
+        length;
+      assert.ok(cos > Math.cos((40 * Math.PI) / 180), `stone face ${i} is faceted`);
+    }
+  }
   stones.forEach(([x, z, width], k) => {
     assert.ok(width >= S.size[0] && width <= S.size[1], `stone ${k} is ${width} wide`);
     assert.ok(x > LX && z > LZ && x < LX + (cols - 1) * pitch && z < LZ + (rows - 1) * pitch);
@@ -2069,21 +2172,35 @@ test("the fine litter (leaves, clods, grit) lies on the foreground soil, never u
   const [start, end] = litter.userData.fine,
     p = litter.attributes.position,
     c = litter.attributes.color;
-  // All of them found room; every piece is a leaf (8 triangles) or a rounded
-  // dome (PEBBLE_DOME: 3 triangles a side), smooth-shaded so none reads as a
-  // faceted pyramid.
+  // All of them found room; every piece is a leaf (a curved outline,
+  // FALLEN_LEAF.outline) or a rounded dome (PEBBLE_DOME: 3 triangles a side,
+  // more sides on a piece the lens can come close to and more rings on the
+  // largest), smooth-shaded so none reads as a faceted pyramid.
   const pieces = litter.userData.finePieces,
     wanted = F.counts.leaves + F.counts.clods + F.counts.gravel;
   assert.equal(pieces.length, wanted);
   assert.equal(pieces[0], start);
   const lift = Math.max(F.leafSize[1] * 0.4, F.clod[1]) + 0.02,
-    n = litter.attributes.normal;
+    n = litter.attributes.normal,
+    leaf = FALLEN_LEAF.outline.length * 4 * 3,
+    profiled = (sides) => sides * (1 + 2 * PEBBLE_DOME.profile.length) * 3,
+    full = profiled(PEBBLE_DOME.smooth);
+  assert.equal(leaf, 60);
   let domes = 0;
   pieces.forEach((first, k) => {
     const end = pieces[k + 1] ?? litter.userData.fine[1],
       count = end - first;
-    assert.ok(count === 24 || count === PEBBLE_DOME.sides * 9, `piece ${k} has ${count} vertices`);
-    if (count !== 24) domes++;
+    assert.ok(
+      [
+        leaf,
+        PEBBLE_DOME.sides * 9,
+        PEBBLE_DOME.midSides * 9,
+        profiled(PEBBLE_DOME.round),
+        full,
+      ].includes(count),
+      `piece ${k} has ${count} vertices`,
+    );
+    if (count !== leaf) domes++;
     let x = 0,
       z = 0;
     for (let i = first; i < end; i++) {
@@ -2103,6 +2220,41 @@ test("the fine litter (leaves, clods, grit) lies on the foreground soil, never u
     }
   });
   assert.equal(domes, F.counts.clods + F.counts.gravel);
+  // A piece the lens can come close to (a clod, the coarser grit) is round and
+  // follows its ellipsoid's curve (PEBBLE_DOME.profile), never a cone; the largest
+  // take more points; mid-size grit takes more than six; the finest keeps six.
+  const size = (first, k) => (pieces[k + 1] ?? litter.userData.fine[1]) - first,
+    round = pieces.filter((first, k) =>
+      [profiled(PEBBLE_DOME.round), full].includes(size(first, k)),
+    ).length,
+    fuller = pieces.filter((first, k) => size(first, k) === full).length,
+    middling = pieces.filter((first, k) => size(first, k) === PEBBLE_DOME.midSides * 9).length;
+  assert.ok(PEBBLE_DOME.full <= PEBBLE_DOME.large && PEBBLE_DOME.widest > PEBBLE_DOME.full);
+  assert.ok(round > F.counts.clods * 0.9 && round < domes / 2, `${round} round domes`);
+  assert.ok(fuller > F.counts.clods / 4 && fuller < round, `${fuller} widest domes`);
+  assert.ok(middling > 0 && middling < domes - round, `${middling} mid-size grains`);
+  // A leaf's rim is raised less toward its stalk and tip (FALLEN_LEAF.ends), so a
+  // low lens never sees a long dark underside along it.
+  assert.ok(FALLEN_LEAF.ends > 1 && FALLEN_LEAF.ends <= 2);
+  // The leaves lie damp and nearly flat, and shade over their curl: normals leaning
+  // out from the middle, the rim darker than the midrib, never a flat card.
+  assert.ok(FALLEN_LEAF.lie > 0 && FALLEN_LEAF.lie < 1 && FALLEN_LEAF.rim < 1);
+  let leaves = 0;
+  pieces.forEach((first, k) => {
+    if ((pieces[k + 1] ?? litter.userData.fine[1]) - first !== leaf) return;
+    leaves++;
+    let lean = 0,
+      lo = Infinity,
+      hi = 0;
+    for (let i = first; i < first + leaf; i++) {
+      lean = Math.max(lean, 1 - n.getY(i));
+      lo = Math.min(lo, c.getX(i));
+      hi = Math.max(hi, c.getX(i));
+    }
+    assert.ok(lean > 0.02, `leaf ${k} shades flat`);
+    assert.ok(lo < hi * (FALLEN_LEAF.rim + 0.01), `leaf ${k} keeps one tone`);
+  });
+  assert.equal(leaves, F.counts.leaves);
   litter.dispose();
   terrain.dispose();
 });
@@ -2329,7 +2481,7 @@ test("the mirrored flame takes the flame module's draught: height and lean, none
     );
     assert.match(
       fragment,
-      /fx = abs\(slateLX-\(slateFlame\.z\*slateR\.z-slateFlame\.w\*slateR\.x\)\/sqrt\(slateRA\)\*fr\*fr\)/,
+      /fx = abs\(slateLX-\(slateFlame\.z\*slateRI\.z-slateFlame\.w\*slateRI\.x\)\/sqrt\(slateRAI\)\*fr\*fr\)/,
       "and its lean grows up the flame",
     );
     assert.match(fragment, /step\(\.01, slateFlame\.x\)/, "no flame module, no flame image");
@@ -2751,12 +2903,20 @@ test("the water's banks: gravel bars, reeds and debris stay out of the water, of
   assert.deepEqual(banks.attributes.position.array, again.attributes.position.array);
   const p = banks.attributes.position,
     c = banks.attributes.color;
-  assert.equal(banks.userData.gravel, WATER_BANKS.gravel.count);
-  assert.ok(banks.userData.debris > WATER_BANKS.debris.count * 0.8);
+  // None lies in the river: the few that would are left out.
+  assert.ok(
+    banks.userData.gravel > WATER_BANKS.gravel.count * 0.9 &&
+      banks.userData.gravel < WATER_BANKS.gravel.count,
+  );
+  assert.ok(
+    banks.userData.debris > WATER_BANKS.debris.count * 0.8 &&
+      banks.userData.debris <
+        WATER_BANKS.debris.count + STREAMS.stones.list.length * WATER_BANKS.debris.eddy,
+  );
   // A share of whole pieces for balanced (estate-ground-detail.js).
   assert.deepEqual(banks.userData.fine, [0, p.count]);
   assert.equal(banks.userData.finePieces[0], 0);
-  assert.ok(p.count / 3 < 36000, `${p.count / 3} triangles`);
+  assert.ok(p.count / 3 < 78000, `${p.count / 3} triangles`);
   const pieces = banks.userData.finePieces;
   let inWater = 0;
   for (let k = 0; k < pieces.length; k++) {
@@ -2768,9 +2928,19 @@ test("the water's banks: gravel bars, reeds and debris stay out of the water, of
       Math.hypot(x - LANTERN_FOOT.x, z - LANTERN_FOOT.z) > WATER_BANKS.gravel.lantern - 0.15,
     );
     assert.equal(rootCovered(x, z), false, `piece ${k} under a root`);
-    if (streamRadius(x, z) < 0.8 && riverRadius(x, z) < 0.8) inWater++;
+    // Its middle: no pebble, leaf or twig lies in the river.
+    const end = pieces[k + 1] ?? p.count;
+    let mx = 0,
+      mz = 0;
+    for (let v = i; v < end; v++) {
+      mx += p.getX(v) / (end - i);
+      mz += p.getZ(v) / (end - i);
+    }
+    assert.ok(riverRadius(mx, mz) >= WATER_BANKS.gravel.shore - 0.01, `piece ${k} in the river`);
+    if (streamRadius(mx, mz) < 0.75 || riverRadius(mx, mz) < 1) inWater++;
   }
-  // Only the eddy leaves and twigs behind the stones float on the stream.
+  // Only the eddy leaves and twigs behind the stones float, on the stream (the
+  // waterline's lie at its edge), and nothing on the river.
   assert.ok(
     inWater <= STREAMS.stones.list.length * WATER_BANKS.debris.eddy,
     `${inWater} in the water`,
@@ -2947,7 +3117,7 @@ test("the river runs through the set: today's reach past the lantern, wider out 
   const shader = PHYSICAL();
   material.onBeforeCompile(shader);
   shadeSlateGround(shader);
-  assert.ok(shader.fragmentShader.includes("*smoothstep(1.5, 3.0, 0.625/slateFP)+"));
+  assert.ok(shader.fragmentShader.includes("float slateFF = smoothstep(1.5, 3.0, 0.625/slateFP);"));
   assert.match(
     shader.fragmentShader,
     /slateP = mix\(slateP, vMudWorld, smoothstep\(14\.0, 28\.0, length\(vMudWorld\.xz-vec2\(50\.92, ?33\.36\)\)\)\);/,

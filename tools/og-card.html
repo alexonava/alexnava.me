@@ -1,8 +1,9 @@
 <!doctype html>
 <!--
   Source for the 1200x630 social card /og.png. Not published; it reads the repo fonts and its
-  backdrop, tools/og-card-backdrop.webp (a 1600x900 still of the live scene's opening shot, The
-  watch, with every page layer but the canvas hidden, kept here only for this card), through
+  backdrop, tools/og-card-backdrop.webp (the live scene's opening shot, The watch, from a 1600x900
+  still with every page layer but the canvas hidden, cropped to the picture between the film's
+  widescreen bars, 1600x670; kept here only for this card), through
   relative URLs. Regenerate from the repository root after a backdrop refresh (msedge returns
   before the file is written, so wait for it, e.g. PowerShell Start-Process -Wait; any headless
   Chromium with the same flags works):
@@ -11,10 +12,10 @@
       --user-data-dir=<scratch>\edge-profile --screenshot=<scratch>\og-raw.png
       file:///<repo>/tools/og-card.html
     magick <scratch>\og-raw.png -alpha off -kmeans 224 -unique-colors <scratch>\og-pal.png
-    magick <scratch>\og-raw.png -alpha off -dither FloydSteinberg -define dither:diffusion-amount=58%
+    magick <scratch>\og-raw.png -alpha off -dither FloydSteinberg -define dither:diffusion-amount=74%
       -remap <scratch>\og-pal.png -strip -define png:compression-level=9 PNG8:public/og.png
   The dither hides the palette's banding in the night's gradients: use the largest amount that
-  keeps the file at or under 300 KB (58% gave 298 KB with the Meshy mountains and the glowing star; the size does not grow evenly with the amount, so try the neighbours). test/hosting.test.mjs
+  keeps the file at or under 300 KB (74% gave 298 KB with the film look and the painted sky; the size does not grow evenly with the amount, so try the neighbours). test/hosting.test.mjs
   holds public/og.png opaque, exactly 1200x630 and at most 300 KB. Re-scrape it with LinkedIn Post
   Inspector after the release.
 -->
@@ -53,7 +54,7 @@
         width: 1200px;
         height: 630px;
         overflow: hidden;
-        /* The 1600x900 backdrop covers at 0.75 scale; the vertical slack keeps the roof clear of the top. */
+        /* The 1600x670 backdrop covers at about 0.94 scale, its sides trimmed evenly. */
         background: #0c1016 url("og-card-backdrop.webp") center 30% / cover no-repeat;
       }
 

@@ -100,10 +100,10 @@ test("staged builds retain the last good payload after errors and keep prior has
 test("watch builds retain an open page's split scene chunks until a full build", async (t) => {
   const root = await fixture(t);
   const output = path.join(root, "output");
-  // A page still showing an older entry may lazily import its light-shafts chunk.
+  // A page still showing an older entry may lazily import its lantern-flame chunk.
   const prepare = (hash) => async (directory) => {
     await mkdir(path.join(directory, "scripts"));
-    for (const name of [`scene.${hash}`, `scene.shared.${hash}`, `scene.light-shafts.${hash}`]) {
+    for (const name of [`scene.${hash}`, `scene.shared.${hash}`, `scene.lantern-flame.${hash}`]) {
       await writeFile(path.join(directory, "scripts", `${name}.js`), hash);
     }
     await writeFile(path.join(directory, "index.html"), hash);
@@ -118,15 +118,15 @@ test("watch builds retain an open page's split scene chunks until a full build",
   assert.deepEqual((await readdir(path.join(output, "scripts"))).sort(), [
     "scene.aaaaaaaa.js",
     "scene.bbbbbbbb.js",
-    "scene.light-shafts.aaaaaaaa.js",
-    "scene.light-shafts.bbbbbbbb.js",
+    "scene.lantern-flame.aaaaaaaa.js",
+    "scene.lantern-flame.bbbbbbbb.js",
     "scene.shared.aaaaaaaa.js",
     "scene.shared.bbbbbbbb.js",
   ]);
   await publishBuild({ projectRoot: root, outputDirectory: output, prepare: prepare("cccccccc") });
   assert.deepEqual((await readdir(path.join(output, "scripts"))).sort(), [
     "scene.cccccccc.js",
-    "scene.light-shafts.cccccccc.js",
+    "scene.lantern-flame.cccccccc.js",
     "scene.shared.cccccccc.js",
   ]);
 });

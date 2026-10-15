@@ -20,7 +20,7 @@ import {
   referenceKeep,
   skyDirection,
 } from "../src/scene/lightning.js";
-import { CLOUD_RESHAPE, FLASH_REFERENCE } from "../src/scene/estate-sky.js";
+import { CLOUD_RESHAPE, FLASH_REFERENCE, FLASH_SKY } from "../src/scene/estate-sky.js";
 import {
   FLASH_GROUND,
   FLASH_UNIFORMS,
@@ -216,7 +216,7 @@ function lightningRig({
 } = {}) {
   const sky = skyUniforms();
   const parent = new Group();
-  const state = { shot, film: true };
+  const state = { shot, film: true, cutIn: Infinity };
   const grey = { r: 1, g: 1, b: 1 };
   const lights = {
     hemisphere: { intensity: 0.5, color: grey },
@@ -231,6 +231,7 @@ function lightningRig({
     sky,
     film: () => state.film,
     shot: () => state.shot,
+    cutIn: () => state.cutIn,
     profile: { tier },
     config: { ...LIGHTNING, forceAt, ...rest },
     date,
@@ -328,6 +329,19 @@ test("a flash beside the frame lights the subjects from its side", () => {
     "the light comes from the flash's side, not the fill's",
   );
   rig.lightning.dispose();
+});
+
+test("a bolt's segments end in round caps, so its bends join without nubs", () => {
+  const glsl = flat(source("src/scene/lightning.js"));
+  // Each quad still overhangs its ends by .35 of its halo, but past an end the distance
+  // counts as across it, so the core and the glow round off there.
+  assert.ok(glsl.includes("a.xy+=(vec2(-d.y,d.x)*aInfo.x+d*end*.35)*w/uViewport*a.w;"));
+  assert.ok(glsl.includes("vAlong=end>0.?len+w*.35:-w*.35; vLength=len;"));
+  assert.ok(glsl.includes("px=length(vec2(px,max(max(-vAlong,vAlong-vLength),0.)));"));
+  assert.ok(
+    glsl.indexOf("px=length(vec2(px,") < glsl.indexOf("float c=(exp(-px*px/(core*core))"),
+    "before the profile",
+  );
 });
 
 test("a bolt's leader grows down before its first stroke", () => {
@@ -557,6 +571,34 @@ test("every lit film material takes the flash, and none of the scene's lights mo
   assert.ok(!flat(source("src/scene/lightning.js")).includes("RIM_UNIFORMS"));
 });
 
+test("a flash dims to nothing by a tour cut's capture, so the kept frame never holds one", () => {
+  const at = (cutIn) => {
+    const rig = lightningRig({ forceAt: [{ at: 1, u: 0.7, v: 0.6, strength: 1 }] });
+    rig.state.cutIn = cutIn;
+    rig.step(1);
+    return rig.lightning.state.level;
+  };
+  assert.ok(LIGHTNING.cutFade > 0 && LIGHTNING.cutFade < 1);
+  assert.ok(at(Infinity) > 0.99, "a hold's flash is whole");
+  assert.ok(at(LIGHTNING.cutFade * 2) > 0.99, "and whole until the fade begins");
+  const half = at(LIGHTNING.cutFade / 2);
+  assert.ok(half > 0.3 && half < 0.7, `half way, ${half}`);
+  assert.equal(at(0), 0, "nothing at the capture");
+  // The bolt's strokes and leader dim with it.
+  const bolt = (cutIn, step = 1) => {
+    const rig = lightningRig({ forceAt: [{ at: 1, u: 0.7, v: 0.6, bolt: true, strength: 1 }] });
+    rig.state.cutIn = cutIn;
+    rig.step(step);
+    return rig.bolt.material.uniforms.uLevel.value;
+  };
+  assert.ok(bolt(Infinity) > 1, "a hold's bolt is whole");
+  assert.ok(Math.abs(bolt(LIGHTNING.cutFade / 2) - bolt(Infinity) / 2) < 0.05 * bolt(Infinity));
+  assert.equal(bolt(0), 0, "no stroke at the capture");
+  const leaderAt = 1 - LIGHTNING.bolt.leader / 2;
+  assert.ok(bolt(Infinity, leaderAt) > 0, "the leader grows down");
+  assert.equal(bolt(0, leaderAt), 0, "nor a leader");
+});
+
 test("the sky draws the flash in the banks, off the crop and the text, never in the environment", () => {
   const sky = flat(source("src/scene/estate-sky.js"));
   assert.ok(sky.includes("if(uFlash.w>0.){"), "the shell's glow costs nothing between flashes");
@@ -568,6 +610,15 @@ test("the sky draws the flash in the banks, off the crop and the text, never in 
     ),
   );
   assert.ok(sky.includes("*(1.-max(cloudText,1.-smoothstep(0.,uFlashTone.w,length(fa))))"));
+  // The open sky lifts only in the banks' soft edges (near their cover threshold, times
+  // the cover), so the cel step never cuts a lone disc or a slab of light out of clear sky.
+  assert.ok(
+    sky.includes(
+      "col+=uFlashTone.rgb*fl*fg*uFlashGlow.z*smoothstep(${glslFloat(FLASH_SKY.near[0])},${glslFloat(FLASH_SKY.near[1])},d)*cover;",
+    ),
+  );
+  assert.equal(FLASH_SKY.near[1], 0.548, "full at the banks' cover threshold");
+  assert.ok(FLASH_SKY.near[0] > 0.3 && FLASH_SKY.near[0] < FLASH_SKY.near[1]);
   assert.ok([w0, w1, w2, w3].every((v) => Number.isFinite(Number(v))));
   const environment = flat(source("src/scene/night-environment.js"));
   assert.ok(environment.includes("uFlash: { value: new Vector4(0, 1, 0, 0) }"));
@@ -599,6 +650,13 @@ test("index.js wires the lightning in film, by shot, before the first warm-up", 
   assert.ok(registered < index.indexOf('warmShaders("scene");'), "its bolt links in the warm-up");
   assert.ok(index.includes("film: () => filmActive,"));
   assert.ok(index.includes("shot: () => cinematic.shot?.name ?? null,"));
+  // The tour's time to its next capture (LIGHTNING.cutFade), Infinity without one.
+  assert.ok(index.includes("cutIn: () => tourCutIn,"));
+  assert.ok(
+    index.includes(
+      "tourCutIn = cameraTour?.running && tourPhase !== null ? Math.max(0, (1 - tourPhase) * cameraTour.state.dwell) : Infinity;",
+    ),
+  );
   assert.ok(index.includes("sky: skyShell.material.uniforms,"));
   assert.ok(index.includes("textGuard: groundContacts,"));
   assert.ok(index.includes("if (qualityDebug) qualityDebug.lightning = lightning.state;"));

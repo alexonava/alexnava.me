@@ -129,10 +129,10 @@ export const ENVIRONMENT_ROLES = Object.freeze({
 // wet, muddy base caught the lantern in a warm glint beside the small, dim
 // label, the brightest pixel of its backdrop. Behind the name and intro, large
 // and bright, the bark keeps its highlights unless a shot asks
-// (BARK_TEXT_GLINT). After the lights (where the light shafts' gobo adds its
-// own, light-shafts.js) the point lights' highlight is taken again as
-// RE_Direct_Physical takes it, and only what the knee removes comes off; away
-// from About nothing runs. Beside About the moon's broad sheen stays as it is.
+// (BARK_TEXT_GLINT). After the lights the point lights' highlight is taken
+// again as RE_Direct_Physical takes it, and only what the knee removes comes
+// off; away from About nothing runs. Beside About the moon's broad sheen stays
+// as it is.
 export const BARK_TEXT_LIGHTS = `float babelBehind = slateBehindAbout(vSlateClip.xy/vSlateClip.w*.5+.5);
 if (babelBehind > 0.0) {
   vec3 babelPoint = vec3(0.0);
@@ -155,7 +155,8 @@ if (babelBehind > 0.0) {
 // brightest glints behind their text: Lantern study's lantern on a root beside
 // the name (4.67:1 at 1920x1080, the end of the push-in) and Root and lantern's
 // moon on a root under the intro's end (4.32:1 at 1440x900, the start of the
-// pull-back). At 0, every other shot, nothing runs.
+// pull-back); Close-up's a twig's one-pixel sparkle behind the intro on the small
+// window (5.25:1 at 599x499). At 0, every other shot, nothing runs.
 export const BARK_TEXT_GLINT = `float babelGlintBehind = babelGlint*slateBehind(slateText, vSlateClip.xy/vSlateClip.w*.5+.5, ${GLINT.reach.toFixed(2)});
 if (babelGlintBehind > 0.0) reflectedLight.directSpecular = slateTextKnee(reflectedLight.directSpecular, babelGlintBehind);
 `;
@@ -350,7 +351,7 @@ roughnessFactor = mix(roughnessFactor, ${ROOT_MOSS.roughness.toFixed(2)}, babelM
     };
     material.userData.babelGrade = { role, uniforms };
     material.customProgramCacheKey = () =>
-      `babel-estate-material-v9-${role}-${roughnessFloor}-${roughnessCeiling}-${directRoughness}${guarded || stoneGuarded ? "-text" : ""}`;
+      `babel-estate-material-v10-${role}-${roughnessFloor}-${roughnessCeiling}-${directRoughness}${guarded || stoneGuarded ? "-text" : ""}`;
     const rimmed = role === "tower" || role === "tree";
     material.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, uniforms);

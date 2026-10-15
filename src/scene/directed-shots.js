@@ -38,6 +38,53 @@ const AFTER_RAIN = Object.freeze({
   mist: Object.freeze({ color: Object.freeze([0.27, 0.26, 0.29]), amount: 0.45 }),
   gloss: Object.freeze({ film: 0.32, gain: 1.9, cool: 0 }),
 });
+// Portrait on upright and squat screens: the tree on the lower third, open sky above it, at
+// its own size (no tilt) and pushed in without the sideways truck. The tall frame reaches
+// high into the sky, clear at the base's -72 degrees ("for this one the sky cannot be
+// seen"), so it turns toward the banks (the owner's pick of 2026-10-14, -38, then -40).
+const PORTRAIT_UPRIGHT = Object.freeze({
+  move: Object.freeze({
+    dolly: Object.freeze([1.06, 0.94]),
+    crane: Object.freeze([0, 0.08]),
+    ease: 0.6,
+  }),
+  margin: 0.93,
+  tilt: null,
+});
+// Phones (the owner's rule of 2026-10-15: the lantern first): at -41.75 with a quarter-degree
+// orbit, the tree a little left of centre, the camera looks from higher (0.38 of the tree's
+// height, the base's 0.12 elsewhere) over the root at the lantern, so its glass and flame stand
+// clear of the root through the whole push, the root's edge 2 CSS px or more below the flame
+// (from 0.12 the root hid the foot and the lower glass all push and the flame lay on its edge
+// at the start). No snow meets a side edge (orbiting on to -40.25 a far cap did at the end;
+// further round a snowy horn meets the left edge, and from about -48 it rises behind the crown).
+// The far range's small snowy tips (the backdrop rings' near 137 degrees) pass behind the trunk
+// and the lower crown through the push: holding them off it would carry the lantern behind the
+// root or the horn onto the edge. (An orbit of exactly 2 would also turn on the phone text
+// band, which index.js gives arc-2 shots.)
+const PORTRAIT_PHONE = Object.freeze({
+  ...PORTRAIT_UPRIGHT,
+  anchor: Object.freeze([0.39, 0.66]),
+  margin: 0.97,
+  height: 0.38,
+  arc: 0.25,
+  azimuth: -41.75,
+});
+// Its wider frames (tablets, portrait monitors, squat windows) reach further round either side
+// of the tree, so they turn to -43.5 and orbit a degree, the tree right of centre: the snowy
+// horn on the left stands whole inside the frame, its foot clear of the edge, and no other
+// snow meets an edge through the push (from -40 their edges cut the horn or a summit on the
+// right), the horn never reaches behind the crown (from about -44.5 it does), and the lantern
+// stays clear; they keep the base's height and the upright fit. Squat windows stand half a
+// degree nearer (-43) and a little left (0.58), so a far ring's snowy cap stays inside their
+// right edge at the start (at -43.5 the edge cut it).
+const PORTRAIT_WIDE = Object.freeze({
+  azimuth: -43.5,
+  arc: 1,
+  anchor: Object.freeze([0.6, 0.66]),
+  margin: 0.93,
+  height: 0.12,
+});
 export const DIRECTED_SHOTS = {
   tower: [
     {
@@ -55,11 +102,9 @@ export const DIRECTED_SHOTS = {
       ...GIANT,
       move: { zoom: [46, 36], dollyZoom: true, tilt: GIANT_MOVE.tilt, ease: 0.6 },
       // One night (the owner's pick of 2026-10-12): the lookout is a dark shape against the
-      // sky (its key and fill dimmed), its one warm light the star's catch on its star-side
-      // edges (shafts.gobo), the moon rim a little under it; far fires stay out of the shot
-      // (far-fires.js FAR_FIRES.shots).
+      // sky (its key and fill dimmed, its moon rim a touch stronger); far fires stay out of
+      // the shot (far-fires.js FAR_FIRES.shots).
       light: { key: 0.4, fill: 0.45, rim: 1.1 },
-      shafts: { gobo: { gain: 1.3, rim: 3.5 } },
       region: [0.5, 1],
       targetHeight: 0.66,
       azimuth: -16,
@@ -67,7 +112,9 @@ export const DIRECTED_SHOTS = {
       hold: 9,
       ground: { ...AFTER_RAIN, mist: { ...AFTER_RAIN.mist, amount: 0.75 } },
       // Portrait screens, narrower, stand the lookout left of centre, the star whole to its
-      // right, and keep the gentler dolly zoom (the wider one crops the star there).
+      // right with air off the cab's corner, and keep the gentler dolly zoom (the wider one
+      // crops the star there). Portrait monitors take it as it is: from further round the
+      // lookout covers the star on their wider frame.
       portrait: {
         azimuth: -12,
         anchor: [0.28, 0.54],
@@ -75,6 +122,10 @@ export const DIRECTED_SHOTS = {
         focus: { width: 0.22, depth: [-0.3, 0.3] },
         move: { zoom: [44, 38], dollyZoom: true, tilt: GIANT_MOVE.tilt, ease: 0.6 },
       },
+      // Tablets stand the lookout a little further right, so the deck's end keeps 20 to 40
+      // CSS px of air off the left edge through the dolly zoom (it touched it at 0.28; the
+      // review of 2026-10-14). On phones the deck's end leaves the frame.
+      tablet: { anchor: [0.31, 0.54] },
       // Landscape phones fit from a little higher up the lookout, so its footing stays below
       // the short frame.
       landscape: { move: null, region: [0.56, 1], anchor: [0.5, 0.62] },
@@ -92,11 +143,8 @@ export const DIRECTED_SHOTS = {
       // and pans onto the lookout as it pushes in and looks up.
       ...GIANT,
       move: { ...GIANT_MOVE, pan: [-5, 0] },
-      // One night: facing the star, it takes the star's warm light through the lattice
-      // (light-shafts.js SHAFT_SHOTS.star) on its star-side edges; the fill, a backlight here,
-      // and the moon rim come down so the warm catch leads.
+      // One night: facing the star, its fill (a backlight here) comes down.
       light: { fill: 0.65, rim: 1.3 },
-      shafts: { gobo: { gain: 0.85, rim: 2.5 } },
       region: [0.5, 1],
       targetHeight: 0.66,
       azimuth: 52,
@@ -116,7 +164,20 @@ export const DIRECTED_SHOTS = {
       landscape: { move: null, region: [0.56, 1], anchor: [0.64, 0.62] },
       // Under 600px wide a little nearer the star keeps its glow off the intro.
       compact: { azimuth: 46, move: null, region: [0.56, 1], anchor: [0.64, 0.62] },
-      squat: { azimuth: 48, move: null },
+      // Squat windows aim 1.5 degrees up, so the ranges' snowy crests drop below the frame
+      // rather than graze its bottom edge beside About.
+      squat: { azimuth: 48, move: null, tilt: [1.5, 1.5] },
+      // Portrait monitors: the lookout right, fitted smaller and set lower (more sky over the
+      // cab), its pan held to the last half degree: the cab keeps 40 CSS px or more of air off
+      // the right edge, the far leg 30 px or more clear of the intro, and the ranges' crests
+      // and feet out of the name and the intro through the push (at 0.84, higher, panning two
+      // degrees, the leg ran under "working on." by the end and a crest through the intro at
+      // the start; the reviews of 2026-10-14 and 2026-10-15).
+      tall: {
+        anchor: [0.6, 0.6],
+        margin: 0.78,
+        move: { ...GIANT_MOVE, pan: [-2, -1.5] },
+      },
     },
     {
       // The name and URL are retained; for the timber lookout it is a
@@ -135,10 +196,9 @@ export const DIRECTED_SHOTS = {
       margin: 0.87,
       ground: AFTER_RAIN,
       portrait: { focus: { width: 0.16, depth: [0.13, 0.36] } },
-      // Its broken moonlight eases off behind About (light-shafts.js): with no
-      // cel step or ink on the timber, a lit leg edge beside it on portrait
-      // phones reached 4.83:1 at 390x844.
-      shafts: { gobo: { about: 1 } },
+      // Letterboxed desktops aim a degree lower, so the massif's snow stands clear above
+      // the name at 1440x900.
+      letterbox: { tilt: [-1, -1] },
     },
     {
       name: "Gallery detail",
@@ -160,9 +220,6 @@ export const DIRECTED_SHOTS = {
       focus: { width: 0.27, depth: [0.13, 0.41] },
       margin: 0.91,
       portrait: { azimuth: -90, focus: { width: 0.2, depth: [0.13, 0.41] } },
-      // Its broken moonlight eases off behind About (light-shafts.js), where
-      // portrait phones see the lattice's lit leg edges (4.24:1 at 390x844).
-      shafts: { gobo: { about: 1 } },
     },
     {
       name: "Watch and tree",
@@ -194,7 +251,16 @@ export const DIRECTED_SHOTS = {
       // smallest landscape windows, the name above the subject's left, see the
       // pair mirrored from across the plain: the tree left, the lookout right,
       // the star whole beyond it.
-      portrait: { azimuth: 55, margin: 0.56, anchor: [0.21, 0.62], tilt: [-1, 2] },
+      // Phones aim from 4 degrees down to half a degree down and frame the pair a little
+      // larger (0.62), so the sky shell's edge never shows in the top corner, through the whole
+      // 48-second breath of the URL view too, short phones with the browser's bars showing
+      // included (from 2 degrees up it did mid-breath; at 0.56 on a 390x664 phone it did from
+      // the start). Letterboxed desktops hold about the base's mean
+      // pitch with a small swing: from -4.8, so the star keeps 22 CSS px or more below the
+      // top bar at 1440x900, to -4.5, so there the ranges' crests stay above the tops of the
+      // name's letters (from -3, or -2, they ran through "Alex" mid-breath).
+      portrait: { azimuth: 55, margin: 0.62, anchor: [0.21, 0.62], tilt: [-4, -0.5] },
+      letterbox: { tilt: [-4.8, -4.5] },
       landscape: { azimuth: 75, margin: 0.6, anchor: [0.5, 0.55], tilt: [-3, 0], move: null },
       compact: { azimuth: -15, margin: 0.6, anchor: [0.6, 0.55], tilt: [-3, 0], move: null },
       squat: {
@@ -217,6 +283,7 @@ export const DIRECTED_SHOTS = {
       // lookout, low on the plain, its lattice a silhouette with the strongest moon rim, the wet
       // plain shining toward the light, the tree small and apart on the right; the star stands
       // behind the lens. Appended to the lookout's shots, so earlier URLs keep their angles.
+      tour: false, // Out of the tour (owner, 2026-10-14); its URL is retained.
       region: [0, 1],
       fov: 38,
       azimuth: -160,
@@ -245,22 +312,16 @@ export const DIRECTED_SHOTS = {
     {
       name: "Portrait",
       // Phones set the tree on the lower third, open sky above it.
-      portrait: {
-        move: { dolly: [1.06, 0.94], crane: [0, 0.08], ease: 0.6 },
-        anchor: [0.5, 0.66],
-        // Phones keep their open-sky framing: no tilt, the tree at its own size.
-        margin: 0.93,
-        tilt: null,
-      },
+      portrait: PORTRAIT_PHONE,
+      // Tablets, portrait monitors and squat windows turn a little further (PORTRAIT_WIDE).
+      tablet: { ...PORTRAIT_WIDE },
+      tall: { ...PORTRAIT_WIDE },
+      squat: { ...PORTRAIT_UPRIGHT, ...PORTRAIT_WIDE, azimuth: -43, anchor: [0.58, 0.66] },
       // The crown in moonlight (the owner's pick of 2026-10-09): its pale,
-      // bleached limbs read cool grey, not pink-beige (pale). The
-      // moon catches it its own way (shafts.gobo over the tree's,
-      // light-shafts.js): barely wrapped, so it falls on the faces turned to
-      // the moon and leaves the rest dark, with a strong cool silver catch on
-      // the edges toward it. Its rays are the tree's own. One night (2026-10-12): the lantern
-      // a little stronger at the trunk's foot, leading into Lantern study.
-      light: { fill: 0.85, rim: 1.3, pale: 0.75, lantern: 1.2 },
-      shafts: { gobo: { color: [0.6, 0.78, 1.2], gain: 3.4, wrap: 0.1, rim: 5 } },
+      // bleached limbs read cool grey, not pink-beige (pale). One night
+      // (2026-10-12): the lantern a little stronger at the trunk's foot,
+      // leading into Lantern study.
+      light: { fill: 0.85, rim: 1.3, pale: 1, lantern: 1.2 },
       move: { truck: [-0.07, 0.07], crane: [0, 0.13], dolly: [1.05, 0.92], ease: 0.6 },
       // Low (0.12), so the plain ahead is foreshortened under the ranges, and
       // calmed: the near slate burned down, its texture and glints quietened
@@ -360,7 +421,9 @@ export const DIRECTED_SHOTS = {
       // of the limbs reaching left stood behind the name (3.97:1 at 1440x900),
       // and the trunk's behind About on phones and portrait monitors.
       // One night (2026-10-12): a pure backlight, the rim leading; less frontal fill.
-      light: { fill: 0.6, rim: 2, rimText: 1 },
+      // Its twigs' glints off the intro too (glintText): a one-pixel sparkle behind it
+      // set the small window's intro at 5.25:1 (599x499, the re-review of 2026-10-15).
+      light: { fill: 0.6, rim: 2, rimText: 1, glintText: 1 },
       // No lens blur: the clouds behind the crown read sharp (sky first, below). A tracking
       // pan (the owner's pick of 2026-10-12): the camera slides to its left while the lens
       // turns to hold the crown, so the limbs slide across the clouds behind it.
@@ -391,6 +454,14 @@ export const DIRECTED_SHOTS = {
       // Landscape phones keep the drift (no room about the name for a move),
       // from higher, so the roots stay below the short frame.
       landscape: { move: null, margin: 0.83, height: 0.5, anchor: [0.5, 0.5] },
+      // Portrait monitors, the name below the subject: turned 15.5 degrees, the trunk a little
+      // larger and right of centre, seen from higher (0.46) and aimed lower, so the trunk keeps
+      // 25 CSS px or more off the name and the intro through the push (from -162 at the centre
+      // it crossed "ex" and "va" by the end; at -166 the intro's last word met it), the roots
+      // and lantern stay below the frame, and the ranges stand wholly above the name, the text
+      // on the plain below their feet (from 0.28 a crag's crest ran through "Alex" and their
+      // feet behind "Nava").
+      tall: { azimuth: -170.5, anchor: [0.6, 0.555], height: 0.46, margin: 0.96 },
     },
     {
       name: "Root and lantern",
@@ -468,21 +539,41 @@ export function letterboxShare(width, height) {
   const share = (height - width / LETTERBOX.ratio) / (2 * height);
   return share > 0.02 ? share : 0;
 }
+// Stacked layouts from this width (portrait tablets, and squares up to 1024px wide)
+// may take a shot's `tablet` variant over its portrait one: their frame is wider than
+// a phone's, so it reaches further round either side of the subject.
+export const TABLET_WIDTH = 600;
 const variantShots = new WeakMap();
 export function resolveDirectedShot(shot, width, height) {
   const short = height <= 500,
-    squat = short && width > height && width < SQUAT_LANDSCAPE * height;
+    squat = short && width > height && width < SQUAT_LANDSCAPE * height,
+    stacked = isStackedLayout(width, height);
+  // Portrait monitors (taller than wide, too wide to stack the hero) set the name
+  // below the subject, where phones set it above: a shot's `tall` variant, over its
+  // portrait one, reframes them alone. Tablets, the hero stacked above the subject as
+  // on phones, may take a `tablet` variant over the portrait one too.
+  const tall = shot.tall && height > width && !stacked,
+    tablet = shot.tablet && stacked && width >= TABLET_WIDTH;
   const variant =
     shot.letterbox && letterboxShare(width, height) > 0
       ? shot.letterbox
       : squat && shot.squat
         ? shot.squat
-        : height > width || isStackedLayout(width, height) || squat
-          ? shot.portrait
-          : short && ((width < 600 && shot.compact) || shot.landscape);
+        : tall
+          ? shot.tall
+          : tablet
+            ? shot.tablet
+            : height > width || stacked || squat
+              ? shot.portrait
+              : short && ((width < 600 && shot.compact) || shot.landscape);
   if (!variant) return shot;
   let resolved = variantShots.get(variant);
-  if (!resolved) variantShots.set(variant, (resolved = { ...shot, ...variant }));
+  if (!resolved)
+    variantShots.set(
+      variant,
+      (resolved =
+        tall || tablet ? { ...shot, ...shot.portrait, ...variant } : { ...shot, ...variant }),
+    );
   return resolved;
 }
 

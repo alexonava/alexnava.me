@@ -111,6 +111,52 @@ export const CLOUD_VORTEX = Object.freeze({
   protect: Object.freeze([176, 179]),
 });
 
+// The painted sky's brush (the owner's ask of 2026-10-14, "a paint brush sky theme"), in
+// the clouds' own noise space (q, after the swirl's warp), so every stroke follows the
+// banks' flow, the maelstrom's turn and the drift, and never folds the noise. Each takes
+// [amount, along, across]: a value noise stretched along the brush (`dir`, the warp's own
+// shear in noise space, which the swirl bends) at `along` and across it at `across` (per
+// noise unit):
+// - `edge`: the banks' threshold moves by up to `amount`, so each painted band ends in
+//   ragged, dry-brush strokes (high and balanced; eased off behind the name and intro,
+//   whose guard moves density only);
+// - `streak`: faint bristle lines inside the banks, their colour lighter and darker by up
+//   to `amount` before the soft knee (high only);
+// uCloudReshape scales all of it (0 in the environment's capture). The reference banks
+// take it too (the owner's call of 2026-10-14, "one film over all"): their shapes and
+// places stay as authored. `on`: 0 emits none of it.
+export const CLOUD_BRUSH = Object.freeze({
+  on: 1,
+  dir: Object.freeze([0.848, -0.53]),
+  edge: Object.freeze([0.035, 0.6, 10]),
+  streak: Object.freeze([0.09, 0.8, 18]),
+});
+// No specks in the banks (the re-reviews of 2026-10-15): the finest octaves (the ridged 4.3x
+// octave and `fine`) and the brush's edge move the cover threshold only where the rest of
+// the field (with its lanes, windows and pockets, the reference banks' too) comes near it.
+// Where that field lies `clear` [gone, whole] below the threshold the cover fades out, so
+// no lone speck, oval or puff floats in clear sky; where it lies `fill` [from, whole] above,
+// the cover is whole, so no pinhole or pit opens in a bank. Lanes, windows and the banks'
+// shapes are the coarser field's and stay as they are. High and balanced skies, by the
+// reshaping (the environment's clouds stay as authored).
+export const CLOUD_ISLANDS = Object.freeze({
+  on: 1,
+  clear: Object.freeze([0.07, 0.015]),
+  fill: Object.freeze([0.01, 0.06]),
+});
+// A value noise on the field's own sine-free hash, at the plane point x (GLSL statements
+// leaving the float named out).
+const brushNoise = (x, out) =>
+  `vec2 ${out}x=${x},${out}i=floor(${out}x),${out}f=fract(${out}x);${out}f=${out}f*${out}f*(3.-2.*${out}f);
+vec4 ${out}cx=${out}i.x+vec4(0.,1.,0.,1.),${out}cy=${out}i.y+vec4(0.,0.,1.,1.);
+vec4 ${out}h1=fract(${out}cx*.1031),${out}h2=fract(${out}cy*.1031),${out}hd=${out}h1*(${out}h2+33.33)+${out}h2*(${out}h1+33.33)+${out}h1*(${out}h1+33.33);
+vec4 ${out}hv=fract((${out}h1+${out}h2+2.*${out}hd)*(${out}h1+${out}hd));
+float ${out}=mix(mix(${out}hv.x,${out}hv.y,${out}f.x),mix(${out}hv.z,${out}hv.w,${out}f.x),${out}f.y);
+`;
+// The plane point q in the brush's frame, stretched [along, across].
+const brushFrame = ([, along, across]) =>
+  `vec2(dot(q,vec2(${glslFloat(CLOUD_BRUSH.dir[0])},${glslFloat(CLOUD_BRUSH.dir[1])})),dot(q,vec2(${glslFloat(-CLOUD_BRUSH.dir[1])},${glslFloat(CLOUD_BRUSH.dir[0])})))*vec2(${glslFloat(along)},${glslFloat(across)})`;
+
 const glslFloat = (value) => (Number.isInteger(value) ? value.toFixed(1) : String(value));
 const { wedge, radius, bend, horizon, scale, banks, lanes, swirl, text } = CLOUD_RESHAPE;
 // The soft knee's own offset at the zenith, so the noise radius starts at 0 there.
@@ -224,7 +270,7 @@ q+=wo; p+=wo;
 }
 }
 float n0=NV[1], n1=NV[2], a0=NV[3], a1=NV[4];
-float d=n0*.62+n1*.38, da=a0*.62+a1*.38;
+float d=n0*.62+n1*.38, da=a0*.62+a1*.38, fineD=0.;
 if(uNebulaLayers>1.5){
 float c2=NV[5]*2.-1., e2=NV[6]*2.-1.;
 float g2=sqrt(c2*c2+.04)+.1, h2=sqrt(e2*e2+.04)+.1;
@@ -232,6 +278,7 @@ float fine=.5;
 if(uNebulaLayers>2.5) fine=NV[7]*.65+NV[8]*.35;
 d=n0*.5+n1*.27+g2*.16+fine*.07;
 da=a0*.5+a1*.27+h2*.16+fine*.07;
+fineD=(g2-.62)*.16+(fine-.5)*.07;
 float bank=open*(mix(${glslFloat(banks[0])}*open,${glslFloat(banks[1])}+${glslFloat(lanes)}*(NV[2]-.5),smoothstep(${glslFloat(banks[2])},${glslFloat(banks[3])},NV[0]))-${glslFloat(text[0])}*cloudText);
 d+=bank; da+=bank;
 }
@@ -246,7 +293,19 @@ float shape=exp(-dot(bankUV,bankUV))*.24+exp(-dot(sunBankUV,sunBankUV))*.30-gapG
 d+=shape; da+=shape;${VORTEX_DENSITY}
 float horizonFade=uNebulaLayers>1.5?smoothstep(0.,.045,altitude):smoothstep(-.03,.17,altitude);
 float w=uNebulaLayers>1.5?.034:mix(.05,.034,smoothstep(.45,.8,altitude));
-float cover=smoothstep(.548-w,.548+w,d)*horizonFade*uClouds;`;
+float brushEdge=0.;
+${
+  CLOUD_BRUSH.on
+    ? `if(uNebulaLayers>1.5){${brushNoise(brushFrame(CLOUD_BRUSH.edge), "be")}brushEdge=${glslFloat(CLOUD_BRUSH.edge[0])}*(be-.5)*2.*(1.-cloudText)*uCloudReshape;}
+`
+    : ""
+}float cover=smoothstep(.548-w,.548+w,d+brushEdge);
+${
+  CLOUD_ISLANDS.on
+    ? `if(uNebulaLayers>1.5){float dC=d-fineD;cover=mix(cover,max(cover*smoothstep(${(0.548 - CLOUD_ISLANDS.clear[0]).toFixed(3)},${(0.548 - CLOUD_ISLANDS.clear[1]).toFixed(3)},dC),smoothstep(${(0.548 + CLOUD_ISLANDS.fill[0]).toFixed(3)},${(0.548 + CLOUD_ISLANDS.fill[1]).toFixed(3)},dC)),uCloudReshape);}
+`
+    : ""
+}cover*=horizonFade*uClouds;`;
 }
 
 // The cloud field's text guard, `cloudText`: 1 behind the name and intro (slateText,
@@ -260,12 +319,18 @@ return 1.-smoothstep(0.,${glslFloat(text[1])},length(f));}`;
 const noText = () => ({ x: 2, y: 2, z: -1, w: -1 });
 
 const { wedge: flashWedge, radius: flashRadius } = FLASH_REFERENCE;
+// The flash's lift of the open sky reaches only the banks' soft edges: their density
+// near the cover threshold, from `near[0]` (none) to `near[1]` (full, the threshold),
+// times the cover itself. Clear sky, a gap between two banks too, is never lifted, so
+// the grade's cel step never cuts a lone disc or a flat slab of light out of it (the
+// reviews of 2026-10-14); the banks still glow from inside.
+export const FLASH_SKY = Object.freeze({ near: Object.freeze([0.42, 0.548]) });
 // A lightning flash in the banks (lightning.js), drawn by the shell while uFlash.w
 // (its level) is above 0: the banks glow cold from inside about the flash's point
 // on the cloud plane (uFlash.xyz, a world direction), over uFlashGlow.x of the
 // plane, by uFlashGlow.y (and uFlashCore more in the banks' hot centre, a third of
 // that radius), their thick cores fully and their thin edges by 1 - uFlashGlow.w,
-// and the clear sky between them by uFlashGlow.z, so the grade's cel step reads
+// and the clear sky near them by uFlashGlow.z (FLASH_SKY), so the grade's cel step reads
 // the flash in the banks' own bands. It is exactly 0 over the reference banks
 // (FLASH_REFERENCE, so The watch's crop keeps every pixel) and eases off behind
 // the name and intro (the clouds' text guard) and About (uFlashTone.w of the
@@ -278,7 +343,7 @@ fa=max(max(slateAbout.xy-fa,fa-slateAbout.zw),0.)*vec2(slateAspect,1.)/min(slate
 float fg=exp(-dot(fo,fo)), fl=uFlash.w*(1.-smoothstep(${glslFloat(flashWedge[0])},${glslFloat(flashWedge[1])},cloudAz)*(1.-smoothstep(${glslFloat(flashWedge[2])},${glslFloat(flashWedge[3])},cloudAz))*smoothstep(${glslFloat(flashRadius[0])},${glslFloat(flashRadius[1])},bl))
 *(1.-max(cloudText,1.-smoothstep(0.,uFlashTone.w,length(fa))));
 cloudCol+=uFlashTone.rgb*fl*(fg+uFlashCore*pow(fg,9.))*uFlashGlow.y*mix(1.-uFlashGlow.w,1.,thick);
-col+=uFlashTone.rgb*fl*fg*uFlashGlow.z;
+col+=uFlashTone.rgb*fl*fg*uFlashGlow.z*smoothstep(${glslFloat(FLASH_SKY.near[0])},${glslFloat(FLASH_SKY.near[1])},d)*cover;
 }`;
 
 // Where a camera at `eye` sees the star (`star`, world) on the cloud plane: the sky
@@ -457,7 +522,12 @@ cloudCol=mix(cloudCol,vec3(1.05,1.02,1.10),smoothstep(.5,1.,lit)*(.6+.4*thick));
 cloudCol+=vec3(.07,.07,.09)*smoothstep(.5,1.,lit)*(1.-thick)*cover;
 cloudCol*=(1.0+.4*smoothstep(.55,.85,altitude))*(.86+.26*smoothstep(-.35,.45,direction.z))
 *(1.0-.14*thin)*(1.0-.3*max(gapG,eaveG));
-vec3 kn=vec3(.64,.62,.66), cap=vec3(.88,.86,.91);
+${
+  CLOUD_BRUSH.on
+    ? `if(uNebulaLayers>2.5){${brushNoise(brushFrame(CLOUD_BRUSH.streak), "bs")}cloudCol*=1.+${glslFloat(CLOUD_BRUSH.streak[0])}*(bs-.5)*2.*uCloudReshape;}
+`
+    : ""
+}vec3 kn=vec3(.64,.62,.66), cap=vec3(.88,.86,.91);
 cloudCol=min(cloudCol,kn)+(cap-kn)*(1.-exp(-max(cloudCol-kn,0.)/(cap-kn)));
 ${FLASH_GLSL}
 col+=vec3(.027,.03,.036)*smoothstep(.36,.54,d)*horizonFade*uClouds;

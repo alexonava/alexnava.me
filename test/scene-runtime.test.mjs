@@ -1576,15 +1576,16 @@ test("a shot's light mood merges over the neutral default and never shares it", 
   // Close-up alone takes its rim off the text; every other shot keeps it whole.
   for (const shot of [...DIRECTED_SHOTS.tower, ...DIRECTED_SHOTS.tree])
     assert.equal(shotLight(shot).rimText, shot.name === "Close-up" ? 1 : 0, shot.name);
-  // Only the lantern shots keep the bark's glints off their text, wholly:
+  // The lantern shots and Close-up keep the bark's glints off their text, wholly:
   // their wet roots' glints stood behind Lantern study's name and Root and
-  // lantern's intro (4.67:1 and 4.32:1).
+  // lantern's intro (4.67:1 and 4.32:1), a twig's sparkle behind Close-up's
+  // intro on the small window (5.25:1).
   const glint = [...DIRECTED_SHOTS.tower, ...DIRECTED_SHOTS.tree].filter(
     (shot) => shotLight(shot).glintText > 0,
   );
   assert.deepEqual(
     glint.map((shot) => shot.name),
-    ["Lantern study", "Root and lantern"],
+    ["Lantern study", "Close-up", "Root and lantern"],
   );
   for (const shot of glint) assert.equal(shotLight(shot).glintText, 1);
   // Only Lantern study keeps its lantern's pool off About (its push-in on a
@@ -1629,7 +1630,7 @@ test("setRim scales the cool rim colour and keeps the moon-facing floor", () => 
     assert.equal(RIM_UNIFORMS.babelRimText.value, 0, "the rim stays on the text by default");
     setRim(2, 1);
     assert.equal(RIM_UNIFORMS.babelRimText.value, 1);
-    // Off the text over a fifth of the screen's smaller side, as the air light.
+    // Off the text over a fifth of the screen's smaller side.
     assert.equal(RIM.textReach, 0.2);
     setRim();
     assert.deepEqual(light.toArray(), [0, 0, 0, RIM.floor], "no strength, no rim");

@@ -11,8 +11,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // The UI entry stays small for first paint. The scene entry carries Three.js
 // and the tower runtime, then main.js loads it after the hero has rendered.
 // The scene is an ES module split by esbuild: code reached only through a
-// dynamic import() (the film's terrain, ranges, rocks, light shafts and lantern
-// flame) becomes a lazy chunk, and code it shares with the entry (Three.js)
+// dynamic import() (the film's terrain, ranges, rocks and lantern flame)
+// becomes a lazy chunk, and code it shares with the entry (Three.js)
 // becomes one static chunk that the entry imports. Every chunk keeps the scene.*.js prefix and a content hash.
 // The scene builds first: the UI names the scene's static chunks so main.js
 // can preload them beside the entry (see buildScripts).

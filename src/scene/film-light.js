@@ -164,8 +164,8 @@ ${FLASH_PARS}`,
 // rather than pink-beige; the darker bark keeps its colour. Off (0) unless a
 // shot asks for it.
 export const PALE = Object.freeze({
-  luma: Object.freeze([0.1, 0.35]),
-  tint: Object.freeze([0.92, 0.98, 1.08]),
+  luma: Object.freeze([0.04, 0.22]),
+  tint: Object.freeze([0.88, 0.96, 1.12]),
 });
 export const PALE_MOOD = { value: 0 };
 
