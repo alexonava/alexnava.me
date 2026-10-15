@@ -65,7 +65,7 @@ test("models and maps keep the startup tier, and quality is sampled only after t
   assert.match(index, /if \(sampledProfile\) adaptiveSteps\.queue\(sampledProfile, nowMs\);/);
   assert.match(
     index,
-    /const adaptiveProfile = adaptiveSteps\.take\(\{ cut: transition\.cut, running: cameraTour\?\.running === true, nowMs \}\); if \(adaptiveProfile\) applyActiveQualityProfile\(adaptiveProfile, "adaptive"\);/,
+    /const adaptiveProfile = adaptiveSteps\.take\(\{ cut: transition\.cut, running: liveView\.running, nowMs \}\); if \(adaptiveProfile\) applyActiveQualityProfile\(adaptiveProfile, "adaptive"\);/,
   );
   assert.match(index, /if \(transition\.capture\) qualityState\.skipSamples\?\.\(3\);/);
 });
@@ -90,14 +90,17 @@ test("each frame runs the tour, the quality step, the capture skip, the crossfad
   const frame = index.slice(index.indexOf("function updateSceneFrame("));
   const order = [
     "qualityState.sampleRevealed?.(",
+    "const walkHeld = walk?.holdsTour === true;",
     "cameraTour?.update(",
-    "const transition = cameraTour?.transition ?? TOUR_IDLE;",
+    "const tourTransition = cameraTour?.transition ?? TOUR_IDLE;",
+    "const transition = walk ? walk.step(elapsedTime, tourTransition) : tourTransition;",
     "adaptiveSteps.take(",
     "applyActiveQualityProfile(adaptiveProfile",
-    "lanternMount.take({ revealed: canvasShown, running: cameraTour?.running === true, cut: transition.cut })",
+    "lanternMount.take({ revealed: canvasShown, running: liveView.running, cut: transition.cut })",
     "qualityState.skipSamples?.(3)",
     "rendering.postprocessPipeline.setTransition?.(transition);",
     "cinematic.apply(",
+    "walk.update(deltaSeconds, viewport.width, viewport.height);",
     "subsystemRegistry.update(",
     "rendering.update();",
     "panelHold?.frameRendered(); visitorHold?.frameRendered();",
@@ -131,7 +134,7 @@ test("an open dialog holds rendering 450 ms after it opens, and a resize draws o
 test("the visitor pause stops the tour and holds rendering; content changes still draw one frame", () => {
   assert.match(
     index,
-    /scene\.setVisitorPaused = \(paused\) => \{ const next = Boolean\(paused\); scene\.visitorPausedPreference = next; cameraTour\?\.setPaused\(next\); return visitorHold\.set\(next\); \};/,
+    /scene\.setVisitorPaused = \(paused\) => \{ const next = Boolean\(paused\); scene\.visitorPausedPreference = next; if \(next\) walk\?\.exit\(\{ immediate: true \}\); cameraTour\?\.setPaused\(next\); return visitorHold\.set\(next\); \};/,
   );
   assert.match(index, /scene\.isVisitorPaused = \(\) => visitorHold\.paused;/);
   assert.match(index, /scene\.setVisitorPaused\(scene\.visitorPausedPreference === true\);/);
@@ -194,7 +197,7 @@ test("renders keep an even display cadence near 60 Hz: desktops at or above it, 
 test("the phone text band shades only a name stacked above the subject", () => {
   assert.match(
     index,
-    /filmScene\.finishFrame\(camera, lookTarget, cinematic\.frame, viewport\.width < 900 && isStackedLayout\(viewport\.width, viewport\.height\) && cinematic\.shot\?\.arc === 2, \(cinematicArea\?\.top \|\| 200\) \/ viewport\.height\);/,
+    /filmScene\.finishFrame\(camera, lookTarget, walking \? walk\.frame : cinematic\.frame, !walking && viewport\.width < 900 && isStackedLayout\(viewport\.width, viewport\.height\) && cinematic\.shot\?\.arc === 2, \(cinematicArea\?\.top \|\| 200\) \/ viewport\.height\);/,
   );
 });
 
@@ -302,9 +305,62 @@ test("the tour fits its next shot in idle slices and refits after a resize, a fo
 test("the film terrain is film-scene.js's lazy chunk and never holds the reveal", () => {
   // It builds in short slices and lands only where it cannot show mid-shot,
   // so the film takes the tour, not the scene's warm-up.
-  assert.match(index, /createFilmScene\(\{[^}]*tour: cameraTour,/);
+  assert.match(index, /createFilmScene\(\{[^}]*tour: liveView,/);
   assert.doesNotMatch(index, /createFilmScene\(\{[^}]*warm[:,]/);
   assert.equal(index.match(/import\("\.\/terrain-build\.js"\)/g), null);
+});
+
+test("the walk holds the tour, drives the camera between its cuts, and lands content only on them", () => {
+  // Content that lands only unseen takes the walk's cuts as the tour's while it holds.
+  assert.match(
+    index,
+    /const liveView = \{ get running\(\) \{ return walk\?\.holdsTour === true \|\| cameraTour\?\.running === true; \}, get transition\(\) \{ return walk\?\.transition \?\? cameraTour\?\.transition \?\? TOUR_IDLE; \} \};/,
+  );
+  assert.match(index, /createHillSilhouette\(\{[^}]*tour: liveView,/);
+  assert.match(index, /panelOpen: walkHeld \|\| document\.body\.hasAttribute\("data-panel-open"\)/);
+  assert.match(
+    index,
+    /rockScatter\.take\(\{ cut: transition\.cut, running: liveView\.running, nowMs \}\)/,
+  );
+  // No shot is on screen while it drives: the shot-keyed pins elsewhere hold.
+  assert.match(index, /const shotOnScreen = \(\) => \(walk\?\.drives \? null : cinematic\.shot\);/);
+  assert.match(index, /shot: \(\) => shotOnScreen\(\)\?\.name \?\? null,/);
+  assert.match(index, /shot: shotOnScreen,/);
+  assert.match(index, /const cinematicApplied = !walking && cinematic\.apply\(\{/);
+  assert.match(
+    index,
+    /if \(walking\) walk\.update\(deltaSeconds, viewport\.width, viewport\.height\); else if \(!cinematicApplied\) \{/,
+  );
+  assert.match(
+    index,
+    /if \(cinematicApplied\) lookTarget\.copy\(cinematic\.target\); else if \(walking\) lookTarget\.copy\(walk\.focus\);/,
+  );
+  // The text guards rest while the page is hidden.
+  assert.match(index, /for \(const selector of walk\?\.textHidden \? \[\] : selectors\)/);
+  // The key: one listener, a lazy walk.js, the mouse captured inside the press.
+  assert.match(index, /import \{ isWalkKey, walkAllowed \} from "\.\/walk-key\.js";/);
+  assert.equal(index.match(/import\("\.\/walk\.js"\)/g)?.length, 1);
+  assert.match(index, /window\.addEventListener\("keydown", onWalkKey\);/);
+  assert.match(
+    between("function disposeHomeSceneRuntime"),
+    /window\.removeEventListener\("keydown", onWalkKey\);/,
+  );
+  const key = between("const onWalkKey", 'window.addEventListener("keydown", onWalkKey);');
+  assert.ok(key.indexOf("requestPointerLock") < key.indexOf('import("./walk.js")'));
+  assert.match(
+    key,
+    /if \(walk\?\.active\) \{ event\.preventDefault\(\); walk\.exit\(\); return; \}/,
+  );
+  assert.match(index, /subsystemRegistry\.register\(\{ dispose: \(\) => walk\.dispose\(\) \}\);/);
+  // A dialog, a visitor pause or reduced motion ends it at once.
+  assert.match(
+    index,
+    /panelHold\.sync\(\); if \(document\.body\.hasAttribute\("data-panel-open"\)\) walk\?\.exit\(\{ immediate: true \}\);/,
+  );
+  assert.match(
+    index,
+    /reducedMotion = Boolean\(event\?\.matches\); if \(reducedMotion\) walk\?\.exit\(\{ immediate: true \}\);/,
+  );
 });
 
 test("the film's environment, the ground's text guard and the flame's bloom are wired from the bootstrap", () => {

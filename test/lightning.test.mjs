@@ -649,7 +649,8 @@ test("index.js wires the lightning in film, by shot, before the first warm-up", 
   assert.ok(registered > index.indexOf("subsystemRegistry.register(starfield);"));
   assert.ok(registered < index.indexOf('warmShaders("scene");'), "its bolt links in the warm-up");
   assert.ok(index.includes("film: () => filmActive,"));
-  assert.ok(index.includes("shot: () => cinematic.shot?.name ?? null,"));
+  // The shot on screen: none while the walk drives the camera (walk.js).
+  assert.ok(index.includes("shot: () => shotOnScreen()?.name ?? null,"));
   // The tour's time to its next capture (LIGHTNING.cutFade), Infinity without one.
   assert.ok(index.includes("cutIn: () => tourCutIn,"));
   assert.ok(

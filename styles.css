@@ -239,6 +239,23 @@ main:focus {
   }
 }
 
+/* The walk (src/scene/walk.js, never under reduced motion): the page fades off
+   the canvas and back over 420ms. Visibility, not display, so every box keeps
+   its layout for the tour's safe area while hidden; the canvas never moves. */
+body.scene-walking > :not(.scene-shell) {
+  transition:
+    opacity 420ms ease,
+    visibility 0s;
+}
+
+body.scene-walk-hidden > :not(.scene-shell) {
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 420ms ease,
+    visibility 0s linear 420ms;
+}
+
 .scene-vignette {
   position: absolute;
   inset: 0;

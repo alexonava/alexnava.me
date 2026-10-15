@@ -151,6 +151,18 @@ test("the title card paints no picture, and its hidden loading line sits between
   }
 });
 
+test("the walk fades the page off the canvas and back, keeping every box's layout and never the canvas", async () => {
+  const styles = await readStyles();
+  const walking = cssRule(styles, "body.scene-walking > :not(.scene-shell)"),
+    hidden = cssRule(styles, "body.scene-walk-hidden > :not(.scene-shell)");
+  assert.match(walking, /transition:\s*opacity 420ms ease,\s*visibility 0s;/);
+  assert.match(hidden, /opacity:\s*0;\s*visibility:\s*hidden;/);
+  assert.match(hidden, /transition:\s*opacity 420ms ease,\s*visibility 0s linear 420ms;/);
+  // Visibility, never display: the tour's safe area measures the hidden boxes.
+  for (const { selector, body } of cssRules(styles, (list) => list.includes("scene-walk")))
+    assert.doesNotMatch(`${selector}{${body}`, /display|scene-canvas|scene-shell\s*>/, selector);
+});
+
 test("the canvas keeps one 480ms fade over the title card, and the loading line finishes within it", async () => {
   const styles = await readStyles();
   const canvas = cssRule(styles, ".scene-canvas");

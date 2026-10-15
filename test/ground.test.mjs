@@ -236,12 +236,21 @@ test("the rock scatter waits for the reveal, film, tree and tier, loads its chun
     "linked, waiting for a cut",
   );
   assert.equal(root.visible, false);
+  assert.deepEqual(rocks.footprints, [], "no solids for the walk until they show");
   assert.equal(rocks.take({ cut: true, running: true, nowMs: 32 }), true);
   assert.equal(rocks.committed, true);
   assert.equal(root.visible, true);
   assert.ok(
     root.children.every((mesh) => mesh.count === mesh.instanceMatrix.count && mesh.count > 0),
   );
+  // The walk's solids (walk.js): every placed rock, the same list each frame.
+  const placed = rocks.footprints;
+  assert.equal(
+    placed.length,
+    root.children.reduce((sum, mesh) => sum + mesh.count, 0),
+  );
+  assert.equal(rocks.footprints, placed);
+  assert.ok(placed.every(({ x, z, half, height }) => [x, z, half, height].every(Number.isFinite)));
   assert.deepEqual(statuses, ["loading", "ready"]);
   rocks.setFilmActive(false);
   assert.equal(root.visible, false);
@@ -251,7 +260,12 @@ test("the rock scatter waits for the reveal, film, tree and tier, loads its chun
 });
 
 test("the rock scatter waits for the film terrain and seats the rocks on its root-aware height", async () => {
-  const fake = { setFilmActive() {}, take: () => false, dispose() {} };
+  const fake = {
+    setFilmActive() {},
+    take: () => false,
+    dispose() {},
+    footprints: [{ x: 1, z: 2 }],
+  };
   for (const [terrainHeight, expected] of [
     [(x, z) => x + z, "terrain"],
     [undefined, "analytic"],
@@ -273,10 +287,12 @@ test("the rock scatter waits for the film terrain and seats the rocks on its roo
     rocks.setRevealed();
     for (let i = 0; i < 4; i++) await tick();
     assert.equal(seen, null, "no rocks before the film terrain settles");
+    assert.deepEqual(rocks.footprints, [], "no solids for the walk yet");
     // The earth comparison's film has no root supports: the analytic ground.
     release(terrainHeight);
     for (let i = 0; i < 4; i++) await tick();
     assert.equal(seen, expected === "terrain" ? terrainHeight : flat, expected);
+    assert.equal(rocks.footprints, fake.footprints, "the placed rocks pass through");
     rocks.dispose();
   }
 });

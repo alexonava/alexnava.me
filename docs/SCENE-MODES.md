@@ -61,6 +61,16 @@ Every shot has a `portrait` variant; Portrait's changes its move (a push without
 - A script may set `BabelSite.scene.visitorPausedPreference = true` before the scene loads; the pause applies at the reveal and keeps the first revealed frame.
 - While paused, a resize, context restore or content change (model, map, shader, font) draws one still frame. Behind an open dialog only a resize does. Scroll never does.
 
+## Walk
+
+An unannounced visitor's mode ([walk.js](../src/scene/walk.js), a lazy chunk fetched on the first press; nothing on the page mentions it).
+
+- **Start.** ` or ~ (the Backquote key, or a layout that types either) over the revealed live scene with its film ground in place. It never starts on a touch-primary or coarse pointer, under reduced motion, a visitor pause, an open dialog or forced colors ([walk-key.js](../src/scene/walk-key.js)). The press captures the mouse; where the browser refuses, a held button drags the view.
+- **In.** The page fades off the canvas (`body.scene-walking`, `.scene-walk-hidden`; its boxes keep their layout), the tour finishes any dissolve and holds, and from the next cut the visitor stands on the ground under the shot's camera, facing its subject, under the film's dissolve; the bars ease out with it.
+- **Controls.** The mouse looks around; W/S or the up and down arrows walk, A/D step aside, the left and right arrows turn, Shift jogs, Space jumps. The tower's base (posts, ladder feet and low braces), the trunk with its root flare, the lantern and every rock at least 0.5 tall are solid; the river and stream are wadeable. Outward motion fades between 76 and 86 units from the tower (`WALK.bound`).
+- **Out.** The same key, or Esc twice (the first frees the mouse), dissolves back to the tour's held shot without a time jump, and the page fades back. A dialog, a visitor pause, reduced motion or a lost GL context ends it at once, with a hard cut.
+- **While walking** no shot is on screen: the light mood, lens, lens sources, mist share and ground calm rest at their defaults, the text guards rest (there is no text), and content that lands only unseen waits for the walk's cuts. The moon's shadow follows a snapped point ahead of the walker (`WALK.shadow`), so its map redraws only on a cell change.
+
 ## sceneDebug
 
 With `sceneDebug=1`, `window.BabelSite.sceneDebug` is a plain, read-only status object. It adds no controls and loads no extra code.
@@ -84,6 +94,7 @@ With `sceneDebug=1`, `window.BabelSite.sceneDebug` is a plain, read-only status 
 | `environment`                             | The environment capture of the film sky: `status` (`none`, `ready` or `failed`) and `ms`, its time                                                                                                                                                           |
 | `lightning`                               | The lightning's own clock (`time`, s), the flash's `level` and the lit `event` (`k`, `start`, `bolt` whether a bolt draws, `wanted` whether the event asked for one, `height` the share of its full height it kept, view `azimuth` and `altitude`) or `null` |
 | `failure`                                 | `{ stage, message }` when the scene stopped for the title card; `stage` is `architecture:tower` or `architecture:tree`                                                                                                                                       |
+| `walk`                                    | `null` until the first walk; then `phase` (`idle`, `arming`, `capture`, `walking`, `leaving`, `returning`), the feet's `x`, `y`, `z`, `yaw`, `pitch`, `grounded`, `locked` (mouse captured) and the solids' `hull` points and `circles`                      |
 
 Status values:
 

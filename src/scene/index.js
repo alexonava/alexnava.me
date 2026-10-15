@@ -2,7 +2,7 @@ import "./quality.js";
 import { createSolarBody, SOLAR_RADIUS } from "./solar-body.js";
 import { LENS_FX, lensKeepRect, lensSource } from "./postprocess.js";
 import { createStarfield } from "./starfield.js";
-import { readTourInterval, createCameraTour, TOUR_IDLE } from "./camera-tour.js";
+import { readTourInterval, createCameraTour, TOUR_IDLE, TOUR_TRANSITION } from "./camera-tour.js";
 import { createFilmScene } from "./film-scene.js";
 import {
   chooseCinematicView,
@@ -29,7 +29,8 @@ import {
   filmGroundSurface,
   slateCalmFor,
 } from "./mud-ground.js";
-import { ESTATE } from "./estate-layout.js";
+import { ESTATE, estateLantern } from "./estate-layout.js";
+import { isWalkKey, walkAllowed } from "./walk-key.js";
 import { createRockScatter, estateContacts } from "./rock-scatter.js";
 import { createHillSilhouette } from "./hill-silhouette.js";
 import { createLightning } from "./lightning.js";
@@ -314,6 +315,22 @@ const ORBIT_SPEED = 0.06;
             prepare: prepareTourShot,
           })
         : null;
+      // The walk (walk.js, a lazy chunk fetched on the first ` or ~): the visitor's
+      // first-person camera on the ground. While it holds the tour, its own cuts
+      // are the tour's for everything that lands only unseen (terrain, banks,
+      // mountains, rocks, the lantern, governor steps), and no shot is on screen.
+      let walk = null,
+        walkLoad = null,
+        walkGround = null;
+      const liveView = {
+        get running() {
+          return walk?.holdsTour === true || cameraTour?.running === true;
+        },
+        get transition() {
+          return walk?.transition ?? cameraTour?.transition ?? TOUR_IDLE;
+        },
+      };
+      const shotOnScreen = () => (walk?.drives ? null : cinematic.shot);
       // Seconds until the tour's next capture (Infinity without a running tour), set
       // each frame; the lightning dims a flash to nothing by then (LIGHTNING.cutFade).
       let tourCutIn = Infinity;
@@ -397,7 +414,7 @@ const ORBIT_SPEED = 0.06;
         sky: skyShell.material.uniforms,
         textGuard: groundContacts,
         film: () => filmActive,
-        shot: () => cinematic.shot?.name ?? null,
+        shot: () => shotOnScreen()?.name ?? null,
         cutIn: () => tourCutIn,
         profile: state.profile,
         skyRadius: WORLD.SKY_DOME_RADIUS,
@@ -451,7 +468,7 @@ const ORBIT_SPEED = 0.06;
       // beside About the bark's lantern highlights pass the same knee (the tree
       // takes these uniforms); the sky's reshaped banks ease out behind the name
       // and intro too (estate-sky.js); measured on resize, on font loads and
-      // every 30th frame.
+      // every 30th frame. While the walk hides the page there is no text to guard.
       function measureGroundText() {
         const canvas = renderer.domElement?.getBoundingClientRect?.();
         const box = (text, selectors) => {
@@ -459,7 +476,7 @@ const ORBIT_SPEED = 0.06;
             y0 = Infinity,
             x1 = -Infinity,
             y1 = -Infinity;
-          for (const selector of selectors)
+          for (const selector of walk?.textHidden ? [] : selectors)
             for (const element of document.querySelectorAll(selector)) {
               const r = element.getBoundingClientRect?.();
               if (!r?.width || !r.height) continue;
@@ -569,7 +586,7 @@ const ORBIT_SPEED = 0.06;
         shellOpacity: skyConfig.shellOpacity,
         sunPosition: WORLD.SUN_POSITION,
         rendering,
-        tour: cameraTour,
+        tour: liveView,
         tier: assetTier,
         invalidate: invalidateContent,
         onStatus: (status) => {
@@ -621,7 +638,7 @@ const ORBIT_SPEED = 0.06;
         parent: environmentRoot,
         camera,
         subjects: () => [completeTower?.root, treeArchitecture?.root],
-        shot: () => cinematic.shot,
+        shot: shotOnScreen,
         textGuard: groundContacts,
         profile: state.profile,
       });
@@ -635,7 +652,7 @@ const ORBIT_SPEED = 0.06;
         atmosphere: atmosphereSystem,
         skyMaterial: skyShell.material,
         invalidate: invalidateContent,
-        tour: cameraTour,
+        tour: liveView,
         onGroundChange(active) {
           environmentSystem.setFilmTreatment(active);
           hillSilhouette.setFilmTreatment(active);
@@ -644,6 +661,11 @@ const ORBIT_SPEED = 0.06;
           groundTextures.setFilmActive(active);
           rockScatter.setFilmActive(active);
           farFires.setFilmActive(active);
+          // The walk stands on the film terrain's height (the procedural one without it).
+          if (active)
+            filmScene.ready?.then((height) => {
+              walkGround = typeof height === "function" ? height : groundHeight;
+            });
         },
       });
       subsystemRegistry.register(filmScene);
@@ -951,13 +973,17 @@ const ORBIT_SPEED = 0.06;
               })
             : null;
         if (sampledProfile) adaptiveSteps.queue(sampledProfile, nowMs);
+        // The walk holds the tour as a dialog does: its shot and hold stay put.
+        const walkHeld = walk?.holdsTour === true;
         const tourPhase =
           cameraTour?.update({
             elapsedSeconds: elapsedTime,
             reducedMotion,
-            panelOpen: document.body.hasAttribute("data-panel-open"),
+            panelOpen: walkHeld || document.body.hasAttribute("data-panel-open"),
           }) ?? null;
-        const transition = cameraTour?.transition ?? TOUR_IDLE;
+        const tourTransition = cameraTour?.transition ?? TOUR_IDLE;
+        const transition = walk ? walk.step(elapsedTime, tourTransition) : tourTransition;
+        const walking = walk?.drives === true;
         // Seconds until the tour's next capture, for the lightning (cutFade).
         tourCutIn =
           cameraTour?.running && tourPhase !== null
@@ -968,19 +994,17 @@ const ORBIT_SPEED = 0.06;
         // its one-off work.
         const adaptiveProfile = adaptiveSteps.take({
           cut: transition.cut,
-          running: cameraTour?.running === true,
+          running: liveView.running,
           nowMs,
         });
         if (adaptiveProfile) applyActiveQualityProfile(adaptiveProfile, "adaptive");
         lanternMount.take({
           revealed: canvasShown,
-          running: cameraTour?.running === true,
+          running: liveView.running,
           cut: transition.cut,
         });
         // The rocks appear on a cut too, with their ground contacts.
-        if (
-          rockScatter.take({ cut: transition.cut, running: cameraTour?.running === true, nowMs })
-        ) {
+        if (rockScatter.take({ cut: transition.cut, running: liveView.running, nowMs })) {
           groundContacts.slateRockContact.value = 1;
           rendering.invalidateShadows();
           qualityState.holdSampling();
@@ -1010,15 +1034,20 @@ const ORBIT_SPEED = 0.06;
           lookAtHeight =
             cameraProfile.lookAtBase + cameraProfile.lookAtScrollDelta * viewport.scroll,
           orbitDistance = cameraProfile.orbitScale * (scrolledOrbitBase - cameraProfile.orbitTrim);
-        const cinematicApplied = cinematic.apply({
-          width: viewport.width,
-          height: viewport.height,
-          elapsedSeconds: elapsedTime,
-          reducedMotion,
-          tourPhase,
-          fallbackFov: cameraProfile.fov,
-        });
-        if (!cinematicApplied) {
+        // The walk drives the camera from its cut in to its cut back; the shot's
+        // lens, bars, light mood, mist and ground calm then rest at no shot's.
+        const cinematicApplied =
+          !walking &&
+          cinematic.apply({
+            width: viewport.width,
+            height: viewport.height,
+            elapsedSeconds: elapsedTime,
+            reducedMotion,
+            tourPhase,
+            fallbackFov: cameraProfile.fov,
+          });
+        if (walking) walk.update(deltaSeconds, viewport.width, viewport.height);
+        else if (!cinematicApplied) {
           camera.position.set(
             Math.cos(orbitAngle) * orbitDistance,
             orbitHeight,
@@ -1027,6 +1056,7 @@ const ORBIT_SPEED = 0.06;
           camera.lookAt(0, lookAtHeight, 0);
         }
         if (cinematicApplied) lookTarget.copy(cinematic.target);
+        else if (walking) lookTarget.copy(walk.focus);
         else lookTarget.set(0, lookAtHeight, 0);
         // The cloud vortex's eye sits where this lens sees the star, set on each cut and
         // each refit (a resize; estate-sky.js CLOUD_VORTEX), so it stays about the star.
@@ -1066,11 +1096,14 @@ const ORBIT_SPEED = 0.06;
             .set(...WORLD.SUN_DIRECTION)
             .transformDirection(camera.matrixWorldInverse);
         }
-        // The shot's lens and the film's bars and grain follow the shot on screen.
+        // The shot's lens and the film's bars and grain follow the shot on screen;
+        // the bars ease out under the dissolve into the walk and back in after it.
         const post = rendering.postprocessPipeline;
         post.setLens?.(cinematicApplied ? cinematic.shot?.lens : null);
         post.setBars?.(
-          filmActive && cinematicApplied ? letterboxShare(viewport.width, viewport.height) : 0,
+          filmActive && (cinematicApplied || walking)
+            ? letterboxShare(viewport.width, viewport.height) * (walk?.bars ?? 1)
+            : 0,
         );
         if (
           !reducedMotion &&
@@ -1083,7 +1116,7 @@ const ORBIT_SPEED = 0.06;
         // fraction of a CSS px more, so fine detail never softens and sharpens with the
         // wander, and the lens's sources below follow it.
         {
-          const weave = filmActive && cinematicApplied ? post.weaveOffset?.() : null;
+          const weave = filmActive && (cinematicApplied || walking) ? post.weaveOffset?.() : null;
           if (weave && (weave[0] || weave[1])) {
             const shift = camera.projectionMatrix.elements;
             shift[8] += (2 * weave[0]) / viewport.width;
@@ -1142,12 +1175,14 @@ const ORBIT_SPEED = 0.06;
         });
         // The phone band shades the frame's top behind a name stacked above
         // the subject; beside it (landscape phones) it would dim the subject.
+        // The walk's shadow follows its own snapped focus (walk.js WALK.shadow).
         if (filmActive)
           filmScene.finishFrame(
             camera,
             lookTarget,
-            cinematic.frame,
-            viewport.width < 900 &&
+            walking ? walk.frame : cinematic.frame,
+            !walking &&
+              viewport.width < 900 &&
               isStackedLayout(viewport.width, viewport.height) &&
               cinematic.shot?.arc === 2,
             (cinematicArea?.top || 200) / viewport.height,
@@ -1161,6 +1196,7 @@ const ORBIT_SPEED = 0.06;
             angle: cinematic.angle + 1,
             current: cinematic.current,
           };
+        if (qualityDebug) qualityDebug.walk = walk?.state ?? null;
         // Drawing while a warm-up links would block on it; the hidden canvas waits.
         if (canvasShown || !shaderWarmup.pending) {
           rendering.update();
@@ -1218,6 +1254,7 @@ const ORBIT_SPEED = 0.06;
       });
       const onReducedMotionChange = (event) => {
         reducedMotion = Boolean(event?.matches);
+        if (reducedMotion) walk?.exit({ immediate: true });
         frameScheduler.setReducedMotion(reducedMotion);
       };
       reducedMotionMQ.addEventListener("change", onReducedMotionChange);
@@ -1235,9 +1272,13 @@ const ORBIT_SPEED = 0.06;
         onRelease: () => qualityState.holdSampling(),
         scheduler: frameScheduler,
       });
+      // An opening dialog (About, its #about link) also ends a walk at once.
       const panelObserver =
         typeof MutationObserver === "function"
-          ? new MutationObserver(() => panelHold.sync())
+          ? new MutationObserver(() => {
+              panelHold.sync();
+              if (document.body.hasAttribute("data-panel-open")) walk?.exit({ immediate: true });
+            })
           : null;
       panelObserver?.observe(document.body, {
         attributes: true,
@@ -1254,11 +1295,77 @@ const ORBIT_SPEED = 0.06;
       scene.setVisitorPaused = (paused) => {
         const next = Boolean(paused);
         scene.visitorPausedPreference = next;
+        if (next) walk?.exit({ immediate: true });
         cameraTour?.setPaused(next);
         return visitorHold.set(next);
       };
       scene.isVisitorPaused = () => visitorHold.paused;
       scene.setVisitorPaused(scene.visitorPausedPreference === true);
+      // ` or ~ starts the walk over the revealed scene on a desktop and ends it
+      // (walk-key.js). The first press captures the mouse inside its own gesture
+      // and fetches walk.js; a refused capture leaves the drag look.
+      const finePointer = window.matchMedia?.("(pointer: fine)"),
+        forcedColors = window.matchMedia?.("(forced-colors: active)");
+      const walkReady = () =>
+        walkAllowed({
+          shown: canvasShown && cinematic.ready && !runtimeDisposed && webglContextAvailable,
+          failed: sceneFailed,
+          ground: filmActive && typeof walkGround === "function",
+          reducedMotion,
+          paused: visitorHold.paused,
+          panelOpen: document.body.hasAttribute("data-panel-open"),
+          finePointer: !qualityState.touchPrimary && finePointer?.matches !== false,
+          forcedColors: forcedColors?.matches === true,
+        });
+      function createSceneWalk({ createWalk }) {
+        if (walk || runtimeDisposed || subsystemRegistry.disposed) return;
+        walk = createWalk({
+          camera,
+          canvas: renderer.domElement,
+          page: document.body,
+          win: window,
+          doc: document,
+          ground: (x, z) => walkGround(x, z) + environmentRoot.position.y,
+          tower: () => completeTower?.root ?? null,
+          anchors: {
+            trunk: {
+              x: ESTATE.tree.x + ESTATE.tree.trunk[0],
+              z: ESTATE.tree.z + ESTATE.tree.trunk[1],
+            },
+            lantern: estateLantern(),
+          },
+          rocks: () => rockScatter.footprints,
+          view: () => ({ position: camera.position, target: cinematic.target }),
+          fog: homeScene.fog,
+          fogRange: () => [state.profile.lighting.fogNear, state.profile.lighting.fogFar],
+          dissolve: TOUR_TRANSITION.dissolve,
+          onText: measureGroundText,
+        });
+        subsystemRegistry.register({ dispose: () => walk.dispose() });
+      }
+      const onWalkKey = (event) => {
+        if (!isWalkKey(event)) return;
+        if (walk?.active) {
+          event.preventDefault();
+          walk.exit();
+          return;
+        }
+        if (!walkReady()) return;
+        event.preventDefault();
+        try {
+          renderer.domElement.requestPointerLock?.()?.catch?.(() => {});
+        } catch {
+          // Refused: the walk looks by dragging instead.
+        }
+        walkLoad ||= import("./walk.js").then(createSceneWalk, () => {
+          walkLoad = null;
+        });
+        walkLoad.then(() => {
+          if (walk && walkReady()) walk.enter();
+          else if (document.pointerLockElement === renderer.domElement) document.exitPointerLock();
+        });
+      };
+      window.addEventListener("keydown", onWalkKey);
       scene.disposeHomeSceneRuntime = function disposeHomeSceneRuntime() {
         if (runtimeDisposed) return false;
         runtimeDisposed = true;
@@ -1267,6 +1374,7 @@ const ORBIT_SPEED = 0.06;
         document.fonts?.removeEventListener?.("loadingdone", onFontsLoaded);
         window.removeEventListener("resize", onWindowResize);
         window.removeEventListener("scroll", onWindowScroll);
+        window.removeEventListener("keydown", onWalkKey);
         document.removeEventListener("visibilitychange", onDocumentVisibilityChange);
         reducedMotionMQ.removeEventListener("change", onReducedMotionChange);
         sceneIntersectionObserver?.disconnect();
