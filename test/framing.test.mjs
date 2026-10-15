@@ -2119,3 +2119,185 @@ test("the lookout and the crown keep their edges and the name clear on tablets a
       });
   }
 });
+
+// The text on a portrait monitor (the review of 2026-10-15): through each tour move in 24
+// steps, Threshold's lookout and Close-up's tree keep 24 CSS px or more off the whole text
+// block, the name's two lines and the intro, and no crest of the ranges (each massif's where it
+// rises over the nearer layers, and the skyline with the backdrop rings) runs through a letter.
+// The letters' ink as measured on 1080x1920 (relative to the hero's box): per letter or run of
+// letters [left, right, top, bottom], the tops their real glyph tops.
+const MONITOR_LETTERS = [
+  [-2, 22, 26, 70],
+  [22, 40, 14, 70],
+  [40, 60, 31, 70],
+  [60, 78, 6, 70],
+  [78, 160, 34, 70],
+  [0, 56, 110, 166],
+  [56, 170, 129, 166],
+  [0, 268, 212, 226],
+];
+test("Threshold and Close-up keep the lookout, the tree and the crests off the text on portrait monitors", async () => {
+  const world = { BabelSite: {} };
+  vm.runInNewContext(await readFile(new URL("../src/scene/world.js", import.meta.url), "utf8"), {
+    window: world,
+  });
+  const { CAMERA_FAR } = world.BabelSite.scene.WORLD;
+  const assets = { tower: await asset("tower"), tree: await asset("tree") };
+  const tower = createCompleteTowerArchitecture({
+    asset: assets.tower,
+    groundY: ground(0, 0),
+    footingOffset: -0.22,
+  });
+  const tree = createTreeArchitecture({
+    asset: assets.tree,
+    groundHeight: ground,
+    anchor: [55.1, 36.1],
+  });
+  const groundRoot = new Group();
+  groundRoot.add(tree.root);
+  const scale = createPropScale({ groundRoot, groundHeight: ground });
+  scale.setTree(tree);
+  scale.setActive(true);
+  tree.setFilmTreatment(true);
+  tree.applyQuality({ tier: "high" });
+  const lantern = await lanternFor(tree);
+  groundRoot.updateMatrixWorld(true);
+  tower.root.updateMatrixWorld(true);
+  const meshes = (root, keep = () => true) => {
+    const out = [];
+    root.traverse((mesh) => {
+      if (!mesh.isMesh || !keep(mesh)) return;
+      mesh.material.side = DoubleSide;
+      out.push(mesh);
+    });
+    return out;
+  };
+  const subjects = {
+    Threshold: meshes(tower.root),
+    "Close-up": meshes(tree.root, (mesh) => !inLantern(mesh)),
+  };
+  // The crests: every massif copy's where it stands over the nearer layers, and the skyline
+  // (the highest of them all and of the backdrop rings) per bin of azimuth.
+  const models = {};
+  for (const role of MASSIFS.roles) {
+    const mesh = (await asset(role)).scene.children[0];
+    models[role] = {
+      position: mesh.geometry.attributes.position,
+      uv: mesh.geometry.attributes.uv,
+      index: mesh.geometry.index,
+      height: mesh.userData.height,
+    };
+  }
+  const composed = createRangeGeometry(models),
+    backdrop = mountainCrests(RANGE_BACKDROP),
+    rad = Math.PI / 180,
+    direction = (azimuth, elevation) =>
+      new Vector3(
+        Math.cos(azimuth * rad),
+        Math.tan(elevation * rad),
+        Math.sin(azimuth * rad),
+      ).multiplyScalar(300);
+  const nearer = (layer, azimuth) => {
+    let top = -90;
+    for (const { placement, sky } of composed.placed) {
+      if (placement.layer >= layer) continue;
+      const bin = Math.floor(((((azimuth - sky.from) % 360) + 360) % 360) / RANGE_SKY.bin);
+      if (bin < sky.values.length) top = Math.max(top, sky.values[bin]);
+    }
+    return top;
+  };
+  const bins = Math.round(360 / RANGE_SKY.bin),
+    highest = new Float32Array(bins).fill(-90),
+    crests = [];
+  for (const { placement, sky } of composed.placed)
+    sky.values.forEach((e, j) => {
+      if (e <= -90) return;
+      const azimuth = sky.from + (j + 0.5) * RANGE_SKY.bin,
+        bin = Math.floor((((azimuth % 360) + 360) % 360) / RANGE_SKY.bin) % bins;
+      highest[bin] = Math.max(highest[bin], e);
+      if (e > nearer(placement.layer, azimuth)) crests.push(direction(azimuth, e));
+    });
+  for (const range of RANGE_BACKDROP.ranges)
+    backdrop[range].forEach((e, j) => {
+      const from = (j / MOUNTAINS.columns) * 360,
+        to = ((j + 1) / MOUNTAINS.columns) * 360;
+      for (let bin = Math.floor(from / RANGE_SKY.bin); bin * RANGE_SKY.bin < to; bin++)
+        highest[bin % bins] = Math.max(highest[bin % bins], e);
+    });
+  highest.forEach((e, bin) => crests.push(direction((bin + 0.5) * RANGE_SKY.bin, e)));
+  const layout = LAYOUTS.find((l) => l.width === 1080 && l.height === 1920),
+    { width, height, hero, nav } = layout,
+    letters = MONITOR_LETTERS.map(([left, right, top, bottom]) => ({
+      left: hero.left + left,
+      right: hero.left + right,
+      top: hero.top + top,
+      bottom: hero.top + bottom,
+    })),
+    air = 24,
+    caster = new Raycaster();
+  try {
+    for (const name of ["Threshold", "Close-up"]) {
+      const kind = DIRECTED_SHOTS.tower.some((shot) => shot.name === name) ? "tower" : "tree",
+        angle = DIRECTED_SHOTS[kind].findIndex((shot) => shot.name === name);
+      const camera = new PerspectiveCamera(38, width / height, 0.1, CAMERA_FAR);
+      const controller = createCinematicCamera({
+        camera,
+        selected: kind,
+        angle,
+        getSafeArea: () => cinematicSafeArea(width, height, hero, nav),
+        getGroundY: ground,
+      });
+      for (const [k, object] of [
+        ["tower", tower],
+        ["tree", tree],
+      ]) {
+        controller.setSubject(k, object.root);
+        controller.setStatus({ kind: k, status: "ready" });
+      }
+      for (let step = 0; step <= 24; step++) {
+        const tourPhase = step / 24;
+        controller.apply({ width, height, tourPhase });
+        camera.updateMatrixWorld(true);
+        const label = `${name} ${width}x${height} phase ${tourPhase.toFixed(3)}`;
+        // The subject: rays every 8 CSS px over the letters and within 24 px of them.
+        for (const box of letters)
+          for (let y = box.top - air; y <= box.bottom + air; y += 8)
+            for (let x = Math.max(0, box.left - air); x <= box.right + air; x += 8) {
+              const dx = Math.max(box.left - x, 0, x - box.right),
+                dy = Math.max(box.top - y, 0, y - box.bottom);
+              if (Math.hypot(dx, dy) > air) continue;
+              caster.setFromCamera({ x: (x / width) * 2 - 1, y: 1 - (y / height) * 2 }, camera);
+              assert.equal(
+                caster.intersectObjects(subjects[name], false).length,
+                0,
+                `${label}: the ${kind === "tower" ? "lookout" : "tree"} at ${x},${y}, within ${air} px of the text`,
+              );
+            }
+        for (const point of crests) {
+          const p = point.clone().add(camera.position);
+          if (p.clone().applyMatrix4(camera.matrixWorldInverse).z >= 0) continue;
+          p.project(camera);
+          const x = ((p.x + 1) * width) / 2,
+            y = ((1 - p.y) * height) / 2;
+          for (const box of letters)
+            assert.ok(
+              x < box.left - 2 || x > box.right + 2 || y < box.top - 2 || y > box.bottom + 2,
+              `${label}: a crest at ${x.toFixed(0)},${y.toFixed(0)} runs through the text`,
+            );
+        }
+      }
+      controller.dispose();
+    }
+  } finally {
+    Object.values(composed.geometries).forEach((geometry) => geometry.dispose());
+    lantern.dispose();
+    scale.dispose();
+    tower.dispose();
+    tree.dispose();
+    for (const item of Object.values(assets))
+      item.scene.traverse((mesh) => {
+        mesh.geometry?.dispose();
+        mesh.material?.dispose();
+      });
+  }
+});

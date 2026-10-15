@@ -167,10 +167,17 @@ export const DIRECTED_SHOTS = {
       // Squat windows aim 1.5 degrees up, so the ranges' snowy crests drop below the frame
       // rather than graze its bottom edge beside About.
       squat: { azimuth: 48, move: null, tilt: [1.5, 1.5] },
-      // Portrait monitors: the lookout right, the name on sky and ground beside its legs,
-      // fitted a little smaller, so the cab keeps 24 CSS px or more of air off the right
-      // edge through the push (at 0.66 and 0.88 the edge cut it; the review of 2026-10-14).
-      tall: { anchor: [0.6, 0.5], margin: 0.84 },
+      // Portrait monitors: the lookout right, fitted smaller and set lower (more sky over the
+      // cab), its pan held to the last half degree: the cab keeps 40 CSS px or more of air off
+      // the right edge, the far leg 30 px or more clear of the intro, and the ranges' crests
+      // and feet out of the name and the intro through the push (at 0.84, higher, panning two
+      // degrees, the leg ran under "working on." by the end and a crest through the intro at
+      // the start; the reviews of 2026-10-14 and 2026-10-15).
+      tall: {
+        anchor: [0.6, 0.6],
+        margin: 0.78,
+        move: { ...GIANT_MOVE, pan: [-2, -1.5] },
+      },
     },
     {
       // The name and URL are retained; for the timber lookout it is a
@@ -447,11 +454,14 @@ export const DIRECTED_SHOTS = {
       // Landscape phones keep the drift (no room about the name for a move),
       // from higher, so the roots stay below the short frame.
       landscape: { move: null, margin: 0.83, height: 0.5, anchor: [0.5, 0.5] },
-      // Portrait monitors, the name below the subject: turned 11 degrees, the aim a little
-      // right of centre and lower, so the trunk's edge stays 25 CSS px or more right of the
-      // name through the push (from -162 at the centre it crossed "ex" and "va" by the end),
-      // the roots and lantern below the frame and the far range's snow off the name.
-      tall: { azimuth: -166, anchor: [0.57, 0.48] },
+      // Portrait monitors, the name below the subject: turned 15.5 degrees, the trunk a little
+      // larger and right of centre, seen from higher (0.46) and aimed lower, so the trunk keeps
+      // 25 CSS px or more off the name and the intro through the push (from -162 at the centre
+      // it crossed "ex" and "va" by the end; at -166 the intro's last word met it), the roots
+      // and lantern stay below the frame, and the ranges stand wholly above the name, the text
+      // on the plain below their feet (from 0.28 a crag's crest ran through "Alex" and their
+      // feet behind "Nava").
+      tall: { azimuth: -170.5, anchor: [0.6, 0.555], height: 0.46, margin: 0.96 },
     },
     {
       name: "Root and lantern",
