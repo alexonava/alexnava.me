@@ -933,7 +933,7 @@ test("the clouds' reshaping never reaches the reference banks or the roof's lane
     [f0, f1] = CLOUD_ISLANDS.fill.map((m) => (0.548 + m).toFixed(3));
   assert.ok(
     field.includes(
-      `if(uNebulaLayers>1.5){float dC=d-fineD;cover=mix(cover,max(min(cover,smoothstep(${c0},${c1},dC)),smoothstep(${f0},${f1},dC)),uCloudReshape);}`,
+      `if(uNebulaLayers>1.5){float dC=d-fineD;cover=mix(cover,max(cover*smoothstep(${c0},${c1},dC),smoothstep(${f0},${f1},dC)),uCloudReshape);}`,
     ),
   );
   assert.ok(CLOUD_ISLANDS.clear[0] > CLOUD_ISLANDS.clear[1] && CLOUD_ISLANDS.clear[1] > 0);

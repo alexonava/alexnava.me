@@ -134,13 +134,13 @@ export const CLOUD_BRUSH = Object.freeze({
 // No lone islands in the banks (the re-review of 2026-10-15): the fine octaves (n1, the
 // ridged 4.3x octave, `fine`) and the brush's edge move the cover threshold only where the
 // coarse field (the density without them, at their means) comes near it. Where the coarse
-// field lies `clear` [gone, whole] below the threshold no cover stands, so no lone puff or
-// cut-off lobe floats in clear sky; where it lies `fill` [from, whole] above, the cover is
+// field lies `clear` [gone, whole] below the threshold the cover fades out with it, so no
+// lone puff, oval or cut-off lobe floats in clear sky; where it lies `fill` [from, whole] above, the cover is
 // whole, so no pinhole or pit opens in a bank. The banks' edges keep their brushed detail.
 // High and balanced skies, by the reshaping (the environment's clouds stay as authored).
 export const CLOUD_ISLANDS = Object.freeze({
   on: 1,
-  clear: Object.freeze([0.1, 0.03]),
+  clear: Object.freeze([0.07, 0.015]),
   fill: Object.freeze([0.01, 0.06]),
 });
 // A value noise on the field's own sine-free hash, at the plane point x (GLSL statements
@@ -301,7 +301,7 @@ ${
 }float cover=smoothstep(.548-w,.548+w,d+brushEdge);
 ${
   CLOUD_ISLANDS.on
-    ? `if(uNebulaLayers>1.5){float dC=d-fineD;cover=mix(cover,max(min(cover,smoothstep(${(0.548 - CLOUD_ISLANDS.clear[0]).toFixed(3)},${(0.548 - CLOUD_ISLANDS.clear[1]).toFixed(3)},dC)),smoothstep(${(0.548 + CLOUD_ISLANDS.fill[0]).toFixed(3)},${(0.548 + CLOUD_ISLANDS.fill[1]).toFixed(3)},dC)),uCloudReshape);}
+    ? `if(uNebulaLayers>1.5){float dC=d-fineD;cover=mix(cover,max(cover*smoothstep(${(0.548 - CLOUD_ISLANDS.clear[0]).toFixed(3)},${(0.548 - CLOUD_ISLANDS.clear[1]).toFixed(3)},dC),smoothstep(${(0.548 + CLOUD_ISLANDS.fill[0]).toFixed(3)},${(0.548 + CLOUD_ISLANDS.fill[1]).toFixed(3)},dC)),uCloudReshape);}
 `
     : ""
 }cover*=horizonFade*uClouds;`;
