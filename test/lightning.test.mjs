@@ -584,6 +584,19 @@ test("a flash dims to nothing by a tour cut's capture, so the kept frame never h
   const half = at(LIGHTNING.cutFade / 2);
   assert.ok(half > 0.3 && half < 0.7, `half way, ${half}`);
   assert.equal(at(0), 0, "nothing at the capture");
+  // The bolt's strokes and leader dim with it.
+  const bolt = (cutIn, step = 1) => {
+    const rig = lightningRig({ forceAt: [{ at: 1, u: 0.7, v: 0.6, bolt: true, strength: 1 }] });
+    rig.state.cutIn = cutIn;
+    rig.step(step);
+    return rig.bolt.material.uniforms.uLevel.value;
+  };
+  assert.ok(bolt(Infinity) > 1, "a hold's bolt is whole");
+  assert.ok(Math.abs(bolt(LIGHTNING.cutFade / 2) - bolt(Infinity) / 2) < 0.05 * bolt(Infinity));
+  assert.equal(bolt(0), 0, "no stroke at the capture");
+  const leaderAt = 1 - LIGHTNING.bolt.leader / 2;
+  assert.ok(bolt(Infinity, leaderAt) > 0, "the leader grows down");
+  assert.equal(bolt(0, leaderAt), 0, "nor a leader");
 });
 
 test("the sky draws the flash in the banks, off the crop and the text, never in the environment", () => {
@@ -597,11 +610,11 @@ test("the sky draws the flash in the banks, off the crop and the text, never in 
     ),
   );
   assert.ok(sky.includes("*(1.-max(cloudText,1.-smoothstep(0.,uFlashTone.w,length(fa))))"));
-  // The clear sky lifts only near the banks, up to their cover threshold, so the cel
-  // step never cuts a lone disc of light out of open sky.
+  // The open sky lifts only in the banks' soft edges (near their cover threshold, times
+  // the cover), so the cel step never cuts a lone disc or a slab of light out of clear sky.
   assert.ok(
     sky.includes(
-      "col+=uFlashTone.rgb*fl*fg*uFlashGlow.z*smoothstep(${glslFloat(FLASH_SKY.near[0])},${glslFloat(FLASH_SKY.near[1])},d);",
+      "col+=uFlashTone.rgb*fl*fg*uFlashGlow.z*smoothstep(${glslFloat(FLASH_SKY.near[0])},${glslFloat(FLASH_SKY.near[1])},d)*cover;",
     ),
   );
   assert.equal(FLASH_SKY.near[1], 0.548, "full at the banks' cover threshold");

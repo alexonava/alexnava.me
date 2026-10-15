@@ -366,7 +366,9 @@ export const DIRECTED_SHOTS = {
       // of the limbs reaching left stood behind the name (3.97:1 at 1440x900),
       // and the trunk's behind About on phones and portrait monitors.
       // One night (2026-10-12): a pure backlight, the rim leading; less frontal fill.
-      light: { fill: 0.6, rim: 2, rimText: 1 },
+      // Its twigs' glints off the intro too (glintText): a one-pixel sparkle behind it
+      // set the small window's intro at 5.25:1 (599x499, the re-review of 2026-10-15).
+      light: { fill: 0.6, rim: 2, rimText: 1, glintText: 1 },
       // No lens blur: the clouds behind the crown read sharp (sky first, below). A tracking
       // pan (the owner's pick of 2026-10-12): the camera slides to its left while the lens
       // turns to hold the crown, so the limbs slide across the clouds behind it.

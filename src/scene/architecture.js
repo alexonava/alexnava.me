@@ -31,6 +31,7 @@ import {
   PALE_MOOD,
   RIM,
   RIM_THIN,
+  RIM_THIN_TREE,
   RIM_UNIFORMS,
   STONE_MOOD,
   STONE_TEXT,
@@ -282,6 +283,40 @@ export function sourceMesh(asset) {
   return meshes[0];
 }
 
+// Each vertex's radius across the tree's tightest turn there: 1 over the largest curvature,
+// 2|n.e|/|e|^2, along its edges e (a twig's girth; the trunk broad), so the rim eases off
+// twigs too thin on screen (film-light.js RIM.thin) evenly along them.
+export function treeRadii(geometry) {
+  const p = geometry.attributes.position.array,
+    n = geometry.attributes.normal.array,
+    count = geometry.attributes.position.count,
+    index = geometry.index,
+    curve = new Float32Array(count);
+  const edge = (a, b) => {
+    const x = p[3 * b] - p[3 * a],
+      y = p[3 * b + 1] - p[3 * a + 1],
+      z = p[3 * b + 2] - p[3 * a + 2],
+      l2 = x * x + y * y + z * z;
+    if (!(l2 > 0)) return;
+    const ka = (2 * Math.abs(n[3 * a] * x + n[3 * a + 1] * y + n[3 * a + 2] * z)) / l2,
+      kb = (2 * Math.abs(n[3 * b] * x + n[3 * b + 1] * y + n[3 * b + 2] * z)) / l2;
+    if (ka > curve[a]) curve[a] = ka;
+    if (kb > curve[b]) curve[b] = kb;
+  };
+  const corners = index ? index.count : count;
+  for (let t = 0; t + 2 < corners; t += 3) {
+    const a = index ? index.getX(t) : t,
+      b = index ? index.getX(t + 1) : t + 1,
+      c = index ? index.getX(t + 2) : t + 2;
+    edge(a, b);
+    edge(b, c);
+    edge(c, a);
+  }
+  const radii = new Float32Array(count);
+  for (let i = 0; i < count; i += 1) radii[i] = curve[i] > 0.01 ? 1 / curve[i] : 100;
+  return new Float32BufferAttribute(radii, 1);
+}
+
 export function editableGeometry(source) {
   const geometry = source.clone();
   // Quantized GLB attributes are compact transport data. Decode before applying
@@ -351,7 +386,7 @@ roughnessFactor = mix(roughnessFactor, ${ROOT_MOSS.roughness.toFixed(2)}, babelM
     };
     material.userData.babelGrade = { role, uniforms };
     material.customProgramCacheKey = () =>
-      `babel-estate-material-v9-${role}-${roughnessFloor}-${roughnessCeiling}-${directRoughness}${guarded || stoneGuarded ? "-text" : ""}`;
+      `babel-estate-material-v10-${role}-${roughnessFloor}-${roughnessCeiling}-${directRoughness}${guarded || stoneGuarded ? "-text" : ""}`;
     const rimmed = role === "tower" || role === "tree";
     material.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, uniforms);
@@ -360,11 +395,11 @@ roughnessFactor = mix(roughnessFactor, ${ROOT_MOSS.roughness.toFixed(2)}, babelM
       shader.vertexShader = shader.vertexShader
         .replace(
           "#include <common>",
-          "#include <common>\nvarying vec3 babelLocal;\nvarying vec3 babelLocalN;",
+          `#include <common>\nvarying vec3 babelLocal;\nvarying vec3 babelLocalN;${role === "tree" ? "\nattribute float babelRadius;\nvarying float vBabelRadius;" : ""}`,
         )
         .replace(
           "#include <begin_vertex>",
-          "#include <begin_vertex>\nbabelLocal = position;\nbabelLocalN = objectNormal;",
+          `#include <begin_vertex>\nbabelLocal = position;\nbabelLocalN = objectNormal;${role === "tree" ? "\nvBabelRadius = babelRadius * length(modelMatrix[0].xyz);" : ""}`,
         );
       shader.fragmentShader = shader.fragmentShader
         .replace(
@@ -377,7 +412,8 @@ roughnessFactor = mix(roughnessFactor, ${ROOT_MOSS.roughness.toFixed(2)}, babelM
           uniform float babelLift;
           uniform float babelFilm;
           uniform vec3 babelEnvironment;
-          ${rimmed ? "uniform vec4 babelRimLight;\n          uniform vec3 babelKeyView;" : ""}
+          ${rimmed ? "uniform vec4 babelRimLight;\n          uniform vec3 babelKeyView;\n          uniform float babelPixel;" : ""}
+          ${role === "tree" ? `varying float vBabelRadius;\n${RIM_THIN_TREE}` : rimmed ? "#define BABEL_THIN 1.0" : ""}
           ${guarded ? "uniform float babelRimText;" : ""}
           varying vec3 babelLocal;
           varying vec3 babelLocalN;
@@ -622,6 +658,7 @@ export function createTreeArchitecture({
     geometry.translate(0, -bounds.min.y, 0);
     geometry.scale(scale, scale, scale);
     geometry.computeBoundingSphere();
+    geometry.setAttribute("babelRadius", treeRadii(geometry));
     const material = ownMaterial(materialFor(asset, anisotropy, "tree", textGuard));
     const tree = new Mesh(geometry, material);
     tree.name = "meshy-tree";

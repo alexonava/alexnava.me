@@ -734,8 +734,9 @@ export function createLightning({
     light ? (light.intensity * (light.color.r + light.color.g + light.color.b)) / 3 : fallback;
   const fillHome = new Vector3(),
     flashKey = new Vector3();
-  // The bolt at a flash's `level` (0 while its leader grows down).
-  function drawBolt(event, where, local, level) {
+  // The bolt at a flash's `level` (0 while its leader grows down), its strokes and leader
+  // dimmed by `fade` too (the cut's), so none is left on the kept frame.
+  function drawBolt(event, where, local, level, fade = 1) {
     const b = local.bolt;
     bolt.visible = true;
     if (bolt.userData.event !== event) {
@@ -749,7 +750,8 @@ export function createLightning({
     const first = event.peaks[0].t;
     // The leader: a faint channel growing down before the first stroke.
     const leader = time < first ? b.leaderGlow : 0;
-    u.uLevel.value = event.strength * b.brightness * Math.max(strokes, b.afterglow * level, leader);
+    u.uLevel.value =
+      event.strength * b.brightness * Math.max(strokes, b.afterglow * level, leader) * fade;
     u.uGrow.value = (time - (first - b.leader)) / Math.max(1e-3, b.leader);
     u.uCore.value = b.core * pixelRatio;
     u.uHalo.value = b.halo * pixelRatio;
@@ -808,10 +810,8 @@ export function createLightning({
       const local = settingsFor(where.shot);
       // Before a cut the flash dims to nothing by the capture (cutFade).
       const toCut = cutIn(),
-        level =
-          event.strength *
-          lightningLevel(event, time, local.attack) *
-          (local.cutFade > 0 ? smoothstep(0, local.cutFade, toCut) : 1);
+        fade = local.cutFade > 0 ? smoothstep(0, local.cutFade, toCut) : 1,
+        level = event.strength * lightningLevel(event, time, local.attack) * fade;
       state.level = level;
       state.event = {
         k: event.k,
@@ -826,7 +826,7 @@ export function createLightning({
         clear();
         // Before the first stroke only the bolt's leader shows, growing down.
         if (bolt && where.segments && time >= event.peaks[0].t - local.bolt.leader)
-          drawBolt(event, where, local, 0);
+          drawBolt(event, where, local, 0, fade);
         return true;
       }
       lit = true;
@@ -894,7 +894,7 @@ export function createLightning({
         z: fb * mist,
         w: level,
       });
-      if (bolt && where.segments) drawBolt(event, where, local, level);
+      if (bolt && where.segments) drawBolt(event, where, local, level, fade);
       return true;
     },
     dispose() {

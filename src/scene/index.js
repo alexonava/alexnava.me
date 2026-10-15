@@ -1065,6 +1065,12 @@ const ORBIT_SPEED = 0.06;
           RIM_UNIFORMS.babelKeyView.value
             .set(...WORLD.SUN_DIRECTION)
             .transformDirection(camera.matrixWorldInverse);
+          RIM_UNIFORMS.babelPixel.value =
+            2 /
+            Math.max(
+              1e-6,
+              camera.projectionMatrix.elements[5] * viewport.height * renderer.getPixelRatio(),
+            );
         }
         // The shot's lens and the film's bars and grain follow the shot on screen.
         const post = rendering.postprocessPipeline;

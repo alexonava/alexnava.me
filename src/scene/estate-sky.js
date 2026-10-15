@@ -131,6 +131,18 @@ export const CLOUD_BRUSH = Object.freeze({
   edge: Object.freeze([0.035, 0.6, 10]),
   streak: Object.freeze([0.09, 0.8, 18]),
 });
+// No lone islands in the banks (the re-review of 2026-10-15): the fine octaves (n1, the
+// ridged 4.3x octave, `fine`) and the brush's edge move the cover threshold only where the
+// coarse field (the density without them, at their means) comes near it. Where the coarse
+// field lies `clear` [gone, whole] below the threshold no cover stands, so no lone puff or
+// cut-off lobe floats in clear sky; where it lies `fill` [from, whole] above, the cover is
+// whole, so no pinhole or pit opens in a bank. The banks' edges keep their brushed detail.
+// High and balanced skies, by the reshaping (the environment's clouds stay as authored).
+export const CLOUD_ISLANDS = Object.freeze({
+  on: 1,
+  clear: Object.freeze([0.1, 0.03]),
+  fill: Object.freeze([0.01, 0.06]),
+});
 // A value noise on the field's own sine-free hash, at the plane point x (GLSL statements
 // leaving the float named out).
 const brushNoise = (x, out) =>
@@ -257,7 +269,7 @@ q+=wo; p+=wo;
 }
 }
 float n0=NV[1], n1=NV[2], a0=NV[3], a1=NV[4];
-float d=n0*.62+n1*.38, da=a0*.62+a1*.38;
+float d=n0*.62+n1*.38, da=a0*.62+a1*.38, fineD=0.;
 if(uNebulaLayers>1.5){
 float c2=NV[5]*2.-1., e2=NV[6]*2.-1.;
 float g2=sqrt(c2*c2+.04)+.1, h2=sqrt(e2*e2+.04)+.1;
@@ -265,6 +277,7 @@ float fine=.5;
 if(uNebulaLayers>2.5) fine=NV[7]*.65+NV[8]*.35;
 d=n0*.5+n1*.27+g2*.16+fine*.07;
 da=a0*.5+a1*.27+h2*.16+fine*.07;
+fineD=(n1-.5)*.27+(g2-.62)*.16+(fine-.5)*.07;
 float bank=open*(mix(${glslFloat(banks[0])}*open,${glslFloat(banks[1])}+${glslFloat(lanes)}*(NV[2]-.5),smoothstep(${glslFloat(banks[2])},${glslFloat(banks[3])},NV[0]))-${glslFloat(text[0])}*cloudText);
 d+=bank; da+=bank;
 }
@@ -285,7 +298,13 @@ ${
     ? `if(uNebulaLayers>1.5){${brushNoise(brushFrame(CLOUD_BRUSH.edge), "be")}brushEdge=${glslFloat(CLOUD_BRUSH.edge[0])}*(be-.5)*2.*(1.-cloudText)*uCloudReshape;}
 `
     : ""
-}float cover=smoothstep(.548-w,.548+w,d+brushEdge)*horizonFade*uClouds;`;
+}float cover=smoothstep(.548-w,.548+w,d+brushEdge);
+${
+  CLOUD_ISLANDS.on
+    ? `if(uNebulaLayers>1.5){float dC=d-fineD;cover=mix(cover,max(min(cover,smoothstep(${(0.548 - CLOUD_ISLANDS.clear[0]).toFixed(3)},${(0.548 - CLOUD_ISLANDS.clear[1]).toFixed(3)},dC)),smoothstep(${(0.548 + CLOUD_ISLANDS.fill[0]).toFixed(3)},${(0.548 + CLOUD_ISLANDS.fill[1]).toFixed(3)},dC)),uCloudReshape);}
+`
+    : ""
+}cover*=horizonFade*uClouds;`;
 }
 
 // The cloud field's text guard, `cloudText`: 1 behind the name and intro (slateText,
@@ -299,11 +318,11 @@ return 1.-smoothstep(0.,${glslFloat(text[1])},length(f));}`;
 const noText = () => ({ x: 2, y: 2, z: -1, w: -1 });
 
 const { wedge: flashWedge, radius: flashRadius } = FLASH_REFERENCE;
-// The flash's lift of the clear sky between the banks reaches only as far as their
-// density comes near the cover threshold: from `near[0]` (none) to `near[1]` (full,
-// the threshold). Deep in clear sky it is 0, so the grade's cel step never cuts a
-// lone disc or slab of light out of open sky (the review of 2026-10-14); the banks
-// still glow from inside.
+// The flash's lift of the open sky reaches only the banks' soft edges: their density
+// near the cover threshold, from `near[0]` (none) to `near[1]` (full, the threshold),
+// times the cover itself. Clear sky, a gap between two banks too, is never lifted, so
+// the grade's cel step never cuts a lone disc or a flat slab of light out of it (the
+// reviews of 2026-10-14); the banks still glow from inside.
 export const FLASH_SKY = Object.freeze({ near: Object.freeze([0.42, 0.548]) });
 // A lightning flash in the banks (lightning.js), drawn by the shell while uFlash.w
 // (its level) is above 0: the banks glow cold from inside about the flash's point
@@ -323,7 +342,7 @@ fa=max(max(slateAbout.xy-fa,fa-slateAbout.zw),0.)*vec2(slateAspect,1.)/min(slate
 float fg=exp(-dot(fo,fo)), fl=uFlash.w*(1.-smoothstep(${glslFloat(flashWedge[0])},${glslFloat(flashWedge[1])},cloudAz)*(1.-smoothstep(${glslFloat(flashWedge[2])},${glslFloat(flashWedge[3])},cloudAz))*smoothstep(${glslFloat(flashRadius[0])},${glslFloat(flashRadius[1])},bl))
 *(1.-max(cloudText,1.-smoothstep(0.,uFlashTone.w,length(fa))));
 cloudCol+=uFlashTone.rgb*fl*(fg+uFlashCore*pow(fg,9.))*uFlashGlow.y*mix(1.-uFlashGlow.w,1.,thick);
-col+=uFlashTone.rgb*fl*fg*uFlashGlow.z*smoothstep(${glslFloat(FLASH_SKY.near[0])},${glslFloat(FLASH_SKY.near[1])},d);
+col+=uFlashTone.rgb*fl*fg*uFlashGlow.z*smoothstep(${glslFloat(FLASH_SKY.near[0])},${glslFloat(FLASH_SKY.near[1])},d)*cover;
 }`;
 
 // Where a camera at `eye` sees the star (`star`, world) on the cloud plane: the sky

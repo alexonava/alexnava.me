@@ -37,21 +37,28 @@ export function shotLight(shot) {
 // past the name, the intro and About (a share of the screen's smaller side)
 // the tree's rim eases back in where a shot takes it off the text (its mood's
 // rimText, the uniform babelRimText; only the bark has the text's boxes, so
-// the lookout's rim is whole); thin: across [from, to] of the normal's turn over one
-// pixel (length(fwidth(geometryNormal))) the rim eases off, so twigs a pixel or two
-// wide, whose few pixels all face grazing, never string into bright beads (the review
-// of 2026-10-14); anything a few pixels across keeps its whole rim.
+// the lookout's rim is whole); thin: across [from, to] device pixels of a twig's radius on
+// screen (the tree's own radius at each vertex, architecture.js treeRadii, over the size
+// of a pixel at its depth, babelPixel) the rim eases off, so twigs under a pixel or so
+// across, whose few pixels all face grazing, never string into bright beads, on any tier
+// (the reviews of 2026-10-14); it is steady along a twig, so a thin rim never breaks into
+// dots, and anything a couple of pixels across keeps its whole rim.
 export const RIM = Object.freeze({
   color: Object.freeze([0.19, 0.24, 0.36]),
   floor: 0.2,
   textReach: 0.2,
-  thin: Object.freeze([1, 2]),
+  thin: Object.freeze([0.3, 0.9]),
 });
-// The rim's share left on thin geometry (RIM.thin), as a GLSL factor.
-export const RIM_THIN = `(1.0-smoothstep(${RIM.thin[0].toFixed(2)}, ${RIM.thin[1].toFixed(2)}, length(fwidth(geometryNormal))))`;
+// The rim's share left on thin geometry (RIM.thin), as a GLSL factor: BABEL_THIN, which the
+// tree defines from its radius (RIM_THIN_TREE) and the lookout as 1.
+export const RIM_THIN = "BABEL_THIN";
+export const RIM_THIN_TREE = `#define BABEL_THIN smoothstep(${RIM.thin[0].toFixed(2)}, ${RIM.thin[1].toFixed(2)}, vBabelRadius / max(babelPixel * vViewPosition.z, 1e-6))`;
 export const RIM_UNIFORMS = Object.freeze({
   babelRimLight: { value: new Vector4(0, 0, 0, RIM.floor) },
   babelKeyView: { value: new Vector3(0, 0, 1) },
+  // The size of a device pixel one unit in front of the lens (2 / (projection[1][1] *
+  // the drawing buffer's height)), kept current per frame.
+  babelPixel: { value: 0.001 },
   babelRimText: { value: 0 },
 });
 export function setRim(strength = 0, text = 0) {
