@@ -349,7 +349,6 @@ test("Pages header rules resolve one cache policy for stable and fingerprinted p
     `/scripts/app.${hash}.js`,
     `/scripts/scene.${hash}.js`,
     `/scripts/scene.shared.${hash}.js`,
-    `/scripts/scene.light-shafts.${hash}.js`,
     `/scripts/scene.rock-build.${hash}.js`,
   ]) {
     assert.equal(cacheControl(pathname), immutable, pathname);

@@ -279,6 +279,7 @@ export const STREAMS = Object.freeze({
     edge: Object.freeze([0.06, 0.24]),
     clump: Object.freeze([0.45, 0.9]),
     broken: 0.8,
+    drift: 0.5,
   }),
   bed: Object.freeze({
     depth: 0.2,
@@ -1496,7 +1497,8 @@ vec2 slateVO = vMudWorld.xz-${glslVec(+(TREE_FOOTING.x + TRUNK[0]).toFixed(2), +
 float slateVA = max(dot(slateVR.xz, slateVR.xz), 1e-4), slateVT = -dot(slateVO, slateVR.xz)/slateVA;
 if (slateVT > 0.0) {
   float slateVH = slateVT*slateVR.y, slateVD = length(slateVO+slateVT*slateVR.xz);
-  slateWaterVeil = max((1.0-smoothstep(${glsl(PUDDLE_MIRROR.trunk[0])}, ${glsl(PUDDLE_MIRROR.trunk[1])}, slateVD))*(1.0-smoothstep(${glsl(PUDDLE_MIRROR.trunk[2])}, ${glsl(PUDDLE_MIRROR.trunk[3])}, slateVH)), (1.0-smoothstep(${glsl(PUDDLE_MIRROR.flare[0])}, ${glsl(PUDDLE_MIRROR.flare[1])}, slateVD))*(1.0-smoothstep(${glsl(PUDDLE_MIRROR.flare[2])}, ${glsl(PUDDLE_MIRROR.flare[3])}, slateVH)));
+  float slateVS = ${glsl(PUDDLE_MIRROR.tree.soft[0])}+${glsl(PUDDLE_MIRROR.tree.soft[1])}*slateVT;
+  slateWaterVeil = ${treeVeil("slateVD", "slateVH", "slateVS")};
   slateWaterBark = ${glslVec(...PUDDLE_MIRROR.bark)};
 }
 float slatePoolNear = slatePoolW*(1.0-smoothstep(${glsl(PUDDLE_MIRROR.undulationFade[0])}, ${glsl(PUDDLE_MIRROR.undulationFade[1])}, length(vViewPosition)));
@@ -1638,20 +1640,56 @@ export const PUDDLE_MIRROR = Object.freeze({
   // hill-silhouette.js TERRAIN_HORIZON and SLATE_PUDDLES.zenith (mud-ground.js).
   horizon: Object.freeze([0.062, 0.065, 0.073]),
   zenith: Object.freeze([0.07, 0.085, 0.13]),
-  // The trunk above TREE_FOOTING + TRUNK: radius and height, and its root
-  // flare (measured on the tree), and their colour.
-  trunk: Object.freeze([1.9, 2.5, 10, 12.5]),
+  // The tree above TREE_FOOTING + TRUNK as the water sees it (treeVeil()): its
+  // root flare (radius and height ranges, measured on the tree); its trunk,
+  // `radius` [at the foot, at the crotch] tapering up to the crotch, which ends
+  // over [from, to] in height; its two limbs leaning apart above it, their
+  // middles `lean` [from the axis, per unit up] out and half `width` [at the
+  // crotch, at the top], fading out over `top`; edges `soft` [units, share of
+  // the reflected ray's length] wide, never under 1.5 pixels; and its colour.
   flare: Object.freeze([3, 4.2, 0.8, 1.8]),
+  tree: Object.freeze({
+    radius: Object.freeze([2.4, 1.9]),
+    crotch: Object.freeze([8.5, 11.5]),
+    lean: Object.freeze([1.1, 0.55]),
+    width: Object.freeze([0.8, 0.35]),
+    top: Object.freeze([11.5, 14]),
+    soft: Object.freeze([0.3, 0.02]),
+  }),
   bark: Object.freeze([0.045, 0.048, 0.05]),
 });
+// The tree's silhouette in the water's mirror (PUDDLE_MIRROR.flare and tree), a
+// GLSL expression: where a ray off the water passes `d` from the trunk's axis at
+// `h` above the water, with edges `aa` units soft. The flare, the trunk tapering
+// to its crotch and two limbs leaning apart above it, so its image reads as a
+// tree's, never as a box with level ends.
+function treeVeil(d, h, aa) {
+  const { flare } = PUDDLE_MIRROR,
+    { radius, crotch, lean, width, top } = PUDDLE_MIRROR.tree,
+    n = (v) => glsl(+v.toFixed(4)),
+    fork = crotch[0] - 1;
+  const trunk = `(1.0-smoothstep(-${aa}, ${aa}, ${d}-mix(${n(radius[0])}, ${n(radius[1])}, clamp(${h}/${n(crotch[1])}, 0.0, 1.0))))*(1.0-smoothstep(${n(crotch[0])}-${aa}, ${n(crotch[1])}+${aa}, ${h}))`,
+    limbs = `(1.0-smoothstep(-${aa}, ${aa}, abs(${d}-${n(lean[0])}-${n(lean[1])}*max(${h}-${n(fork)}, 0.0))-mix(${n(width[0])}, ${n(width[1])}, smoothstep(${n(fork)}, ${n(top[1])}, ${h}))))*smoothstep(${n(fork - 1)}, ${n(fork)}, ${h})*(1.0-smoothstep(${n(top[0])}, ${n(top[1])}+${aa}, ${h}))`,
+    root = `(1.0-smoothstep(${n(flare[0])}, ${n(flare[1])}, ${d}))*(1.0-smoothstep(${n(flare[2])}, ${n(flare[3])}, ${h}))`;
+  return `max(max(${trunk}, ${limbs}), ${root})`;
+}
 // The supplied lantern in its own units (lantern.js LANTERN_AUTHORING_HEIGHT
-// 2.48, drawn 1.98 tall): the light sits at its luminous centre, and the
-// flame (lantern-flame.js FLAME and FLAME_BASE) stands on the wick at 0.49,
-// 0.30 tall and 0.047 wide, its fire in the FLAME colours at gain 1.6, with
-// lanternFire's light held in the glass: a halo [strength, half-width, centre
-// and height as fractions of the flame's] and fill in the warm colour, a
-// glare in the pale one (its no-bloom strength).
-export const LANTERN_IMAGE = Object.freeze({ scale: 1.98 / 2.48, glow: 0.7146 });
+// 2.48, drawn 1.98 tall): the light sits at its luminous centre (`glow`, and
+// `scale` the drawn size), and the flame (lantern-flame.js FLAME and
+// FLAME_BASE) stands on the wick at 0.49, 0.30 tall and 0.047 wide, its fire
+// in the FLAME colours at gain 1.6, with lanternFire's light held in the
+// glass: a halo [strength, half-width, centre and height as fractions of the
+// flame's] and fill in the warm colour, a glare in the pale one (its no-bloom
+// strength). In the water the cage's silhouette eases each step of its width
+// over `round` (lantern units), so its eave never stands out as a rectangular
+// tab, and the flame-lit underside of its roof keeps `roof` of its light, so
+// the image's lower crossbar never closes it into a lit frame.
+export const LANTERN_IMAGE = Object.freeze({
+  scale: 1.98 / 2.48,
+  glow: 0.7146,
+  round: 0.04,
+  roof: 0.6,
+});
 export const LANTERN_FLAME = Object.freeze({
   base: 0.49,
   height: 0.3,
@@ -1750,12 +1788,36 @@ const zoneGlsl = (zone) => glslVec(+zone.x.toFixed(2), +zone.z.toFixed(2));
 // [along, across] cycles per unit (drawn out along the flow), and the tilt of
 // each. Where `fade` is set, the coarse octave fades as the fine one does,
 // where its ripples would fall under fade[0] to fade[1] pixels of ground, so
-// far water keeps the sky still instead of shimmering.
+// far water keeps the sky still instead of shimmering. The lantern's image
+// takes none of the currents' tilt up or down: each ripple would shift the
+// reflected height by more than the lantern's eave is deep and break its image
+// into stacked, offset strips. It sways instead, `sway` times the river's
+// coarse ripples' tilt across the view: its posts lean and bend by about a
+// post's width as the water drifts, slowly, the image never sliced. A lens
+// looking down on the water sees the same ripple bend the image less, so the
+// sway grows as the view flattens, `swayLow` [0] over the sine of the view's
+// elevation, at least 1 and at most [1] times: a small, far image (a landscape
+// phone, a wide screen, the phone's Root and lantern) sways as a near one does,
+// and its lit roof underside, which would stay level while the posts sway,
+// dims by as much. The
+// moving water (the river's and the streams') mirrors the sky at `rough`
+// roughness (the environment's own prefiltered blur), and the stream up to
+// `roughTilt` more where its ripples are steepest (where it pours in): sharp,
+// its ripples swept the sky's fine strokes into closed contour rings; still
+// puddles stay sharp.
+// Where the stream pours in, its steeper ripples ease into the river's own
+// between `mouth` [0] and [1] river radii, keeping [2] of them, so the plume's
+// steep ripples never contour the river's mirror.
 export const RIVER_RIPPLE = Object.freeze({
   coarse: Object.freeze([0.6, 1.6]),
   fine: Object.freeze([1.8, 4]),
   tilt: Object.freeze([0.018, 0.007]),
   fade: Object.freeze([1.5, 3]),
+  sway: 3,
+  swayLow: Object.freeze([0.5, 5]),
+  rough: 0.12,
+  roughTilt: 0.3,
+  mouth: Object.freeze([0.5, 1, 0.2]),
 });
 // The streams' current (STREAMS.current), on the same octaves' terms.
 const SC = STREAMS.current;
@@ -1802,8 +1864,8 @@ float slateWater = slatePuddle*slateZoneW;
 if (slateWater > 0.0) {
   // The water's own normal, for the mirror and its Fresnel only (the bottom keeps the soil's): level as it deepens, a still micro-undulation near the lens, and the drips.
   float slateDeep = smoothstep(-.01, .05, slateLevel)*(1.0-slateDry)*slateZoneW;
-  vec3 slateN = normalize(normal*mat3(viewMatrix));
-  float slateView = length(vViewPosition);
+  vec3 slateN = normalize(normal*mat3(viewMatrix)), slateNI = slateN, slateV = normalize(cameraPosition-vMudWorld);
+  float slateView = length(vViewPosition), slateRough = 0.0, slateRoughT = 0.0, slateSWG = 1.0;
   if (slateDeep > 0.0) {
     vec2 slateG = vec2(0.0);
     // The undulation's noise only where it has not faded; the rings only while a drip lives.
@@ -1812,28 +1874,45 @@ if (slateWater > 0.0) {
       slateG = (slateU1.yz*mat2(.8, .6, -.6, .8)+.5*slateU2.yz)*${glsl(M.undulation)}*(1.0-smoothstep(${glsl(M.undulationFade[0])}, ${glsl(M.undulationFade[1])}, slateView));
     }
     if (slateDrip.w > 0.0) slateG += slateRipples(vMudWorld.xz, slatePx*slateView/max(abs(dot(normal, normalize(vViewPosition))), .3));
+    // The currents' tilt (slateGC: the river's, slateGT: the streams'), which the lantern's image takes none of; it sways
+    // with the river's coarse ripples (slateGS) across the view instead (RIVER_RIPPLE.sway).
+    vec2 slateGC = vec2(0.0), slateGS = vec2(0.0), slateGT = vec2(0.0);
     // The river's current: ripples drawn out along the flow drift downstream at RIVER.flow (on the drips' clock, so they hold
     // as the drips do); the finer octave fades where it would fall under three pixels of ground. They ease out toward the shore.
     if (slateRiverR < 1.1) {
       vec2 slateFU = vec2(slateRiverQ.y-slateFlow*${glsl(RIVER.flow)}, slateRiverQ.z);
       float slateFP = slatePx*slateView/max(abs(dot(normal, normalize(vViewPosition))), .3);
       vec3 slateF1 = slateNoiseD(slateFU*${glslVec(...RIVER_RIPPLE.coarse)}), slateF2 = slateNoiseD(slateFU*${glslVec(...RIVER_RIPPLE.fine)}+13.0);
-      vec2 slateFG = slateF1.yz*${glslVec(...RIVER_RIPPLE.coarse)}*${glsl(RIVER_RIPPLE.tilt[0])}${RIVER_RIPPLE.fade ? `*smoothstep(${glsl(RIVER_RIPPLE.fade[0])}, ${glsl(RIVER_RIPPLE.fade[1])}, ${glsl(+(1 / RIVER_RIPPLE.coarse[1]).toFixed(4))}/slateFP)` : ""}+slateF2.yz*${glslVec(...RIVER_RIPPLE.fine)}*${glsl(RIVER_RIPPLE.tilt[1])}*smoothstep(1.5, 3.0, ${glsl(1 / RIVER_RIPPLE.fine[1])}/slateFP);
-      slateG += (slateRiverDir*slateFG.x+vec2(-slateRiverDir.y, slateRiverDir.x)*slateFG.y)*(1.0-smoothstep(.8, 1.1, slateRiverR));
+      float slateFF = ${RIVER_RIPPLE.fade ? `smoothstep(${glsl(RIVER_RIPPLE.fade[0])}, ${glsl(RIVER_RIPPLE.fade[1])}, ${glsl(+(1 / RIVER_RIPPLE.coarse[1]).toFixed(4))}/slateFP)` : "1.0"};
+      vec2 slateFC = slateF1.yz*${glslVec(...RIVER_RIPPLE.coarse)}*${glsl(RIVER_RIPPLE.tilt[0])}*slateFF, slateFG = slateFC+slateF2.yz*${glslVec(...RIVER_RIPPLE.fine)}*${glsl(RIVER_RIPPLE.tilt[1])}*smoothstep(1.5, 3.0, ${glsl(1 / RIVER_RIPPLE.fine[1])}/slateFP);
+      vec2 slateFX = vec2(-slateRiverDir.y, slateRiverDir.x);
+      float slateFS = 1.0-smoothstep(.8, 1.1, slateRiverR);
+      slateGC = (slateRiverDir*slateFG.x+slateFX*slateFG.y)*slateFS;
+      slateGS = (slateRiverDir*slateFC.x+slateFX*slateFC.y)*slateFS;
+      slateRough = slateFS;
     }
     // The streams' current: steeper, finer ripples drawn out along each course drift down it at STREAMS.flow, each
-    // octave fading where it would fall under three pixels of ground.
+    // octave fading where it would fall under three pixels of ground, and easing into the river's own where it pours in
+    // (RIVER_RIPPLE.mouth).
     if (slateStreamQ.x > 0.0) {
       vec2 slateSU = vec2(slateStreamQ.y-slateFlow*${glsl(STREAMS.flow)}, slateStreamQ.z*slateStreamQ.w);
       float slateSP = slatePx*slateView/max(abs(dot(normal, normalize(vViewPosition))), .3);
       vec3 slateS1 = slateNoiseD(slateSU*${glslVec(...SC.coarse)}+5.0), slateS2 = slateNoiseD(slateSU*${glslVec(...SC.fine)}+29.0);
       vec2 slateSG = slateS1.yz*${glslVec(...SC.coarse)}*${glsl(SC.tilt[0])}*smoothstep(1.5, 3.0, ${glsl(+(1 / SC.coarse[1]).toFixed(4))}/slateSP)+slateS2.yz*${glslVec(...SC.fine)}*${glsl(SC.tilt[1])}*smoothstep(1.5, 3.0, ${glsl(+(1 / SC.fine[1]).toFixed(4))}/slateSP);
-      slateG += (slateStreamDir*slateSG.x+vec2(-slateStreamDir.y, slateStreamDir.x)*slateSG.y)*slateStreamQ.x;
+      slateRough = max(slateRough, slateStreamQ.x);
+      slateRoughT = min(length(slateSG)/.08, 1.0)*slateStreamQ.x;
+      slateGT = (slateStreamDir*slateSG.x+vec2(-slateStreamDir.y, slateStreamDir.x)*slateSG.y)*slateStreamQ.x*mix(${glsl(RIVER_RIPPLE.mouth[2])}, 1.0, smoothstep(${glsl(RIVER_RIPPLE.mouth[0])}, ${glsl(RIVER_RIPPLE.mouth[1])}, slateRiverR));
     }
+    // The lantern's image: the still water's tilt, swayed across the view by the river's coarse ripples.
+    vec2 slateSide = normalize(vec2(slateV.z, -slateV.x)+1e-6);
+    slateSWG = clamp(${glsl(RIVER_RIPPLE.swayLow[0])}/max(slateV.y, .02), 1.0, ${glsl(RIVER_RIPPLE.swayLow[1])});
+    vec2 slateGI = slateG+${glsl(RIVER_RIPPLE.sway)}*slateSWG*dot(slateGS, slateSide)*slateSide;
+    slateNI = normalize(mix(slateN, normalize(vec3(-slateGI.x, 1.0, -slateGI.y)), slateDeep));
+    slateG += slateGC+slateGT;
     slateN = normalize(mix(slateN, normalize(vec3(-slateG.x, 1.0, -slateG.y)), slateDeep));
   }
-  vec3 slateV = normalize(cameraPosition-vMudWorld), slateR = reflect(-slateV, slateN);
-  float slateF = ${glsl(M.f0)}+${glsl(1 - M.f0)}*pow(1.0-saturate(dot(slateN, slateV)), 5.0), slateRA = max(dot(slateR.xz, slateR.xz), 1e-4);
+  vec3 slateR = reflect(-slateV, slateN), slateRI = reflect(-slateV, slateNI);
+  float slateF = ${glsl(M.f0)}+${glsl(1 - M.f0)}*pow(1.0-saturate(dot(slateN, slateV)), 5.0), slateRA = max(dot(slateR.xz, slateR.xz), 1e-4), slateRAI = max(dot(slateRI.xz, slateRI.xz), 1e-4);
   // The lantern, found by its light's world position among the point lights.
   vec3 slateLamp = vec3(0.0), slateLampW = vec3(0.0);
   #if NUM_POINT_LIGHTS > 0
@@ -1853,7 +1932,7 @@ ${
     : ""
 }  // The night sky (the film's environment, night-environment.js) at its sharpest, brighter in a lightning flash away from the text (film-light.js FLASH_GROUND); without it, a sky from the horizon, fog and zenith colours.
   #ifdef USE_ENVMAP
-  vec3 slateSkyW = textureCubeUV(envMap, slateR, 0.0).rgb*envMapIntensity*${glsl(M.sky)}*(babelFlash.y > 0.0 ? 1.0+babelFlash.y*(1.0-slateBehindText()) : 1.0);
+  vec3 slateSkyW = textureCubeUV(envMap, slateR, ${glsl(RIVER_RIPPLE.rough)}*slateRough+${glsl(RIVER_RIPPLE.roughTilt)}*slateRoughT).rgb*envMapIntensity*${glsl(M.sky)}*(babelFlash.y > 0.0 ? 1.0+babelFlash.y*(1.0-slateBehindText()) : 1.0);
   #else
   vec3 slateSkyW = mix(mix(${glslVec(...M.horizon)}, fogColor, smoothstep(0.0, .1, slateR.y)), ${glslVec(...M.zenith)}, smoothstep(.12, .6, slateR.y));
   slateSkyW *= 1.0+${glsl(2 * M.cloud)}*(slateNoise((slateP.xz+slateR.xz*(60.0/max(slateR.y, .05)))/45.0)-.5)*smoothstep(.02, .12, slateR.y);
@@ -1862,34 +1941,38 @@ ${
   vec2 slateO = slateP.xz-${TRUNK_GLSL};
   float slateT = -dot(slateO, slateR.xz)/slateRA, slateTH = slateT*slateR.y, slateTD = length(slateO+slateT*slateR.xz), slateTrunk = 0.0;
   if (slateT > 0.0) {
-    slateTrunk = max((1.0-smoothstep(${glsl(M.trunk[0])}, ${glsl(M.trunk[1])}, slateTD))*(1.0-smoothstep(${glsl(M.trunk[2])}, ${glsl(M.trunk[3])}, slateTH)), (1.0-smoothstep(${glsl(M.flare[0])}, ${glsl(M.flare[1])}, slateTD))*(1.0-smoothstep(${glsl(M.flare[2])}, ${glsl(M.flare[3])}, slateTH)));
+    float slateTS = max(${glsl(M.tree.soft[0])}+${glsl(M.tree.soft[1])}*slateT, 1.5*slatePx*(slateView+slateT));
+    slateTrunk = ${treeVeil("slateTD", "slateTH", "slateTS")};
     slateSkyW = mix(slateSkyW, ${glslVec(...M.bark)}, slateTrunk);
   }
   vec3 slateMirror = slateSkyW, slateFlameW = vec3(0.0);
   float slateFlamePk = 0.0;
   vec2 slateLO = slateP.xz-slateLampW.xz;
-  float slateLT = -dot(slateLO, slateR.xz)/slateRA;
+  float slateLT = -dot(slateLO, slateRI.xz)/slateRAI;
   if (slateLT > 0.0 && dot(slateLamp, slateLamp) > 0.0 && (slateLT < slateT || slateTrunk < .01)) {
     // Where the reflected ray passes the lantern's axis, in lantern units.
-    float slateLX = (slateLO.x*slateR.z-slateLO.y*slateR.x)/sqrt(slateRA)/${glsl(LANTERN_IMAGE.scale)}, slateLY = (slateP.y+slateLT*slateR.y-slateLampW.y)/${glsl(LANTERN_IMAGE.scale)}+${glsl(LANTERN_IMAGE.glow)};
+    float slateLX = (slateLO.x*slateRI.z-slateLO.y*slateRI.x)/sqrt(slateRAI)/${glsl(LANTERN_IMAGE.scale)}, slateLY = (slateP.y+slateLT*slateRI.y-slateLampW.y)/${glsl(LANTERN_IMAGE.scale)}+${glsl(LANTERN_IMAGE.glow)};
     vec2 slateAA = vec2(slatePx*(slateView+slateLT)/${glsl(LANTERN_IMAGE.scale)})+vec2(.012, .03)*${glsl(M.imageSoft)};
     float slateAX = abs(slateLX), ly = slateLY;
     // Only rays that pass within the lantern's bounds (its widest .59, 0 to 2.49 tall) draw its image.
     if (slateAX < .6+slateAA.x && ly > -slateAA.y && ly < 2.5+slateAA.y) {
     // The cage's silhouette (measured on the lantern): foot, body, eave, dome and finial.
-    float slateHW = ly < .1 ? .59 : ly < .3 ? .51 : ly < 1.5 ? .435 : ly < 1.68 ? .59 : ly < 2.1 ? mix(.5, .3, (ly-1.68)/.42) : ly < 2.2 ? mix(.3, .16, (ly-2.1)/.1) : .16-.24*(ly-2.2);
+    // Its steps (foot to body, body to eave, eave to dome) eased over LANTERN_IMAGE.round, so no corner reads as a tab.
+    float slateHR = ${glsl(LANTERN_IMAGE.round)}, slateHT = ly < 2.1 ? mix(.5, .3, (ly-1.68)/.42) : ly < 2.2 ? mix(.3, .16, (ly-2.1)/.1) : .16-.24*(ly-2.2);
+    float slateHW = mix(.59-.08*smoothstep(.1-slateHR, .1+slateHR, ly)-.075*smoothstep(.3-slateHR, .3+slateHR, ly)+.155*smoothstep(1.5-slateHR, 1.5+slateHR, ly), slateHT, smoothstep(1.68-slateHR, 1.68+slateHR, ly));
+
     float slateCageM = (1.0-smoothstep(slateHW-slateAA.x, slateHW+slateAA.x, slateAX))*smoothstep(-slateAA.y, slateAA.y, ly)*(1.0-smoothstep(2.47-slateAA.y, 2.49+slateAA.y, ly));
     float slateGlassM = (1.0-smoothstep(.36-slateAA.x, .36+slateAA.x, slateAX))*smoothstep(.34-slateAA.y, .34+slateAA.y, ly)*(1.0-smoothstep(1.48-slateAA.y, 1.48+slateAA.y, ly));
     float slateLampY = dot(slateLamp, vec3(.2126, .7152, .0722)), slateGlobe = length(vec2(slateAX/.2, (ly-.74)/.34));
     // Through the clear globe the sky and, without the flame module, a faint glow (with it, the flame's image carries the glass's light); the dark cage with the flame-lit inner faces of its posts and the roof's underside.
     vec3 slateGlassC = slateSkyW*.8+slateLamp*(.03*(1.0-smoothstep(.5, 1.0, slateGlobe))+.02*exp(-3.0*slateGlobe*slateGlobe))*(1.0-step(.01, slateFlame.x));
-    vec3 slateCageC = vec3(.012, .013, .026)+slateLamp*(.25*exp(-pow2((slateAX-.37)/(.018+slateAA.x))-pow2((ly-.8)/.55))*step(.3, ly)*step(ly, 1.52)+.12*exp(-pow2((ly-1.49)/(.02+slateAA.y))))*step(slateAX, .44);
+    vec3 slateCageC = vec3(.012, .013, .026)+slateLamp*(.25*exp(-pow2((slateAX-.37)/(.018+slateAA.x))-pow2((ly-.8)/.55))*step(.3, ly)*step(ly, 1.52)+${glsl(0.12 * LANTERN_IMAGE.roof)}/slateSWG*exp(-pow2((ly-1.49)/(.02+slateAA.y))))*(1.0-smoothstep(.44-slateAA.x, .44+slateAA.x, slateAX));
     // The v3 flame (lantern-flame.js lanternFire): blue cup, dark vapour cone, yellow-white core, yellow body, orange-red tip, at
     // the flame's own draught (slateFlame): its height, and its lean, which grows up the flame. Its ends sit MIRROR_FLAME.inset
     // pixel footprints (fp) inside the flame's.
     float fp = slatePx*(slateView+slateLT)/${glsl(LANTERN_IMAGE.scale)};
     float fh = ${glsl(F.height)}*max(slateFlame.x, .01), fu = ((ly-${glsl(F.base)})/fh-${glsl(MF.mid)})*(1.0+${glsl((2 * MF.inset) / MF.span)}*fp/fh)+${glsl(MF.mid)}, fs = clamp((fu+.08)/1.08, 0.0, 1.0), fr = clamp(fu, 0.0, 1.0);
-    float fw = ${glsl(F.halfWidth * 1.45)}*sin(3.1416*pow(fs, .74))*(1.0-.22*fs), fx = abs(slateLX-(slateFlame.z*slateR.z-slateFlame.w*slateR.x)/sqrt(slateRA)*fr*fr), fq = fx/max(fw, .005), fa = max(fp-.7*fw, 1e-4);
+    float fw = ${glsl(F.halfWidth * 1.45)}*sin(3.1416*pow(fs, .74))*(1.0-.22*fs), fx = abs(slateLX-(slateFlame.z*slateRI.z-slateFlame.w*slateRI.x)/sqrt(slateRAI)*fr*fr), fq = fx/max(fw, .005), fa = max(fp-.7*fw, 1e-4);
     // The body (MIRROR_FLAME.width of the flame's) falls off as the flame's, which has no AA of its own: only where that falloff is
     // narrower than a footprint does it widen to one (fa). The base and tip keep the image's AA.
     float slateFlameM = step(.01, slateFlame.x)*(1.0-smoothstep(${glsl(0.3 * MF.width)}*fw-fa*.6, ${glsl(MF.width)}*fw+fa*.6, fx))*smoothstep(-.08-slateAA.y/fh, -.04+slateAA.y/fh, fu)*(1.0-smoothstep(.96-slateAA.y/fh, 1.0+slateAA.y/fh, fu));
@@ -1953,7 +2036,7 @@ const STREAM_FOAM = `float slateFoam = 0.0;
 float slateStreamBody = smoothstep(0.0, ${glsl(SB.deep)}, slateLevel)*(1.0-smoothstep(.9, 1.05, slateStreamR))*smoothstep(.7, 1.1, slateRiverR)*slatePuddle;
 diffuseColor.rgb = mix(diffuseColor.rgb, ${glslVec(...SB.silt)}, ${glsl(SB.calm)}*slateStreamBody)*(1.0-${glsl(SB.darken)}*slateStreamBody);
 if (slateStreamQ.x > 0.0) {
-  vec2 slateSU = vec2(slateStreamQ.y-slateFlow*${glsl(STREAMS.flow)}, slateStreamQ.z*slateStreamQ.w), slateSF = slateSU*${glslVec(...SF.cell)};
+  vec2 slateSU = vec2(slateStreamQ.y-slateFlow*${glsl(STREAMS.flow * SF.drift)}, slateStreamQ.z*slateStreamQ.w), slateSF = slateSU*${glslVec(...SF.cell)};
   float slateSN = .6*slateNoise(slateSF)+.4*slateNoise(slateSF*2.2+11.0);
   vec2 slateSO;
   float slateSD, slateRing = 0.0, slateStone = 0.0;
@@ -2151,7 +2234,7 @@ function fading(rendering, hidden = true) {
 // Whether a change to the ground can land now without showing mid-shot: before
 // the reveal or during the canvas's fade-in over the title card, on a tour cut
 // under the dissolve's kept frame, or on any frame while the tour is not
-// running. light-shafts.js switches its treatments by the same rule.
+// running.
 function unseen(rendering, tour) {
   const early = fading(rendering);
   return () => !tour?.running || tour.transition.cut || early();
@@ -2245,7 +2328,9 @@ export const LITTER = Object.freeze({
   tone: Object.freeze({ pebble: Object.freeze([0.3, 0.5]), flake: 0.28, twig: 0.34 }),
   // Small stones among the roots and about the trunk's base: rounded, a cool
   // grey `tone` times the soil's mean (they catch the light the dark slate
-  // swallows), `size` wide, sunk `sink` of their height.
+  // swallows), `size` wide, sunk `sink` of their height, their bumps eased
+  // smoothly over them (`round`: the falloff's sharpness between the 42
+  // points that carry them).
   // Most lie beside a resting root (`beside` beyond its half-width); the rest
   // in the crooks `crook` from the trunk, within `among` of a root. Never
   // under a root or an arch, nor at the lantern or a puddle.
@@ -2262,6 +2347,7 @@ export const LITTER = Object.freeze({
     spacing: 0.5,
     tone: Object.freeze([1.1, 2.3]),
     tint: Object.freeze([0.94, 1, 1.1]),
+    round: 12,
   }),
   // The fine pieces on their own seed, after the stones: fallen leaves (curled,
   // cupped ovals, `leafSize` long, dull brown `leafTone` rgb, darker in the
@@ -2289,7 +2375,9 @@ export const LITTER = Object.freeze({
     pale: Object.freeze([0.03, 1.8]),
   }),
 });
-// A unit icosphere (one subdivision: 42 vertices, 80 faces), the stones' shape.
+// A unit icosphere, the stones' shape: two subdivisions (162 vertices, 320
+// faces); its first 42 vertices are the once-subdivided sphere's, which carry
+// each stone's bumps (LITTER.stones.round).
 const ICOSPHERE = (() => {
   const t = (1 + Math.sqrt(5)) / 2,
     vertices = [
@@ -2338,18 +2426,21 @@ const ICOSPHERE = (() => {
       }
       return middle.get(key);
     };
-  const split = faces.flatMap(([a, b, c]) => {
-    const ab = mid(a, b),
-      bc = mid(b, c),
-      ca = mid(c, a);
-    return [
-      [a, ab, ca],
-      [b, bc, ab],
-      [c, ca, bc],
-      [ab, bc, ca],
-    ];
-  });
-  return { vertices, faces: split };
+  const split = (list) =>
+    list.flatMap(([a, b, c]) => {
+      const ab = mid(a, b),
+        bc = mid(b, c),
+        ca = mid(c, a);
+      return [
+        [a, ab, ca],
+        [b, bc, ab],
+        [c, ca, bc],
+        [ab, bc, ca],
+      ];
+    });
+  const once = split(faces),
+    bumps = vertices.length;
+  return { vertices, faces: split(once), bumps };
 })();
 // Distance from x/z to the nearest root-covered cell, up to limit (Infinity beyond).
 function coverDistance(x, z, limit) {
@@ -2620,9 +2711,22 @@ export function scatterLitter(surface, groundColor) {
       dim = 1 - L.shade * sky,
       cy = Math.cos(yaw),
       sy = Math.sin(yaw);
-    const shape = ICOSPHERE.vertices.map(([vx, vy, vz], k) => {
-      const bump = 0.86 + 0.26 * dripHash(Math.floor(jitter) + k, 7);
-      return [vx * bump, vy * bump, vz * bump];
+    // Its bumps on the 42 coarse points, eased smoothly over the sphere between
+    // them (S.round: the falloff's sharpness), so it reads as a rounded stone,
+    // never a faceted nugget.
+    const bumps = ICOSPHERE.vertices
+      .slice(0, ICOSPHERE.bumps)
+      .map((v, k) => [v, 0.86 + 0.26 * dripHash(Math.floor(jitter) + k, 7)]);
+    const shape = ICOSPHERE.vertices.map((v) => {
+      let sum = 0,
+        weight = 0;
+      for (const [p, b] of bumps) {
+        const w = Math.exp(S.round * (v[0] * p[0] + v[1] * p[1] + v[2] * p[2] - 1));
+        sum += w * b;
+        weight += w;
+      }
+      const bump = sum / weight;
+      return [v[0] * bump, v[1] * bump, v[2] * bump];
     });
     const world = shape.map(([vx, vy, vz]) => {
       const px = (vx * width) / 2,
@@ -2697,15 +2801,56 @@ export function scatterLitter(surface, groundColor) {
 // A rounded pebble or clod, half-width `a` by `b`, `h` high: a top, a ring
 // at PEBBLE_DOME.ring of its width and a ring sunk into the soil, each ring of
 // PEBBLE_DOME.sides jittered points, smooth-shaded from its ellipsoid's normals
-// and a little darker toward the soil. `at(u, w, lift)` places a local point
-// (u along its yaw) on the ground; `turn` is [cos, sin] of that yaw.
-export const PEBBLE_DOME = Object.freeze({ sides: 6, ring: 0.62, jitter: 0.18 });
+// and a little darker toward the soil. A piece at least `large` wide (one the
+// lens can come close to) takes `round` points a ring, so its outline never
+// reads as a polygon, and its rings follow its ellipsoid at `profile` degrees
+// up from the sunk ring, so its side never bends at one ring into a flat cone
+// (a faceted nugget); one at least `widest` wide (45-90 px near the lens on a
+// portrait monitor) takes `smooth` points a ring. A grain at least `mid` wide
+// takes `midSides`, so a bank stone near the lens on a wide screen is never a
+// hexagon. The jitter of every ring eases between the `sides` drawn, so every
+// piece takes the same draws and the scatter keeps its places. `at(u, w,
+// lift)` places a local point (u along its yaw) on the ground; `turn` is
+// [cos, sin] of that yaw.
+export const PEBBLE_DOME = Object.freeze({
+  sides: 6,
+  round: 12,
+  large: 0.035,
+  ring: 0.62,
+  jitter: 0.18,
+  full: 0.035,
+  widest: 0.05,
+  smooth: 16,
+  mid: 0.02,
+  midSides: 9,
+  profile: Object.freeze([35, 65]),
+});
 function pebbleDome(a, b, h, random, at, [cy, sy], rgb, triangle) {
-  const { sides, ring, jitter } = PEBBLE_DOME,
-    spin = random() * Math.PI;
-  const point = (r, y, k) => {
-    const t = spin + (k * 2 * Math.PI) / sides,
-      j = 1 + jitter * (random() * 2 - 1),
+  const { sides, round, large, full, widest, smooth, mid, midSides, ring, jitter, profile } =
+      PEBBLE_DOME,
+    spin = random() * Math.PI,
+    drawn = () => Array.from({ length: sides }, () => 1 + jitter * (random() * 2 - 1)),
+    upperJitter = drawn(),
+    lowerJitter = drawn(),
+    n =
+      Math.max(a, b) >= widest
+        ? smooth
+        : Math.max(a, b) >= large
+          ? round
+          : Math.max(a, b) >= mid
+            ? midSides
+            : sides;
+  // The jitter `k` sides round from the first drawn point, eased between them.
+  const eased = (drawnJitter, k) => {
+    const i = Math.floor(k),
+      f = k - i,
+      s = f * f * (3 - 2 * f);
+    return drawnJitter[i % sides] * (1 - s) + drawnJitter[(i + 1) % sides] * s;
+  };
+  const point = (r, y, m, offset, drawnJitter) => {
+    const k = (m * sides) / n + offset,
+      t = spin + (k * 2 * Math.PI) / sides,
+      j = eased(drawnJitter, k - offset),
       u = Math.cos(t) * a * r * j,
       w = Math.sin(t) * b * r * j;
     // The ellipsoid's normal (its centre at the sunk ring), turned to the world.
@@ -2715,21 +2860,107 @@ function pebbleDome(a, b, h, random, at, [cy, sy], rgb, triangle) {
       l = Math.hypot(nu, ny, nw) || 1;
     return [at(u, w, y), [(nu * cy - nw * sy) / l, ny / l, (nu * sy + nw * cy) / l]];
   };
+  // The rings from the sunk one up: a small piece's at PEBBLE_DOME.ring; a large
+  // one's on its ellipsoid (centre at the sunk ring, 1.15 h high), each turned a
+  // little further and its jitter eased from the sunk ring's to the upper's.
   const top = [at(0, 0, h), [0, 1, 0]],
-    upper = Array.from({ length: sides }, (_, k) => point(ring, h * 0.8, k + 0.5)),
-    lower = Array.from({ length: sides }, (_, k) => point(1, -h * 0.15, k));
-  const shade = (n) => {
-    const k = 0.68 + 0.32 * Math.max(0, n[1]);
+    shape =
+      Math.max(a, b) < full
+        ? [[ring, h * 0.8, 0.5, 1]]
+        : profile.map((degrees, i) => {
+            const e = (degrees * Math.PI) / 180;
+            return [
+              Math.cos(e),
+              -h * 0.15 + h * 1.15 * Math.sin(e),
+              (i + 1) * 0.25,
+              Math.min(1, (i + 1) / (profile.length - 1 || 1)),
+            ];
+          }),
+    blend = (share) => upperJitter.map((v, k) => lowerJitter[k] + (v - lowerJitter[k]) * share),
+    rings = [
+      Array.from({ length: n }, (_, m) => point(1, -h * 0.15, m, 0, lowerJitter)),
+      ...shape.map(([r, y, offset, share]) =>
+        Array.from({ length: n }, (_, m) => point(r, y, m, offset, blend(share))),
+      ),
+    ];
+  const shade = (normal) => {
+    const k = 0.68 + 0.32 * Math.max(0, normal[1]);
     return [rgb[0] * k, rgb[1] * k, rgb[2] * k];
   };
   const face = (p, q, r) =>
     triangle(p[0], q[0], r[0], [shade(p[1]), shade(q[1]), shade(r[1])], [p[1], q[1], r[1]]);
-  for (let k = 0; k < sides; k++) {
-    const k1 = (k + 1) % sides;
+  for (let k = 0; k < n; k++) {
+    const k1 = (k + 1) % n,
+      upper = rings.at(-1);
     face(top, upper[k1], upper[k]);
-    face(upper[k], upper[k1], lower[k1]);
-    face(upper[k], lower[k1], lower[k]);
+    for (let i = rings.length - 1; i > 0; i--) {
+      const [above, below] = [rings[i], rings[i - 1]];
+      face(above[k], above[k1], below[k1]);
+      face(above[k], below[k1], below[k]);
+    }
   }
+}
+
+// A fallen leaf (LITTER.fine's, and the banks' debris): a cupped oval on a
+// midrib, `length` long and `width` wide, its rim raised by `cup` and its
+// ends by `curl`, both as drawn times FALLEN_LEAF.lie (damp leaves lie nearly
+// flat, so a low lens never looks under a raised rim), `rise` above the
+// surface `at(u, w, lift)` places it on. Toward its stalk and tip, where its
+// outline narrows, the rim is raised less, as its half-width over the widest
+// to the power `ends`, so a low lens never sees a long dark underside along
+// the near rim. Its normals lean out from its middle by `round` of their
+// offset over its length and its rim is `rim` as light as its midrib, so it
+// shades over like a curled leaf, never flat as a card.
+export const FALLEN_LEAF = Object.freeze({
+  lie: 0.5,
+  ends: 1.5,
+  round: 1.2,
+  rim: 0.8,
+  // Its outline: [along the midrib, half-width] from stalk to tip, so its edge
+  // curves as a leaf's, never a card's straight sides.
+  outline: Object.freeze(
+    [
+      [0.12, 0.3],
+      [0.3, 0.46],
+      [0.5, 0.48],
+      [0.7, 0.4],
+      [0.88, 0.24],
+    ].map((station) => Object.freeze(station)),
+  ),
+});
+function fallenLeaf(at, length, width, cup, curl, rise, rgb, triangle) {
+  const { lie, ends, round, rim, outline } = FALLEN_LEAF,
+    lift = (u) => rise + curl * lie * (2 * u - 1) ** 2,
+    widest = Math.max(...outline.map(([, half]) => half)),
+    raise = (half) => cup * lie * (half / widest) ** ends;
+  const [[, A], ...rest] = [[0, 0], ...outline, [1, 0]].map(([u, half]) => [
+      at((u - 0.5) * length, -half * width, lift(u) + raise(half)),
+      at((u - 0.5) * length, 0, lift(u)),
+      at((u - 0.5) * length, half * width, lift(u) + raise(half)),
+    ]),
+    [, T] = rest.pop(),
+    middle = new Set(rest.map(([, M]) => M));
+  const centre = rest[outline.findIndex(([u]) => u === 0.5)][1],
+    normal = ([px, , pz]) => {
+      const n = [((px - centre[0]) / length) * round, 1, ((pz - centre[2]) / length) * round],
+        l = Math.hypot(...n);
+      return n.map((v) => v / l);
+    },
+    edge = rgb.map((c) => c * rim),
+    tone = (v) => (middle.has(v) ? rgb : edge),
+    faces = [
+      [A, rest[0][1], rest[0][0]],
+      [A, rest[0][2], rest[0][1]],
+    ];
+  for (let k = 1; k < rest.length; k++) {
+    const [L1, M1, R1] = rest[k - 1],
+      [L2, M2, R2] = rest[k];
+    faces.push([L1, M1, M2], [L1, M2, L2], [M1, R1, R2], [M1, R2, M2]);
+  }
+  const [L, M, R] = rest.at(-1);
+  faces.push([L, M, T], [M, R, T]);
+  for (const [a, b, c] of faces)
+    triangle(a, b, c, [tone(a), tone(b), tone(c)], [normal(a), normal(b), normal(c)]);
 }
 
 // The fine litter (LITTER.fine), appended through `triangle(a, b, c, rgb)`:
@@ -2787,45 +3018,11 @@ function scatterFine(surface, base, stones, triangle, vertices) {
         width = length * between([0.45, 0.62]),
         cup = width * between([0.12, 0.3]),
         curl = length * between([0.05, 0.22]),
-        lift = (u) => 0.008 + curl * (2 * u - 1) ** 2;
-      const [[, A], [L1, M1, R1], [L2, M2, R2], [, T]] = [
-        [0, 0],
-        [0.3, 0.46],
-        [0.65, 0.4],
-        [1, 0],
-      ].map(([u, half]) => [
-        at((u - 0.5) * length, -half * width, lift(u) + cup),
-        at((u - 0.5) * length, 0, lift(u)),
-        at((u - 0.5) * length, half * width, lift(u) + cup),
-      ]);
-      const centre = M1.map((v, k) => (v + M2[k]) / 2),
-        leafNormal = ([px, , pz]) => {
-          const n = [(px - centre[0]) * 0.8, 1, (pz - centre[2]) * 0.8],
-            l = Math.hypot(...n);
-          return n.map((v) => v / l);
-        };
-      const age = random(),
+        age = random(),
         rgb = F.leafTone.map(
           (c, k) => c * (0.6 + 0.6 * age) * dim * (k === 1 ? 1 - 0.15 * age : 1),
         );
-      for (const [a, b, c] of [
-        [A, M1, L1],
-        [A, R1, M1],
-        [L1, M1, M2],
-        [L1, M2, L2],
-        [M1, R1, R2],
-        [M1, R2, M2],
-        [L2, M2, T],
-        [M2, R2, T],
-      ])
-        // Soft, mostly upward normals: a curled leaf, not a folded card.
-        triangle(
-          a,
-          b,
-          c,
-          rgb,
-          [a, b, c].map((v) => leafNormal(v)),
-        );
+      fallenLeaf(at, length, width, cup, curl, 0.008, rgb, triangle);
       left.leaves--;
     } else {
       // A rounded, jittered dome: a soil clod or a grain of grit.
@@ -3071,9 +3268,13 @@ export function plantReeds(surface) {
 //   radii), the delta (river radii `delta` within `fan` units of the mouth) and
 //   the river's near bank (river radii `river`, within `reach` units along of
 //   where it passes the lantern but not within `clear` of it); `tone` times
-//   the soil's grey, darker (`wet`) at the water.
+//   the soil's grey, darker (`wet`) at the water. None lies in the river: a
+//   pebble inside `shore` river radii (its own width past the waterline) is
+//   left out, its draws still taken, so the rest keep their places.
 // - debris: `count` leaves and twigs at the stream's waterline (radii
-//   `waterline`) and `eddy` of them in the slack water just behind each stone.
+//   `waterline`) and `eddy` of them in the slack water just behind each stone;
+//   as the gravel, one inside `shore` river radii is left out, its draws still
+//   taken, so none lies on the river where the stream pours in.
 export const WATER_BANKS = Object.freeze({
   seed: 47713,
   gravel: Object.freeze({
@@ -3090,6 +3291,7 @@ export const WATER_BANKS = Object.freeze({
     reach: 7,
     clear: 1.6,
     lantern: 0.9,
+    shore: 1.04,
   }),
   debris: Object.freeze({
     count: 60,
@@ -3198,7 +3400,8 @@ function* bankSteps(surface, groundColor) {
     const y = surface(x, z);
     return Number.isFinite(y) ? y : fallback;
   };
-  let placed = 0;
+  let placed = 0,
+    drawn = 0;
   for (let attempt = 0; placed < G.count && attempt < G.count * 8; attempt++) {
     const spot = candidate();
     if (!spot) continue;
@@ -3221,7 +3424,11 @@ function* bankSteps(surface, groundColor) {
         tz = u * sy + w * cy;
       return [x + tx, groundAt(x + tx, z + tz, y) + lift, z + tz];
     };
-    pieces.push(positions.length / 3);
+    const dry = riverRadius(x, z) >= G.shore;
+    if (dry) {
+      pieces.push(positions.length / 3);
+      drawn++;
+    }
     pebbleDome(
       a,
       b,
@@ -3230,13 +3437,14 @@ function* bankSteps(surface, groundColor) {
       at,
       [cy, sy],
       [k * (1 + warm), k, k * (1 - warm)],
-      (p, q, r, rgb, n) => triangle(p, q, r, rgb, n),
+      dry ? (p, q, r, rgb, n) => triangle(p, q, r, rgb, n) : () => {},
     );
     if (++placed % 64 === 0) yield;
   }
   // Leaves and twigs at the waterline, and in the eddy behind each stone.
   const level = groundAt(LANTERN_FOOT.x, LANTERN_FOOT.z, 0) + STREAMS.bed.level + 0.004;
   const debris = [];
+  let floating = 0;
   for (const [dx, dz] of STREAMS.stones.list) {
     const sx = LANTERN_FOOT.x + dx,
       sz = LANTERN_FOOT.z + dz;
@@ -3275,8 +3483,13 @@ function* bankSteps(surface, groundColor) {
       yaw = random() * Math.PI * 2,
       cy = Math.cos(yaw),
       sy = Math.sin(yaw),
-      at = (u, w, lift) => [x + u * cy - w * sy, y + lift, z + u * sy + w * cy];
-    pieces.push(positions.length / 3);
+      at = (u, w, lift) => [x + u * cy - w * sy, y + lift, z + u * sy + w * cy],
+      dry = riverRadius(x, z) >= G.shore,
+      draw = dry ? triangle : () => {};
+    if (dry) {
+      pieces.push(positions.length / 3);
+      floating++;
+    }
     if (random() < D.twigs) {
       // A twig: a long, thin, rounded stick.
       const length = between(D.twig),
@@ -3289,7 +3502,7 @@ function* bankSteps(surface, groundColor) {
         at,
         [cy, sy],
         F.leafTone.map((c) => c * k),
-        (p, q, r, rgb, n) => triangle(p, q, r, rgb, n),
+        draw,
       );
       continue;
     }
@@ -3299,28 +3512,7 @@ function* bankSteps(surface, groundColor) {
       age = random(),
       // Darker than the litter's leaves: wet, and lit by the lantern beside the water.
       rgb = F.leafTone.map((c, k) => c * (0.32 + 0.33 * age) * (k === 1 ? 1 - 0.15 * age : 1));
-    const [[, A], [L1, M1, R1], [L2, M2, R2], [, T]] = [
-      [0, 0],
-      [0.3, 0.46],
-      [0.65, 0.4],
-      [1, 0],
-    ].map(([u, h]) => [
-      at((u - 0.5) * length, -h * width, 0.006 + cup),
-      at((u - 0.5) * length, 0, 0.006),
-      at((u - 0.5) * length, h * width, 0.006 + cup),
-    ]);
-    const up = [0, 1, 0];
-    for (const [a, b, c] of [
-      [A, M1, L1],
-      [A, R1, M1],
-      [L1, M1, M2],
-      [L1, M2, L2],
-      [M1, R1, R2],
-      [M1, R2, M2],
-      [L2, M2, T],
-      [M2, R2, T],
-    ])
-      triangle(a, b, c, rgb, [up, up, up]);
+    fallenLeaf(at, length, width, cup, 0, 0.006, rgb, draw);
   }
   const geometry = new BufferGeometry();
   geometry.setAttribute("position", new BufferAttribute(new Float32Array(positions), 3));
@@ -3331,8 +3523,8 @@ function* bankSteps(surface, groundColor) {
     new BufferAttribute(new Float32Array((positions.length / 3) * 2), 2),
   );
   geometry.computeBoundingSphere();
-  geometry.userData.gravel = placed;
-  geometry.userData.debris = debris.length;
+  geometry.userData.gravel = drawn;
+  geometry.userData.debris = floating;
   // Balanced draws GROWTH.balanced of the pieces (estate-ground-detail.js).
   geometry.userData.fine = [0, positions.length / 3];
   geometry.userData.finePieces = pieces;
@@ -3483,10 +3675,9 @@ function streamAlong(x, z, line = STREAM_LINES[0]) {
 // or in the fade-in's first SHADING_EARLY ms. A light, map or quality change
 // that alters the ground's program meanwhile links it again first. Where
 // programs cannot link in parallel, the switch's own draw links it, on a cut
-// (or a still frame), never in the fade-in, which the light shafts' own
-// links need (light-shafts.js). From the switch on,
-// each draw of the ground brings the moon key's view direction up to date and
-// advances the drips' clock. Disposing the terrain withdraws all of it.
+// (or a still frame), never in the fade-in. From the switch on, each draw of
+// the ground brings the moon key's view direction up to date and advances the
+// drips' clock. Disposing the terrain withdraws all of it.
 export function settleRoots(
   terrain,
   ground,
@@ -3558,7 +3749,6 @@ export function settleRoots(
             ],
           ].map(([geometry, name]) => Object.assign(new Mesh(geometry, growth.material), { name }));
         })(),
-        null,
         () => false,
         () => !live,
       ).then((built) => {
@@ -4326,30 +4516,16 @@ function* earthSteps(groundHeight, EARTH) {
 // and after it they take idle time, and less where the idle wait timed out,
 // as nothing else is idle. index.js requests this chunk with the scene, so
 // the build starts as the tower arrives, well before a warm load's reveal.
-// The terrain has the idle time first: while it slices, rendering.terrainSlicing
-// holds a promise the light shafts' own build waits on (light-shafts.js), as
-// the terrain can land only under the fade or on a cut while the warm star can
-// fade in mid-hold. A cancelled build (the film scene disposed) stops and
-// resolves to nothing.
-function inSlices(steps, rendering = null, early = () => false, cancelled = () => false) {
+// A cancelled build (the film scene disposed) stops and resolves to nothing.
+function inSlices(steps, early = () => false, cancelled = () => false) {
   const idle =
     typeof globalThis.requestIdleCallback === "function"
       ? (task) => globalThis.requestIdleCallback(task, { timeout: 100 })
       : (task) => setTimeout(task, 0);
-  let done;
-  const slicing = new Promise((resolve) => {
-    done = resolve;
-  });
-  if (rendering) rendering.terrainSlicing = slicing;
   return new Promise((resolve, reject) => {
-    const finish = (settle, value) => {
-      if (rendering?.terrainSlicing === slicing) rendering.terrainSlicing = null;
-      done();
-      settle(value);
-    };
     // Without idle callbacks (Safari), short tasks leave room for the frames.
     const slice = (deadline) => {
-      if (cancelled()) return finish(resolve, null);
+      if (cancelled()) return resolve(null);
       const rush = early();
       const until =
         performance.now() +
@@ -4363,11 +4539,11 @@ function inSlices(steps, rendering = null, early = () => false, cancelled = () =
       try {
         for (;;) {
           const next = steps.next();
-          if (next.done) return finish(resolve, next.value);
+          if (next.done) return resolve(next.value);
           if (performance.now() >= until) break;
         }
       } catch (error) {
-        return finish(reject, error);
+        return reject(error);
       }
       if (rush) setTimeout(slice, 0);
       else idle(slice);
@@ -4396,7 +4572,7 @@ export function createEarthGeometry(
     }
   }
   const allowed = unseen(rendering, tour);
-  return inSlices(steps, rendering, fading(rendering, false), cancelled).then(
+  return inSlices(steps, fading(rendering, false), cancelled).then(
     (geometry) =>
       new Promise((resolve) => {
         (function check() {

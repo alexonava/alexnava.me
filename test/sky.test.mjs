@@ -43,6 +43,8 @@ import {
 } from "../src/scene/starfield.js";
 import { createSceneAtmosphere } from "../src/scene/atmosphere.js";
 import {
+  CLOUD_BRUSH,
+  CLOUD_ISLANDS,
   CLOUD_RESHAPE,
   CLOUD_TEXT_GLSL,
   CLOUD_VORTEX,
@@ -914,13 +916,29 @@ test("the clouds' reshaping never reaches the reference banks or the roof's lane
   for (const nv0 of [0, 0.5, 1])
     assert.ok(Math.abs(bank(1, nv0, 0.5, 1) - (bank(1, nv0) - clearing)) < 1e-12);
   const field = cloudFieldGLSL("uTime");
-  // It reaches the reshaped bank and, where the vortex turns, the vortex (CLOUD_VORTEX).
+  // It reaches the reshaped bank, where the vortex turns the vortex (CLOUD_VORTEX), and the
+  // brush's dry edge, which eases off there (CLOUD_BRUSH): density only, never tone.
   assert.equal(
     field.match(/cloudText/g).length,
-    CLOUD_VORTEX.on ? 2 : 1,
-    "the guard reaches only the bank and the vortex",
+    1 + (CLOUD_VORTEX.on ? 1 : 0) + (CLOUD_BRUSH.on ? 1 : 0),
+    "the guard reaches only the bank, the vortex and the brush's edge",
   );
-  assert.match(field, /float cover=smoothstep\(\.548-w,\.548\+w,d\)\*horizonFade\*uClouds;$/);
+  // It ends with the bank's cover, its threshold broken by the brush's dry edge (CLOUD_BRUSH),
+  // with no lone islands (CLOUD_ISLANDS): the fine octaves move it only where the coarse
+  // field comes near the threshold.
+  assert.match(field, /float cover=smoothstep\(\.548-w,\.548\+w,d\+brushEdge\);\n/);
+  assert.match(field, /cover\*=horizonFade\*uClouds;$/);
+  // Only the finest octaves count: the medium one (n1) shapes lanes, windows and pockets.
+  assert.ok(field.includes("fineD=(g2-.62)*.16+(fine-.5)*.07;"));
+  const [c0, c1] = CLOUD_ISLANDS.clear.map((m) => (0.548 - m).toFixed(3)),
+    [f0, f1] = CLOUD_ISLANDS.fill.map((m) => (0.548 + m).toFixed(3));
+  assert.ok(
+    field.includes(
+      `if(uNebulaLayers>1.5){float dC=d-fineD;cover=mix(cover,max(cover*smoothstep(${c0},${c1},dC),smoothstep(${f0},${f1},dC)),uCloudReshape);}`,
+    ),
+  );
+  assert.ok(CLOUD_ISLANDS.clear[0] > CLOUD_ISLANDS.clear[1] && CLOUD_ISLANDS.clear[1] > 0);
+  assert.ok(CLOUD_ISLANDS.fill[1] > CLOUD_ISLANDS.fill[0] && CLOUD_ISLANDS.fill[0] > 0);
   assert.ok(shader.includes("col+=vec3(.027,.03,.036)*smoothstep(.36,.54,d)*horizonFade*uClouds;"));
   assert.match(shader, /d\+=bank; da\+=bank;/);
   // NV[0] exists only on the high and balanced skies: its readers sit after the
@@ -1435,6 +1453,9 @@ test("the star's lens streak breathes with it and every part writes the star's l
   assert.equal(streak.material.uniforms.uBreath, corona.material.uniforms.uBreath);
   assert.ok(streak.renderOrder > corona.renderOrder, "drawn over the glow");
   assert.equal(streak.material.depthWrite, false);
+  // The streak's mask saturates early, line * 4: its faint tail stays out of the cel step,
+  // its widest skirt does not (a band kept off the step would leave dark rails beside it).
+  assert.ok(streak.material.fragmentShader.includes(",min(line*4.,1.));"));
   // Each part's alpha adds STAR_LAYER times its coverage (constant-alpha), so
   // the grade keeps the star out of the cloud banks' cel step.
   for (const name of ["solar-photosphere", "solar-corona", "solar-prominences", "solar-streak"]) {
@@ -1451,4 +1472,27 @@ test("the star's lens streak breathes with it and every part writes the star's l
   controller.update({ elapsedSeconds: 1 });
   assert.ok(streak.quaternion.angleTo(corona.quaternion) < 1e-9);
   controller.dispose();
+});
+
+test("the painted sky's brush follows the clouds' flow, and the capture keeps them as authored", () => {
+  const field = cloudFieldGLSL();
+  const shader = skyMaterial().fragmentShader;
+  assert.equal(CLOUD_BRUSH.on, 1);
+  // The dry edge: in the clouds' own noise space (q, after the warp), on high and balanced,
+  // eased off behind the text and scaled by uCloudReshape (0 in the environment capture).
+  const edge = field.slice(field.indexOf("float brushEdge=0.;"));
+  assert.ok(
+    field.indexOf("q+=wo; p+=wo;") < field.indexOf("float brushEdge=0.;"),
+    "after the warp",
+  );
+  assert.match(edge, /^float brushEdge=0\.;\nif\(uNebulaLayers>1\.5\)\{vec2 bex=vec2\(dot\(q,/);
+  assert.match(edge, /brushEdge=[\d.]+\*\(be-\.5\)\*2\.\*\(1\.-cloudText\)\*uCloudReshape;/);
+  // The streaks: before the soft knee, high only, scaled the same way.
+  const streak = shader.indexOf("if(uNebulaLayers>2.5){vec2 bsx=");
+  assert.ok(streak > 0 && streak < shader.indexOf("vec3 kn=vec3(.64,.62,.66)"));
+  assert.match(shader, /cloudCol\*=1\.\+[\d.]+\*\(bs-\.5\)\*2\.\*uCloudReshape;/);
+  for (const [amount, along, across] of [CLOUD_BRUSH.edge, CLOUD_BRUSH.streak])
+    assert.ok(amount <= 0.1 && across > along, "slight, and longer along the brush than across");
+  // Sine-free, as every cloud noise is.
+  assert.doesNotMatch(edge, /sin\(/);
 });

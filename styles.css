@@ -220,9 +220,9 @@ main:focus {
 }
 
 /* The live scene fades in over the title card at its reveal. Keep this single
-   480ms opacity transition: terrain-build.js, mountain-build.js and
-   light-shafts.js read its transitionDuration to time work under the fade, and
-   the loading line (.scene-loader.is-done) finishes within it. */
+   480ms opacity transition: terrain-build.js and mountain-build.js read its
+   transitionDuration to time work under the fade, and the loading line
+   (.scene-loader.is-done) finishes within it. */
 .scene-canvas {
   z-index: 1;
   opacity: 0;
@@ -1259,7 +1259,10 @@ body[data-panel-open]::after {
     padding-top: max(48px, calc(38px + env(safe-area-inset-top)));
   }
 
+  /* Above the intro, whose scrim reaches up behind the name's feet. */
   .hero h1 {
+    position: relative;
+    z-index: 1;
     max-width: 8ch;
     font-size: clamp(54px, 8vw, 72px);
   }
@@ -1273,7 +1276,10 @@ body[data-panel-open]::after {
      scrim and over the subject in the close shots (Masonry study's lit post,
      Close-up's pale branches), so it keeps its own text scrim, as About does: a
      soft oval centred on the line that reaches transparent before every edge of
-     its box (the hero's (1 - t²)² falloff), 0.6 at its centre. */
+     its box (the hero's (1 - t²)² falloff), 0.6 at its centre. It guards the
+     line over the live scene only: hero.js marks the hero is-over-scene while
+     the scene host is ready, and the oval fades in and out with the canvas, so
+     the title card's night, which needs no scrim, never shows it as a shape. */
   .hero-intro {
     position: relative;
     isolation: isolate;
@@ -1305,6 +1311,12 @@ body[data-panel-open]::after {
       rgba(7, 10, 18, 0.022) 90%,
       rgba(7, 10, 18, 0) 100%
     );
+    opacity: 0;
+    transition: opacity 480ms ease-out;
+  }
+
+  .hero-minimal.is-over-scene .hero-intro::before {
+    opacity: 1;
   }
 
   .site-shell {
@@ -1314,6 +1326,12 @@ body[data-panel-open]::after {
   .bottom-btn--icon {
     width: 52px;
     height: 52px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-intro::before {
+    transition: none;
   }
 }
 
@@ -1414,10 +1432,13 @@ body[data-panel-open]::after {
   filter: brightness(1.015) drop-shadow(5px 20px 24px rgba(1, 3, 7, 0.42))
     drop-shadow(0 3px 4px rgba(1, 3, 7, 0.2));
 }
+/* The paper fill behind the art, so the ink reads while it loads. It keeps
+   inside the art's opaque paper (the torn edge reaches about 3% in on both
+   maps), so it never shows past the tear. */
 .estate-home-map .estate-map::after {
   content: "";
   position: absolute;
-  inset: 2%;
+  inset: 4%;
   z-index: -2;
   background: #e6d3af;
 }
@@ -1540,11 +1561,13 @@ body[data-panel-open]::after {
   outline-offset: 3px;
 }
 /* Close is drawn in the map's ink: a hairline ring with no pale disc, tinted
-   only under hover, focus or a press. */
+   only under hover, focus or a press. It sits 16px from the visible paper: the
+   box's outer 2% is the art's torn edge, so the ring and its focus ring keep
+   clear of the tear on every map. */
 .panel-estate .panel-close {
   position: absolute;
-  top: 16px;
-  right: 16px;
+  top: calc(16px + 2%);
+  right: calc(16px + 2%);
   z-index: 2;
   margin: 0;
   border-color: rgba(48, 37, 24, 0.42);
@@ -1813,6 +1836,22 @@ body[data-panel-open]::after {
 @media (max-width: 640px) {
   .not-found .story-text {
     font-size: 16px;
+  }
+}
+
+/* Phones turned sideways: a shorter sheet and heading, so the whole paper,
+   its torn edge included, sits centred within the screen's height. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .not-found .section {
+    padding-block: 12px;
+  }
+
+  .not-found .story-shell {
+    padding-block: 36px;
+  }
+
+  .not-found .story-shell h1 {
+    font-size: 34px;
   }
 }
 

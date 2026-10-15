@@ -37,7 +37,6 @@ import {
   SLATE_TEXT_GUARD,
   createSlateContacts,
 } from "../src/scene/mud-ground.js";
-import { goboHook } from "../src/scene/light-shafts.js";
 import { createPropScale } from "../src/scene/prop-scale.js";
 import {
   GLINT,
@@ -692,26 +691,17 @@ test("beside About the bark's highlights from the lantern and the crown's fill p
     BARK_RIM_TEXT,
     `*(1.0-babelRimText*max(slateBehind(slateText, vSlateClip.xy/vSlateClip.w*.5+.5, ${reach}), slateBehind(slateAbout, vSlateClip.xy/vSlateClip.w*.5+.5, ${reach})))`,
   );
-  // The light shafts' gobo still lands after the light chunk, on its own hook.
-  const gobo = goboHook(material, {}, 0),
-    composed = physical();
-  gobo.install();
-  material.onBeforeCompile(composed);
-  assert.ok(composed.fragmentShader.includes("if(shaftGoboGain>0.){"));
-  assert.ok(composed.fragmentShader.includes(BARK_TEXT_LIGHTS));
-  assert.ok(composed.fragmentShader.includes(BARK_RIM_TEXT));
   // Everything the rim's factor reads is declared before main().
-  const main = composed.fragmentShader.indexOf("void main");
+  const main = shader.fragmentShader.indexOf("void main");
   for (const declared of [
     "uniform float babelRimText;",
     "varying vec4 vSlateClip;",
     "uniform vec4 slateText, slateAbout;",
     "float slateBehind(vec4 r,vec2 v,float d)",
   ]) {
-    const at = composed.fragmentShader.indexOf(declared);
+    const at = shader.fragmentShader.indexOf(declared);
     assert.ok(at >= 0 && at < main, declared);
   }
-  gobo.restore();
   // Without the ground's uniforms the bark is as it was, on its own program.
   const plain = createTreeArchitecture({ asset: boxAsset(), groundHeight: () => 0 }),
     plainMaterial = plain.root.getObjectByName("meshy-tree").material,
@@ -790,13 +780,6 @@ test("behind the name and intro the bark's glints pass the same knee, by the sho
   ])
     assert.ok(glsl.indexOf(declared) >= 0 && glsl.indexOf(declared) < main, declared);
   assert.ok(glsl.indexOf(BARK_TEXT_GLINT) > main);
-  // With the light shafts' gobo composed it stays.
-  const gobo = goboHook(material, {}, 0),
-    composed = physical();
-  gobo.install();
-  material.onBeforeCompile(composed);
-  assert.ok(composed.fragmentShader.includes(BARK_TEXT_GLINT));
-  gobo.restore();
   // Without the ground's uniforms, and on the tower and the rocks, none.
   const plain = createTreeArchitecture({ asset: boxAsset(), groundHeight: () => 0 }),
     unguarded = physical();

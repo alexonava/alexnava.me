@@ -6,11 +6,14 @@ import test from "node:test";
 import { sceneGround } from "./support/ground.mjs";
 import { glbAsset, modelBytes } from "./support/glb.mjs";
 import {
+  BackSide,
   Group,
   Matrix4,
   Mesh,
+  MeshBasicMaterial,
   MeshStandardMaterial,
   PerspectiveCamera,
+  SphereGeometry,
   Vector3,
   BoxGeometry,
   Raycaster,
@@ -23,11 +26,13 @@ import {
 import { createPropScale } from "../src/scene/prop-scale.js";
 import { rootSupportHeight } from "../src/scene/terrain-build.js";
 import { createLanternMount } from "../src/scene/lantern.js";
+import { FLAME } from "../src/scene/lantern-flame.js";
 import {
   DIRECTED_SHOTS,
   measureShot,
   resolveDirectedShot,
   SQUAT_LANDSCAPE,
+  TABLET_WIDTH,
 } from "../src/scene/directed-shots.js";
 import {
   createCinematicCamera,
@@ -37,7 +42,7 @@ import {
 import { TOUR_ORDER } from "../src/scene/camera-tour.js";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
-import { MASSIF_SNOW, MASSIFS, snowReach } from "../src/scene/hill-silhouette.js";
+import { MASSIF_SNOW, MASSIFS, SNOW, snowReach } from "../src/scene/hill-silhouette.js";
 import { SOLAR_GLOW_RADIUS } from "../src/scene/solar-body.js";
 import {
   createMountainGeometry,
@@ -369,12 +374,72 @@ test("The watch resolves its landscape variant only for short landscape viewport
     [932, 430],
   ])
     assert.ok(width >= SQUAT_LANDSCAPE * height, `${width}x${height} is a landscape phone`);
-  // Portrait screens, phones and monitors alike, take the portrait variant: the lookout left of
-  // centre, the star whole to its right.
+  // A shot's tall variant reframes portrait monitors alone (the name below the subject),
+  // over its portrait variant; phones and tablets, the hero stacked above, keep that one.
+  // Its tablet variant, over the portrait one too, reframes stacked layouts from
+  // TABLET_WIDTH wide (portrait tablets and squares up to 1024px wide) alone.
+  {
+    const probe = {
+      name: "probe",
+      azimuth: 10,
+      anchor: [0.5, 0.5],
+      portrait: { azimuth: 20, anchor: [0.3, 0.5] },
+      tall: { anchor: [0.7, 0.4] },
+    };
+    const tall = resolveDirectedShot(probe, 1080, 1920);
+    assert.deepEqual([tall.azimuth, tall.anchor], [20, [0.7, 0.4]]);
+    assert.equal(resolveDirectedShot(probe, 1200, 1920), tall, "built once");
+    for (const [width, height] of [
+      [390, 844],
+      [820, 1180],
+      [1024, 1366],
+    ])
+      assert.deepEqual(resolveDirectedShot(probe, width, height).anchor, [0.3, 0.5]);
+    assert.equal(resolveDirectedShot(probe, 1920, 1080).anchor, probe.anchor);
+    const both = { ...probe, tablet: { anchor: [0.4, 0.6] } };
+    assert.equal(TABLET_WIDTH, 600);
+    const tablet = resolveDirectedShot(both, 820, 1180);
+    assert.deepEqual([tablet.azimuth, tablet.anchor], [20, [0.4, 0.6]]);
+    for (const [width, height] of [
+      [600, 900],
+      [768, 1024],
+      [1024, 1366],
+      [900, 900],
+    ])
+      assert.equal(
+        resolveDirectedShot(both, width, height),
+        tablet,
+        `${width}x${height} built once`,
+      );
+    for (const [width, height, anchor] of [
+      [390, 844, [0.3, 0.5]],
+      [599, 900, [0.3, 0.5]],
+      [560, 700, [0.3, 0.5]],
+      [1080, 1920, [0.7, 0.4]],
+      [700, 480, [0.3, 0.5]],
+      [1920, 1080, [0.5, 0.5]],
+    ])
+      assert.deepEqual(
+        resolveDirectedShot(both, width, height).anchor,
+        anchor,
+        `${width}x${height}`,
+      );
+  }
+  // Portrait screens take the portrait variant: the lookout left of centre (-12), the star
+  // whole to its right. Portrait monitors take it as it is; tablets stand the lookout a
+  // little further right, so the deck's end keeps its air off the left edge.
   const portrait = resolveDirectedShot(watch, 430, 932);
   assert.equal(portrait.azimuth, watch.portrait.azimuth);
+  assert.equal(portrait.azimuth, -12);
   assert.ok(portrait.anchor[0] < 0.5);
-  assert.equal(resolveDirectedShot(watch, 1080, 1920), portrait);
+  const monitor = resolveDirectedShot(watch, 1080, 1920);
+  assert.equal(watch.tall, undefined);
+  assert.deepEqual({ ...monitor }, { ...watch, ...watch.portrait });
+  const tablet = resolveDirectedShot(watch, 820, 1180);
+  assert.deepEqual({ ...tablet }, { ...watch, ...watch.portrait, ...watch.tablet });
+  assert.equal(tablet.azimuth, portrait.azimuth);
+  assert.ok(tablet.anchor[0] > portrait.anchor[0] && tablet.anchor[0] < 0.5);
+  assert.equal(resolveDirectedShot(watch, 768, 1024), tablet, "tablets share one variant");
   // Landscape phones under 600px wide take a compact variant: a drift, a little nearer the
   // star's bearing.
   for (const [width, height] of [
@@ -439,75 +504,84 @@ test("every moving shot holds still on landscape phones and keeps a move on desk
       );
 });
 
-// Hero text and bottom bar measured from the live page at each size.
+// Hero text and bottom bar measured from the live page at each size (2026-10-15: the hero's
+// layout box and the bottom bar's rect, as the scene reads them).
 const LAYOUTS = [
   {
     width: 390,
     height: 844,
-    hero: { left: 32, right: 299, top: 34, bottom: 177 },
-    nav: { top: 738 },
+    hero: { left: 12, right: 299, top: 34, bottom: 177 },
+    nav: { top: 766 },
   },
   {
     width: 450,
     height: 800,
-    hero: { left: 12, right: 345, top: 34, bottom: 270 },
-    nav: { top: 694 },
+    hero: { left: 12, right: 302, top: 34, bottom: 194 },
+    nav: { top: 722 },
+  },
+  // A portrait tablet (measured 2026-10-15): the name stacked above the subject, as on
+  // phones, in a wider frame.
+  {
+    width: 820,
+    height: 1180,
+    hero: { left: 16, right: 323, top: 48, bottom: 226 },
+    nav: { top: 1098 },
   },
   {
     width: 844,
     height: 390,
     hero: { left: 16, right: 262, top: 12, bottom: 138 },
-    nav: { top: 296 },
+    nav: { top: 316 },
   },
   {
     width: 1440,
     height: 900,
     hero: { left: 130, right: 454, top: 447, bottom: 720 },
-    nav: { top: 782 },
+    nav: { top: 818 },
   },
   {
     width: 1600,
     height: 900,
-    hero: { left: 210, right: 535, top: 447, bottom: 720 },
-    nav: { top: 782 },
+    hero: { left: 210, right: 534, top: 447, bottom: 720 },
+    nav: { top: 818 },
   },
   {
     width: 2560,
     height: 1080,
     hero: { left: 141, right: 465, top: 613, bottom: 886 },
-    nav: { top: 962 },
+    nav: { top: 998 },
   },
-  // Maximised browsers (measured 2026-10-11): a 1080p desktop and a wider window, where
-  // The watch tilts up; a 16:9 window, a MacBook and a 125%-scaled laptop, where it keeps level.
+  // Maximised browsers: a 1080p desktop and a wider window, where The watch tilts up; a 16:9
+  // window, a MacBook and a 125%-scaled laptop, where it keeps level.
   {
     width: 1992,
     height: 1020,
     hero: { left: 110, right: 434, top: 555, bottom: 828 },
-    nav: { top: 902 },
+    nav: { top: 938 },
   },
   {
     width: 1920,
     height: 960,
     hero: { left: 106, right: 430, top: 501, bottom: 774 },
-    nav: { top: 842 },
+    nav: { top: 878 },
   },
   {
     width: 1680,
     height: 950,
     hero: { left: 250, right: 574, top: 492, bottom: 765 },
-    nav: { top: 832 },
+    nav: { top: 868 },
   },
   {
     width: 1440,
     height: 800,
     hero: { left: 130, right: 454, top: 357, bottom: 630 },
-    nav: { top: 682 },
+    nav: { top: 718 },
   },
   {
     width: 1536,
     height: 730,
     hero: { left: 178, right: 502, top: 294, bottom: 567 },
-    nav: { top: 612 },
+    nav: { top: 648 },
   },
   // A small landscape phone sets the name top-left beside the subject; a
   // portrait monitor sets it bottom-left, below the subject.
@@ -528,7 +602,7 @@ const LAYOUTS = [
   {
     width: 700,
     height: 480,
-    hero: { left: 12, right: 261, top: 12, bottom: 148 },
+    hero: { left: 16, right: 261, top: 12, bottom: 148 },
     nav: { top: 406 },
   },
   // 4:3 and 5:4 screens, landscape iPads and taller 16:10 windows (the hero measured
@@ -547,7 +621,7 @@ const LAYOUTS = [
     width,
     height,
     hero: { left, right, top, bottom },
-    nav: { top: height - 118 },
+    nav: { top: height - 82 },
     lookout: true,
   })),
 ];
@@ -1442,3 +1516,788 @@ for (const tier of ["high", "balanced"])
       });
     },
   );
+
+// The film's composition profile lowers the scene, not the star or the sky shell: the live
+// scene stands sceneOffsetY down, these fixtures at -6.8 (the phones' offset), so over them
+// the star and the shell stand `lift` higher.
+async function compositionLift(width, height) {
+  const window = { BabelSite: {} };
+  vm.runInNewContext(await readFile(new URL("../src/scene/quality.js", import.meta.url), "utf8"), {
+    window,
+  });
+  const { scene } = window.BabelSite;
+  return { lift: -6.8 - scene.getSceneCompositionProfile({ width, height }).sceneOffsetY, scene };
+}
+// The lantern's assembly on the tree: its model, its light and the light's streak.
+const inLantern = (object) => {
+  for (let node = object; node; node = node.parent) if (/lantern/i.test(node.name)) return true;
+  return false;
+};
+
+// Portrait on upright and squat screens (its portrait, tablet, tall and squat variants; the
+// reviews of 2026-10-14 and 2026-10-15), through its whole push in 24 steps: the root never
+// hides the lantern's flame, and no snow (a Meshy massif's or the backdrop rings', at its mean
+// snowline and above the nearer layers' skyline) meets a side edge, where the frame would cut
+// a snowy summit. On phones (the owner's rule: the lantern first) the root hides none of the
+// lantern's glass, and no part of the tree, in front or behind, comes within 2 CSS px of the
+// flame, where its edge would run through it.
+test("Portrait on upright and squat screens keeps the lantern and the snowy summits clear through its push", async () => {
+  const world = { BabelSite: {} };
+  vm.runInNewContext(await readFile(new URL("../src/scene/world.js", import.meta.url), "utf8"), {
+    window: world,
+  });
+  const { CAMERA_FAR } = world.BabelSite.scene.WORLD;
+  const assets = { tower: await asset("tower"), tree: await asset("tree") };
+  const tower = createCompleteTowerArchitecture({
+    asset: assets.tower,
+    groundY: ground(0, 0),
+    footingOffset: -0.22,
+  });
+  const tree = createTreeArchitecture({
+    asset: assets.tree,
+    groundHeight: ground,
+    anchor: [55.1, 36.1],
+  });
+  const groundRoot = new Group();
+  groundRoot.add(tree.root);
+  const scale = createPropScale({ groundRoot, groundHeight: ground });
+  scale.setTree(tree);
+  scale.setActive(true);
+  tree.setFilmTreatment(true);
+  tree.applyQuality({ tier: "high" });
+  const lantern = await lanternFor(tree);
+  groundRoot.updateMatrixWorld(true);
+  let lanternRoot = null;
+  groundRoot.traverse((object) => {
+    if (!lanternRoot && object.name === "supplied-meshy-lantern") lanternRoot = object;
+  });
+  assert.ok(lanternRoot, "the lantern stands by the tree");
+  // The flame's body, its lower quarter to its tip.
+  const flame = [0.25, 0.5, 0.75, 1].map((share) =>
+    lanternRoot.localToWorld(new Vector3(0, FLAME.base + share * FLAME.height, 0)),
+  );
+  const solid = [],
+    lanternMeshes = [],
+    lanternPoints = [];
+  tree.root.traverse((mesh) => {
+    if (!mesh.isMesh || inLantern(mesh)) return;
+    mesh.material.side = DoubleSide;
+    solid.push(mesh);
+  });
+  lanternRoot.traverse((mesh) => {
+    if (!mesh.isMesh) return;
+    mesh.material.side = DoubleSide;
+    lanternMeshes.push(mesh);
+    const p = mesh.geometry.attributes.position;
+    for (let i = 0; i < p.count; i += 7)
+      lanternPoints.push(new Vector3().fromBufferAttribute(p, i).applyMatrix4(mesh.matrixWorld));
+  });
+  // The massifs' snow that can show: each vertex over its mean snowline (the shader's noise
+  // and gully tongues average out about it) and above every nearer layer's skyline.
+  const models = {};
+  for (const role of MASSIFS.roles) {
+    const mesh = (await asset(role)).scene.children[0];
+    models[role] = {
+      position: mesh.geometry.attributes.position,
+      uv: mesh.geometry.attributes.uv,
+      index: mesh.geometry.index,
+      height: mesh.userData.height,
+    };
+  }
+  const composed = createRangeGeometry(models),
+    rad = Math.PI / 180;
+  const nearer = (layer, azimuth) => {
+    let top = -90;
+    for (const { placement, sky } of composed.placed) {
+      if (placement.layer >= layer) continue;
+      const bin = Math.floor(((((azimuth - sky.from) % 360) + 360) % 360) / RANGE_SKY.bin);
+      if (bin < sky.values.length) top = Math.max(top, sky.values[bin]);
+    }
+    return top;
+  };
+  const snow = [];
+  for (const geometry of Object.values(composed.geometries)) {
+    const p = geometry.attributes.position,
+      terrain = geometry.attributes.aTerrain;
+    for (let v = 0; v < p.count; v++) {
+      const line = terrain.getZ(v),
+        massif = terrain.getW(v);
+      if (!line) continue;
+      const elevation = Math.atan2(p.getY(v), Math.hypot(p.getX(v), p.getZ(v))) / rad,
+        cap = Math.min(MASSIF_SNOW.max, Math.max(0, (massif - line) * MASSIF_SNOW.depth));
+      if (cap <= 0.001 || elevation <= massif - cap) continue;
+      if (elevation > nearer(terrain.getY(v), Math.atan2(p.getZ(v), p.getX(v)) / rad))
+        snow.push(new Vector3(p.getX(v), p.getY(v), p.getZ(v)));
+    }
+  }
+  assert.ok(snow.length > 500, "the massifs carry snow");
+  // The backdrop rings' snow (the rings' own rule), where it stands above every massif.
+  const rings = createMountainGeometry({ backdrop: RANGE_BACKDROP, nearer: composed.nearer });
+  {
+    const p = rings.attributes.position,
+      terrain = rings.attributes.aTerrain;
+    let count = 0;
+    for (let v = 0; v < p.count; v++) {
+      const massif = terrain.getW(v),
+        elevation = Math.atan2(p.getY(v), Math.hypot(p.getX(v), p.getZ(v))) / rad,
+        cap = Math.min(SNOW.max, Math.max(0, (massif - SNOW.line) * SNOW.depth));
+      if (cap <= 0.001 || elevation <= massif - cap) continue;
+      if (elevation > nearer(Infinity, Math.atan2(p.getZ(v), p.getX(v)) / rad)) {
+        snow.push(new Vector3(p.getX(v), p.getY(v), p.getZ(v)));
+        count++;
+      }
+    }
+    assert.ok(count > 30, "the backdrop rings carry snow");
+  }
+  const upright = LAYOUTS.filter(({ width, height }) =>
+    ["390x844", "450x800", "820x1180", "1080x1920", "700x480"].includes(`${width}x${height}`),
+  );
+  assert.equal(upright.length, 5);
+  const phone = (width, height) => height > width && width < TABLET_WIDTH;
+  const layouts = [
+    ...upright,
+    {
+      width: 430,
+      height: 932,
+      hero: { left: 12, right: 301, top: 34, bottom: 189 },
+      nav: { top: 854 },
+    },
+    // A phone with its browser's bars showing.
+    {
+      width: 390,
+      height: 664,
+      hero: { left: 12, right: 299, top: 34, bottom: 177 },
+      nav: { top: 586 },
+    },
+    {
+      width: 599,
+      height: 499,
+      hero: { left: 12, right: 254, top: 12, bottom: 151 },
+      nav: { top: 425 },
+    },
+    {
+      width: 560,
+      height: 450,
+      hero: { left: 12, right: 253, top: 12, bottom: 143 },
+      nav: { top: 376 },
+    },
+  ];
+  const caster = new Raycaster(),
+    edge = 6;
+  try {
+    for (const { width, height, hero, nav } of layouts) {
+      const camera = new PerspectiveCamera(38, width / height, 0.1, CAMERA_FAR);
+      const controller = createCinematicCamera({
+        camera,
+        selected: "tree",
+        angle: 0,
+        getSafeArea: () => cinematicSafeArea(width, height, hero, nav),
+        getGroundY: ground,
+      });
+      for (const [subject, object] of [
+        ["tower", tower],
+        ["tree", tree],
+      ]) {
+        controller.setSubject(subject, object.root);
+        controller.setStatus({ kind: subject, status: "ready" });
+      }
+      for (let step = 0; step <= 24; step++) {
+        const tourPhase = step / 24;
+        controller.apply({ width, height, tourPhase });
+        camera.updateMatrixWorld(true);
+        const label = `Portrait ${width}x${height} phase ${tourPhase.toFixed(3)}`;
+        assert.equal(controller.shot.name, "Portrait");
+        for (const point of flame) {
+          const toward = point.clone().sub(camera.position);
+          caster.set(camera.position, toward.clone().normalize());
+          caster.far = toward.length();
+          assert.equal(
+            caster.intersectObjects(solid, false).length,
+            0,
+            `${label}: the root hides the lantern's flame`,
+          );
+        }
+        if (phone(width, height)) {
+          const screen = (point) => {
+            const p = point.clone().project(camera);
+            return { x: ((p.x + 1) * width) / 2, y: ((1 - p.y) * height) / 2 };
+          };
+          const through = (x, y) =>
+            caster.setFromCamera({ x: (x / width) * 2 - 1, y: 1 - (y / height) * 2 }, camera);
+          caster.far = Infinity;
+          // The glass: its band, from an eighth of the lantern's height above its foot to a
+          // quarter below its top, sampled on a grid; where a ray meets the lantern, no
+          // part of the tree comes first.
+          const box = lanternPoints.map(screen),
+            left = Math.min(...box.map((p) => p.x)),
+            right = Math.max(...box.map((p) => p.x)),
+            top = Math.min(...box.map((p) => p.y)),
+            foot = Math.max(...box.map((p) => p.y)),
+            tall = foot - top;
+          for (let row = 0; row <= 4; row++)
+            for (let column = 0; column <= 6; column++) {
+              through(
+                left + ((right - left) * column) / 6,
+                foot - tall * (0.12 + (0.63 * row) / 4),
+              );
+              const glass = caster.intersectObjects(lanternMeshes, false)[0];
+              if (!glass) continue;
+              caster.far = glass.distance;
+              assert.equal(
+                caster.intersectObjects(solid, false).length,
+                0,
+                `${label}: the root hides the lantern's glass`,
+              );
+              caster.far = Infinity;
+            }
+          // The flame: no part of the tree, in front or behind, within 2 CSS px of it.
+          for (const point of flame) {
+            const { x, y } = screen(point);
+            for (let k = 0; k <= 8; k++) {
+              const a = (k * Math.PI) / 4,
+                r = k === 8 ? 0 : 2;
+              through(x + r * Math.cos(a), y + r * Math.sin(a));
+              assert.equal(
+                caster.intersectObjects(solid, false).length,
+                0,
+                `${label}: the tree's edge runs within 2 px of the lantern's flame`,
+              );
+            }
+          }
+        }
+        for (const point of snow) {
+          const p = point.clone().add(camera.position);
+          if (p.clone().applyMatrix4(camera.matrixWorldInverse).z >= 0) continue;
+          p.project(camera);
+          const x = ((p.x + 1) * width) / 2,
+            y = ((1 - p.y) * height) / 2;
+          assert.ok(
+            y < 0 || y > height || (Math.abs(x) > edge && Math.abs(x - width) > edge),
+            `${label}: a side edge cuts a summit's snow at ${x.toFixed(0)},${y.toFixed(0)}`,
+          );
+        }
+      }
+      controller.dispose();
+    }
+  } finally {
+    rings.dispose();
+    Object.values(composed.geometries).forEach((geometry) => geometry.dispose());
+    lantern.dispose();
+    scale.dispose();
+    tower.dispose();
+    tree.dispose();
+    for (const item of Object.values(assets))
+      item.scene.traverse((mesh) => {
+        mesh.geometry?.dispose();
+        mesh.material?.dispose();
+      });
+  }
+});
+
+// Watch and tree opens from its URL alone, so its move and tilt breathe over 48 s (the review
+// of 2026-10-14). Through the whole breath: on phones and tablets every corner meets the sky
+// shell at the tier's own segments (its faceted rim showed as a dark wedge in the top corner
+// mid-breath); on letterboxed desktops the star stays whole, 22 CSS px or more below the top
+// bar at 1440x900, and the ranges' skyline stays above the letters of "Alex" (their tops 13
+// CSS px under the hero's box) at 1440x900 and 1992x1020, every massif's crest too at 1440x900.
+test("Watch and tree breathes clear of the sky shell's rim on phones and of the bar and the name on letterboxed desktops", async () => {
+  const world = { BabelSite: {} };
+  vm.runInNewContext(await readFile(new URL("../src/scene/world.js", import.meta.url), "utf8"), {
+    window: world,
+  });
+  const { SUN_POSITION, CAMERA_FAR, SKY_DOME_RADIUS } = world.BabelSite.scene.WORLD;
+  const assets = { tower: await asset("tower"), tree: await asset("tree") };
+  const tower = createCompleteTowerArchitecture({
+    asset: assets.tower,
+    groundY: ground(0, 0),
+    footingOffset: -0.22,
+  });
+  const tree = createTreeArchitecture({
+    asset: assets.tree,
+    groundHeight: ground,
+    anchor: [55.1, 36.1],
+  });
+  const groundRoot = new Group();
+  groundRoot.add(tree.root);
+  const scale = createPropScale({ groundRoot, groundHeight: ground });
+  scale.setTree(tree);
+  scale.setActive(true);
+  tree.setFilmTreatment(true);
+  tree.applyQuality({ tier: "high" });
+  const models = {};
+  for (const role of MASSIFS.roles) {
+    const mesh = (await asset(role)).scene.children[0];
+    models[role] = {
+      position: mesh.geometry.attributes.position,
+      uv: mesh.geometry.attributes.uv,
+      index: mesh.geometry.index,
+      height: mesh.userData.height,
+    };
+  }
+  const composed = createRangeGeometry(models),
+    backdrop = mountainCrests(RANGE_BACKDROP),
+    rad = Math.PI / 180,
+    direction = (azimuth, elevation) =>
+      new Vector3(
+        Math.cos(azimuth * rad),
+        Math.tan(elevation * rad),
+        Math.sin(azimuth * rad),
+      ).multiplyScalar(300);
+  // Every Meshy copy's own crest, and the silhouette against the sky: per bin of azimuth the
+  // highest of them all and of the backdrop rings.
+  const crests = [],
+    bins = Math.round(360 / RANGE_SKY.bin),
+    top = new Float32Array(bins).fill(-90);
+  for (const { sky } of composed.placed)
+    sky.values.forEach((e, j) => {
+      if (e <= -90) return;
+      const azimuth = sky.from + (j + 0.5) * RANGE_SKY.bin,
+        bin = Math.floor((((azimuth % 360) + 360) % 360) / RANGE_SKY.bin) % bins;
+      crests.push(direction(azimuth, e));
+      top[bin] = Math.max(top[bin], e);
+    });
+  for (const range of RANGE_BACKDROP.ranges)
+    backdrop[range].forEach((e, j) => {
+      const from = (j / MOUNTAINS.columns) * 360,
+        to = ((j + 1) / MOUNTAINS.columns) * 360;
+      for (let bin = Math.floor(from / RANGE_SKY.bin); bin * RANGE_SKY.bin < to; bin++)
+        top[bin % bins] = Math.max(top[bin % bins], e);
+    });
+  const silhouette = Array.from(top, (e, bin) => direction((bin + 0.5) * RANGE_SKY.bin, e));
+  const angle = DIRECTED_SHOTS.tower.findIndex((shot) => shot.name === "Watch and tree");
+  assert.equal(DIRECTED_SHOTS.tower[angle].tour, false);
+  const phones = [
+    ...LAYOUTS.filter(({ width, height }) =>
+      ["390x844", "450x800", "820x1180"].includes(`${width}x${height}`),
+    ),
+    // Short phones: a 390x844 or 393x852 phone with its browser's bars showing.
+    {
+      width: 390,
+      height: 664,
+      hero: { left: 12, right: 299, top: 34, bottom: 177 },
+      nav: { top: 586 },
+    },
+    {
+      width: 393,
+      height: 659,
+      hero: { left: 12, right: 299, top: 34, bottom: 177 },
+      nav: { top: 581 },
+    },
+  ];
+  const desktops = LAYOUTS.filter(
+    ({ width, height, lookout }) => !lookout && letterboxShare(width, height) > 0,
+  );
+  assert.ok(desktops.some(({ width, height }) => width === 1440 && height === 900));
+  const shells = [];
+  try {
+    for (const layout of [...phones, ...desktops]) {
+      const { width, height, hero, nav } = layout,
+        bar = letterboxShare(width, height) * height,
+        { lift, scene } = await compositionLift(width, height),
+        sun = new Vector3(...SUN_POSITION).setY(SUN_POSITION[1] + lift);
+      const camera = new PerspectiveCamera(38, width / height, 0.1, CAMERA_FAR);
+      const controller = createCinematicCamera({
+        camera,
+        selected: "tower",
+        angle,
+        getSafeArea: () => cinematicSafeArea(width, height, hero, nav),
+        getGroundY: ground,
+      });
+      for (const [subject, object] of [
+        ["tower", tower],
+        ["tree", tree],
+      ]) {
+        controller.setSubject(subject, object.root);
+        controller.setStatus({ kind: subject, status: "ready" });
+      }
+      const layoutShells = (bar ? [] : ["balanced", "high"]).map((tier) => {
+        const { skyWidthSegments, skyHeightSegments } = scene.SCENE_QUALITY_PROFILES[tier].geometry;
+        const shell = new Mesh(
+          new SphereGeometry(SKY_DOME_RADIUS, skyWidthSegments, skyHeightSegments),
+          new MeshBasicMaterial({ side: BackSide }),
+        );
+        shell.position.y = lift;
+        shell.updateMatrixWorld(true);
+        shells.push(shell);
+        return [tier, shell];
+      });
+      const caster = new Raycaster();
+      // The URL view: the first frame starts the breath.
+      controller.apply({ width, height, elapsedSeconds: 0 });
+      for (let elapsedSeconds = 0; elapsedSeconds < 48; elapsedSeconds += 1) {
+        controller.apply({ width, height, elapsedSeconds });
+        camera.updateMatrixWorld(true);
+        const label = `Watch and tree ${width}x${height} at ${elapsedSeconds} s`;
+        for (const [tier, shell] of layoutShells)
+          for (let gy = 0; gy <= 12; gy++)
+            for (let gx = 0; gx <= 12; gx++) {
+              caster.setFromCamera({ x: gx / 6 - 1, y: 1 - gy / 6 }, camera);
+              assert.ok(
+                caster.intersectObject(shell, false).length > 0,
+                `${label}: the ${tier} sky shell's rim shows at ${gx},${gy}`,
+              );
+            }
+        if (!bar) continue;
+        const s = sun.clone().project(camera),
+          depth = -sun.clone().applyMatrix4(camera.matrixWorldInverse).z,
+          disc = (((3.027375 * camera.projectionMatrix.elements[5]) / depth) * height) / 2,
+          x = ((s.x + 1) * width) / 2,
+          y = ((1 - s.y) * height) / 2;
+        if (depth > 0 && x + disc > 0 && x - disc < width && y + disc > bar) {
+          const clear = width === 1440 && height === 900 ? 22 : 10;
+          assert.ok(
+            y - disc >= bar + clear,
+            `${label}: the star's disc ${(y - disc - bar).toFixed(1)} px under the top bar`,
+          );
+        }
+        // The silhouette at 1440x900 and 1992x1020; at 1440x900, where the name stands below
+        // the ranges' feet, every massif's own crest too.
+        const lines =
+          width === 1440 && height === 900
+            ? [
+                ["skyline", silhouette],
+                ["crest", crests],
+              ]
+            : width === 1992 && height === 1020
+              ? [["skyline", silhouette]]
+              : [];
+        const letters = hero.top + 13;
+        for (const [what, line] of lines)
+          for (const point of line) {
+            const p = point.clone().add(camera.position);
+            if (p.clone().applyMatrix4(camera.matrixWorldInverse).z >= 0) continue;
+            p.project(camera);
+            const px = ((p.x + 1) * width) / 2,
+              py = ((1 - p.y) * height) / 2;
+            if (px >= hero.left && px <= hero.left + 185)
+              assert.ok(
+                py <= letters,
+                `${label}: the ranges' ${what} crosses "Alex" ${(py - letters).toFixed(1)} px down`,
+              );
+          }
+      }
+      controller.dispose();
+    }
+  } finally {
+    for (const shell of shells) {
+      shell.geometry.dispose();
+      shell.material.dispose();
+    }
+    Object.values(composed.geometries).forEach((geometry) => geometry.dispose());
+    scale.dispose();
+    tower.dispose();
+    tree.dispose();
+    for (const item of Object.values(assets))
+      item.scene.traverse((mesh) => {
+        mesh.geometry?.dispose();
+        mesh.material?.dispose();
+      });
+  }
+});
+
+// The lookout and the crown on the wider upright screens (the review of 2026-10-14), through
+// each tour move in 24 steps: on a portrait tablet The watch keeps its deck's end 20 CSS px or
+// more off the left edge; on a portrait monitor Threshold keeps its cab 20 px or more inside
+// the right edge, and Close-up keeps the tree out of the name.
+test("the lookout and the crown keep their edges and the name clear on tablets and portrait monitors", async () => {
+  const world = { BabelSite: {} };
+  vm.runInNewContext(await readFile(new URL("../src/scene/world.js", import.meta.url), "utf8"), {
+    window: world,
+  });
+  const { CAMERA_FAR } = world.BabelSite.scene.WORLD;
+  const assets = { tower: await asset("tower"), tree: await asset("tree") };
+  const tower = createCompleteTowerArchitecture({
+    asset: assets.tower,
+    groundY: ground(0, 0),
+    footingOffset: -0.22,
+  });
+  const tree = createTreeArchitecture({
+    asset: assets.tree,
+    groundHeight: ground,
+    anchor: [55.1, 36.1],
+  });
+  const groundRoot = new Group();
+  groundRoot.add(tree.root);
+  const scale = createPropScale({ groundRoot, groundHeight: ground });
+  scale.setTree(tree);
+  scale.setActive(true);
+  tree.setFilmTreatment(true);
+  tree.applyQuality({ tier: "high" });
+  const lantern = await lanternFor(tree);
+  const points = (root, keep = () => true) => {
+    const out = [];
+    root.updateMatrixWorld(true);
+    root.traverse((mesh) => {
+      if (!mesh.isMesh || !keep(mesh)) return;
+      const p = mesh.geometry.attributes.position;
+      for (let i = 0; i < p.count; i++)
+        out.push(new Vector3().fromBufferAttribute(p, i).applyMatrix4(mesh.matrixWorld));
+    });
+    return out;
+  };
+  const lookout = points(tower.root);
+  let top = -Infinity,
+    bottom = Infinity;
+  for (const p of lookout) {
+    top = Math.max(top, p.y);
+    bottom = Math.min(bottom, p.y);
+  }
+  // The cab and its deck: the lookout's top quarter.
+  const cab = lookout.filter((p) => p.y > bottom + 0.74 * (top - bottom));
+  const crown = points(tree.root, (mesh) => !inLantern(mesh));
+  const at = (width, height) => LAYOUTS.find((l) => l.width === width && l.height === height);
+  const checks = [
+    {
+      name: "The watch",
+      layout: at(820, 1180),
+      subject: cab,
+      fails: (p) => p.x < 20,
+      why: (p) => `the deck's end ${p.x.toFixed(1)} px from the left edge`,
+    },
+    {
+      name: "Threshold",
+      layout: at(1080, 1920),
+      subject: cab,
+      fails: (p, { width }) => p.x > width - 20,
+      why: (p, { width }) => `the cab ${(width - p.x).toFixed(1)} px inside the right edge`,
+    },
+    {
+      name: "Close-up",
+      layout: at(1080, 1920),
+      subject: crown,
+      fails: (p, { hero }) =>
+        p.x >= hero.left && p.x <= hero.left + 170 && p.y >= hero.top && p.y <= hero.top + 180,
+      why: (p) => `the tree at ${p.x.toFixed(0)},${p.y.toFixed(0)} in the name`,
+    },
+  ];
+  try {
+    for (const { name, layout, subject, fails, why } of checks) {
+      const { width, height, hero, nav } = layout;
+      const kind = DIRECTED_SHOTS.tower.some((shot) => shot.name === name) ? "tower" : "tree",
+        angle = DIRECTED_SHOTS[kind].findIndex((shot) => shot.name === name);
+      const camera = new PerspectiveCamera(38, width / height, 0.1, CAMERA_FAR);
+      const controller = createCinematicCamera({
+        camera,
+        selected: kind,
+        angle,
+        getSafeArea: () => cinematicSafeArea(width, height, hero, nav),
+        getGroundY: ground,
+      });
+      for (const [k, object] of [
+        ["tower", tower],
+        ["tree", tree],
+      ]) {
+        controller.setSubject(k, object.root);
+        controller.setStatus({ kind: k, status: "ready" });
+      }
+      for (let step = 0; step <= 24; step++) {
+        const tourPhase = step / 24;
+        controller.apply({ width, height, tourPhase });
+        camera.updateMatrixWorld(true);
+        for (const point of subject) {
+          const p = point.clone().project(camera);
+          if (p.z > 1) continue;
+          const s = { x: ((p.x + 1) * width) / 2, y: ((1 - p.y) * height) / 2 };
+          if (s.y < 0 || s.y > height) continue;
+          assert.ok(
+            !fails(s, layout),
+            `${name} ${width}x${height} phase ${tourPhase.toFixed(3)}: ${why(s, layout)}`,
+          );
+        }
+      }
+      controller.dispose();
+    }
+  } finally {
+    lantern.dispose();
+    scale.dispose();
+    tower.dispose();
+    tree.dispose();
+    for (const item of Object.values(assets))
+      item.scene.traverse((mesh) => {
+        mesh.geometry?.dispose();
+        mesh.material?.dispose();
+      });
+  }
+});
+
+// The text on a portrait monitor (the review of 2026-10-15): through each tour move in 24
+// steps, Threshold's lookout and Close-up's tree keep 24 CSS px or more off the whole text
+// block, the name's two lines and the intro, and no crest of the ranges (each massif's where it
+// rises over the nearer layers, and the skyline with the backdrop rings) runs through a letter.
+// The letters' ink as measured on 1080x1920 (relative to the hero's box): per letter or run of
+// letters [left, right, top, bottom], the tops their real glyph tops.
+const MONITOR_LETTERS = [
+  [-2, 22, 26, 70],
+  [22, 40, 14, 70],
+  [40, 60, 31, 70],
+  [60, 78, 6, 70],
+  [78, 160, 34, 70],
+  [0, 56, 110, 166],
+  [56, 170, 129, 166],
+  [0, 268, 212, 226],
+];
+test("Threshold and Close-up keep the lookout, the tree and the crests off the text on portrait monitors", async () => {
+  const world = { BabelSite: {} };
+  vm.runInNewContext(await readFile(new URL("../src/scene/world.js", import.meta.url), "utf8"), {
+    window: world,
+  });
+  const { CAMERA_FAR } = world.BabelSite.scene.WORLD;
+  const assets = { tower: await asset("tower"), tree: await asset("tree") };
+  const tower = createCompleteTowerArchitecture({
+    asset: assets.tower,
+    groundY: ground(0, 0),
+    footingOffset: -0.22,
+  });
+  const tree = createTreeArchitecture({
+    asset: assets.tree,
+    groundHeight: ground,
+    anchor: [55.1, 36.1],
+  });
+  const groundRoot = new Group();
+  groundRoot.add(tree.root);
+  const scale = createPropScale({ groundRoot, groundHeight: ground });
+  scale.setTree(tree);
+  scale.setActive(true);
+  tree.setFilmTreatment(true);
+  tree.applyQuality({ tier: "high" });
+  const lantern = await lanternFor(tree);
+  groundRoot.updateMatrixWorld(true);
+  tower.root.updateMatrixWorld(true);
+  const meshes = (root, keep = () => true) => {
+    const out = [];
+    root.traverse((mesh) => {
+      if (!mesh.isMesh || !keep(mesh)) return;
+      mesh.material.side = DoubleSide;
+      out.push(mesh);
+    });
+    return out;
+  };
+  const subjects = {
+    Threshold: meshes(tower.root),
+    "Close-up": meshes(tree.root, (mesh) => !inLantern(mesh)),
+  };
+  // The crests: every massif copy's where it stands over the nearer layers, and the skyline
+  // (the highest of them all and of the backdrop rings) per bin of azimuth.
+  const models = {};
+  for (const role of MASSIFS.roles) {
+    const mesh = (await asset(role)).scene.children[0];
+    models[role] = {
+      position: mesh.geometry.attributes.position,
+      uv: mesh.geometry.attributes.uv,
+      index: mesh.geometry.index,
+      height: mesh.userData.height,
+    };
+  }
+  const composed = createRangeGeometry(models),
+    backdrop = mountainCrests(RANGE_BACKDROP),
+    rad = Math.PI / 180,
+    direction = (azimuth, elevation) =>
+      new Vector3(
+        Math.cos(azimuth * rad),
+        Math.tan(elevation * rad),
+        Math.sin(azimuth * rad),
+      ).multiplyScalar(300);
+  const nearer = (layer, azimuth) => {
+    let top = -90;
+    for (const { placement, sky } of composed.placed) {
+      if (placement.layer >= layer) continue;
+      const bin = Math.floor(((((azimuth - sky.from) % 360) + 360) % 360) / RANGE_SKY.bin);
+      if (bin < sky.values.length) top = Math.max(top, sky.values[bin]);
+    }
+    return top;
+  };
+  const bins = Math.round(360 / RANGE_SKY.bin),
+    highest = new Float32Array(bins).fill(-90),
+    crests = [];
+  for (const { placement, sky } of composed.placed)
+    sky.values.forEach((e, j) => {
+      if (e <= -90) return;
+      const azimuth = sky.from + (j + 0.5) * RANGE_SKY.bin,
+        bin = Math.floor((((azimuth % 360) + 360) % 360) / RANGE_SKY.bin) % bins;
+      highest[bin] = Math.max(highest[bin], e);
+      if (e > nearer(placement.layer, azimuth)) crests.push(direction(azimuth, e));
+    });
+  for (const range of RANGE_BACKDROP.ranges)
+    backdrop[range].forEach((e, j) => {
+      const from = (j / MOUNTAINS.columns) * 360,
+        to = ((j + 1) / MOUNTAINS.columns) * 360;
+      for (let bin = Math.floor(from / RANGE_SKY.bin); bin * RANGE_SKY.bin < to; bin++)
+        highest[bin % bins] = Math.max(highest[bin % bins], e);
+    });
+  highest.forEach((e, bin) => crests.push(direction((bin + 0.5) * RANGE_SKY.bin, e)));
+  const layout = LAYOUTS.find((l) => l.width === 1080 && l.height === 1920),
+    { width, height, hero, nav } = layout,
+    letters = MONITOR_LETTERS.map(([left, right, top, bottom]) => ({
+      left: hero.left + left,
+      right: hero.left + right,
+      top: hero.top + top,
+      bottom: hero.top + bottom,
+    })),
+    air = 24,
+    caster = new Raycaster();
+  try {
+    for (const name of ["Threshold", "Close-up"]) {
+      const kind = DIRECTED_SHOTS.tower.some((shot) => shot.name === name) ? "tower" : "tree",
+        angle = DIRECTED_SHOTS[kind].findIndex((shot) => shot.name === name);
+      const camera = new PerspectiveCamera(38, width / height, 0.1, CAMERA_FAR);
+      const controller = createCinematicCamera({
+        camera,
+        selected: kind,
+        angle,
+        getSafeArea: () => cinematicSafeArea(width, height, hero, nav),
+        getGroundY: ground,
+      });
+      for (const [k, object] of [
+        ["tower", tower],
+        ["tree", tree],
+      ]) {
+        controller.setSubject(k, object.root);
+        controller.setStatus({ kind: k, status: "ready" });
+      }
+      for (let step = 0; step <= 24; step++) {
+        const tourPhase = step / 24;
+        controller.apply({ width, height, tourPhase });
+        camera.updateMatrixWorld(true);
+        const label = `${name} ${width}x${height} phase ${tourPhase.toFixed(3)}`;
+        // The subject: rays every 8 CSS px over the letters and within 24 px of them.
+        for (const box of letters)
+          for (let y = box.top - air; y <= box.bottom + air; y += 8)
+            for (let x = Math.max(0, box.left - air); x <= box.right + air; x += 8) {
+              const dx = Math.max(box.left - x, 0, x - box.right),
+                dy = Math.max(box.top - y, 0, y - box.bottom);
+              if (Math.hypot(dx, dy) > air) continue;
+              caster.setFromCamera({ x: (x / width) * 2 - 1, y: 1 - (y / height) * 2 }, camera);
+              assert.equal(
+                caster.intersectObjects(subjects[name], false).length,
+                0,
+                `${label}: the ${kind === "tower" ? "lookout" : "tree"} at ${x},${y}, within ${air} px of the text`,
+              );
+            }
+        for (const point of crests) {
+          const p = point.clone().add(camera.position);
+          if (p.clone().applyMatrix4(camera.matrixWorldInverse).z >= 0) continue;
+          p.project(camera);
+          const x = ((p.x + 1) * width) / 2,
+            y = ((1 - p.y) * height) / 2;
+          for (const box of letters)
+            assert.ok(
+              x < box.left - 2 || x > box.right + 2 || y < box.top - 2 || y > box.bottom + 2,
+              `${label}: a crest at ${x.toFixed(0)},${y.toFixed(0)} runs through the text`,
+            );
+        }
+      }
+      controller.dispose();
+    }
+  } finally {
+    Object.values(composed.geometries).forEach((geometry) => geometry.dispose());
+    lantern.dispose();
+    scale.dispose();
+    tower.dispose();
+    tree.dispose();
+    for (const item of Object.values(assets))
+      item.scene.traverse((mesh) => {
+        mesh.geometry?.dispose();
+        mesh.material?.dispose();
+      });
+  }
+});

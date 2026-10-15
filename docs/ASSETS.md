@@ -98,9 +98,9 @@ The grit and relief maps are the close soil near the lens (mud-ground.js `SLATE_
 | `icon-192.png`          |   9,005 | 192×192   | RGBA                                          |
 | `icon-512.png`          |  26,321 | 512×512   | RGBA                                          |
 | `icon-maskable-512.png` |  13,398 | 512×512   | Opaque RGB                                    |
-| `og.png`                | 298,375 | 1200×630  | Share card; opaque, 224-colour palette        |
+| `og.png`                | 298,550 | 1200×630  | Share card; opaque, 224-colour palette        |
 
-`tools/og-card-backdrop.webp` (65,662 bytes, 1600×900, opaque) is the share card's backdrop: a still of the live scene's opening shot, The watch, with every page layer but the canvas hidden. It is never published (`test/hosting.test.mjs`, `test/bundle-output.test.mjs`).
+`tools/og-card-backdrop.webp` (38,878 bytes, 1600×670, opaque) is the share card's backdrop: a still of the live scene's opening shot, The watch, with every page layer but the canvas hidden. It is never published (`test/hosting.test.mjs`, `test/bundle-output.test.mjs`).
 
 ## Sources
 
@@ -118,7 +118,7 @@ Only the share card is generated in the repository. Everything else is committed
 | Fonts                         | Variable woff2 subsets of the two OFL fonts; the subsetting is not in the repository                                                                                                                                                                                                                                                                                               |
 | Icons                         | No generator in the repository                                                                                                                                                                                                                                                                                                                                                     |
 | `public/og.png`               | Rendered from `tools/og-card.html` over the backdrop ([below](#refresh-the-share-card))                                                                                                                                                                                                                                                                                            |
-| `tools/og-card-backdrop.webp` | A 1600×900 still of the accepted live scene's opening shot, The watch                                                                                                                                                                                                                                                                                                              |
+| `tools/og-card-backdrop.webp` | A 1600×670 still of the accepted live scene's opening shot, The watch                                                                                                                                                                                                                                                                                                              |
 
 ## Budgets
 
@@ -132,7 +132,7 @@ Only the share card is generated in the repository. Everything else is committed
 | Scene entry and the chunks it imports statically       | under 820 KiB, exactly two files                   |                  | `bundle-output`: "scene bundle stays under the deferred-payload budget"                                     |
 | Paper grain, paper edge and the three vignettes        | 200 KiB (204,800)                                  | 182,994          | `markup-accessibility`: "three distinct transparent paper vignettes share the 200 KiB section-paper budget" |
 | Both estate maps                                       | 200 KiB (204,800)                                  | 193,610          | `bundle-output`: "estate map artwork is hashed, responsive and under 200 KiB combined"                      |
-| `public/og.png`                                        | opaque, exactly 1200×630, at most 300 KB (300,000) | 298,375          | `hosting`: "the share image is an opaque 1200x630 PNG of at most 300 KB, as its tags say"                   |
+| `public/og.png`                                        | opaque, exactly 1200×630, at most 300 KB (300,000) | 298,550          | `hosting`: "the share image is an opaque 1200x630 PNG of at most 300 KB, as its tags say"                   |
 
 Lazy scene chunks are outside the script budget. Script sizes change with every build; `npm run build:dist` prints them.
 
@@ -176,7 +176,7 @@ The two variable fonts are the only ones the design allows ([Style](STYLE.md#pal
 
 ### Refresh the share card
 
-1. Refresh `tools/og-card-backdrop.webp` only from an accepted live view: a 1600×900 still of The watch with every page layer but the canvas hidden. Edit `tools/og-card.html` when the card's text changes.
+1. Refresh `tools/og-card-backdrop.webp` only from an accepted live view: a 1600×900 still of The watch with every page layer but the canvas hidden, cropped to the picture between the film's widescreen bars (1600×670). Edit `tools/og-card.html` when the card's text changes.
 2. Render and quantize the card with the commands in `tools/og-card.html`'s header comment (headless Edge, then ImageMagick to a palette PNG).
 3. Use the largest dither amount that keeps `public/og.png` at or under 300 KB (the header comment gives the steps), then run `node --test test/hosting.test.mjs`, which holds it opaque, exactly 1200×630 and at most 300 KB.
 4. After the release, purge `/og.png` ([Operations](OPERATIONS.md#headers-and-caching)) and re-scrape it with LinkedIn Post Inspector.

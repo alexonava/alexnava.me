@@ -314,6 +314,9 @@ const ORBIT_SPEED = 0.06;
             prepare: prepareTourShot,
           })
         : null;
+      // Seconds until the tour's next capture (Infinity without a running tour), set
+      // each frame; the lightning dims a flash to nothing by then (LIGHTNING.cutFade).
+      let tourCutIn = Infinity;
       if (cameraTour) subsystemRegistry.register({ dispose: () => cameraTour.dispose() });
       // The current profile's anisotropy, within the caller's maximum and the GPU's.
       function chooseAnisotropy(maximum) {
@@ -395,6 +398,7 @@ const ORBIT_SPEED = 0.06;
         textGuard: groundContacts,
         film: () => filmActive,
         shot: () => cinematic.shot?.name ?? null,
+        cutIn: () => tourCutIn,
         profile: state.profile,
         skyRadius: WORLD.SKY_DOME_RADIUS,
         date: sceneDate,
@@ -443,11 +447,11 @@ const ORBIT_SPEED = 0.06;
       // the reveal links through compileAsync instead of blocking the first draw.
       let warmGround = null;
       // The name and intro, and About, on the canvas, in its UV (y up), where
-      // the ground's water eases off (mud-ground.js SLATE_WATER.text), as the
-      // light shafts' air does, and beside About the bark's lantern highlights
-      // pass the same knee (the tree takes these uniforms); the sky's reshaped
-      // banks ease out behind the name and intro too (estate-sky.js); measured
-      // on resize, on font loads and every 30th frame.
+      // the ground's water eases off (mud-ground.js SLATE_WATER.text), and
+      // beside About the bark's lantern highlights pass the same knee (the tree
+      // takes these uniforms); the sky's reshaped banks ease out behind the name
+      // and intro too (estate-sky.js); measured on resize, on font loads and
+      // every 30th frame.
       function measureGroundText() {
         const canvas = renderer.domElement?.getBoundingClientRect?.();
         const box = (text, selectors) => {
@@ -643,26 +647,6 @@ const ORBIT_SPEED = 0.06;
         },
       });
       subsystemRegistry.register(filmScene);
-      // Light shafts: a lazy chunk for high and balanced film on WebGL2 only
-      // (light-shafts.js). A failed import leaves the scene as it is; a late one
-      // registers nothing.
-      if (renderer.capabilities.isWebGL2) {
-        import("./light-shafts.js").then(
-          ({ lightShafts }) =>
-            subsystemRegistry.disposed ||
-            subsystemRegistry.register(
-              lightShafts(
-                rendering,
-                cinematic,
-                cameraTour,
-                filmScene,
-                environmentRoot,
-                invalidateContent,
-              ),
-            ),
-          () => {},
-        );
-      }
       // A failed scene cannot be revealed or retried. Leave the static title card
       // rather than a partial scene or a loop waiting on a status. A scene never
       // shown also hides its host, which retires the title card's loading line
@@ -974,6 +958,11 @@ const ORBIT_SPEED = 0.06;
             panelOpen: document.body.hasAttribute("data-panel-open"),
           }) ?? null;
         const transition = cameraTour?.transition ?? TOUR_IDLE;
+        // Seconds until the tour's next capture, for the lightning (cutFade).
+        tourCutIn =
+          cameraTour?.running && tourPhase !== null
+            ? Math.max(0, (1 - tourPhase) * cameraTour.state.dwell)
+            : Infinity;
         // Each step changes the tier or, below balanced, only the pixel ratio. A
         // running tour takes it on a cut, where the crossfade's kept frame hides
         // its one-off work.
@@ -1089,6 +1078,19 @@ const ORBIT_SPEED = 0.06;
           !document.body.hasAttribute("data-panel-open")
         )
           post.setFilmTime?.(elapsedTime);
+        // The gate weave (FILM_LOOK.weave) moves the lens, not the finished frame: the
+        // shot's lens shift (cinematic.js, rewritten on every applied frame) takes a
+        // fraction of a CSS px more, so fine detail never softens and sharpens with the
+        // wander, and the lens's sources below follow it.
+        {
+          const weave = filmActive && cinematicApplied ? post.weaveOffset?.() : null;
+          if (weave && (weave[0] || weave[1])) {
+            const shift = camera.projectionMatrix.elements;
+            shift[8] += (2 * weave[0]) / viewport.width;
+            shift[9] += (2 * weave[1]) / viewport.height;
+            camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
+          }
+        }
         // The lens follows its sources on screen (LENS_FX): the star, the lantern's
         // flame in the shots that look at it, and the rect it keeps whole (The
         // watch's reference banks on desktop landscape frames). They change with the shot.
