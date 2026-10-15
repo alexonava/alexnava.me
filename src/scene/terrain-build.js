@@ -1795,8 +1795,10 @@ const zoneGlsl = (zone) => glslVec(+zone.x.toFixed(2), +zone.z.toFixed(2));
 // coarse ripples' tilt across the view: its posts lean and bend by about a
 // post's width as the water drifts, slowly, the image never sliced. The
 // moving water (the river's and the streams') mirrors the sky at `rough`
-// roughness (the environment's own prefiltered blur): sharp, its ripples swept
-// the sky's fine strokes into closed contour rings; still puddles stay sharp.
+// roughness (the environment's own prefiltered blur), and the stream up to
+// `roughTilt` more where its ripples are steepest (where it pours in): sharp,
+// its ripples swept the sky's fine strokes into closed contour rings; still
+// puddles stay sharp.
 // Where the stream pours in, its steeper ripples ease into the river's own
 // between `mouth` [0] and [1] river radii, keeping [2] of them, so the plume's
 // steep ripples never contour the river's mirror.
@@ -1807,6 +1809,7 @@ export const RIVER_RIPPLE = Object.freeze({
   fade: Object.freeze([1.5, 3]),
   sway: 3,
   rough: 0.12,
+  roughTilt: 0.3,
   mouth: Object.freeze([0.5, 1, 0.2]),
 });
 // The streams' current (STREAMS.current), on the same octaves' terms.
@@ -1855,7 +1858,7 @@ if (slateWater > 0.0) {
   // The water's own normal, for the mirror and its Fresnel only (the bottom keeps the soil's): level as it deepens, a still micro-undulation near the lens, and the drips.
   float slateDeep = smoothstep(-.01, .05, slateLevel)*(1.0-slateDry)*slateZoneW;
   vec3 slateN = normalize(normal*mat3(viewMatrix)), slateNI = slateN, slateV = normalize(cameraPosition-vMudWorld);
-  float slateView = length(vViewPosition), slateRough = 0.0;
+  float slateView = length(vViewPosition), slateRough = 0.0, slateRoughT = 0.0;
   if (slateDeep > 0.0) {
     vec2 slateG = vec2(0.0);
     // The undulation's noise only where it has not faded; the rings only while a drip lives.
@@ -1890,6 +1893,7 @@ if (slateWater > 0.0) {
       vec3 slateS1 = slateNoiseD(slateSU*${glslVec(...SC.coarse)}+5.0), slateS2 = slateNoiseD(slateSU*${glslVec(...SC.fine)}+29.0);
       vec2 slateSG = slateS1.yz*${glslVec(...SC.coarse)}*${glsl(SC.tilt[0])}*smoothstep(1.5, 3.0, ${glsl(+(1 / SC.coarse[1]).toFixed(4))}/slateSP)+slateS2.yz*${glslVec(...SC.fine)}*${glsl(SC.tilt[1])}*smoothstep(1.5, 3.0, ${glsl(+(1 / SC.fine[1]).toFixed(4))}/slateSP);
       slateRough = max(slateRough, slateStreamQ.x);
+      slateRoughT = min(length(slateSG)/.08, 1.0)*slateStreamQ.x;
       slateGT = (slateStreamDir*slateSG.x+vec2(-slateStreamDir.y, slateStreamDir.x)*slateSG.y)*slateStreamQ.x*mix(${glsl(RIVER_RIPPLE.mouth[2])}, 1.0, smoothstep(${glsl(RIVER_RIPPLE.mouth[0])}, ${glsl(RIVER_RIPPLE.mouth[1])}, slateRiverR));
     }
     // The lantern's image: the still water's tilt, swayed across the view by the river's coarse ripples.
@@ -1919,7 +1923,7 @@ ${
     : ""
 }  // The night sky (the film's environment, night-environment.js) at its sharpest, brighter in a lightning flash away from the text (film-light.js FLASH_GROUND); without it, a sky from the horizon, fog and zenith colours.
   #ifdef USE_ENVMAP
-  vec3 slateSkyW = textureCubeUV(envMap, slateR, ${glsl(RIVER_RIPPLE.rough)}*slateRough).rgb*envMapIntensity*${glsl(M.sky)}*(babelFlash.y > 0.0 ? 1.0+babelFlash.y*(1.0-slateBehindText()) : 1.0);
+  vec3 slateSkyW = textureCubeUV(envMap, slateR, ${glsl(RIVER_RIPPLE.rough)}*slateRough+${glsl(RIVER_RIPPLE.roughTilt)}*slateRoughT).rgb*envMapIntensity*${glsl(M.sky)}*(babelFlash.y > 0.0 ? 1.0+babelFlash.y*(1.0-slateBehindText()) : 1.0);
   #else
   vec3 slateSkyW = mix(mix(${glslVec(...M.horizon)}, fogColor, smoothstep(0.0, .1, slateR.y)), ${glslVec(...M.zenith)}, smoothstep(.12, .6, slateR.y));
   slateSkyW *= 1.0+${glsl(2 * M.cloud)}*(slateNoise((slateP.xz+slateR.xz*(60.0/max(slateR.y, .05)))/45.0)-.5)*smoothstep(.02, .12, slateR.y);

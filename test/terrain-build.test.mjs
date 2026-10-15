@@ -964,7 +964,7 @@ test("the lazy ground shading extends only the slate's program, under its own ke
     // without it.
     assert.match(
       fragment,
-      /#ifdef USE_ENVMAP\s*vec3 slateSkyW = textureCubeUV\(envMap, slateR, [\d.]+\*slateRough\)\.rgb\*envMapIntensity\*[\d.]+\*\(babelFlash\.y > 0\.0 \? 1\.0\+babelFlash\.y\*\(1\.0-slateBehindText\(\)\) : 1\.0\);\s*#else\s*vec3 slateSkyW = mix\(/,
+      /#ifdef USE_ENVMAP\s*vec3 slateSkyW = textureCubeUV\(envMap, slateR, [\d.]+\*slateRough\+[\d.]+\*slateRoughT\)\.rgb\*envMapIntensity\*[\d.]+\*\(babelFlash\.y > 0\.0 \? 1\.0\+babelFlash\.y\*\(1\.0-slateBehindText\(\)\) : 1\.0\);\s*#else\s*vec3 slateSkyW = mix\(/,
     );
     assert.match(fragment, /slatePuddle = mix\(slatePuddle, smoothstep\([^;]*\), slateZoneW\);/);
     assert.match(
@@ -1051,10 +1051,16 @@ test("the lazy ground shading extends only the slate's program, under its own ke
     // by its ripples never draw closed contour rings; still puddles mirror it sharp.
     assert.ok(RIVER_RIPPLE.rough >= 0.1 && RIVER_RIPPLE.rough <= 0.2);
     assert.ok(
-      fragment.includes(`textureCubeUV(envMap, slateR, ${RIVER_RIPPLE.rough}*slateRough).rgb`),
+      fragment.includes(
+        `textureCubeUV(envMap, slateR, ${RIVER_RIPPLE.rough}*slateRough+${RIVER_RIPPLE.roughTilt}*slateRoughT).rgb`,
+      ),
     );
     assert.ok(fragment.includes("slateRough = slateFS;"));
     assert.ok(fragment.includes("slateRough = max(slateRough, slateStreamQ.x);"));
+    // Where the stream's ripples are steepest (where it pours in) it mirrors the sky up
+    // to RIVER_RIPPLE.roughTilt rougher, so its steep ripples draw no crisp rings there.
+    assert.ok(RIVER_RIPPLE.roughTilt > 0 && RIVER_RIPPLE.roughTilt <= 0.4);
+    assert.ok(fragment.includes("slateRoughT = min(length(slateSG)/.08, 1.0)*slateStreamQ.x;"));
     // The image's silhouette eases each step of its width, so its eave is never a
     // rectangular tab; its lit posts and roof fade at the cage's edge rather than stop
     // at a line; the roof's lit underside is dimmed (LANTERN_IMAGE.round, roof).
