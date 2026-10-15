@@ -1512,3 +1512,134 @@ for (const tier of ["high", "balanced"])
       });
     },
   );
+
+// The lantern's assembly on the tree: its model, its light and the light's streak.
+const inLantern = (object) => {
+  for (let node = object; node; node = node.parent) if (/lantern/i.test(node.name)) return true;
+  return false;
+};
+
+// The lookout and the crown on the wider upright screens (the review of 2026-10-14), through
+// each tour move in 24 steps: on a portrait tablet The watch keeps its deck's end 20 CSS px or
+// more off the left edge; on a portrait monitor Threshold keeps its cab 20 px or more inside
+// the right edge, and Close-up keeps the tree out of the name.
+test("the lookout and the crown keep their edges and the name clear on tablets and portrait monitors", async () => {
+  const world = { BabelSite: {} };
+  vm.runInNewContext(await readFile(new URL("../src/scene/world.js", import.meta.url), "utf8"), {
+    window: world,
+  });
+  const { CAMERA_FAR } = world.BabelSite.scene.WORLD;
+  const assets = { tower: await asset("tower"), tree: await asset("tree") };
+  const tower = createCompleteTowerArchitecture({
+    asset: assets.tower,
+    groundY: ground(0, 0),
+    footingOffset: -0.22,
+  });
+  const tree = createTreeArchitecture({
+    asset: assets.tree,
+    groundHeight: ground,
+    anchor: [55.1, 36.1],
+  });
+  const groundRoot = new Group();
+  groundRoot.add(tree.root);
+  const scale = createPropScale({ groundRoot, groundHeight: ground });
+  scale.setTree(tree);
+  scale.setActive(true);
+  tree.setFilmTreatment(true);
+  tree.applyQuality({ tier: "high" });
+  const lantern = await lanternFor(tree);
+  const points = (root, keep = () => true) => {
+    const out = [];
+    root.updateMatrixWorld(true);
+    root.traverse((mesh) => {
+      if (!mesh.isMesh || !keep(mesh)) return;
+      const p = mesh.geometry.attributes.position;
+      for (let i = 0; i < p.count; i++)
+        out.push(new Vector3().fromBufferAttribute(p, i).applyMatrix4(mesh.matrixWorld));
+    });
+    return out;
+  };
+  const lookout = points(tower.root);
+  let top = -Infinity,
+    bottom = Infinity;
+  for (const p of lookout) {
+    top = Math.max(top, p.y);
+    bottom = Math.min(bottom, p.y);
+  }
+  // The cab and its deck: the lookout's top quarter.
+  const cab = lookout.filter((p) => p.y > bottom + 0.74 * (top - bottom));
+  const crown = points(tree.root, (mesh) => !inLantern(mesh));
+  const at = (width, height) => LAYOUTS.find((l) => l.width === width && l.height === height);
+  const checks = [
+    {
+      name: "The watch",
+      layout: at(820, 1180),
+      subject: cab,
+      fails: (p) => p.x < 20,
+      why: (p) => `the deck's end ${p.x.toFixed(1)} px from the left edge`,
+    },
+    {
+      name: "Threshold",
+      layout: at(1080, 1920),
+      subject: cab,
+      fails: (p, { width }) => p.x > width - 20,
+      why: (p, { width }) => `the cab ${(width - p.x).toFixed(1)} px inside the right edge`,
+    },
+    {
+      name: "Close-up",
+      layout: at(1080, 1920),
+      subject: crown,
+      fails: (p, { hero }) =>
+        p.x >= hero.left && p.x <= hero.left + 170 && p.y >= hero.top && p.y <= hero.top + 180,
+      why: (p) => `the tree at ${p.x.toFixed(0)},${p.y.toFixed(0)} in the name`,
+    },
+  ];
+  try {
+    for (const { name, layout, subject, fails, why } of checks) {
+      const { width, height, hero, nav } = layout;
+      const kind = DIRECTED_SHOTS.tower.some((shot) => shot.name === name) ? "tower" : "tree",
+        angle = DIRECTED_SHOTS[kind].findIndex((shot) => shot.name === name);
+      const camera = new PerspectiveCamera(38, width / height, 0.1, CAMERA_FAR);
+      const controller = createCinematicCamera({
+        camera,
+        selected: kind,
+        angle,
+        getSafeArea: () => cinematicSafeArea(width, height, hero, nav),
+        getGroundY: ground,
+      });
+      for (const [k, object] of [
+        ["tower", tower],
+        ["tree", tree],
+      ]) {
+        controller.setSubject(k, object.root);
+        controller.setStatus({ kind: k, status: "ready" });
+      }
+      for (let step = 0; step <= 24; step++) {
+        const tourPhase = step / 24;
+        controller.apply({ width, height, tourPhase });
+        camera.updateMatrixWorld(true);
+        for (const point of subject) {
+          const p = point.clone().project(camera);
+          if (p.z > 1) continue;
+          const s = { x: ((p.x + 1) * width) / 2, y: ((1 - p.y) * height) / 2 };
+          if (s.y < 0 || s.y > height) continue;
+          assert.ok(
+            !fails(s, layout),
+            `${name} ${width}x${height} phase ${tourPhase.toFixed(3)}: ${why(s, layout)}`,
+          );
+        }
+      }
+      controller.dispose();
+    }
+  } finally {
+    lantern.dispose();
+    scale.dispose();
+    tower.dispose();
+    tree.dispose();
+    for (const item of Object.values(assets))
+      item.scene.traverse((mesh) => {
+        mesh.geometry?.dispose();
+        mesh.material?.dispose();
+      });
+  }
+});

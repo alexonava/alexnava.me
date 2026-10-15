@@ -120,8 +120,10 @@ export const DIRECTED_SHOTS = {
       // Squat windows aim 1.5 degrees up, so the ranges' snowy crests drop below the frame
       // rather than graze its bottom edge beside About.
       squat: { azimuth: 48, move: null, tilt: [1.5, 1.5] },
-      // Portrait monitors: the lookout right, the name on sky and ground beside its legs.
-      tall: { anchor: [0.66, 0.5] },
+      // Portrait monitors: the lookout right, the name on sky and ground beside its legs,
+      // fitted a little smaller, so the cab keeps 24 CSS px or more of air off the right
+      // edge through the push (at 0.66 and 0.88 the edge cut it; the review of 2026-10-14).
+      tall: { anchor: [0.6, 0.5], margin: 0.84 },
     },
     {
       // The name and URL are retained; for the timber lookout it is a
@@ -400,9 +402,11 @@ export const DIRECTED_SHOTS = {
       // Landscape phones keep the drift (no room about the name for a move),
       // from higher, so the roots stay below the short frame.
       landscape: { move: null, margin: 0.83, height: 0.5, anchor: [0.5, 0.5] },
-      // Portrait monitors, the name below the subject: turned 7 degrees, so the trunk's
-      // edge clears the name (shifting the aim instead let the roots in).
-      tall: { azimuth: -162 },
+      // Portrait monitors, the name below the subject: turned 11 degrees, the aim a little
+      // right of centre and lower, so the trunk's edge stays 25 CSS px or more right of the
+      // name through the push (from -162 at the centre it crossed "ex" and "va" by the end),
+      // the roots and lantern below the frame and the far range's snow off the name.
+      tall: { azimuth: -166, anchor: [0.57, 0.48] },
     },
     {
       name: "Root and lantern",
