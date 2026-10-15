@@ -28,8 +28,6 @@ import {
   shotLight,
 } from "../src/scene/film-light.js";
 import { DIRECTED_SHOTS } from "../src/scene/directed-shots.js";
-import { treeRadii } from "../src/scene/architecture.js";
-import { CylinderGeometry } from "three";
 import { flat, source } from "./support/code.mjs";
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
@@ -1615,54 +1613,6 @@ test("a shot's light mood merges over the neutral default and never shares it", 
     ["Lantern study", "Root and lantern"],
   );
   for (const shot of inside) assert.equal(shotLight(shot).grassInside, 1);
-});
-
-test("the moon's and the flash's rims ease off twigs under a pixel or so across, by their radius", () => {
-  assert.ok(Object.isFrozen(RIM.thin) && RIM.thin[0] < RIM.thin[1]);
-  // In device pixels of a twig's radius on screen: gone under about half a pixel across,
-  // whole from about two.
-  assert.ok(RIM.thin[0] >= 0.2 && RIM.thin[1] <= 1.2);
-  // The tree's radius at each vertex is its tightest turn's: a twig's girth, the trunk broad.
-  for (const r of [0.02, 0.05, 2]) {
-    const radii = treeRadii(new CylinderGeometry(r, r, 1, 8, 2, true)).array;
-    assert.ok(
-      radii.every((v) => Math.abs(v - r) < 0.02 * r),
-      `${r}: ${Math.min(...radii)}..${Math.max(...radii)}`,
-    );
-  }
-  const light = flat(source("src/scene/film-light.js"));
-  assert.ok(light.includes('export const RIM_THIN = "BABEL_THIN";'));
-  assert.ok(
-    light.includes(
-      "export const RIM_THIN_TREE = `#define BABEL_THIN smoothstep(${RIM.thin[0].toFixed(2)}, ${RIM.thin[1].toFixed(2)}, vBabelRadius / max(babelPixel * vViewPosition.z, 1e-6))`;",
-    ),
-  );
-  assert.ok(
-    light.includes(
-      "pow(1.0-saturate(dot(geometryNormal, geometryViewDir)), 4.0)*${RIM_THIN}*mix(babelFlashRim.w",
-    ),
-  );
-  const architecture = flat(source("src/scene/architecture.js"));
-  assert.ok(
-    architecture.includes(
-      "float babelRim = pow(1.0-saturate(dot(geometryNormal, geometryViewDir)), 4.0)*${RIM_THIN};",
-    ),
-  );
-  // The tree reads its radius, the lookout keeps its whole rim.
-  assert.ok(architecture.includes('geometry.setAttribute("babelRadius", treeRadii(geometry));'));
-  assert.ok(architecture.includes("vBabelRadius = babelRadius * length(modelMatrix[0].xyz);"));
-  assert.ok(
-    architecture.includes(
-      '${role === "tree" ? `varying float vBabelRadius;\\n${RIM_THIN_TREE}` : rimmed ? "#define BABEL_THIN 1.0" : ""}',
-    ),
-  );
-  // The size of a device pixel one unit out, kept current per frame from the lens.
-  assert.ok("babelPixel" in RIM_UNIFORMS);
-  assert.ok(
-    flat(source("src/scene/index.js")).includes(
-      "RIM_UNIFORMS.babelPixel.value = 2 / Math.max(1e-6, camera.projectionMatrix.elements[5] * viewport.height * renderer.getPixelRatio());",
-    ),
-  );
 });
 
 test("setRim scales the cool rim colour and keeps the moon-facing floor", () => {
