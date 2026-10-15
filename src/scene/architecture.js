@@ -155,7 +155,8 @@ if (babelBehind > 0.0) {
 // brightest glints behind their text: Lantern study's lantern on a root beside
 // the name (4.67:1 at 1920x1080, the end of the push-in) and Root and lantern's
 // moon on a root under the intro's end (4.32:1 at 1440x900, the start of the
-// pull-back). At 0, every other shot, nothing runs.
+// pull-back); Close-up's a twig's one-pixel sparkle behind the intro on the small
+// window (5.25:1 at 599x499). At 0, every other shot, nothing runs.
 export const BARK_TEXT_GLINT = `float babelGlintBehind = babelGlint*slateBehind(slateText, vSlateClip.xy/vSlateClip.w*.5+.5, ${GLINT.reach.toFixed(2)});
 if (babelGlintBehind > 0.0) reflectedLight.directSpecular = slateTextKnee(reflectedLight.directSpecular, babelGlintBehind);
 `;
