@@ -612,8 +612,10 @@ test("the massif shader is the ranges' moonlit style on the models' own relief",
   // (ribScale, pixels per degree), so a squat window's small cap lies whole.
   assert.ok(MASSIF_SNOW.ribShare > 0 && MASSIF_SNOW.ribShare <= 0.6);
   assert.ok(MASSIF_SNOW.ribScale[0] > 0 && MASSIF_SNOW.ribScale[1] > MASSIF_SNOW.ribScale[0]);
-  // Its lit faces take a share of the finer relief's light, so none is one flat tone.
+  // Its lit faces take a share of the finer relief's light, so none is one flat tone, and
+  // it lightens a face only a little (toneCap), so a sharp tip never glints like a rim.
   assert.ok(MASSIF_SNOW.tone > 0 && MASSIF_SNOW.tone <= 2);
+  assert.ok(MASSIF_SNOW.toneCap > 0 && MASSIF_SNOW.toneCap * MASSIF_SNOW.tone <= 0.1);
   // The source's broad whiteness (its blurred mask) leans the hold only a little, so its dark
   // blotches never open round bare holes in the cap; over them the snow lies thinner instead.
   assert.ok(MASSIF_SNOW.white > 0 && MASSIF_SNOW.white <= 0.1);
@@ -624,7 +626,7 @@ test("the massif shader is the ranges' moonlit style on the models' own relief",
     `float rib=(mk.x-texture2D(uMask,vU,3.).r)*smoothstep(${float(MASSIF_SNOW.ribScale[0])},${float(MASSIF_SNOW.ribScale[1])},ppd);`,
     "float wv=smoothstep(.45,.85,mb.x), gully=max(wv,smoothstep(.95,.75,mb.y));",
     `float bare=nh.y+${float(MASSIF_SNOW.white)}*(wv-.5), hold=bare+${float(MASSIF_SNOW.rib)}*rib,`,
-    `float sk=mix(smoothstep(-.3,1.,dot(ns,K)),smoothstep(.3-tk,.3+tk,ke),.5)*(1.+${float(MASSIF_SNOW.tone)}*(dot(nh,K)-dot(ns,K)));`,
+    `float sk=mix(smoothstep(-.3,1.,dot(ns,K)),smoothstep(.3-tk,.3+tk,ke),.5)*(1.+${float(MASSIF_SNOW.tone)}*min(dot(nh,K)-dot(ns,K),${float(MASSIF_SNOW.toneCap)}));`,
     `c=mix(c,sn,snow*(1.-mist)*(${float(1 - MASSIF_SNOW.thin)}+${float(MASSIF_SNOW.thin)}*wv));}`,
   ])
     assert.ok(fragmentShader.includes(pin), pin);

@@ -77,7 +77,9 @@ export const SNOW = Object.freeze({
 // either way, so its dark blotches never open round bare holes in the cap;
 // over them the snow lies thinner instead, `thin` of the rock showing
 // through. Its lit faces take `tone` x the finer relief's light about the
-// smoother's, so a lit face never reads as one flat tone.
+// smoother's, so a lit face never reads as one flat tone; it lightens a face
+// by at most `toneCap` of that, so a sharp tip, where the finer relief turns
+// furthest to the moon, never glints like a lit rim.
 export const MASSIF_SNOW = Object.freeze({
   ...SNOW,
   depth: 0.7,
@@ -93,6 +95,7 @@ export const MASSIF_SNOW = Object.freeze({
   ribShare: 0.5,
   ribScale: Object.freeze([12, 30]),
   tone: 1.5,
+  toneCap: 0.05,
 });
 // JS mirror of the shader's snowline: whether snow can reach `elevation`
 // degrees on a massif `massif` degrees high, with the jitter and gully tongue
@@ -633,7 +636,7 @@ float rib=(mk.x-texture2D(uMask,vU,3.).r)*smoothstep(${glslFloat(MASSIF_SNOW.rib
 float bare=nh.y+${glslFloat(MASSIF_SNOW.white)}*(wv-.5), hold=bare+${glslFloat(MASSIF_SNOW.rib)}*rib, hw=max(1.5*fwidth(hold),.04);
 float ke=dot(ne,K), tk=max(.05,1.5*fwidth(ke));
 if(vT.z>.5&&cap>0.){float snow=smoothstep(0.,1.6*sw,se)*mix(clamp((bare+.04)/hw+.5,0.,1.),clamp((hold+.04)/hw+.5,0.,1.),${glslFloat(MASSIF_SNOW.ribShare)});
-float sk=mix(smoothstep(-.3,1.,dot(ns,K)),smoothstep(.3-tk,.3+tk,ke),.5)*(1.+${glslFloat(MASSIF_SNOW.tone)}*(dot(nh,K)-dot(ns,K)));
+float sk=mix(smoothstep(-.3,1.,dot(ns,K)),smoothstep(.3-tk,.3+tk,ke),.5)*(1.+${glslFloat(MASSIF_SNOW.tone)}*min(dot(nh,K)-dot(ns,K),${glslFloat(MASSIF_SNOW.toneCap)}));
 vec3 sn=mix(vec3(.8485,1.0027,1.4193)*${glslFloat(MASSIF_SNOW.shade)},vec3(.9691,1.0014,1.0768)*${glslFloat(MASSIF_SNOW.lit)},sk)*sL;
 sn=mix(air,sn,mix(1.,T,.55));
 c=mix(c,sn,snow*(1.-mist)*(${glslFloat(1 - MASSIF_SNOW.thin)}+${glslFloat(MASSIF_SNOW.thin)}*wv));}
