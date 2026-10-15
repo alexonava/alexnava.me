@@ -2061,7 +2061,7 @@ test("sparse dark litter and small grey stones lie among the roots, clear of the
     );
   }
   assert.ok(
-    litterVertices / 3 > 300 && litterVertices / 3 < 1700,
+    litterVertices / 3 > 300 && litterVertices / 3 < 2800,
     `${litterVertices / 3} triangles`,
   );
   // The small stones: among the roots and about the trunk's base, clear of
@@ -2075,7 +2075,26 @@ test("sparse dark litter and small grey stones lie among the roots, clear of the
   const [fineStart, fineEnd] = litter.userData.fine;
   assert.equal(fineEnd, p.count);
   const perStone = (fineStart - litterVertices) / stones.length;
-  assert.equal(perStone, 240, "a smooth icosphere each");
+  assert.equal(perStone, 960, "a smooth icosphere each");
+  // Rounded, never a faceted nugget: no face turns more than 40 degrees from
+  // the smooth normals at its corners (the once-subdivided sphere's bumps
+  // turned some by 60).
+  const normal = litter.attributes.normal;
+  for (let i = litterVertices; i < fineStart; i += 3) {
+    const [a, b, q] = [i, i + 1, i + 2].map((v) => [p.getX(v), p.getY(v), p.getZ(v)]),
+      u = b.map((v, k) => v - a[k]),
+      w = q.map((v, k) => v - a[k]),
+      face = [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]],
+      length = Math.hypot(...face);
+    for (let k = 0; k < 3; k++) {
+      const cos =
+        (face[0] * normal.getX(i + k) +
+          face[1] * normal.getY(i + k) +
+          face[2] * normal.getZ(i + k)) /
+        length;
+      assert.ok(cos > Math.cos((40 * Math.PI) / 180), `stone face ${i} is faceted`);
+    }
+  }
   stones.forEach(([x, z, width], k) => {
     assert.ok(width >= S.size[0] && width <= S.size[1], `stone ${k} is ${width} wide`);
     assert.ok(x > LX && z > LZ && x < LX + (cols - 1) * pitch && z < LZ + (rows - 1) * pitch);
@@ -2123,24 +2142,28 @@ test("the fine litter (leaves, clods, grit) lies on the foreground soil, never u
   const [start, end] = litter.userData.fine,
     p = litter.attributes.position,
     c = litter.attributes.color;
-  // All of them found room; every piece is a leaf (8 triangles) or a rounded
-  // dome (PEBBLE_DOME: 3 triangles a side, more sides on a piece the lens can
-  // come close to), smooth-shaded so none reads as a faceted pyramid.
+  // All of them found room; every piece is a leaf (a curved outline,
+  // FALLEN_LEAF.outline) or a rounded dome (PEBBLE_DOME: 3 triangles a side,
+  // more sides on a piece the lens can come close to and more rings on the
+  // largest), smooth-shaded so none reads as a faceted pyramid.
   const pieces = litter.userData.finePieces,
     wanted = F.counts.leaves + F.counts.clods + F.counts.gravel;
   assert.equal(pieces.length, wanted);
   assert.equal(pieces[0], start);
   const lift = Math.max(F.leafSize[1] * 0.4, F.clod[1]) + 0.02,
-    n = litter.attributes.normal;
+    n = litter.attributes.normal,
+    leaf = FALLEN_LEAF.outline.length * 4 * 3,
+    full = PEBBLE_DOME.smooth * (1 + 2 * PEBBLE_DOME.profile.length) * 3;
+  assert.equal(leaf, 60);
   let domes = 0;
   pieces.forEach((first, k) => {
     const end = pieces[k + 1] ?? litter.userData.fine[1],
       count = end - first;
     assert.ok(
-      count === 24 || count === PEBBLE_DOME.sides * 9 || count === PEBBLE_DOME.round * 9,
+      [leaf, PEBBLE_DOME.sides * 9, PEBBLE_DOME.round * 9, full].includes(count),
       `piece ${k} has ${count} vertices`,
     );
-    if (count !== 24) domes++;
+    if (count !== leaf) domes++;
     let x = 0,
       z = 0;
     for (let i = first; i < end; i++) {
@@ -2162,21 +2185,25 @@ test("the fine litter (leaves, clods, grit) lies on the foreground soil, never u
   assert.equal(domes, F.counts.clods + F.counts.gravel);
   // A piece the lens can come close to (a clod, the coarser grit) is round, the
   // finest grit keeps the few sides it needs.
-  const round = pieces.filter(
-    (first, k) => (pieces[k + 1] ?? litter.userData.fine[1]) - first === PEBBLE_DOME.round * 9,
-  ).length;
+  const size = (first, k) => (pieces[k + 1] ?? litter.userData.fine[1]) - first,
+    round = pieces.filter((first, k) =>
+      [PEBBLE_DOME.round * 9, full].includes(size(first, k)),
+    ).length,
+    fuller = pieces.filter((first, k) => size(first, k) === full).length;
   assert.ok(round > F.counts.clods * 0.9 && round < domes / 2, `${round} round domes`);
+  // The largest follow their ellipsoid's curve (PEBBLE_DOME.profile), never a cone.
+  assert.ok(fuller > F.counts.clods / 2 && fuller < round, `${fuller} full domes`);
   // The leaves lie damp and nearly flat, and shade over their curl: normals leaning
   // out from the middle, the rim darker than the midrib, never a flat card.
   assert.ok(FALLEN_LEAF.lie > 0 && FALLEN_LEAF.lie < 1 && FALLEN_LEAF.rim < 1);
   let leaves = 0;
   pieces.forEach((first, k) => {
-    if ((pieces[k + 1] ?? litter.userData.fine[1]) - first !== 24) return;
+    if ((pieces[k + 1] ?? litter.userData.fine[1]) - first !== leaf) return;
     leaves++;
     let lean = 0,
       lo = Infinity,
       hi = 0;
-    for (let i = first; i < first + 24; i++) {
+    for (let i = first; i < first + leaf; i++) {
       lean = Math.max(lean, 1 - n.getY(i));
       lo = Math.min(lo, c.getX(i));
       hi = Math.max(hi, c.getX(i));
@@ -2846,7 +2873,7 @@ test("the water's banks: gravel bars, reeds and debris stay out of the water, of
   // A share of whole pieces for balanced (estate-ground-detail.js).
   assert.deepEqual(banks.userData.fine, [0, p.count]);
   assert.equal(banks.userData.finePieces[0], 0);
-  assert.ok(p.count / 3 < 46000, `${p.count / 3} triangles`);
+  assert.ok(p.count / 3 < 64000, `${p.count / 3} triangles`);
   const pieces = banks.userData.finePieces;
   let inWater = 0;
   for (let k = 0; k < pieces.length; k++) {

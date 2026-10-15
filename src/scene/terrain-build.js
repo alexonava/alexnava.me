@@ -2314,7 +2314,9 @@ export const LITTER = Object.freeze({
   tone: Object.freeze({ pebble: Object.freeze([0.3, 0.5]), flake: 0.28, twig: 0.34 }),
   // Small stones among the roots and about the trunk's base: rounded, a cool
   // grey `tone` times the soil's mean (they catch the light the dark slate
-  // swallows), `size` wide, sunk `sink` of their height.
+  // swallows), `size` wide, sunk `sink` of their height, their bumps eased
+  // smoothly over them (`round`: the falloff's sharpness between the 42
+  // points that carry them).
   // Most lie beside a resting root (`beside` beyond its half-width); the rest
   // in the crooks `crook` from the trunk, within `among` of a root. Never
   // under a root or an arch, nor at the lantern or a puddle.
@@ -2331,6 +2333,7 @@ export const LITTER = Object.freeze({
     spacing: 0.5,
     tone: Object.freeze([1.1, 2.3]),
     tint: Object.freeze([0.94, 1, 1.1]),
+    round: 12,
   }),
   // The fine pieces on their own seed, after the stones: fallen leaves (curled,
   // cupped ovals, `leafSize` long, dull brown `leafTone` rgb, darker in the
@@ -2358,7 +2361,9 @@ export const LITTER = Object.freeze({
     pale: Object.freeze([0.03, 1.8]),
   }),
 });
-// A unit icosphere (one subdivision: 42 vertices, 80 faces), the stones' shape.
+// A unit icosphere, the stones' shape: two subdivisions (162 vertices, 320
+// faces); its first 42 vertices are the once-subdivided sphere's, which carry
+// each stone's bumps (LITTER.stones.round).
 const ICOSPHERE = (() => {
   const t = (1 + Math.sqrt(5)) / 2,
     vertices = [
@@ -2407,18 +2412,21 @@ const ICOSPHERE = (() => {
       }
       return middle.get(key);
     };
-  const split = faces.flatMap(([a, b, c]) => {
-    const ab = mid(a, b),
-      bc = mid(b, c),
-      ca = mid(c, a);
-    return [
-      [a, ab, ca],
-      [b, bc, ab],
-      [c, ca, bc],
-      [ab, bc, ca],
-    ];
-  });
-  return { vertices, faces: split };
+  const split = (list) =>
+    list.flatMap(([a, b, c]) => {
+      const ab = mid(a, b),
+        bc = mid(b, c),
+        ca = mid(c, a);
+      return [
+        [a, ab, ca],
+        [b, bc, ab],
+        [c, ca, bc],
+        [ab, bc, ca],
+      ];
+    });
+  const once = split(faces),
+    bumps = vertices.length;
+  return { vertices, faces: split(once), bumps };
 })();
 // Distance from x/z to the nearest root-covered cell, up to limit (Infinity beyond).
 function coverDistance(x, z, limit) {
@@ -2689,9 +2697,22 @@ export function scatterLitter(surface, groundColor) {
       dim = 1 - L.shade * sky,
       cy = Math.cos(yaw),
       sy = Math.sin(yaw);
-    const shape = ICOSPHERE.vertices.map(([vx, vy, vz], k) => {
-      const bump = 0.86 + 0.26 * dripHash(Math.floor(jitter) + k, 7);
-      return [vx * bump, vy * bump, vz * bump];
+    // Its bumps on the 42 coarse points, eased smoothly over the sphere between
+    // them (S.round: the falloff's sharpness), so it reads as a rounded stone,
+    // never a faceted nugget.
+    const bumps = ICOSPHERE.vertices
+      .slice(0, ICOSPHERE.bumps)
+      .map((v, k) => [v, 0.86 + 0.26 * dripHash(Math.floor(jitter) + k, 7)]);
+    const shape = ICOSPHERE.vertices.map((v) => {
+      let sum = 0,
+        weight = 0;
+      for (const [p, b] of bumps) {
+        const w = Math.exp(S.round * (v[0] * p[0] + v[1] * p[1] + v[2] * p[2] - 1));
+        sum += w * b;
+        weight += w;
+      }
+      const bump = sum / weight;
+      return [v[0] * bump, v[1] * bump, v[2] * bump];
     });
     const world = shape.map(([vx, vy, vz]) => {
       const px = (vx * width) / 2,
@@ -2768,7 +2789,11 @@ export function scatterLitter(surface, groundColor) {
 // PEBBLE_DOME.sides jittered points, smooth-shaded from its ellipsoid's normals
 // and a little darker toward the soil. A piece at least `large` wide (one the
 // lens can come close to) takes `round` points a ring, so its outline never
-// reads as a polygon; their jitter eases between the `sides` drawn, so every
+// reads as a polygon; one at least `full` wide (the largest, 45-90 px near
+// the lens on a portrait monitor) takes `smooth` points a ring and its rings
+// follow its ellipsoid at `profile` degrees up from the sunk ring, so its side
+// never bends at one ring into a flat cone (a faceted nugget); the jitter of
+// every ring eases between the `sides` drawn, so every
 // piece takes the same draws and the scatter keeps its places. `at(u, w,
 // lift)` places a local point (u along its yaw) on the ground; `turn` is
 // [cos, sin] of that yaw.
@@ -2778,14 +2803,17 @@ export const PEBBLE_DOME = Object.freeze({
   large: 0.035,
   ring: 0.62,
   jitter: 0.18,
+  full: 0.05,
+  smooth: 16,
+  profile: Object.freeze([35, 65]),
 });
 function pebbleDome(a, b, h, random, at, [cy, sy], rgb, triangle) {
-  const { sides, round, large, ring, jitter } = PEBBLE_DOME,
+  const { sides, round, large, full, smooth, ring, jitter, profile } = PEBBLE_DOME,
     spin = random() * Math.PI,
     drawn = () => Array.from({ length: sides }, () => 1 + jitter * (random() * 2 - 1)),
     upperJitter = drawn(),
     lowerJitter = drawn(),
-    n = Math.max(a, b) >= large ? round : sides;
+    n = Math.max(a, b) >= full ? smooth : Math.max(a, b) >= large ? round : sides;
   // The jitter `k` sides round from the first drawn point, eased between them.
   const eased = (drawnJitter, k) => {
     const i = Math.floor(k),
@@ -2806,9 +2834,29 @@ function pebbleDome(a, b, h, random, at, [cy, sy], rgb, triangle) {
       l = Math.hypot(nu, ny, nw) || 1;
     return [at(u, w, y), [(nu * cy - nw * sy) / l, ny / l, (nu * sy + nw * cy) / l]];
   };
+  // The rings from the sunk one up: a small piece's at PEBBLE_DOME.ring; a large
+  // one's on its ellipsoid (centre at the sunk ring, 1.15 h high), each turned a
+  // little further and its jitter eased from the sunk ring's to the upper's.
   const top = [at(0, 0, h), [0, 1, 0]],
-    upper = Array.from({ length: n }, (_, m) => point(ring, h * 0.8, m, 0.5, upperJitter)),
-    lower = Array.from({ length: n }, (_, m) => point(1, -h * 0.15, m, 0, lowerJitter));
+    shape =
+      Math.max(a, b) < full
+        ? [[ring, h * 0.8, 0.5, 1]]
+        : profile.map((degrees, i) => {
+            const e = (degrees * Math.PI) / 180;
+            return [
+              Math.cos(e),
+              -h * 0.15 + h * 1.15 * Math.sin(e),
+              (i + 1) * 0.25,
+              Math.min(1, (i + 1) / (profile.length - 1 || 1)),
+            ];
+          }),
+    blend = (share) => upperJitter.map((v, k) => lowerJitter[k] + (v - lowerJitter[k]) * share),
+    rings = [
+      Array.from({ length: n }, (_, m) => point(1, -h * 0.15, m, 0, lowerJitter)),
+      ...shape.map(([r, y, offset, share]) =>
+        Array.from({ length: n }, (_, m) => point(r, y, m, offset, blend(share))),
+      ),
+    ];
   const shade = (normal) => {
     const k = 0.68 + 0.32 * Math.max(0, normal[1]);
     return [rgb[0] * k, rgb[1] * k, rgb[2] * k];
@@ -2816,10 +2864,14 @@ function pebbleDome(a, b, h, random, at, [cy, sy], rgb, triangle) {
   const face = (p, q, r) =>
     triangle(p[0], q[0], r[0], [shade(p[1]), shade(q[1]), shade(r[1])], [p[1], q[1], r[1]]);
   for (let k = 0; k < n; k++) {
-    const k1 = (k + 1) % n;
+    const k1 = (k + 1) % n,
+      upper = rings.at(-1);
     face(top, upper[k1], upper[k]);
-    face(upper[k], upper[k1], lower[k1]);
-    face(upper[k], lower[k1], lower[k]);
+    for (let i = rings.length - 1; i > 0; i--) {
+      const [above, below] = [rings[i], rings[i - 1]];
+      face(above[k], above[k1], below[k1]);
+      face(above[k], below[k1], below[k]);
+    }
   }
 }
 
@@ -2830,38 +2882,52 @@ function pebbleDome(a, b, h, random, at, [cy, sy], rgb, triangle) {
 // surface `at(u, w, lift)` places it on. Its normals lean out from its middle
 // by `round` of their offset over its length and its rim is `rim` as light as
 // its midrib, so it shades over like a curled leaf, never flat as a card.
-export const FALLEN_LEAF = Object.freeze({ lie: 0.5, round: 1.2, rim: 0.8 });
+export const FALLEN_LEAF = Object.freeze({
+  lie: 0.5,
+  round: 1.2,
+  rim: 0.8,
+  // Its outline: [along the midrib, half-width] from stalk to tip, so its edge
+  // curves as a leaf's, never a card's straight sides.
+  outline: Object.freeze(
+    [
+      [0.12, 0.3],
+      [0.3, 0.46],
+      [0.5, 0.48],
+      [0.7, 0.4],
+      [0.88, 0.24],
+    ].map((station) => Object.freeze(station)),
+  ),
+});
 function fallenLeaf(at, length, width, cup, curl, rise, rgb, triangle) {
-  const { lie, round, rim } = FALLEN_LEAF,
+  const { lie, round, rim, outline } = FALLEN_LEAF,
     lift = (u) => rise + curl * lie * (2 * u - 1) ** 2;
-  const [[, A], [L1, M1, R1], [L2, M2, R2], [, T]] = [
-    [0, 0],
-    [0.3, 0.46],
-    [0.65, 0.4],
-    [1, 0],
-  ].map(([u, half]) => [
-    at((u - 0.5) * length, -half * width, lift(u) + cup * lie),
-    at((u - 0.5) * length, 0, lift(u)),
-    at((u - 0.5) * length, half * width, lift(u) + cup * lie),
-  ]);
-  const centre = M1.map((v, k) => (v + M2[k]) / 2),
+  const [[, A], ...rest] = [[0, 0], ...outline, [1, 0]].map(([u, half]) => [
+      at((u - 0.5) * length, -half * width, lift(u) + cup * lie),
+      at((u - 0.5) * length, 0, lift(u)),
+      at((u - 0.5) * length, half * width, lift(u) + cup * lie),
+    ]),
+    [, T] = rest.pop(),
+    middle = new Set(rest.map(([, M]) => M));
+  const centre = rest[outline.findIndex(([u]) => u === 0.5)][1],
     normal = ([px, , pz]) => {
       const n = [((px - centre[0]) / length) * round, 1, ((pz - centre[2]) / length) * round],
         l = Math.hypot(...n);
       return n.map((v) => v / l);
     },
     edge = rgb.map((c) => c * rim),
-    tone = (v) => (v === M1 || v === M2 ? rgb : edge);
-  for (const [a, b, c] of [
-    [A, M1, L1],
-    [A, R1, M1],
-    [L1, M1, M2],
-    [L1, M2, L2],
-    [M1, R1, R2],
-    [M1, R2, M2],
-    [L2, M2, T],
-    [M2, R2, T],
-  ])
+    tone = (v) => (middle.has(v) ? rgb : edge),
+    faces = [
+      [A, rest[0][1], rest[0][0]],
+      [A, rest[0][2], rest[0][1]],
+    ];
+  for (let k = 1; k < rest.length; k++) {
+    const [L1, M1, R1] = rest[k - 1],
+      [L2, M2, R2] = rest[k];
+    faces.push([L1, M1, M2], [L1, M2, L2], [M1, R1, R2], [M1, R2, M2]);
+  }
+  const [L, M, R] = rest.at(-1);
+  faces.push([L, M, T], [M, R, T]);
+  for (const [a, b, c] of faces)
     triangle(a, b, c, [tone(a), tone(b), tone(c)], [normal(a), normal(b), normal(c)]);
 }
 
