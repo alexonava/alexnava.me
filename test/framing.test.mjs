@@ -1866,9 +1866,24 @@ test("Watch and tree breathes clear of the sky shell's rim on phones and of the 
   const silhouette = Array.from(top, (e, bin) => direction((bin + 0.5) * RANGE_SKY.bin, e));
   const angle = DIRECTED_SHOTS.tower.findIndex((shot) => shot.name === "Watch and tree");
   assert.equal(DIRECTED_SHOTS.tower[angle].tour, false);
-  const phones = LAYOUTS.filter(({ width, height }) =>
-    ["390x844", "450x800", "820x1180"].includes(`${width}x${height}`),
-  );
+  const phones = [
+    ...LAYOUTS.filter(({ width, height }) =>
+      ["390x844", "450x800", "820x1180"].includes(`${width}x${height}`),
+    ),
+    // Short phones: a 390x844 or 393x852 phone with its browser's bars showing.
+    {
+      width: 390,
+      height: 664,
+      hero: { left: 12, right: 299, top: 34, bottom: 177 },
+      nav: { top: 586 },
+    },
+    {
+      width: 393,
+      height: 659,
+      hero: { left: 12, right: 299, top: 34, bottom: 177 },
+      nav: { top: 581 },
+    },
+  ];
   const desktops = LAYOUTS.filter(
     ({ width, height, lookout }) => !lookout && letterboxShare(width, height) > 0,
   );
