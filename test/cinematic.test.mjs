@@ -449,8 +449,10 @@ test("an anchored tour shot keeps its fit through an address bar while its reach
   f.apply(390, 844);
   const shot = f.controller.shot,
     locked = f.controller.frame;
-  // Portrait sets the tree on the phone's lower third.
-  assert.deepEqual(shot.anchor, [0.5, 0.66]);
+  // Portrait sets the tree on the phone's lower third, a little left of centre, and lifts the
+  // camera to look over the root at the lantern.
+  assert.deepEqual(shot.anchor, [0.39, 0.66]);
+  assert.equal(shot.height, 0.38);
   const a = cinematicSafeArea(390, 844, f.hero, { top: 844 - 110 }),
     reach = a.top + a.height * 0.66 + Math.min(1, shot.margin / (1 - PUSH_IN)) * a.height * 0.34,
     edge = Math.ceil(reach + 16);
@@ -1134,12 +1136,15 @@ test("a shot's tilt pitches the camera from its cut to the next, a move's on its
 
   assert.equal(f.controller.setPreviewShot("tower", 4), true);
   // Driven by the tour: the cut opens at tilt[0]. A 1440x900 desktop is cut to
-  // 2.39:1 and keeps the base shot, which tilts from -6 to -3.
+  // 2.39:1 and takes the letterbox variant, which tilts from -4.8 to -4.5: about the base's
+  // mean (-6 to -3), its low end lifted so the star keeps clear of the top bar and its high
+  // end lowered so the ranges' crests keep out of the name.
   assert.equal(f.render(0), 0);
   assert.equal(f.controller.shot.name, "Watch and tree");
   assert.equal(f.controller.shot, resolveDirectedShot(DIRECTED_SHOTS.tower[4], 1440, 900));
-  assert.equal(f.controller.shot, DIRECTED_SHOTS.tower[4]);
-  assert.deepEqual(f.controller.shot.tilt, [-6, -3]);
+  assert.deepEqual(DIRECTED_SHOTS.tower[4].tilt, [-6, -3]);
+  assert.deepEqual(f.controller.shot.tilt, [-4.8, -4.5]);
+  assert.ok(f.controller.shot.tilt[0] > -6 && f.controller.shot.tilt[1] < -3);
   const [from, to] = f.controller.shot.tilt,
     half = (from + to) / 2;
   closeTo(pose().pitch, from, 1e-6);
@@ -1188,7 +1193,7 @@ test("the ten directed shots keep their names and distinct viewpoints", () => {
     key = (Math.atan2(MOON_LIGHTS.key[2], MOON_LIGHTS.key[0]) * 180) / Math.PI,
     looks = moon.azimuth + 180;
   assert.ok(Math.abs(((looks - key + 540) % 360) - 180) < 5, `looks toward ${looks}, key ${key}`);
-  assert.equal(TOUR_ORDER.indexOf("Against the moon"), TOUR_ORDER.indexOf("Close-up") + 1);
+  assert.equal(TOUR_ORDER.includes("Against the moon"), false, "out of the tour since 2026-10-14");
   for (const shot of all) {
     assert.ok(shot.height >= 0.1 && shot.height <= 0.7);
     assert.ok(shot.fov >= 30 && shot.fov <= 46);
@@ -1424,10 +1429,17 @@ test("widescreen bars cut desktops to 2.39:1, never phones, portrait, narrow or 
   assert.equal(phone.top, 201);
 
   // The bars pick a shot's letterbox variant, built once; shots without one keep their base
-  // form. (No directed shot carries one now: the tour's giants frame every desktop alike.)
+  // form. Only the two URL-only shots carry one (the review of 2026-10-14): Masonry study
+  // aims lower, so the snow clears the name, and Watch and tree tilts higher, so the star
+  // clears the top bar; the tour's giants frame every desktop alike.
   assert.deepEqual(
     [...DIRECTED_SHOTS.tower, ...DIRECTED_SHOTS.tree].filter((s) => s.letterbox).map((s) => s.name),
-    [],
+    ["Masonry study", "Watch and tree"],
+  );
+  assert.ok(
+    [...DIRECTED_SHOTS.tower, ...DIRECTED_SHOTS.tree]
+      .filter((s) => s.letterbox)
+      .every((s) => s.tour === false),
   );
   for (const base of [
     ...DIRECTED_SHOTS.tower,

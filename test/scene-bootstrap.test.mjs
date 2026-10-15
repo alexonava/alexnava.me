@@ -40,15 +40,6 @@ test("a missing tower or tree fails to the title card once the camera knows; the
   assert.match(index, /if \(committed\) warmShaders\("lantern"\);/);
 });
 
-test("the light shafts load once, on WebGL2 only, and a late import registers nothing", () => {
-  assert.match(index, /const \{ camera, homeScene, renderer \} = rendering;/);
-  assert.match(
-    index,
-    /if \(renderer\.capabilities\.isWebGL2\) \{ import\("\.\/light-shafts\.js"\)\.then\(\(\{ lightShafts \}\) => subsystemRegistry\.disposed \|\| subsystemRegistry\.register\(lightShafts\(rendering, cinematic, cameraTour, filmScene, environmentRoot, invalidateContent\)\), \(\) => \{\}\); \}/,
-  );
-  assert.equal(index.match(/import\("\.\/light-shafts\.js"\)/g).length, 1);
-});
-
 test("models and maps keep the startup tier, and quality is sampled only after the reveal", () => {
   assert.match(index, /const assetTier = qualityState\.initialTier;/);
   assert.match(index, /architectureAssets\.setQuality\(state\.profile, true, \{ assetTier \}\);/);

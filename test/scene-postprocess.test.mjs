@@ -14,12 +14,16 @@ import { DEPTH_LAYER, STAR_LAYER } from "../src/scene/depth-layers.js";
 import {
   createPostprocessPipeline,
   DISSOLVE_BRUSH,
+  DISSOLVE_SOFT,
+  FILM_LOOK,
   LAYER_STAGGER,
+  SKY_INK,
   LENS_FX,
   lensSource,
   lensKeepRect,
 } from "../src/scene/postprocess.js";
 import { compactShaderSource } from "../tools/shader-compact.mjs";
+import { flat, source } from "./support/code.mjs";
 
 function createRendererMock() {
   return {
@@ -449,16 +453,26 @@ test("film grading survives quality changes and restores the current profile wit
   pipeline.setFilmTreatment(true);
   pipeline.setTextProtection(true, 0.3);
   assert.equal(pipeline.composer.passes.length, 4);
-  // The owner restored the cel banding and ink contour on the default film look.
+  // The owner restored the cel banding and ink contour on the default film look; the
+  // painted sky's ink is a brush's (SKY_INK).
   assert.equal(g.uCelMix.value, 0.24);
-  assert.equal(g.uInkMix.value, 0.14);
-  // A firmer film contrast over the soft highlight shoulder.
+  assert.equal(g.uInkMix.value, SKY_INK.mix);
+  assert.deepEqual(g.uInkVary.value.toArray(), [SKY_INK.vary, SKY_INK.scale]);
+  // A firmer film contrast over the soft highlight shoulder; the print film's split
+  // tone and grain (FILM_LOOK).
   assert.equal(g.uContrast.value, 1.06);
-  assert.equal(g.uHighlightWarmMix.value, 0.12);
-  assert.equal(g.uShadowCoolMix.value, 0.16);
+  assert.equal(g.uHighlightWarmMix.value, FILM_LOOK.print.warm);
+  assert.equal(g.uShadowCoolMix.value, FILM_LOOK.print.cool);
   assert.equal(pipeline.passes.bloom.strength, 0.2);
-  assert.equal(v.uGrainStrength.value, 0.008);
+  assert.equal(v.uGrainStrength.value, FILM_LOOK.grain.strength);
   assert.equal(v.uVignetteStrength.value, 0.12);
+  // Halation where the bloom draws, the print's toe.
+  assert.deepEqual(
+    g.uHalation.value.toArray(),
+    FILM_LOOK.halation.color.map((c) => c * FILM_LOOK.halation.strength),
+  );
+  assert.equal(g.tHalation.value, pipeline.passes.bloom.renderTargetsHorizontal[0].texture);
+  assert.deepEqual(g.uPrint.value.toArray(), [FILM_LOOK.print.lift, FILM_LOOK.print.toe]);
   pipeline.setQualityProfile({ ...profile, postprocessBloom: false });
   assert.equal(pipeline.passes.bloom.enabled, false);
   assert.equal(g.uCelMix.value, 0.24);
@@ -480,8 +494,8 @@ test("in film the grade's cel step and ink are the sky's alone; everything else 
   assert.equal(g.uLayerRelief.value, 0, "outside film the grade is unchanged");
   pipeline.setFilmTreatment(true);
   assert.equal(g.uLayerRelief.value, 1);
-  // The ground and the star and shafts' marks (depth-layers.js STAR_LAYER and
-  // SHAFT_LAYER, 0.0005-0.28 over the sky's 0) take no band.
+  // The ground and the star's mark (depth-layers.js STAR_LAYER, 0.0005-0.28
+  // over the sky's 0) take no band.
   assert.match(
     shader,
     /float starLayer = uLayerRelief \* smoothstep\(0\.0005, 0\.006, texel\.a\) \* \(1\.0 - smoothstep\(0\.22, 0\.28, texel\.a\)\);/,
@@ -517,7 +531,7 @@ test("in film the grade's cel step and ink are the sky's alone; everything else 
     shader,
     /float skyInk = mix\(1\.0, \(1\.0 - smoothstep\(0\.0, 0\.006, texel\.a\)\) \* \(1\.0 - step\(0\.006, nearest\)\), uLayerRelief\);/,
   );
-  assert.match(shader, /inkContour \* uInkMix \* skyInk\);/);
+  assert.match(shader, /clamp\(inkContour \* uInkMix \* skyInk \* inkWeight, 0\.0, 1\.0\)\);/);
   // With uLayerRelief 0 every film factor is 1: the grade of every other view is unchanged.
   pipeline.dispose();
 });
@@ -899,15 +913,72 @@ test("the final pass decodes each frame's layer from a 5-tap cross and mixes by 
   for (const tap of ["uv - x", "uv + x", "uv - y", "uv + y"])
     assert.ok(layerCode.includes(`texture2D(map, ${tap}).a`), tap);
   assert.match(layerCode, /vec2 x = vec2\(uCodeTexel\.x, 0\.0\), y = vec2\(0\.0, uCodeTexel\.y\);/);
+  // Each frame's code, softened (DISSOLVE_SOFT): the cross's maximum averaged with a disc
+  // of taps `radius` of the frame's height across, so a silhouette turns over that width,
+  // with its subject share of the taps.
+  assert.ok(DISSOLVE_SOFT.on && DISSOLVE_SOFT.radius > 0 && DISSOLVE_SOFT.radius <= 0.05);
+  const softAt = shader.indexOf("float softCode(");
+  const soft = shader.slice(softAt, shader.indexOf("\n}\n", softAt));
+  assert.match(soft, /float softCode\(sampler2D map, vec2 uv, out float subject\)/);
+  assert.match(soft, /own = layerCode\(map, uv\), sum = own;\s*subject = step\(0\.9, own\);/);
+  assert.ok(soft.includes(`for (int i = 1; i <= ${DISSOLVE_SOFT.taps}; i++)`));
+  const taps = (DISSOLVE_SOFT.taps + 1).toFixed(1);
+  assert.ok(soft.includes(`subject /= ${taps};`));
+  assert.ok(soft.includes(`return sum / ${taps};`));
+  assert.doesNotMatch(shader, /, own \* |closing/, "no subject held whole against the sky");
   assert.match(
     shader,
-    /start = 3\.0 \* uStagger\.x \* clamp\(max\(layerCode\(tPrev, prevUv\), layerCode\(tDiffuse, vUv\)\), 0\.0, 1\.0\);\s*span = uStagger\.y;/,
+    /float codePrev = min\(softCode\(tPrev, prevUv, subPrev\), layerCode\(tPrev, prevUv\)\), codeNow = softCode\(tDiffuse, vUv, subNow\);\s*start = 3\.0 \* uStagger\.x \* clamp\(max\(codePrev, codeNow\), 0\.0, 1\.0\);\s*span = uStagger\.y;/,
   );
+  // The incoming subject washes in on one long weight, its gaps with it (`wash`): never a
+  // stencil of the outgoing frame.
+  assert.ok(DISSOLVE_SOFT.wash[0] < DISSOLVE_SOFT.wash[1] && DISSOLVE_SOFT.wash[1] <= 1);
+  assert.ok(
+    shader.includes(
+      `if (uLayered > 0.5) w = mix(w, smoothstep(0.0, 1.0, uProgress), smoothstep(${DISSOLVE_SOFT.wash[0]}, ${DISSOLVE_SOFT.wash[1]}, subNow));`,
+    ),
+  );
+  // The outgoing star fades whole into its own frame's sky about it (`ring` radii out, only sky
+  // taps), and the place then turns as sky, `fade` later: no porthole onto the incoming shot.
+  assert.ok(
+    DISSOLVE_SOFT.foot[0] < DISSOLVE_SOFT.foot[1] && DISSOLVE_SOFT.foot[1] >= 2.78,
+    "the glow's reach",
+  );
+  assert.ok(DISSOLVE_SOFT.ring > DISSOLVE_SOFT.foot[1], "the ring lies outside the footprint");
+  assert.ok(DISSOLVE_SOFT.fade > 0 && DISSOLVE_SOFT.fade < LAYER_STAGGER.window);
+  assert.doesNotMatch(shader, /starCode/);
+  const skyAt = shader.indexOf("vec3 starSky(");
+  const sky = shader.slice(skyAt, shader.indexOf("\n}\n", skyAt));
+  assert.match(sky, /for \(int i = 0; i < 8; i\+\+\)/);
+  assert.match(sky, /\(1\.0 - smoothstep\(0\.02, 0\.05, tap\.a\)\)/, "sky taps only");
+  assert.match(sky, /return weight > 1e-4 \? sum \/ weight : own;/);
+  assert.match(
+    shader,
+    /turnPrev = smoothstep\(0\.0, [0-9.]+, uProgress\);\s*if \(foot > 0\.0\) \{\s*prevTexel\.rgb = mix\(prevTexel\.rgb, starSky\(prevUv, uStarPrev\.xy, uStarPrev\.z, aspect, prevTexel\.rgb\), foot \* turnPrev\);/,
+  );
+  assert.match(
+    shader,
+    /float late = min\(start \+ [0-9.]+, 1\.0 - span\);\s*w = mix\(w, min\(w, smoothstep\(late, late \+ span, uProgress\)\), foot\);/,
+  );
+  // The incoming star turns as one when the outgoing frame's nearest layer over its disc turns.
+  const turnAt = shader.indexOf("float starTurn(");
+  const turn = shader.slice(turnAt, shader.indexOf("\n}\n", turnAt));
+  assert.match(
+    turn,
+    /float start = 3\.0 \* uStagger\.x \* clamp\(code, 0\.0, 1\.0\);\s*return smoothstep\(start, start \+ uStagger\.y, uProgress\);/,
+  );
+  assert.equal((turn.match(/texture2D\(other, /g) || []).length, 5);
+  assert.match(
+    shader,
+    /turnNow = starTurn\(tPrev, uPrevOrigin \+ \(uStar\.xy - uPrevOrigin\) \* uPrevScale, uStar\.z \* uPrevScale, aspect\);\s*w = mix\(w, turnNow, foot\);/,
+  );
+  assert.match(shader, /\(1\.0 - smoothstep\(0\.25, 0\.3, texture2D\(tPrev, prevUv\)\.a\)\)/);
+  assert.match(shader, /\(1\.0 - smoothstep\(0\.25, 0\.3, texture2D\(tDiffuse, vUv\)\.a\)\)/);
   // In film the kept frame dissolves through the outgoing shot's lens: its focus,
   // and its heat, fringes and kept rect (LENS_FX).
   assert.match(
     shader,
-    /w = smoothstep\(start, start \+ span, uProgress\);\s*texel = mix\(uLayered > 0\.5 \? lensView\(tPrev, prevUv, prevUv, uBlurPrev, uStarPrev, uFlamePrev, uKeepPrev, guard\) : texture2D\(tPrev, prevUv\), texel, w\);\s*protection = mix\(uTextProtectionFrom, uTextProtection, w\);/,
+    /w = smoothstep\(start, start \+ span, uProgress\);\s*vec4 prevTexel = uLayered > 0\.5 \? lensView\(tPrev, prevUv, prevUv, uBlurPrev, uStarPrev, uFlamePrev, uKeepPrev, guard\) : texture2D\(tPrev, prevUv\);[\s\S]*?texel = mix\(prevTexel, texel, w\);\s*protection = mix\(uTextProtectionFrom, uTextProtection, w\);/,
   );
   assert.match(
     shader,
@@ -915,7 +986,7 @@ test("the final pass decodes each frame's layer from a 5-tap cross and mixes by 
   );
   assert.match(
     shader,
-    /float start = 0\.0, span = 1\.0;\s*if \(uLayered > 0\.5\)/,
+    /float start = 0\.0, span = 1\.0, subPrev = 0\.0, subNow = 0\.0;\s*if \(uLayered > 0\.5\)/,
     "unlayered: smoothstep(0, 1, progress)",
   );
   assert.match(shader, /if \(uProgress < 1\.0\)/);
@@ -1004,10 +1075,11 @@ test("the lens's heat, fringes and flare live in the final pass, in film, off th
   // The focus's taps never sit behind a per-pixel branch: no early return in lensView.
   const view = shader.slice(shader.indexOf("vec4 lensView("), shader.indexOf("vec3 lensFlare("));
   assert.equal((view.match(/return /g) || []).length, 1);
-  // The flare dissolves with each frame's own, and only while the star is in frame.
+  // The flare dissolves with each frame's own star, evenly (its turn, never cut by the
+  // other frame's layers), and only while the star is in frame.
   assert.match(
     shader,
-    /if \(uProgress < 1\.0\) flare = mix\(lensFlare\(prevUv, uStarPrev, uKeepPrev\), flare, w\);/,
+    /if \(uProgress < 1\.0\) flare = lensFlare\(prevUv, uStarPrev, uKeepPrev\) \* \(1\.0 - turnPrev\) \+ flare \* turnNow;/,
   );
   assert.match(shader, /float shown = star\.w \* smoothstep\(-star\.z, 2\.0 \* star\.z, inside\);/);
   // One block per ghost, each dropped whole near the kept rect.
@@ -1181,5 +1253,81 @@ test("the shot's lens blurs only in film, the bars cut the frame and the grain s
     /float near = max\(max\(centre\.a, texture2D\(map, uv \+ vec2\(uCssTexel\.x, 0\.0\)\)\.a\)/,
   );
   assert.match(shader, /mix\(sum \/ weight, centre\.rgb, step\(0\.5, near\)\)/);
+  pipeline.dispose();
+});
+
+test("the film look: halation where bloom draws, a print toe, midtone grain, and a gate weave, no canvas over the sky", () => {
+  const profile = {
+    postprocessGrading: true,
+    postprocessBloom: true,
+    postprocessGrain: true,
+    postprocessVignette: true,
+  };
+  const pipeline = createPipeline(profile);
+  pipeline.setFilmTreatment(true);
+  const g = pipeline.passes.grading.uniforms,
+    final = pipeline.passes.vignetteGrain.uniforms;
+  assert.ok(g.uHalation.value.x > 0, "halation with the bloom");
+  pipeline.setQualityProfile({ ...profile, postprocessBloom: false });
+  assert.deepEqual(g.uHalation.value.toArray(), [0, 0, 0], "none where the bloom is off");
+  assert.ok(FILM_LOOK.halation.color[0] > FILM_LOOK.halation.color[1], "a warm, red-leaning glow");
+  const grading = pipeline.passes.grading.material.fragmentShader;
+  // Both land before the soft shoulder, which stays the last step.
+  const shoulder = grading.indexOf("vec3 over = max(color - 0.75, 0.0);");
+  assert.ok(grading.indexOf("color += halo * uHalation") < shoulder);
+  // Only warm light bleeds: the halo's weight eases in with its red's lead over its blue.
+  assert.match(
+    grading,
+    /smoothstep\(0\.100, 0\.350, \(halo\.r - halo\.b\) \/ max\(halo\.r, 1e-4\)\)/,
+  );
+  assert.deepEqual([...FILM_LOOK.halation.warm], [0.1, 0.35]);
+  assert.ok(grading.indexOf("uPrintTint * uPrint.x") < shoulder);
+  // The gate weave: up to its amount in CSS px, stepped at 24 frames a second, for the
+  // scene to offset its camera's projection by; no pass resamples the finished frame.
+  pipeline.resize(1600, 900);
+  const reach = FILM_LOOK.weave.amount;
+  let moved = 0;
+  for (const t of [0, 0.5, 1.02, 7.3, 60]) {
+    pipeline.setFilmTime(t);
+    const [x, y] = pipeline.weaveOffset();
+    assert.ok(Math.abs(x) <= reach + 1e-9 && Math.abs(y) <= reach + 1e-9);
+    moved = Math.max(moved, Math.abs(x), Math.abs(y));
+  }
+  assert.ok(moved > 0, "it wanders in film");
+  pipeline.setFilmTime(1.02);
+  const held = [...pipeline.weaveOffset()];
+  pipeline.setFilmTime(1.04);
+  assert.deepEqual([...pipeline.weaveOffset()], held, "held within a frame");
+  pipeline.setFilmTreatment(false);
+  assert.deepEqual([...pipeline.weaveOffset()], [0, 0], "no weave out of film");
+  pipeline.setFilmTime(7.3);
+  assert.deepEqual([...pipeline.weaveOffset()], [0, 0], "nor once the clock moves");
+  const shader = pipeline.passes.vignetteGrain.material.fragmentShader;
+  assert.doesNotMatch(shader, /uWeave|vUv \+ uWeave/);
+  assert.equal(final.uWeave, undefined);
+  // The scene adds it to the shot's lens shift (cinematic.js rewrites that on every applied
+  // frame), before the lens reads its sources, and only while a shot is applied in film.
+  // Never a view offset: it rebuilds the projection and drops the shot's shift.
+  const index = flat(source("src/scene/index.js"));
+  const weaveAt = index.indexOf(
+    "const weave = filmActive && cinematicApplied ? post.weaveOffset?.() : null;",
+  );
+  assert.ok(weaveAt > index.indexOf("const cinematicApplied = cinematic.apply("));
+  assert.ok(
+    index.includes(
+      "shift[8] += (2 * weave[0]) / viewport.width; shift[9] += (2 * weave[1]) / viewport.height;",
+    ),
+  );
+  assert.ok(
+    weaveAt < index.indexOf("const shot = filmActive && cinematicApplied ? cinematic.shot : null,"),
+    "before the lens sources",
+  );
+  assert.doesNotMatch(index, /setViewOffset/);
+  // Film grain: in CSS-pixel cells, each channel a little apart, weighted toward the midtones.
+  assert.match(shader, /floor\(vUv \/ \(uCssTexel \* 1\.5\)\)/);
+  assert.match(shader, /mix\(0\.25, 1\.0, 4\.0 \* gl \* \(1\.0 - gl\)\)/);
+  // No canvas tooth over the sky: a woven one, fixed to the screen, read as a grid.
+  assert.doesNotMatch(shader, /weft|warp/);
+  assert.equal(SKY_INK.canvas, undefined);
   pipeline.dispose();
 });

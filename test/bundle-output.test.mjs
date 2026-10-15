@@ -118,7 +118,7 @@ test("UI bundle stays under the LCP budget", async () => {
 test("scene bundle stays under the deferred-payload budget", async () => {
   // The budget covers every byte a default visitor's scene load downloads:
   // the entry and each chunk it imports statically. The film's terrain,
-  // ranges, rocks, light shafts and lantern flame load on demand only.
+  // ranges, rocks and lantern flame load on demand only.
   const { loaded } = await sceneScripts();
   // The entry and one shared Three.js chunk.
   assert.equal(loaded.size, 2, `scene loads ${[...loaded.keys()]}`);
@@ -135,7 +135,6 @@ test("the film's optional effects are the only lazy chunks, and Three.js ships o
   const { entry, loaded, lazy } = await sceneScripts();
   assert.deepEqual(lazy.map((name) => name.replace(/\.[a-f0-9]{8}\.js$/, "")).sort(), [
     "scene.lantern-flame",
-    "scene.light-shafts",
     "scene.mountain-build",
     "scene.rock-build",
     "scene.terrain-build",
@@ -184,41 +183,6 @@ test("the film's rock placement is a lazy chunk that imports nothing", async () 
     loaded.get(entry),
     new RegExp(`import\\(\\s*"\\./${rockName.replaceAll(".", "\\.")}"\\s*\\)`),
   );
-});
-
-test("the film's light shafts are a lazy chunk outside the visitor payload", async () => {
-  const { entry, loaded, lazy } = await sceneScripts();
-  const shaftsName = lazy.find((name) => name.startsWith("scene.light-shafts."));
-  assert.ok(shaftsName, "the light shafts have their own hashed lazy chunk");
-  const shafts = await readFile(path.join(scriptsDir, shaftsName), "utf8");
-  const statics = [...loaded.values()].join("\n");
-  const app = await readFile(await findHashedScript("app"), "utf8");
-  // Markers that survive minification and GLSL compaction: the march, the
-  // box material's name and the subjects' program key suffix.
-  for (const marker of [/shaftMarch/, /LightShafts/, /light-shafts-/]) {
-    assert.match(shafts, marker);
-    assert.doesNotMatch(statics, marker, `${marker} leaked into the visitor scene payload`);
-    assert.doesNotMatch(app, marker, `${marker} leaked into the UI payload`);
-  }
-  // The entry imports it on demand and nothing preloads it.
-  assert.match(
-    loaded.get(entry),
-    new RegExp(`import\\(\\s*"\\./${shaftsName.replaceAll(".", "\\.")}"\\s*\\)`),
-  );
-  assert.ok(!app.includes(shaftsName), "the UI must not preload the light shafts");
-  // It reuses the visitor's Three.js and carries no first-party modules.
-  assert.ok(
-    !shafts.includes("Multiple instances of Three.js being imported"),
-    "Three.js is duplicated in the light shafts",
-  );
-  assert.deepEqual(chunkImports(shafts).dynamic, []);
-  for (const dependency of chunkImports(shafts).static) {
-    assert.ok(
-      loaded.has(dependency),
-      `the light shafts import ${dependency}, which visitors do not load`,
-    );
-  }
-  assert.doesNotMatch(shafts, /initHomeScene/);
 });
 
 test("the film mountains' generator is a lazy chunk that imports only Three.js", async () => {

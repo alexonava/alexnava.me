@@ -402,7 +402,7 @@ test("the river's water lies only below its shore, as the terrain carves it, and
   );
   assert.ok(
     plain.fragment.includes(
-      "float slateLanternPuddle = slatePuddle*(1.0-smoothstep(1.0, 1.4, slateRiverR));",
+      "float slateLanternPuddle = slatePuddle*max(1.0-smoothstep(1.0, 1.4, slateRiverR), 1.0-smoothstep(1.0, 1.4, slateStreamR));",
     ),
   );
   // The river is found once a fragment, its segments in runs, each tried only
@@ -471,19 +471,49 @@ test("the river's water lies only below its shore, as the terrain carves it, and
   assert.ok(soil.fragment.includes("*(1.-slatePuddle);"));
   assert.match(
     soil.fragment,
-    /slateDH = vec2\(dFdx\(slateCH\), dFdy\(slateCH\)\)\*[\d.]+\*slateCF;/,
+    /slateDH = \(vec2\(dot\(slateCDH, dFdx\(vMudWorld\.xz\)\), dot\(slateCDH, dFdy\(vMudWorld\.xz\)\)\)\+vec2\(dFdx\(slateCW\), dFdy\(slateCW\)\)\*\(slateCHV-slateCHU\)\)\*[\d.]+\*slateCF;/,
+  );
+  // That slope is worked out at each pixel, from the map's next texels and the crumbs'
+  // exact slope, never from the height's screen derivatives, which step in two-pixel
+  // blocks along the lit crests; the grains meet in valleys rounded by a smooth minimum.
+  assert.doesNotMatch(soil.fragment, /dFd[xy]\(slateCH\)/);
+  assert.ok(soil.fragment.includes(`vec2(${1 / SLATE_CLOSE.texels}, 0.)`));
+  assert.ok(SLATE_CLOSE.crumb.round >= 8);
+  assert.ok(
+    soil.fragment.includes(`slateK1 = -log(slateKS)/${SLATE_CLOSE.crumb.round.toFixed(1)};`),
   );
   // Near the lens the slate's blotches give way to its blurred tone.
   assert.ok(soil.fragment.includes(`texture2D(map, vMapUv, ${SLATE_CLOSE.blur}.0)`));
   assert.ok(SLATE_CLOSE.calm > 0 && SLATE_CLOSE.calm < 1);
   // Crumbs: a cellular noise on the close soil's relief and grit, worked out
   // only where they show (near the lens, a cell over a few pixels).
-  assert.match(soil.fragment, /if \(slateKW > 0\.\) \{\s*for \(int j = -1; j <= 1; j\+\+\)/);
+  assert.match(
+    soil.fragment,
+    /if \(slateKW > 0\.\) \{\s*float slateKS = 0\.;\s*for \(int j = -1; j <= 1; j\+\+\)/,
+  );
   const crumbHeight = Number.isInteger(SLATE_CLOSE.crumb.height)
     ? SLATE_CLOSE.crumb.height.toFixed(1)
     : String(SLATE_CLOSE.crumb.height);
   assert.ok(soil.fragment.includes(`slateCH += slateCrumb*${crumbHeight}*slateKW;`));
   assert.doesNotMatch(soil.fragment, /slateKO = fract\(sin/);
+  // Their walls tilt at most toward SLATE_CLOSE.crumb.steep (a soft limit on the
+  // slope's tangent), so the wall facing the lantern at each valley never lights
+  // into a continuous pale rim about the cobble.
+  assert.ok(SLATE_CLOSE.crumb.steep >= 0.8 && SLATE_CLOSE.crumb.steep < 1.5);
+  // Near the lens the soil's brightest channel eases past SLATE_CLOSE.ceiling with the
+  // colour scaled whole, so a lantern-lit crest keeps its warmth instead of clipping
+  // channel by channel into a chalky grey patch.
+  assert.ok(SLATE_CLOSE.ceiling > 0.5 && SLATE_CLOSE.ceiling <= 1);
+  assert.ok(
+    soil.fragment.includes(
+      `slateCE = max(slateCM-${SLATE_CLOSE.ceiling}, 0.); gl_FragColor.rgb *= mix(1., (slateCM-slateCE+slateCE/(1.+slateCE/${SLATE_CLOSE.ceiling}))/max(slateCM, 1e-5), 1.-smoothstep(${SLATE_CLOSE.near.map((v) => v.toFixed(1)).join(",")}, length(vViewPosition)));`,
+    ),
+  );
+  assert.ok(
+    soil.fragment.includes(
+      `slateCDH -= slateKG/(1.+length(slateKG)*${SLATE_CLOSE.relief / SLATE_CLOSE.crumb.steep});`,
+    ),
+  );
   // The stream is found once a fragment: its place, flow, join, radius and bend.
   assert.ok(
     soil.fragment.includes(
@@ -570,8 +600,8 @@ test("each ground shading has its own program cache key; the slate's shading nee
         `earthHorizon \\*= smoothstep\\(1\\.0, 1\\.15, dot\\(gl_FragColor\\.rgb, ${LUMA}\\)/dot\\(earthAir, ${LUMA}\\)\\);\\s*` +
         `gl_FragColor\\.rgb = mix\\(gl_FragColor\\.rgb, earthAir, earthHorizon\\);\\s*#endif\\s*` +
         `if \\(slateClearShade\\.w > 0\\.\\) \\{[^}]*\\}\\s*if \\(slateMist\\.w > 0\\.\\) \\{[^}]*\\}\\s*` +
-        // Then the drifting mist (drifting-mist.js), over the slate's own air and look.
-        `${mistOn ? "gl_FragColor\\.rgb = mistOver\\(gl_FragColor\\.rgb, vMudWorld\\);\\s*" : ""}gl_FragColor\\.a = 0\\.6667;`,
+        // Then the drifting mist (drifting-mist.js mistGround), over the slate's own air and look.
+        `${mistOn ? "gl_FragColor\\.rgb = mistGround\\(gl_FragColor\\.rgb, vMudWorld\\);\\s*" : ""}gl_FragColor\\.a = 0\\.6667;`,
     ),
   );
   // Delay distance haze so the phone foreground retains texture; the outer
@@ -603,11 +633,13 @@ test("each ground shading has its own program cache key; the slate's shading nee
     fragment,
     /reflectedLight\.directSpecular \/= 1\.0 \+ 2\.5\*dot\(reflectedLight\.directSpecular,vec3\(\.2126,\.7152,\.0722\)\)\*slateLanternPuddle;/,
   );
-  // The zone's explicit support prevents dark detail texels elsewhere from
-  // receiving the lantern override; parentheses preserve the 1 - fade mask.
+  // The zone's explicit support (the river and the stream, whose glint between
+  // its white water flared white under the puddles' gain) prevents dark detail
+  // texels elsewhere from receiving the lantern override; parentheses preserve
+  // the 1 - fade mask.
   assert.match(
     fragment,
-    /float slateLanternPuddle = slatePuddle\*\(1\.0-smoothstep\(1\.0, 1\.4, slateRiverR\)\);/,
+    /float slateLanternPuddle = slatePuddle\*max\(1\.0-smoothstep\(1\.0, 1\.4, slateRiverR\), 1\.0-smoothstep\(1\.0, 1\.4, slateStreamR\)\);/,
   );
   assert.equal(SLATE_PUDDLES.lantern.specular, 0.8);
   assert.equal(SLATE_PUDDLES.lantern.roughness, 0.2);
@@ -677,7 +709,7 @@ test("each ground shading has its own program cache key; the slate's shading nee
     assert.ok(lobe.knee > 0 && lobe.knee <= 0.4 && lobe.roughness >= 0.15);
   }
   assert.ok(SLATE_WATER.moon.knee <= 0.08, "the moon's glints stay low behind the name and intro");
-  // Like the light shafts' air, the water eases off behind the name and intro
+  // The water eases off behind the name and intro
   // (over half the screen's smaller side, the clouds' reach) and behind About
   // (a fifth), and there the soil's own highlights pass a knee: text stays at
   // 5:1 over the wet ground. The name's reach is wide, so the moon's glare on
@@ -1585,6 +1617,56 @@ test("the drifting mist lies below its ceiling on every film material, after its
   // The ranges take it only about their feet: up to ranges[1] of view slope above
   // eye level, never on their bodies against the sky.
   assert.ok(MIST_RANGES.includes(`if(md.y<${MIST_DRIFT.ranges[1]}){`));
+  // Their long rays cross hundreds of units of mist in a few steps: there each step
+  // takes the banks' mean as it grows past their cells, so no single sample rules the
+  // far plain into level bands. The terrain's far part eases into the same mean toward
+  // its edge (edge: TERRAIN_EDGE), so their veil never ends on a ruled line where they
+  // meet; nearer, every material marches as before.
+  assert.ok(MIST_RANGES.includes("c+=(mistMarch(c,cameraPosition+md*mD,1.)-c)*"));
+  assert.equal(MIST_DRIFT.edge[0], TERRAIN_EDGE);
+  assert.ok(MIST_DRIFT.edge[1] > 0.4 && MIST_DRIFT.edge[1] < 0.8);
+  assert.ok(
+    MIST_PARS.includes(
+      `vec3 mistOver(vec3 c,vec3 world){return mistMarch(c,world,smoothstep(${+(TERRAIN_EDGE * MIST_DRIFT.edge[1]).toFixed(6)},${TERRAIN_EDGE.toFixed(1)},max(abs(world.x),abs(world.z))));}`,
+    ),
+  );
+  // The ground's own march (mistGround): where it stands above the plain near eye level
+  // (a ridge's crest), its ray runs on to the plain behind it as the ranges' does, wholly
+  // within horizon[0] of view slope and not at all past horizon[1], so the veil behind a
+  // ridge never ends on its crest in a ruled step. Ground on the plain marches as before
+  // (its ray already ends there), and no other material takes it.
+  const [h0, h1] = MIST_DRIFT.horizon;
+  assert.ok(h0 > 0 && h1 > h0 && h1 <= 0.1, "a few degrees below eye level");
+  assert.ok(
+    MIST_PARS.includes(
+      `float mW=1.-smoothstep(${h0},${h1},-mU.y),mD=min(${MIST_DRIFT.ranges[0].toFixed(1)},max(cameraPosition.y-mistFrame.x,0.)/-mU.y);\nif(mD>mL){mE=cameraPosition+mU*mix(mL,mD,mW);mS=max(mS,mW);}}\nreturn mistMarch(c,mE,mS);}`,
+    ),
+  );
+  assert.equal(MIST_PARS.match(/vec3 mistGround\(/g).length, 1);
+  // On balanced, whose two steps saturate on those rays, the mean adds at most
+  // depth[1] of optical depth on the long rays (depthReach, the terrain's far part's
+  // and the ranges' alike), so the far plain never lies as a pale sheet; high has no cap.
+  assert.equal(MIST_DRIFT.depth[0], 0);
+  assert.ok(MIST_DRIFT.depth[1] > 0 && MIST_DRIFT.depth[1] <= 1);
+  assert.ok(
+    MIST_PARS.includes(
+      `mistD=mistFrame.z>1.5?10000.0:${MIST_DRIFT.depth[1]},mistR=smoothstep(${MIST_DRIFT.depthReach.map((v) => v.toFixed(1)).join(",")},L);`,
+    ),
+  );
+  assert.ok(
+    MIST_DRIFT.depthReach[0] < TERRAIN_EDGE &&
+      MIST_DRIFT.depthReach[1] > TERRAIN_EDGE &&
+      MIST_DRIFT.depthReach[1] < MIST_DRIFT.ranges[0],
+  );
+  assert.ok(MIST_PARS.includes("a=mix(a,min(a,max(mistD-tau,0.)),mistF*mistR);"));
+  assert.ok(
+    MIST_PARS.includes(
+      `mix(smoothstep(${MIST_DRIFT.banks[0]},${MIST_DRIFT.banks[1]},n),mistC,mistF)`,
+    ),
+  );
+  assert.ok(MIST_PARS.includes("side=mix(side,1.,mistF);"));
+  assert.ok(MIST_DRIFT.filter[0] > 0 && MIST_DRIFT.filter[1] > MIST_DRIFT.filter[0]);
+  assert.ok(MIST_DRIFT.cover.every((c) => c > 0.15 && c < 0.4));
   // A built-in lit material takes it after its fog, at its own world point, with the
   // shared uniforms (lent, never copied) and its own key.
   const material = mistHook(new MeshStandardMaterial());

@@ -38,8 +38,8 @@
     // --- The star (the visible warm disc, solar-body.js; not a light) ---
     // Placed in open sky on the tower side of the field, clear of the tower's
     // silhouette. The watch frames it; every other tower shot shows it whole
-    // or not at all, never behind geometry (framing.test). The light shafts'
-    // star rays and the mountain shading read it too; it never moves per shot.
+    // or not at all, never behind geometry (framing.test). The mountain
+    // shading reads it too; it never moves per shot.
     SUN_POSITION: Object.freeze([-72.25, 50, -11.9]),
 
     // --- Main camera (PerspectiveCamera) ---

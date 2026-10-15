@@ -664,7 +664,7 @@ function frames() {
   };
 }
 
-test("the ranges build in short idle slices, hold the shafts' slot and fade in wherever they could show mid-shot", async () => {
+test("the ranges build in short idle slices and fade in wherever they could show mid-shot", async () => {
   const clock = frames(),
     idle = globalThis.requestIdleCallback,
     style = globalThis.getComputedStyle,
@@ -693,8 +693,6 @@ test("the ranges build in short idle slices, hold the shafts' slot and fade in w
     buildMountains({ rendering, tour }).then((built) => {
       arrived = built;
     });
-    // While it slices, the light shafts wait on rendering.terrainSlicing.
-    assert.ok(rendering.terrainSlicing instanceof Promise, "light-shafts.js sees the build");
     do await clock.step();
     while (outstanding);
     await clock.step(3);
@@ -702,7 +700,6 @@ test("the ranges build in short idle slices, hold the shafts' slot and fade in w
     // MOUNTAIN_ENTRANCE.late, rather than leaving the horizon bare until the cut.
     assert.ok(arrived, "lands mid-shot rather than waiting for a cut");
     assert.equal(arrived.userData.fadeIn, MOUNTAIN_ENTRANCE.late);
-    assert.equal(rendering.terrainSlicing, null, "the slot clears once the build ends");
     assert.ok(slices.length > 3, `${slices.length} slices`);
     // Each slice stops before a step that could overrun it: never a long task,
     // and typically within the 4 ms of idle time offered (the suite runs files in
@@ -718,31 +715,16 @@ test("the ranges build in short idle slices, hold the shafts' slot and fade in w
       assert.deepEqual(arrived.attributes[name].array, geometry.attributes[name].array, name);
     assert.deepEqual(arrived.index.array, geometry.index.array);
     arrived.dispose();
-    // Sharing the slot with the terrain: it holds a promise for both.
-    let terrainDone;
-    const terrain = new Promise((resolve) => {
-      terrainDone = resolve;
-    });
-    rendering.terrainSlicing = terrain;
     tour.running = false; // not touring: any frame is unseen
-    const shared = buildMountains({ rendering, tour });
-    assert.notEqual(rendering.terrainSlicing, terrain);
-    const both = rendering.terrainSlicing;
-    const still = await shared;
+    const still = await buildMountains({ rendering, tour });
     assert.equal(still.userData.fadeIn, 0, "a still frame takes the ranges at once");
     still.dispose();
-    assert.equal(rendering.terrainSlicing, both, "held while the terrain still slices");
-    terrainDone();
-    await both;
-    await Promise.resolve();
-    assert.equal(rendering.terrainSlicing, null);
     // Disposed first: the build stops and resolves to nothing.
     let gone = false;
     assert.equal(
       await buildMountains({ rendering, tour, cancelled: () => gone || !(gone = true) }),
       null,
     );
-    assert.equal(rendering.terrainSlicing, null);
   } finally {
     clock.restore();
     if (idle) globalThis.requestIdleCallback = idle;
