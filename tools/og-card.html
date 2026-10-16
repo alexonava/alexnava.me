@@ -1,9 +1,11 @@
 <!doctype html>
 <!--
   Source for the 1200x630 social card /og.png. Not published; it reads the repo fonts and its
-  backdrop, tools/og-card-backdrop.webp (the live scene's opening shot, The watch, from a 1600x900
-  still with every page layer but the canvas hidden, cropped to the picture between the film's
-  widescreen bars, 1600x670; kept here only for this card), through
+  backdrop, tools/og-card-backdrop.webp (the lookout's gallery, Gallery detail, under the milky
+  banks: a 1600x900 still of that shot with every page layer but the canvas hidden, the sky's
+  cloud directions turned 70 degrees so The watch's banks stand behind the cabin, and the shot's
+  light lifted a little (fill 1.5, key 1.1), cropped to the picture between the film's widescreen
+  bars, 1600x670; the owner's pick of 2026-10-16; kept here only for this card), through
   relative URLs. Regenerate from the repository root after a backdrop refresh (msedge returns
   before the file is written, so wait for it, e.g. PowerShell Start-Process -Wait; any headless
   Chromium with the same flags works):
@@ -12,12 +14,13 @@
       --user-data-dir=<scratch>\edge-profile --screenshot=<scratch>\og-raw.png
       file:///<repo>/tools/og-card.html
     magick <scratch>\og-raw.png -alpha off -kmeans 224 -unique-colors <scratch>\og-pal.png
-    magick <scratch>\og-raw.png -alpha off -dither FloydSteinberg -define dither:diffusion-amount=73%
+    magick <scratch>\og-raw.png -alpha off -dither FloydSteinberg -define dither:diffusion-amount=61%
       -remap <scratch>\og-pal.png -strip -define png:compression-level=9 PNG8:public/og.png
   The dither hides the palette's banding in the night's gradients: use the largest amount that
-  keeps the file at or under 300 KB (73% gave 299 KB with all the text in the name’s colour; the size does not grow evenly with the amount, so try the neighbours). test/hosting.test.mjs
-  holds public/og.png opaque, exactly 1200x630 and at most 300 KB. Re-scrape it with LinkedIn Post
-  Inspector after the release.
+  keeps the file at or under 300 KB (61% gave 299 KB for the gallery under the banks; the size does not grow evenly with the amount, so try the neighbours). test/hosting.test.mjs
+  holds public/og.png opaque, exactly 1200x630 and at most 300 KB, and index.html's og:image and
+  twitter:image naming it as og.png?card= its first eight hex digits of SHA-256, so a new card gets a
+  new URL: update both tags, then re-scrape it with LinkedIn Post Inspector after the release.
 -->
 <html lang="en">
   <head>

@@ -2,6 +2,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
+import { createHash } from "node:crypto";
 import { access, readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,11 +15,15 @@ async function readProjectFile(relativePath) {
   return readFile(path.join(projectRoot, relativePath), "utf8");
 }
 
-test("the page names its committed share image for social previews", async () => {
+test("the page names its committed share image for social previews, versioned by its bytes", async () => {
   const indexHtml = await readProjectFile("index.html");
-  await access(path.join(projectRoot, "public", "og.png"));
-  assert.match(indexHtml, /property="og:image"\s+content="https:\/\/alexnava\.me\/og\.png"/);
-  assert.match(indexHtml, /name="twitter:image"\s+content="https:\/\/alexnava\.me\/og\.png"/);
+  const png = await readFile(path.join(projectRoot, "public", "og.png"));
+  // Link previews keep an image by its URL, so the card's own hash rides in the query: a new
+  // card is a new URL, which LinkedIn and the rest fetch afresh.
+  const version = createHash("sha256").update(png).digest("hex").slice(0, 8);
+  const url = `https://alexnava\\.me/og\\.png\\?card=${version}`;
+  assert.match(indexHtml, new RegExp(`property="og:image"\\s+content="${url}"`));
+  assert.match(indexHtml, new RegExp(`name="twitter:image"\\s+content="${url}"`));
   assert.match(indexHtml, /name="twitter:card"\s+content="summary_large_image"/);
 });
 
