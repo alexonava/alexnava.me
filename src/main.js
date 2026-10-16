@@ -1,6 +1,7 @@
 (() => {
   const site = (window.BabelSite = window.BabelSite || {});
   let sceneInitialized = false;
+  let sceneLoadPromise = null;
   let staticRecoveryInstalled = false;
   let staticRecoveryAttempted = false;
   const staticRecoveryCleanups = [];
@@ -75,8 +76,24 @@
     }
   }
 
+  function detectsForcedColors() {
+    try {
+      return window.matchMedia("(forced-colors: active)").matches === true;
+    } catch {
+      return false;
+    }
+  }
+
   function forcesLiveScene(controls) {
     return Boolean(controls?.overrideTier || controls?.debug);
+  }
+
+  function staticPreferenceBlocksScene(controls) {
+    // Forced colors hides the canvas in CSS, even with a quality/debug override.
+    return (
+      detectsForcedColors() ||
+      (!forcesLiveScene(controls) && (detectsReducedData() || detectsReducedMotion()))
+    );
   }
 
   function clearStaticPreferenceRecovery() {
@@ -96,10 +113,11 @@
   function installStaticPreferenceRecovery() {
     if (staticRecoveryInstalled || staticRecoveryAttempted) return;
     const controls = readSceneQualityControls();
-    if (forcesLiveScene(controls) || (!detectsReducedData() && !detectsReducedMotion())) return;
+    if (!staticPreferenceBlocksScene(controls)) return;
 
     const recover = () => {
-      if (staticRecoveryAttempted || detectsReducedData() || detectsReducedMotion()) return;
+      if (staticRecoveryAttempted || staticPreferenceBlocksScene(readSceneQualityControls()))
+        return;
       staticRecoveryAttempted = true;
       clearStaticPreferenceRecovery();
       void site.ensureSceneReady();
@@ -107,8 +125,9 @@
 
     const motionQuery = window.matchMedia?.("(prefers-reduced-motion: reduce)");
     const dataQuery = window.matchMedia?.("(prefers-reduced-data: reduce)");
+    const forcedColorsQuery = window.matchMedia?.("(forced-colors: active)");
     const connection = typeof navigator !== "undefined" ? navigator.connection : null;
-    [motionQuery, dataQuery, connection].forEach((target) => {
+    [motionQuery, dataQuery, forcedColorsQuery, connection].forEach((target) => {
       const cleanup = addChangeListener(target, recover);
       if (cleanup) staticRecoveryCleanups.push(cleanup);
     });
@@ -256,6 +275,17 @@
   }
 
   site.ensureSceneReady = async function ensureSceneReady() {
+    if (detectsForcedColors()) {
+      // CSS hides an initialized scene while forced colors is active. Keep its
+      // host available when the preference clears after one-shot recovery.
+      if (!sceneInitialized) {
+        disableSceneHost();
+        installStaticPreferenceRecovery();
+      }
+      return false;
+    }
+    if (sceneLoadPromise) return sceneLoadPromise;
+
     if (site.scene?.initHomeScene) {
       const initialized = initScene();
       if (initialized) {
@@ -267,7 +297,7 @@
 
     const controls = readSceneQualityControls();
     const forceLiveScene = forcesLiveScene(controls);
-    if (!forceLiveScene && (detectsReducedData() || detectsReducedMotion())) {
+    if (staticPreferenceBlocksScene(controls)) {
       disableSceneHost();
       return false;
     }
@@ -288,29 +318,36 @@
 
     // Only the live path shows the title card's loading line.
     site.sceneLoader?.begin?.({ tier: startupTier });
-    try {
-      const sceneScript = loadScriptOnce(getSceneScriptUrl(), getSceneModulePreloads());
-      // Issued after the bundle request, which keeps its head start.
-      prefetchArchitectureModels(startupTier);
-      await sceneScript;
-      site.sceneLoader?.stage?.("bundle");
-      cancelDeferredPrefetch();
-      enableSceneHost();
-      const initialized = initScene();
-      if (!initialized) {
+    sceneLoadPromise = (async () => {
+      try {
+        const sceneScript = loadScriptOnce(getSceneScriptUrl(), getSceneModulePreloads());
+        // Issued after the bundle request, which keeps its head start.
+        prefetchArchitectureModels(startupTier);
+        await sceneScript;
+        site.sceneLoader?.stage?.("bundle");
+        cancelDeferredPrefetch();
+        enableSceneHost();
+        const initialized = initScene();
+        if (!initialized) {
+          releaseArchitecturePrefetch();
+          disableSceneHost();
+          return false;
+        }
+        site.sceneLoader?.stage?.("init");
+        clearStaticPreferenceRecovery();
+        return true;
+      } catch (error) {
+        console.warn("Scene bundle failed to load.", error);
+        cancelDeferredPrefetch();
         releaseArchitecturePrefetch();
         disableSceneHost();
         return false;
       }
-      site.sceneLoader?.stage?.("init");
-      clearStaticPreferenceRecovery();
-      return true;
-    } catch (error) {
-      console.warn("Scene bundle failed to load.", error);
-      cancelDeferredPrefetch();
-      releaseArchitecturePrefetch();
-      disableSceneHost();
-      return false;
+    })();
+    try {
+      return await sceneLoadPromise;
+    } finally {
+      sceneLoadPromise = null;
     }
   };
 

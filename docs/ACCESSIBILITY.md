@@ -45,7 +45,7 @@ The page is complete without scripts. Contact stays hidden, and the footer shows
 
 **Reduced motion** (`prefers-reduced-motion: reduce`)
 
-- No live scene: [main.js](../src/main.js) requests no scene script unless `?quality=high|balanced` or `?sceneDebug=1|true` forces it; `?quality=auto` or an unknown value forces nothing, and `?quality=low` keeps the title card. main.js loads the scene if the preference later clears, except when the address carries `?quality=high|balanced|low` or `?sceneDebug=1|true`: then it installs no listener (`forcesLiveScene`).
+- No live scene: [main.js](../src/main.js) requests no scene script unless `?quality=high|balanced` or `?sceneDebug=1|true` forces it; `?quality=auto` or an unknown value forces nothing, and `?quality=low` keeps the title card. Without an explicit quality or debug override, main.js rechecks startup if the preference later clears. An explicit `?quality=high|balanced|low` or `?sceneDebug=1|true` determines startup as above (`forcesLiveScene`); clearing motion or data alone does not trigger recovery from a static tier selected under those controls. Forced colours always block startup, including these overrides.
 - The entrance animations stop: the hero's and the footer's rise, both `hero-reveal`. The hero's scroll fade ([hero.js](../src/ui/hero.js)) stops and the hero stays in place.
 - Transitions are removed from the skip link, the footer's Contact and links, the 404's Home link, the canvas fade-in, the title card's grain, the tablet intro's scrim and the loading line with its bar's fill, which then steps to each new value. The loading line and its star have no animation of their own: the line's value, its bar and the star change only with real progress, and the star has no transition to remove.
 - In-page scrolling is instant (`scroll-behavior: auto` replaces `smooth`).
@@ -54,7 +54,7 @@ The page is complete without scripts. Contact stays hidden, and the footer shows
 **Reduced data** (`prefers-reduced-data: reduce`, or Save-Data from `navigator.connection`, which only Chromium browsers have)
 
 - No live scene: main.js keeps the title card, and with `?sceneDebug=1` quality.js still gives the low startup tier, which keeps it too. When the probe could not read the texture limits, main.js downloads the scene bundle before `initHomeScene()` declines that tier; the title card stays either way. Only `?quality=high` or `?quality=balanced` overrides reduced data.
-- The scene loads if the preference later clears, unless the address carries `?quality=high|balanced|low` or `?sceneDebug=1|true`, as under reduced motion. So `?sceneDebug=1` with reduced data keeps the title card until a reload.
+- The scene loads if the preference later clears, unless the address carries `?quality=high|balanced|low` or `?sceneDebug=1|true`, as under reduced motion. With `?sceneDebug=1`, a reduced-data change alone does not restart startup; clearing forced colours rechecks the current preferences even with that override.
 
 **Reduced transparency** (`prefers-reduced-transparency: reduce`)
 
@@ -65,7 +65,8 @@ The page is complete without scripts. Contact stays hidden, and the footer shows
 **Forced colours** (`forced-colors: active`)
 
 - The decorative layers are removed: the scene shell with its canvas, the vignette with the title card's grain, the site shell, and the hero's, the tablet intro's, the footer's and the bottom bar's backdrops. So are the loading line, its bar with it, and its star.
-- Only CSS reacts: no script reads this mode, so on the live path main.js still requests the scene bundle and the early tower and tree, and initializes the scene behind the hidden shell.
+- main.js checks this mode before probing WebGL, requesting the scene bundle or models, or starting the loading line. An initial forced-colours visit makes none of those requests, even with an explicit quality or debug override.
+- When the preference clears, main.js rechecks the other startup gates and starts once if eligible; overlapping preference changes share any startup in flight. `?quality=low` stays static, and `?sceneDebug=1` with reduced data still selects the low tier. This is a startup gate: switching the preference on does not unload an already initialized scene; CSS hides its decorative shell.
 - The skip link and the footer's controls use system colours (Canvas, CanvasText and LinkText; no others): links, the 404's Home among them, and Contact are LinkText.
 - The cursor is the system's.
 
@@ -112,6 +113,6 @@ Shader warm-up needs `renderer.compileAsync` and `KHR_parallel_shader_compile`. 
 
 - `svh` sizes the page and hero, after a `vh` fallback. On touch WebKit (`@supports (-webkit-touch-callout: none)`) the decorative layers use `lvh`, after a `vh` fallback.
 - `text-wrap: balance` balances the intro and, inside `@supports`, the name and the 404 heading, which otherwise break with `overflow-wrap: anywhere`.
-- `env(safe-area-inset-*)` keeps the skip link, the hero, the footer and the loading line (its label, and its bar below the home-screen app's status bar) clear of notches and the home indicator, and the bottom bar follows the same insets; `main` clips horizontal overflow with `overflow-x: clip`.
+- `env(safe-area-inset-*)` keeps the skip link, the hero, the footer and the loading line (its label, and its bar below the home-screen app's status bar) clear of notches and the home indicator, and the bottom bar follows the same insets. `main` is at least one viewport tall (`min-height: 100vh`, then `100svh`) and clips decorative overflow on both axes with `overflow: clip`, without becoming a scroll container. In-flow content can grow its height and scroll normally with the document.
 - Focus rings use `:focus-visible`. The stylesheet uses no `:has()`: the title card's grain fades at the reveal through a sibling selector, `.scene-canvas.is-ready + .scene-vignette::before`.
 - The pages carry no inline styles: the Content Security Policy forbids them, and scripts change styles only through the CSSOM.

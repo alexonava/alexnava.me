@@ -104,10 +104,12 @@ button {
 main {
   position: relative;
   z-index: 2;
-  /* The hero backdrop's oval reaches past the screen edge on phones. Clipping
-     it here keeps mobile browsers from widening the layout viewport, which
-     pushed the footer below the screen; body's overflow-x alone doesn't. */
-  overflow-x: clip;
+  /* Keep the hero's oval inside the viewport on both axes without shortening
+     its visible fade below the hero or making main a scroll container.
+     In-flow content can still grow main and scroll the document normally. */
+  min-height: 100vh;
+  min-height: 100svh;
+  overflow: clip;
 }
 
 main:focus {
