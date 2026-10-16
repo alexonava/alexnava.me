@@ -3,7 +3,6 @@ import test from "node:test";
 import path from "node:path";
 import {
   createDeferredQualityStep,
-  createPanelHold,
   createPixelRatioWatcher,
   createRefreshEstimator,
   createSceneFrameScheduler,
@@ -444,7 +443,7 @@ test("named holds stop rendering and scheduling until the last one is released",
   frames.step(16);
   assert.equal(updates.length, 2);
 
-  assert.equal(scheduler.setHold("panel", true), true);
+  assert.equal(scheduler.setHold("another", true), true);
   assert.equal(frames.pending, 0, "a hold cancels the queued frame");
   scheduler.setHold("visitor", true);
   scheduler.invalidate();
@@ -457,7 +456,7 @@ test("named holds stop rendering and scheduling until the last one is released",
     { held: true, scheduled: false },
   );
 
-  assert.equal(scheduler.setHold("panel", false), true);
+  assert.equal(scheduler.setHold("another", false), true);
   assert.equal(frames.pending, 0, "another reason still holds");
   assert.equal(scheduler.setHold("visitor", false), false);
   assert.equal(frames.pending, 1, "releasing the last hold resumes");
@@ -482,10 +481,10 @@ test("a hold set before start keeps the scheduler idle until released", () => {
     requestFrame: frames.requestFrame,
   });
 
-  scheduler.setHold("panel", true);
+  scheduler.setHold("another", true);
   scheduler.start();
   assert.equal(frames.pending, 0);
-  scheduler.setHold("panel", false);
+  scheduler.setHold("another", false);
   frames.step(0);
   assert.equal(updates, 1);
   scheduler.dispose();
@@ -553,124 +552,6 @@ test("still mode composes with reduced motion", () => {
   frames.step(16);
   assert.equal(updates, 2, "an invalidated still frame draws once");
   assert.equal(frames.pending, 0);
-  scheduler.dispose();
-});
-
-function createTimers() {
-  let nextId = 1;
-  const timers = new Map();
-  return {
-    clearTimer(id) {
-      timers.delete(id);
-    },
-    get delays() {
-      return [...timers.values()].map(({ delay }) => delay);
-    },
-    fire() {
-      const entries = [...timers.values()];
-      timers.clear();
-      entries.forEach(({ callback }) => callback());
-    },
-    setTimer(callback, delay) {
-      const id = nextId++;
-      timers.set(id, { callback, delay });
-      return id;
-    },
-  };
-}
-
-function createPanelHarness() {
-  const frames = createFrameHarness();
-  const timers = createTimers();
-  const state = { open: false, releases: 0, rendered: 0 };
-  const scheduler = createSceneFrameScheduler({
-    cancelFrame: frames.cancelFrame,
-    onUpdate() {
-      state.rendered += 1;
-      hold.frameRendered();
-    },
-    requestFrame: frames.requestFrame,
-  });
-  const hold = createPanelHold({
-    clearTimer: timers.clearTimer,
-    delayMs: 450,
-    isOpen: () => state.open,
-    onRelease: () => (state.releases += 1),
-    scheduler,
-    setTimer: timers.setTimer,
-  });
-  scheduler.start();
-  frames.step(0);
-  return { frames, hold, scheduler, state, timers };
-}
-
-test("a dialog holds rendering once its overlay fades in and releases with the last dialog", () => {
-  const { frames, hold, scheduler, state, timers } = createPanelHarness();
-
-  hold.sync();
-  assert.deepEqual(timers.delays, [], "no dialog, no hold");
-  state.open = true;
-  hold.sync();
-  hold.sync();
-  assert.deepEqual(timers.delays, [450], "repeated mutations keep one pending hold");
-  frames.step(16);
-  assert.equal(state.rendered, 2, "the scene keeps drawing while the overlay fades in");
-  timers.fire();
-  assert.equal(hold.held, true);
-  assert.equal(scheduler.getState().held, true);
-  assert.equal(frames.pending, 0, "nothing is scheduled behind the dialog");
-
-  state.open = false;
-  hold.sync();
-  assert.equal(hold.held, false);
-  assert.equal(state.releases, 1);
-  assert.equal(frames.pending, 1, "closing the last dialog resumes the scene");
-
-  state.open = true;
-  hold.sync();
-  state.open = false;
-  hold.sync();
-  assert.deepEqual(timers.delays, [], "a dialog closed during the fade cancels its hold");
-  assert.equal(state.releases, 1, "no hold was taken, so none is released");
-
-  state.open = true;
-  hold.sync();
-  hold.dispose();
-  assert.deepEqual(timers.delays, [], "disposal clears a pending hold");
-  scheduler.dispose();
-});
-
-test("a resize behind a held dialog draws one frame and holds again", () => {
-  const { frames, hold, scheduler, state, timers } = createPanelHarness();
-  state.open = true;
-  hold.sync();
-  timers.fire();
-  const rendered = state.rendered;
-
-  hold.redraw();
-  assert.equal(hold.held, false);
-  assert.equal(frames.pending, 1, "the cleared canvas is redrawn");
-  assert.deepEqual(timers.delays, [], "without another overlay delay");
-  frames.step(100);
-  assert.equal(state.rendered, rendered + 1);
-  assert.equal(hold.held, true, "the first drawn frame restores the hold");
-  assert.equal(frames.pending, 0, "no animation continues behind the dialog");
-  hold.redraw();
-  hold.redraw();
-  frames.step(200);
-  assert.equal(state.rendered, rendered + 2);
-  assert.equal(frames.pending, 0);
-
-  hold.redraw();
-  state.open = false;
-  hold.sync();
-  assert.equal(state.releases, 1, "closing during the redraw still releases the hold");
-  frames.step(300);
-  assert.equal(hold.held, false, "a closed dialog is not held again");
-  assert.equal(frames.pending, 1);
-
-  hold.redraw();
-  assert.equal(hold.held, false, "an unheld scene needs no redraw release");
   scheduler.dispose();
 });
 
@@ -1680,13 +1561,11 @@ test("each frame applies the shot's light, lens, bars and grain, holding the gra
     ),
   );
   // The grain's frame advances only while the scene moves: never under reduced
-  // motion, a visitor pause or an open panel.
+  // motion or a visitor pause.
   const calls = index.match(/setFilmTime\?\.\(/g) || [];
   assert.equal(calls.length, 1, "one call site");
   assert.ok(
-    index.includes(
-      'if (!reducedMotion && !visitorHold?.paused && !document.body.hasAttribute("data-panel-open")) post.setFilmTime?.(elapsedTime);',
-    ),
+    index.includes("if (!reducedMotion && !visitorHold?.paused) post.setFilmTime?.(elapsedTime);"),
   );
   // The lens (LENS_FX) follows its sources on screen in film only: the star always,
   // the flame in the shots that look at it, and The watch's kept banks on desktops.

@@ -11,7 +11,6 @@ import { flat as flatHtml } from "./support/html.mjs";
 import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createHash } from "node:crypto";
 
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -57,7 +56,6 @@ test("every aria-controls target resolves to an element id in the same document"
 test("every aria-labelledby reference resolves to an element id", async () => {
   const html = await readIndexHtml();
   const refs = collectMatches(/aria-labelledby="([^"]+)"/g, html);
-  assert.ok(refs.length > 0);
   for (const targetId of refs) {
     assert.match(html, new RegExp(`id="${targetId}"`), `aria-labelledby="${targetId}" missing`);
   }
@@ -70,63 +68,32 @@ test("the skip-link points at an id that exists on the page", async () => {
   assert.match(html, new RegExp(`id="${skipMatch[1]}"`));
 });
 
-test("About and estate buttons have accessible names and reference their dialogs", async () => {
-  const html = await readIndexHtml();
-  const buttonBlocks = html.match(/<button[^>]*class="bottom-btn[^"]*"[^>]*>/g) || [];
-  assert.ok(buttonBlocks.length === 4, "About and its three destinations expose dialog buttons");
-  for (const block of buttonBlocks) {
-    assert.match(block, /aria-label="[^"]+"/, `bottom-bar button is missing aria-label: ${block}`);
-    assert.match(
-      block,
-      /aria-expanded="(true|false)"/,
-      "bottom-bar button tracks aria-expanded state",
-    );
-    assert.match(
-      block,
-      /aria-controls="[^"]+"/,
-      "bottom-bar button references the panel it toggles",
-    );
-  }
-});
-
-test("modal overlays declare dialog semantics and start hidden", async () => {
-  const html = await readIndexHtml();
-  const overlayBlocks = html.match(/<div[^>]*class="panel-overlay"[\s\S]*?>/g) || [];
-  assert.ok(overlayBlocks.length === 4, "About and its three categories each expose a dialog");
-  for (const block of overlayBlocks) {
-    assert.match(block, /role="dialog"/);
-    assert.match(block, /aria-modal="true"/);
-    assert.match(block, /aria-labelledby="/);
-    assert.match(block, /\shidden(\s|>)/);
-  }
-});
-
-test("all estate panels share the parchment frame", async () => {
-  const html = await readIndexHtml();
-  const sharedFrames =
-    html.match(/class="[^"]*\bpanel-parchment\b[^"]*\bpanel-surface\b[^"]*"/g) || [];
-  assert.equal(
-    sharedFrames.length,
-    3,
-    "all panels use the shared panel-parchment + panel-surface frame",
-  );
-});
-
-test("the scene is the landing content and the estate starts inside the hidden About dialog", async () => {
+test("Contact is the page's one button, a native disclosure over the links it shows", async () => {
   const html = flatHtml(await readIndexHtml());
+  const buttons = html.match(/<button[^>]*>/g) || [];
+  assert.equal(buttons.length, 1);
+  const [toggle] = buttons;
+  assert.match(toggle, /class="site-footer__link site-footer__contact"/);
+  assert.match(toggle, /type="button"/);
+  assert.match(toggle, /aria-expanded="true"/, "expanded, as the no-JS links show");
+  assert.match(toggle, /aria-controls="contact-links"/);
+  assert.match(toggle, / hidden>/, "hidden until contact.js binds it");
+  assert.doesNotMatch(toggle, /aria-label/, "its text names it");
+  assert.match(html, /<span class="site-footer__label">Contact<\/span><\/button>/);
+  assert.match(html, /<p class="site-footer__links" id="contact-links">/);
+});
+
+test("the scene is the landing content, and nothing covers or dims it", async () => {
+  const html = flatHtml(await readIndexHtml());
+  const styles = await readStyles();
   assert.match(html, /<body class="scene-home">/);
   assert.match(html, /<main[^>]*id="main"[^>]*tabindex="-1"/);
   assert.match(html, /<div class="scene-shell" aria-hidden="true">/);
   assert.match(html, /id="home-scene" class="scene-canvas"/);
   const main = html.match(/<main[\s\S]*?<\/main>/)[0];
   assert.match(main, /id="home" class="hero section"/);
-  assert.doesNotMatch(main, /class="estate-map"|class="estate-destinations"/);
-  assert.match(html, /id="panel-about"[^>]* hidden>[\s\S]*?class="estate-destinations"/);
-  assert.match(html, /class="panel-close" aria-label="Close About"/);
-  assert.equal(
-    (html.match(/class="panel-close panel-back" aria-label="Back to About"/g) || []).length,
-    3,
-  );
+  assert.doesNotMatch(html, /role="dialog"|aria-modal|class="panel-|estate-map|data-panel/);
+  assert.doesNotMatch(styles, /body::after|data-panel-open|\.panel-|\.estate-/);
 });
 
 const LOADER_MARKUP =
@@ -364,41 +331,13 @@ test("a faint, zero-mean grain dithers the title card and fades with the reveal"
   );
 });
 
-test("estate layers preserve artwork proportions without masking labels", async () => {
-  const css = flatCss(await readStyles());
-  assert.match(css, /aspect-ratio: 3 \/ 2/);
-  assert.match(css, /aspect-ratio: 2 \/ 3/);
-  assert.match(css, /\.estate-home-map \.estate-map::before/);
-  assert.match(
-    css,
-    /\.scene-entry\[hidden\], \[data-scene-fallback\]\[hidden\] \{ display: none; \}/,
-  );
-  // The paper fill behind the art keeps inside its opaque paper: the torn edge
-  // reaches about 3% in on both maps, so a 4% inset never shows a straight edge
-  // or square corner past the tear.
-  const backing = cssRule(css, ".estate-home-map .estate-map::after");
-  assert.match(backing, /inset: 4%;/);
-  assert.match(backing, /z-index: -2;/);
-});
-
-test("paper and estate surfaces are declared once", async () => {
+test("the footer's controls and the 404's paper are declared once", async () => {
   const css = await readStyles();
-  // Each surface has one top-level block of its own (shared selector lists
-  // aside); media queries only adjust it.
+  // Each has one top-level block of its own (shared selector lists aside);
+  // media queries only adjust it.
   for (const selector of [
-    ".panel-parchment",
-    ".panel-parchment__sheet",
-    ".panel-parchment__sheet::before",
-    ".panel-parchment__sheet::after",
-    ".panel-parchment__content",
-    ".panel-parchment__sheet .eyebrow",
-    ".panel-parchment__sheet h2",
-    ".panel-parchment__sheet .panel-body",
-    ".panel-estate",
-    ".estate-map",
-    ".estate-title",
-    ".estate-destination span",
-    ".panel-estate .panel-close",
+    ".site-footer__contact",
+    ".site-footer__links",
     ".not-found .story-shell",
     ".not-found .story-shell h1",
     ".not-found .back-link",
@@ -417,40 +356,31 @@ test("external links that open in a new tab declare rel=noopener", async () => {
   }
 });
 
-test("fallback About link and matching category copy remain usable before scene menu initialization", async () => {
+test("without scripts the footer shows the email and LinkedIn in Contact's place", async () => {
   const html = flatHtml(await readIndexHtml());
   assert.match(
     html,
     /<h1>[\s\S]*?class="hero-word">Alex<\/span>[\s\S]*?class="hero-word">Nava<\/span>[\s\S]*?<\/h1>/,
   );
-  const fallbackLink = html.match(/<a[^>]*href="#about-text"[^>]*>/)[0];
-  assert.match(fallbackLink, /aria-label="About"/);
-  assert.match(fallbackLink, /data-scene-fallback/);
-  assert.doesNotMatch(fallbackLink, / hidden/);
-  const fallbackContent = html.match(/<div class="scene-fallback-content"[^>]*>/)[0];
-  assert.match(fallbackContent, /id="about-text"/);
-  assert.match(fallbackContent, /data-scene-fallback/);
-  assert.doesNotMatch(fallbackContent, / hidden/);
-  const fallbackNav = html.match(/<nav class="estate-text-nav"[^>]*>([\s\S]*?)<\/nav>/)[1];
+  const footer = html.match(/<footer class="site-footer">([\s\S]*?)<\/footer>/)[1];
+  // Contact comes first, so its sibling rule reaches the links once it shows.
+  assert.ok(footer.indexOf("site-footer__contact") < footer.indexOf("site-footer__links"));
+  const links = footer.match(/<p class="site-footer__links" id="contact-links">([\s\S]*?)<\/p>/);
+  assert.ok(links, "the links follow Contact");
+  assert.doesNotMatch(links[0], / hidden/, "on show until contact.js collapses them");
+  const anchors = [
+    ...links[1].matchAll(/<a ([^>]*)><span class="site-footer__label">([^<]+)<\/span><\/a>/g),
+  ];
   assert.deepEqual(
-    [...fallbackNav.matchAll(/href="#([^"]+)"/g)].map((m) => m[1]),
-    ["profile-text", "experience-text", "contact-text"],
+    anchors.map(([, , label]) => label),
+    ["alexonava@gmail.com", "LinkedIn"],
   );
-  assert.match(html, /<button[^>]*class="[^"]*scene-entry"[^>]* hidden>/);
-  const text = (value) =>
-    value
-      .replace(/<[^>]*>/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-  for (const category of ["profile", "experience", "contact"]) {
-    const inline = html.match(
-      new RegExp(`id="${category}-text"[^>]*>[\\s\\S]*?<p>([\\s\\S]*?)</p>`),
-    )[1];
-    const dialog = html.match(
-      new RegExp(`id="panel-${category}"[\\s\\S]*?<p class="panel-body">([\\s\\S]*?)</p>`),
-    )[1];
-    assert.equal(text(inline), text(dialog), `${category} fallback wording drifted`);
-  }
+  assert.equal(anchors[0][1], 'class="site-footer__link" href="mailto:alexonava@gmail.com"');
+  assert.equal(
+    anchors[1][1],
+    'class="site-footer__link" href="https://www.linkedin.com/in/alex-nava/" target="_blank" rel="noopener"',
+  );
+  assert.doesNotMatch(html, /data-scene-fallback|scene-entry|about-text|scene-fallback-content/);
 });
 
 test("homepage modification metadata matches its public Markdown equivalent", async () => {
@@ -479,7 +409,7 @@ test("personal metadata stays consistent and scene discovery uses inert metadata
   assert.doesNotMatch(html, /rel="prefetch"[^>]*scene\.js/);
 });
 
-test("the first-paint hero, action cursors, microcopy and paper copy stay legible", async () => {
+test("the first-paint hero, action cursors and microcopy stay legible", async () => {
   const styles = await readStyles();
   assert.doesNotMatch(
     styles,
@@ -497,45 +427,6 @@ test("the first-paint hero, action cursors, microcopy and paper copy stay legibl
     /font-size:\s*(?:[0-9](?:\.[0-9]+)?|1[01](?:\.[0-9]+)?)px/,
     "user-facing microcopy must not fall below 12px",
   );
-  // The one top-level sheet rule holds every paper's height at all widths but
-  // two: desktops' larger letter, taller for every category alike, and small
-  // landscape phones, whose screens are shorter than it: there the vignette
-  // goes back beside the copy and the sheet keeps its content's height.
-  const baseHeight = Number(
-    cssRule(styles, ".panel-parchment__sheet").match(/min-height:\s*(\d+)px;/)[1],
-  );
-  const letter = mediaBlock(styles, "(min-width: 701px) and (min-height: 501px)");
-  const letterHeight = Number(
-    letter.match(/\.panel-parchment__sheet\s*\{[^}]*min-height:\s*(\d+)px;/)[1],
-  );
-  assert.ok(letterHeight > baseHeight, `the letter is taller (${letterHeight}px)`);
-  const shortLandscape = mediaBlock(
-    styles,
-    "(orientation: landscape) and (max-height: 500px) and (max-width: 700px)",
-  );
-  assert.match(shortLandscape, /\.panel-parchment__sheet\s*\{[^}]*min-height:\s*0;/);
-  assert.match(shortLandscape, /\.panel-vignette\s*\{[^}]*grid-column:\s*2;/);
-  assert.doesNotMatch(
-    styles
-      .replace(/\n\.panel-parchment__sheet\s*\{[^}]*\}/, "")
-      .replace(letter, "")
-      .replace(shortLandscape, ""),
-    /\.panel-parchment__sheet\s*\{[^}]*min-height/,
-    "no other later or media rule overrides the paper height",
-  );
-  // The eyebrow and body ink that render read on the paper.
-  const paper = cssRule(styles, ".panel-parchment__sheet::before").match(
-    /background-color:\s*(#[0-9a-f]{6});/i,
-  )[1];
-  const eyebrowColors = [...styles.matchAll(/\.panel-parchment__sheet \.eyebrow\s*\{([^}]*)\}/g)]
-    .map((match) => match[1].match(/(?:^|[;\s])color:\s*([^;]+);/)?.[1])
-    .filter(Boolean);
-  assert.equal(eyebrowColors.length, 1, "one eyebrow ink renders");
-  const bodyInk = cssRule(styles, ".panel-parchment__sheet .panel-body").match(
-    /(?:^|[;\s])color:\s*([^;]+);/,
-  )[1];
-  for (const ink of [eyebrowColors[0], bodyInk])
-    assert.ok(contrast(color(styles, ink), paper) >= 4.5, `${ink} on the paper`);
 });
 
 test("the hero backdrop fades to transparent before every edge of its box", async () => {
@@ -607,13 +498,10 @@ test("main clips the hero backdrop's horizontal overflow so phones keep a device
 test("every contact address sits inside Cloudflare email_off markers", async () => {
   const html = flatHtml(await readIndexHtml());
   const wrapped =
-    html.match(/<!--email_off--><a [^>]*href="mailto:[^"]+"[^>]*>[^<]+<\/a><!--\/email_off-->/g) ||
-    [];
-  assert.equal(
-    wrapped.length,
-    2,
-    "the fallback Contact section and Contact dialog keep literal links",
-  );
+    html.match(
+      /<!--email_off--><a [^>]*href="mailto:[^"]+"[^>]*><span[^>]*>[^<]+<\/span><\/a><!--\/email_off-->/g,
+    ) || [];
+  assert.equal(wrapped.length, 1, "Contact's email keeps a literal link");
   const outside = html.replace(/<!--email_off-->[\s\S]*?<!--\/email_off-->/g, "");
   assert.doesNotMatch(outside, /mailto:|[\w.+-]+@[\w-]+\.[a-z]{2,}/i);
 });
@@ -637,51 +525,32 @@ test("variable font faces supply real weights", async () => {
   ];
   assert.ok(fontUrls.length >= 4);
   for (const url of fontUrls) await access(path.join(projectRoot, url));
-  for (const rule of [
-    /\.hero h1\s*\{[^}]*font-weight:\s*700;[^}]*font-synthesis-weight:\s*none;/,
-    /\.estate-title\s*\{[^}]*font: 600[^}]*font-synthesis-weight:\s*none;/,
-    /\.estate-destination span\s*\{[^}]*font: 600[^}]*font-synthesis-weight:\s*none;/,
-  ]) {
-    assert.match(styles, rule);
-  }
+  assert.match(styles, /\.hero h1\s*\{[^}]*font-weight:\s*700;[^}]*font-synthesis-weight:\s*none;/);
 });
 
 test("forced colors and high-contrast modes keep system colors and the system cursor", async () => {
   const styles = await readStyles();
   assert.doesNotMatch(styles, /forced-color-adjust:\s*none/);
-  assert.match(styles, /\.panel-overlay\s*\{\s*cursor:\s*auto;\s*\}/);
   assert.match(
     styles,
     /@media \(forced-colors: active\), \(prefers-contrast: more\)\s*\{\s*html,\s*body\s*\{\s*cursor:\s*auto;/,
   );
 });
 
-test("no-JavaScript fallback links stay legible on the night", async () => {
+test("the email and LinkedIn read at Contact's tier, underlined, with or without scripts", async () => {
   const styles = await readStyles();
-  const ink = cssRule(styles, ".scene-fallback-content a").match(/(?:^|[;\s])color:\s*([^;]+);/)[1];
-  assert.ok(contrast(color(styles, ink), color(styles, "var(--night-900)")) >= 4.5, ink);
-});
-
-test("the no-JavaScript About starts below the fold with display headings and 44px links", async () => {
-  const styles = await readStyles();
-  // The desktop hero ends 90px above the fold; the fallback clears it.
-  const heroShortfall = Number(
-    cssRule(styles, ".hero").match(/min-height:\s*calc\(100svh - (\d+)px\);/)[1],
+  assert.match(cssRule(styles, ".site-footer__links"), /color:\s*var\(--text-nav\);/);
+  const nav = color(styles, "var(--text-nav)");
+  assert.ok(contrast(nav, color(styles, "var(--night-900)")) >= 4.5, nav);
+  const link = cssRule(styles, ".site-footer__links .site-footer__link");
+  assert.match(link, /text-decoration:\s*underline;/);
+  assert.match(link, /text-decoration-thickness:\s*1px;/);
+  assert.match(link, /text-underline-offset:\s*4px;/);
+  // Real hover brightens the underline, as the shared rule brightens the text.
+  assert.match(
+    mediaBlock(styles, "(hover: hover)"),
+    /\.site-footer__links \.site-footer__link:hover\s*\{\s*text-decoration-color:/,
   );
-  const fallback = cssRule(styles, ".scene-fallback-content");
-  const [marginTop] = fallback
-    .match(/margin:\s*(\d+)px auto 0;/)
-    .slice(1)
-    .map(Number);
-  assert.ok(marginTop >= heroShortfall, `${marginTop}px clears the hero's ${heroShortfall}px`);
-  const headings = cssRule(styles, ".scene-fallback-content :is(h2, h3)");
-  assert.match(headings, /font-family:\s*var\(--font-display\);/);
-  assert.match(headings, /font-weight:\s*500;/);
-  assert.ok(contrast(headings.match(/color:\s*(#[0-9a-f]{6});/i)[1], "#0c1016") >= 4.5);
-  const link = cssRule(styles, ".scene-fallback-content a");
-  assert.match(link, /display:\s*inline-flex;/);
-  assert.match(link, /align-items:\s*center;/);
-  assert.match(link, /min-height:\s*44px;/);
 });
 
 test("the skip link clears the notch, is a 44px target and hides wholly above any inset", async () => {
@@ -707,40 +576,9 @@ test("reduced transparency keeps the hero's text scrim", async () => {
   assert.doesNotMatch(transparency, /\.hero-minimal::before/, "the name keeps its scrim");
 });
 
-test("paper copy wraps without orphans and dialogs centre beside a classic scrollbar", async () => {
+test("the 404's copy wraps without orphans", async () => {
   const styles = await readStyles();
-  assert.match(cssRule(styles, ".panel-parchment__sheet h2"), /text-wrap:\s*balance;/);
-  for (const selector of [".panel-parchment__sheet .panel-body", ".not-found .story-text"])
-    assert.match(cssRule(styles, selector), /text-wrap:\s*pretty;/, selector);
-  const overlay = styles.match(/\n\.panel-overlay\s*\{[^}]*position:\s*fixed;[^}]*\}/)[0];
-  assert.match(overlay, /scrollbar-gutter:\s*stable both-edges;/);
-});
-
-test("the 3:2 estate map fits short laptop and landscape-phone viewports", async () => {
-  const styles = flatCss(await readStyles());
-  assert.match(
-    styles,
-    /\.panel-overlay\s*\{[^}]*padding:\s*max\(24px, env\(safe-area-inset-top\)\)[^;]*max\(24px, env\(safe-area-inset-bottom\)\)/,
-  );
-  assert.match(
-    styles,
-    /\.panel-estate\s*\{[^}]*width:\s*min\(100%, 960px, calc\(\(100svh - 48px\) \* 1\.5\)\);/,
-  );
-  assert.match(
-    styles,
-    /@media \(orientation: landscape\) and \(max-height: 500px\)\s*\{\s*\.panel-estate\s*\{\s*width:\s*min\(\s*100%,\s*960px,\s*calc\(\(100svh - max\(8px, env\(safe-area-inset-top\)\) - max\(10px, env\(safe-area-inset-bottom\)\)\) \* 1\.5\)\s*\);/,
-  );
-  // The portrait map below 600px keeps its own width after the caps.
-  const cap = styles.lastIndexOf("(100svh - max(8px");
-  const portrait = styles.indexOf(".panel-estate { width: min(100%, 440px); }");
-  assert.ok(cap > 0 && portrait > cap);
-  // Only portrait phones take the 2:3 map: a 568x320 landscape phone keeps the
-  // 3:2 map under its short-viewport cap, which the 2:3 map would overflow.
-  const portraitMap = mediaBlock(styles, "(max-width: 600px) and (orientation: portrait)");
-  assert.match(portraitMap, /\.panel-estate \{ width: min\(100%, 440px\); \}/);
-  assert.match(portraitMap, /aspect-ratio: 2 \/ 3;/);
-  assert.match(portraitMap, /estate-map-portrait\.webp/);
-  assert.equal(mediaBlock(styles, "(max-width: 600px)").includes("aspect-ratio"), false);
+  assert.match(cssRule(styles, ".not-found .story-text"), /text-wrap:\s*pretty;/);
 });
 
 test("phones do not gain a phantom scroll below the small-viewport hero", async () => {
@@ -774,7 +612,7 @@ test("modern iPhones open full-bleed: night to every edge, no bounce, matching b
   // The canvas's buffer follows the full-bleed container (scene-bootstrap.test.mjs).
 });
 
-test("fixed chrome and dialogs clear left and right safe-area insets", async () => {
+test("fixed chrome clears left and right safe-area insets", async () => {
   const styles = await readStyles();
   assert.match(
     styles,
@@ -784,32 +622,19 @@ test("fixed chrome and dialogs clear left and right safe-area insets", async () 
   assert.match(footer, /right:\s*max\(20px, calc\(env\(safe-area-inset-right\) \+ 8px\)\);/);
   assert.match(footer, /bottom:\s*max\(30px, calc\(22px \+ env\(safe-area-inset-bottom\)\)\);/);
   assert.match(footer, /left:\s*max\(20px, calc\(env\(safe-area-inset-left\) \+ 8px\)\);/);
-  const sidePaddings = [...styles.matchAll(/\.panel-overlay\s*\{[^}]*padding:([^;]+);/g)]
-    .map((match) => match[1].trim())
-    .filter((padding) => padding.includes("safe-area-inset-left"));
-  assert.deepEqual(
-    sidePaddings.map((padding) => padding.match(/^max\((\d+px)/)[1]),
-    ["24px", "8px"],
-    "the base and short-landscape overlays pad for side insets",
-  );
-  for (const padding of sidePaddings) {
-    assert.match(
-      padding,
-      /max\(\d+px, env\(safe-area-inset-right\)\)\s+max\(\d+px, env\(safe-area-inset-bottom\)\)\s+max\(\d+px, env\(safe-area-inset-left\)\)$/,
-    );
-  }
 });
 
 test("landmarks and heading levels describe the page structure", async () => {
   const html = await readIndexHtml();
   const styles = await readStyles();
-  assert.match(html, /<footer class="site-footer">[\s\S]*?data-panel="about"[\s\S]*?<\/footer>/);
-  const fallback = html.match(/<div class="scene-fallback-content"[\s\S]*?<\/main>/)[0];
+  assert.match(
+    html,
+    /<footer class="site-footer">[\s\S]*?aria-controls="contact-links"[\s\S]*?<\/footer>/,
+  );
+  // The name is the page's one heading.
   assert.deepEqual(
-    [...fallback.matchAll(/<(h[1-6])>([^<]+)<\/h[1-6]>/g)].map(
-      (match) => `${match[1]} ${match[2]}`,
-    ),
-    ["h2 About", "h3 Profile", "h3 Experience", "h3 Contact"],
+    [...html.matchAll(/<(h[1-6])[\s>]/g)].map((match) => match[1]),
+    ["h1"],
   );
 
   const notFound = await readNotFoundHtml();
@@ -836,13 +661,15 @@ test("social previews describe the share image", async () => {
   assert.ok(html.includes(`<meta name="twitter:image:alt" content="${alt}" />`));
 });
 
-test("About is the only footer control and keeps the corner clear", async () => {
+test("Contact and its two links are the footer's only controls, and the corner stays clear", async () => {
   const html = await readIndexHtml();
-  const footer = html.match(/<footer class="site-footer">([\s\S]*?)<\/footer>/)?.[1] || "";
-  assert.match(footer, /href="#about-text"[^>]*data-scene-fallback/);
-  assert.match(footer, /data-panel="about"[^>]*aria-controls="panel-about"/);
-  assert.equal((footer.match(/>About<\/span>/g) || []).length, 2);
-  assert.doesNotMatch(footer, /mailto:|Email/);
+  const footer =
+    flatHtml(html).match(/<footer class="site-footer">([\s\S]*?)<\/footer>/)?.[1] || "";
+  assert.equal((footer.match(/<button/g) || []).length, 1);
+  assert.match(footer, /^<button[^>]*class="site-footer__link site-footer__contact"/);
+  const anchors = footer.match(/<a [^>]*>/g) || [];
+  assert.equal(anchors.length, 2, "only the email and LinkedIn");
+  for (const anchor of anchors) assert.match(anchor, /^<a class="site-footer__link" href=/);
   const safeArea = html.match(/<div class="bottom-bar"[\s\S]*?<\/div>/)[0];
   assert.match(safeArea, /aria-hidden="true"/);
   assert.doesNotMatch(safeArea, /<button|<a /);
@@ -866,8 +693,8 @@ test("footer controls keep 44px targets without blocking the scene", async () =>
   // Touch browsers keep :hover after a tap, so only the pressed state stays bright.
   const hover = mediaBlock(styles, "(hover: hover)");
   assert.match(hover, /\.site-footer__link:hover\s*\{\s*color:\s*var\(--text\);/);
-  assert.match(hover, /\.site-footer__about:hover\s*\{[^}]*text-decoration:\s*underline;/);
-  const footerHover = /\.site-footer__(?:link|about):hover/g;
+  assert.match(hover, /\.site-footer__contact:hover\s*\{[^}]*text-decoration:\s*underline;/);
+  const footerHover = /\.site-footer__(?:link|contact):hover/g;
   assert.equal((styles.match(footerHover) || []).length, (hover.match(footerHover) || []).length);
 
   const phone = mediaBlock(styles, "(max-width: 640px)");
@@ -876,11 +703,35 @@ test("footer controls keep 44px targets without blocking the scene", async () =>
     /\.site-footer\s*\{[^}]*right:\s*max\(\d+px, calc\(env\(safe-area-inset-right\) \+ 8px\)\);[^}]*left:\s*max\(\d+px, calc\(env\(safe-area-inset-left\) \+ 8px\)\);/,
   );
 
+  // Every target sits one 44px row from the next: stacked on phones (18px
+  // lines), side by side past the two 14px overhangs elsewhere.
+  const line = Number(footer.match(/line-height:\s*(\d+)px;/)[1]);
+  const stack = cssRule(phone, ".site-footer__links");
+  assert.match(stack, /flex-direction:\s*column;/);
+  assert.equal(line + Number(stack.match(/gap:\s*(\d+)px;/)[1]), 44, "between the links");
+  const above = Number(
+    cssRule(phone, ".site-footer__contact:not([hidden]) + .site-footer__links").match(
+      /margin:\s*0 0 (\d+)px;/,
+    )[1],
+  );
+  assert.equal(
+    line + above + Number(footer.match(/row-gap:\s*(\d+)px;/)[1]),
+    44,
+    "and above Contact",
+  );
+  assert.ok(Number(cssRule(styles, ".site-footer__links").match(/gap:\s*(\d+)px;/)[1]) >= 28);
+  // Disclosed on wider screens they follow Contact on its line, after a hairline.
+  const beside = cssRule(styles, ".site-footer__contact:not([hidden]) + .site-footer__links");
+  assert.match(beside, /grid-column:\s*2;/);
+  assert.match(beside, /margin-left:\s*26px;/);
+  assert.match(beside, /padding-left:\s*26px;/);
+  assert.match(beside, /border-left:\s*1px solid rgba\(229, 228, 223, 0\.28\);/);
+
   const forced = styles.slice(styles.indexOf("/* Windows High Contrast"));
-  assert.match(forced, /a,\s*\.site-footer__about\s*\{\s*color:\s*LinkText;/);
+  assert.match(forced, /a,\s*\.site-footer__contact\s*\{\s*color:\s*LinkText;/);
 });
 
-test("the footer's About keeps a brighter label over an edgeless text scrim of its own", async () => {
+test("Contact and its links keep a brighter label over edgeless text scrims of their own", async () => {
   const styles = await readStyles();
   // A tier above the meta text, 14px, and well clear of the night.
   const nav = styles.match(/--text-nav:\s*(#[0-9a-f]{6});/i)[1];
@@ -889,32 +740,50 @@ test("the footer's About keeps a brighter label over an edgeless text scrim of i
   assert.ok(contrast(nav, night) > contrast(meta, night));
   assert.ok(contrast(nav, night) >= 12, `${contrast(nav, night)}`);
   assert.match(cssRule(styles, ".site-footer"), /font-size:\s*14px;\s*line-height:\s*18px;/);
-  const about = cssRule(styles, ".site-footer__about");
-  assert.match(about, /position:\s*relative;/);
-  assert.match(about, /isolation:\s*isolate;/);
-  assert.match(about, /color:\s*var\(--text-nav\);/);
+  for (const selector of [".site-footer__contact", ".site-footer__links"]) {
+    const body = cssRule(styles, selector);
+    assert.match(body, /position:\s*relative;/, selector);
+    assert.match(body, /isolation:\s*isolate;/, selector);
+    assert.match(body, /color:\s*var\(--text-nav\);/, selector);
+  }
+  assert.match(
+    cssRule(styles, '.site-footer__contact[aria-expanded="true"]'),
+    /color:\s*var\(--text\);/,
+  );
   // The 44px target hangs around the 18px line; the ring stays 2px clear of it.
   assert.match(cssRule(styles, ".site-footer__link"), /margin:\s*-13px -14px;/);
   assert.match(cssRule(styles, ".site-footer__link:focus-visible"), /outline-offset:\s*-11px;/);
-  // The scrim sits behind the label inside its own stacking context, wider
-  // and taller than the target so its corners are covered, and reaches
+  // The scrims sit behind the text inside their own stacking contexts, wider
+  // and taller than the targets so their corners are covered, and reach
   // transparent before every edge: no plate, no straight edge.
-  const scrim = cssRule(styles, ".site-footer__about::before");
-  assert.match(scrim, /z-index:\s*-1;/);
-  assert.match(scrim, /pointer-events:\s*none;/);
-  assert.ok(Number(scrim.match(/width:\s*(\d+)px;/)[1]) >= 2 * 67);
-  assert.ok(Number(scrim.match(/height:\s*(\d+)px;/)[1]) >= 2 * 44);
-  assert.match(scrim, /radial-gradient\(\s*closest-side,\s*rgba\(7, 10, 18, 0\.5\) 0%/);
-  assert.match(scrim, /rgba\(7, 10, 18, 0\) 100%\s*\);/);
-  // Forced colours drop it with the other scrims; reduced transparency keeps it
-  // with the hero's, as both keep text legible.
+  const [scrim] = cssRules(
+    styles,
+    (list) =>
+      list
+        .split(",")
+        .map((part) => part.trim())
+        .join() === ".site-footer__contact::before,.site-footer__links::before",
+  );
+  assert.ok(scrim, "one shared scrim rule");
+  assert.match(scrim.body, /z-index:\s*-1;/);
+  assert.match(scrim.body, /pointer-events:\s*none;/);
+  assert.match(scrim.body, /radial-gradient\(\s*closest-side,\s*rgba\(7, 10, 18, 0\.5\) 0%/);
+  assert.match(scrim.body, /rgba\(7, 10, 18, 0\) 100%\s*\);/);
+  const contact = cssRule(styles, ".site-footer__contact::before");
+  assert.ok(Number(contact.match(/width:\s*(\d+)px;/)[1]) >= 2 * 67);
+  assert.ok(Number(contact.match(/height:\s*(\d+)px;/)[1]) >= 2 * 44);
+  const links = cssRule(styles, ".site-footer__links::before");
+  assert.ok(Number(links.match(/width:\s*calc\(100% \+ (\d+)px\);/)[1]) >= 2 * 28);
+  assert.ok(Number(links.match(/height:\s*calc\(100% \+ (\d+)px\);/)[1]) >= 44);
+  // Forced colours drop them with the other scrims; reduced transparency keeps
+  // them with the hero's, as all keep text legible.
   assert.match(
     mediaBlock(styles, "(forced-colors: active)"),
-    /\.site-footer__about::before,[^{]*\{\s*display:\s*none;/,
+    /\.site-footer__contact::before,\s*\.site-footer__links::before,[^{]*\{\s*display:\s*none;/,
   );
   assert.doesNotMatch(
     mediaBlock(styles, "(prefers-reduced-transparency: reduce)"),
-    /site-footer__about/,
+    /site-footer__/,
   );
 });
 
@@ -983,96 +852,18 @@ test("on tablets the intro keeps its own text scrim", async () => {
   );
 });
 
-test("the estate map's controls are drawn in its ink", async () => {
-  const styles = await readStyles();
-  // Hairline rules either side of the title, on one line.
-  assert.match(cssRule(styles, ".estate-title"), /white-space:\s*nowrap;/);
-  assert.match(
-    styles,
-    /\.estate-title::before,\s*\.estate-title::after\s*\{[^}]*height:\s*1px;[^}]*content:\s*"";/,
-  );
-  // Close: a hairline ink ring with no pale disc, tinted only under real
-  // hover, focus or a press.
-  const close = cssRule(styles, ".panel-estate .panel-close");
-  assert.match(close, /background:\s*transparent;/);
-  assert.match(close, /box-shadow:\s*none;/);
-  assert.match(close, /border-color:\s*rgba\(48, 37, 24, 0\.42\);/);
-  // 16px from the visible paper, not the box: the box's outer 2% is the art's
-  // torn edge, so the ring and its 2px focus ring 3px out keep clear of it.
-  assert.match(close, /top:\s*calc\(16px \+ 2%\);/);
-  assert.match(close, /right:\s*calc\(16px \+ 2%\);/);
-  assert.match(
-    mediaBlock(styles, "(hover: hover)"),
-    /\.panel-estate \.panel-close:hover\s*\{\s*background:/,
-  );
-  assert.match(cssRule(styles, ".panel-estate .panel-close:focus-visible"), /background:/);
-  // A destination's wash is a radial gradient transparent before the target's
-  // edge, for hover, focus and a press alike.
-  const destination = cssRule(styles, ".estate-destination");
-  for (const name of ["--estate-wash", "--estate-wash-press"])
-    assert.match(
-      destination,
-      new RegExp(
-        `${name}:\\s*radial-gradient\\(\\s*closest-side,[^;]*rgba\\(78, 54, 26, 0\\)\\s*\\);`,
-      ),
-      name,
-    );
-  assert.match(cssRule(styles, ".estate-destination:focus-visible"), /var\(--estate-wash\)/);
-  assert.match(
-    mediaBlock(styles, "(hover: none), (pointer: coarse)"),
-    /\.panel-estate \.estate-destination:active\s*\{\s*background:\s*var\(--estate-wash-press\);/,
-  );
-});
-
-test("papers take a larger letter on desktops and Back is written in ink", async () => {
-  const styles = await readStyles();
-  const back = cssRule(styles, ".panel-parchment .panel-back");
-  assert.match(back, /display:\s*inline-flex;/);
-  assert.match(back, /background:\s*transparent;/);
-  assert.match(back, /border-color:\s*transparent;/);
-  assert.match(back, /text-decoration:\s*underline;/);
-  assert.match(back, /min-width:\s*64px;/);
-  assert.match(cssRule(styles, ".panel-parchment .panel-back::before"), /content:\s*"\\2190";/);
-  // The arrow is drawn, not read: Back keeps its accessible name.
-  const html = await readIndexHtml();
-  assert.equal(
-    (html.match(/class="panel-close panel-back" aria-label="Back to About">Back</g) || []).length,
-    3,
-  );
-  // Only desktops over 700px wide and 500px tall take the letter, so phones and
-  // small landscape phones keep their layouts.
-  const letter = mediaBlock(styles, "(min-width: 701px) and (min-height: 501px)");
-  assert.match(letter, /\.panel-parchment\s*\{\s*width:\s*min\(100%, 860px\);/);
-  assert.match(letter, /\.panel-vignette\s*\{\s*width:\s*220px;/);
-  assert.match(
-    letter,
-    /\.panel-parchment__sheet h2\s*\{\s*font-size:\s*clamp\(40px, 4\.6vw, 62px\);/,
-  );
-  assert.ok(
-    Number(letter.match(/\.panel-parchment \.panel-back\s*\{\s*margin:\s*(\d+)px;/)[1]) > 24,
-  );
-});
-
-test("category copy stays minimal and matches its Markdown equivalent", async () => {
+test("the copy stays minimal and matches its Markdown equivalent", async () => {
   const html = flatHtml(await readIndexHtml());
   const markdown = await readFile(path.join(projectRoot, "public", "index.md"), "utf8");
-  const profile = "This is my personal corner of the web.";
-  const experience = "Analytics, reporting, remediation, and controls, across banking and health.";
-  for (const [id, sentence] of [
-    ["profile", profile],
-    ["experience", experience],
-  ]) {
-    const escaped = sentence.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    assert.match(html, new RegExp(`id="${id}-text"><h3>[^<]+</h3><p>${escaped}</p></section>`));
-    assert.ok(html.includes(`<p class="panel-body">${sentence}</p>`), `${id} dialog copy`);
-    assert.ok(markdown.includes(`\n${sentence}\n`), `${id} Markdown copy`);
-  }
-  assert.equal(
-    html.split("A little about me and what I’m working on.").length - 1,
-    1,
-    "only the hero keeps the intro",
-  );
-  assert.match(html, /id="panel-experience-title">My background\.<\/h2>/);
+  const intro = "A little about me and what I’m working on.";
+  assert.equal(html.split(intro).length - 1, 1, "only the hero keeps the intro");
+  assert.ok(markdown.includes(`\n${intro}\n`));
+  // Contact's two links, in the page and in Markdown.
+  assert.ok(markdown.includes("[alexonava@gmail.com](mailto:alexonava@gmail.com)"));
+  assert.ok(html.includes('href="https://www.linkedin.com/in/alex-nava/"'));
+  assert.ok(markdown.includes("(https://www.linkedin.com/in/alex-nava/)"));
+  for (const page of [html, markdown])
+    assert.doesNotMatch(page, /\bExperience\b|personal corner|analytics|banking/i);
 });
 
 test("structured data describes the person without new facts and dates match Markdown", async () => {
@@ -1084,11 +875,7 @@ test("structured data describes the person without new facts and dates match Mar
   assert.equal(data["@type"], "ProfilePage");
   assert.equal(data.description, "Alex Nava’s personal website");
   assert.equal(data.mainEntity["@type"], "Person");
-  assert.equal(
-    data.mainEntity.description,
-    "Background in analytics, reporting, remediation, and controls across banking and health.",
-  );
-  assert.deepEqual(Object.keys(data.mainEntity).sort(), ["@type", "description", "name", "url"]);
+  assert.deepEqual(Object.keys(data.mainEntity).sort(), ["@type", "name", "url"]);
   assert.equal(data.dateModified, markdown.match(/^dateModified: (\S+)$/m)[1]);
   assert.match(html, /<title>Alex Nava<\/title>/);
 });
@@ -1113,149 +900,26 @@ test("very wide screens anchor the hero and footer to a gutter beyond the 1600px
   );
 });
 
-test("one shared backdrop dims the scene steadily across map and paper swaps", async () => {
+test("controls brighten on real hover and press without lifting; the 404's paper keeps one focus ink", async () => {
   const styles = await readStyles();
-  const backdrop = cssRule(styles, "body::after");
-  assert.match(backdrop, /position:\s*fixed;/);
-  assert.match(backdrop, /inset:\s*0;/);
-  assert.match(backdrop, /z-index:\s*19;/, "just below the z-index 20 overlays");
-  assert.match(backdrop, /pointer-events:\s*none;/);
-  assert.match(backdrop, /opacity:\s*0;/);
-  // The dim fades in over 440 ms, inside index.js's 450 ms dialog hold.
-  assert.match(
-    cssRule(styles, "body[data-panel-open]::after"),
-    /opacity:\s*1;\s*transition-duration:\s*440ms;/,
-  );
-  const overlay = styles.match(/\n\.panel-overlay\s*\{[^}]*position:\s*fixed;[^}]*\}/)[0];
-  assert.match(overlay, /z-index:\s*20;/);
-  assert.match(overlay, /inset:\s*0;/, "the overlay still fills the viewport for backdrop clicks");
-  assert.match(overlay, /background:\s*transparent;/);
-  const dim = backdrop.match(/rgba\([^)]*\)/)[0];
-  assert.equal(styles.split(dim).length - 1, 1, "the dim is painted once");
-  assert.match(
-    styles,
-    /@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?body::after\s*\{\s*transition:\s*none;/,
-  );
-});
-
-test("dialog polish keeps readable ink, touch cues and paper-safe controls", async () => {
-  const styles = await readStyles();
-  const paper = cssRule(styles, ".panel-parchment__sheet::before").match(
-    /background-color:\s*(#[0-9a-f]{6});/i,
-  )[1];
-  const email = cssRule(styles, "#panel-contact .panel-body a");
-  assert.match(email, /display:\s*inline-block;/);
-  assert.ok(contrast(email.match(/(?:^|[;\s])color:\s*(#[0-9a-f]{6});/i)[1], paper) >= 4.5);
-
-  const touch = mediaBlock(styles, "(hover: none), (pointer: coarse)");
-  assert.match(touch, /\.estate-destination span\s*\{[^}]*text-decoration:\s*underline;/);
-  assert.match(touch, /\.panel-estate \.estate-destination:active\s*\{[^}]*background:/);
-  // The touch underline shares the base label rule's specificity, so it must
-  // follow that rule in source order to keep winning.
-  const baseLabel = styles.search(/^\.estate-destination span\s*\{/m);
-  const touchLabel = styles.search(
-    /@media \(hover: none\), \(pointer: coarse\)\s*\{[^@]*?\.estate-destination span\s*\{[^}]*text-decoration:\s*underline;/,
-  );
-  assert.ok(
-    baseLabel >= 0 && touchLabel > baseLabel,
-    "the touch underline follows the base label rule",
-  );
-  const unscoped = styles.replace(/@media \(hover: hover\)\s*\{(?:[^{}]*\{[^}]*\})*\s*\}/g, "");
-  assert.equal(
-    unscoped.match(/\.estate-destination:hover span/),
-    null,
-    "the map underline follows real hover only",
-  );
-  // So does the destination's tint, so a tap leaves none behind.
-  assert.doesNotMatch(unscoped, /\.estate-destination:hover[^{]*\{[^}]*background/);
-  assert.match(
-    styles,
-    /@media \(hover: hover\)\s*\{\s*\.estate-destination:hover\s*\{\s*background:/,
-  );
-
-  // Back clears the paper's 24px deckled edge, so it sits wholly on the paper.
-  const back = Number(
-    cssRule(styles, ".panel-parchment .panel-back").match(/margin:\s*(\d+)px;/)[1],
-  );
-  assert.ok(back > 24, `Back sits ${back}px in`);
-  assert.doesNotMatch(
-    styles,
-    /\.panel-parchment \.panel-close\s*\{/,
-    "no second margin rule for Back",
-  );
-});
-
-test("the Contact address is a 44px target whose padding never moves its line", async () => {
-  const styles = await readStyles();
-  const email = cssRule(styles, "#panel-contact .panel-body a");
-  const [, smallest, lineHeight] = email.match(
-    /font:\s*500 clamp\((\d+)px,[^)]*\)\s*\/\s*([\d.]+)\s/,
-  );
-  const padding = Number(email.match(/padding-block:\s*(\d+)px;/)[1]);
-  const [top, bottom] = email
-    .match(/margin-block:\s*([^;]+);/)[1]
-    .split(/\s+/)
-    .map((value) => Number.parseFloat(value));
-  assert.ok(
-    Number(smallest) * Number(lineHeight) + 2 * padding >= 44,
-    `${smallest}px x ${lineHeight} + 2 x ${padding}px reaches 44px`,
-  );
-  // The bottom margin takes the bottom padding back, so the line box keeps
-  // its depth below the baseline, and the address keeps its 8px gap above.
-  assert.equal(bottom, -padding);
-  assert.equal(top + padding, 8);
-  assert.doesNotMatch(email, /(?:^|[;\s])margin(?:-top|-bottom)?:/, "one margin declaration");
-  // Real hover deepens the underline; a press firms it on every device.
-  assert.match(
-    mediaBlock(styles, "(hover: hover)"),
-    /#panel-contact \.panel-body a:hover\s*\{\s*text-decoration-color:\s*currentColor;/,
-  );
-  assert.match(
-    cssRule(styles, "#panel-contact .panel-body a:active"),
-    /text-decoration-color:\s*currentColor;/,
-  );
-});
-
-test("controls tint on real hover, press deeper without lifting and share one paper focus ink", async () => {
-  const styles = await readStyles();
-  // Touch browsers keep :hover after a tap, so tints and lifts follow real
-  // hover; reduced motion may only cancel the lift.
+  // Touch browsers keep :hover after a tap, so tints follow real hover.
   const hover = mediaBlock(styles, "(hover: hover)");
   const reduced = mediaBlock(styles, "(prefers-reduced-motion: reduce)");
   // mediaBlock joins a query's blocks; each one leaves the sheet on its own.
   const outside = [hover, reduced]
     .flatMap((joined) => joined.split(/\n(?=@media )/))
     .reduce((sheet, block) => sheet.replace(block, ""), styles);
-  for (const selector of [".panel-close:hover", ".not-found .back-link:hover"]) {
+  for (const selector of [".site-footer__link:hover", ".not-found .back-link:hover"]) {
     assert.ok(cssRules(hover, (list) => list.includes(selector)).length > 0, selector);
     assert.ok(!outside.includes(selector), `${selector} only on real hover`);
   }
-  assert.match(
-    cssRule(styles, ".panel-close:focus-visible"),
-    /background:[^;]+;[^}]*transform:\s*translateY\(-1px\);/,
-    "keyboard focus keeps the tint and lift",
-  );
-  for (const selector of [
-    ".panel-close:active",
-    ".not-found .back-link:active",
-    ".site-footer__link:active",
-  ]) {
+  for (const selector of [".not-found .back-link:active", ".site-footer__link:active"]) {
     const body = cssRule(styles, selector);
     assert.ok(body, `${selector} has a pressed state`);
     assert.doesNotMatch(body, /translate/, `${selector} does not lift`);
   }
-  assert.match(cssRule(styles, ".panel-close:active"), /transform:\s*none;/);
-  assert.match(cssRule(styles, ".panel-estate .panel-close:active"), /background:/);
   assert.match(cssRule(styles, ".not-found .back-link"), /transition:[^;]*\bcolor 180ms ease;/);
-  // Only the estate destinations' background ever changes on .bottom-btn.
-  assert.match(cssRule(styles, ".bottom-btn"), /transition:\s*background-color 180ms ease;/);
-  for (const selector of [
-    ".bottom-btn",
-    ".panel-close",
-    ".site-footer__link",
-    ".not-found .back-link",
-    "#panel-contact .panel-body a",
-  ]) {
+  for (const selector of [".site-footer__link", ".not-found .back-link"]) {
     assert.ok(
       cssRules(reduced, (list) => list.split(",").some((part) => part.trim() === selector)).some(
         ({ body }) => /transition:\s*none;/.test(body),
@@ -1263,14 +927,12 @@ test("controls tint on real hover, press deeper without lifting and share one pa
       `${selector} is immediate for reduced motion`,
     );
   }
-  // Every focus ring on paper or the estate map takes one ink.
+  // Every focus ring on the paper takes one ink.
   const paperInks = cssRules(
     styles,
-    (selector) =>
-      selector.includes("focus-visible") &&
-      /panel-parchment|panel-estate|estate-destination|not-found/.test(selector),
+    (selector) => selector.includes("focus-visible") && selector.includes("not-found"),
   ).flatMap(({ body }) => [...body.matchAll(/#[0-9a-f]{6}/gi)].map(([ink]) => ink.toLowerCase()));
-  assert.ok(paperInks.length >= 4);
+  assert.ok(paperInks.length >= 1);
   assert.deepEqual([...new Set(paperInks)], ["#59472f"]);
 });
 
@@ -1289,14 +951,10 @@ test("selected text takes a warm wash that keeps its ink legible on the night an
       .join("")}`;
   };
   const night = cssRule(styles, "::selection");
-  const [paperRule] = cssRules(styles, (selector) =>
-    selector.split(",").some((part) => part.trim() === ".panel-parchment ::selection"),
-  );
-  assert.ok(paperRule, "paper has its own selection");
-  for (const scope of [".panel-estate ::selection", ".not-found .story-shell ::selection"])
-    assert.ok(paperRule.selector.includes(scope), scope);
-  const paper = cssRule(styles, ".panel-parchment__sheet::before").match(
-    /background-color:\s*(#[0-9a-f]{6});/i,
+  const paperRule = { body: cssRule(styles, ".not-found .story-shell ::selection") };
+  assert.ok(paperRule.body, "the 404's paper has its own selection");
+  const paper = cssRule(styles, ".not-found .story-shell::before").match(
+    /(#[0-9a-f]{6}) url\("\/images\/paper-grain\.webp"\)/i,
   )[1];
   for (const [body, ground] of [
     [night, color(styles, "var(--night-900)")],
@@ -1352,18 +1010,8 @@ test("the 404 is a centered cotton-paper sheet with dark ink", async () => {
   assert.match(cssRule(styles, ".not-found"), /display:\s*grid;\s*place-items:\s*center;/);
   const sheet = cssRule(styles, ".not-found .story-shell::before");
   const paper = sheet.match(/(#[0-9a-f]{6}) url\("\/images\/paper-grain\.webp"\)/i)[1];
-  // The dialogs' paper: their light layer first, over the same ivory.
-  const dialogLight = cssRule(styles, ".panel-parchment__sheet::before").match(
-    /linear-gradient\([^;]*?\)\)/,
-  )[0];
-  assert.match(sheet, /background:\s*linear-gradient\(/);
-  assert.ok(sheet.includes(dialogLight), "the 404 shares the dialogs' 115deg light");
-  assert.equal(
-    paper,
-    cssRule(styles, ".panel-parchment__sheet::before").match(
-      /background-color:\s*(#[0-9a-f]{6});/i,
-    )[1],
-  );
+  // A 115deg light over the ivory and its grain.
+  assert.match(sheet, /background:\s*linear-gradient\(115deg,/);
   assert.match(
     cssRule(styles, ".not-found .story-shell::after"),
     /border-image:\s*url\("\/images\/paper-edge\.webp"\)/,
@@ -1385,76 +1033,13 @@ test("the 404 is a centered cotton-paper sheet with dark ink", async () => {
 
 const root = new URL("../", import.meta.url);
 
-test("the scene opens About through the text button and keeps Contact inside the estate", async () => {
-  const html = flatHtml(await readFile(new URL("index.html", root), "utf8"));
-  const entry = html.match(/<button[^>]*class="[^"]*scene-entry"[\s\S]*?<\/button>/)[0];
-  assert.match(entry, /data-panel="about"/);
-  assert.match(entry, /aria-controls="panel-about"/);
-  assert.match(entry, /aria-label="About"/);
-  assert.match(entry, / hidden>/);
-  assert.match(entry, /<span class="about-link__label">About<\/span>/);
-  assert.doesNotMatch(entry, /<img|<canvas/);
-  assert.match(html, /href="#about-text"[^>]*data-scene-fallback>[\s\S]*?about-link__label/);
-  const primary = html.match(/<footer class="site-footer"[\s\S]*?<\/footer>/)[0];
-  assert.doesNotMatch(primary, /data-panel="contact"/);
-  for (const name of ["profile", "experience", "contact"]) {
-    assert.ok(html.includes(`aria-controls="panel-${name}"`));
-  }
-});
-
-test("estate destinations are labeled HTML buttons in keyboard order without floating icons", async () => {
-  const html = await readFile(new URL("index.html", root), "utf8");
-  const map = html.match(/<nav class="estate-destinations"[\s\S]*?<\/nav>/)[0];
-  const destinations = [...map.matchAll(/data-panel="([^"]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(destinations, ["profile", "experience", "contact"]);
-  assert.doesNotMatch(map, /<img|<canvas/);
-  for (const name of destinations) {
-    assert.ok(map.includes(`aria-controls="panel-${name}"`));
-    assert.ok(map.includes(`<span>${name[0].toUpperCase() + name.slice(1)}</span>`));
-  }
-});
-
-const categories = ["profile", "experience", "contact"];
-
-test("three distinct transparent paper vignettes share the 200 KiB section-paper budget", async () => {
+test("the 404's paper grain and edge stay within their 200 KiB budget", async () => {
   let total = 0;
   for (const name of ["paper-grain.webp", "paper-edge.webp"]) {
-    total += (await readFile(new URL(`images/${name}`, root))).length;
-  }
-  const hashes = new Set();
-  for (const category of categories) {
-    const bytes = await readFile(new URL(`images/paper-vignette-${category}.webp`, root));
+    const bytes = await readFile(new URL(`images/${name}`, root));
+    assert.equal(bytes.toString("ascii", 0, 4), "RIFF", name);
+    assert.equal(bytes.toString("ascii", 8, 12), "WEBP", name);
     total += bytes.length;
-    assert.equal(bytes.toString("ascii", 0, 4), "RIFF");
-    assert.equal(bytes.toString("ascii", 8, 12), "WEBP");
-    assert.equal(bytes.toString("ascii", 12, 16), "VP8X");
-    assert.ok(bytes[20] & 0x10, `${category} must preserve transparency`);
-    assert.equal(bytes.readUIntLE(24, 3) + 1, 420);
-    assert.equal(bytes.readUIntLE(27, 3) + 1, 420);
-    hashes.add(createHash("sha256").update(bytes).digest("hex"));
   }
-  assert.equal(hashes.size, 3, "each category must have its own illustration");
-  assert.ok(total <= 200 * 1024, `shared paper and vignettes use ${total} bytes`);
-});
-
-test("each child dialog owns one decorative noninteractive vignette without changing menu destinations", async () => {
-  const html = await readFile(new URL("index.html", root), "utf8");
-  for (const category of categories) {
-    const start = html.indexOf(`id="panel-${category}"`);
-    const next = html.indexOf('class="panel-overlay"', start + 1);
-    const panel = html.slice(start, next === -1 ? undefined : next);
-    const decoration = panel.match(/<div class="panel-vignette [^"]+"[^>]*>/g) || [];
-    assert.equal(decoration.length, 1, `${category} requires one decorative illustration`);
-    assert.ok(decoration[0].includes(`panel-vignette--${category}`));
-    assert.ok(decoration[0].includes('aria-hidden="true"'));
-    assert.doesNotMatch(decoration[0], /tabindex|role=|data-panel|aria-label/);
-    assert.ok(panel.includes('aria-label="Back to About"'));
-    assert.ok(panel.includes(`id="panel-${category}-title"`));
-  }
-  const menu = html.match(/<nav class="estate-destinations"[\s\S]*?<\/nav>/)[0];
-  assert.deepEqual(
-    [...menu.matchAll(/data-panel="([^"]+)"/g)].map((match) => match[1]),
-    categories,
-  );
-  assert.doesNotMatch(menu, /panel-vignette|<img|<canvas/);
+  assert.ok(total <= 200 * 1024, `the paper uses ${total} bytes`);
 });

@@ -71,7 +71,6 @@ import {
 import { createSceneRendering } from "./rendering.js";
 import {
   createDeferredQualityStep,
-  createPanelHold,
   createPixelRatioWatcher,
   createSceneFrameScheduler,
   createSceneResizeController,
@@ -120,8 +119,6 @@ const ORBIT_SPEED = 0.06;
     let sceneReadyMarked = false;
     // A failed authored model leaves the static title card and stops rendering.
     let sceneFailed = false;
-    // Dialogs hold rendering once their dim overlay has faded in (~440ms).
-    let panelHold = null;
     // A visitor pause (scene.setVisitorPaused) holds rendering once revealed.
     let visitorHold = null;
     // Behind a visitor pause, content changes (models, maps, shaders, fonts)
@@ -463,12 +460,14 @@ const ORBIT_SPEED = 0.06;
       // Set once the shader warm-up exists: a ground program that changes before
       // the reveal links through compileAsync instead of blocking the first draw.
       let warmGround = null;
-      // The name and intro, and About, on the canvas, in its UV (y up), where
+      // The name and intro, and the footer (Contact and, while it shows them,
+      // the email and LinkedIn), on the canvas, in its UV (y up), where
       // the ground's water eases off (mud-ground.js SLATE_WATER.text), and
-      // beside About the bark's lantern highlights pass the same knee (the tree
-      // takes these uniforms); the sky's reshaped banks ease out behind the name
-      // and intro too (estate-sky.js); measured on resize, on font loads and
-      // every 30th frame. While the walk hides the page there is no text to guard.
+      // beside the footer the bark's lantern highlights pass the same knee (the
+      // tree takes these uniforms); the sky's reshaped banks ease out behind the
+      // name and intro too (estate-sky.js); measured on resize, on font loads,
+      // every 30th frame and when the links show or hide. While the walk hides
+      // the page there is no text to guard.
       function measureGroundText() {
         const canvas = renderer.domElement?.getBoundingClientRect?.();
         const box = (text, selectors) => {
@@ -497,7 +496,7 @@ const ORBIT_SPEED = 0.06;
         if (canvas?.width && canvas.height)
           groundContacts.slateAspect.value = canvas.width / canvas.height;
         box(groundContacts.slateText.value, [".hero h1", ".hero-intro"]);
-        box(groundContacts.slateAbout.value, [".site-footer__about .about-link__label"]);
+        box(groundContacts.slateAbout.value, [".site-footer .site-footer__label"]);
       }
       subsystemRegistry.register({
         applyQuality(profile) {
@@ -875,9 +874,7 @@ const ORBIT_SPEED = 0.06;
           height,
           width,
         });
-        // Resizing clears the canvas; draw one frame behind an open dialog or
-        // a visitor pause.
-        panelHold?.redraw();
+        // Resizing clears the canvas; draw one frame behind a visitor pause.
         visitorHold?.redraw();
         frameScheduler?.invalidate();
         cameraTour?.prepareNext();
@@ -923,7 +920,7 @@ const ORBIT_SPEED = 0.06;
         viewport.scrollTarget = Math.min(window.scrollY / (1.8 * viewport.height), 1.25);
         // The hero scrolls over the fixed canvas: the next frame re-measures
         // the ground's text guard (measuring here would flush layout per event).
-        groundTextScrolled = true;
+        groundTextStale = true;
         frameScheduler?.invalidate();
       };
       window.addEventListener("resize", onWindowResize);
@@ -934,7 +931,18 @@ const ORBIT_SPEED = 0.06;
       const vortexEye = new Vector3();
       let debugRenderFrameCount = 0,
         groundTextFrames = 0,
-        groundTextScrolled = false;
+        groundTextStale = false;
+      // Contact shows and hides its links (ui/contact.js): the next frame
+      // guards them as it does the label.
+      const footerLinksObserver =
+        typeof ResizeObserver === "function"
+          ? new ResizeObserver(() => {
+              groundTextStale = true;
+              frameScheduler?.invalidate();
+            })
+          : null;
+      for (const links of document.querySelectorAll(".site-footer__links"))
+        footerLinksObserver?.observe(links);
       let debugRenderWindowStart = null;
       let firstFrameDrawn = false;
       // Governor steps link their programs at once and apply on a tour cut.
@@ -954,8 +962,8 @@ const ORBIT_SPEED = 0.06;
         timestamp,
       }) {
         const frameStart = firstFrameDrawn ? 0 : sceneNow();
-        if (++groundTextFrames % 30 === 1 || groundTextScrolled) {
-          groundTextScrolled = false;
+        if (++groundTextFrames % 30 === 1 || groundTextStale) {
+          groundTextStale = false;
           measureGroundText();
         }
         // Samples are rAF intervals, not render cost; take them only while the
@@ -973,13 +981,12 @@ const ORBIT_SPEED = 0.06;
               })
             : null;
         if (sampledProfile) adaptiveSteps.queue(sampledProfile, nowMs);
-        // The walk holds the tour as a dialog does: its shot and hold stay put.
-        const walkHeld = walk?.holdsTour === true;
+        // The walk holds the tour: its shot and hold stay put.
         const tourPhase =
           cameraTour?.update({
             elapsedSeconds: elapsedTime,
             reducedMotion,
-            panelOpen: walkHeld || document.body.hasAttribute("data-panel-open"),
+            held: walk?.holdsTour === true,
           }) ?? null;
         const tourTransition = cameraTour?.transition ?? TOUR_IDLE;
         const transition = walk ? walk.step(elapsedTime, tourTransition) : tourTransition;
@@ -1105,12 +1112,7 @@ const ORBIT_SPEED = 0.06;
             ? letterboxShare(viewport.width, viewport.height) * (walk?.bars ?? 1)
             : 0,
         );
-        if (
-          !reducedMotion &&
-          !visitorHold?.paused &&
-          !document.body.hasAttribute("data-panel-open")
-        )
-          post.setFilmTime?.(elapsedTime);
+        if (!reducedMotion && !visitorHold?.paused) post.setFilmTime?.(elapsedTime);
         // The gate weave (FILM_LOOK.weave) moves the lens, not the finished frame: the
         // shot's lens shift (cinematic.js, rewritten on every applied frame) takes a
         // fraction of a CSS px more, so fine detail never softens and sharpens with the
@@ -1167,7 +1169,7 @@ const ORBIT_SPEED = 0.06;
         subsystemRegistry.update({
           deltaSeconds,
           elapsedSeconds: elapsedTime,
-          motionPaused: visitorHold?.paused || document.body.hasAttribute("data-panel-open"),
+          motionPaused: visitorHold?.paused,
           reducedMotion,
           render: false,
           visibilityScale,
@@ -1205,7 +1207,6 @@ const ORBIT_SPEED = 0.06;
             measureScene("first-frame", frameStart);
           }
         }
-        panelHold?.frameRendered();
         visitorHold?.frameRendered();
         if (qualityDebug) {
           // Linked programs: a first crossfade or quality step should add none.
@@ -1264,27 +1265,6 @@ const ORBIT_SPEED = 0.06;
         frameScheduler.resume();
       };
       document.addEventListener("visibilitychange", onDocumentVisibilityChange);
-      // panels.js marks <body data-panel-open> while any dialog is open. The tour
-      // already holds; after the dim overlay fades in, the backdrop stops redrawing.
-      panelHold = createPanelHold({
-        delayMs: 450,
-        isOpen: () => document.body.hasAttribute("data-panel-open"),
-        onRelease: () => qualityState.holdSampling(),
-        scheduler: frameScheduler,
-      });
-      // An opening dialog (About, its #about link) also ends a walk at once.
-      const panelObserver =
-        typeof MutationObserver === "function"
-          ? new MutationObserver(() => {
-              panelHold.sync();
-              if (document.body.hasAttribute("data-panel-open")) walk?.exit({ immediate: true });
-            })
-          : null;
-      panelObserver?.observe(document.body, {
-        attributes: true,
-        attributeFilter: ["data-panel-open"],
-      });
-      panelHold.sync();
       // scene.setVisitorPaused() stops the tour and the drift and holds
       // rendering; a visitorPausedPreference set before this bundle loads
       // applies at the start.
@@ -1313,7 +1293,6 @@ const ORBIT_SPEED = 0.06;
           ground: filmActive && typeof walkGround === "function",
           reducedMotion,
           paused: visitorHold.paused,
-          panelOpen: document.body.hasAttribute("data-panel-open"),
           finePointer: !qualityState.touchPrimary && finePointer?.matches !== false,
           forcedColors: forcedColors?.matches === true,
         });
@@ -1379,10 +1358,9 @@ const ORBIT_SPEED = 0.06;
         reducedMotionMQ.removeEventListener("change", onReducedMotionChange);
         sceneIntersectionObserver?.disconnect();
         sceneIntersectionObserver = null;
-        panelObserver?.disconnect();
-        panelHold.dispose();
         visitorHold.dispose();
         pixelRatioWatcher.dispose();
+        footerLinksObserver?.disconnect();
         containerResizeObserver?.disconnect();
         resizeController.dispose();
         frameScheduler.dispose();

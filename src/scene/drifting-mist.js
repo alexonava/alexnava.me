@@ -63,8 +63,8 @@
 //   and easing out by [1], so the veil behind a ridge fades down over its crest
 //   rather than ending on it in a ruled level step (mistGround(), the ground's only);
 // - `shots`: a shot's own share of the density (1 when unlisted), set on the cut.
-// Its clock runs with drawn frames and holds for reduced motion, a visitor pause and
-// an open panel, as the grass's wind does.
+// Its clock runs with drawn frames and holds for reduced motion and a visitor pause,
+// as the grass's wind does.
 export const MIST_DRIFT = Object.freeze({
   on: 1,
   density: 0.08,

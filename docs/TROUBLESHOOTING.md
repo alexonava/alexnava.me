@@ -50,7 +50,7 @@ The line retires below 100% when the run ends without a reveal ([scene-loader.js
 | `static`   | main.js hid the host and ended the run (`disableSceneHost()`): a failed bundle or initialization, or the scene declining its own low tier. A tower or tree that failed before the reveal makes the scene hide the host itself (index.js `stopFailedScene`), which reads `static` through the `MutationObserver` on the host; without one it reads `stalled` ([The scene never appears](#the-scene-never-appears)) |
 | `stalled`  | No progress for about 16 s of visible time, below                                                                                                                                                                                                                                                                                                                                                                 |
 
-The watchdog checks every 2 s and stalls after `STALL_MS` (15 s) without progress, so about 16 s; time in a hidden tab or with a dialog open does not count. Retiring the line does not stop the scene, which reveals when it is ready. `bytes`, `stages` and `built` show where progress stopped:
+The watchdog checks every 2 s and stalls after `STALL_MS` (15 s) without progress, so about 16 s; time in a hidden tab does not count. Retiring the line does not stop the scene, which reveals when it is ready. `bytes`, `stages` and `built` show where progress stopped:
 
 - `bytes` not growing: the tower (with `view=tree`, the tower or the tree) is not arriving. Without streaming support (`ReadableStream` and the `Response` constructor) `track()` returns each response unchanged: `bytes` stays at 0 throughout, and the line holds at 26% at most (bundle, initialization and build) until it reads 100% at the reveal.
 - `built` steps missing: without `PerformanceObserver` the build share waits for the reveal, so the line holds at 84% at most.
@@ -58,7 +58,7 @@ The watchdog checks every 2 s and stalls after `STALL_MS` (15 s) without progres
 
 ## The site does not load from the repository folder
 
-`index.html` names `/scripts/app.js` and `/scripts/scene.js` (`404.html` loads no script), which exist only in the build's output, under hashed names. A static server on the repository root serves `index.html`, `styles.css`, the fonts and the images, so the title card shows, but the UI bundle is missing: the page behaves as without JavaScript (the no-JS About section, no dialogs, deep links or scene). A file URL also loses the root-relative paths. Use `npm run dev` or `npm run preview`.
+`index.html` names `/scripts/app.js` and `/scripts/scene.js` (`404.html` loads no script), which exist only in the build's output, under hashed names. A static server on the repository root serves `index.html`, `styles.css`, the fonts and the images, so the title card shows, but the UI bundle is missing: the page behaves as without JavaScript (the footer's links stand alone, without Contact, and there is no scene). A file URL also loses the root-relative paths. Use `npm run dev` or `npm run preview`.
 
 ## The dev server will not start
 
@@ -108,7 +108,7 @@ Run `npm run format` and commit the result. Prettier is pinned to 3.9.9 in `pack
 
 ## A test fails after an intentional change
 
-The test holds the old value. Change the source and the test's expected value in the same commit, with the reason, and update the docs that state the value ([Testing](TESTING.md#locked-values)). Copy changes are a common case: the dialog copy must match the no-JS fallback, and the Profile and Experience sentences must also appear in `public/index.md`.
+The test holds the old value. Change the source and the test's expected value in the same commit, with the reason, and update the docs that state the value ([Testing](TESTING.md#locked-values)). Copy changes are a common case: the tests pin the intro, the footer's links and the JSON-LD, and `public/index.md` repeats the intro and the contact details ([Content](CONTENT.md#change-the-copy)).
 
 ## A slice-timing test fails on a busy machine
 

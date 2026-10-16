@@ -200,11 +200,11 @@
     };
     document.addEventListener("visibilitychange", onVisibility);
     r.cleanups.push(() => document.removeEventListener("visibilitychange", onVisibility));
-    // Only visible time without an open dialog counts toward a stall.
+    // Only visible time counts toward a stall.
     const watchdog = window.setInterval(() => {
       if (!loading(r)) return;
       if (host.classList.contains("is-ready")) return end("revealed");
-      if (document.hidden || document.body?.hasAttribute("data-panel-open")) return;
+      if (document.hidden) return;
       if (r.target !== r.seen) {
         r.seen = r.target;
         r.idle = 0;

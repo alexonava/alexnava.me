@@ -158,11 +158,9 @@ until its own ranges (the lazy `src/scene/mountain-build.js` chunk, with the
 Meshy mountains) are built, and keeps the stand-in if that chunk fails. The scene is revealed
 only after the tower loads, so visitors never see the ring.
 
-## Cotton paper panel material
+## Cotton paper
 
-The paper textures, `images/paper-grain.webp` and `images/paper-edge.webp`,
-were generated with OpenAI's built-in image generation tool and prepared as
-local WebP assets. They are decorative; all panel wording remains selectable
-HTML. The repository records no source for the three paper vignettes
-(`images/paper-vignette-*.webp`) or the two estate maps
-(`images/estate-map-*.webp`).
+The paper textures of the 404 page's sheet, `images/paper-grain.webp` and
+`images/paper-edge.webp`, were generated with OpenAI's built-in image generation
+tool and prepared as local WebP assets. They are decorative; the page's wording
+is selectable HTML.

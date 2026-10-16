@@ -30,8 +30,8 @@ import { FLASH_GROUND, FLASH_UNIFORMS, lendFlashText } from "./film-light.js";
 // mistFlash) brighten too, away from the text. The scene's lights never change.
 //
 // Timing is the lightning's own clock, the drawn frames' time while the scene
-// animates (frozen under reduced motion, a visitor pause or an open dialog, as
-// the flame's), and a seeded schedule on it, so every capture of a phase is the
+// animates (frozen under reduced motion or a visitor pause, as the flame's),
+// and a seeded schedule on it, so every capture of a phase is the
 // same. Events start `first` seconds in and then every `interval` seconds; each
 // is 1 to 3 `pulses` (a rise over `attack`, then an exponential fall over
 // `decay`), `gap` apart, the later ones `echo` of the first. WCAG 2.3.1: never

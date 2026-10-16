@@ -90,7 +90,6 @@ test("each frame runs the tour, the quality step, the capture skip, the crossfad
   const frame = index.slice(index.indexOf("function updateSceneFrame("));
   const order = [
     "qualityState.sampleRevealed?.(",
-    "const walkHeld = walk?.holdsTour === true;",
     "cameraTour?.update(",
     "const tourTransition = cameraTour?.transition ?? TOUR_IDLE;",
     "const transition = walk ? walk.step(elapsedTime, tourTransition) : tourTransition;",
@@ -103,7 +102,7 @@ test("each frame runs the tour, the quality step, the capture skip, the crossfad
     "walk.update(deltaSeconds, viewport.width, viewport.height);",
     "subsystemRegistry.update(",
     "rendering.update();",
-    "panelHold?.frameRendered(); visitorHold?.frameRendered();",
+    "visitorHold?.frameRendered();",
   ].map((anchor) => frame.indexOf(anchor));
   assert.ok(
     order.every((at) => at >= 0),
@@ -115,19 +114,15 @@ test("each frame runs the tour, the quality step, the capture skip, the crossfad
   );
 });
 
-test("an open dialog holds rendering 450 ms after it opens, and a resize draws one frame behind it", () => {
+test("only a visitor pause holds rendering, and a resize draws one frame behind it", () => {
+  assert.doesNotMatch(index, /data-panel-open|createPanelHold|panelHold/);
   assert.match(
     index,
-    /panelHold = createPanelHold\(\{ delayMs: 450, isOpen: \(\) => document\.body\.hasAttribute\("data-panel-open"\), onRelease: \(\) => qualityState\.holdSampling\(\), scheduler: frameScheduler \}\);/,
-  );
-  assert.match(index, /attributeFilter: \["data-panel-open"\]/);
-  assert.match(
-    index,
-    /function applySceneSize\([^]*?panelHold\?\.redraw\(\); visitorHold\?\.redraw\(\); frameScheduler\?\.invalidate\(\);/,
+    /function applySceneSize\([^]*?visitorHold\?\.redraw\(\); frameScheduler\?\.invalidate\(\);/,
   );
   assert.match(
     between("function disposeHomeSceneRuntime"),
-    /panelObserver\?\.disconnect\(\); panelHold\.dispose\(\); visitorHold\.dispose\(\);[^]*?frameScheduler\.dispose\(\);/,
+    /visitorHold\.dispose\(\);[^]*?frameScheduler\.dispose\(\);/,
   );
 });
 
@@ -317,7 +312,7 @@ test("the walk holds the tour, drives the camera between its cuts, and lands con
     /const liveView = \{ get running\(\) \{ return walk\?\.holdsTour === true \|\| cameraTour\?\.running === true; \}, get transition\(\) \{ return walk\?\.transition \?\? cameraTour\?\.transition \?\? TOUR_IDLE; \} \};/,
   );
   assert.match(index, /createHillSilhouette\(\{[^}]*tour: liveView,/);
-  assert.match(index, /panelOpen: walkHeld \|\| document\.body\.hasAttribute\("data-panel-open"\)/);
+  assert.match(index, /held: walk\?\.holdsTour === true \}\)/);
   assert.match(
     index,
     /rockScatter\.take\(\{ cut: transition\.cut, running: liveView\.running, nowMs \}\)/,
@@ -352,11 +347,7 @@ test("the walk holds the tour, drives the camera between its cuts, and lands con
     /if \(walk\?\.active\) \{ event\.preventDefault\(\); walk\.exit\(\); return; \}/,
   );
   assert.match(index, /subsystemRegistry\.register\(\{ dispose: \(\) => walk\.dispose\(\) \}\);/);
-  // A dialog, a visitor pause or reduced motion ends it at once.
-  assert.match(
-    index,
-    /panelHold\.sync\(\); if \(document\.body\.hasAttribute\("data-panel-open"\)\) walk\?\.exit\(\{ immediate: true \}\);/,
-  );
+  // A visitor pause (above) or reduced motion ends it at once.
   assert.match(
     index,
     /reducedMotion = Boolean\(event\?\.matches\); if \(reducedMotion\) walk\?\.exit\(\{ immediate: true \}\);/,
@@ -369,13 +360,14 @@ test("the film's environment, the ground's text guard and the flame's bloom are 
     index,
     /atmosphereSystem\.setSkyMaterial\(skyShell\.material\); rendering\.setEnvironmentSky\(skyShell\.material, skyConfig\.shellOpacity\);/,
   );
-  // The ground's water eases off behind the name and intro and behind About,
+  // The ground's water eases off behind the name and intro and behind the
+  // footer's labels (Contact, and the email and LinkedIn while they show),
   // measured on the canvas on resize, on font loads, every 30th frame and on
-  // the first frame after a scroll.
+  // the first frame after a scroll or after the links show or hide.
   assert.match(index, /box\(groundContacts\.slateText\.value, \[".hero h1", ".hero-intro"\]\);/);
   assert.match(
     index,
-    /box\(groundContacts\.slateAbout\.value, \[".site-footer__about .about-link__label"\]\);/,
+    /box\(groundContacts\.slateAbout\.value, \[".site-footer .site-footer__label"\]\);/,
   );
   assert.match(
     index,
@@ -387,14 +379,27 @@ test("the film's environment, the ground's text guard and the flame's bloom are 
   );
   assert.match(
     index,
-    /if \(\+\+groundTextFrames % 30 === 1 \|\| groundTextScrolled\) \{ groundTextScrolled = false; measureGroundText\(\); \}/,
+    /if \(\+\+groundTextFrames % 30 === 1 \|\| groundTextStale\) \{ groundTextStale = false; measureGroundText\(\); \}/,
   );
   // The hero scrolls over the fixed canvas: the scroll handler only flags the
   // guard (measuring there would flush layout on every scroll event).
   const onScroll = index.match(/const onWindowScroll = \(\) => \{[^}]*\};/)?.[0] ?? "";
-  assert.match(onScroll, /groundTextScrolled = true; frameScheduler\?\.invalidate\(\);/);
+  assert.match(onScroll, /groundTextStale = true; frameScheduler\?\.invalidate\(\);/);
   assert.doesNotMatch(onScroll, /measureGroundText|getBoundingClientRect/);
-  // Beside About the bark's lantern highlights pass the same guard, on the ground's uniforms.
+  // So does Contact showing or hiding its links: a ResizeObserver on them.
+  assert.match(
+    index,
+    /new ResizeObserver\(\(\) => \{ groundTextStale = true; frameScheduler\?\.invalidate\(\); \}\)/,
+  );
+  assert.match(
+    index,
+    /for \(const links of document\.querySelectorAll\(".site-footer__links"\)\) footerLinksObserver\?\.observe\(links\);/,
+  );
+  assert.match(
+    between("function disposeHomeSceneRuntime"),
+    /footerLinksObserver\?\.disconnect\(\);/,
+  );
+  // Beside the footer the bark's lantern highlights pass the same guard, on the ground's uniforms.
   assert.match(
     index,
     /createTreeArchitecture\(\{ asset, groundHeight, anisotropy: chooseAnisotropy\(6\), anchor: \[ESTATE\.tree\.x, ESTATE\.tree\.z\], textGuard: groundContacts \}\);/,

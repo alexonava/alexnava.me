@@ -4,21 +4,21 @@ The documents that describe alexnava.me, and where to start for a task. They des
 
 ## Index
 
-| Document                              | Covers                                                                                                                                              |
-| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [Architecture](ARCHITECTURE.md)       | Startup, the module map, the scene lifecycle, quality tiers, assets and budgets, the build pipeline                                                 |
-| [Contracts](CONTRACTS.md)             | The interface between the pages, the UI bundle and the scene bundle: `window.BabelSite`, DOM hooks, events, meta tags, User Timing, defines         |
-| [Scene modes](SCENE-MODES.md)         | URL parameters, shots, pauses, the `sceneDebug` and `sceneLoader.state` fields, the capture recipe                                                  |
-| [Style](STYLE.md)                     | Visual, motion and typographic rules                                                                                                                |
-| [UI](UI.md)                           | The page's interface: tokens, breakpoints and the scene framing that mirrors them, layers, components, motion, dialogs, deep links and the 404 page |
-| [Content](CONTENT.md)                 | The site's words and where each piece lives                                                                                                         |
-| [Assets](ASSETS.md)                   | Models, maps, artwork, fonts, icons and the share card                                                                                              |
-| [Accessibility](ACCESSIBILITY.md)     | How the page meets its accessibility rules                                                                                                          |
-| [Testing](TESTING.md)                 | Running the suite, what each test file guards, locked values, visual review, Lighthouse                                                             |
-| [Troubleshooting](TROUBLESHOOTING.md) | Symptom, cause and fix for recurring failures                                                                                                       |
-| [Operations](OPERATIONS.md)           | Release gates, CI, deploy, rollback, headers, Cloudflare                                                                                            |
-| [Glossary](GLOSSARY.md)               | The terms the code and docs use, and the preferred word for each                                                                                    |
-| [Credits](CREDITS.md)                 | Rights, third-party code, fonts and the provenance of the supplied artwork                                                                          |
+| Document                              | Covers                                                                                                                                      |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Architecture](ARCHITECTURE.md)       | Startup, the module map, the scene lifecycle, quality tiers, assets and budgets, the build pipeline                                         |
+| [Contracts](CONTRACTS.md)             | The interface between the pages, the UI bundle and the scene bundle: `window.BabelSite`, DOM hooks, events, meta tags, User Timing, defines |
+| [Scene modes](SCENE-MODES.md)         | URL parameters, shots, pauses, the `sceneDebug` and `sceneLoader.state` fields, the capture recipe                                          |
+| [Style](STYLE.md)                     | Visual, motion and typographic rules                                                                                                        |
+| [UI](UI.md)                           | The page's interface: tokens, breakpoints and the scene framing that mirrors them, layers, components, motion, Contact and the 404 page     |
+| [Content](CONTENT.md)                 | The site's words and where each piece lives                                                                                                 |
+| [Assets](ASSETS.md)                   | Models, maps, artwork, fonts, icons and the share card                                                                                      |
+| [Accessibility](ACCESSIBILITY.md)     | How the page meets its accessibility rules                                                                                                  |
+| [Testing](TESTING.md)                 | Running the suite, what each test file guards, locked values, visual review, Lighthouse                                                     |
+| [Troubleshooting](TROUBLESHOOTING.md) | Symptom, cause and fix for recurring failures                                                                                               |
+| [Operations](OPERATIONS.md)           | Release gates, CI, deploy, rollback, headers, Cloudflare                                                                                    |
+| [Glossary](GLOSSARY.md)               | The terms the code and docs use, and the preferred word for each                                                                            |
+| [Credits](CREDITS.md)                 | Rights, third-party code, fonts and the provenance of the supplied artwork                                                                  |
 
 Outside `docs/`:
 
@@ -28,7 +28,7 @@ Outside `docs/`:
 
 ## Start here
 
-**Changing words.** [Content](CONTENT.md) says where each piece of copy lives. Each category's copy appears in its dialog and in the no-JS fallback, and the Profile and Experience sentences in `public/index.md` too; tests hold the copies equal and pin the words, so change every copy and the test together ([Testing](TESTING.md#locked-values)). Keep the JSON-LD `dateModified` in `index.html` equal to `public/index.md`'s, and keep the discovery files accurate (AGENTS.md rule 4).
+**Changing words.** [Content](CONTENT.md) says where each piece of copy lives. `public/index.md` repeats the intro and the contact details, and tests pin the words, so change every copy and the test together ([Testing](TESTING.md#locked-values)). Keep the JSON-LD `dateModified` in `index.html` equal to `public/index.md`'s, and keep the discovery files accurate (AGENTS.md rule 4).
 
 **Changing the look.** Read [Style](STYLE.md) first, then [UI](UI.md) for the page and [Assets](ASSETS.md) for artwork and models. Review the scene with the [capture recipe](SCENE-MODES.md#capture-recipe) and the [visual review](TESTING.md#visual-review) protocol. Changes that would pop mid-shot land on a tour cut.
 

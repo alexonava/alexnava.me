@@ -239,8 +239,8 @@ test("a capture frame keeps the outgoing shot, then the cut dissolves in from th
   quick.dispose();
 });
 
-test("pause, panels and reduced motion hold the tour without catch-up cuts", () => {
-  for (const flag of ["panelOpen", "reducedMotion"]) {
+test("pause, a hold and reduced motion hold the tour without catch-up cuts", () => {
+  for (const flag of ["held", "reducedMotion"]) {
     const f = setup();
     f.render(0);
     f.render(2);
@@ -260,7 +260,7 @@ test("pause, panels and reduced motion hold the tour without catch-up cuts", () 
   }
   // A hold that lands mid-dissolve shows the incoming shot clear, and the
   // interrupted dissolve is not replayed once released.
-  for (const flag of ["panelOpen"]) {
+  for (const flag of ["held"]) {
     const f = setup();
     f.render(0);
     f.render(5);

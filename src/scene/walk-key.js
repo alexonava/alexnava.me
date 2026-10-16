@@ -15,25 +15,15 @@ export function isWalkKey(event) {
 
 // The walk starts only over the revealed live scene with its film ground in
 // place, on a desktop's fine pointer, and never under reduced motion, a
-// visitor pause, an open dialog or forced colors (which hide the scene).
+// visitor pause or forced colors (which hide the scene).
 export function walkAllowed({
   shown = false,
   failed = false,
   ground = false,
   reducedMotion = false,
   paused = false,
-  panelOpen = false,
   finePointer = false,
   forcedColors = false,
 } = {}) {
-  return (
-    shown &&
-    !failed &&
-    ground &&
-    finePointer &&
-    !reducedMotion &&
-    !paused &&
-    !panelOpen &&
-    !forcedColors
-  );
+  return shown && !failed && ground && finePointer && !reducedMotion && !paused && !forcedColors;
 }

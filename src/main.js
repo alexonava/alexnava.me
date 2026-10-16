@@ -9,8 +9,7 @@
   function initUi() {
     const { ui } = site;
     ui.initHeroChrome();
-    // Deep links drive the enhanced dialogs; the fallback keeps native anchors.
-    if (ui.initSceneMenu() === true) ui.initDeepLinks();
+    ui.initContact();
   }
 
   function initScene() {
@@ -316,7 +315,7 @@
   };
 
   // Defer the heavier Three.js scene bundle past first paint so the hero LCP
-  // and panel controls are interactive before WebGL setup starts.
+  // and Contact are interactive before WebGL setup starts.
   function afterFirstPaint(cb) {
     if (typeof window.requestIdleCallback === "function") {
       window.requestIdleCallback(cb, { timeout: 500 });

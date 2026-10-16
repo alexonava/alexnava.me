@@ -77,8 +77,6 @@
 
           "name": "Alex Nava",
 
-          "description": "Background in analytics, reporting, remediation, and controls across banking and health.",
-
           "url": "https://alexnava.me/"
         },
 
@@ -88,7 +86,7 @@
 
         "url": "https://alexnava.me/",
 
-        "dateModified": "2026-09-22"
+        "dateModified": "2026-10-15"
       }
     </script>
 
@@ -133,33 +131,6 @@
           <p class="hero-intro">A little about me and what I’m working on.</p>
         </div>
       </section>
-
-      <div class="scene-fallback-content" id="about-text" tabindex="-1" data-scene-fallback>
-        <h2>About</h2>
-        <nav class="estate-text-nav" aria-label="Categories">
-          <a href="#profile-text">Profile</a> &middot;
-          <a href="#experience-text">Experience</a> &middot; <a href="#contact-text">Contact</a>
-        </nav>
-
-        <section class="estate-text-section" tabindex="-1" id="profile-text">
-          <h3>Profile</h3>
-          <p>This is my personal corner of the web.</p>
-        </section>
-
-        <section class="estate-text-section" tabindex="-1" id="experience-text">
-          <h3>Experience</h3>
-          <p>Analytics, reporting, remediation, and controls, across banking and health.</p>
-        </section>
-
-        <section class="estate-text-section" tabindex="-1" id="contact-text">
-          <h3>Contact</h3>
-          <p>
-            You can reach me at
-            <!--email_off--><a href="mailto:alexonava@gmail.com">alexonava@gmail.com</a
-            ><!--/email_off-->
-          </p>
-        </section>
-      </div>
     </main>
 
     <!-- Retain the tour's measured lower safe area without a corner control. -->
@@ -172,153 +143,28 @@
       <div class="scene-loader__track"><div class="scene-loader__fill"></div></div>
     </div>
     <footer class="site-footer">
-      <a
-        class="site-footer__link site-footer__about"
-        href="#about-text"
-        aria-label="About"
-        data-scene-fallback
-        ><span class="about-link__label">About</span></a
-      >
       <button
-        class="bottom-btn site-footer__link site-footer__about scene-entry"
-        data-panel="about"
-        aria-label="About"
-        aria-expanded="false"
-        aria-controls="panel-about"
+        class="site-footer__link site-footer__contact"
+        type="button"
+        aria-expanded="true"
+        aria-controls="contact-links"
         hidden
       >
-        <span class="about-link__label">About</span>
+        <span class="site-footer__label">Contact</span>
       </button>
+      <p class="site-footer__links" id="contact-links">
+        <!--email_off--><a class="site-footer__link" href="mailto:alexonava@gmail.com"
+          ><span class="site-footer__label">alexonava@gmail.com</span></a
+        ><!--/email_off-->
+        <a
+          class="site-footer__link"
+          href="https://www.linkedin.com/in/alex-nava/"
+          target="_blank"
+          rel="noopener"
+          ><span class="site-footer__label">LinkedIn</span></a
+        >
+      </p>
     </footer>
-
-    <div
-      class="panel-overlay"
-      id="panel-about"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="panel-about-title"
-      hidden
-    >
-      <div class="panel-estate panel-surface" tabindex="-1">
-        <div class="estate-home-map">
-          <div class="estate-map">
-            <h2 class="estate-title" id="panel-about-title">About</h2>
-            <button class="panel-close" aria-label="Close About">&times;</button>
-            <nav class="estate-destinations" aria-label="Site categories">
-              <button
-                class="bottom-btn estate-destination estate-profile"
-                data-panel="profile"
-                aria-label="Profile"
-                aria-expanded="false"
-                aria-controls="panel-profile"
-              >
-                <span>Profile</span>
-              </button>
-
-              <button
-                class="bottom-btn estate-destination estate-experience"
-                data-panel="experience"
-                aria-label="Experience"
-                aria-expanded="false"
-                aria-controls="panel-experience"
-              >
-                <span>Experience</span>
-              </button>
-
-              <button
-                class="bottom-btn estate-destination estate-contact"
-                data-panel="contact"
-                aria-label="Contact"
-                aria-expanded="false"
-                aria-controls="panel-contact"
-              >
-                <span>Contact</span>
-              </button>
-            </nav>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div
-      class="panel-overlay"
-      id="panel-contact"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="panel-contact-title"
-      hidden
-    >
-      <div class="panel-parchment panel-surface" tabindex="-1">
-        <button class="panel-close panel-back" aria-label="Back to About">Back</button>
-
-        <div class="panel-parchment__sheet">
-          <div class="panel-vignette panel-vignette--contact" aria-hidden="true"></div>
-
-          <div class="panel-parchment__content">
-            <p class="eyebrow">Contact</p>
-
-            <h2 id="panel-contact-title">Say hello.</h2>
-
-            <p class="panel-body">
-              You can reach me at<br />
-
-              <!--email_off--><a href="mailto:alexonava@gmail.com">alexonava@gmail.com</a
-              ><!--/email_off-->
-            </p>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div
-      class="panel-overlay"
-      id="panel-profile"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="panel-profile-title"
-      hidden
-    >
-      <div class="panel-parchment panel-surface" tabindex="-1">
-        <button class="panel-close panel-back" aria-label="Back to About">Back</button>
-
-        <div class="panel-parchment__sheet">
-          <div class="panel-vignette panel-vignette--profile" aria-hidden="true"></div>
-          <div class="panel-parchment__content">
-            <p class="eyebrow">Profile</p>
-
-            <h2 id="panel-profile-title">A little about me.</h2>
-
-            <p class="panel-body">This is my personal corner of the web.</p>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div
-      class="panel-overlay"
-      id="panel-experience"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="panel-experience-title"
-      hidden
-    >
-      <div class="panel-parchment panel-surface" tabindex="-1">
-        <button class="panel-close panel-back" aria-label="Back to About">Back</button>
-
-        <div class="panel-parchment__sheet">
-          <div class="panel-vignette panel-vignette--experience" aria-hidden="true"></div>
-          <div class="panel-parchment__content">
-            <p class="eyebrow">Experience</p>
-
-            <h2 id="panel-experience-title">My background.</h2>
-
-            <p class="panel-body">
-              Analytics, reporting, remediation, and controls, across banking and health.
-            </p>
-          </div>
-        </div>
-      </div>
-    </div>
 
     <script defer src="/scripts/app.js"></script>
   </body>

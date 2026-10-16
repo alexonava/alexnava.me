@@ -377,7 +377,7 @@
   const ascending = (left, right) => left - right;
   // A 60 Hz display interval plus rAF jitter.
   const DISPLAY_FLOOR_MAX_MS = 17.5;
-  // Frames after a resize, resume, context restore, dialog release or asset
+  // Frames after a resize, resume, context restore, pause release or asset
   // commit carry uploads and shader compiles, so they are not sampled.
   const SAMPLE_HOLD_MS = 3000;
 

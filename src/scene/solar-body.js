@@ -585,7 +585,7 @@ gl_FragColor=vec4(vec3(1.,.62,.32)*line*uStrength*uBreath,min(line*4.,1.));
     },
     update({ elapsedSeconds = 0, reducedMotion = false, motionPaused = false } = {}) {
       if (disposed) return false;
-      // A visitor pause or an open dialog holds the fire with the rest of the star.
+      // A visitor pause holds the fire with the rest of the star.
       uTime.value = clock.tick(elapsedSeconds, reducedMotion || motionPaused);
       const unrest = solarUnrest(uTime.value);
       uBreath.value = unrest.breath;

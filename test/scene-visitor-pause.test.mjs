@@ -2,11 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createCameraTour, TOUR_IDLE } from "../src/scene/camera-tour.js";
 import { DIRECTED_SHOTS } from "../src/scene/directed-shots.js";
-import {
-  createPanelHold,
-  createSceneFrameScheduler,
-  createVisitorHold,
-} from "../src/scene/runtime.js";
+import { createSceneFrameScheduler, createVisitorHold } from "../src/scene/runtime.js";
 
 function createFrameHarness() {
   let nextId = 1;
@@ -32,26 +28,6 @@ function createFrameHarness() {
   };
 }
 
-function createTimers() {
-  let nextId = 1;
-  const timers = new Map();
-  return {
-    clearTimer(id) {
-      timers.delete(id);
-    },
-    fire() {
-      const entries = [...timers.values()];
-      timers.clear();
-      entries.forEach((callback) => callback());
-    },
-    setTimer(callback) {
-      const id = nextId++;
-      timers.set(id, callback);
-      return id;
-    },
-  };
-}
-
 // The tour needs only the directed camera's selection and readiness.
 function createTourCamera(state) {
   return {
@@ -69,27 +45,24 @@ function createTourCamera(state) {
   };
 }
 
-// Mirrors index.js: each drawn frame updates the tour, reports itself to both
-// holds, then shows the canvas and reveals once the camera is ready.
+// Mirrors index.js: each drawn frame updates the tour, reports itself to the
+// visitor hold, then shows the canvas and reveals once the camera is ready.
 function createSceneHarness({ paused = false, ready = true } = {}) {
   const frames = createFrameHarness();
-  const timers = createTimers();
-  const state = { open: false, panelReleases: 0, ready, visitorReleases: 0 };
+  const state = { ready, visitorReleases: 0 };
   const drawn = [];
   const camera = createTourCamera(state);
-  let panelHold = null;
   let visitorHold = null;
   const scheduler = createSceneFrameScheduler({
     cancelFrame: frames.cancelFrame,
     onUpdate({ deltaSeconds, elapsedSeconds }) {
-      tour.update({ elapsedSeconds, panelOpen: state.open });
+      tour.update({ elapsedSeconds });
       drawn.push({
         deltaSeconds,
         elapsedSeconds,
         transition: { ...tour.transition },
         shot: DIRECTED_SHOTS[camera.current][camera.angle].name,
       });
-      panelHold.frameRendered();
       visitorHold.frameRendered();
       scheduler.setStill(!state.ready);
       if (state.ready) visitorHold.reveal();
@@ -101,13 +74,6 @@ function createSceneHarness({ paused = false, ready = true } = {}) {
     interval: 5,
     invalidate: () => scheduler.invalidate(),
   });
-  panelHold = createPanelHold({
-    clearTimer: timers.clearTimer,
-    isOpen: () => state.open,
-    onRelease: () => (state.panelReleases += 1),
-    scheduler,
-    setTimer: timers.setTimer,
-  });
   visitorHold = createVisitorHold({
     onRelease: () => (state.visitorReleases += 1),
     scheduler,
@@ -116,14 +82,8 @@ function createSceneHarness({ paused = false, ready = true } = {}) {
     tour.setPaused(next);
     return visitorHold.set(next);
   }
-  function setDialogOpen(open) {
-    state.open = open;
-    panelHold.sync();
-    if (open) timers.fire();
-  }
-  // Both holds redraw after a resize, as applySceneSize() does.
+  // The hold redraws after a resize, as applySceneSize() does.
   function resize() {
-    panelHold.redraw();
     visitorHold.redraw();
     scheduler.invalidate();
   }
@@ -135,7 +95,6 @@ function createSceneHarness({ paused = false, ready = true } = {}) {
     frames,
     resize,
     scheduler,
-    setDialogOpen,
     setVisitorPaused,
     state,
     tour,
@@ -277,43 +236,6 @@ test("a resize while paused draws exactly one still frame", () => {
   scene.run(10);
   assert.equal(scene.drawn.length, count + 2, "repeated redraws coalesce");
   assert.equal(scene.frames.pending, 0);
-  scene.scheduler.dispose();
-});
-
-test("visitor and dialog holds compose in either order", () => {
-  const scene = createSceneHarness();
-  scene.run(10);
-  scene.setVisitorPaused(true);
-  scene.run(1);
-  const count = scene.drawn.length;
-
-  scene.setDialogOpen(true);
-  scene.setDialogOpen(false);
-  assert.equal(scene.state.panelReleases, 1);
-  assert.equal(scene.frames.pending, 0, "closing a dialog keeps a paused scene held");
-
-  scene.setDialogOpen(true);
-  scene.resize();
-  assert.equal(scene.frames.pending, 1, "a resize redraws behind both holds");
-  scene.run(10);
-  assert.equal(scene.drawn.length, count + 1);
-  assert.equal(scene.frames.pending, 0, "both holds return after one frame");
-
-  scene.setVisitorPaused(false);
-  assert.equal(scene.frames.pending, 0, "unpausing behind a dialog keeps the panel hold");
-  scene.setDialogOpen(false);
-  assert.equal(scene.frames.pending, 1, "the scene resumes once both are released");
-  scene.run(3);
-  assert.equal(scene.drawn.length, count + 4);
-
-  // A pause taken behind a held dialog draws its settling frame on close.
-  scene.setDialogOpen(true);
-  scene.setVisitorPaused(true);
-  assert.equal(scene.frames.pending, 0);
-  scene.setDialogOpen(false);
-  scene.run(10);
-  assert.equal(scene.drawn.length, count + 5);
-  assert.equal(scene.visitorHold.held, true);
   scene.scheduler.dispose();
 });
 

@@ -545,8 +545,8 @@ export function createFarFires({
       uniforms.uHeight.value = cssHeight * uniforms.uPixelRatio.value;
       return true;
     },
-    // The fires breathe on the scene clock: held by a visitor pause, an open
-    // dialog and reduced motion, as the lantern's flame is.
+    // The fires breathe on the scene clock: held by a visitor pause and
+    // reduced motion, as the lantern's flame is.
     update({ deltaSeconds = 0, reducedMotion = false, motionPaused = false } = {}) {
       if (disposed || !points.visible) return false;
       if (!reducedMotion && !motionPaused && Number.isFinite(deltaSeconds))
