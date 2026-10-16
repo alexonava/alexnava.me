@@ -115,6 +115,9 @@ export function createCinematicCamera({
   angle = 0,
   getSafeArea,
   getGroundY,
+  // How a subject is measured for a shot: the model itself (measureShot), or a
+  // stored measurement that stands in for it before it loads.
+  measure = measureShot,
 }) {
   let tower = null,
     tree = null,
@@ -142,7 +145,7 @@ export function createCinematicCamera({
   function measurementFor(root, shot) {
     let measured = cachedMeasurement(root, shot);
     if (!measured) {
-      measured = measureShot(root, shot);
+      measured = measure(root, shot);
       measurements.set(shot, {
         root,
         matrix: Float64Array.from(root.matrixWorld.elements),

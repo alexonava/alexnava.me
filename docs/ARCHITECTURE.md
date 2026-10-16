@@ -23,17 +23,19 @@ Neither page has an `<img>` or `<picture>` element: the only artwork, the 404's 
 
 On the live path [src/ui/scene-loader.js](../src/ui/scene-loader.js) (`BabelSite.sceneLoader`) shows one line, `#scene-loader`, above the footer. Its value is real progress: 10% bundle, 4% initialization, 70% model bytes and 12% model build, a running maximum held at 96% until the reveal. Bytes count the required models (the tower, plus the tree for `view=tree`): `track(url, response)` reads each model response into a copy as it arrives and counts decoded bytes against the sizes build.mjs defines for the UI (`__BABEL_ARCHITECTURE_PREFETCH_BYTES__`). Build follows the scene's measures `babel:glb-parse:<role>`, `babel:assembly:<role>` and `babel:shaders:<role>`. A MutationObserver on `#home-scene` ends the run: gaining `is-ready` is the reveal (100%, then the line fades within the canvas's fade-in), and `hidden` retires the line below 100%. The `babel:reveal` mark, seen through a PerformanceObserver, also completes it. A watchdog checks every 2 s, completes the line once the host is `is-ready`, and retires it as stalled once 15 s (`STALL_MS`) pass without progress, which its checks reach at 16 s, counting only time while the page is visible. The watchdog does not check the host's `hidden` attribute: without a MutationObserver, a host the scene hides after a failed tower or tree retires the line only through that stall. `.scene-canvas` keeps one 480 ms opacity transition; terrain-build.js and mountain-build.js read it as `transitionDuration`.
 
+The line's star, `#scene-star` in the scene shell, stands where the opening shot will show the scene's star (the owner's rule: it has to line up), under the canvas. The scene reports that place through `sceneLoader.star()` in CSS px from the canvas's top-left: index.js `reportLoaderStar()` converts a `lensSource()` result (canvas UV, y up, the radius in frame heights) with the renderer canvas's `getBoundingClientRect()` size. Before the tower loads, `predictLoaderStar()` reports [opening-star.js](../src/scene/opening-star.js) `openingStar()`: from the scene's start (in `applySceneSize()`, once the composition has set the scene's height through `subsystemRegistry.resize`), again on every resize and once the fonts load, until the camera's own report or the reveal. `openingStar()` fits a cinematic camera of its own (cinematic.js `createCinematicCamera`'s `measure` option) to the tower's stored outline ([opening-outline.js](../src/scene/opening-outline.js)) for the asset tier and The watch's resolved variant, with the scene's safe area (`cinematicArea` or `measureCinematicArea`), its ground (`cinematicGroundY`, which the scene's camera reads too), the star's world position and the tower's root where it will stand (`towerRoot.localToWorld(0, towerGroundY + TOWER_FOOTING, 0)`, so the environment root's composition height lifts or lowers it with the tower); it applies The watch at time 0 and the tour's opening phase (`cameraTour ? 0 : null`) and projects the star with `lensSource()` before disposing the controller, whose disposal resets the camera's lens. It takes about 0.2 ms, and gives no star when the opening is another shot (anything but the tower's angle 0, from `scene.cinematicSelection` and `cinematicAngle`), the outline is missing or stale for that tier and variant, or the star stands outside the frame. Measured on 30 window shapes (desktops from 1280×720 to 3440×1440, a square, squat windows 560–700 px wide, portrait monitors, phones both ways and tablets), the prediction lands within 0.56 px of the camera's own star. Once the scene's camera has fitted the opening shot itself, the lens block computes the star from the live camera while the canvas is not yet shown and reports that instead (`openingCameraStar`), until the reveal. scene-loader.js warms the star with the real progress, from the progress at which its place first became known to the reveal ([UI](UI.md#loading-lines-star) has the parts and their transforms), writing only transforms and opacities, at most once a frame. At the reveal the line reads 100% and the star is the scene's own as the opening shot shows it, in place and size; the canvas fades in over it, and it hides with the line after 600 ms. A line retired below 100% hides its star at once, and reports after a run has ended are ignored.
+
 ## Module map
 
 _lazy_ marks a chunk loaded on demand.
 
 **Pages (repository root)**
 
-| File         | Role                                                               |
-| ------------ | ------------------------------------------------------------------ |
-| `index.html` | Identity, the footer's Contact and links, scene host, loading line |
-| `404.html`   | Not-found page: a paper sheet on the same night, no script         |
-| `styles.css` | Type, layout, title card, footer, loading line, the 404's paper    |
+| File         | Role                                                                            |
+| ------------ | ------------------------------------------------------------------------------- |
+| `index.html` | Identity, the footer's Contact and links, scene host, loading line and its star |
+| `404.html`   | Not-found page: a paper sheet on the same night, no script                      |
+| `styles.css` | Type, layout, title card, footer, loading line and its star, the 404's paper    |
 
 **UI bundle (`src/`)**
 
@@ -43,7 +45,7 @@ _lazy_ marks a chunk loaded on demand.
 | `main.js`               | Boot, static gates, scene and early model requests                                            |
 | `ui/hero.js`            | Hero chrome and scroll state; the hero is `is-over-scene` while the scene host is ready       |
 | `ui/contact.js`         | The footer's Contact: folds the email and LinkedIn behind it, Escape, the hashes that open it |
-| `ui/scene-loader.js`    | Loading line (`BabelSite.sceneLoader`)                                                        |
+| `ui/scene-loader.js`    | Loading line and its star (`BabelSite.sceneLoader`)                                           |
 | `shared/webgl-probe.js` | WebGL probe and cached limits (both bundles)                                                  |
 | `shared/motion.js`      | Reduced-motion helpers (both bundles)                                                         |
 | `scene/quality.js`      | Tiers, profiles, composition, governor (both bundles)                                         |
@@ -68,14 +70,17 @@ _lazy_ marks a chunk loaded on demand.
 
 **Camera (`src/scene/`)**
 
-| File                | Role                                                                                   |
-| ------------------- | -------------------------------------------------------------------------------------- |
-| `directed-shots.js` | Shot definitions, dwells and viewport variants; the stacked layout (`isStackedLayout`) |
-| `cinematic.js`      | Safe area, shot fitting, drift and push-in                                             |
-| `camera-tour.js`    | Tour pacing and dissolve timing                                                        |
-| `scene-modes.js`    | Opening view from `?view=`                                                             |
-| `walk-key.js`       | The walk's key (` or ~) and when it may start                                          |
-| `walk.js`           | _lazy_ The walk: the first-person camera on the ground, its solids and its cuts        |
+| File                     | Role                                                                                                                                                   |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `directed-shots.js`      | Shot definitions, dwells and viewport variants; the stacked layout (`isStackedLayout`)                                                                 |
+| `cinematic.js`           | Safe area, shot fitting (to the model, or a stored measurement), drift and push-in                                                                     |
+| `opening-star.js`        | Where the opening shot will show the star before the tower loads (`openingStar()`), for the loading line's star                                        |
+| `opening-outline.js`     | Generated by `tools/bake-opening-outline.mjs`, never edited: the tower's stored outline for The watch, per model tier and variant (`OPENING_OUTLINES`) |
+| `opening-outline-key.js` | The stored outline's resolution (`OUTLINE_RESOLUTION`) and the key a resolved shot finds it by (`outlineKey`)                                          |
+| `camera-tour.js`         | Tour pacing and dissolve timing                                                                                                                        |
+| `scene-modes.js`         | Opening view from `?view=`                                                                                                                             |
+| `walk-key.js`            | The walk's key (` or ~) and when it may start                                                                                                          |
+| `walk.js`                | _lazy_ The walk: the first-person camera on the ground, its solids and its cuts                                                                        |
 
 **Models (`src/scene/`)**
 
@@ -123,18 +128,21 @@ _lazy_ marks a chunk loaded on demand.
 
 Build, development and authoring helpers in `tools/`. None is published.
 
-| File                    | Role                                                                                                |
-| ----------------------- | --------------------------------------------------------------------------------------------------- |
-| `build-output.mjs`      | Validates the output folder, stages the payload, replaces assets before HTML, rolls back on failure |
-| `watch.mjs`             | `npm run watch`: debounced, serialized rebuilds with `--retain-assets`                              |
-| `dev.mjs`               | `npm run dev`: watch builds plus an owned Wrangler server (`--port`, default 4173)                  |
-| `owned-process.mjs`     | Starts a child process and stops only what it started, never a process found by name or port        |
-| `shader-compact.mjs`    | Compacts the scene's GLSL template literals before esbuild                                          |
-| `bake-root-shade.mjs`   | Bakes the tree's root tables (`ROOT_RESTS`, `ROOT_SHADE`, `ROOT_COVER`) for terrain-build.js        |
-| `og-card.html`          | Source of the share card, `public/og.png`                                                           |
-| `og-card-backdrop.webp` | The share card's backdrop, a still of the live scene                                                |
+| File                       | Role                                                                                                   |
+| -------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `build-output.mjs`         | Validates the output folder, stages the payload, replaces assets before HTML, rolls back on failure    |
+| `watch.mjs`                | `npm run watch`: debounced, serialized rebuilds with `--retain-assets`                                 |
+| `dev.mjs`                  | `npm run dev`: watch builds plus an owned Wrangler server (`--port`, default 4173)                     |
+| `owned-process.mjs`        | Starts a child process and stops only what it started, never a process found by name or port           |
+| `shader-compact.mjs`       | Compacts the scene's GLSL template literals before esbuild                                             |
+| `bake-root-shade.mjs`      | Bakes the tree's root tables (`ROOT_RESTS`, `ROOT_SHADE`, `ROOT_COVER`) for terrain-build.js           |
+| `bake-opening-outline.mjs` | Bakes `src/scene/opening-outline.js`, the tower's stored outline for The watch, from both tower models |
+| `og-card.html`             | Source of the share card, `public/og.png`                                                              |
+| `og-card-backdrop.webp`    | The share card's backdrop, a still of the live scene                                                   |
 
 `node tools/bake-root-shade.mjs` prints the three constants from both tree variants, deterministically; paste them over the ones in [terrain-build.js](../src/scene/terrain-build.js) whenever one of its inputs changes: the tree models, the tree's seating (`TREE_FOOTING`, `TREE_SINK`), the root lines and lattice, the key-light direction (`KEY_LIGHT`), the terrain, or the ground the tables must leave untouched (the lantern clearing about `LANTERN_FOOT`, the river to its reach (`RIVER`, `RIVER_BED`, restating `SLATE_RIVER` and `SLATE_RIVER_BED` in mud-ground.js) and the puddles in `PUDDLE_ZONES`), or the stream's channel (`STREAMS`, restating `SLATE_STREAMS`). `test/terrain-build.test.mjs` re-bakes and fails on any difference.
+
+`node tools/bake-opening-outline.mjs` rewrites [opening-outline.js](../src/scene/opening-outline.js), which is generated and never edited by hand. For every variant `resolveDirectedShot()` gives The watch over a sweep of window sizes (three today, each keyed by `outlineKey(shot)`: its subject, region, focus, azimuth, height and target height, everything `measureShot()` reads from a shot), it measures each tier's tower (high and balanced) as the scene does, its root at the origin, and keeps the measurement's points reduced to their convex hull: `fitShot()` tests each point only against linear limits, so the hull fits exactly as all the points do. The tiers' models fit a few px apart in some variants (short landscape windows), so each tier has its own. Points are stored as little-endian Int16 multiples of `OUTLINE_RESOLUTION` (0.005 world units), base64: about 9.7 kB of source, 4.7 kB gzipped, in the scene's default load. Run it whenever the tower models (`images/architecture/tower-*.glb`) or The watch's framing (`DIRECTED_SHOTS.tower[0]` and its variants) change; `test/opening-star.test.mjs` re-measures both towers and fails until you do.
 
 ## Scene lifecycle
 
@@ -193,6 +201,6 @@ Every model, map, image, font and icon, with its size, and every byte and script
 
 ## Tests
 
-`npm test` runs `node --test "test/*.test.mjs"`: Node's own runner, no framework. Files are grouped by domain: page and UI (`markup-accessibility`, `hero`, `contact`, `scene-loader`, `boot`), scene wiring (`scene-bootstrap`, `scene-basics`, `scene-runtime`, `scene-quality`, `scene-postprocess`, `scene-visitor-pause`, `startup-cost`), camera (`cinematic`, `framing`, `camera-tour`), subjects and surroundings (`architecture`, `architecture-assets`, `lantern`, `sky`, `night-environment`, `hill-silhouette`, `mountain-massifs`, `lightning`, `film-scene`, `ground`, `terrain-build`), delivery (`build`, `bundle-output`, `hosting`, `smoke-pages`, `workflows`), and the docs (`docs`). `bundle-output` builds the site once into a temporary folder under `.tmp-preview-review/` and checks the real payload; two of its tests build small fixture projects there as well (the refused shared chunk, and a changed model's effect on the UI bundle).
+`npm test` runs `node --test "test/*.test.mjs"`: Node's own runner, no framework. Files are grouped by domain: page and UI (`markup-accessibility`, `hero`, `contact`, `scene-loader`, `boot`), scene wiring (`scene-bootstrap`, `scene-basics`, `scene-runtime`, `scene-quality`, `scene-postprocess`, `scene-visitor-pause`, `startup-cost`), camera (`cinematic`, `framing`, `camera-tour`, `opening-star`), subjects and surroundings (`architecture`, `architecture-assets`, `lantern`, `sky`, `night-environment`, `hill-silhouette`, `mountain-massifs`, `lightning`, `film-scene`, `ground`, `terrain-build`), delivery (`build`, `bundle-output`, `hosting`, `smoke-pages`, `workflows`), and the docs (`docs`). `bundle-output` builds the site once into a temporary folder under `.tmp-preview-review/` and checks the real payload; two of its tests build small fixture projects there as well (the refused shared chunk, and a changed model's effect on the UI bundle).
 
-[test/support/](../test/support/) holds shared helpers, outside the test glob. Each of `code.mjs`, `css.mjs` and `html.mjs` has its own whitespace-normalizing `flat()` for its language, so source, style and markup checks survive formatting; `code.mjs` also reads source files, and `css.mjs` parses rules and media blocks and computes contrast. `glb.mjs` is a GLB reader that handles normalized integer attributes, byte strides and node transforms, `terrain.mjs` holds the plain-dune baseline the terrain tests compare against, and `contact-dom.mjs` is the fake footer the contact and boot tests run contact.js over.
+[test/support/](../test/support/) holds shared helpers, outside the test glob. Each of `code.mjs`, `css.mjs` and `html.mjs` has its own whitespace-normalizing `flat()` for its language, so source, style and markup checks survive formatting; `code.mjs` also reads source files, and `css.mjs` parses rules and media blocks and computes contrast. `glb.mjs` is a GLB reader that handles normalized integer attributes, byte strides and node transforms, `terrain.mjs` holds the plain-dune baseline the terrain tests compare against, `ground.mjs` the live scene's analytic ground for the framing fixtures, and `contact-dom.mjs` is the fake footer the contact and boot tests run contact.js over.

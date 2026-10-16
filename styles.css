@@ -679,45 +679,138 @@ body.scene-walk-hidden > :not(.scene-shell) {
   text-align: left;
 }
 
-.scene-loader__track {
-  position: relative;
-  height: 2px;
-  border-radius: 1px;
-  background: rgba(230, 226, 214, 0.16);
-}
-
-/* The sun's colour; only its transform moves. */
-.scene-loader__fill {
+/* The loading line's star (src/ui/scene-loader.js): the scene's star as the opening
+   shot will show it, drawn under the canvas, so the canvas's own fade-in covers it as
+   the scene's star appears in its place. Every part is a 100px box centred on the
+   star's centre, sized by its transform; the script writes only transforms and
+   opacities, as the load progresses. Its disc, limb, glow and streak follow
+   solar-body.js (SOLAR_LOOK, SOLAR_STREAK); its five ghosts the lens's
+   (postprocess.js LENS_FX.flare: colour and strength here, place and size in the
+   script). */
+.scene-star {
   position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: #dfb882;
-  box-shadow: 0 0 6px rgba(223, 184, 130, 0.5);
-  transform: scaleX(0);
-  transform-origin: 0 50%;
-  transition: transform 520ms cubic-bezier(0.22, 1, 0.36, 1);
+  top: 0;
+  left: 0;
+  z-index: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
 }
 
-.scene-loader.is-done .scene-loader__fill {
-  transition-duration: 240ms;
+.scene-star > span {
+  position: absolute;
+  top: -50px;
+  left: -50px;
+  width: 100px;
+  height: 100px;
+  opacity: 0;
+}
+
+/* The disc as the scene grades it at the reveal: a pale gold centre to a warm limb. */
+.scene-star > .scene-star__disc {
+  border-radius: 50%;
+  background: radial-gradient(
+    circle closest-side,
+    rgb(190, 180, 122) 0%,
+    rgb(177, 155, 90) 30%,
+    rgb(173, 146, 83) 60%,
+    rgb(172, 139, 77) 80%,
+    rgb(173, 128, 67) 90%,
+    rgb(172, 121, 61) 95%,
+    rgb(173, 127, 70) 100%
+  );
+}
+
+/* The glow about the limb, two radii out (its box), gone by the second. */
+.scene-star > .scene-star__glow {
+  border-radius: 50%;
+  background: radial-gradient(
+    circle closest-side,
+    rgba(200, 140, 75, 0.85) 50%,
+    rgba(196, 136, 78, 0.77) 52.5%,
+    rgba(200, 120, 70, 0.41) 57.5%,
+    rgba(200, 118, 70, 0.18) 65%,
+    rgba(190, 110, 70, 0.06) 80%,
+    rgba(190, 110, 70, 0) 100%
+  );
+}
+
+/* The lens's anamorphic streak and its haze: lines through the centre, brightest there. */
+.scene-star > .scene-star__streak {
+  top: -1px;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    rgba(230, 150, 90, 0),
+    rgba(230, 150, 90, 0.05) 10%,
+    rgba(232, 156, 96, 0.14) 30%,
+    rgba(240, 172, 110, 0.32) 42%,
+    rgba(250, 200, 140, 0.7) 48%,
+    rgba(255, 220, 165, 0.9) 50%,
+    rgba(250, 200, 140, 0.7) 52%,
+    rgba(240, 172, 110, 0.32) 58%,
+    rgba(232, 156, 96, 0.14) 70%,
+    rgba(230, 150, 90, 0.05) 90%,
+    rgba(230, 150, 90, 0)
+  );
+}
+
+.scene-star > .scene-star__haze {
+  top: -8px;
+  height: 16px;
+  background: radial-gradient(
+    closest-side,
+    rgba(232, 150, 84, 0.16),
+    rgba(232, 150, 84, 0.06) 55%,
+    rgba(232, 150, 84, 0)
+  );
+}
+
+/* The lens's ghosts: brightest toward their rim (0.55 of their strength at the
+   centre), fading out over their last fifth, as the final pass draws them. */
+.scene-star > .scene-star__ghost {
+  --ghost: 255, 158, 77;
+  --strength: 0.18;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle closest-side,
+    rgba(var(--ghost), calc(0.55 * var(--strength))) 0%,
+    rgba(var(--ghost), calc(0.55 * var(--strength))) 45%,
+    rgba(var(--ghost), var(--strength)) 80%,
+    rgba(var(--ghost), 0) 100%
+  );
+}
+
+.scene-star__ghost:nth-of-type(6) {
+  --ghost: 115, 179, 255;
+  --strength: 0.09;
+}
+
+.scene-star__ghost:nth-of-type(7) {
+  --ghost: 153, 255, 179;
+  --strength: 0.16;
+}
+
+.scene-star__ghost:nth-of-type(8) {
+  --ghost: 230, 128, 255;
+  --strength: 0.06;
+}
+
+.scene-star__ghost:nth-of-type(9) {
+  --ghost: 255, 191, 102;
+  --strength: 0.12;
+}
+
+@media (forced-colors: active), (prefers-contrast: more) {
+  .scene-star {
+    display: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .scene-loader.is-loading,
-  .scene-loader.is-done,
-  .scene-loader__fill,
-  .scene-loader.is-done .scene-loader__fill {
+  .scene-loader.is-done {
     transition: none;
-  }
-}
-
-@media (prefers-reduced-transparency: reduce) {
-  .scene-loader__track {
-    background: #34373c;
-  }
-
-  .scene-loader__fill {
-    box-shadow: none;
   }
 }
 

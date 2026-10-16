@@ -123,11 +123,11 @@ Only the share card is generated in the repository. Everything else is committed
 | Complete scene, high: eight models and five slate maps | 6.25 MiB (6,553,600)                               | 6,477,958        | `bundle-output`: "the complete scene fits 6.25 MiB on high and 3 MiB on balanced…"        |
 | Complete scene, balanced                               | 3 MiB                                              | 3,063,140        | The same                                                                                  |
 | UI bundle (`app.HASH.js`)                              | under 30 KiB                                       |                  | `bundle-output`: "UI bundle stays under the LCP budget"                                   |
-| Scene entry and the chunks it imports statically       | under 820 KiB, exactly two files                   |                  | `bundle-output`: "scene bundle stays under the deferred-payload budget"                   |
+| Scene entry and the chunks it imports statically       | under 830 KiB, exactly two files                   |                  | `bundle-output`: "scene bundle stays under the deferred-payload budget"                   |
 | Paper grain and paper edge                             | 200 KiB (204,800)                                  | 91,240           | `markup-accessibility`: "the 404's paper grain and edge stay within their 200 KiB budget" |
 | `public/og.png`                                        | opaque, exactly 1200×630, at most 300 KB (300,000) | 298,550          | `hosting`: "the share image is an opaque 1200x630 PNG of at most 300 KB, as its tags say" |
 
-Lazy scene chunks are outside the script budget. Script sizes change with every build; `npm run build:dist` prints them.
+Lazy scene chunks are outside the script budget. The scene's default load carries the tower's stored outline for the loading line's star ([opening-outline.js](../src/scene/opening-outline.js), about 10 kB of it). Script sizes change with every build; `npm run build:dist` prints them.
 
 ## Publication
 
@@ -142,8 +142,9 @@ The build publishes these sources only as `name.HASH.ext`, eight hex digits of t
 1. Prepare the GLB to the loader's rules above, within its tier's limit, with the same role and tier name. Keep the supplied silhouettes, UVs and map resolutions ([Style](STYLE.md#materials-and-lighting)).
 2. Keep each tier's complete scene within its budget.
 3. When the tree changes, run `node tools/bake-root-shade.mjs` and paste the `ROOT_RESTS`, `ROOT_SHADE` and `ROOT_COVER` it prints over those constants in [terrain-build.js](../src/scene/terrain-build.js); `test/terrain-build.test.mjs` re-bakes both tree variants and fails on any difference.
-4. Recheck every shot it appears in ([Scene modes](SCENE-MODES.md#capture-recipe)); `test/framing.test.mjs` fits the directed shots to the delivered tower, tree and lantern on both tiers.
-5. Update the tables in this file and the model's entry in [Credits](CREDITS.md).
+4. When the tower changes, run `node tools/bake-opening-outline.mjs`, which rewrites [opening-outline.js](../src/scene/opening-outline.js), the tower's stored outline that places the loading line's star before the tower loads; `test/opening-star.test.mjs` re-measures both tower variants and fails until you do.
+5. Recheck every shot it appears in ([Scene modes](SCENE-MODES.md#capture-recipe)); `test/framing.test.mjs` fits the directed shots to the delivered tower, tree and lantern on both tiers.
+6. Update the tables in this file and the model's entry in [Credits](CREDITS.md).
 
 The build hashes the new bytes, so the file needs no other wiring. Replacing the tower or tree also changes the UI bundle, which names those two URLs and sizes for the early request and the loading line.
 

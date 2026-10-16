@@ -125,9 +125,11 @@ test("scene bundle stays under the deferred-payload budget", async () => {
   let bytes = 0;
   for (const name of loaded.keys()) bytes += (await stat(path.join(scriptsDir, name))).size;
   const kb = bytes / 1024;
+  // 830 kB since the loading line's star lines up with the opening shot's: the tower's
+  // stored outline (opening-outline.js) is about 10 kB of it.
   assert.ok(
-    kb < 820,
-    `scene bundle (${[...loaded.keys()].join(" + ")}) is ${kb.toFixed(1)} kB; budget is 820 kB`,
+    kb < 830,
+    `scene bundle (${[...loaded.keys()].join(" + ")}) is ${kb.toFixed(1)} kB; budget is 830 kB`,
   );
 });
 
@@ -404,7 +406,8 @@ test("the pages publish no picture, and the share card's backdrop stays unpublis
 test("the UI carries the loading line and its tower and tree byte sizes; the scene only reports to it", async () => {
   const app = await readFile(await findHashedScript("app"), "utf8");
   const scene = await readSceneStatic();
-  assert.match(app, /scene-loader__fill/);
+  assert.match(app, /scene-loader__value/);
+  assert.match(app, /scene-star/);
   assert.match(app, /sceneLoader/);
   for (const tier of ["high", "balanced"]) {
     for (const role of ["tower", "tree"]) {
@@ -421,9 +424,10 @@ test("the UI carries the loading line and its tower and tree byte sizes; the sce
     );
     assert.ok(!app.includes(String(size)), `the UI names no ${role} size`);
   }
-  // The scene's model loader reports its own requests; the copy stays in the UI.
+  // The scene's model loader reports its own requests, and the scene where its star will
+  // be; the copy and the star's drawing stay in the UI.
   assert.match(scene, /sceneLoader/);
-  assert.doesNotMatch(scene, /Loading the estate|scene-loader__/);
+  assert.doesNotMatch(scene, /Loading the estate|scene-loader__|scene-star/);
   const html = await readFile(path.join(distDir, "index.html"), "utf8");
   assert.match(html, /<div class="scene-loader" id="scene-loader" aria-hidden="true" hidden>/);
 });

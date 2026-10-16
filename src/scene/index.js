@@ -1,6 +1,7 @@
 import "./quality.js";
 import { createSolarBody, SOLAR_RADIUS } from "./solar-body.js";
 import { LENS_FX, lensKeepRect, lensSource } from "./postprocess.js";
+import { openingStar } from "./opening-star.js";
 import { createStarfield } from "./starfield.js";
 import { readTourInterval, createCameraTour, TOUR_IDLE, TOUR_TRANSITION } from "./camera-tour.js";
 import { createFilmScene } from "./film-scene.js";
@@ -263,6 +264,8 @@ const ORBIT_SPEED = 0.06;
       let cinematicArea;
       // The hero uses layout geometry so scroll and its reveal/fade transforms do
       // not reframe the camera; the fixed bottom bar keeps its viewport rect.
+      const cinematicGroundY = (x, z) =>
+        groundHeight(x, z) + groundSurface.getWorldPosition(new Vector3()).y;
       const measureCinematicArea = (width, height) =>
         cinematicSafeArea(
           width,
@@ -276,7 +279,7 @@ const ORBIT_SPEED = 0.06;
         selected: scene.cinematicSelection,
         angle: scene.cinematicAngle,
         getSafeArea: (width, height) => cinematicArea || measureCinematicArea(width, height),
-        getGroundY: (x, z) => groundHeight(x, z) + groundSurface.getWorldPosition(new Vector3()).y,
+        getGroundY: (x, z) => cinematicGroundY(x, z),
       });
       subsystemRegistry.register(cinematic);
       const tourInterval = readTourInterval(window.location.search);
@@ -616,6 +619,8 @@ const ORBIT_SPEED = 0.06;
       const towerRoot = new Group();
       environmentRoot.add(towerRoot);
       const towerGroundY = groundHeight(0, 0);
+      // The earth footing sets the lookout's posts into the terrace.
+      const TOWER_FOOTING = -0.22;
       // Authored casters and the sun hold still within a shot, so the shadow map
       // redraws only on reported changes.
       rendering.setStaticShadows(true);
@@ -733,11 +738,10 @@ const ORBIT_SPEED = 0.06;
         onLanternReady: (asset) => lanternMount.stage(asset),
         onTowerReady(assets) {
           const assemblyStart = sceneNow();
-          // The earth footing (-0.22) sets the lookout's posts into the terrace.
           const replacement = createCompleteTowerArchitecture({
             asset: assets.tower,
             groundY: towerGroundY,
-            footingOffset: -0.22,
+            footingOffset: TOWER_FOOTING,
             anisotropy: chooseAnisotropy(6),
           });
           try {
@@ -860,6 +864,51 @@ const ORBIT_SPEED = 0.06;
           compositionReason: reason,
         });
       }
+      // The loading line's star (ui/scene-loader.js) waits where the opening shot will show
+      // this one, in CSS px from the canvas's top-left: first where the opening fit to the
+      // tower's stored outline puts it (opening-star.js), from the scene's start and again on
+      // a resize or once the fonts load; then, once the scene's camera has fitted that shot
+      // itself, where it does.
+      let openingCameraStar = false;
+      const openingSun = new Vector3(),
+        openingTower = new Vector3(),
+        openingSource = [0, 0, 0, 0];
+      function reportLoaderStar(star) {
+        const rect = renderer.domElement?.getBoundingClientRect?.();
+        site.sceneLoader?.star?.(
+          star && rect?.width && rect.height
+            ? {
+                x: star[0] * rect.width,
+                y: (1 - star[1]) * rect.height,
+                radius: star[2] * rect.height,
+                width: rect.width,
+                height: rect.height,
+              }
+            : null,
+        );
+      }
+      function predictLoaderStar() {
+        if (openingCameraStar || canvasShown || !site.sceneLoader?.star) return;
+        // Where the tower's root will stand: its terrace and footing, under the scene's
+        // composition height (environmentRoot), which only lifts or lowers it.
+        towerRoot.updateWorldMatrix(true, false);
+        towerRoot.localToWorld(openingTower.set(0, towerGroundY + TOWER_FOOTING, 0));
+        reportLoaderStar(
+          openingStar({
+            width: viewport.width,
+            height: viewport.height,
+            getSafeArea: (width, height) => cinematicArea || measureCinematicArea(width, height),
+            getGroundY: cinematicGroundY,
+            sun: solarBody.root.getWorldPosition(openingSun),
+            towerY: openingTower.y,
+            tier: assetTier,
+            tourPhase: cameraTour ? 0 : null,
+            selected: scene.cinematicSelection,
+            angle: scene.cinematicAngle,
+            out: openingSource,
+          }),
+        );
+      }
       function applySceneSize({ width, height }) {
         qualityState.holdSampling();
         cinematicArea = measureCinematicArea(width, height);
@@ -874,6 +923,8 @@ const ORBIT_SPEED = 0.06;
           height,
           width,
         });
+        // After the composition has set the scene's height.
+        predictLoaderStar();
         // Resizing clears the canvas; draw one frame behind a visitor pause.
         visitorHold?.redraw();
         frameScheduler?.invalidate();
@@ -914,6 +965,7 @@ const ORBIT_SPEED = 0.06;
         cameraTour?.prepareNext();
         measureGroundText();
         invalidateContent();
+        predictLoaderStar();
       };
       document.fonts?.addEventListener?.("loadingdone", onFontsLoaded);
       const onWindowScroll = () => {
@@ -1140,6 +1192,11 @@ const ORBIT_SPEED = 0.06;
                   lensStar,
                 )
               : null;
+          // Until the reveal the loading line's star waits where this one will be.
+          if (star && !canvasShown) {
+            openingCameraStar = true;
+            reportLoaderStar(star);
+          }
           post.setLensSources?.({
             star,
             flame: flame

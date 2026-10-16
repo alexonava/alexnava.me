@@ -116,6 +116,18 @@
     <a class="skip-link" href="#main">Skip to main content</a>
 
     <div class="scene-shell" aria-hidden="true">
+      <!-- The loading line's star, where the opening shot will show the scene's own. -->
+      <div class="scene-star" id="scene-star" hidden>
+        <span class="scene-star__haze"></span>
+        <span class="scene-star__streak"></span>
+        <span class="scene-star__glow"></span>
+        <span class="scene-star__disc"></span>
+        <span class="scene-star__ghost"></span>
+        <span class="scene-star__ghost"></span>
+        <span class="scene-star__ghost"></span>
+        <span class="scene-star__ghost"></span>
+        <span class="scene-star__ghost"></span>
+      </div>
       <div id="home-scene" class="scene-canvas"></div>
       <div class="scene-vignette"></div>
     </div>
@@ -140,7 +152,6 @@
       <p class="scene-loader__label">
         Loading the estate &middot; <span class="scene-loader__value">0%</span>
       </p>
-      <div class="scene-loader__track"><div class="scene-loader__fill"></div></div>
     </div>
     <footer class="site-footer">
       <button

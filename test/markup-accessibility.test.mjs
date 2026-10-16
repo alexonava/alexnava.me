@@ -97,7 +97,8 @@ test("the scene is the landing content, and nothing covers or dims it", async ()
 });
 
 const LOADER_MARKUP =
-  '<div class="scene-loader" id="scene-loader" aria-hidden="true" hidden><p class="scene-loader__label">Loading the estate &middot; <span class="scene-loader__value">0%</span></p><div class="scene-loader__track"><div class="scene-loader__fill"></div></div></div>';
+  '<div class="scene-loader" id="scene-loader" aria-hidden="true" hidden><p class="scene-loader__label">Loading the estate &middot; <span class="scene-loader__value">0%</span></p></div>';
+const STAR_MARKUP = `<div class="scene-star" id="scene-star" hidden><span class="scene-star__haze"></span><span class="scene-star__streak"></span><span class="scene-star__glow"></span><span class="scene-star__disc"></span>${'<span class="scene-star__ghost"></span>'.repeat(5)}</div>`;
 
 test("the title card paints no picture, and its hidden loading line sits between the bottom bar and footer", async () => {
   const html = flatHtml(await readIndexHtml());
@@ -112,6 +113,17 @@ test("the title card paints no picture, and its hidden loading line sits between
   assert.ok(at < html.indexOf('<footer class="site-footer">'), "before the footer");
   const main = html.match(/<main[\s\S]*?<\/main>/)[0];
   assert.doesNotMatch(main, /scene-loader/, "outside main");
+  // Its star sits in the decorative scene shell, hidden, before the canvas, which fades in
+  // over it; the canvas and the vignette stay adjacent for the grain's sibling rule.
+  const shell =
+    html.match(
+      /<div class="scene-shell" aria-hidden="true">[\s\S]*?<div class="scene-vignette"><\/div>/,
+    )?.[0] ?? "";
+  assert.ok(shell.includes(STAR_MARKUP), "the star's exact markup, in the scene shell");
+  assert.ok(
+    shell.indexOf(STAR_MARKUP) < shell.indexOf('<div id="home-scene" class="scene-canvas">'),
+  );
+  assert.equal(html.split('id="scene-star"').length - 1, 1);
   // The CSP allows no inline style; the line moves only through the CSSOM.
   for (const page of [html, await readNotFoundHtml()]) {
     assert.doesNotMatch(page, /\sstyle=|<style[\s>]/);
@@ -150,12 +162,7 @@ test("the canvas keeps one 480ms fade over the title card, and the loading line 
   );
   assert.ok(Number(duration) + Number(delay) <= 480, "the line is gone when the canvas is in");
   const reduced = mediaBlock(styles, "(prefers-reduced-motion: reduce)");
-  for (const selector of [
-    ".scene-canvas",
-    ".scene-loader.is-loading",
-    ".scene-loader.is-done",
-    ".scene-loader__fill",
-  ]) {
+  for (const selector of [".scene-canvas", ".scene-loader.is-loading", ".scene-loader.is-done"]) {
     assert.ok(
       cssRules(reduced, (list) => list.split(",").some((part) => part.trim() === selector)).some(
         ({ body }) => /transition:\s*none;/.test(body),
@@ -163,26 +170,40 @@ test("the canvas keeps one 480ms fade over the title card, and the loading line 
       `${selector} is immediate for reduced motion`,
     );
   }
-  // The bar moves only with real progress: no glint sweeps it, for anyone.
+  // The line and its star move only with real progress: no glint sweeps them, for anyone,
+  // and the star has no transition of its own (the canvas's fade covers it at the reveal).
   assert.deepEqual(
     cssRules(
       styles,
-      (selector) => /scene-loader/.test(selector) && /::(?:after|before)/.test(selector),
+      (selector) => /scene-loader|scene-star/.test(selector) && /::(?:after|before)/.test(selector),
     ),
     [],
     "no decorative layer on the loading line",
   );
-  assert.doesNotMatch(styles, /@keyframes scene-loader|glint/, "no glint keyframes");
   assert.doesNotMatch(
-    cssRules(styles, (selector) => selector.includes("scene-loader"))
+    styles,
+    /@keyframes scene-loader|@keyframes scene-star|glint/,
+    "no glint keyframes",
+  );
+  assert.doesNotMatch(
+    cssRules(styles, (selector) => /scene-loader|scene-star/.test(selector))
       .map(({ body }) => body)
       .join(""),
     /animation/,
     "nothing on the loading line animates",
   );
+  assert.doesNotMatch(
+    cssRules(styles, (selector) => selector.includes("scene-star"))
+      .map(({ body }) => body)
+      .join(""),
+    /transition/,
+    "the star changes only as the script writes it",
+  );
+  // Under the canvas (z-index 1), above the title card's own stars (the shell's ::before, 0).
+  assert.match(cssRule(styles, ".scene-star"), /z-index:\s*0;/);
 });
 
-test("the loading line is fixed above the footer, inert, legible and drawn by one transform", async () => {
+test("the loading line is fixed above the footer, inert and legible; its star moves by transform and opacity alone", async () => {
   const styles = await readStyles();
   const loader = cssRule(styles, ".scene-loader");
   assert.match(loader, /position:\s*fixed;/);
@@ -197,30 +218,24 @@ test("the loading line is fixed above the footer, inert, legible and drawn by on
   assert.match(loader, /color:\s*var\(--text-accent\);/);
   assert.match(loader, /text-shadow:\s*var\(--text-meta-shadow\);/);
   assert.match(cssRule(styles, ".scene-loader__label"), /font-variant-numeric:\s*tabular-nums;/);
-  const fill = cssRule(styles, ".scene-loader__fill");
-  assert.match(fill, /transform:\s*scaleX\(0\);/);
-  assert.match(fill, /transform-origin:\s*0 50%;/);
-  // Only the transform animates, and the script writes nothing else.
-  const fillTransitions = cssRules(styles, (selector) =>
-    /\.scene-loader__fill$/.test(selector.trim()),
-  ).flatMap(({ body }) =>
-    [...body.matchAll(/transition(?:-property)?:\s*([^;]+);/g)].map((match) => match[1]),
-  );
-  assert.ok(fillTransitions.length > 0);
-  for (const transition of fillTransitions)
-    assert.match(transition, /^(?:transform \d+ms\b|none$)/);
+  // The script writes the star's transforms and opacities and nothing else; every part
+  // starts unseen.
   const script = await readFile(path.join(projectRoot, "src", "ui", "scene-loader.js"), "utf8");
   assert.deepEqual(
     [...new Set([...script.matchAll(/\.style\.(\w+)\s*=/g)].map((match) => match[1]))],
-    ["transform"],
+    ["transform", "opacity"],
   );
+  assert.match(cssRule(styles, ".scene-star > span"), /opacity:\s*0;/);
+  assert.match(cssRule(styles, ".scene-star"), /pointer-events:\s*none;/);
   assert.match(
     mediaBlock(styles, "(forced-colors: active)"),
     /\.scene-loader\s*\{\s*display:\s*none;/,
   );
-  const transparency = mediaBlock(styles, "(prefers-reduced-transparency: reduce)");
-  assert.match(transparency, /\.scene-loader__track\s*\{\s*background:\s*#[0-9a-f]{6};/i);
-  assert.match(transparency, /\.scene-loader__fill\s*\{\s*box-shadow:\s*none;/);
+  // Forced colours and increased contrast take no star, as they take no grain.
+  assert.match(
+    mediaBlock(styles, "(forced-colors: active), (prefers-contrast: more)"),
+    /\.scene-star\s*\{\s*display:\s*none;/,
+  );
   const ink = color(styles, "var(--text-accent)"),
     night = color(styles, "var(--night-900)");
   assert.ok(
