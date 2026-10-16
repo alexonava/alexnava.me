@@ -220,9 +220,9 @@ test("the loading line is fixed above the footer in the name's colour, its bar a
     "the line sits on the footer",
   );
   assert.ok(Number(loader.match(/font-size:\s*(\d+)px;/)[1]) >= 12);
-  // The label and the bar take the name's colour.
-  const name = cssRule(styles, ".hero h1").match(/(?:^|[;\s])color:\s*(#[0-9a-f]{6});/i)[1];
-  assert.ok(loader.includes(`color: ${name};`), "the label in the name's colour");
+  // The label and the bar take the name's colour, as all text does.
+  const name = color(styles, "var(--text)");
+  assert.match(loader, /color:\s*var\(--text\);/, "the label in the name's colour");
   assert.match(loader, /text-shadow:\s*var\(--text-meta-shadow\);/);
   assert.match(cssRule(styles, ".scene-loader__label"), /font-variant-numeric:\s*tabular-nums;/);
   // The bar spans the window's top edge (below the status bar in the home-screen app,
@@ -237,7 +237,7 @@ test("the loading line is fixed above the footer in the name's colour, its bar a
   ])
     assert.match(track, rule);
   const fill = cssRule(styles, ".scene-loader__fill");
-  assert.ok(fill.includes(`background: ${name};`), "the fill in the name's colour");
+  assert.match(fill, /background:\s*var\(--text\);/, "the fill in the name's colour");
   assert.match(fill, /transform:\s*scaleX\(0\);/);
   assert.match(fill, /transform-origin:\s*0 50%;/);
   // Only the fill's transform moves, and faster at the reveal.
@@ -582,16 +582,16 @@ test("forced colors and high-contrast modes keep system colors and the system cu
   );
 });
 
-test("the email and LinkedIn read at Contact's tier, underlined, with or without scripts", async () => {
+test("the email and LinkedIn read in the name's colour, underlined, with or without scripts", async () => {
   const styles = await readStyles();
-  assert.match(cssRule(styles, ".site-footer__links"), /color:\s*var\(--text-nav\);/);
-  const nav = color(styles, "var(--text-nav)");
-  assert.ok(contrast(nav, color(styles, "var(--night-900)")) >= 4.5, nav);
+  assert.match(cssRule(styles, ".site-footer__links"), /color:\s*var\(--text\);/);
+  const text = color(styles, "var(--text)");
+  assert.ok(contrast(text, color(styles, "var(--night-900)")) >= 4.5, text);
   const link = cssRule(styles, ".site-footer__links .site-footer__link");
   assert.match(link, /text-decoration:\s*underline;/);
   assert.match(link, /text-decoration-thickness:\s*1px;/);
   assert.match(link, /text-underline-offset:\s*4px;/);
-  // Real hover brightens the underline, as the shared rule brightens the text.
+  // Real hover brightens the underline; the text keeps its colour.
   assert.match(
     mediaBlock(styles, "(hover: hover)"),
     /\.site-footer__links \.site-footer__link:hover\s*\{\s*text-decoration-color:/,
@@ -727,7 +727,7 @@ test("footer controls keep 44px targets without blocking the scene", async () =>
   assert.match(footer, /position:\s*fixed;/);
   assert.match(footer, /pointer-events:\s*none;/);
   assert.ok(Number(footer.match(/font-size:\s*(\d+)px;/)[1]) >= 12);
-  assert.match(footer, /color:\s*var\(--text-accent\);/);
+  assert.match(footer, /color:\s*var\(--text\);/);
   assert.match(footer, /text-shadow:\s*var\(--text-meta-shadow\);/);
 
   const link = cssRule(styles, ".site-footer__link");
@@ -736,10 +736,23 @@ test("footer controls keep 44px targets without blocking the scene", async () =>
   assert.match(link, /pointer-events:\s*auto;/);
   assert.match(link, /text-shadow:\s*inherit;/, "buttons otherwise drop the meta shadow");
 
-  // Touch browsers keep :hover after a tap, so only the pressed state stays bright.
+  // Touch browsers keep :hover after a tap, so the hover underlines follow real hover
+  // only; a press underlines in full.
   const hover = mediaBlock(styles, "(hover: hover)");
-  assert.match(hover, /\.site-footer__link:hover\s*\{\s*color:\s*var\(--text\);/);
   assert.match(hover, /\.site-footer__contact:hover\s*\{[^}]*text-decoration:\s*underline;/);
+  assert.match(cssRule(styles, ".site-footer__link:active"), /text-decoration-line:\s*underline;/);
+  // A pressed link goes full over its hover rule; Contact's and Home's underline colour is
+  // set at rest, so hover never starts it at full and fades it.
+  assert.match(
+    cssRule(styles, ".site-footer__links .site-footer__link:active"),
+    /text-decoration-color:\s*currentColor;/,
+  );
+  for (const selector of [".site-footer__contact", ".not-found .back-link"])
+    assert.match(
+      cssRule(styles, selector),
+      /text-decoration-color:\s*rgba\(247, 241, 234, 0\.5\);/,
+      selector,
+    );
   const footerHover = /\.site-footer__(?:link|contact):hover/g;
   assert.equal((styles.match(footerHover) || []).length, (hover.match(footerHover) || []).length);
 
@@ -771,31 +784,28 @@ test("footer controls keep 44px targets without blocking the scene", async () =>
   assert.match(beside, /grid-column:\s*2;/);
   assert.match(beside, /margin-left:\s*26px;/);
   assert.match(beside, /padding-left:\s*26px;/);
-  assert.match(beside, /border-left:\s*1px solid rgba\(229, 228, 223, 0\.28\);/);
+  // A hairline of the name's colour.
+  assert.match(beside, /border-left:\s*1px solid rgba\(247, 241, 234, 0\.28\);/);
 
   const forced = styles.slice(styles.indexOf("/* Windows High Contrast"));
   assert.match(forced, /a,\s*\.site-footer__contact\s*\{\s*color:\s*LinkText;/);
 });
 
-test("Contact and its links keep a brighter label over edgeless text scrims of their own", async () => {
+test("Contact and its links take the name's colour over edgeless text scrims of their own", async () => {
   const styles = await readStyles();
-  // A tier above the meta text, 14px, and well clear of the night.
-  const nav = styles.match(/--text-nav:\s*(#[0-9a-f]{6});/i)[1];
-  const meta = styles.match(/--text-muted-accent:\s*(#[0-9a-f]{6});/i)[1];
-  const night = styles.match(/--night-900:\s*(#[0-9a-f]{6});/i)[1];
-  assert.ok(contrast(nav, night) > contrast(meta, night));
-  assert.ok(contrast(nav, night) >= 12, `${contrast(nav, night)}`);
+  // The name's colour, 14px, and well clear of the night.
+  const text = color(styles, "var(--text)");
+  const night = color(styles, "var(--night-900)");
+  assert.ok(contrast(text, night) >= 12, `${contrast(text, night)}`);
   assert.match(cssRule(styles, ".site-footer"), /font-size:\s*14px;\s*line-height:\s*18px;/);
   for (const selector of [".site-footer__contact", ".site-footer__links"]) {
     const body = cssRule(styles, selector);
     assert.match(body, /position:\s*relative;/, selector);
     assert.match(body, /isolation:\s*isolate;/, selector);
-    assert.match(body, /color:\s*var\(--text-nav\);/, selector);
+    assert.match(body, /color:\s*var\(--text\);/, selector);
   }
-  assert.match(
-    cssRule(styles, '.site-footer__contact[aria-expanded="true"]'),
-    /color:\s*var\(--text\);/,
-  );
+  // Open, Contact keeps the one colour: there is no brighter tier.
+  assert.equal(cssRule(styles, '.site-footer__contact[aria-expanded="true"]'), "");
   // The 44px target hangs around the 18px line; the ring stays 2px clear of it.
   assert.match(cssRule(styles, ".site-footer__link"), /margin:\s*-13px -14px;/);
   assert.match(cssRule(styles, ".site-footer__link:focus-visible"), /outline-offset:\s*-11px;/);
@@ -946,7 +956,26 @@ test("very wide screens anchor the hero and footer to a gutter beyond the 1600px
   );
 });
 
-test("controls brighten on real hover and press without lifting, and their rings hug the line", async () => {
+test("all text takes the name's colour: one token, and every colour declaration uses it", async () => {
+  const styles = await readStyles();
+  assert.equal(color(styles, "var(--text)").toLowerCase(), "#f7f1ea");
+  // The name is the source of the colour.
+  assert.match(cssRule(styles, ".hero h1"), /(?:^|[;\s])color:\s*var\(--text\);/);
+  // Forced colours hand text to the system's colours; everywhere else it is the one token.
+  const forced = mediaBlock(styles, "(forced-colors: active)");
+  const sheet = forced
+    .split(/\n(?=@media )/)
+    .reduce((rest, block) => rest.replace(block, ""), styles);
+  const colours = [...sheet.matchAll(/(?:^|[;{\s])color:\s*([^;]+);/g)].map((match) =>
+    match[1].trim(),
+  );
+  assert.ok(colours.length >= 8, "the sheet's text colours");
+  for (const value of colours)
+    assert.match(value, /^(?:var\(--text\)|inherit|currentColor|transparent)$/, value);
+  assert.doesNotMatch(styles, /--text-(?:nav|accent|muted-accent|primary)\b/, "no tiers");
+});
+
+test("controls underline on real hover and press without lifting, and their rings hug the line", async () => {
   const styles = await readStyles();
   // Touch browsers keep :hover after a tap, so tints follow real hover.
   const hover = mediaBlock(styles, "(hover: hover)");
@@ -1008,7 +1037,7 @@ test("selected text takes a warm wash that keeps its ink legible on the night", 
     [night, color(styles, "var(--night-800)")],
   ]) {
     const wash = body.match(/background:\s*(rgba\([^)]+\));/)[1];
-    const ink = body.match(/(?:^|[;\s])color:\s*(#[0-9a-f]{6});/i)[1];
+    const ink = color(styles, body.match(/(?:^|[;\s])color:\s*([^;]+);/)[1]);
     const selected = over(wash, ground);
     assert.ok(
       contrast(ink, selected) >= 4.5,
@@ -1067,19 +1096,12 @@ test("the 404 is the title card's night with one centred line and the way home",
   const heading = cssRule(styles, ".not-found h1");
   assert.match(heading, /font-family:\s*var\(--font-display\);/);
   assert.match(heading, /font-weight:\s*700;/);
-  const night = color(styles, "var(--night-900)");
-  for (const [selector, ink] of [
-    [".not-found h1", heading.match(/(?:^|[;\s])color:\s*(#[0-9a-f]{6});/i)[1]],
-    [
-      ".not-found__text",
-      cssRule(styles, ".not-found__text").match(/(?:^|[;\s])color:\s*(#[0-9a-f]{6});/i)[1],
-    ],
-    [".not-found .back-link", color(styles, "var(--text-nav)")],
-  ])
-    assert.ok(contrast(ink, night) >= 4.5, `${selector}: ${ink} on the night`);
-  // Home in the footer's type at Contact's tier, a 44px target about its 18px line.
+  // Every line in the name's colour, legible on the night.
+  for (const selector of [".not-found h1", ".not-found__text", ".not-found .back-link"])
+    assert.match(cssRule(styles, selector), /(?:^|[;\s])color:\s*var\(--text\);/, selector);
+  assert.ok(contrast(color(styles, "var(--text)"), color(styles, "var(--night-900)")) >= 4.5);
+  // Home in the footer's type, a 44px target about its 18px line.
   const home = cssRule(styles, ".not-found .back-link");
-  assert.match(home, /color:\s*var\(--text-nav\);/);
   assert.match(home, /min-height:\s*44px;/);
   assert.match(home, /line-height:\s*18px;/);
   // No paper, no picture: nothing on the 404 requests an image.

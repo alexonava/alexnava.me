@@ -84,7 +84,7 @@ The grit and relief maps are the close soil near the lens (mud-ground.js `SLATE_
 | `icon-192.png`          |   1,969 | 192×192   | Palette with transparency (tRNS)                          |
 | `icon-512.png`          |  18,901 | 512×512   | RGBA                                                      |
 | `icon-maskable-512.png` |   2,928 | 512×512   | Opaque palette                                            |
-| `og.png`                | 298,550 | 1200×630  | Share card; opaque, 224-colour palette                    |
+| `og.png`                | 299,150 | 1200×630  | Share card; opaque, 224-colour palette                    |
 
 The icons are the initials AN in the name's face, Cormorant Garamond 700, in the name's colour (`#f7f1ea`) on the night (`#090b16`) ([Style](STYLE.md#static-images)). `favicon.svg` and `icon.svg` draw, on a 512 viewBox, the night tile with its corners rounded at 112 and the initials as one outline path (even-odd fill), so they need no font. `icon-maskable.svg` is full bleed, its initials scaled to 0.815 of theirs to sit inside the maskable safe circle, and `apple-touch-icon.png` is `icon.svg`'s drawing full bleed (iOS rounds it). The PNGs and the ICO's images are Chrome's renderings of these drawings.
 
@@ -116,7 +116,7 @@ Only the share card is generated in the repository. Everything else is committed
 | Complete scene, balanced                               | 3 MiB                                              | 3,063,140        | The same                                                                                  |
 | UI bundle (`app.HASH.js`)                              | under 30 KiB                                       |                  | `bundle-output`: "UI bundle stays under the LCP budget"                                   |
 | Scene entry and the chunks it imports statically       | under 830 KiB, exactly two files                   |                  | `bundle-output`: "scene bundle stays under the deferred-payload budget"                   |
-| `public/og.png`                                        | opaque, exactly 1200×630, at most 300 KB (300,000) | 298,550          | `hosting`: "the share image is an opaque 1200x630 PNG of at most 300 KB, as its tags say" |
+| `public/og.png`                                        | opaque, exactly 1200×630, at most 300 KB (300,000) | 299,150          | `hosting`: "the share image is an opaque 1200x630 PNG of at most 300 KB, as its tags say" |
 
 Lazy scene chunks are outside the script budget. The scene's default load carries the tower's stored outline for the loading line's star ([opening-outline.js](../src/scene/opening-outline.js), about 10 kB of it). Script sizes change with every build; `npm run build:dist` prints them.
 

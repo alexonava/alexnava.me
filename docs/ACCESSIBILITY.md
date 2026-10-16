@@ -8,16 +8,16 @@ The intended conformance target is WCAG 2.2 level AA. This file is where that ta
 
 What the repository checks:
 
-| Check                                                                                                                                                                        | Where                               |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
-| Lighthouse accessibility score 1.00 (median of three runs) on the homepage's title card                                                                                      | `lighthouserc.json`, CI `audit` job |
-| No `font-size` below 12px in styles.css; the footer at 12px or more                                                                                                          | `markup-accessibility`              |
-| 4.5:1 on the night for the 404's heading, text and Home link, the footer's Contact and links (`--text-nav`) and the loading line; selected text on its wash                  | `markup-accessibility`              |
-| 44 px targets: the skip link, the footer's Contact and its two links, and the 404's Home link                                                                                | `markup-accessibility`              |
-| Every `aria-controls` target exists; the skip link's target exists                                                                                                           | `markup-accessibility`              |
-| Landmarks and heading levels; the footer's Contact button and its links, which show without scripts                                                                          | `markup-accessibility`              |
-| No `forced-color-adjust: none`; forced-colors and increased-contrast modes keep the system cursor and hide the loading line's star                                           | `markup-accessibility`              |
-| Contact's collapse and reveal, `aria-expanded`, Escape and focus return, the hashes that open it, the links left alone when focus is inside them or the markup is incomplete | `contact`                           |
+| Check                                                                                                                                                                                                                                                | Where                               |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| Lighthouse accessibility score 1.00 (median of three runs) on the homepage's title card                                                                                                                                                              | `lighthouserc.json`, CI `audit` job |
+| No `font-size` below 12px in styles.css; the footer at 12px or more                                                                                                                                                                                  | `markup-accessibility`              |
+| All text in one colour, `--text` (every `color` outside forced colours is it, `inherit`, `currentColor` or `transparent`), at 4.5:1 or better on the night and 12:1 or better for the footer's Contact and links; selected text at 4.5:1 on its wash | `markup-accessibility`              |
+| 44 px targets: the skip link, the footer's Contact and its two links, and the 404's Home link                                                                                                                                                        | `markup-accessibility`              |
+| Every `aria-controls` target exists; the skip link's target exists                                                                                                                                                                                   | `markup-accessibility`              |
+| Landmarks and heading levels; the footer's Contact button and its links, which show without scripts                                                                                                                                                  | `markup-accessibility`              |
+| No `forced-color-adjust: none`; forced-colors and increased-contrast modes keep the system cursor and hide the loading line's star                                                                                                                   | `markup-accessibility`              |
+| Contact's collapse and reveal, `aria-expanded`, Escape and focus return, the hashes that open it, the links left alone when focus is inside them or the markup is incomplete                                                                         | `contact`                           |
 
 GitHub's runners have no GPU, so Lighthouse audits the static title card, not the live scene. The 404 page is not audited.
 
@@ -75,10 +75,10 @@ The page is complete without scripts. Contact stays hidden, and the footer shows
 
 **Hover.** Touch browsers keep `:hover` after a tap, so every hover style is limited to `(hover: hover)`:
 
-- `.site-footer__link:hover` brightens the footer's Contact and links (its only controls), `.site-footer__contact:hover` underlines Contact, and `.site-footer__links .site-footer__link:hover` strengthens a link's underline.
-- `.not-found .back-link:hover` brightens and underlines the 404's Home link.
+- `.site-footer__contact:hover` underlines Contact, and `.site-footer__links .site-footer__link:hover` strengthens a link's underline: the footer's only controls.
+- `.not-found .back-link:hover` underlines the 404's Home link.
 
-No `:hover` selector stands outside that query. The pressed (`:active`) styles apply on every device.
+No `:hover` selector stands outside that query. The pressed (`:active`) styles apply on every device. Hover and press only underline: the text keeps its colour.
 
 ## Browser support
 

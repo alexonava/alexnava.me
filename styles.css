@@ -30,14 +30,9 @@
     sans-serif;
   --night-900: #0c1016;
   --night-800: #191d25;
-  /* Ambient meta text, such as the footer controls: a warm off-white one tier
-     below the main text, legible against the blue-black scene. */
-  --text-muted-accent: #bfc1bf;
-  /* The footer's Contact and its links: between the meta text and the main text. */
-  --text-nav: #d9dad4;
-  --text: #e5e4df;
-  --text-primary: var(--text);
-  --text-accent: var(--text-muted-accent);
+  /* All text takes the name's colour, a warm off-white (the owner's rule):
+     size, weight and the footer's underlines make the tiers. */
+  --text: #f7f1ea;
   --text-meta-shadow: 0 2px 8px rgba(7, 10, 14, 0.42);
   --border-soft: rgba(241, 229, 212, 0.16);
   --ui-focus: #d0d1cc;
@@ -89,7 +84,7 @@ body {
   font-feature-settings:
     "kern" 1,
     "liga" 1;
-  color: var(--text-primary);
+  color: var(--text);
   background: linear-gradient(180deg, var(--night-900) 0%, var(--night-800) 34%, #0d1119 100%);
   overscroll-behavior: none;
 }
@@ -131,7 +126,7 @@ main:focus {
   border: 1px solid var(--border-soft);
   border-radius: 999px;
   background: rgba(14, 18, 34, 0.88);
-  color: var(--text-primary);
+  color: var(--text);
   text-decoration: none;
   /* Its own height plus its top offset, so it never peeks below a notch. */
   transform: translateY(calc(-100% - max(14px, env(safe-area-inset-top)) - 8px));
@@ -151,7 +146,7 @@ main:focus {
    blue, in warm white. */
 ::selection {
   background: rgba(223, 184, 130, 0.32);
-  color: #f7f1ea;
+  color: var(--text);
 }
 
 /* Under the canvas, so only the title card shows it: a faint cool haze where
@@ -372,7 +367,7 @@ body.scene-walk-hidden > :not(.scene-shell) {
   text-shadow: 0 2px 12px rgba(4, 7, 12, 0.65);
   max-width: 30ch;
   margin: 18px 0 0;
-  color: #deddd9;
+  color: var(--text);
   font-size: clamp(14px, 1.25vw, 17px);
   line-height: 1.55;
   text-wrap: balance;
@@ -380,12 +375,11 @@ body.scene-walk-hidden > :not(.scene-shell) {
 
 .eyebrow {
   margin: 0 0 18px;
-  color: var(--text-accent);
+  color: var(--text);
   text-transform: uppercase;
   letter-spacing: 0.28em;
   font-size: 12px;
   font-weight: 600;
-  opacity: 0.88;
 }
 
 .hero h1 {
@@ -393,7 +387,7 @@ body.scene-walk-hidden > :not(.scene-shell) {
   margin: 0;
   font-weight: 700;
   font-synthesis-weight: none;
-  color: #f7f1ea;
+  color: var(--text);
   font-size: clamp(48px, 8vw, 104px);
   line-height: 0.98;
   letter-spacing: -0.015em;
@@ -472,7 +466,7 @@ body.scene-walk-hidden > :not(.scene-shell) {
   grid-template-columns: max-content minmax(0, 1fr);
   align-items: end;
   row-gap: 6px;
-  color: var(--text-accent);
+  color: var(--text);
   font-size: 14px;
   line-height: 18px;
   letter-spacing: 0.06em;
@@ -497,17 +491,19 @@ body.scene-walk-hidden > :not(.scene-shell) {
   text-decoration: none;
   text-shadow: inherit;
   pointer-events: auto;
-  transition: color 180ms ease;
+  transition: text-decoration-color 180ms ease;
 }
 
-/* Contact reads a tier above the meta text. It and its links keep their own
-   text scrims: soft ovals centred on the text that reach transparent before
-   every edge of their boxes (the hero's (1 - t²)² falloff), so over any shot
-   the footer holds 5:1 without a visible plate. */
+/* Contact and its links keep their own text scrims: soft ovals centred on the
+   text that reach transparent before every edge of their boxes (the hero's
+   (1 - t²)² falloff), so over any shot the footer holds 5:1 without a visible
+   plate. Contact's underline colour is set at rest, so hover draws it at once
+   and a press eases it to full. */
 .site-footer__contact {
   position: relative;
   isolation: isolate;
-  color: var(--text-nav);
+  color: var(--text);
+  text-decoration-color: rgba(247, 241, 234, 0.5);
 }
 
 .site-footer__contact::before,
@@ -540,11 +536,7 @@ body.scene-walk-hidden > :not(.scene-shell) {
   height: 104px;
 }
 
-.site-footer__contact[aria-expanded="true"] {
-  color: var(--text);
-}
-
-/* The email and LinkedIn, underlined at Contact's tier, behind a scrim grown
+/* The email and LinkedIn, underlined, behind a scrim grown
    to their row or column. Without scripts they stand alone in Contact's place;
    disclosed, they follow it after a hairline. 28px between them keeps their
    44px targets apart. */
@@ -554,7 +546,7 @@ body.scene-walk-hidden > :not(.scene-shell) {
   display: flex;
   gap: 28px;
   margin: 0;
-  color: var(--text-nav);
+  color: var(--text);
 }
 
 .site-footer__links::before {
@@ -566,12 +558,12 @@ body.scene-walk-hidden > :not(.scene-shell) {
   grid-column: 2;
   margin-left: 26px;
   padding-left: 26px;
-  border-left: 1px solid rgba(229, 228, 223, 0.28);
+  border-left: 1px solid rgba(247, 241, 234, 0.28);
 }
 
 .site-footer__links .site-footer__link {
   text-decoration: underline;
-  text-decoration-color: rgba(229, 228, 223, 0.35);
+  text-decoration-color: rgba(247, 241, 234, 0.35);
   text-decoration-thickness: 1px;
   text-underline-offset: 4px;
 }
@@ -603,25 +595,26 @@ body.scene-walk-hidden > :not(.scene-shell) {
   outline-offset: -11px;
 }
 
-/* Touch browsers keep :hover after a tap; brightening follows real hover only. */
+/* Touch browsers keep :hover after a tap; underlines follow real hover only. */
 @media (hover: hover) {
-  .site-footer__link:hover {
-    color: var(--text);
-  }
-
   .site-footer__contact:hover {
     text-decoration: underline;
-    text-decoration-color: rgba(229, 228, 223, 0.5);
+    text-decoration-color: rgba(247, 241, 234, 0.5);
     text-underline-offset: 3px;
   }
 
   .site-footer__links .site-footer__link:hover {
-    text-decoration-color: rgba(229, 228, 223, 0.6);
+    text-decoration-color: rgba(247, 241, 234, 0.6);
   }
 }
 
 .site-footer__link:active {
-  color: var(--text);
+  text-decoration-line: underline;
+  text-decoration-color: currentColor;
+}
+
+/* A pressed link's underline goes full too, over its hover rule. */
+.site-footer__links .site-footer__link:active {
   text-decoration-color: currentColor;
 }
 
@@ -638,7 +631,7 @@ body.scene-walk-hidden > :not(.scene-shell) {
   z-index: 10;
   width: min(240px, calc(100% - 48px));
   margin-inline: auto;
-  color: #f7f1ea;
+  color: var(--text);
   font-size: 12px;
   line-height: 16px;
   letter-spacing: 0.08em;
@@ -688,7 +681,7 @@ body.scene-walk-hidden > :not(.scene-shell) {
 .scene-loader__fill {
   position: absolute;
   inset: 0;
-  background: #f7f1ea;
+  background: var(--text);
   box-shadow: 0 0 6px rgba(247, 241, 234, 0.3);
   transform: scaleX(0);
   transform-origin: 0 50%;
@@ -1178,7 +1171,7 @@ body.scene-walk-hidden > :not(.scene-shell) {
 .not-found h1 {
   max-width: 11ch;
   margin: 0;
-  color: #f7f1ea;
+  color: var(--text);
   font-family: var(--font-display);
   font-size: clamp(44px, 6vw, 80px);
   font-weight: 700;
@@ -1192,28 +1185,29 @@ body.scene-walk-hidden > :not(.scene-shell) {
 .not-found__text {
   max-width: 30ch;
   margin: 18px 0 0;
-  color: #deddd9;
+  color: var(--text);
   font-size: clamp(14px, 1.25vw, 17px);
   line-height: 1.55;
   text-shadow: 0 2px 12px rgba(4, 7, 12, 0.65);
   text-wrap: pretty;
 }
 
-/* Home, in the footer's type at Contact's tier: a 44px target hanging around its
-   18px line, 30px under the text. */
+/* Home, in the footer's type: a 44px target hanging around its 18px line, 30px
+   under the text. Its underline colour is set at rest, as Contact's is. */
 .not-found .back-link {
   display: inline-flex;
   align-items: center;
   min-height: 44px;
   margin: 17px -14px -13px;
   padding: 0 14px;
-  color: var(--text-nav);
+  color: var(--text);
   font-size: 14px;
   line-height: 18px;
   letter-spacing: 0.06em;
   text-decoration: none;
+  text-decoration-color: rgba(247, 241, 234, 0.5);
   text-shadow: var(--text-meta-shadow);
-  transition: color 180ms ease;
+  transition: text-decoration-color 180ms ease;
 }
 
 .not-found .back-link:focus-visible {
@@ -1222,15 +1216,16 @@ body.scene-walk-hidden > :not(.scene-shell) {
 
 @media (hover: hover) {
   .not-found .back-link:hover {
-    color: var(--text);
     text-decoration: underline;
-    text-decoration-color: rgba(229, 228, 223, 0.5);
+    text-decoration-color: rgba(247, 241, 234, 0.5);
     text-underline-offset: 3px;
   }
 }
 
 .not-found .back-link:active {
-  color: var(--text);
+  text-decoration: underline;
+  text-decoration-color: currentColor;
+  text-underline-offset: 3px;
 }
 
 /* Phones turned sideways: a smaller heading, so the line sits within the screen. */
