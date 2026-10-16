@@ -270,7 +270,7 @@ test("the drifting mist veils each fire as it veils the plain there, through its
   assert.ok(off.includes("float veil=1.;"));
 });
 
-test("the fires breathe on the scene clock and hold for pauses, dialogs and reduced motion", () => {
+test("the fires breathe on the scene clock and hold for pauses and reduced motion", () => {
   const fires = createFarFires({ parent: new Group() }),
     time = fires.uniforms.uTime;
   fires.update({ deltaSeconds: 0.5 });

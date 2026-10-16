@@ -407,6 +407,7 @@ test("the UI carries the loading line and its tower and tree byte sizes; the sce
   const app = await readFile(await findHashedScript("app"), "utf8");
   const scene = await readSceneStatic();
   assert.match(app, /scene-loader__value/);
+  assert.match(app, /scene-loader__fill/);
   assert.match(app, /scene-star/);
   assert.match(app, /sceneLoader/);
   for (const tier of ["high", "balanced"]) {
@@ -427,7 +428,7 @@ test("the UI carries the loading line and its tower and tree byte sizes; the sce
   // The scene's model loader reports its own requests, and the scene where its star will
   // be; the copy and the star's drawing stay in the UI.
   assert.match(scene, /sceneLoader/);
-  assert.doesNotMatch(scene, /Loading the estate|scene-loader__|scene-star/);
+  assert.doesNotMatch(scene, /scene-loader__|scene-star/);
   const html = await readFile(path.join(distDir, "index.html"), "utf8");
   assert.match(html, /<div class="scene-loader" id="scene-loader" aria-hidden="true" hidden>/);
 });
@@ -435,8 +436,8 @@ test("the UI carries the loading line and its tower and tree byte sizes; the sce
 test("the build refuses a shared scene chunk that would carry first-party modules", async () => {
   const fixture = await mkdtemp(path.join(scratchRoot, "shared-chunk-build-"));
   try {
-    // The sanitized static payload, plus the source images (models, maps and
-    // paper) the build hashes, which dist carries only under hashed names.
+    // The sanitized static payload, plus the source images (the models and
+    // maps) the build hashes, which dist carries only under hashed names.
     await cp(distDir, fixture, { recursive: true });
     await cp(path.join(projectRoot, "images"), path.join(fixture, "images"), { recursive: true });
     await cp(path.join(projectRoot, "build.mjs"), path.join(fixture, "build.mjs"));
@@ -637,20 +638,15 @@ test("homepage discovers the deferred scene while its UI excludes the renderer a
   assert.doesNotMatch(app, /gl_Position|WebGLRenderer|GLTFLoader|Invalid architecture GLB/);
 });
 
-test("the 404's paper textures are fingerprinted", async () => {
+test("the stylesheet is named for its bytes and requests no image", async () => {
   const cssDir = path.join(distDir, "css");
   const cssName = (await readdir(cssDir)).find((name) => /^styles\.[a-f0-9]{8}\.css$/.test(name));
   const css = await readFile(path.join(cssDir, cssName), "utf8");
   assert.equal(cssName, `styles.${createHash("sha256").update(css).digest("hex").slice(0, 8)}.css`);
-  // Their 200 KiB budget is held in markup-accessibility.test.mjs ("the 404's
-  // paper grain and edge stay within their 200 KiB budget").
-  for (const name of ["paper-grain", "paper-edge"]) {
-    const source = await readFile(path.join(projectRoot, "images", `${name}.webp`));
-    const hash = createHash("sha256").update(source).digest("hex").slice(0, 8);
-    assert.ok(css.includes(`/images/${name}.${hash}.webp`));
-    assert.ok(!css.includes(`/images/${name}.webp`));
-    assert.deepEqual(await readFile(path.join(distDir, "images", `${name}.${hash}.webp`)), source);
-  }
+  // The night, its stars, the grain and the cursor are drawn in CSS; only fonts load from it.
+  assert.doesNotMatch(css, /\/images\//);
+  for (const [, url] of css.matchAll(/url\("?([^")]+)"?\)/g))
+    assert.match(url, /^(?:data:|\/fonts\/[\w-]+\.[a-f0-9]{8}\.woff2$)/, url.slice(0, 60));
 });
 
 test("the stylesheet is published minified", async () => {

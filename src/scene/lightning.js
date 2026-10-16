@@ -25,7 +25,7 @@ import { FLASH_GROUND, FLASH_UNIFORMS, lendFlashText } from "./film-light.js";
 // flash's light after its own lights (film-light.js FLASH_UNIFORMS and
 // flashHook(); the slate in mud-ground.js): light from the flash's side, a lift
 // of the sky's and the flat light and, on the lookout and the tree, a cold rim,
-// none of it behind the name, the intro or About. The ground's sky light and
+// none of it behind the name, the intro or Contact. The ground's sky light and
 // water (FLASH_GROUND) and the drifting mist's banks (drifting-mist.js
 // mistFlash) brighten too, away from the text. The scene's lights never change.
 //
@@ -48,7 +48,7 @@ import { FLASH_GROUND, FLASH_UNIFORMS, lendFlashText } from "./film-light.js";
 // - `sky`: the banks' glow: `radius` on the cloud plane (by strength), `gain` in
 //   the banks, `core` more in its hot centre (a third of the radius), `clear` on
 //   the clear sky, `thin` the share the banks' thin edges lose, `color`, `jitter` (degrees each pulse's centre wanders) and `about`,
-//   the reach (a share of the screen's smaller side) it eases off about About.
+//   the reach (a share of the screen's smaller side) it eases off about Contact.
 // - `bolt`: a branching channel drawn procedurally (where `draw`), `chance` of
 //   the events, at least `strength`; from `top` (degrees) to `bottom`, below the ranges' crest,
 //   leaning up to `lean`, jagged by `rough` over `detail` halvings, with
@@ -61,7 +61,7 @@ import { FLASH_GROUND, FLASH_UNIFORMS, lendFlashText } from "./film-light.js";
 //   of its height above the flash before going without), each stroke falls
 //   over `decay` and the channel keeps `afterglow` of the flash.
 // - `relight`: what a whole flash adds, eased off behind the text over `text`
-//   [name and intro, About] of the screen's smaller side: `fill`, the intensity
+//   [name and intro, Contact] of the screen's smaller side: `fill`, the intensity
 //   of its light (in `color`) from its side (from the cool fill's, for a flash in
 //   view, behind the subjects), `hemisphere` and `ambient`, shares of those
 //   lights' own in its colour, `rim` times `rimColor` as a cold rim on the
@@ -609,7 +609,7 @@ export function createLightning({
       .normalize();
     return [Math.atan2(ray.z, ray.x) / DEG, Math.asin(Math.max(-1, Math.min(1, ray.y))) / DEG];
   }
-  // How far a canvas point lies from the name, the intro and About, as a share
+  // How far a canvas point lies from the name, the intro and Contact, as a share
   // of the screen's smaller side (the text guards' measure).
   function textDistance(u, v) {
     if (!textGuard) return Infinity;
@@ -622,7 +622,7 @@ export function createLightning({
     };
     return Math.min(from(textGuard.slateText?.value), from(textGuard.slateAbout?.value));
   }
-  // 1 behind the name and intro (or About), easing to 0 over the clouds' reach.
+  // 1 behind the name and intro (or Contact), easing to 0 over the clouds' reach.
   function textNear(u, v) {
     if (!textGuard) return 0;
     const aspect = textGuard.slateAspect?.value ?? 1;

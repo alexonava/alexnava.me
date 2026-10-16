@@ -1193,8 +1193,6 @@ export function streamPinDistance(x, z) {
   const r = streamRadius(x, z);
   return r < 1e8 ? ((r - STREAMS.bed.reach[1]) * streamWidth) / 2 : 1e9;
 }
-// Whether x/z lies clear of the roots for the stream's pin (its channel is never pinned under them).
-export const streamPinned = (x, z) => rootClearance(x, z) > STREAM_ROOTS[1];
 // Seeded value noise in [-1, 1] on a unit lattice, C1 (smoothstep weights), the
 // same on every engine (an integer hash, as dripHash()).
 function latticeNoise(x, z, salt) {

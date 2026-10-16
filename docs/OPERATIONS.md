@@ -65,7 +65,7 @@ If a post-upload smoke check fails, the workflow calls Cloudflare's Pages rollba
 
 ## Headers and caching
 
-`public/_headers` is the baseline. HTML revalidates on every request. Icons, the manifest, `robots.txt`, the discovery files, `security.txt`, `/fonts/OFL.txt` and other stable names revalidate after seven days. Content-hashed scripts, CSS, fonts, images, models and slate maps are immutable for a year. Do not add absolute-host patterns: Pages applies rules by path, so a `pages.dev`-only header would reach the apex.
+`public/_headers` is the baseline. HTML revalidates on every request. Icons, the manifest, `robots.txt`, the discovery files, `security.txt`, `/fonts/OFL.txt` and other stable names revalidate after seven days. Content-hashed scripts, CSS, fonts, models and slate maps are immutable for a year. Do not add absolute-host patterns: Pages applies rules by path, so a `pages.dev`-only header would reach the apex.
 
 A deploy does not purge the zone's cache. After a release that changes a stable-named file (`/robots.txt`, `/og.png`, `/favicon.ico`, `/manifest.webmanifest`, `/llms.txt`, `/fonts/OFL.txt` and the like), purge those URLs (Caching → Configuration → Custom Purge). HTML and hashed files need no purge.
 

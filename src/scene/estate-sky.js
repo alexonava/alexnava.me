@@ -333,7 +333,7 @@ export const FLASH_SKY = Object.freeze({ near: Object.freeze([0.42, 0.548]) });
 // and the clear sky near them by uFlashGlow.z (FLASH_SKY), so the grade's cel step reads
 // the flash in the banks' own bands. It is exactly 0 over the reference banks
 // (FLASH_REFERENCE, so The watch's crop keeps every pixel) and eases off behind
-// the name and intro (the clouds' text guard) and About (uFlashTone.w of the
+// the name and intro (the clouds' text guard) and Contact (uFlashTone.w of the
 // screen's smaller side). Its colour is uFlashTone.rgb. The environment's capture
 // never sees one.
 const FLASH_GLSL = `if(uFlash.w>0.){

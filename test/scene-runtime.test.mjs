@@ -8,7 +8,6 @@ import {
   createSceneFrameScheduler,
   createSceneResizeController,
   disposeSceneRuntimeResources,
-  hasMeaningfulScalarChange,
   renderDivisor,
 } from "../src/scene/runtime.js";
 import {
@@ -701,13 +700,6 @@ test("the pixel-ratio watcher idles without a usable matchMedia", () => {
     assert.equal(watcher.dispose(), true);
   }
   assert.throws(() => createPixelRatioWatcher({ matchMedia: null }), TypeError);
-});
-
-test("stable scalar values do not request redundant buffer uploads", () => {
-  assert.equal(hasMeaningfulScalarChange(undefined, 1), true);
-  assert.equal(hasMeaningfulScalarChange(1, 1), false);
-  assert.equal(hasMeaningfulScalarChange(1, 1.00001), false);
-  assert.equal(hasMeaningfulScalarChange(1, 1.01), true);
 });
 
 test("runtime resource disposal deduplicates scene assets and leaves render-target textures owned", () => {
@@ -1469,7 +1461,7 @@ test("a shot's light mood merges over the neutral default and never shares it", 
     ["Lantern study", "Close-up", "Root and lantern"],
   );
   for (const shot of glint) assert.equal(shotLight(shot).glintText, 1);
-  // Only Lantern study keeps its lantern's pool off About (its push-in on a
+  // Only Lantern study keeps its lantern's pool off Contact (its push-in on a
   // portrait monitor), and wholly.
   const pool = [...DIRECTED_SHOTS.tower, ...DIRECTED_SHOTS.tree]
     .filter((shot) => shotLight(shot).poolAbout > 0)
@@ -1531,7 +1523,7 @@ test("each frame applies the shot's light, lens, bars and grain, holding the gra
       "const mood = shotLight(filmActive && cinematicApplied ? cinematic.shot : null); rendering.setShotLight?.(mood); if (LANTERN_MOOD.value !== mood.lantern) { LANTERN_MOOD.value = mood.lantern; treeArchitecture?.refreshLantern?.(); } setRim(filmActive ? mood.rim : 0, filmActive ? mood.rimText : 0); PALE_MOOD.value = filmActive ? mood.pale : 0; GLINT_MOOD.value = filmActive ? mood.glintText : 0; GRASS_MOOD.value = filmActive ? mood.grassInside : 0;",
     ),
   );
-  // The ground's pool knee about About follows it too, off out of film.
+  // The ground's pool knee about Contact follows it too, off out of film.
   const pool = index.indexOf(
     "groundContacts.slatePoolAbout.value = filmActive ? mood.poolAbout : 0;",
   );

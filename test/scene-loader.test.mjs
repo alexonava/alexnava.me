@@ -135,12 +135,14 @@ function createHarness({
     return el;
   }
 
+  const fill = element("fill", { classes: ["scene-loader__fill"] });
   const value = element("value", { classes: ["scene-loader__value"], text: "0%" });
   const label = element("label", { classes: ["scene-loader__label"], children: [value] });
+  const track = element("track", { classes: ["scene-loader__track"], children: [fill] });
   const loader = element("loader", {
     classes: ["scene-loader"],
     hidden: true,
-    children: [label],
+    children: [label, track],
   });
   // #scene-star: haze, streak, glow, disc and the lens's five ghosts, as index.html has them.
   const parts = ["haze", "streak", "glow", "disc", ...Array(5).fill("ghost")].map((part, i) =>
@@ -222,6 +224,7 @@ function createHarness({
     host,
     star,
     parts,
+    fill,
     value,
     document,
     events,
@@ -345,6 +348,7 @@ test("begin unhides the line, flushes its style, then fades it in at 0%", () => 
     "loader:+is-loading",
   ]);
   assert.equal(h.value.textContent, "0%");
+  assert.equal(h.fill.style.transform, "scaleX(0)");
   assert.equal(h.star.hidden, true, "no star until the scene reports where");
   const state = h.state();
   assert.equal(state.status, "loading");
@@ -475,6 +479,7 @@ test("every stage, the tower's bytes and its three build steps hold the line at 
   });
   h.frame();
   assert.equal(h.value.textContent, "96%");
+  assert.equal(h.fill.style.transform, "scaleX(0.96)");
   assert.equal(h.state().status, "loading", "only the reveal completes the line");
 });
 
@@ -506,6 +511,7 @@ test("the reveal completes the line at 100% and retires it with the canvas fade"
   assert.equal(state.status, "revealed");
   assert.equal(state.progress, 1);
   assert.equal(h.value.textContent, "100%");
+  assert.equal(h.fill.style.transform, "scaleX(1)");
   assert.ok(h.loader.classList.contains("is-done"));
   assert.ok(!h.loader.classList.contains("is-loading"));
   assert.equal(h.observerCount, 0, "observers and listeners disconnect at the reveal");
@@ -514,6 +520,7 @@ test("the reveal completes the line at 100% and retires it with the canvas fade"
   h.advance(1);
   assert.equal(h.loader.hidden, true);
   assert.ok(!h.loader.classList.contains("is-done"));
+  assert.equal(h.fill.style.transform, "");
   assert.equal(h.star.hidden, true);
   assert.equal(h.timerCount, 0, "no watchdog outlives the line");
   // Pending frames draw nothing more.
@@ -542,6 +549,7 @@ test("a hidden scene host retires the line below 100%", async () => {
   assert.equal(h.state().status, "static");
   assert.equal(h.state().progress, 0.1);
   assert.equal(h.value.textContent, "10%");
+  assert.equal(h.fill.style.transform, "scaleX(0.1)");
   assert.equal(h.star.hidden, true);
   assert.ok(h.loader.classList.contains("is-done"));
   assert.equal(h.observerCount, 0);

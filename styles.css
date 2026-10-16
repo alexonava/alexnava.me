@@ -148,15 +148,10 @@ main:focus {
 }
 
 /* Selected text takes a translucent wash of the sun's amber, never system
-   blue; warm white on the night, dark ink on paper. */
+   blue, in warm white. */
 ::selection {
   background: rgba(223, 184, 130, 0.32);
   color: #f7f1ea;
-}
-
-.not-found .story-shell ::selection {
-  background: rgba(223, 184, 130, 0.45);
-  color: #211c16;
 }
 
 /* Under the canvas, so only the title card shows it: a faint cool haze where
@@ -631,20 +626,19 @@ body.scene-walk-hidden > :not(.scene-shell) {
 }
 
 /* The title card's loading line (src/ui/scene-loader.js): shown only while the
-   live scene loads, centred 44px above the footer line, clear of the identity
-   and Contact. Its value is real progress; it reads 100% at the reveal and fades
-   out within the canvas's 480ms fade-in (120ms delay + 360ms). */
+   live scene loads, its label in the name's colour centred 44px above the footer
+   line, clear of the identity and Contact, and its bar along the window's top
+   edge. Its value is real progress; it reads 100% at the reveal and fades out
+   within the canvas's 480ms fade-in (120ms delay + 360ms). */
 .scene-loader {
   position: fixed;
   right: 0;
   bottom: calc(max(30px, calc(22px + env(safe-area-inset-bottom))) + 44px);
   left: 0;
   z-index: 10;
-  display: grid;
-  row-gap: 10px;
   width: min(240px, calc(100% - 48px));
   margin-inline: auto;
-  color: var(--text-accent);
+  color: #f7f1ea;
   font-size: 12px;
   line-height: 16px;
   letter-spacing: 0.08em;
@@ -677,6 +671,32 @@ body.scene-walk-hidden > :not(.scene-shell) {
   display: inline-block;
   min-width: 4ch;
   text-align: left;
+}
+
+/* The bar, across the window's top edge in the name's colour, below the status
+   bar where the page runs under it (the home-screen app); only its fill's
+   transform moves. */
+.scene-loader__track {
+  position: fixed;
+  top: env(safe-area-inset-top, 0px);
+  right: 0;
+  left: 0;
+  height: 2px;
+  background: rgba(247, 241, 234, 0.08);
+}
+
+.scene-loader__fill {
+  position: absolute;
+  inset: 0;
+  background: #f7f1ea;
+  box-shadow: 0 0 6px rgba(247, 241, 234, 0.3);
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+  transition: transform 520ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.scene-loader.is-done .scene-loader__fill {
+  transition-duration: 240ms;
 }
 
 /* The loading line's star (src/ui/scene-loader.js): the scene's star as the opening
@@ -809,8 +829,20 @@ body.scene-walk-hidden > :not(.scene-shell) {
 
 @media (prefers-reduced-motion: reduce) {
   .scene-loader.is-loading,
-  .scene-loader.is-done {
+  .scene-loader.is-done,
+  .scene-loader__fill,
+  .scene-loader.is-done .scene-loader__fill {
     transition: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .scene-loader__track {
+    background: #1f2227;
+  }
+
+  .scene-loader__fill {
+    box-shadow: none;
   }
 }
 
@@ -1126,169 +1158,84 @@ body.scene-walk-hidden > :not(.scene-shell) {
   }
 }
 
-/* The 404 is one cotton-paper sheet. */
-.not-found {
+/* The 404: the title card's night with its one line centred, in the name's serif and
+   the intro's type, and the way home under it in the footer's. */
+.not-found main {
   display: grid;
-  place-items: center;
+  justify-items: center;
+  align-content: center;
+  min-height: 100vh;
+  min-height: 100svh;
+  padding: max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right))
+    max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
+  text-align: center;
 }
 
-.not-found .section {
-  padding-block: 32px;
+.not-found .eyebrow {
+  text-shadow: var(--text-meta-shadow);
 }
 
-.not-found .story-shell {
-  position: relative;
-  isolation: isolate;
-  width: min(100%, 560px);
-  margin-inline: auto;
-  padding: clamp(56px, 8vw, 72px) clamp(44px, 8vw, 72px);
-  color: #211c16;
-  /* The pale line cursor vanishes on the paper. */
-  cursor: auto;
-  filter: drop-shadow(0 22px 30px rgba(3, 4, 8, 0.4)) drop-shadow(0 6px 12px rgba(3, 4, 8, 0.26));
-}
-
-.story-shell--narrow {
-  max-width: 760px;
-}
-
-.not-found .story-shell::before,
-.not-found .story-shell::after {
-  position: absolute;
-  z-index: -1;
-  content: "";
-  pointer-events: none;
-}
-
-/* The paper: a 115deg light over the ivory and its grain. */
-.not-found .story-shell::before {
-  inset: 23px;
-  background:
-    linear-gradient(115deg, rgba(255, 252, 240, 0.19), rgba(71, 47, 22, 0.035)) 0 0 / 100% 100%
-      no-repeat,
-    #e8ddc8 url("/images/paper-grain.webp") 0 0 / 384px 384px repeat;
-}
-
-.not-found .story-shell::after {
-  inset: 0;
-  border: 24px solid transparent;
-  border-image: url("/images/paper-edge.webp") 96 / 24px / 0 stretch;
-}
-
-.not-found .story-shell .eyebrow {
-  color: #60492e;
-  opacity: 1;
-}
-
-.not-found .story-shell h1 {
-  max-width: 12ch;
+.not-found h1 {
+  max-width: 11ch;
   margin: 0;
-  color: #211c16;
+  color: #f7f1ea;
   font-family: var(--font-display);
-  font-size: clamp(34px, 5vw, 52px);
-  font-weight: 500;
+  font-size: clamp(44px, 6vw, 80px);
+  font-weight: 700;
+  font-synthesis-weight: none;
   line-height: 0.98;
   letter-spacing: -0.015em;
-  overflow-wrap: anywhere;
+  text-shadow: 0 0 44px rgba(198, 208, 202, 0.1);
+  text-wrap: balance;
 }
 
-@supports (text-wrap: balance) {
-  .not-found .story-shell h1 {
-    text-wrap: balance;
-    overflow-wrap: normal;
-  }
-}
-
-.not-found .story-text {
-  max-width: 46ch;
-  margin: 20px 0 0;
-  color: #393229;
-  font-size: 18px;
-  line-height: 1.72;
+.not-found__text {
+  max-width: 30ch;
+  margin: 18px 0 0;
+  color: #deddd9;
+  font-size: clamp(14px, 1.25vw, 17px);
+  line-height: 1.55;
+  text-shadow: 0 2px 12px rgba(4, 7, 12, 0.65);
   text-wrap: pretty;
 }
 
-.error-cta {
-  margin: 24px 0 0;
-}
-
+/* Home, in the footer's type at Contact's tier: a 44px target hanging around its
+   18px line, 30px under the text. */
 .not-found .back-link {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
   min-height: 44px;
-  padding: 12px 18px;
-  border: 1px solid rgba(64, 47, 30, 0.22);
-  border-radius: 999px;
-  background: rgba(88, 72, 50, 0.08);
-  color: #3b2c1e;
+  margin: 17px -14px -13px;
+  padding: 0 14px;
+  color: var(--text-nav);
+  font-size: 14px;
+  line-height: 18px;
+  letter-spacing: 0.06em;
   text-decoration: none;
-  transition:
-    background 180ms ease,
-    border-color 180ms ease,
-    color 180ms ease;
+  text-shadow: var(--text-meta-shadow);
+  transition: color 180ms ease;
+}
+
+.not-found .back-link:focus-visible {
+  outline-offset: -11px;
 }
 
 @media (hover: hover) {
   .not-found .back-link:hover {
-    border-color: rgba(64, 47, 30, 0.34);
-    background: rgba(88, 72, 50, 0.16);
-    color: #241910;
+    color: var(--text);
+    text-decoration: underline;
+    text-decoration-color: rgba(229, 228, 223, 0.5);
+    text-underline-offset: 3px;
   }
 }
 
 .not-found .back-link:active {
-  border-color: rgba(64, 47, 30, 0.42);
-  background: rgba(88, 72, 50, 0.24);
-  color: #241910;
+  color: var(--text);
 }
 
-.not-found .story-shell :focus-visible {
-  outline-color: #59472f;
-}
-
-@media (max-width: 640px) {
-  .not-found .story-text {
-    font-size: 16px;
-  }
-}
-
-/* Phones turned sideways: a shorter sheet and heading, so the whole paper,
-   its torn edge included, sits centred within the screen's height. */
+/* Phones turned sideways: a smaller heading, so the line sits within the screen. */
 @media (orientation: landscape) and (max-height: 500px) {
-  .not-found .section {
-    padding-block: 12px;
-  }
-
-  .not-found .story-shell {
-    padding-block: 36px;
-  }
-
-  .not-found .story-shell h1 {
+  .not-found h1 {
     font-size: 34px;
-  }
-}
-
-@media (forced-colors: active) {
-  .not-found .story-shell {
-    border: 1px solid CanvasText;
-    background: Canvas;
-    color: CanvasText;
-    filter: none;
-  }
-
-  .not-found .story-shell::before,
-  .not-found .story-shell::after {
-    display: none;
-  }
-
-  .not-found .story-shell :is(h1, .eyebrow, .story-text) {
-    color: CanvasText;
-  }
-
-  .not-found .back-link {
-    border-color: LinkText;
-    background: Canvas;
-    color: LinkText;
   }
 }

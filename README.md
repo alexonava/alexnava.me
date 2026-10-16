@@ -37,7 +37,7 @@ Add `?view=tree&angle=2&tour=0` to stay on one shot; the [scene-mode guide](docs
 
 - `index.html`, `404.html`, `styles.css`: the pages and their styles.
 - `src/`: the UI bundle (`app.js`, `main.js`, `ui/`) and the deferred scene (`scene-entry.js`, `scene/`); each bundle carries its own copy of `shared/` and `scene/quality.js`.
-- `images/`, `fonts/`: runtime artwork, models, slate maps and fonts, published under content hashes.
+- `images/`, `fonts/`: the models, slate maps and fonts, published under content hashes.
 - `public/`: hosting, icon and discovery files copied to the site root.
 - `tools/`: `build-output.mjs` (staged publication of the payload), `watch.mjs` and `dev.mjs` (rebuilds and the dev server), `owned-process.mjs` (starting and stopping their child processes), `shader-compact.mjs` (the GLSL compactor), `bake-root-shade.mjs` (the tree's baked root tables), `bake-opening-outline.mjs` (the tower's stored outline that places the loading line's star) and the share card's source, `og-card.html` and `og-card-backdrop.webp`.
 - `test/`: the test suite, with shared helpers in `test/support/`.
@@ -55,7 +55,7 @@ The [documentation index](docs/README.md) lists every document. The main ones:
 - [UI](docs/UI.md): the page's tokens, breakpoints and the scene framing that mirrors them, layers, components, motion, Contact and the 404 page
 - [Scene modes](docs/SCENE-MODES.md): URL parameters, shots, pauses and status objects
 - [Content](docs/CONTENT.md): where the site's words live and how to change them
-- [Assets](docs/ASSETS.md): models, maps, artwork, fonts and icons, with every budget
+- [Assets](docs/ASSETS.md): models, maps, fonts, icons and the share card, with every budget
 - [Accessibility](docs/ACCESSIBILITY.md): keyboard, screen readers, preferences and browser support
 - [Operations](docs/OPERATIONS.md): release gates, CI, deploy, rollback, headers and Cloudflare
 - [Glossary](docs/GLOSSARY.md): the terms the code and the docs use, such as film, baseline and the tiers

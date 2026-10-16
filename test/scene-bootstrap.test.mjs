@@ -78,7 +78,7 @@ test("each event that brings uploads or compiles restarts the sampling hold", ()
     ["model readiness", "onStatus(status) {"],
     ["resize", "function applySceneSize("],
     ["document resume", "const onDocumentVisibilityChange = () => {"],
-    ["dialog release", "onRelease:"],
+    ["visitor hold release", "onRelease:"],
   ]) {
     const start = index.indexOf(anchor);
     assert.ok(start >= 0, label);

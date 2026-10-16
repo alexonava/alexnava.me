@@ -37,8 +37,8 @@
 //   in the mist it shines through toward the lens (the reference's smoke lit by the
 //   eye), falling off past `reach` units from it;
 // - `steps`: the march's steps [high, balanced]; `octaves`: [high, balanced];
-// - `text`: behind the name and intro (and About), the mist's light eases by this
-//   share, out over `textReach` [name and intro, About] of the screen's smaller side,
+// - `text`: behind the name and intro (and Contact), the mist's light eases by this
+//   share, out over `textReach` [name and intro, Contact] of the screen's smaller side,
 //   so the text keeps its contrast (its veil over darker ground is kept);
 // - `ranges`: [units, view slope]: the ranges ride on the camera (hill-silhouette.js),
 //   so their mist is gathered along their view ray out to [0] units, or to the plain

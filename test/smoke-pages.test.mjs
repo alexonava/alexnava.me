@@ -88,7 +88,6 @@ curl() {
         extra-scene) printf ' scripts/scene.44444444.js' >> "$body" ;;
       esac
     fi
-    printf ' <nav class="estate-destinations"></nav>' >> "$body"
   fi
   printf '%s\t%s' "$status" "$effective"
 }

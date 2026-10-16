@@ -391,14 +391,13 @@ const execFileP = promisify(execFile);
 const hash = (bytes) => createHash("sha256").update(bytes).digest("hex").slice(0, 8);
 
 // Exercise the actual builder in an isolated checkout-shaped fixture. Tiny
-// binary assets and stub entries avoid copying the archived scene payload or
-// racing bundle-output.test.mjs for the real dist/ directory.
+// binary assets and stub entries avoid copying the scene's payload or racing
+// bundle-output.test.mjs for the real dist/ directory.
 test("CSS asset URLs and bytes are portable across checkout line endings", async () => {
-  const scratchRoot = path.join(projectRoot, ".tmp-preview-review");
   await mkdir(scratchRoot, { recursive: true });
   const fixture = await mkdtemp(path.join(scratchRoot, "portable-css-"));
   const sourceCss = await readFile(path.join(projectRoot, "styles.css"));
-  const paper = Buffer.from([82, 73, 70, 70, 13, 10, 0, 255, 87, 69, 66, 80]);
+  const binary = Buffer.from([82, 73, 70, 70, 13, 10, 0, 255, 87, 69, 66, 80]);
   try {
     await cp(path.join(projectRoot, "build.mjs"), path.join(fixture, "build.mjs"));
     await cp(path.join(projectRoot, "tools"), path.join(fixture, "tools"), { recursive: true });
@@ -441,9 +440,6 @@ test("CSS asset URLs and bytes are portable across checkout line endings", async
     for (const file of ["index.html", "404.html"]) {
       await writeFile(path.join(fixture, file), '<link rel="stylesheet" href="/styles.css">');
     }
-    for (const name of ["paper-grain", "paper-edge"]) {
-      await writeFile(path.join(fixture, "images", `${name}.webp`), paper);
-    }
     for (const tier of ["high", "balanced"]) {
       for (const role of [
         "tower",
@@ -455,7 +451,10 @@ test("CSS asset URLs and bytes are portable across checkout line endings", async
         "mountain-spine",
         "mountain-summit",
       ]) {
-        await writeFile(path.join(fixture, "images", "architecture", `${role}-${tier}.glb`), paper);
+        await writeFile(
+          path.join(fixture, "images", "architecture", `${role}-${tier}.glb`),
+          binary,
+        );
       }
     }
     for (const map of [
@@ -469,13 +468,13 @@ test("CSS asset URLs and bytes are portable across checkout line endings", async
       "relief-512",
       "detail-512",
     ]) {
-      await writeFile(path.join(fixture, "images", "materials", `slate-${map}.webp`), paper);
+      await writeFile(path.join(fixture, "images", "materials", `slate-${map}.webp`), binary);
     }
     // The stylesheet's fonts, under their source names.
     for (const name of (await readdir(path.join(projectRoot, "fonts"))).filter((file) =>
       file.endsWith(".woff2"),
     )) {
-      await writeFile(path.join(fixture, "fonts", name), paper);
+      await writeFile(path.join(fixture, "fonts", name), binary);
     }
 
     async function buildCss(css) {
@@ -503,14 +502,16 @@ test("CSS asset URLs and bytes are portable across checkout line endings", async
     const crlf = await buildCss(lfSource.replace(/\n/g, "\r\n"));
     assert.deepEqual(crlf, lf, "LF and CRLF checkouts must publish identical CSS bytes and URLs");
     assert.ok(!crlf.bytes.includes(13), "emitted CSS must contain only LF line endings");
-    assert.ok(crlf.bytes.toString("utf8").includes(`/images/paper-grain.${hash(paper)}.webp`));
+    // The stylesheet's one kind of asset URL, its fonts, names their hashed copies.
+    const font = "instrument-sans-variable";
+    assert.ok(crlf.bytes.toString("utf8").includes(`/fonts/${font}.${hash(binary)}.woff2`));
     assert.deepEqual(
-      await readFile(path.join(fixture, "dist", "images", `paper-grain.${hash(paper)}.webp`)),
-      paper,
-      "binary artwork, including CRLF bytes, must remain unchanged",
+      await readFile(path.join(fixture, "dist", "fonts", `${font}.${hash(binary)}.woff2`)),
+      binary,
+      "binary files, including CRLF bytes, must remain unchanged",
     );
     // A fingerprinted source is published only under its hashed name.
-    await assert.rejects(readFile(path.join(fixture, "dist", "images", "paper-grain.webp")), {
+    await assert.rejects(readFile(path.join(fixture, "dist", "fonts", `${font}.woff2`)), {
       code: "ENOENT",
     });
 

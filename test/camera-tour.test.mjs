@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { BoxGeometry, Group, Mesh, MeshBasicMaterial, PerspectiveCamera } from "three";
-import { createCinematicCamera, PUSH_IN } from "../src/scene/cinematic.js";
+import { createCinematicCamera } from "../src/scene/cinematic.js";
 import * as tourModule from "../src/scene/camera-tour.js";
 import { DIRECTED_SHOTS, shotAnchor } from "../src/scene/directed-shots.js";
 import { createPostprocessPipeline } from "../src/scene/postprocess.js";

@@ -12,7 +12,7 @@ The documents that describe alexnava.me, and where to start for a task. They des
 | [Style](STYLE.md)                     | Visual, motion and typographic rules                                                                                                        |
 | [UI](UI.md)                           | The page's interface: tokens, breakpoints and the scene framing that mirrors them, layers, components, motion, Contact and the 404 page     |
 | [Content](CONTENT.md)                 | The site's words and where each piece lives                                                                                                 |
-| [Assets](ASSETS.md)                   | Models, maps, artwork, fonts, icons and the share card                                                                                      |
+| [Assets](ASSETS.md)                   | Models, maps, fonts, icons and the share card                                                                                               |
 | [Accessibility](ACCESSIBILITY.md)     | How the page meets its accessibility rules                                                                                                  |
 | [Testing](TESTING.md)                 | Running the suite, what each test file guards, locked values, visual review, Lighthouse                                                     |
 | [Troubleshooting](TROUBLESHOOTING.md) | Symptom, cause and fix for recurring failures                                                                                               |
@@ -57,6 +57,6 @@ Merging the approved pull request releases through [deploy.yml](../.github/workf
 
 **Local gates.** Before pushing, run `npm run format`, `npm run verify` and `npm test`, and `npm run build:dist` when the published output changes (AGENTS.md rule 3). The [README's table](../README.md#work-locally) lists the commands; [Operations](OPERATIONS.md#release-gates) gives the full CI-equivalent sequence.
 
-**Formatting.** Prettier 3.9.9 (pinned in `package.json`, configured in `.prettierrc.json`) formats the repository, Markdown included; `.prettierignore` leaves out `package-lock.json`, and `.gitattributes` keeps LF line endings. `.git-blame-ignore-revs` lists the commit that formatted the whole repository; GitHub's blame view skips it, and `git config blame.ignoreRevsFile .git-blame-ignore-revs` makes local blame do the same.
+**Formatting.** Prettier 3.9.10 (pinned in `package.json`, configured in `.prettierrc.json`) formats the repository, Markdown included; `.prettierignore` leaves out `package-lock.json`, and `.gitattributes` keeps LF line endings. `.git-blame-ignore-revs` lists the commit that formatted the whole repository; GitHub's blame view skips it, and `git config blame.ignoreRevsFile .git-blame-ignore-revs` makes local blame do the same.
 
 **Dependencies.** No new dependency without the owner's authorization (AGENTS.md rule 6). Dependabot proposes npm and GitHub Actions updates weekly ([dependabot.yml](../.github/dependabot.yml)), except `three`, which `package.json` pins at exactly 0.160.1 for r160's legacy light units; a test holds that version, and upgrading it needs a deliberate visual review.

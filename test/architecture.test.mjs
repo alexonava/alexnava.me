@@ -629,7 +629,7 @@ test("supplied tower and tree switch between source and moonlight grades without
   tree.dispose();
 });
 
-test("beside About the bark's highlights from the lantern and the crown's fill pass the ground's knee", () => {
+test("beside Contact the bark's highlights from the lantern and the crown's fill pass the ground's knee", () => {
   const contacts = createSlateContacts(),
     physical = () => ({
       uniforms: {},
@@ -651,7 +651,7 @@ test("beside About the bark's highlights from the lantern and the crown's fill p
   assert.match(SLATE_TEXT_GUARD, /#define SLATE_TEXT_KNEE /);
   assert.match(shader.vertexShader, /#include <project_vertex>\nvSlateClip = gl_Position;/);
   assert.match(shader.fragmentShader, /varying vec4 vSlateClip;/);
-  // After all the lights, beside About only: the point lights' highlight
+  // After all the lights, beside Contact only: the point lights' highlight
   // taken again as RE_Direct_Physical takes it, and only the knee's cut removed.
   assert.ok(
     shader.fragmentShader.includes(`#include <lights_fragment_begin>\n${BARK_TEXT_LIGHTS}`),
@@ -669,7 +669,7 @@ test("beside About the bark's highlights from the lantern and the crown's fill p
       "reflectedLight.directSpecular -= babelPoint-slateTextKnee(babelPoint, babelBehind);",
     ),
   );
-  // The knee's define, then About's test and the blended knee the bark calls.
+  // The knee's define, then Contact's test and the blended knee the bark calls.
   const guardAt = (text) => SLATE_TEXT_GUARD.indexOf(text);
   assert.ok(
     guardAt("#define SLATE_TEXT_KNEE ") >= 0 &&
@@ -677,7 +677,7 @@ test("beside About the bark's highlights from the lantern and the crown's fill p
       guardAt("float slateBehindAbout(vec2 v){") >= 0,
   );
   assert.doesNotMatch(BARK_TEXT_LIGHTS, /\bslateText\b|directionalLights|spotLights/);
-  // The moon rim comes off behind the name, the intro and About by the shot's
+  // The moon rim comes off behind the name, the intro and Contact by the shot's
   // share (Close-up's), easing out over RIM.textReach; at 0 the factor is 1.
   assert.equal(shader.uniforms.babelRimText, RIM_UNIFORMS.babelRimText);
   assert.match(shader.fragmentShader, /uniform float babelRimText;/);

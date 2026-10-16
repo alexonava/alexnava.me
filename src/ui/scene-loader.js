@@ -5,10 +5,12 @@
 // initialized. The required models report their downloaded bytes through
 // track(), and the scene's User Timing measures (perf-marks.js names) report
 // each one's parse, assembly and shader warm-up. The value is that real
-// progress, held below 100% until #home-scene gains is-ready (the reveal); it
-// then reads 100% and fades out with the canvas's fade-in. A scene host that is
-// hidden (a failed scene) or a run that stops progressing retires the line
-// below 100%, so it is never left on screen. Static visitors never see it.
+// progress, as the label's percentage and as the fill of a bar along the
+// window's top edge, held below 100% until #home-scene gains is-ready (the
+// reveal); it then reads 100% and fades out with the canvas's fade-in. A
+// scene host that is hidden (a failed scene) or a run that stops progressing
+// retires the line below 100%, so it is never left on screen. Static visitors
+// never see it.
 //
 // Its star (#scene-star) is the scene's star as the opening shot will show it:
 // the scene reports where (star()), first from its opening fit to the tower's
@@ -112,6 +114,7 @@
 
   function paint(r) {
     const shown = r.status === "revealed" ? 1 : r.target;
+    r.fill.style.transform = `scaleX(${shown})`;
     r.value.textContent =
       shown === 1 ? "100%" : `${Math.floor(Math.min(shown, 0.99) * 100 + 1e-6)}%`;
     paintStar(r, shown);
@@ -194,6 +197,7 @@
     r.exit = window.setTimeout(() => {
       r.el.hidden = true;
       r.el.classList.remove("is-done");
+      r.fill.style.transform = "";
       if (r.starEl) r.starEl.hidden = true;
     }, EXIT_MS);
   });
@@ -202,8 +206,9 @@
     if (loading(run)) return;
     const el = document.getElementById("scene-loader");
     const host = document.getElementById("home-scene");
+    const fill = el?.querySelector(".scene-loader__fill");
     const value = el?.querySelector(".scene-loader__value");
-    if (!host || !value) return;
+    if (!host || !fill || !value) return;
     const starEl = document.getElementById("scene-star");
     const starParts = starEl ? Array.from(starEl.children) : [];
     if (run.exit) window.clearTimeout(run.exit);
@@ -214,7 +219,7 @@
         : ["tower"];
     const r = (run = {
       el,
-      host,
+      fill,
       value,
       starEl: starParts.length === 4 + STAR.ghosts.length ? starEl : null,
       starParts,

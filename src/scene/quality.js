@@ -591,12 +591,10 @@
     return cloneCompositionProfile("desktop");
   }
 
-  scene.SCENE_COMPOSITION_PROFILES = SCENE_COMPOSITION_PROFILES;
   scene.SCENE_QUALITY_PROFILES = SCENE_QUALITY_PROFILES;
   scene.createSceneQualityGovernor = createSceneQualityGovernor;
   scene.createSceneQualityState = createSceneQualityState;
   scene.detectSaveData = detectSaveData;
-  scene.detectTouchPrimary = detectTouchPrimary;
   scene.getSceneCompositionProfile = getSceneCompositionProfile;
   scene.resolveEffectiveDprCap = resolveEffectiveDprCap;
   scene.getSceneQualityProfile = function getSceneQualityProfile(tier) {

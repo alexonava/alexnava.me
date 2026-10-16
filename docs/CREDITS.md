@@ -142,6 +142,16 @@ integrated from its normal map, both greyscale and tiling
 provenance are in `Assets/Materials/PolyHaven-Dirt`). Credit is not required
 under CC0; it is given here.
 
+## Icons
+
+The icons in `public/` draw the initials AN in Cormorant Garamond 700 (SIL Open
+Font License 1.1, [above](#typography)) in the name's colour on the night. Their
+outlines were traced from Chrome's rendering of the font at 1000 px (marching
+squares, simplified to within 0.2 px), so the icons embed no font, and Chrome
+rendered the PNG and ICO images from the same drawings. The scripts,
+`trace-initials.cjs` and `make-icons.cjs`, are in
+`Assets/Review captures/loader-20261016/tools`; none are published.
+
 ## Baseline hill ring elevation data
 
 The baseline hill ring (`HILL_PROFILE` in `src/scene/hill-silhouette.js`) is
@@ -157,10 +167,3 @@ the tower commits, takes the ring's place at once: it shows an empty stand-in
 until its own ranges (the lazy `src/scene/mountain-build.js` chunk, with the
 Meshy mountains) are built, and keeps the stand-in if that chunk fails. The scene is revealed
 only after the tower loads, so visitors never see the ring.
-
-## Cotton paper
-
-The paper textures of the 404 page's sheet, `images/paper-grain.webp` and
-`images/paper-edge.webp`, were generated with OpenAI's built-in image generation
-tool and prepared as local WebP assets. They are decorative; the page's wording
-is selectable HTML.
