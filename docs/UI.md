@@ -74,6 +74,8 @@ Each row is a media query in styles.css; queries that appear in several places a
 
 styles.css has no `prefers-reduced-data` query: [main.js](../src/main.js) and [quality.js](../src/scene/quality.js) read that preference ([Accessibility](ACCESSIBILITY.md#preferences)).
 
+main.js also gates scene startup on forced colours before any WebGL probe, scene or model request, or loading line, regardless of quality or debug overrides. When forced colours clear it rechecks the other startup gates and starts once if eligible; CSS still hides decorative layers if the preference turns on after initialization ([Accessibility](ACCESSIBILITY.md#preferences)).
+
 ### Scene framing
 
 The scene frames its subject around the hero and the bottom bar, so its layout rules mirror the hero's breakpoints. styles.css puts the name at the top on portrait screens (squares included) up to 1024px wide, and on landscape screens up to 760px wide or 500px tall; elsewhere it sits bottom-left.
@@ -163,7 +165,7 @@ The star warms from the progress at which its place first became known (`since`)
 
 - **Name.** The `h1`, two block `.hero-word` spans. Cormorant 700 with `font-synthesis-weight: none`, `--text`, `clamp(48px, 8vw, 104px)` on desktop, line height 0.98, −0.015em tracking, at most 8ch wide, with a faint halo (`0 0 44px rgba(198, 208, 202, 0.1)`).
 - **Intro.** `.hero-intro`: `--text`, `clamp(14px, 1.25vw, 17px)`, line height 1.55, at most 30ch, balanced, 18px below the name, with a dark text shadow.
-- **Scrim.** `.hero-minimal::before`: a soft oval of `rgba(7, 10, 18, 0.58)` at its centre with a (1 − t²)² falloff (`radial-gradient(closest-side, …)`), reaching 140px above, 196px right, 167px below and 240px left of the hero block, and transparent before every edge of its box. `main`'s `overflow-x: clip` keeps it from widening the layout viewport on phones.
+- **Scrim.** `.hero-minimal::before`: a soft oval of `rgba(7, 10, 18, 0.58)` at its centre with a (1 − t²)² falloff (`radial-gradient(closest-side, …)`), reaching 140px above, 196px right, 167px below and 240px left of the hero block, and transparent before every edge of its box. `main` is at least one viewport tall (`min-height: 100vh`, then `100svh`); its `overflow: clip` contains the scrim on both axes, so it cannot widen the layout viewport or add a vertical scrollbar. It is not a scroll container: in-flow content can grow `main` and scroll normally with the document.
 - **Intro scrim.** Tablets in portrait only ([Breakpoints](#layout)): `.hero-intro` isolates, and its `::before` is the intro's own oval, `rgba(7, 10, 18, 0.6)` at its centre with the same falloff, 240px wider and 96px taller than the line. It guards the line over the live scene only: hero.js sets `is-over-scene` on `#hero-minimal` while `#home-scene` has `is-ready` (a MutationObserver on its `class`), and the oval fades in and out with the canvas (opacity, 480ms `ease-out`; at once under reduced motion). The title card never shows it; a browser without MutationObserver always does. The name (`position: relative; z-index: 1`) paints above it, so the oval's upward reach never dims the name's feet.
 - The hero's layout box and text bound the scene's framing and text guard ([Scene framing](#scene-framing)).
 

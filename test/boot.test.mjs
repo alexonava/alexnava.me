@@ -74,6 +74,7 @@ function createMutableChangeTarget(initialMatches = false) {
 }
 
 function createContext({
+  forcedColors = false,
   hardwareConcurrency,
   height = 720,
   hidden = false,
@@ -107,6 +108,7 @@ function createContext({
   const idleCallbacks = [];
   const motionQuery = createMutableChangeTarget(reducedMotion);
   const dataQuery = createMutableChangeTarget(saveData);
+  const forcedColorsQuery = createMutableChangeTarget(forcedColors);
   const connectionListeners = new Set();
   const connection = {
     saveData,
@@ -123,6 +125,7 @@ function createContext({
   };
   let contextLossCount = 0;
   let scriptAppendCount = 0;
+  let sceneInitCount = 0;
   let webglProbeCount = 0;
   const window = {
     // The UI modules app.js boots before main.js; Contact stays native here.
@@ -134,6 +137,7 @@ function createContext({
     matchMedia(query) {
       if (query === "(prefers-reduced-data: reduce)") return dataQuery;
       if (query === "(prefers-reduced-motion: reduce)") return motionQuery;
+      if (query === "(forced-colors: active)") return forcedColorsQuery;
       return createMutableChangeTarget(false);
     },
     requestIdleCallback(callback) {
@@ -168,7 +172,10 @@ function createContext({
     };
   }
   const loadScript = (script) => {
-    window.BabelSite.scene.initHomeScene = () => initResult;
+    window.BabelSite.scene.initHomeScene = () => {
+      sceneInitCount += 1;
+      return initResult;
+    };
     script.dispatch("load");
   };
   const document = {
@@ -304,6 +311,7 @@ function createContext({
     host,
     connection,
     dataQuery,
+    forcedColorsQuery,
     dispatchDOMContentLoaded() {
       for (const handler of [...domContentLoadedListeners]) handler({ type: "DOMContentLoaded" });
       domContentLoadedListeners.clear();
@@ -325,6 +333,7 @@ function createContext({
     links,
     scripts,
     getScriptAppendCount: () => scriptAppendCount,
+    getSceneInitCount: () => sceneInitCount,
     getContextLossCount: () => contextLossCount,
     getWebglProbeCount: () => webglProbeCount,
   };
@@ -338,6 +347,226 @@ async function loadMainWithQuality(context) {
   vm.runInNewContext(qualitySource, context, { filename: qualitySourcePath });
   vm.runInNewContext(mainSource, context, { filename: mainSourcePath });
 }
+
+test("forced colors blocks WebGL, scene chunks, models and the loading line even with overrides", async () => {
+  for (const search of [
+    "",
+    "?quality=high",
+    "?quality=balanced",
+    "?sceneDebug=1",
+    "?quality=low&sceneDebug=1",
+  ]) {
+    const harness = createContext({
+      ...CAPABLE,
+      forcedColors: true,
+      modulePreloads: ["/scripts/scene.shared.0123abcd.js"],
+      sceneLoader: true,
+      search,
+    });
+    await loadMainWithQuality(harness.context);
+    harness.dispatchDOMContentLoaded();
+    await harness.flushIdleCallbacks();
+
+    assert.equal(await harness.context.window.BabelSite.ensureSceneReady(), false, search);
+    assert.equal(harness.host.hidden, true);
+    assert.equal(harness.getWebglProbeCount(), 0, "forced colors exits before probing WebGL");
+    assert.equal(harness.scripts.length, 0);
+    assert.equal(harness.links.length, 0);
+    assert.equal(harness.fetches.length, 0);
+    assert.equal(harness.getSceneInitCount(), 0);
+    assert.ok(!harness.events.includes("loader:begin"), "the blocked path starts no loading line");
+  }
+});
+
+test("forced colors enabled before delayed startup can recover after it clears", async () => {
+  const harness = createContext({ ...CAPABLE, sceneLoader: true });
+  await loadMainWithQuality(harness.context);
+  harness.dispatchDOMContentLoaded();
+
+  // No preference was active when boot initially considered recovery.
+  harness.forcedColorsQuery.setMatches(true);
+  await harness.flushIdleCallbacks();
+  assert.equal(harness.host.hidden, true);
+  assert.equal(harness.getWebglProbeCount(), 0);
+  assert.equal(harness.scripts.length, 0);
+  assert.equal(harness.fetches.length, 0);
+  assert.ok(!harness.events.includes("loader:begin"));
+
+  harness.forcedColorsQuery.setMatches(false);
+  assert.equal(harness.getScriptAppendCount(), 1, "clearing the preference starts recovery itself");
+  assert.equal(await harness.context.window.BabelSite.ensureSceneReady(), true);
+  assert.equal(harness.host.hidden, false);
+  assert.equal(harness.getScriptAppendCount(), 1);
+  assert.equal(harness.getSceneInitCount(), 1);
+  assert.equal(harness.fetches.length, 2);
+});
+
+test("clearing forced colors shares one pending startup with scheduled boot and concurrent callers", async () => {
+  const harness = createContext({
+    ...CAPABLE,
+    forcedColors: true,
+    modulePreloads: ["/scripts/scene.shared.0123abcd.js"],
+    sceneLoader: true,
+    scriptOutcomes: ["pending"],
+  });
+  await loadMainWithQuality(harness.context);
+  harness.dispatchDOMContentLoaded();
+
+  // The preference clears before the first-paint callback gets its turn.
+  harness.forcedColorsQuery.setMatches(false);
+  assert.equal(
+    harness.getScriptAppendCount(),
+    1,
+    "recovery starts before the queued idle callback",
+  );
+  const boot = harness.flushIdleCallbacks();
+  const concurrent = harness.context.window.BabelSite.ensureSceneReady();
+  harness.forcedColorsQuery.setMatches(false);
+  harness.motionQuery.setMatches(false);
+  harness.dataQuery.setMatches(false);
+  harness.connection.setSaveData(false);
+
+  assert.equal(harness.getScriptAppendCount(), 1);
+  assert.equal(harness.links.length, 1);
+  assert.equal(harness.fetches.length, 2);
+  assert.equal(harness.loaderCalls.filter(({ method }) => method === "begin").length, 1);
+  assert.equal(harness.getSceneInitCount(), 0, "initialization waits for the scene bundle");
+
+  harness.loadPendingScripts();
+  await boot;
+  assert.equal(await concurrent, true);
+  assert.equal(harness.host.hidden, false);
+  assert.equal(harness.getSceneInitCount(), 1);
+  assert.deepEqual(
+    harness.loaderCalls.filter(({ method }) => method === "stage").map(({ name }) => name),
+    ["bundle", "init"],
+  );
+
+  harness.forcedColorsQuery.setMatches(true);
+  harness.forcedColorsQuery.setMatches(false);
+  assert.equal(await harness.context.window.BabelSite.ensureSceneReady(), true);
+  assert.equal(
+    harness.getScriptAppendCount(),
+    1,
+    "later preference changes never reload the scene",
+  );
+  assert.equal(harness.getSceneInitCount(), 1);
+  assert.equal(harness.fetches.length, 2);
+});
+
+test("queued boot preserves a recovered scene when forced colors turns on again before idle", async () => {
+  const harness = createContext({ ...CAPABLE, forcedColors: true, sceneLoader: true });
+  await loadMainWithQuality(harness.context);
+  harness.dispatchDOMContentLoaded();
+
+  harness.forcedColorsQuery.setMatches(false);
+  assert.equal(harness.getScriptAppendCount(), 1);
+  assert.equal(await harness.context.window.BabelSite.ensureSceneReady(), true);
+  assert.equal(harness.host.hidden, false);
+
+  // Recovery has already completed and removed its listeners. A queued boot
+  // must leave the initialized host available once CSS shows the scene again.
+  harness.forcedColorsQuery.setMatches(true);
+  await harness.flushIdleCallbacks();
+  harness.forcedColorsQuery.setMatches(false);
+
+  assert.equal(harness.host.hidden, false, "clearing forced colors can show the initialized scene");
+  assert.equal(harness.getScriptAppendCount(), 1);
+  assert.equal(harness.getSceneInitCount(), 1);
+  assert.equal(harness.fetches.length, 2);
+  assert.equal(harness.loaderCalls.filter(({ method }) => method === "begin").length, 1);
+});
+
+test("forced-colors recovery waits for every unoverridden static preference to clear", async () => {
+  for (const order of [
+    ["colors", "motion", "data", "connection"],
+    ["connection", "data", "motion", "colors"],
+  ]) {
+    const harness = createContext({
+      ...CAPABLE,
+      forcedColors: true,
+      reducedMotion: true,
+      saveData: true,
+    });
+    await loadMainWithQuality(harness.context);
+    harness.dispatchDOMContentLoaded();
+    await harness.flushIdleCallbacks();
+    const clear = {
+      colors: () => harness.forcedColorsQuery.setMatches(false),
+      motion: () => harness.motionQuery.setMatches(false),
+      data: () => harness.dataQuery.setMatches(false),
+      connection: () => harness.connection.setSaveData(false),
+    };
+    for (const preference of order.slice(0, -1)) {
+      clear[preference]();
+      assert.equal(harness.scripts.length, 0, `${preference}: another static preference remains`);
+      assert.equal(harness.getWebglProbeCount(), 0);
+      assert.equal(harness.fetches.length, 0);
+    }
+    clear[order.at(-1)]();
+    assert.equal(harness.getScriptAppendCount(), 1, "the last preference change starts recovery");
+    assert.equal(await harness.context.window.BabelSite.ensureSceneReady(), true);
+    assert.equal(harness.scripts.length, 1);
+    assert.equal(harness.getSceneInitCount(), 1);
+  }
+});
+
+test("forced-colors recovery preserves explicit quality and debug preference overrides", async () => {
+  for (const options of [
+    { reducedMotion: true, saveData: true, search: "?quality=high" },
+    { reducedMotion: true, saveData: true, search: "?quality=balanced" },
+    { reducedMotion: true, search: "?sceneDebug=1" },
+  ]) {
+    const harness = createContext({ ...CAPABLE, ...options, forcedColors: true });
+    await loadMainWithQuality(harness.context);
+    harness.dispatchDOMContentLoaded();
+    await harness.flushIdleCallbacks();
+    assert.equal(harness.scripts.length, 0);
+
+    harness.forcedColorsQuery.setMatches(false);
+    assert.equal(harness.getScriptAppendCount(), 1, "the override permits automatic recovery");
+    assert.equal(await harness.context.window.BabelSite.ensureSceneReady(), true, options.search);
+    assert.equal(harness.scripts.length, 1);
+    assert.equal(harness.getSceneInitCount(), 1);
+  }
+});
+
+test("clearing forced colors keeps low quality and reduced-data debug visits static", async () => {
+  for (const options of [
+    { search: "?quality=low" },
+    { search: "?quality=low&sceneDebug=1" },
+    { maxTextureSize: 2048 },
+    { saveData: true, search: "?sceneDebug=1" },
+  ]) {
+    const harness = createContext({
+      ...CAPABLE,
+      ...options,
+      forcedColors: true,
+      sceneLoader: true,
+    });
+    await loadMainWithQuality(harness.context);
+    harness.dispatchDOMContentLoaded();
+    await harness.flushIdleCallbacks();
+    assert.equal(harness.getWebglProbeCount(), 0);
+
+    harness.forcedColorsQuery.setMatches(false);
+    assert.equal(
+      harness.getWebglProbeCount(),
+      1,
+      "recovery rechecks capabilities and the low tier",
+    );
+    assert.equal(
+      await harness.context.window.BabelSite.ensureSceneReady(),
+      false,
+      JSON.stringify(options),
+    );
+    assert.equal(harness.host.hidden, true);
+    assert.equal(harness.scripts.length, 0);
+    assert.equal(harness.links.length, 0);
+    assert.equal(harness.fetches.length, 0);
+    assert.ok(!harness.events.includes("loader:begin"));
+  }
+});
 
 test("scene loader skips the deferred bundle when reduced-data is requested", async () => {
   const { context, host, scripts, getWebglProbeCount } = createContext({ saveData: true });

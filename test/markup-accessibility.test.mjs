@@ -526,18 +526,16 @@ test("the bottom scrim fades to transparent before the top and sides of its box"
   assert.equal(stops.at(-1).join(), "0,100", "fully transparent at the ellipse's edge");
 });
 
-test("main clips the hero backdrop's horizontal overflow so phones keep a device-width layout", async () => {
-  // The backdrop's box reaches about 196px past the hero's right edge. On a
-  // 390px phone that widened the mobile layout viewport to ~495px and pushed
-  // the footer below the screen; body's overflow-x: hidden does not stop it.
+test("main contains the hero backdrop without becoming a scroll container", async () => {
+  // The oval reaches beyond a phone's width and a short desktop's height.
+  // Keep its fade visible to the viewport's edge; real in-flow content can
+  // still grow this minimum-height box and scroll the document.
   const styles = await readStyles();
   const main = cssRule(styles, "main");
-  assert.match(main, /overflow-x:\s*clip;/);
-  assert.doesNotMatch(
-    main,
-    /overflow(-y)?:\s*(hidden|auto|scroll)/,
-    "no scroll container or vertical clip",
-  );
+  assert.match(main, /min-height:\s*100vh;/);
+  assert.match(main, /min-height:\s*100svh;/);
+  assert.match(main, /overflow:\s*clip;/);
+  assert.doesNotMatch(main, /overflow(-y)?:\s*(hidden|auto|scroll)/, "no scroll container");
 });
 
 test("every contact address sits inside Cloudflare email_off markers", async () => {

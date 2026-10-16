@@ -15,8 +15,8 @@ Append them to the local preview, for example `http://127.0.0.1:4173/?view=tower
 | `sceneDebug` | `1` or `true`                               | Publishes `BabelSite.sceneDebug`                   |
 
 - Any other `view` opens the tower, and a missing or invalid `angle` the first shot. A `tour` value other than 3, 5 or 20 stays on the opening shot. At `tour=3` the dissolve takes 0.9 s. Any other `quality` value reads as `auto`.
-- `quality=high|balanced` loads the live scene past the reduced-motion, reduced-data and software-renderer gates, never without WebGL, and pins the tier: the governor takes no adaptive step, not even the resolution step (pixel ratio only).
-- `sceneDebug` loads the live scene past the reduced-motion and software-renderer gates only: with a reduced-data preference the startup tier is still low, which keeps the title card (when the probe could not read the texture limits, main.js downloads the scene bundle first and `initHomeScene()` declines). It keeps the detected tier and the governor. With `sceneDebug`, main.js installs no preference listeners, so a title card kept by reduced data stays when the preference clears, until a reload.
+- `quality=high|balanced` loads the live scene past the reduced-motion, reduced-data and software-renderer gates, never without WebGL or while forced colours are active, and pins the tier: the governor takes no adaptive step, not even the resolution step (pixel ratio only).
+- `sceneDebug` loads the live scene past the reduced-motion and software-renderer gates only: with a reduced-data preference the startup tier is still low, which keeps the title card (when the probe could not read the texture limits, main.js downloads the scene bundle first and `initHomeScene()` declines). It keeps the detected tier and the governor. Clearing reduced data alone does not recover a static startup selected under `sceneDebug`. Forced colours always block startup, including explicit quality or debug overrides; when they clear, main.js rechecks the remaining gates and starts once if eligible.
 - `quality=low` keeps the title card, with or without `sceneDebug`.
 
 ## Shots
