@@ -117,7 +117,7 @@ The rules for visual, motion and typographic changes. Read them before changing 
 
 ## Static images
 
-- The share card, `public/og.png`, is rendered from `tools/og-card.html` over `tools/og-card-backdrop.webp`, a still of the live scene; its words (the name, the intro and alexnava.me) take the name's colour, as the page's do. It must match the accepted live appearance: compare live views before refreshing either, and regenerate the card when the backdrop changes.
+- The share card, `public/og.png`, is rendered from `tools/og-card.html` over `tools/og-card-backdrop.webp`, the lookout's gallery (Gallery detail) under the milky banks, the owner's pick of 2026-10-16: a still of that shot with every page layer but the canvas hidden, the sky's cloud directions turned 70 degrees so The watch's banks stand behind the cabin, and the shot's light lifted a little (fill 1.5, key 1.1); its words (the name, the intro and alexnava.me) take the name's colour, as the page's do. It must match the accepted live appearance: compare live views before refreshing either, and regenerate the card when the backdrop changes.
 - The icons are the initials AN in the name's face and colour, Cormorant Garamond 700 in `#f7f1ea`, on the night (`#090b16`): the owner's pick of 2026-10-15, "lets go with initials AN", over the scene's star, a single A and the lookout with its star. The favicons and the manifest's `any` icons round the tile's corners; the maskable icons and the Apple touch icon are full bleed, for launchers and iOS to crop, the maskable's initials smaller, inside the safe circle. The initials are outlines, so no icon needs the font ([Assets](ASSETS.md#icons-and-share-card)).
 
 ## Guardrails

@@ -84,11 +84,11 @@ The grit and relief maps are the close soil near the lens (mud-ground.js `SLATE_
 | `icon-192.png`          |   1,969 | 192×192   | Palette with transparency (tRNS)                          |
 | `icon-512.png`          |  18,901 | 512×512   | RGBA                                                      |
 | `icon-maskable-512.png` |   2,928 | 512×512   | Opaque palette                                            |
-| `og.png`                | 299,150 | 1200×630  | Share card; opaque, 224-colour palette                    |
+| `og.png`                | 298,931 | 1200×630  | Share card; opaque, 224-colour palette                    |
 
 The icons are the initials AN in the name's face, Cormorant Garamond 700, in the name's colour (`#f7f1ea`) on the night (`#090b16`) ([Style](STYLE.md#static-images)). `favicon.svg` and `icon.svg` draw, on a 512 viewBox, the night tile with its corners rounded at 112 and the initials as one outline path (even-odd fill), so they need no font. `icon-maskable.svg` is full bleed, its initials scaled to 0.815 of theirs to sit inside the maskable safe circle, and `apple-touch-icon.png` is `icon.svg`'s drawing full bleed (iOS rounds it). The PNGs and the ICO's images are Chrome's renderings of these drawings.
 
-`tools/og-card-backdrop.webp` (38,878 bytes, 1600×670, opaque) is the share card's backdrop: a still of the live scene's opening shot, The watch, with every page layer but the canvas hidden. It is never published (`test/hosting.test.mjs`, `test/bundle-output.test.mjs`).
+`tools/og-card-backdrop.webp` (43,954 bytes, 1600×670, opaque) is the share card's backdrop: the lookout's gallery (Gallery detail) under the milky banks, the owner's pick of 2026-10-16: a still of that shot with every page layer but the canvas hidden, the sky's cloud directions turned 70 degrees so The watch's banks stand behind the cabin, and the shot's light lifted a little (fill 1.5, key 1.1). It is never published (`test/hosting.test.mjs`, `test/bundle-output.test.mjs`).
 
 ## Sources
 
@@ -104,7 +104,7 @@ Only the share card is generated in the repository. Everything else is committed
 | Fonts                         | Variable woff2 subsets of the two OFL fonts; the subsetting is not in the repository                                                                                                                                                                                                                                                                                               |
 | Icons                         | The initials traced into outlines by a Node script from Chrome's rendering of Cormorant Garamond 700 at 1000 px (marching squares, simplified to within 0.2 px), and the PNG and ICO images rendered by Chrome from the same drawings by another ([Credits](CREDITS.md)); no generator in the repository                                                                           |
 | `public/og.png`               | Rendered from `tools/og-card.html` over the backdrop ([below](#refresh-the-share-card))                                                                                                                                                                                                                                                                                            |
-| `tools/og-card-backdrop.webp` | A 1600×670 still of the accepted live scene's opening shot, The watch                                                                                                                                                                                                                                                                                                              |
+| `tools/og-card-backdrop.webp` | A 1600×670 still of the live scene's Gallery detail under The watch's banks, made with the prototype capture scripts in the owner's archive                                                                                                                                                                                                                                        |
 
 ## Budgets
 
@@ -116,7 +116,7 @@ Only the share card is generated in the repository. Everything else is committed
 | Complete scene, balanced                               | 3 MiB                                              | 3,063,140        | The same                                                                                  |
 | UI bundle (`app.HASH.js`)                              | under 30 KiB                                       |                  | `bundle-output`: "UI bundle stays under the LCP budget"                                   |
 | Scene entry and the chunks it imports statically       | under 830 KiB, exactly two files                   |                  | `bundle-output`: "scene bundle stays under the deferred-payload budget"                   |
-| `public/og.png`                                        | opaque, exactly 1200×630, at most 300 KB (300,000) | 299,150          | `hosting`: "the share image is an opaque 1200x630 PNG of at most 300 KB, as its tags say" |
+| `public/og.png`                                        | opaque, exactly 1200×630, at most 300 KB (300,000) | 298,931          | `hosting`: "the share image is an opaque 1200x630 PNG of at most 300 KB, as its tags say" |
 
 Lazy scene chunks are outside the script budget. The scene's default load carries the tower's stored outline for the loading line's star ([opening-outline.js](../src/scene/opening-outline.js), about 10 kB of it). Script sizes change with every build; `npm run build:dist` prints them.
 
@@ -157,7 +157,7 @@ The two variable fonts are the only ones the design allows ([Style](STYLE.md#pal
 
 ### Refresh the share card
 
-1. Refresh `tools/og-card-backdrop.webp` only from an accepted live view: a 1600×900 still of The watch with every page layer but the canvas hidden, cropped to the picture between the film's widescreen bars (1600×670). Edit `tools/og-card.html` when the card's text changes.
+1. Refresh `tools/og-card-backdrop.webp` only from an accepted live view: a 1600×900 still with every page layer but the canvas hidden, cropped to the picture between the film's widescreen bars (1600×670). Today's is Gallery detail with the sky's cloud directions turned 70 degrees and its light lifted a little, rendered by the prototype capture scripts in the owner's archive (`Assets/Review captures/share-card-20261016`). Edit `tools/og-card.html` when the card's text changes.
 2. Render and quantize the card with the commands in `tools/og-card.html`'s header comment (headless Edge, then ImageMagick to a palette PNG).
-3. Use the largest dither amount that keeps `public/og.png` at or under 300 KB (the header comment gives the steps), then run `node --test test/hosting.test.mjs`, which holds it opaque, exactly 1200×630 and at most 300 KB.
+3. Use the largest dither amount that keeps `public/og.png` at or under 300 KB (the header comment gives the steps). Then set the `?card=` of `index.html`'s `og:image` and `twitter:image` to the first eight hex digits of the new file's SHA-256, so link previews fetch it afresh, and run `node --test test/hosting.test.mjs`, which holds the file opaque, exactly 1200×630 and at most 300 KB, and both tags on its hash.
 4. After the release, purge `/og.png` ([Operations](OPERATIONS.md#headers-and-caching)) and re-scrape it with LinkedIn Post Inspector.

@@ -82,7 +82,7 @@ With `--rollback`, `smoke-pages.sh` also accepts `<title>Nava Designs — Alex N
 1. Edit the words in every place the table above lists. Keep the footer's links and `public/index.md`'s Contact section in step, and the `mailto:` link inside its `email_off` markers.
 2. When the homepage's content changes, set the same date (`YYYY-MM-DD`) in the JSON-LD `dateModified` and in `public/index.md`'s front matter. `sitemap.xml` follows on the next build.
 3. Update the tests that pin the old wording in the same change (`test/markup-accessibility.test.mjs`, `test/hosting.test.mjs`, and `test/smoke-pages.test.mjs` for the title and the 404 heading), and the address in the `test/contact.test.mjs` fixture. A change to the strings the CI scripts and `ci.yml` read needs authorization first.
-4. When the name, intro or domain changes, edit `tools/og-card.html` and regenerate `public/og.png` ([Assets](ASSETS.md#refresh-the-share-card)).
+4. When the name, intro or domain changes, edit `tools/og-card.html`, regenerate `public/og.png` and update the `?card=` hash in `index.html`'s `og:image` and `twitter:image` ([Assets](ASSETS.md#refresh-the-share-card)).
 5. Keep `public/index.md`, `llms.txt`, `site-agents.md` and `sitemap.md` accurate and free of anything private ([AGENTS.md](../AGENTS.md) rule 4).
 6. Run `npm run format`, `npm run verify`, `npm test` and `npm run build:dist`.
 7. After the release, purge each changed stable-named file (`/index.md`, `/robots.txt`, `/llms.txt`, `/AGENTS.md`, `/sitemap.md`, `/sitemap.xml`, `/manifest.webmanifest`, `/og.png`, `/.well-known/security.txt`); HTML revalidates on every request ([Operations](OPERATIONS.md#headers-and-caching)).
