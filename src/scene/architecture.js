@@ -123,15 +123,15 @@ export const ENVIRONMENT_ROLES = Object.freeze({
   rock: Object.freeze([0.6, 2, 1.8]),
 });
 
-// Beside About the bark's highlights from the point lights (the lantern and
+// Beside Contact the bark's highlights from the point lights (the lantern and
 // the crown's fill) pass the ground's luminance knee (mud-ground.js
-// SLATE_TEXT_GUARD: About's box, the same reach and knee): in tree-4 a root's
+// SLATE_TEXT_GUARD: Contact's box, the same reach and knee): in tree-4 a root's
 // wet, muddy base caught the lantern in a warm glint beside the small, dim
 // label, the brightest pixel of its backdrop. Behind the name and intro, large
 // and bright, the bark keeps its highlights unless a shot asks
 // (BARK_TEXT_GLINT). After the lights the point lights' highlight is taken
 // again as RE_Direct_Physical takes it, and only what the knee removes comes
-// off; away from About nothing runs. Beside About the moon's broad sheen stays
+// off; away from Contact nothing runs. Beside Contact the moon's broad sheen stays
 // as it is.
 export const BARK_TEXT_LIGHTS = `float babelBehind = slateBehindAbout(vSlateClip.xy/vSlateClip.w*.5+.5);
 if (babelBehind > 0.0) {
@@ -192,10 +192,10 @@ if (babelStoneBehind > 0.0) {
 
 // The bark's moon rim behind the text, a factor on the rim: the shot's share
 // (babelRimText, its mood's rimText) comes off behind the name and intro and
-// behind About, easing out over a fifth of the screen's smaller side
+// behind Contact, easing out over a fifth of the screen's smaller side
 // (film-light.js RIM.textReach).
 // Close-up's rim-led crown (rim 2) put its cool lit branch edges behind the
-// name and the trunk's lit edge behind About, the brightest pixels of their
+// name and the trunk's lit edge behind Contact, the brightest pixels of their
 // backdrops; at 0 the factor is exactly 1.
 export const BARK_RIM_TEXT = `*(1.0-babelRimText*max(slateBehind(slateText, vSlateClip.xy/vSlateClip.w*.5+.5, ${RIM.textReach.toFixed(2)}), slateBehind(slateAbout, vSlateClip.xy/vSlateClip.w*.5+.5, ${RIM.textReach.toFixed(2)})))`;
 
@@ -307,7 +307,7 @@ const PALE_GLSL = `
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(babelPaleLuma)*vec3(${PALE.tint.map((v) => v.toFixed(3)).join(", ")}), babelPale*smoothstep(${PALE.luma.map((v) => v.toFixed(3)).join(", ")}, babelPaleLuma));`;
 
 // textGuard: the ground's createSlateContacts() uniforms, for the bark's guards
-// beside About (BARK_TEXT_LIGHTS) and, by the shot's shares, its glints behind
+// beside Contact (BARK_TEXT_LIGHTS) and, by the shot's shares, its glints behind
 // the name and intro (BARK_TEXT_GLINT) and its moon rim behind all the text
 // (BARK_RIM_TEXT); the tree takes it, the tower and the rocks never.
 export function materialFor(asset, anisotropy, role, textGuard = null) {

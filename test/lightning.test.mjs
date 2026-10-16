@@ -377,7 +377,7 @@ test("lightning holds with the scene and never flashes under reduced motion", ()
   const rig = lightningRig({ forceAt: [{ at: 1, u: 0.7, v: 0.6, strength: 1 }] });
   rig.step(0.5);
   rig.step(5, { motionPaused: true });
-  assert.ok(Math.abs(rig.lightning.state.time - 0.5) < 1e-9, "a pause or a dialog holds its clock");
+  assert.ok(Math.abs(rig.lightning.state.time - 0.5) < 1e-9, "a pause holds its clock");
   rig.step(0.5);
   const lit = rig.sky.uFlash.value.w;
   assert.ok(lit > 0.99);
@@ -455,8 +455,8 @@ test("a tall bolt keeps its size where it fits and falls back to shorter ones be
   assert.ok(placed(some) > 0);
 });
 
-test("a bolt keeps its gap from the name, the intro and About", () => {
-  // The name and intro across the frame's left half, About low left, on a 16:9 canvas.
+test("a bolt keeps its gap from the name, the intro and Contact", () => {
+  // The name and intro across the frame's left half, Contact low left, on a 16:9 canvas.
   const textGuard = {
     slateText: { value: { x: 0.12, y: 0.3, z: 0.48, w: 0.62 } },
     slateAbout: { value: { x: 0.01, y: 0.02, z: 0.05, w: 0.05 } },

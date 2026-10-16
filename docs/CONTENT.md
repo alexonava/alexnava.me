@@ -12,7 +12,7 @@ Every place the site's words live, the checks that hold them in step, and how to
 | `.skip-link`                                                         | Skip to main content                                                                                                                            |
 | `.hero h1` (two `.hero-word` spans)                                  | Alex, Nava                                                                                                                                      |
 | `.hero-intro`                                                        | A little about me and what I’m working on.                                                                                                      |
-| `#scene-loader`                                                      | Loading the estate · N%                                                                                                                         |
+| `#scene-loader`                                                      | Loading · N%                                                                                                                                    |
 | `.site-footer__contact`                                              | Contact                                                                                                                                         |
 | `#contact-links`                                                     | alexonava@gmail.com, a `mailto:` link inside `<!--email_off-->` … `<!--/email_off-->`; LinkedIn, linking https://www.linkedin.com/in/alex-nava/ |
 
@@ -48,13 +48,13 @@ From `test/markup-accessibility.test.mjs` unless named:
 - "Alex Nava’s personal website" appears at least three times in index.html, and the title is `<title>Alex Nava</title>`.
 - Both image alt texts read Alex Nava — a timber lookout tower under a moonlit sky.
 - index.html has exactly one `mailto:` link, Contact's, wrapped in `<!--email_off-->`, and no address outside the markers.
-- The footer holds Contact and its two links; the 404 heading is That page isn't here.
+- The footer holds Contact and its two links; the 404's `main` is verbatim: the eyebrow 404, the heading That page isn't here., the text The way back is just below. and Home.
 - The 404's meta description equals index.html's.
-- The loading line's markup, label included, appears once, verbatim.
+- The loading line's markup, its label and bar included, appears once, verbatim.
 - `test/hosting.test.mjs`: `security.txt`'s `Contact` is `mailto:alexonava@gmail.com`.
 - `test/bundle-output.test.mjs` and `test/build.test.mjs`: `sitemap.xml`'s `lastmod` comes from `public/index.md`'s `dateModified`.
 
-Nothing checks the share card's text against the page, `public/index.md`'s `title` or `description`, the contents of `llms.txt`, `site-agents.md` and `sitemap.md`, the manifest's `name` and `description`, or the 404 page beyond its heading and its description (held equal to the homepage's). Keep them in step by hand.
+Nothing checks the share card's text against the page, `public/index.md`'s `title` or `description`, the contents of `llms.txt`, `site-agents.md` and `sitemap.md`, the manifest's `name` and `description`, or the 404 page's title. Keep them in step by hand.
 
 ## Copy that CI and the audit scripts read
 

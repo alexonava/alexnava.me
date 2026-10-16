@@ -60,15 +60,6 @@ The tower and tree are required: without either the scene returns to the title c
 
 The grit and relief maps are the close soil near the lens (mud-ground.js `SLATE_CLOSE`): greyscale albedo detail and height from CC0 PolyHaven "Dirt" ([Credits](CREDITS.md)), made by `Assets/Materials/dirt-close-v1/scripts/make-dirt-close.py`.
 
-## Page artwork
-
-`images/`, lossy WebP, used by [styles.css](../styles.css) for the 404's paper sheet.
-
-| File               |  Bytes | Pixels  | Alpha | Use                                 |
-| ------------------ | -----: | ------- | ----- | ----------------------------------- |
-| `paper-grain.webp` |  1,996 | 384×384 | no    | Paper fill, tiled                   |
-| `paper-edge.webp`  | 89,244 | 768×768 | yes   | Paper edge, `border-image` slice 96 |
-
 ## Fonts
 
 `fonts/`. The build discovers every `fonts/*.woff2` ([build.mjs](../build.mjs) `fontAssetManifest`).
@@ -83,17 +74,19 @@ The grit and relief maps are the close soil near the lens (mud-ground.js `SLATE_
 
 `public/`, copied to the site root under stable names.
 
-| File                    |   Bytes | Pixels    | Notes                                         |
-| ----------------------- | ------: | --------- | --------------------------------------------- |
-| `favicon.ico`           |   5,430 | 16 and 32 | Fallback on both pages, listed before the SVG |
-| `favicon.svg`           |     258 | vector    | Page icon on both pages                       |
-| `icon.svg`              |     266 | vector    | Manifest, `any`                               |
-| `icon-maskable.svg`     |     256 | vector    | Manifest, `maskable`                          |
-| `apple-touch-icon.png`  |   2,498 | 180×180   | Opaque, palette                               |
-| `icon-192.png`          |   9,005 | 192×192   | RGBA                                          |
-| `icon-512.png`          |  26,321 | 512×512   | RGBA                                          |
-| `icon-maskable-512.png` |  13,398 | 512×512   | Opaque RGB                                    |
-| `og.png`                | 298,550 | 1200×630  | Share card; opaque, 224-colour palette        |
+| File                    |   Bytes | Pixels    | Notes                                                     |
+| ----------------------- | ------: | --------- | --------------------------------------------------------- |
+| `favicon.ico`           |   5,430 | 16 and 32 | Fallback on both pages, listed before the SVG; BMP images |
+| `favicon.svg`           |   3,394 | vector    | Page icon on both pages                                   |
+| `icon.svg`              |   3,394 | vector    | Manifest, `any`; the same file as `favicon.svg`           |
+| `icon-maskable.svg`     |   3,423 | vector    | Manifest, `maskable`                                      |
+| `apple-touch-icon.png`  |   1,101 | 180×180   | Opaque palette                                            |
+| `icon-192.png`          |   1,969 | 192×192   | Palette with transparency (tRNS)                          |
+| `icon-512.png`          |  18,901 | 512×512   | RGBA                                                      |
+| `icon-maskable-512.png` |   2,928 | 512×512   | Opaque palette                                            |
+| `og.png`                | 299,150 | 1200×630  | Share card; opaque, 224-colour palette                    |
+
+The icons are the initials AN in the name's face, Cormorant Garamond 700, in the name's colour (`#f7f1ea`) on the night (`#090b16`) ([Style](STYLE.md#static-images)). `favicon.svg` and `icon.svg` draw, on a 512 viewBox, the night tile with its corners rounded at 112 and the initials as one outline path (even-odd fill), so they need no font. `icon-maskable.svg` is full bleed, its initials scaled to 0.815 of theirs to sit inside the maskable safe circle, and `apple-touch-icon.png` is `icon.svg`'s drawing full bleed (iOS rounds it). The PNGs and the ICO's images are Chrome's renderings of these drawings.
 
 `tools/og-card-backdrop.webp` (38,878 bytes, 1600×670, opaque) is the share card's backdrop: a still of the live scene's opening shot, The watch, with every page layer but the canvas hidden. It is never published (`test/hosting.test.mjs`, `test/bundle-output.test.mjs`).
 
@@ -108,9 +101,8 @@ Only the share card is generated in the repository. Everything else is committed
 | Tree                          | Reduced in Blender from a supplied Meshy model (the GLB's `asset.generator`)                                                                                                                                                                                                                                                                                                       |
 | Lantern                       | Repackaged by a Node script from its v1 GLB of a supplied Meshy model: positions byte-identical, normals and UVs quantized; colour, metal-roughness and the balanced normal map encoded as WebP from the supplied source; the emission map as lossless WebP of the v1 PNG pixels; the high tier's normal map kept as the v1 JPEG (`asset.generator`, `scenes[0].extras.packaging`) |
 | Slate maps                    | Baked in Blender from a supplied Meshy model                                                                                                                                                                                                                                                                                                                                       |
-| Paper textures                | Generated with OpenAI's image tool and prepared as WebP                                                                                                                                                                                                                                                                                                                            |
 | Fonts                         | Variable woff2 subsets of the two OFL fonts; the subsetting is not in the repository                                                                                                                                                                                                                                                                                               |
-| Icons                         | No generator in the repository                                                                                                                                                                                                                                                                                                                                                     |
+| Icons                         | The initials traced into outlines by a Node script from Chrome's rendering of Cormorant Garamond 700 at 1000 px (marching squares, simplified to within 0.2 px), and the PNG and ICO images rendered by Chrome from the same drawings by another ([Credits](CREDITS.md)); no generator in the repository                                                                           |
 | `public/og.png`               | Rendered from `tools/og-card.html` over the backdrop ([below](#refresh-the-share-card))                                                                                                                                                                                                                                                                                            |
 | `tools/og-card-backdrop.webp` | A 1600×670 still of the accepted live scene's opening shot, The watch                                                                                                                                                                                                                                                                                                              |
 
@@ -123,17 +115,16 @@ Only the share card is generated in the repository. Everything else is committed
 | Complete scene, high: eight models and five slate maps | 6.25 MiB (6,553,600)                               | 6,477,958        | `bundle-output`: "the complete scene fits 6.25 MiB on high and 3 MiB on balanced…"        |
 | Complete scene, balanced                               | 3 MiB                                              | 3,063,140        | The same                                                                                  |
 | UI bundle (`app.HASH.js`)                              | under 30 KiB                                       |                  | `bundle-output`: "UI bundle stays under the LCP budget"                                   |
-| Scene entry and the chunks it imports statically       | under 820 KiB, exactly two files                   |                  | `bundle-output`: "scene bundle stays under the deferred-payload budget"                   |
-| Paper grain and paper edge                             | 200 KiB (204,800)                                  | 91,240           | `markup-accessibility`: "the 404's paper grain and edge stay within their 200 KiB budget" |
-| `public/og.png`                                        | opaque, exactly 1200×630, at most 300 KB (300,000) | 298,550          | `hosting`: "the share image is an opaque 1200x630 PNG of at most 300 KB, as its tags say" |
+| Scene entry and the chunks it imports statically       | under 830 KiB, exactly two files                   |                  | `bundle-output`: "scene bundle stays under the deferred-payload budget"                   |
+| `public/og.png`                                        | opaque, exactly 1200×630, at most 300 KB (300,000) | 299,150          | `hosting`: "the share image is an opaque 1200x630 PNG of at most 300 KB, as its tags say" |
 
-Lazy scene chunks are outside the script budget. Script sizes change with every build; `npm run build:dist` prints them.
+Lazy scene chunks are outside the script budget. The scene's default load carries the tower's stored outline for the loading line's star ([opening-outline.js](../src/scene/opening-outline.js), about 10 kB of it). Script sizes change with every build; `npm run build:dist` prints them.
 
 ## Publication
 
-The build publishes these sources only as `name.HASH.ext`, eight hex digits of the file's SHA-256, cached immutably for a year: the 404's paper textures, every model, the slate maps and the fonts ([build.mjs](../build.mjs) `isFingerprintedSource`), besides the scripts and the stylesheet. Pages, the stylesheet and the scene name only the hashed copies. `public/` files and `fonts/OFL.txt` keep stable names and revalidate after seven days; after a release that changes one, purge its URL ([Operations](OPERATIONS.md#headers-and-caching)). Nothing in `tools/` is published.
+The build publishes these sources only as `name.HASH.ext`, eight hex digits of the file's SHA-256, cached immutably for a year: every model, the slate maps and the fonts ([build.mjs](../build.mjs) `isFingerprintedSource`), besides the scripts and the stylesheet. Pages, the stylesheet and the scene name only the hashed copies. `public/` files and `fonts/OFL.txt` keep stable names and revalidate after seven days; after a release that changes one, purge its URL ([Operations](OPERATIONS.md#headers-and-caching)). Nothing in `tools/` is published.
 
-`test/bundle-output.test.mjs` fails when a file in `images/` is published under its plain name or is missing under its hashed name, and `test/hosting.test.mjs` expects exactly 27 fingerprinted files in `images/` (2 paper textures, 16 models and 9 slate maps); a new file there means updating that count. `.gitignore` ignores `*.png` except `og.png`, `apple-touch-icon.png`, `icon-192.png`, `icon-512.png` and `icon-maskable-512.png`, so a new PNG must be added there as an exception before Git sees it.
+`test/bundle-output.test.mjs` fails when a file in `images/` is published under its plain name or is missing under its hashed name, and `test/hosting.test.mjs` expects exactly 25 fingerprinted files in `images/` (16 models and 9 slate maps); a new file there means updating that count. `images/` holds only `architecture/` and `materials/`, and the stylesheet requests no image: its only URLs are the hashed fonts and `data:` URIs (`test/bundle-output.test.mjs`). `.gitignore` ignores `*.png` except `og.png`, `apple-touch-icon.png`, `icon-192.png`, `icon-512.png` and `icon-maskable-512.png`, so a new PNG must be added there as an exception before Git sees it.
 
 ## How to
 
@@ -142,8 +133,9 @@ The build publishes these sources only as `name.HASH.ext`, eight hex digits of t
 1. Prepare the GLB to the loader's rules above, within its tier's limit, with the same role and tier name. Keep the supplied silhouettes, UVs and map resolutions ([Style](STYLE.md#materials-and-lighting)).
 2. Keep each tier's complete scene within its budget.
 3. When the tree changes, run `node tools/bake-root-shade.mjs` and paste the `ROOT_RESTS`, `ROOT_SHADE` and `ROOT_COVER` it prints over those constants in [terrain-build.js](../src/scene/terrain-build.js); `test/terrain-build.test.mjs` re-bakes both tree variants and fails on any difference.
-4. Recheck every shot it appears in ([Scene modes](SCENE-MODES.md#capture-recipe)); `test/framing.test.mjs` fits the directed shots to the delivered tower, tree and lantern on both tiers.
-5. Update the tables in this file and the model's entry in [Credits](CREDITS.md).
+4. When the tower changes, run `node tools/bake-opening-outline.mjs`, which rewrites [opening-outline.js](../src/scene/opening-outline.js), the tower's stored outline that places the loading line's star before the tower loads; `test/opening-star.test.mjs` re-measures both tower variants and fails until you do.
+5. Recheck every shot it appears in ([Scene modes](SCENE-MODES.md#capture-recipe)); `test/framing.test.mjs` fits the directed shots to the delivered tower, tree and lantern on both tiers.
+6. Update the tables in this file and the model's entry in [Credits](CREDITS.md).
 
 The build hashes the new bytes, so the file needs no other wiring. Replacing the tower or tree also changes the UI bundle, which names those two URLs and sizes for the early request and the loading line.
 
@@ -154,10 +146,6 @@ Name the role in [build.mjs](../build.mjs) `architectureAssetManifest` and in [a
 ### Replace the slate maps
 
 Keep the nine names and exact pixel sizes (1024 or 512; the detail map 512 on both tiers), seamless tiles, and the complete-scene budgets. stone-detail.js rejects any other size at runtime.
-
-### Replace the paper
-
-Keep the file names, the grain a 384×384 tile and the edge 768×768 with alpha, sliced at 96 by its `border-image`, and hold the two to 200 KiB together. A new image needs its name in `FINGERPRINTED_PAPER` in [build.mjs](../build.mjs) and the count in `test/hosting.test.mjs`.
 
 ### Replace an icon
 

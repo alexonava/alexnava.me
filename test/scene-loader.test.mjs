@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
+import { rule as cssRule } from "./support/css.mjs";
+import { LENS_FX } from "../src/scene/postprocess.js";
 
 // The title card's loading line (src/ui/scene-loader.js) runs in a fake DOM
 // with controllable observers, frames and timers, and Node's own Response and
@@ -40,6 +42,7 @@ function createHarness({
   search = "",
   sizes = SIZES,
   withLoader = true,
+  withStar = true,
   performanceObserver = true,
   hostHidden = false,
 } = {}) {
@@ -52,6 +55,7 @@ function createHarness({
   let nextTimer = 1;
   let now = 0;
   let styleWrites = 0;
+  let textWrites = 0;
 
   function mutate(target, attribute) {
     for (const observer of mutationObservers) {
@@ -66,10 +70,11 @@ function createHarness({
     }
   }
 
-  function element(name, { classes = [], hidden = false, children = [] } = {}) {
+  function element(name, { classes = [], hidden = false, children = [], text: initial = "" } = {}) {
     let isHidden = hidden;
     let transform = "";
-    let text = "";
+    let opacity = "";
+    let text = initial;
     const el = {
       name,
       children,
@@ -81,11 +86,19 @@ function createHarness({
           styleWrites += 1;
           transform = value;
         },
+        get opacity() {
+          return opacity;
+        },
+        set opacity(value) {
+          styleWrites += 1;
+          opacity = value;
+        },
       },
       get textContent() {
         return text;
       },
       set textContent(value) {
+        textWrites += 1;
         text = String(value);
       },
       get hidden() {
@@ -123,8 +136,7 @@ function createHarness({
   }
 
   const fill = element("fill", { classes: ["scene-loader__fill"] });
-  const value = element("value", { classes: ["scene-loader__value"] });
-  value.textContent = "0%";
+  const value = element("value", { classes: ["scene-loader__value"], text: "0%" });
   const label = element("label", { classes: ["scene-loader__label"], children: [value] });
   const track = element("track", { classes: ["scene-loader__track"], children: [fill] });
   const loader = element("loader", {
@@ -132,11 +144,17 @@ function createHarness({
     hidden: true,
     children: [label, track],
   });
+  // #scene-star: haze, streak, glow, disc and the lens's five ghosts, as index.html has them.
+  const parts = ["haze", "streak", "glow", "disc", ...Array(5).fill("ghost")].map((part, i) =>
+    element(`${part}${i}`, { classes: [`scene-star__${part}`] }),
+  );
+  const star = element("star", { classes: ["scene-star"], hidden: true, children: parts });
   const host = element("host", { classes: ["scene-canvas"], hidden: hostHidden });
   const document = {
     hidden: false,
     getElementById(id) {
       if (id === "scene-loader") return withLoader ? loader : null;
+      if (id === "scene-star") return withStar ? star : null;
       if (id === "home-scene") return host;
       return null;
     },
@@ -204,6 +222,8 @@ function createHarness({
   return {
     loader,
     host,
+    star,
+    parts,
     fill,
     value,
     document,
@@ -215,6 +235,9 @@ function createHarness({
     },
     get styleWrites() {
       return styleWrites;
+    },
+    get textWrites() {
+      return textWrites;
     },
     get pendingFrames() {
       return frames.length;
@@ -326,6 +349,7 @@ test("begin unhides the line, flushes its style, then fades it in at 0%", () => 
   ]);
   assert.equal(h.value.textContent, "0%");
   assert.equal(h.fill.style.transform, "scaleX(0)");
+  assert.equal(h.star.hidden, true, "no star until the scene reports where");
   const state = h.state();
   assert.equal(state.status, "loading");
   assert.equal(state.tier, "high");
@@ -497,6 +521,7 @@ test("the reveal completes the line at 100% and retires it with the canvas fade"
   assert.equal(h.loader.hidden, true);
   assert.ok(!h.loader.classList.contains("is-done"));
   assert.equal(h.fill.style.transform, "");
+  assert.equal(h.star.hidden, true);
   assert.equal(h.timerCount, 0, "no watchdog outlives the line");
   // Pending frames draw nothing more.
   const writes = h.styleWrites;
@@ -525,6 +550,7 @@ test("a hidden scene host retires the line below 100%", async () => {
   assert.equal(h.state().progress, 0.1);
   assert.equal(h.value.textContent, "10%");
   assert.equal(h.fill.style.transform, "scaleX(0.1)");
+  assert.equal(h.star.hidden, true);
   assert.ok(h.loader.classList.contains("is-done"));
   assert.equal(h.observerCount, 0);
   h.advance(600);
@@ -618,23 +644,139 @@ test("without a known tier the first model URL names it; an unknown size counts 
   assert.equal(unsized.state().progress, 0.7);
 });
 
-test("many chunks within one frame cost one style write", async () => {
+test("many chunks within one frame cost one draw", async () => {
   const h = createHarness();
   h.sceneLoader.begin({ tier: "high" });
-  const afterBegin = h.styleWrites;
+  const afterBegin = h.textWrites;
   assert.equal(afterBegin, 1, "begin draws 0% at once");
   const model = modelResponse();
   h.sceneLoader.track(TOWER, model.response);
   for (let chunk = 0; chunk < 20; chunk += 1) model.push(10);
   h.sceneLoader.stage("bundle");
   await settle();
-  assert.equal(h.styleWrites, afterBegin, "nothing draws between frames");
+  assert.equal(h.textWrites, afterBegin, "nothing draws between frames");
   assert.equal(h.pendingFrames, 1, "one frame is requested");
   h.frame();
-  assert.equal(h.styleWrites, afterBegin + 1);
+  assert.equal(h.textWrites, afterBegin + 1);
   assert.equal(h.value.textContent, "24%");
   h.frame();
-  assert.equal(h.styleWrites, afterBegin + 1, "an idle frame draws nothing");
+  assert.equal(h.textWrites, afterBegin + 1, "an idle frame draws nothing");
+});
+
+// The star as index.js reports it: CSS px from the canvas's top-left.
+const STAR = { x: 500, y: 300, radius: 20, width: 1440, height: 900 };
+const scaleOf = (transform) => Number(transform.match(/scaleX?\(([-\d.e]+)\)/)[1]);
+const translateOf = (transform) =>
+  transform
+    .match(/translate\(([-\d.e]+)px, ([-\d.e]+)px\)/)
+    .slice(1)
+    .map(Number);
+const close = (actual, expected, label) =>
+  assert.ok(Math.abs(actual - expected) < 1e-6, `${label}: ${actual} is not ${expected}`);
+
+test("the scene's report places the star, which warms from that progress to the reveal", async () => {
+  const h = createHarness();
+  h.sceneLoader.begin({ tier: "high" });
+  h.sceneLoader.stage("bundle");
+  h.sceneLoader.star({ ...STAR });
+  h.frame();
+  const [haze, streak, glow, disc] = h.parts;
+  assert.equal(h.star.hidden, false);
+  assert.deepEqual(translateOf(h.star.style.transform), [500, 300]);
+  // Known at 10%: an unseen ember there.
+  assert.equal(Number(disc.style.opacity), 0);
+  close(scaleOf(disc.style.transform), 0.4 * 0.4, "the ember's disc");
+  assert.deepEqual(h.state().star, STAR);
+  // Halfway from 10% to the reveal: warmth 0.5.
+  const model = modelResponse();
+  h.sceneLoader.track(TOWER, model.response);
+  model.push(643);
+  await settle();
+  h.frame();
+  close(h.state().progress, 0.1 + 0.7 * 0.643, "progress");
+  const warm = (h.state().progress - 0.1) / 0.9;
+  close(Number(disc.style.opacity), Math.round(Math.sqrt(warm) * 1000) / 1000, "the disc's light");
+  close(scaleOf(streak.style.transform), 14.4 * warm, "the streak");
+  close(scaleOf(haze.style.transform), 11.52 * warm, "the haze");
+  // At the reveal: the scene's own star, two radii of glow, the frame-wide streak.
+  model.push(357);
+  model.close();
+  await settle();
+  h.host.classList.add("is-ready");
+  await settle();
+  close(scaleOf(disc.style.transform), 0.4, "the disc at full size");
+  close(Number(disc.style.opacity), 1, "the disc's full light");
+  close(scaleOf(glow.style.transform), 0.8, "the glow");
+  close(scaleOf(streak.style.transform), 14.4, "the full streak");
+  // A revealed star stays under the canvas's fade-in until the line goes.
+  assert.equal(h.star.hidden, false);
+  h.advance(600);
+  assert.equal(h.star.hidden, true);
+});
+
+test("the star's ghosts follow the lens's: place, size, colour and strength", async () => {
+  const h = createHarness();
+  h.sceneLoader.begin({ tier: "high" });
+  h.sceneLoader.star({ ...STAR });
+  h.sceneLoader.end("revealed");
+  const ghosts = h.parts.slice(4);
+  const styles = await readFile(new URL("../styles.css", import.meta.url), "utf8");
+  assert.equal(ghosts.length, LENS_FX.flare.ghosts.length);
+  LENS_FX.flare.ghosts.forEach(([t, size, red, green, blue, strength], i) => {
+    const [x, y] = translateOf(ghosts[i].style.transform);
+    close(x, (STAR.width / 2 - STAR.x) * t, `ghost ${i} across`);
+    close(y, (STAR.height / 2 - STAR.y) * t, `ghost ${i} down`);
+    close(scaleOf(ghosts[i].style.transform), (2 * size * STAR.height) / 100, `ghost ${i} size`);
+    assert.equal(Number(ghosts[i].style.opacity), 1);
+    const body = cssRule(
+      styles,
+      i === 0 ? ".scene-star > .scene-star__ghost" : `.scene-star__ghost:nth-of-type(${5 + i})`,
+    );
+    const [, rgb, alpha] = body.match(/--ghost:\s*([\d, ]+);\s*--strength:\s*([\d.]+);/);
+    assert.deepEqual(
+      rgb.split(",").map(Number),
+      [red, green, blue].map((channel) => Math.round(channel * 255)),
+      `ghost ${i} colour`,
+    );
+    assert.equal(Number(alpha), strength, `ghost ${i} strength`);
+  });
+});
+
+test("an unknown, off-frame or malformed star shows nothing, and a late report changes nothing", () => {
+  const h = createHarness();
+  h.sceneLoader.begin({ tier: "high" });
+  for (const report of [
+    null,
+    { ...STAR, x: -1 },
+    { ...STAR, y: STAR.height + 1 },
+    { ...STAR, radius: 0 },
+    { ...STAR, width: Number.NaN },
+    { x: 1, y: 1 },
+  ]) {
+    h.sceneLoader.star(report);
+    h.frame();
+    assert.equal(h.star.hidden, true, JSON.stringify(report));
+    assert.equal(h.state().star, null);
+  }
+  h.sceneLoader.star({ ...STAR });
+  h.frame();
+  assert.equal(h.star.hidden, false);
+  h.sceneLoader.star(null);
+  h.frame();
+  assert.equal(h.star.hidden, true, "the scene withdrew it");
+  // A retired line takes its star with it at once, and ignores later reports.
+  h.sceneLoader.star({ ...STAR });
+  h.frame();
+  h.sceneLoader.end("static");
+  assert.equal(h.star.hidden, true);
+  h.sceneLoader.star({ ...STAR, x: 600 });
+  assert.deepEqual(translateOf(h.star.style.transform), [500, 300]);
+  // A page without the star keeps the line.
+  const bare = createHarness({ withStar: false });
+  bare.sceneLoader.begin({ tier: "high" });
+  bare.sceneLoader.star({ ...STAR });
+  bare.frame();
+  assert.equal(bare.state().status, "loading");
 });
 
 test("without PerformanceObserver the build share waits for the reveal", async () => {

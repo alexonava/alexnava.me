@@ -685,9 +685,9 @@ export const MOON_LIGHTS = Object.freeze({
 // roots (bounce: the share of its light that reaches the soil from all about,
 // not only from the lamp's low angle), so its warm pool spreads to the light's
 // reach. Without an environment the fills and ambient stay whole.
-// Behind About, under a shot's `poolAbout` (film-light.js), that pool (the
+// Behind Contact, under a shot's `poolAbout` (film-light.js), that pool (the
 // lantern's direct diffuse and its bounce) passes a luminance knee (poolKnee)
-// by that share, across the text guard's reach about About (SLATE_WATER.text[3]):
+// by that share, across the text guard's reach about Contact (SLATE_WATER.text[3]):
 // on a portrait monitor Lantern study's push-in carries the lit crests of the
 // near cobbles across the small label (3.92:1 at 1080x1920). Only the crests
 // near the ceiling give way; the pool keeps its warmth and its relief.
@@ -721,18 +721,18 @@ export const SLATE_LIGHT = Object.freeze({
 // across the wet soil toward its side and the lantern's glints run in streaks
 // toward the eye, while the soil's own highlight stays clamped. The water's
 // mirror and glints (and the soil's relaxed sky reflection) ease off behind
-// the name and intro and behind About, text[0] of them, over text[2] of the
-// screen's smaller side about the name and intro and text[3] about About
+// the name and intro and behind Contact, text[0] of them, over text[2] of the
+// screen's smaller side about the name and intro and text[3] about Contact
 // (index.js measures the text: slateText, slateAbout); there all the ground
 // reflects, the water and the soil's own highlights (a puddle's moon glint
 // among them), then passes a luminance knee, text[1];
-// beside About so do the bark's highlights from the lantern and the crown's
+// beside Contact so do the bark's highlights from the lantern and the crown's
 // fill (architecture.js, through SLATE_TEXT_GUARD). The knee is blended in
 // over the whole reach (slateTextKnee()), never scaled into its divisor, where
 // a knee that low would crush bright glare at a few percent of the guard and
 // end the wet plain's moon glare in a hard wall beside the name. Half the
 // screen's smaller side, the clouds' reach (estate-sky.js CLOUD_RESHAPE.text),
-// lets the glare fade out along the plain; the small About label keeps a fifth,
+// lets the glare fade out along the plain; the small Contact label keeps a fifth,
 // so on phones the river's image of the lantern above it stays bright.
 export const SLATE_WATER = Object.freeze({
   f0: 0.02,
@@ -749,9 +749,10 @@ export const SLATE_WATER = Object.freeze({
 
 // The text guard's screen test, shared by the ground and the bark
 // (architecture.js): slateBehindText() is 1 behind the name and intro
-// (slateText) or About (slateAbout, slateBehindAbout()), boxes in the
-// canvas's UV, easing to 0 over SLATE_WATER.text[2] or text[3] of the screen's
-// smaller side (slateAspect, the canvas's); vSlateClip is the fragment's
+// (slateText) or Contact (slateAbout, slateBehindAbout(): named for About, the
+// label Contact replaced), boxes in the canvas's UV, easing to 0 over
+// SLATE_WATER.text[2] or text[3] of the screen's smaller side (slateAspect,
+// the canvas's); vSlateClip is the fragment's
 // clip-space position. slateTextKnee(c, b) takes the light c through the knee
 // by b, the test's value: the knee's share, 1-(1-b)^2, stays near whole
 // through the inner part of the reach, so the ground about the text stays
@@ -784,7 +785,7 @@ export function createSlateContacts(values = new Float32Array(SLATE_CONTACTS * 4
     slateDetail: { value: null },
     slateGrit: { value: null },
     slateRelief: { value: null },
-    // The name and intro, and About, on the canvas (x0, y0, x1, y1 in its UV,
+    // The name and intro, and Contact, on the canvas (x0, y0, x1, y1 in its UV,
     // y up; empty beyond it) and the canvas's aspect, for the water to ease off
     // behind them.
     slateText: { value: { x: 2, y: 2, z: -1, w: -1 } },
@@ -871,7 +872,7 @@ export function slateCalmFor(contacts, shot, distance, at) {
 //   (Portrait's whole, by default; the other wide shots' none, so their plain
 //   keeps its warmth), out to gloss.far units of view distance (the
 //   puddles too); all of it away from the text only, eased over gloss.text ([name and
-//   intro, About] as shares of the screen's smaller side, as the text guard
+//   intro, Contact] as shares of the screen's smaller side, as the text guard
 //   measures), and in broad wetter and drier patches (gloss.patch: [cell in
 //   units, the drier patches' share]).
 // - shadow: [near, far]: the moon's shadow (the crown's, far out on the plain,
@@ -1160,7 +1161,7 @@ const PLAIN_EDGE = `smoothstep(${glslNumber(155)}, ${glslNumber(190)}, max(abs(v
 // The far plain's swathes, then its tile structure (SLATE_FAR), after the calm,
 // fading out toward the plain's edge with its air, so no blotch meets that air at
 // a line. Its darker blotches darken the albedo the cracks read (slateCrack), so
-// the wet sheen comes and goes with them far out. Behind About (slateBehindAbout(),
+// the wet sheen comes and goes with them far out. Behind Contact (slateBehindAbout(),
 // its share eased in as the text knee's is) the lighter swathes and blotches ease
 // to the soil's own tone and only the darker ones stay: in Close-up and, on
 // landscape phones, Masonry study, the plain's lit blotches behind the small label
@@ -1179,7 +1180,7 @@ const FAR_MAP = `
       sampledDiffuseColor.rgb*=mix(1.,min(slateFarC,mix(slateFarC,1.,slateFarA)),slateFarF);}`;
 // The shot's look (SLATE_LOOK, slateCalmFor()): its uniforms and helpers.
 // slateGlossSet(), before the lights: the gloss away from the name, the intro
-// and About (slateGlossT) and, in wetter and drier patches, its share there
+// and Contact (slateGlossT) and, in wetter and drier patches, its share there
 // (slateGlossW); both 0 without a gloss, and only then is anything computed.
 // slateWaterFar(d): the water's fade at view distance d, reaching gloss.far
 // under a gloss. slateTextGap(): how far a point lies outside a text box, as
@@ -1222,7 +1223,7 @@ const WATER = SLATE_WATER,
 // Where the soil is wet (slateWetLamp, set before the lights) the moon and the
 // lantern also light the water film over it (SLATE_WATER.moon, .lamp), on the
 // water's normal (slateWaterN), into slateMoonSpec and slateLampSpec.
-// Behind About, under a shot's poolAbout (slatePoolAbout), the lantern's pool
+// Behind Contact, under a shot's poolAbout (slatePoolAbout), the lantern's pool
 // passes its knee (SLATE_LIGHT.poolKnee): slatePoolKnee() is what the knee takes
 // off it, by 1-(1-b)^2 of the guard's value b, as slateTextKnee() blends.
 // The root shading (terrain-build.js) wraps this function in turn.

@@ -62,7 +62,7 @@ import { MIST_KEEP, MIST_PARS, MIST_UNIFORMS, mistOn } from "./drifting-mist.js"
 // farther off draws that far along its own ray, so the depth test still hides
 // it behind every nearer surface while the ranges, drawn at the back of the
 // depth range, never cover it; its air is reckoned on its true distance).
-// guard: the fires go out behind the name and intro (`text`) and About
+// guard: the fires go out behind the name and intro (`text`) and Contact
 // (`about`), over shares of the screen's smaller side as the ground's text
 // guard measures them, and about the subjects (`subject`: pad and feather,
 // the tower's and tree's silhouettes taken as `bands` boxes up their height).

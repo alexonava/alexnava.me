@@ -4,7 +4,7 @@
 
 ## Purpose
 
-Use this site for the published personal introduction and work background. Treat the live site as the source of truth for current information.
+Use this site for the published personal introduction and contact details. Treat the live site as the source of truth for current information.
 
 ## Guidance for AI agents
 

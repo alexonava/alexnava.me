@@ -4,20 +4,20 @@ How the site works with a keyboard, a screen reader, user preferences and older 
 
 ## Target
 
-The intended conformance target is WCAG 2.2 level AA. This file is where that target is recorded, and no check tests conformance as a whole. [Style](STYLE.md#motion-and-accessibility) sets the house rules: text keeps 4.5:1 contrast or better on the night, on paper and over every tour shot (the AA minimum for normal text); no text is below 12 px; interactive targets are at least 44 px (above AA's 24 px target-size minimum).
+The intended conformance target is WCAG 2.2 level AA. This file is where that target is recorded, and no check tests conformance as a whole. [Style](STYLE.md#motion-and-accessibility) sets the house rules: text keeps 4.5:1 contrast or better on the night and over every tour shot (the AA minimum for normal text); no text is below 12 px; interactive targets are at least 44 px (above AA's 24 px target-size minimum).
 
 What the repository checks:
 
-| Check                                                                                                                                                                        | Where                               |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
-| Lighthouse accessibility score 1.00 (median of three runs) on the homepage's title card                                                                                      | `lighthouserc.json`, CI `audit` job |
-| No `font-size` below 12px in styles.css; the footer at 12px or more                                                                                                          | `markup-accessibility`              |
-| 4.5:1 for the 404's paper ink (its text and eyebrow), the footer's Contact and links (`--text-nav`) and the loading line on the night                                        | `markup-accessibility`              |
-| 44 px targets: the skip link, the footer's Contact and its two links, and the 404's Home link                                                                                | `markup-accessibility`              |
-| Every `aria-controls` target exists; the skip link's target exists                                                                                                           | `markup-accessibility`              |
-| Landmarks and heading levels; the footer's Contact button and its links, which show without scripts                                                                          | `markup-accessibility`              |
-| No `forced-color-adjust: none`; forced-colors and increased-contrast modes keep the system cursor                                                                            | `markup-accessibility`              |
-| Contact's collapse and reveal, `aria-expanded`, Escape and focus return, the hashes that open it, the links left alone when focus is inside them or the markup is incomplete | `contact`                           |
+| Check                                                                                                                                                                                                                                                | Where                               |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| Lighthouse accessibility score 1.00 (median of three runs) on the homepage's title card                                                                                                                                                              | `lighthouserc.json`, CI `audit` job |
+| No `font-size` below 12px in styles.css; the footer at 12px or more                                                                                                                                                                                  | `markup-accessibility`              |
+| All text in one colour, `--text` (every `color` outside forced colours is it, `inherit`, `currentColor` or `transparent`), at 4.5:1 or better on the night and 12:1 or better for the footer's Contact and links; selected text at 4.5:1 on its wash | `markup-accessibility`              |
+| 44 px targets: the skip link, the footer's Contact and its two links, and the 404's Home link                                                                                                                                                        | `markup-accessibility`              |
+| Every `aria-controls` target exists; the skip link's target exists                                                                                                                                                                                   | `markup-accessibility`              |
+| Landmarks and heading levels; the footer's Contact button and its links, which show without scripts                                                                                                                                                  | `markup-accessibility`              |
+| No `forced-color-adjust: none`; forced-colors and increased-contrast modes keep the system cursor and hide the loading line's star                                                                                                                   | `markup-accessibility`              |
+| Contact's collapse and reveal, `aria-expanded`, Escape and focus return, the hashes that open it, the links left alone when focus is inside them or the markup is incomplete                                                                         | `contact`                           |
 
 GitHub's runners have no GPU, so Lighthouse audits the static title card, not the live scene. The 404 page is not audited.
 
@@ -34,7 +34,7 @@ GitHub's runners have no GPU, so Lighthouse audits the static title card, not th
 - The page is `lang="en"`. Landmarks: `main` and the footer.
 - Headings: the name is the homepage's only heading, its `h1`.
 - Contact is a button with `aria-expanded` and `aria-controls="contact-links"`: `false` while the links are hidden, `true` while they show. The links are plain links: the address a literal `mailto:` link, LinkedIn opening in a new tab (`rel="noopener"`).
-- Decorative layers are hidden from assistive technology: the scene shell with its canvas (`aria-hidden`), the site shell, the bottom bar (`.bottom-bar`, an empty band that shades the screen's foot behind the footer) and the loading line. The loading line is not announced.
+- Decorative layers are hidden from assistive technology: the scene shell with its canvas and the loading line's star (`aria-hidden`), the site shell, the bottom bar (`.bottom-bar`, an empty band that shades the screen's foot behind the footer) and the loading line. The loading line is not announced.
 - All copy is HTML text.
 
 ## Without JavaScript
@@ -47,7 +47,7 @@ The page is complete without scripts. Contact stays hidden, and the footer shows
 
 - No live scene: [main.js](../src/main.js) requests no scene script unless `?quality=high|balanced` or `?sceneDebug=1|true` forces it; `?quality=auto` or an unknown value forces nothing, and `?quality=low` keeps the title card. main.js loads the scene if the preference later clears, except when the address carries `?quality=high|balanced|low` or `?sceneDebug=1|true`: then it installs no listener (`forcesLiveScene`).
 - The entrance animations stop: the hero's and the footer's rise, both `hero-reveal`. The hero's scroll fade ([hero.js](../src/ui/hero.js)) stops and the hero stays in place.
-- Transitions are removed from the skip link, the footer's Contact and links, the 404's Home link, the canvas fade-in, the title card's grain, the tablet intro's scrim and the loading line. The loading line has no animation of its own: its bar moves only with real progress.
+- Transitions are removed from the skip link, the footer's Contact and links, the 404's Home link, the canvas fade-in, the title card's grain, the tablet intro's scrim and the loading line with its bar's fill, which then steps to each new value. The loading line and its star have no animation of their own: the line's value, its bar and the star change only with real progress, and the star has no transition to remove.
 - In-page scrolling is instant (`scroll-behavior: auto` replaces `smooth`).
 - A live scene, forced or running when the preference turns on, holds the tour and the drift, freezes scene time with the flame and the drips, and draws only when something changes.
 
@@ -59,26 +59,26 @@ The page is complete without scripts. Contact stays hidden, and the footer shows
 **Reduced transparency** (`prefers-reduced-transparency: reduce`)
 
 - The bottom bar's soft backdrop is removed. The hero's, the tablet intro's and the footer's stay: they are the scrims that keep the text legible over the scene.
-- The loading line's track turns solid and its fill loses its shadow.
+- The loading line's track turns solid (`#1f2227`) and its fill drops its glow.
 - The scene's post-process vignette is off ([postprocess.js](../src/scene/postprocess.js)).
 
 **Forced colours** (`forced-colors: active`)
 
-- The decorative layers are removed: the scene shell with its canvas, the vignette with the title card's grain, the site shell, and the hero's, the tablet intro's, the footer's and the bottom bar's backdrops. So is the loading line.
+- The decorative layers are removed: the scene shell with its canvas, the vignette with the title card's grain, the site shell, and the hero's, the tablet intro's, the footer's and the bottom bar's backdrops. So are the loading line, its bar with it, and its star.
 - Only CSS reacts: no script reads this mode, so on the live path main.js still requests the scene bundle and the early tower and tree, and initializes the scene behind the hidden shell.
-- The skip link, the footer's controls and the 404 sheet use system colours (Canvas, CanvasText and LinkText; no others): links and Contact are LinkText, and the sheet drops its paper textures.
+- The skip link and the footer's controls use system colours (Canvas, CanvasText and LinkText; no others): links, the 404's Home among them, and Contact are LinkText.
 - The cursor is the system's.
 
 **Increased contrast** (`prefers-contrast: more`)
 
-- The system cursor replaces the pale line cursor, and the title card's grain is removed. Nothing else changes.
+- The system cursor replaces the pale line cursor, and the title card's grain and the loading line's star are removed. Nothing else changes.
 
 **Hover.** Touch browsers keep `:hover` after a tap, so every hover style is limited to `(hover: hover)`:
 
-- `.site-footer__link:hover` brightens the footer's Contact and links (its only controls), `.site-footer__contact:hover` underlines Contact, and `.site-footer__links .site-footer__link:hover` strengthens a link's underline.
-- `.not-found .back-link:hover` tints the 404's Home link.
+- `.site-footer__contact:hover` underlines Contact, and `.site-footer__links .site-footer__link:hover` strengthens a link's underline: the footer's only controls.
+- `.not-found .back-link:hover` underlines the 404's Home link.
 
-No `:hover` selector stands outside that query. The pressed (`:active`) styles apply on every device.
+No `:hover` selector stands outside that query. The pressed (`:active`) styles apply on every device. Hover and press only underline: the text keeps its colour.
 
 ## Browser support
 
@@ -104,7 +104,7 @@ Shader warm-up needs `renderer.compileAsync` and `KHR_parallel_shader_compile`. 
 | `MutationObserver`              | Ending the loading line; showing the tablet intro's scrim only over the live scene (hero.js)                                                    | The loading line's 2 s watchdog sees the reveal, but not a host the scene hides after a failed tower or tree, so the line then retires only as stalled, about 16 s later; the tablet intro's scrim always shows |
 | `IntersectionObserver`          | Not rendering an off-screen canvas                                                                                                              | The canvas counts as visible                                                                                                                                                                                    |
 | `ResizeObserver`                | Resizes of the scene host without a window resize; re-measuring the footer's text guard on the frame after Contact's links show or hide         | Window resizes and pixel-ratio changes only; the guard follows the links within 30 frames                                                                                                                       |
-| `document.fonts`                | Re-measuring the text the scene frames around after fonts load                                                                                  | Re-measured on the next resize                                                                                                                                                                                  |
+| `document.fonts`                | Re-measuring the text the scene frames around after fonts load, and placing the loading line's star again                                       | Re-measured on the next resize                                                                                                                                                                                  |
 | `navigator.deviceMemory`        | The low tier at 2 GB or less                                                                                                                    | Memory is not a reason for the low tier (iOS hides it)                                                                                                                                                          |
 | `createImageBitmap`             | Decoding the slate maps                                                                                                                         | The slate reports `fallback` and the procedural ground stays                                                                                                                                                    |
 
@@ -112,6 +112,6 @@ Shader warm-up needs `renderer.compileAsync` and `KHR_parallel_shader_compile`. 
 
 - `svh` sizes the page and hero, after a `vh` fallback. On touch WebKit (`@supports (-webkit-touch-callout: none)`) the decorative layers use `lvh`, after a `vh` fallback.
 - `text-wrap: balance` balances the intro and, inside `@supports`, the name and the 404 heading, which otherwise break with `overflow-wrap: anywhere`.
-- `env(safe-area-inset-*)` keeps the skip link, the hero, the footer and the loading line clear of notches and the home indicator, and the bottom bar follows the same insets; `main` clips horizontal overflow with `overflow-x: clip`.
+- `env(safe-area-inset-*)` keeps the skip link, the hero, the footer and the loading line (its label, and its bar below the home-screen app's status bar) clear of notches and the home indicator, and the bottom bar follows the same insets; `main` clips horizontal overflow with `overflow-x: clip`.
 - Focus rings use `:focus-visible`. The stylesheet uses no `:has()`: the title card's grain fades at the reveal through a sibling selector, `.scene-canvas.is-ready + .scene-vignette::before`.
 - The pages carry no inline styles: the Content Security Policy forbids them, and scripts change styles only through the CSSOM.

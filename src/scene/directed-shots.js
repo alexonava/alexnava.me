@@ -165,7 +165,7 @@ export const DIRECTED_SHOTS = {
       // Under 600px wide a little nearer the star keeps its glow off the intro.
       compact: { azimuth: 46, move: null, region: [0.56, 1], anchor: [0.64, 0.62] },
       // Squat windows aim 1.5 degrees up, so the ranges' snowy crests drop below the frame
-      // rather than graze its bottom edge beside About.
+      // rather than graze its bottom edge beside Contact.
       squat: { azimuth: 48, move: null, tilt: [1.5, 1.5] },
       // Portrait monitors: the lookout right, fitted smaller and set lower (more sky over the
       // cab), its pan held to the last half degree: the cab keeps 40 CSS px or more of air off
@@ -375,7 +375,7 @@ export const DIRECTED_SHOTS = {
       // stones' lamplight passes a knee behind the name and intro
       // (film-light.js STONE_TEXT): the lantern lit the near face of a stone
       // in the stream at the corner of the name's box (4.76:1 at 1440x900,
-      // phase 32.35). Its pool is kept off About: on a portrait monitor the
+      // phase 32.35). Its pool is kept off Contact: on a portrait monitor the
       // push-in carries the pool's lit cobble crests across the label (3.92:1
       // at 1080x1920), so there the pool passes its knee (mud-ground.js
       // SLATE_LIGHT.poolKnee). One night (2026-10-12): less of the frontal fill,
@@ -419,7 +419,7 @@ export const DIRECTED_SHOTS = {
       name: "Close-up",
       // Rim-led, its rim off the text: at the start of the move the lit edges
       // of the limbs reaching left stood behind the name (3.97:1 at 1440x900),
-      // and the trunk's behind About on phones and portrait monitors.
+      // and the trunk's behind Contact on phones and portrait monitors.
       // One night (2026-10-12): a pure backlight, the rim leading; less frontal fill.
       // Its twigs' glints off the intro too (glintText): a one-pixel sparkle behind it
       // set the small window's intro at 5.25:1 (599x499, the re-review of 2026-10-15).

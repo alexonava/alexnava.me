@@ -54,13 +54,11 @@ const STATIC_FILES = [
   { source: `${PUBLIC_DIR}/site-agents.md`, destination: "AGENTS.md" },
 ];
 const STATIC_DIRS = ["fonts", "images"];
-const FINGERPRINTED_PAPER = ["paper-grain.webp", "paper-edge.webp"];
 // Sources the build publishes only as hashed copies (path relative to the
 // project root, any separator).
 export function isFingerprintedSource(file) {
   const path = file.split(sep).join("/");
   return (
-    FINGERPRINTED_PAPER.some((name) => path === `images/${name}`) ||
     /^fonts\/[^/]+\.woff2$/.test(path) ||
     /^images\/architecture\/[^/]+\.glb$/.test(path) ||
     /^images\/materials\/slate-[^/]+\.webp$/.test(path)
@@ -331,12 +329,12 @@ const UNHASHED_FONT = /\/fonts\/[\w-]+\.woff2/;
 // Points a page at the published, content-hashed assets. The sources name
 // the plain paths; an un-hashed stylesheet, script or font path, or a ?v=
 // query, left after the rewrite would request a file the build never publishes.
-function rewriteHtml(name, src, { appPath, cssPath, scenePath, imagePaths, fontPaths }) {
+function rewriteHtml(name, src, { appPath, cssPath, scenePath, fontPaths }) {
   let html = src
     .replaceAll("/styles.css", cssPath)
     .replaceAll("/scripts/app.js", appPath)
     .replaceAll("/scripts/scene.js", scenePath);
-  for (const [sourcePath, hashedPath] of Object.entries({ ...imagePaths, ...fontPaths })) {
+  for (const [sourcePath, hashedPath] of Object.entries(fontPaths)) {
     html = html.replaceAll(sourcePath, hashedPath);
   }
   const stale = html.match(/\/styles\.css|\/scripts\/[\w-]+\.js|\?v=/) ?? html.match(UNHASHED_FONT);
@@ -352,10 +350,6 @@ async function writePayload(DIST_DIR) {
   const architecture = await architectureAssetManifest();
   const materials = await materialAssetManifest();
   const fonts = await fontAssetManifest();
-  const fingerprintedImages = new Map();
-  for (const name of FINGERPRINTED_PAPER) {
-    fingerprintedImages.set(name, await readFile(join(__dirname, "images", name)));
-  }
 
   const scriptPaths = {};
   for (const { script, chunks } of await buildScripts(architecture, materials)) {
@@ -375,13 +369,6 @@ async function writePayload(DIST_DIR) {
   // Git checkouts can use CRLF on Windows; hash and publish the same LF bytes
   // everywhere so a release has one asset URL independent of the build host.
   let cssSrc = (await readFile(join(__dirname, "styles.css"), "utf8")).replace(/\r\n?/g, "\n");
-  for (const name of FINGERPRINTED_PAPER) {
-    const bytes = fingerprintedImages.get(name);
-    cssSrc = cssSrc.replaceAll(
-      `/images/${name}`,
-      `/images/${name.replace(/\.webp$/, `.${sha8(bytes)}.webp`)}`,
-    );
-  }
   for (const [sourcePath, hashedPath] of Object.entries(fonts.urls)) {
     cssSrc = cssSrc.replaceAll(sourcePath, hashedPath);
   }
@@ -407,7 +394,7 @@ async function writePayload(DIST_DIR) {
     }),
   );
   // Fingerprinted sources publish only under their hashed names: the fonts,
-  // the 404's paper, every model and the slate maps. Nothing the
+  // every model and the slate maps. Nothing the
   // build writes names their source paths, so no plain copy is kept.
   await Promise.all(
     STATIC_DIRS.map((dir) =>
@@ -432,23 +419,12 @@ async function writePayload(DIST_DIR) {
     await writeFile(join(DIST_DIR, "images", "materials", hashedName), bytes);
   }
 
-  // New pages receive a fresh URL whenever the paper's bytes change,
-  // independent of the browser's image cache.
-  const imagePaths = {};
-  for (const name of FINGERPRINTED_PAPER) {
-    const bytes = fingerprintedImages.get(name);
-    const hashedName = name.replace(/\.webp$/, `.${sha8(bytes)}.webp`);
-    await writeFile(join(DIST_DIR, "images", hashedName), bytes);
-    imagePaths[`/images/${name}`] = `/images/${hashedName}`;
-  }
-
   for (const name of ["index.html", "404.html"]) {
     const htmlSrc = await readFile(join(__dirname, name), "utf8");
     const rewritten = rewriteHtml(name, htmlSrc, {
       appPath: scriptPaths.app,
       cssPath: cssHashedUrl,
       scenePath: scriptPaths.scene,
-      imagePaths,
       fontPaths: fonts.urls,
     });
     await writeFile(join(DIST_DIR, name), rewritten);

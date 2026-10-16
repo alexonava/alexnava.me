@@ -278,11 +278,10 @@ test("static headers separate immutable fingerprints from revalidated stable ass
       ),
     );
   }
-  // Fingerprinted fonts, artwork, models and maps also match /fonts/* or
-  // /images/*, so these rules detach that rule's Cache-Control.
+  // Fingerprinted fonts, models and maps also match /fonts/* or /images/*, so
+  // these rules detach that rule's Cache-Control.
   for (const fingerprintedPath of [
     "/fonts/:name.:hash.woff2",
-    "/images/:name.:hash.webp",
     "/images/architecture/:name.:hash.glb",
     "/images/materials/slate-:map.:hash.webp",
   ]) {
@@ -377,9 +376,9 @@ test("Pages header rules resolve one cache policy for stable and fingerprinted p
     assert.equal(headersFor(pathname).get("content-type"), "text/plain; charset=utf-8", pathname);
   }
 
-  // The build publishes top-level artwork, the architecture models and the
-  // film slate's maps only as name.HASH.ext, which are immutable; any other
-  // image would keep a revalidated plain URL.
+  // The build publishes the architecture models and the film slate's maps only
+  // as name.HASH.ext, which are immutable; any other image would keep a
+  // revalidated plain URL.
   let fingerprintable = 0;
   const images = path.join(projectRoot, "images");
   for (const entry of await readdir(images, { recursive: true, withFileTypes: true })) {
@@ -390,18 +389,18 @@ test("Pages header rules resolve one cache policy for stable and fingerprinted p
       .join("/");
     const stable = `/images/${relative}`;
     const hashed = stable.replace(/\.(\w+)$/, `.${hash}.$1`);
-    const hashedByBuild =
-      /^(?:[^/]+\.webp|architecture\/[^/]+\.glb|materials\/slate-[^/]+\.webp)$/.test(relative);
+    const hashedByBuild = /^(?:architecture\/[^/]+\.glb|materials\/slate-[^/]+\.webp)$/.test(
+      relative,
+    );
     fingerprintable += hashedByBuild;
     assert.equal(cacheControl(stable), revalidated, stable);
     assert.equal(cacheControl(hashed), hashedByBuild ? immutable : revalidated, hashed);
     assert.equal(headersFor(hashed).get("x-content-type-options"), "nosniff", hashed);
   }
-  assert.equal(fingerprintable, 27, "2 paper textures, 16 models and 9 slate maps");
+  assert.equal(fingerprintable, 25, "16 models and 9 slate maps");
 });
 
 test("hosting files publish security.txt, raster icons and a stable manifest id", async () => {
-  const buildScript = await readProjectFile("build.mjs");
   const indexHtml = await readProjectFile("index.html");
   const manifest = JSON.parse(await readProjectFile("public/manifest.webmanifest"));
   const securityTxt = await readProjectFile("public/.well-known/security.txt");

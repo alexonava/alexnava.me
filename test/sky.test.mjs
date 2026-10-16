@@ -257,7 +257,7 @@ test("the star's fire streams from the limb inside its reach, under the bloom, m
   // and ends inside the corona plane.
   assert.ok(STAR_LAYER * cover >= 0.006);
   assert.ok(reach + feather <= SOLAR_LOOK.plane / 2 - 0.2);
-  // A pause or an open dialog holds it with the rest of the star.
+  // A pause holds it with the rest of the star.
   controller.update({ elapsedSeconds: 0 });
   controller.update({ elapsedSeconds: 4 });
   const time = corona.uniforms.uTime.value;

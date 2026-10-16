@@ -5,10 +5,18 @@
 // initialized. The required models report their downloaded bytes through
 // track(), and the scene's User Timing measures (perf-marks.js names) report
 // each one's parse, assembly and shader warm-up. The value is that real
-// progress, held below 100% until #home-scene gains is-ready (the reveal); it
-// then reads 100% and fades out with the canvas's fade-in. A scene host that is
-// hidden (a failed scene) or a run that stops progressing retires the line
-// below 100%, so it is never left on screen. Static visitors never see it.
+// progress, as the label's percentage and as the fill of a bar along the
+// window's top edge, held below 100% until #home-scene gains is-ready (the
+// reveal); it then reads 100% and fades out with the canvas's fade-in. A
+// scene host that is hidden (a failed scene) or a run that stops progressing
+// retires the line below 100%, so it is never left on screen. Static visitors
+// never see it.
+//
+// Its star (#scene-star) is the scene's star as the opening shot will show it:
+// the scene reports where (star()), first from its opening fit to the tower's
+// stored outline, then from its own camera, and from then on the star warms
+// with the progress: an ember at that progress, the scene's star at the reveal,
+// where the canvas fades in over it.
 (() => {
   const site = (window.BabelSite = window.BabelSite || {});
   // The early and the scene's own model requests: ROLE-TIER[.HASH].glb.
@@ -22,6 +30,24 @@
   const EXIT_MS = 600;
   const WATCH_MS = 2000;
   const STALL_MS = 15000;
+  // The star's parts at full warmth: its glow out to `glow` radii (as the scene's
+  // star shows at the reveal), its lens streak and haze `streak` and `haze` of the
+  // frame's width long (the warming star's own; the scene's shorter streak takes
+  // over in the crossfade), and the lens's ghosts (postprocess.js
+  // LENS_FX.flare.ghosts): [t along the line from the star through the frame's
+  // centre (1 at the centre), radius in frame heights].
+  const STAR = Object.freeze({
+    glow: 2,
+    streak: 1,
+    haze: 0.8,
+    ghosts: Object.freeze([
+      [0.35, 0.03],
+      [0.75, 0.06],
+      [1.35, 0.018],
+      [1.9, 0.1],
+      [2.6, 0.04],
+    ]),
+  });
   // Each tier's tower and tree sizes in bytes (build.mjs), as decoded bodies.
   const SIZES =
     typeof __BABEL_ARCHITECTURE_PREFETCH_BYTES__ !== "undefined"
@@ -91,6 +117,44 @@
     r.fill.style.transform = `scaleX(${shown})`;
     r.value.textContent =
       shown === 1 ? "100%" : `${Math.floor(Math.min(shown, 0.99) * 100 + 1e-6)}%`;
+    paintStar(r, shown);
+  }
+
+  // The star warms from the progress its place became known to the reveal.
+  function paintStar(r, shown) {
+    const s = r.star;
+    if (!r.starEl) return;
+    if (!s) {
+      r.starEl.hidden = true;
+      return;
+    }
+    const warm =
+      shown >= 1 ? 1 : Math.min(1, Math.max(0, (shown - r.since) / Math.max(1e-3, 1 - r.since)));
+    const glowing = Math.sqrt(warm);
+    const size = (diameter) => diameter / 100;
+    const set = (el, transform, opacity) => {
+      el.style.transform = transform;
+      el.style.opacity = String(Math.round(opacity * 1000) / 1000);
+    };
+    const [haze, streak, glow, disc, ...ghosts] = r.starParts;
+    r.starEl.style.transform = `translate(${s.x}px, ${s.y}px)`;
+    set(disc, `scale(${size(2 * s.radius) * (0.4 + 0.6 * glowing)})`, glowing);
+    set(glow, `scale(${size(2 * STAR.glow * s.radius) * (0.5 + 0.5 * warm)})`, warm);
+    set(streak, `scaleX(${size(STAR.streak * s.width) * warm})`, 0.3 + 0.7 * warm);
+    set(haze, `scaleX(${size(STAR.haze * s.width) * warm})`, warm);
+    // The ghosts come in over the last two thirds of the warmth.
+    const ghostIn = Math.max(0, (warm - 0.35) / 0.65);
+    ghosts.forEach((ghost, i) => {
+      const [t, radius] = STAR.ghosts[i] || [0, 0];
+      const x = (s.width / 2 - s.x) * t,
+        y = (s.height / 2 - s.y) * t;
+      set(
+        ghost,
+        `translate(${x}px, ${y}px) scale(${size(2 * radius * s.height)})`,
+        ghostIn * ghostIn * (3 - 2 * ghostIn),
+      );
+    });
+    r.starEl.hidden = false;
   }
 
   // Byte counts arrive per network chunk; the line redraws at most once a frame.
@@ -127,10 +191,14 @@
     }
     r.el.classList.add("is-done");
     r.el.classList.remove("is-loading");
+    // A revealed star sits under the canvas, which fades in over it; a retired
+    // one goes with the line.
+    if (r.starEl && r.status !== "revealed") r.starEl.hidden = true;
     r.exit = window.setTimeout(() => {
       r.el.hidden = true;
       r.el.classList.remove("is-done");
       r.fill.style.transform = "";
+      if (r.starEl) r.starEl.hidden = true;
     }, EXIT_MS);
   });
 
@@ -141,6 +209,8 @@
     const fill = el?.querySelector(".scene-loader__fill");
     const value = el?.querySelector(".scene-loader__value");
     if (!host || !fill || !value) return;
+    const starEl = document.getElementById("scene-star");
+    const starParts = starEl ? Array.from(starEl.children) : [];
     if (run.exit) window.clearTimeout(run.exit);
     // The tower opens the film; ?view=tree also waits for the tree.
     const roles =
@@ -149,9 +219,12 @@
         : ["tower"];
     const r = (run = {
       el,
-      host,
       fill,
       value,
+      starEl: starParts.length === 4 + STAR.ghosts.length ? starEl : null,
+      starParts,
+      star: null,
+      since: 0,
       tier: tier || null,
       roles,
       status: "loading",
@@ -283,8 +356,35 @@
     return copy;
   }
 
+  // The scene's star on screen (postprocess.js lensSource(): canvas UV, y up, and its
+  // radius in frame heights), reported until the reveal once its camera is fitted.
+  function star(source) {
+    const r = run;
+    if (!loading(r)) return;
+    const valid =
+      source &&
+      [source.x, source.y, source.radius, source.width, source.height].every(Number.isFinite) &&
+      source.radius > 0 &&
+      source.x > 0 &&
+      source.x < source.width &&
+      source.y > 0 &&
+      source.y < source.height;
+    if (valid && !r.star) r.since = r.target;
+    r.star = valid
+      ? {
+          x: source.x,
+          y: source.y,
+          radius: source.radius,
+          width: source.width,
+          height: source.height,
+        }
+      : null;
+    schedule(r);
+  }
+
   site.sceneLoader = {
     begin: safe(begin),
+    star: safe(star),
     track: safe(track, (url, response) => response),
     stage: safe(stage),
     end,
@@ -298,6 +398,7 @@
         bytes: Object.fromEntries(r.roles.map((role) => [role, roleBytes(r, role)])),
         stages: { ...r.stages },
         built: JSON.parse(JSON.stringify(r.built)),
+        star: r.star ? { ...r.star } : null,
       };
     },
   };

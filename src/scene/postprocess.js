@@ -311,7 +311,7 @@ export const LENS_FX = Object.freeze({
     ]),
   }),
   // None of it reaches the text: it eases out over `text[0]` of the screen's
-  // smaller side about the name and intro, and `text[1]` about About.
+  // smaller side about the name and intro, and `text[1]` about Contact.
   text: Object.freeze([0.1, 0.05]),
   // Nor The watch's reference banks (STYLE.md, Sky) on desktop landscape frames: the
   // frame's share [x0, y0, x1, y1] from its top-left corner, kept whole, with

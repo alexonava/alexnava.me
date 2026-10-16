@@ -30,14 +30,9 @@
     sans-serif;
   --night-900: #0c1016;
   --night-800: #191d25;
-  /* Ambient meta text, such as the footer controls: a warm off-white one tier
-     below the main text, legible against the blue-black scene. */
-  --text-muted-accent: #bfc1bf;
-  /* The footer's Contact and its links: between the meta text and the main text. */
-  --text-nav: #d9dad4;
-  --text: #e5e4df;
-  --text-primary: var(--text);
-  --text-accent: var(--text-muted-accent);
+  /* All text takes the name's colour, a warm off-white (the owner's rule):
+     size, weight and the footer's underlines make the tiers. */
+  --text: #f7f1ea;
   --text-meta-shadow: 0 2px 8px rgba(7, 10, 14, 0.42);
   --border-soft: rgba(241, 229, 212, 0.16);
   --ui-focus: #d0d1cc;
@@ -89,7 +84,7 @@ body {
   font-feature-settings:
     "kern" 1,
     "liga" 1;
-  color: var(--text-primary);
+  color: var(--text);
   background: linear-gradient(180deg, var(--night-900) 0%, var(--night-800) 34%, #0d1119 100%);
   overscroll-behavior: none;
 }
@@ -131,7 +126,7 @@ main:focus {
   border: 1px solid var(--border-soft);
   border-radius: 999px;
   background: rgba(14, 18, 34, 0.88);
-  color: var(--text-primary);
+  color: var(--text);
   text-decoration: none;
   /* Its own height plus its top offset, so it never peeks below a notch. */
   transform: translateY(calc(-100% - max(14px, env(safe-area-inset-top)) - 8px));
@@ -148,15 +143,10 @@ main:focus {
 }
 
 /* Selected text takes a translucent wash of the sun's amber, never system
-   blue; warm white on the night, dark ink on paper. */
+   blue, in warm white. */
 ::selection {
   background: rgba(223, 184, 130, 0.32);
-  color: #f7f1ea;
-}
-
-.not-found .story-shell ::selection {
-  background: rgba(223, 184, 130, 0.45);
-  color: #211c16;
+  color: var(--text);
 }
 
 /* Under the canvas, so only the title card shows it: a faint cool haze where
@@ -377,7 +367,7 @@ body.scene-walk-hidden > :not(.scene-shell) {
   text-shadow: 0 2px 12px rgba(4, 7, 12, 0.65);
   max-width: 30ch;
   margin: 18px 0 0;
-  color: #deddd9;
+  color: var(--text);
   font-size: clamp(14px, 1.25vw, 17px);
   line-height: 1.55;
   text-wrap: balance;
@@ -385,12 +375,11 @@ body.scene-walk-hidden > :not(.scene-shell) {
 
 .eyebrow {
   margin: 0 0 18px;
-  color: var(--text-accent);
+  color: var(--text);
   text-transform: uppercase;
   letter-spacing: 0.28em;
   font-size: 12px;
   font-weight: 600;
-  opacity: 0.88;
 }
 
 .hero h1 {
@@ -398,7 +387,7 @@ body.scene-walk-hidden > :not(.scene-shell) {
   margin: 0;
   font-weight: 700;
   font-synthesis-weight: none;
-  color: #f7f1ea;
+  color: var(--text);
   font-size: clamp(48px, 8vw, 104px);
   line-height: 0.98;
   letter-spacing: -0.015em;
@@ -477,7 +466,7 @@ body.scene-walk-hidden > :not(.scene-shell) {
   grid-template-columns: max-content minmax(0, 1fr);
   align-items: end;
   row-gap: 6px;
-  color: var(--text-accent);
+  color: var(--text);
   font-size: 14px;
   line-height: 18px;
   letter-spacing: 0.06em;
@@ -502,17 +491,19 @@ body.scene-walk-hidden > :not(.scene-shell) {
   text-decoration: none;
   text-shadow: inherit;
   pointer-events: auto;
-  transition: color 180ms ease;
+  transition: text-decoration-color 180ms ease;
 }
 
-/* Contact reads a tier above the meta text. It and its links keep their own
-   text scrims: soft ovals centred on the text that reach transparent before
-   every edge of their boxes (the hero's (1 - t²)² falloff), so over any shot
-   the footer holds 5:1 without a visible plate. */
+/* Contact and its links keep their own text scrims: soft ovals centred on the
+   text that reach transparent before every edge of their boxes (the hero's
+   (1 - t²)² falloff), so over any shot the footer holds 5:1 without a visible
+   plate. Contact's underline colour is set at rest, so hover draws it at once
+   and a press eases it to full. */
 .site-footer__contact {
   position: relative;
   isolation: isolate;
-  color: var(--text-nav);
+  color: var(--text);
+  text-decoration-color: rgba(247, 241, 234, 0.5);
 }
 
 .site-footer__contact::before,
@@ -545,11 +536,7 @@ body.scene-walk-hidden > :not(.scene-shell) {
   height: 104px;
 }
 
-.site-footer__contact[aria-expanded="true"] {
-  color: var(--text);
-}
-
-/* The email and LinkedIn, underlined at Contact's tier, behind a scrim grown
+/* The email and LinkedIn, underlined, behind a scrim grown
    to their row or column. Without scripts they stand alone in Contact's place;
    disclosed, they follow it after a hairline. 28px between them keeps their
    44px targets apart. */
@@ -559,7 +546,7 @@ body.scene-walk-hidden > :not(.scene-shell) {
   display: flex;
   gap: 28px;
   margin: 0;
-  color: var(--text-nav);
+  color: var(--text);
 }
 
 .site-footer__links::before {
@@ -571,12 +558,12 @@ body.scene-walk-hidden > :not(.scene-shell) {
   grid-column: 2;
   margin-left: 26px;
   padding-left: 26px;
-  border-left: 1px solid rgba(229, 228, 223, 0.28);
+  border-left: 1px solid rgba(247, 241, 234, 0.28);
 }
 
 .site-footer__links .site-footer__link {
   text-decoration: underline;
-  text-decoration-color: rgba(229, 228, 223, 0.35);
+  text-decoration-color: rgba(247, 241, 234, 0.35);
   text-decoration-thickness: 1px;
   text-underline-offset: 4px;
 }
@@ -608,43 +595,43 @@ body.scene-walk-hidden > :not(.scene-shell) {
   outline-offset: -11px;
 }
 
-/* Touch browsers keep :hover after a tap; brightening follows real hover only. */
+/* Touch browsers keep :hover after a tap; underlines follow real hover only. */
 @media (hover: hover) {
-  .site-footer__link:hover {
-    color: var(--text);
-  }
-
   .site-footer__contact:hover {
     text-decoration: underline;
-    text-decoration-color: rgba(229, 228, 223, 0.5);
+    text-decoration-color: rgba(247, 241, 234, 0.5);
     text-underline-offset: 3px;
   }
 
   .site-footer__links .site-footer__link:hover {
-    text-decoration-color: rgba(229, 228, 223, 0.6);
+    text-decoration-color: rgba(247, 241, 234, 0.6);
   }
 }
 
 .site-footer__link:active {
-  color: var(--text);
+  text-decoration-line: underline;
+  text-decoration-color: currentColor;
+}
+
+/* A pressed link's underline goes full too, over its hover rule. */
+.site-footer__links .site-footer__link:active {
   text-decoration-color: currentColor;
 }
 
 /* The title card's loading line (src/ui/scene-loader.js): shown only while the
-   live scene loads, centred 44px above the footer line, clear of the identity
-   and Contact. Its value is real progress; it reads 100% at the reveal and fades
-   out within the canvas's 480ms fade-in (120ms delay + 360ms). */
+   live scene loads, its label in the name's colour centred 44px above the footer
+   line, clear of the identity and Contact, and its bar along the window's top
+   edge. Its value is real progress; it reads 100% at the reveal and fades out
+   within the canvas's 480ms fade-in (120ms delay + 360ms). */
 .scene-loader {
   position: fixed;
   right: 0;
   bottom: calc(max(30px, calc(22px + env(safe-area-inset-bottom))) + 44px);
   left: 0;
   z-index: 10;
-  display: grid;
-  row-gap: 10px;
   width: min(240px, calc(100% - 48px));
   margin-inline: auto;
-  color: var(--text-accent);
+  color: var(--text);
   font-size: 12px;
   line-height: 16px;
   letter-spacing: 0.08em;
@@ -679,20 +666,23 @@ body.scene-walk-hidden > :not(.scene-shell) {
   text-align: left;
 }
 
+/* The bar, across the window's top edge in the name's colour, below the status
+   bar where the page runs under it (the home-screen app); only its fill's
+   transform moves. */
 .scene-loader__track {
-  position: relative;
+  position: fixed;
+  top: env(safe-area-inset-top, 0px);
+  right: 0;
+  left: 0;
   height: 2px;
-  border-radius: 1px;
-  background: rgba(230, 226, 214, 0.16);
+  background: rgba(247, 241, 234, 0.08);
 }
 
-/* The sun's colour; only its transform moves. */
 .scene-loader__fill {
   position: absolute;
   inset: 0;
-  border-radius: inherit;
-  background: #dfb882;
-  box-shadow: 0 0 6px rgba(223, 184, 130, 0.5);
+  background: var(--text);
+  box-shadow: 0 0 6px rgba(247, 241, 234, 0.3);
   transform: scaleX(0);
   transform-origin: 0 50%;
   transition: transform 520ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -700,6 +690,134 @@ body.scene-walk-hidden > :not(.scene-shell) {
 
 .scene-loader.is-done .scene-loader__fill {
   transition-duration: 240ms;
+}
+
+/* The loading line's star (src/ui/scene-loader.js): the scene's star as the opening
+   shot will show it, drawn under the canvas, so the canvas's own fade-in covers it as
+   the scene's star appears in its place. Every part is a 100px box centred on the
+   star's centre, sized by its transform; the script writes only transforms and
+   opacities, as the load progresses. Its disc, limb, glow and streak follow
+   solar-body.js (SOLAR_LOOK, SOLAR_STREAK); its five ghosts the lens's
+   (postprocess.js LENS_FX.flare: colour and strength here, place and size in the
+   script). */
+.scene-star {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.scene-star > span {
+  position: absolute;
+  top: -50px;
+  left: -50px;
+  width: 100px;
+  height: 100px;
+  opacity: 0;
+}
+
+/* The disc as the scene grades it at the reveal: a pale gold centre to a warm limb. */
+.scene-star > .scene-star__disc {
+  border-radius: 50%;
+  background: radial-gradient(
+    circle closest-side,
+    rgb(190, 180, 122) 0%,
+    rgb(177, 155, 90) 30%,
+    rgb(173, 146, 83) 60%,
+    rgb(172, 139, 77) 80%,
+    rgb(173, 128, 67) 90%,
+    rgb(172, 121, 61) 95%,
+    rgb(173, 127, 70) 100%
+  );
+}
+
+/* The glow about the limb, two radii out (its box), gone by the second. */
+.scene-star > .scene-star__glow {
+  border-radius: 50%;
+  background: radial-gradient(
+    circle closest-side,
+    rgba(200, 140, 75, 0.85) 50%,
+    rgba(196, 136, 78, 0.77) 52.5%,
+    rgba(200, 120, 70, 0.41) 57.5%,
+    rgba(200, 118, 70, 0.18) 65%,
+    rgba(190, 110, 70, 0.06) 80%,
+    rgba(190, 110, 70, 0) 100%
+  );
+}
+
+/* The lens's anamorphic streak and its haze: lines through the centre, brightest there. */
+.scene-star > .scene-star__streak {
+  top: -1px;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    rgba(230, 150, 90, 0),
+    rgba(230, 150, 90, 0.05) 10%,
+    rgba(232, 156, 96, 0.14) 30%,
+    rgba(240, 172, 110, 0.32) 42%,
+    rgba(250, 200, 140, 0.7) 48%,
+    rgba(255, 220, 165, 0.9) 50%,
+    rgba(250, 200, 140, 0.7) 52%,
+    rgba(240, 172, 110, 0.32) 58%,
+    rgba(232, 156, 96, 0.14) 70%,
+    rgba(230, 150, 90, 0.05) 90%,
+    rgba(230, 150, 90, 0)
+  );
+}
+
+.scene-star > .scene-star__haze {
+  top: -8px;
+  height: 16px;
+  background: radial-gradient(
+    closest-side,
+    rgba(232, 150, 84, 0.16),
+    rgba(232, 150, 84, 0.06) 55%,
+    rgba(232, 150, 84, 0)
+  );
+}
+
+/* The lens's ghosts: brightest toward their rim (0.55 of their strength at the
+   centre), fading out over their last fifth, as the final pass draws them. */
+.scene-star > .scene-star__ghost {
+  --ghost: 255, 158, 77;
+  --strength: 0.18;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle closest-side,
+    rgba(var(--ghost), calc(0.55 * var(--strength))) 0%,
+    rgba(var(--ghost), calc(0.55 * var(--strength))) 45%,
+    rgba(var(--ghost), var(--strength)) 80%,
+    rgba(var(--ghost), 0) 100%
+  );
+}
+
+.scene-star__ghost:nth-of-type(6) {
+  --ghost: 115, 179, 255;
+  --strength: 0.09;
+}
+
+.scene-star__ghost:nth-of-type(7) {
+  --ghost: 153, 255, 179;
+  --strength: 0.16;
+}
+
+.scene-star__ghost:nth-of-type(8) {
+  --ghost: 230, 128, 255;
+  --strength: 0.06;
+}
+
+.scene-star__ghost:nth-of-type(9) {
+  --ghost: 255, 191, 102;
+  --strength: 0.12;
+}
+
+@media (forced-colors: active), (prefers-contrast: more) {
+  .scene-star {
+    display: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -713,7 +831,7 @@ body.scene-walk-hidden > :not(.scene-shell) {
 
 @media (prefers-reduced-transparency: reduce) {
   .scene-loader__track {
-    background: #34373c;
+    background: #1f2227;
   }
 
   .scene-loader__fill {
@@ -1033,169 +1151,86 @@ body.scene-walk-hidden > :not(.scene-shell) {
   }
 }
 
-/* The 404 is one cotton-paper sheet. */
-.not-found {
+/* The 404: the title card's night with its one line centred, in the name's serif and
+   the intro's type, and the way home under it in the footer's. */
+.not-found main {
   display: grid;
-  place-items: center;
+  justify-items: center;
+  align-content: center;
+  min-height: 100vh;
+  min-height: 100svh;
+  padding: max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right))
+    max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
+  text-align: center;
 }
 
-.not-found .section {
-  padding-block: 32px;
+.not-found .eyebrow {
+  text-shadow: var(--text-meta-shadow);
 }
 
-.not-found .story-shell {
-  position: relative;
-  isolation: isolate;
-  width: min(100%, 560px);
-  margin-inline: auto;
-  padding: clamp(56px, 8vw, 72px) clamp(44px, 8vw, 72px);
-  color: #211c16;
-  /* The pale line cursor vanishes on the paper. */
-  cursor: auto;
-  filter: drop-shadow(0 22px 30px rgba(3, 4, 8, 0.4)) drop-shadow(0 6px 12px rgba(3, 4, 8, 0.26));
-}
-
-.story-shell--narrow {
-  max-width: 760px;
-}
-
-.not-found .story-shell::before,
-.not-found .story-shell::after {
-  position: absolute;
-  z-index: -1;
-  content: "";
-  pointer-events: none;
-}
-
-/* The paper: a 115deg light over the ivory and its grain. */
-.not-found .story-shell::before {
-  inset: 23px;
-  background:
-    linear-gradient(115deg, rgba(255, 252, 240, 0.19), rgba(71, 47, 22, 0.035)) 0 0 / 100% 100%
-      no-repeat,
-    #e8ddc8 url("/images/paper-grain.webp") 0 0 / 384px 384px repeat;
-}
-
-.not-found .story-shell::after {
-  inset: 0;
-  border: 24px solid transparent;
-  border-image: url("/images/paper-edge.webp") 96 / 24px / 0 stretch;
-}
-
-.not-found .story-shell .eyebrow {
-  color: #60492e;
-  opacity: 1;
-}
-
-.not-found .story-shell h1 {
-  max-width: 12ch;
+.not-found h1 {
+  max-width: 11ch;
   margin: 0;
-  color: #211c16;
+  color: var(--text);
   font-family: var(--font-display);
-  font-size: clamp(34px, 5vw, 52px);
-  font-weight: 500;
+  font-size: clamp(44px, 6vw, 80px);
+  font-weight: 700;
+  font-synthesis-weight: none;
   line-height: 0.98;
   letter-spacing: -0.015em;
-  overflow-wrap: anywhere;
+  text-shadow: 0 0 44px rgba(198, 208, 202, 0.1);
+  text-wrap: balance;
 }
 
-@supports (text-wrap: balance) {
-  .not-found .story-shell h1 {
-    text-wrap: balance;
-    overflow-wrap: normal;
-  }
-}
-
-.not-found .story-text {
-  max-width: 46ch;
-  margin: 20px 0 0;
-  color: #393229;
-  font-size: 18px;
-  line-height: 1.72;
+.not-found__text {
+  max-width: 30ch;
+  margin: 18px 0 0;
+  color: var(--text);
+  font-size: clamp(14px, 1.25vw, 17px);
+  line-height: 1.55;
+  text-shadow: 0 2px 12px rgba(4, 7, 12, 0.65);
   text-wrap: pretty;
 }
 
-.error-cta {
-  margin: 24px 0 0;
-}
-
+/* Home, in the footer's type: a 44px target hanging around its 18px line, 30px
+   under the text. Its underline colour is set at rest, as Contact's is. */
 .not-found .back-link {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
   min-height: 44px;
-  padding: 12px 18px;
-  border: 1px solid rgba(64, 47, 30, 0.22);
-  border-radius: 999px;
-  background: rgba(88, 72, 50, 0.08);
-  color: #3b2c1e;
+  margin: 17px -14px -13px;
+  padding: 0 14px;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 18px;
+  letter-spacing: 0.06em;
   text-decoration: none;
-  transition:
-    background 180ms ease,
-    border-color 180ms ease,
-    color 180ms ease;
+  text-decoration-color: rgba(247, 241, 234, 0.5);
+  text-shadow: var(--text-meta-shadow);
+  transition: text-decoration-color 180ms ease;
+}
+
+.not-found .back-link:focus-visible {
+  outline-offset: -11px;
 }
 
 @media (hover: hover) {
   .not-found .back-link:hover {
-    border-color: rgba(64, 47, 30, 0.34);
-    background: rgba(88, 72, 50, 0.16);
-    color: #241910;
+    text-decoration: underline;
+    text-decoration-color: rgba(247, 241, 234, 0.5);
+    text-underline-offset: 3px;
   }
 }
 
 .not-found .back-link:active {
-  border-color: rgba(64, 47, 30, 0.42);
-  background: rgba(88, 72, 50, 0.24);
-  color: #241910;
+  text-decoration: underline;
+  text-decoration-color: currentColor;
+  text-underline-offset: 3px;
 }
 
-.not-found .story-shell :focus-visible {
-  outline-color: #59472f;
-}
-
-@media (max-width: 640px) {
-  .not-found .story-text {
-    font-size: 16px;
-  }
-}
-
-/* Phones turned sideways: a shorter sheet and heading, so the whole paper,
-   its torn edge included, sits centred within the screen's height. */
+/* Phones turned sideways: a smaller heading, so the line sits within the screen. */
 @media (orientation: landscape) and (max-height: 500px) {
-  .not-found .section {
-    padding-block: 12px;
-  }
-
-  .not-found .story-shell {
-    padding-block: 36px;
-  }
-
-  .not-found .story-shell h1 {
+  .not-found h1 {
     font-size: 34px;
-  }
-}
-
-@media (forced-colors: active) {
-  .not-found .story-shell {
-    border: 1px solid CanvasText;
-    background: Canvas;
-    color: CanvasText;
-    filter: none;
-  }
-
-  .not-found .story-shell::before,
-  .not-found .story-shell::after {
-    display: none;
-  }
-
-  .not-found .story-shell :is(h1, .eyebrow, .story-text) {
-    color: CanvasText;
-  }
-
-  .not-found .back-link {
-    border-color: LinkText;
-    background: Canvas;
-    color: LinkText;
   }
 }

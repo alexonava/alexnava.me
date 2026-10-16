@@ -75,12 +75,10 @@ import {
   ROOT_HOLLOWS,
   ROOT_KNOLL,
   ROOT_LATTICE,
-  ROOT_LINES,
   ROOT_RELIEF,
   ROOT_RESTS,
   ROOT_SHADE,
   rootBankLift,
-  rootBermExcess,
   rootCovered,
   rootOcclusion,
   rootShade,
@@ -2337,7 +2335,7 @@ test("the drips' clock advances by bounded frame steps only while the scene anim
   const frozen = uniform.value;
   held = true;
   for (let t = 6232; t < 9000; t += 16) clock.tick(t);
-  assert.equal(uniform.value, frozen, "frozen under reduced motion, a visitor pause or a panel");
+  assert.equal(uniform.value, frozen, "frozen under reduced motion or a visitor pause");
   held = false;
   clock.tick(9016);
   assert.ok(uniform.value - frozen <= 0.1 + 1e-9);

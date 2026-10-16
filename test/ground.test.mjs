@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
-import { BoxGeometry, Group, Mesh, MeshStandardMaterial, Box3, ShaderLib, Vector3 } from "three";
+import { BoxGeometry, Group, Mesh, MeshStandardMaterial, ShaderLib } from "three";
 import {
   ESTATE,
   estateLantern,
@@ -317,20 +317,6 @@ test("a failed stone leaves no rocks and reports a fallback", async () => {
   assert.equal(rocks.take({ cut: true }), false);
   rocks.dispose();
 });
-
-const size = (o) => new Box3().setFromObject(o).getSize(new Vector3());
-
-function fixture() {
-  const root = new Group();
-  root.position.y = -7;
-  const make = (w, h, d, x) => {
-    const m = new Mesh(new BoxGeometry(w, h, d), new MeshStandardMaterial());
-    m.position.set(x, 4, 0);
-    root.add(m);
-    return m;
-  };
-  return { root, make };
-}
 
 const FILM_CHUNKS = [
   "#include <lights_physical_pars_fragment>",
@@ -726,7 +712,7 @@ test("each ground shading has its own program cache key; the slate's shading nee
   }
   assert.ok(SLATE_WATER.moon.knee <= 0.08, "the moon's glints stay low behind the name and intro");
   // The water eases off behind the name and intro
-  // (over half the screen's smaller side, the clouds' reach) and behind About
+  // (over half the screen's smaller side, the clouds' reach) and behind Contact
   // (a fifth), and there the soil's own highlights pass a knee: text stays at
   // 5:1 over the wet ground. The name's reach is wide, so the moon's glare on
   // the wet plain fades out along it instead of ending beside the name; the
@@ -734,7 +720,7 @@ test("each ground shading has its own program cache key; the slate's shading nee
   const [share, knee, reach, aboutReach] = SLATE_WATER.text;
   assert.ok(share > 0 && share < 1 && knee > 0 && knee <= 0.05);
   assert.ok(reach >= 0.4 && reach <= 0.6, "reach");
-  assert.ok(aboutReach > 0 && aboutReach <= 0.25, "About's reach");
+  assert.ok(aboutReach > 0 && aboutReach <= 0.25, "Contact's reach");
   assert.ok(
     fragment.includes(
       "float slateBehind(vec4 r,vec2 v,float d){vec2 f=max(max(r.xy-v,v-r.zw),0.)*vec2(slateAspect,1.)/min(slateAspect,1.);return 1.-smoothstep(0.,d,length(f));}",
@@ -795,10 +781,10 @@ test("each ground shading has its own program cache key; the slate's shading nee
   for (const share of [SLATE_LIGHT.fill, SLATE_LIGHT.crown, SLATE_LIGHT.ambient])
     assert.ok(share > 0 && share < 1);
   assert.ok(SLATE_LIGHT.bounce > 0 && SLATE_LIGHT.bounce <= 0.25);
-  // Behind About, under a shot's poolAbout, the lantern's pool (its direct
+  // Behind Contact, under a shot's poolAbout, the lantern's pool (its direct
   // diffuse and its bounce) passes its own knee, gentler than the reflections'
   // and harder than the lamp's glints on the water: Lantern study's lit cobble
-  // crests read 3.92:1 behind About at 1080x1920, 6.09:1 through it. Only the
+  // crests read 3.92:1 behind Contact at 1080x1920, 6.09:1 through it. Only the
   // crests near the ceiling give way: dim soil (luma 0.01) keeps nearly 90%.
   const poolKnee = SLATE_LIGHT.poolKnee;
   assert.ok(poolKnee > SLATE_WATER.text[1] && poolKnee < SLATE_WATER.lamp.knee, "pool knee");
@@ -926,7 +912,7 @@ const smooth = (a, b, x) => {
   return t * t * (3 - 2 * t);
 };
 
-test("the far plain keeps its own structure: swathes and the slate's far tile after the calm, fading at the plain's edge, its lighter tones eased behind About", async () => {
+test("the far plain keeps its own structure: swathes and the slate's far tile after the calm, fading at the plain's edge, its lighter tones eased behind Contact", async () => {
   const { configureGroundShading, SLATE_FAR } = await import("../src/scene/mud-ground.js");
   const material = new MeshStandardMaterial();
   const compile = (maps) => {
@@ -957,7 +943,7 @@ test("the far plain keeps its own structure: swathes and the slate's far tile af
       .length,
     2,
   );
-  // Behind About (the ground's About test, its share eased in as the knee's is)
+  // Behind Contact (the ground's Contact test, its share eased in as the knee's is)
   // both parts keep only their darker tones: the lighter ones ease to the soil's own.
   assert.equal(
     (
@@ -979,7 +965,7 @@ test("the far plain keeps its own structure: swathes and the slate's far tile af
   );
   assert.ok(
     authored.indexOf("float slateBehindAbout(") < at,
-    "the About test is declared before it",
+    "the Contact test is declared before it",
   );
   // Two more lookups of the slate tile, larger than it and weighted whole; a gain that
   // deepens the structure within a bounded range; swathes that lean warm.

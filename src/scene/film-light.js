@@ -12,7 +12,7 @@ export const FILM_LIGHT = Object.freeze({ key: 1.12, fill: 1.15, hemisphere: 0.8
 // glints kept off the name and intro (glintText), the share of the stones'
 // lamplight that passes its knee behind the name and intro (stoneText,
 // STONE_TEXT) and the share of the lantern's pool on the ground that passes
-// its knee behind About (poolAbout, mud-ground.js SLATE_LIGHT.poolKnee), all 0
+// its knee behind Contact (poolAbout, mud-ground.js SLATE_LIGHT.poolKnee), all 0
 // by default; it follows the shot on screen, so it changes on a cut.
 export const SHOT_LIGHT_DEFAULT = Object.freeze({
   key: 1,
@@ -34,7 +34,7 @@ export function shotLight(shot) {
 // edge, strongest where the moon is behind the subject from the lens.
 // light: rgb strength and, in w, the share it keeps facing the moon; key: the
 // moon's direction in view space, kept current per frame; textReach: how far
-// past the name, the intro and About (a share of the screen's smaller side)
+// past the name, the intro and Contact (a share of the screen's smaller side)
 // the tree's rim eases back in where a shot takes it off the text (its mood's
 // rimText, the uniform babelRimText; only the bark has the text's boxes, so
 // the lookout's rim is whole).
@@ -61,7 +61,7 @@ export const LANTERN_MOOD = { value: 1 };
 // read by the slate (mud-ground.js) and its puddle mirror (terrain-build.js).
 // babelFlash: x the flash's share added to the night sky's light on the
 // ground, y to the water's mirror, both easing off behind the name, the intro
-// and About (the slate's text test); 0 outside a flash, so the ground is then
+// and Contact (the slate's text test); 0 outside a flash, so the ground is then
 // exactly as without it.
 export const FLASH_GROUND = Object.freeze({
   babelFlash: { value: new Vector4(0, 0, 0, 0) },
@@ -84,7 +84,7 @@ export const FLASH_GROUND = Object.freeze({
 //   edge, as the moon's RIM), strongest with the flash behind them, w the share
 //   it keeps facing it; babelFlashView: the flash's direction in view space;
 // - babelFlashProj: the camera's projection, babelFlashReach: how far the
-//   flash eases back in past the name and intro [x] and About [y] (a share of
+//   flash eases back in past the name and intro [x] and Contact [y] (a share of
 //   the screen's smaller side), and babelFlashText, babelFlashAbout,
 //   babelFlashAspect: the ground's text boxes and the canvas's aspect
 //   (lendFlashText()); behind them a material keeps none of the flash.

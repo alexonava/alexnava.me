@@ -97,10 +97,6 @@
 
 # Build fingerprints (name.HASH.ext) replace the /images/* rule above, so they
 # must follow it. A placeholder stops only at "/": one-dot stable names never match.
-/images/:name.:hash.webp
-  ! Cache-Control
-  Cache-Control: public, max-age=31536000, immutable
-
 /images/architecture/:name.:hash.glb
   ! Cache-Control
   Cache-Control: public, max-age=31536000, immutable

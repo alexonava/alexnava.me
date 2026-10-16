@@ -771,7 +771,7 @@ test("flame time and light multiplier freeze under every hold and resume without
     factor = factors.at(-1),
     key = f.material.customProgramCacheKey();
   const draught = [...shader.uniforms.lanternFlicker.value];
-  // motionPaused carries the visitor hold and open panels (index.js).
+  // motionPaused carries the visitor hold (index.js).
   for (const hold of [
     { reducedMotion: true },
     { motionPaused: true },

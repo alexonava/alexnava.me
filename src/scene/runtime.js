@@ -675,11 +675,3 @@ export function disposeSceneRuntimeResources({
   }
   return disposed;
 }
-
-export function hasMeaningfulScalarChange(previous, next, epsilon = 1e-4) {
-  return (
-    !Number.isFinite(previous) ||
-    !Number.isFinite(next) ||
-    Math.abs(previous - next) > Math.max(0, epsilon)
-  );
-}

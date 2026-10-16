@@ -304,10 +304,6 @@ test("the byte tables in Assets match the files they list", () => {
       /^Complete scene, (high|balanced)\b/,
       (tier) => grouped(sum([...models(tier), ...slates(tier)])),
     ],
-    [
-      /^Paper grain and paper edge$/,
-      () => grouped(sum([...sizes.keys()].filter((file) => /^images\/paper-/.test(file)))),
-    ],
     [/^`public\/og\.png`$/, () => grouped(sizes.get("public/og.png"))],
   ];
   for (const row of budgets.rows) {
