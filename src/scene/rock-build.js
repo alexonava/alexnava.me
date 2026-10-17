@@ -242,7 +242,7 @@ export function createRocks(
     );
   }
   function build(assets) {
-    const layout = createRockLayout(lib, { groundHeight }),
+    const layout = createRockLayout(lib, { groundHeight: groundHeight?.film ?? groundHeight }),
       color = new Color();
     Object.keys(lib.ROCK_TYPES).forEach((type, index) => {
       const rocks = layout.filter((rock) => rock.type === type),
@@ -282,7 +282,7 @@ export function createRocks(
     Object.values(lib.ROCK_TYPES).map(({ role }) =>
       loadAsset(urls[tier]?.[role], { signal: abort.signal, tier, role }),
     ),
-  ).then((results) => {
+  ).then(async (results) => {
     const assets = results.map((result) => (result.status === "fulfilled" ? result.value : null)),
       loaded = assets.filter(Boolean).map((asset) => lib.collectResources(asset));
     if (disposed) return loaded.forEach(free);
@@ -290,10 +290,14 @@ export function createRocks(
     try {
       if (assets.some((asset) => !asset?.scene?.isObject3D))
         throw new Error("Rock asset unavailable");
+      // Downloads overlap coastal linking. Own completed assets while waiting,
+      // so disposal can release them even if no coastal cut ever arrives.
+      if ((await groundHeight?.ready) === false) throw new Error("Terrain unavailable");
+      if (disposed) return;
       build(assets);
     } catch {
       release();
-      onStatus({ status: "fallback", tier });
+      if (!disposed) onStatus({ status: "fallback", tier });
     }
   });
   return {

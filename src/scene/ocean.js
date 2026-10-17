@@ -244,8 +244,9 @@ return mix(vec3(.062,.065,.073),vec3(.07,.085,.13),smoothstep(0.,.5,d.y));
 #endif
 }
 uniform vec3 seaKey,seaKeyColor,seaFill,seaFillColor,seaAmbient,seaHemiSky,seaHemiGround;
-// What a matte surface facing n takes (over pi), as the scene's standard materials do: the moon
-// key, the fill, the ambient and hemisphere lights, and the environment (lifted by a flash).
+// The shore's subdued diffuse response: raw scene light intensities over pi,
+// without the legacy-light pi boost used by the standard materials. The
+// environment remains separate, lifted by a flash.
 vec3 seaLight(vec3 n,float flash){return (seaKeyColor*max(dot(n,seaKey),0.)+seaFillColor*max(dot(n,seaFill),0.)+seaAmbient+mix(seaHemiGround,seaHemiSky,.5*n.y+.5))/SEA_PI+seaEnv(n,1.)*(1.+flash);}`;
 
 function seaVertex(sea) {
@@ -366,8 +367,9 @@ gl_FragColor=vec4(c,${SEA_SHARED.layer});
 }`;
 }
 
-// The scene's lights and environment, read per draw (rendering.js: the moon key
-// `sun`, `fill`, `ambient` and `hemisphere`, as three's standard materials take them).
+// The scene's raw light colors/intensities and environment, read per draw.
+// seaLight() applies the shore's own diffuse normalization; do not add r160's
+// legacy-light pi boost, which would brighten the tuned cliffs and white water.
 function lighting(rendering, material, uniforms) {
   const key = new Vector3(),
     target = new Vector3(),

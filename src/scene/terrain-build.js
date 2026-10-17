@@ -3764,9 +3764,11 @@ function streamAlong(x, z, line = STREAM_LINES[0]) {
   return along;
 }
 
-// Once the film terrain is in place (film-scene.js): settle the estate tufts
-// (settleTufts()), strew the litter as a child of their mesh, and return the
-// terrain-aware height the rocks are seated with. The slate's ground shading
+// Prepare the film terrain's tufts, shore and shading, then land them together
+// over film-scene.js's borrowed geometry. The returned sampler's ready promise
+// settles at its first commit; setActive(false) withdraws the tuple, and its
+// height and shore then follow the borrowed ground until a new eligible cut.
+// Tufts and optional litter follow the rendered surface. The slate's shading
 // (shadeSlateGround(): the puddle mirror and the root shading) never holds the
 // reveal or links in a draw: once the canvas shows, its program links on a
 // detached stand-in, and the ground switches to it where the change cannot
@@ -3786,16 +3788,25 @@ export function settleRoots(
   tour = null,
   lib = null,
 ) {
+  let landed = ground.geometry === terrain,
+    resolveReady;
   const liftAt = terrainLift(terrain),
     material = ground.material,
-    landHeight = filmHeight(groundHeight, true);
-  // The film terrain's own height (its plain up to the cliffs' lip, the cliff's
-  // shelf covering the fall past it), and the fault's distance for the walk.
-  const height = Object.assign((x, z) => landHeight(x, z) + liftAt(x, z), { shore: coastDistance });
+    landHeight = filmHeight(groundHeight, true),
+    originalGeometry = lib?.originalGeometry ?? ground.geometry;
+  // The walk follows the visible surface and fault. Asynchronous rock builds
+  // take the stable film height, even if film withdraws while their GLBs load.
+  const film = (x, z) => landHeight(x, z) + liftAt(x, z);
+  const height = Object.assign((x, z) => (landed ? film(x, z) : groundHeight(x, z)), {
+    film,
+    shore: (x, z) => (landed ? coastDistance(x, z) : Infinity),
+    ready: new Promise((resolve) => (resolveReady = resolve)),
+  });
   const growth = ground.parent?.getObjectByName("estate-ground-growth");
   let litter = null,
     rushes = null,
-    drift = null;
+    drift = null,
+    tuftsSettled = false;
   const extras = [];
   // The water's banks, built in idle slices once the shading has switched
   // (commit()), so they never hold its early switch.
@@ -3803,7 +3814,10 @@ export function settleRoots(
     buildBanks = () => {},
     seatBanks = () => {};
   if (growth?.geometry.attributes.position) {
-    settleTufts(growth, liftAt);
+    if (landed) {
+      settleTufts(growth, liftAt);
+      tuftsSettled = true;
+    }
     const seat = (mesh) => {
       mesh.receiveShadow = true;
       mesh.castShadow = false;
@@ -3817,7 +3831,8 @@ export function settleRoots(
     // mid-shot (unseen(): in the fade-in, on a cut or while the tour is still).
     const surface = terrainHeight(terrain),
       soil = material.color ?? { r: 0.36, g: 0.31, b: 0.28 },
-      landable = unseen(rendering, tour);
+      unseenNow = unseen(rendering, tour),
+      landable = () => landed && active && unseenNow();
     // Optional litter and rushes build detached in idle slices. Tuft seating
     // and the rocks' analytic height stay immediate; neither the reveal nor
     // the ground's shading link waits for these meshes.
@@ -3902,6 +3917,8 @@ export function settleRoots(
     lean = new Vector3(),
     origin = new Vector3();
   let live = true,
+    active = lib?.active ?? true,
+    checking = false,
     probe = null,
     linking = false,
     linked = "",
@@ -4010,11 +4027,17 @@ export function settleRoots(
     if (sink) [sink.x, sink.y, sink.z, sink.w] = [...coastPlane(), 1];
     if (globalThis.BabelSite?.sceneDebug) globalThis.BabelSite.sceneDebug.sea = "ready";
   };
-  terrain.addEventListener("dispose", () => {
-    live = false;
-    for (const part of shore.splice(0)) part.dispose();
+  height.setActive = (next) => {
+    active = Boolean(next);
+    if (active) {
+      if (live && !landed && !checking) check();
+      return;
+    }
+    if (ground.geometry === terrain) ground.geometry = originalGeometry;
+    landed = false;
+    for (const part of shore) part.mesh.removeFromParent();
     if (lib?.SEA_SINK) lib.SEA_SINK.value.w = 0;
-    release();
+    if (globalThis.BabelSite?.sceneDebug) delete globalThis.BabelSite.sceneDebug.sea;
     if (material.userData.slateRoot === shadeSlateGround) {
       delete material.userData.slateRoot;
       material.needsUpdate = true;
@@ -4022,6 +4045,16 @@ export function settleRoots(
     if (ground.onBeforeRender === beforeRender) delete ground.onBeforeRender;
     if (ground.onAfterRender === afterRender) delete ground.onAfterRender;
     if (ground.userData.slateDrips === clock) delete ground.userData.slateDrips;
+    release();
+    linking = false;
+    linked = "";
+    if (live) invalidate();
+  };
+  terrain.addEventListener("dispose", () => {
+    live = false;
+    height.setActive(false);
+    resolveReady(false);
+    for (const part of shore.splice(0)) part.dispose();
     if (litter) {
       litter.removeFromParent();
       litter.geometry.dispose();
@@ -4120,6 +4153,12 @@ export function settleRoots(
     release();
   }
   function commit() {
+    ground.geometry = terrain;
+    landed = true;
+    if (!tuftsSettled && growth?.geometry.attributes.position) {
+      settleTufts(growth, liftAt);
+      tuftsSettled = true;
+    }
     material.userData.slateRoot = shadeSlateGround;
     material.needsUpdate = true;
     // Then the water's banks are built, in idle slices.
@@ -4128,17 +4167,20 @@ export function settleRoots(
     if (!clocked) {
       clocked = true;
       clock.reset();
-      ground.onBeforeRender = beforeRender;
-      // Scripted review can read or set the drips' time here.
-      ground.userData.slateDrips = clock;
     }
+    ground.onBeforeRender = beforeRender;
+    // Scripted review can read or set the drips' time here.
+    ground.userData.slateDrips = clock;
     // Hold the stand-in's program until the ground has drawn with it.
     if (probe) ground.onAfterRender = afterRender;
     landShore();
+    resolveReady(true);
+    rendering.invalidateShadows?.();
     invalidate();
   }
-  (function check() {
-    if (!live) return;
+  function check() {
+    checking = false;
+    if (!live || !active) return;
     // r160 replaces renderer.properties on restoration. Identity catches a
     // loss and restore between poll ticks, even when isContextLost() is false.
     if (probe && !probe.userData.valid()) {
@@ -4146,15 +4188,20 @@ export function settleRoots(
       linking = false;
       linked = "";
     }
-    if (renderer?.getContext?.()?.isContextLost?.()) return nextFrame(check);
+    if (renderer?.getContext?.()?.isContextLost?.()) {
+      checking = true;
+      return nextFrame(check);
+    }
     const container = renderer?.domElement?.parentNode;
     if (!linking && !linked && (!container || container.classList?.contains("is-ready"))) link();
     if (linked && allowed()) {
       if (linked === programState()) return commit();
       linked = "";
     }
+    checking = true;
     nextFrame(check);
-  })();
+  }
+  check();
   return height;
 }
 
@@ -4790,13 +4837,15 @@ function inSlices(steps, early = () => false, cancelled = () => false) {
 // (inSlices()) and resolves only where the new ground cannot show mid-shot
 // (unseen()); without it (tests), it builds at once. cancelled: the film scene
 // is gone, so the build stops, or the finished geometry is freed, and it
-// resolves to nothing.
+// resolves to nothing. prepareOnly leaves publication and shadow invalidation
+// to settleRoots()'s atomic commit, so detached preparation never waits a cut.
 export function createEarthGeometry(
   groundHeight,
   EARTH = { width: 384, subdivisions: 128 },
   rendering = null,
   tour = null,
   cancelled = () => false,
+  prepareOnly = false,
 ) {
   const steps = earthSteps(groundHeight, EARTH);
   if (!rendering) {
@@ -4811,8 +4860,8 @@ export function createEarthGeometry(
       new Promise((resolve) => {
         (function check() {
           if (!geometry || cancelled()) return resolve(geometry?.dispose());
-          if (!allowed()) return nextFrame(check);
-          rendering.invalidateShadows?.();
+          if (!prepareOnly && !allowed()) return nextFrame(check);
+          if (!prepareOnly) rendering.invalidateShadows?.();
           resolve(geometry);
         })();
       }),

@@ -513,7 +513,7 @@ function wireSceneWalk(rig) {
     sceneFailed: false,
     sceneReadyMarked: true,
     filmActive: true,
-    walkGround: () => 0,
+    walkGround: Object.assign(() => 0, { shore: () => 1 }),
     reducedMotion: false,
     visitorHold: { ...owner, paused: false },
     qualityState: { touchPrimary: false },
@@ -539,6 +539,87 @@ function wireSceneWalk(rig) {
   vm.runInNewContext(index.slice(start, end), context);
   return { context, forcedColors, dispose: () => context.scene.disposeHomeSceneRuntime() };
 }
+
+test("the scene's actual ground consumer enables walk only after a successful current coastal commit", async () => {
+  const index = source("src/scene/index.js"),
+    start = index.indexOf("onGroundChange(active) {"),
+    end = index.indexOf("\n      });", start);
+  assert.ok(start > 0 && end > start, "locate the actual film readiness consumer");
+  for (const phase of ["commit", "failed", "missing", "disposed"]) {
+    const rig = walkRig(),
+      integration = wireSceneWalk(rig),
+      context = integration.context,
+      owner = { setFilmTreatment() {}, setFilmActive() {} };
+    let finish,
+      landed = false;
+    const height = Object.assign(() => 2, {
+      ready: new Promise((resolve) => (finish = resolve)),
+      shore: () => (landed ? 10 : Infinity),
+    });
+    Object.assign(context, {
+      filmScene: { ready: Promise.resolve(phase === "missing" ? undefined : height) },
+      environmentSystem: owner,
+      hillSilhouette: owner,
+      groundTextures: owner,
+      rockScatter: owner,
+      farFires: owner,
+      completeTower: null,
+      groundHeight: () => 0,
+      walkGround: null,
+    });
+    vm.runInNewContext(`onGroundChange = ({${index.slice(start, end)}}).onGroundChange;`, context);
+    const press = async () => {
+      const event = key("keydown", "Backquote");
+      rig.site.win.dispatchEvent(event);
+      await new Promise((resolve) => setImmediate(resolve));
+      return event;
+    };
+    try {
+      context.onGroundChange(true);
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(
+        context.walkGround,
+        phase === "missing" ? null : height,
+        "prepared height may be retained without enabling walk",
+      );
+      assert.equal((await press()).defaultPrevented, false);
+      assert.equal(rig.walk.active, false);
+      if (phase === "disposed") integration.dispose();
+      landed = phase === "commit";
+      finish(phase === "commit");
+      await new Promise((resolve) => setImmediate(resolve));
+      if (phase !== "commit") {
+        assert.notEqual(
+          context.walkGround,
+          context.groundHeight,
+          `${phase}: no analytic fallback enables expanded walk`,
+        );
+        assert.equal((await press()).defaultPrevented, false);
+        assert.equal(rig.walk.active, false);
+        continue;
+      }
+      assert.equal(context.walkGround, height);
+      assert.equal((await press()).defaultPrevented, true);
+      assert.equal(rig.walk.active, true, "first successful commit enables the actual shortcut");
+      rig.walk.exit({ immediate: true });
+      landed = false;
+      context.onGroundChange(false);
+      context.onGroundChange(true);
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(
+        (await press()).defaultPrevented,
+        false,
+        "cached first readiness cannot enable withdrawn terrain",
+      );
+      assert.equal(rig.walk.active, false);
+      landed = true;
+      assert.equal((await press()).defaultPrevented, true);
+      assert.equal(rig.walk.active, true, "reactivation waits for its own current coastal commit");
+    } finally {
+      integration.dispose();
+    }
+  }
+});
 
 test("forced colors immediately restores the page and mouse during walk arming or walking", async () => {
   for (const phase of ["arming", "walking"]) {

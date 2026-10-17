@@ -45,6 +45,8 @@ import {
   TREE_FOOTING,
 } from "../src/scene/terrain-build.js";
 import { compilePrograms } from "../src/scene/shader-programs.js";
+import { createRockScatter, ROCK_LIB } from "../src/scene/rock-scatter.js";
+import { createRocks, createRockLayout } from "../src/scene/rock-build.js";
 import { flat, source } from "./support/code.mjs";
 
 // What film-scene.js lends the sea (terrain-build.js settleRoots()'s `lib`).
@@ -189,7 +191,7 @@ test("the sea is one program: the film's environment its only texture, the groun
   sea.dispose();
 });
 
-test("the sea reads the scene's lights and environment each draw, as the standard materials take them", () => {
+test("the sea reads raw light intensities and applies its subdued custom 1/pi normalization", () => {
   const view = rendering(),
     { mesh, material } = createSea({ lib, clock: dripClock({ value: 0 }), rendering: view });
   const light = (color, intensity, position) => {
@@ -356,7 +358,7 @@ test("the sea, the cliffs and the falls land with the film terrain, sink the ran
   });
   film.setActive(true);
   const height = await film.ready;
-  assert.equal(height.shore, coastDistance, "the walk's edge");
+  assert.equal(height.shore(80, 80), coastDistance(80, 80), "the walk's edge");
   const names = root.children.map((child) => child.name);
   for (const name of ["estate-sea", "estate-cliff", "estate-falls"])
     assert.ok(names.includes(name), `${name} in ${names}`);
@@ -364,6 +366,22 @@ test("the sea, the cliffs and the falls land with the film terrain, sink the ran
     [SEA_SINK.value.x, SEA_SINK.value.y, SEA_SINK.value.z, SEA_SINK.value.w],
     [...coastPlane(), 1],
   );
+  const meshes = root.children.filter((child) => child.name.startsWith("estate-"));
+  film.setActive(false);
+  assert.equal(ground.geometry.type, "BoxGeometry", "restore the borrowed surface");
+  assert.ok(
+    meshes.every((mesh) => !mesh.parent),
+    "withdraw the entire shore",
+  );
+  assert.equal(SEA_SINK.value.w, 0);
+  assert.equal(height(100, 40), 0, "the live sampler follows the borrowed ground");
+  assert.equal(height.shore(80, 80), Infinity, "the inactive coast cannot constrain the walk");
+  film.setActive(true);
+  assert.ok(
+    meshes.every((mesh) => mesh.parent === root),
+    "reuse the shore on reactivation",
+  );
+  assert.equal(SEA_SINK.value.w, 1);
   film.dispose();
   for (const name of ["estate-sea", "estate-cliff", "estate-falls"])
     assert.ok(!root.children.some((child) => child.name === name), `${name} stays`);
@@ -481,5 +499,407 @@ test("the sea, the cliffs and the falls link with the slate's root shading and l
   } finally {
     if (previous) globalThis.requestAnimationFrame = previous;
     else delete globalThis.requestAnimationFrame;
+  }
+});
+
+// The real film/terrain owners, with only frame delivery and driver completion
+// controlled. The camera can reveal the borrowed ground while this tuple waits.
+function coastalFilmRig({ revealed = true, holdBuild = false } = {}) {
+  const frames = [],
+    previous = globalThis.requestAnimationFrame,
+    terrain = createEarthGeometry(() => 0),
+    original = new BoxGeometry(),
+    material = new MeshStandardMaterial(),
+    ground = new Mesh(original, material),
+    root = new Group(),
+    scene = new Scene(),
+    batches = [],
+    tour = { running: true, transition: { cut: false } },
+    host = { revealed };
+  globalThis.requestAnimationFrame = (task) => frames.push(task);
+  root.add(ground);
+  scene.add(root);
+  let finishBuild, sampler;
+  const build = holdBuild ? new Promise((resolve) => (finishBuild = resolve)) : terrain;
+  const renderer = {
+    domElement: { parentNode: { classList: { contains: () => host.revealed } } },
+    extensions: { has: () => true },
+    compile() {},
+    properties: {},
+    getContext: () => ({ isContextLost: () => false }),
+    getRenderTarget: () => null,
+    setRenderTarget() {},
+    shadowMap: { enabled: false },
+  };
+  const film = createFilmScene({
+    ground,
+    groundHeight: () => 0,
+    rendering: {
+      renderer,
+      homeScene: scene,
+      lights: {},
+      camera: {},
+      setFilmTreatment() {},
+      compilePrograms(_renderer, objects, _camera, _scene, valid) {
+        const meshes = [];
+        objects.traverse((mesh) => mesh.isMesh && meshes.push(mesh));
+        return new Promise((finish) => batches.push({ meshes, valid, finish }));
+      },
+    },
+    atmosphere: { setFilmTreatment() {} },
+    skyMaterial: { uniforms: { sunColor: { value: new Color() } } },
+    onGroundChange: (active) =>
+      configureGroundShading(material, active, { detail: { isTexture: true } }),
+    tour,
+    loadTerrain: async () => ({
+      createEarthGeometry: () => build,
+      settleRoots(...args) {
+        sampler = settleRoots(...args);
+        return sampler;
+      },
+    }),
+  });
+  return {
+    film,
+    terrain,
+    original,
+    ground,
+    root,
+    batches,
+    host,
+    tour,
+    get sampler() {
+      return sampler;
+    },
+    finishBuild: () => finishBuild?.(terrain),
+    shore: () => root.children.filter((child) => child.name.startsWith("estate-")),
+    async step(count = 1) {
+      for (let i = 0; i < count; i++) {
+        for (const task of frames.splice(0)) task(performance.now());
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+    },
+    async dispose() {
+      film.dispose();
+      batches.forEach((batch) => batch.finish(false));
+      await this.step(2);
+      original.dispose();
+      material.dispose();
+      if (previous) globalThis.requestAnimationFrame = previous;
+      else delete globalThis.requestAnimationFrame;
+    },
+  };
+}
+
+test("the reveal keeps borrowed terrain until coastal geometry, shore, sink and height can land together", async () => {
+  const r = coastalFilmRig({ revealed: false });
+  let ready;
+  try {
+    r.film.setActive(true);
+    r.film.ready.then((height) => (ready = height));
+    await r.step(2);
+    assert.equal(r.batches.length, 0);
+    assert.equal(r.ground.geometry, r.original);
+    assert.equal(r.sampler(100, 40), 0, "no future height while the borrowed ground draws");
+    assert.equal(r.sampler.shore(80, 80), Infinity);
+    assert.equal(ready, r.sampler, "prepared readiness lets optional downloads start");
+    // The title-card reveal is independent of this optional work.
+    r.host.revealed = true;
+    await r.step(2);
+    assert.equal(r.batches.length, 1);
+    assert.equal(r.ground.geometry, r.original, "a pending driver cannot expose the cut seabed");
+    assert.deepEqual(r.shore(), []);
+    assert.equal(SEA_SINK.value.w, 0);
+    r.batches[0].finish(true);
+    await r.step(2);
+    assert.equal(r.ground.geometry, r.original, "linked work still waits for its cut");
+    assert.equal(ready, r.sampler, "published height still follows the borrowed ground");
+    r.tour.transition.cut = true;
+    await r.step(2);
+    assert.equal(await r.film.ready, r.sampler);
+    assert.equal(r.ground.geometry, r.terrain);
+    assert.equal(r.shore().length, 3);
+    assert.equal(SEA_SINK.value.w, 1);
+    assert.equal(r.sampler(100, 40), filmHeight(() => 0, true)(100, 40));
+    assert.equal(r.sampler.shore(80, 80), coastDistance(80, 80));
+  } finally {
+    await r.dispose();
+  }
+});
+
+test("film deactivation during a coastal build or link prevents late landing and reactivation reuses the tuple", async () => {
+  for (const phase of ["building", "linking", "linked"]) {
+    const r = coastalFilmRig({ holdBuild: phase === "building" });
+    try {
+      r.film.setActive(true);
+      await r.step(2);
+      if (phase === "linked") {
+        r.batches[0].finish(true);
+        await r.step(2);
+      }
+      r.film.setActive(false);
+      r.finishBuild();
+      r.batches.forEach((batch) => batch.finish(true));
+      r.tour.transition.cut = true;
+      await r.step(3);
+      assert.equal(r.ground.geometry, r.original, phase);
+      assert.equal(r.shore().length, 0);
+      assert.equal(SEA_SINK.value.w, 0);
+      assert.equal(r.sampler(100, 40), 0);
+      assert.equal(r.sampler.shore(80, 80), Infinity);
+      assert.ok(
+        r.batches.every((batch) => !batch.valid()),
+        "old generations retire",
+      );
+      r.tour.transition.cut = false;
+      const count = r.batches.length;
+      r.film.setActive(true);
+      await r.step(2);
+      assert.equal(r.batches.length, count + 1);
+      r.batches.at(-1).finish(true);
+      await r.step(2);
+      assert.equal(r.ground.geometry, r.original, "reactivation also waits for a cut");
+      r.tour.transition.cut = true;
+      await r.step(2);
+      assert.equal(await r.film.ready, r.sampler);
+      assert.equal(r.ground.geometry, r.terrain);
+      const meshes = r.shore();
+      assert.equal(meshes.length, 3);
+      r.film.setActive(false);
+      assert.equal(r.ground.geometry, r.original);
+      assert.ok(meshes.every((mesh) => !mesh.parent));
+      assert.equal(SEA_SINK.value.w, 0);
+      assert.equal(r.sampler(100, 40), 0, "the cached sampler follows withdrawal too");
+    } finally {
+      await r.dispose();
+    }
+  }
+});
+
+test("rock GLBs start beside coastal linking but their layout waits for the coastal commit", async () => {
+  const r = coastalFilmRig(),
+    requests = [];
+  let rocks;
+  try {
+    r.film.setActive(true);
+    await r.step(2);
+    const height = await r.film.ready;
+    assert.equal(height, r.sampler);
+    assert.equal(height(100, 40), 0);
+    rocks = createRockScatter({
+      tier: "high",
+      parent: r.root,
+      terrain: () => r.film.ready,
+      load: async () => ({ createRocks }),
+      loadAsset: () => new Promise((resolve) => requests.push(resolve)),
+      compile: () => true,
+    });
+    rocks.setFilmActive(true);
+    rocks.setTreeStatus("ready");
+    rocks.setRevealed();
+    await r.step(2);
+    assert.equal(requests.length, 2, "both GLBs start before the pending coastal programs finish");
+    for (const resolve of requests) {
+      const scene = new Group();
+      scene.add(new Mesh(new BoxGeometry(), new MeshStandardMaterial()));
+      resolve({ scene });
+    }
+    await r.step(2);
+    const root = r.root.getObjectByName("film-rocks");
+    assert.equal(root.children.length, 0, "loaded assets cannot place rocks against future ground");
+    assert.equal(rocks.take({ cut: true, running: true }), false);
+    r.batches[0].finish(true);
+    await r.step(2);
+    assert.equal(root.children.length, 0, "linked coast still waits for a cut");
+    r.tour.transition.cut = true;
+    await r.step(2);
+    assert.equal(await height.ready, true);
+    assert.equal(r.ground.geometry, r.terrain);
+    assert.equal(root.children.length, 2);
+    assert.equal(root.visible, false, "rock programs and placement retain their own cut gate");
+    rocks.take({ cut: false, running: true, nowMs: 0 });
+    await r.step();
+    assert.equal(rocks.take({ cut: true, running: true, nowMs: 16 }), true);
+    assert.equal(root.visible, true);
+  } finally {
+    rocks?.dispose();
+    await r.dispose();
+  }
+});
+
+test("loaded rocks waiting for a coastal cut release on terrain failure or scatter disposal", async () => {
+  for (const owner of ["terrain", "rocks"]) {
+    const r = coastalFilmRig(),
+      owned = [],
+      statuses = [];
+    let rocks;
+    try {
+      r.film.setActive(true);
+      await r.step(2);
+      const height = await r.film.ready;
+      rocks = createRockScatter({
+        tier: "high",
+        parent: r.root,
+        terrain: () => r.film.ready,
+        load: async () => ({ createRocks }),
+        loadAsset: async () => {
+          const geometry = new BoxGeometry(),
+            material = new MeshStandardMaterial(),
+            scene = new Group();
+          for (const resource of [geometry, material]) {
+            const record = { freed: 0 };
+            owned.push(record);
+            resource.addEventListener("dispose", () => record.freed++);
+          }
+          scene.add(new Mesh(geometry, material));
+          return { scene };
+        },
+        onStatus: ({ status }) => statuses.push(status),
+      });
+      rocks.setFilmActive(true);
+      rocks.setTreeStatus("ready");
+      rocks.setRevealed();
+      await r.step(3);
+      assert.equal(owned.length, 4);
+      assert.ok(
+        owned.every(({ freed }) => freed === 0),
+        "the pending build owns its loaded assets",
+      );
+      const root = r.root.getObjectByName("film-rocks");
+      assert.equal(root.children.length, 0);
+      if (owner === "terrain") {
+        r.film.dispose();
+        assert.equal(await height.ready, false);
+        await r.step(2);
+        assert.deepEqual(statuses, ["loading", "fallback"]);
+      } else {
+        rocks.dispose();
+        assert.ok(
+          owned.every(({ freed }) => freed === 1),
+          "no coastal commit is needed to release",
+        );
+        r.batches[0].finish(true);
+        r.tour.transition.cut = true;
+        await r.step(3);
+        assert.equal(await height.ready, true);
+        assert.deepEqual(statuses, ["loading"], "late readiness cannot publish after disposal");
+      }
+      assert.ok(
+        owned.every(({ freed }) => freed === 1),
+        "each borrowed asset is freed once",
+      );
+      assert.equal(root.children.length, 0);
+      assert.equal(rocks.take({ cut: true, running: true }), false);
+    } finally {
+      rocks?.dispose();
+      await r.dispose();
+    }
+  }
+});
+
+test("rocks loading across film withdrawal retain the committed film height while walking follows visible ground", async () => {
+  const r = coastalFilmRig(),
+    requests = [];
+  let rocks;
+  try {
+    r.film.setActive(true);
+    await r.step(2);
+    r.batches[0].finish(true);
+    r.tour.transition.cut = true;
+    await r.step(2);
+    const height = await r.film.ready,
+      expected = createRockLayout(ROCK_LIB, { groundHeight: height });
+    rocks = createRockScatter({
+      tier: "high",
+      parent: r.root,
+      groundHeight: () => 0,
+      terrain: () => r.film.ready,
+      load: async () => ({ createRocks }),
+      loadAsset: () => new Promise((resolve) => requests.push(resolve)),
+      compile: () => true,
+    });
+    rocks.setFilmActive(true);
+    rocks.setTreeStatus("ready");
+    rocks.setRevealed();
+    await r.step(2);
+    assert.equal(requests.length, 2, "both real rock asset loads are pending");
+    r.film.setActive(false);
+    rocks.setFilmActive(false);
+    assert.equal(height(100, 40), 0, "walking follows the borrowed ground");
+    assert.equal(height.shore(80, 80), Infinity);
+    const withdrawn = createRockLayout(ROCK_LIB, { groundHeight: height });
+    assert.ok(
+      expected.some((rock, i) => rock.y !== withdrawn[i].y),
+      "the fixture would seat rocks differently through the visible-surface sampler",
+    );
+    for (const resolve of requests) {
+      const scene = new Group();
+      scene.add(new Mesh(new BoxGeometry(), new MeshStandardMaterial()));
+      resolve({ scene });
+    }
+    await r.step(2);
+    const root = r.root.getObjectByName("film-rocks");
+    assert.equal(root.children.length, 2);
+    for (const mesh of root.children) {
+      const type = mesh.name.slice("film-rocks-".length),
+        matrices = expected
+          .filter((rock) => rock.type === type)
+          .flatMap((rock) => rock.matrix.elements.map(Math.fround));
+      assert.deepEqual([...mesh.instanceMatrix.array], matrices, type);
+    }
+    r.film.setActive(true);
+    await r.step(2);
+    r.batches.at(-1).finish(true);
+    await r.step(2);
+    rocks.setFilmActive(true);
+    rocks.take({ cut: false, running: true, nowMs: 0 });
+    await r.step();
+    assert.equal(rocks.take({ cut: true, running: true, nowMs: 16 }), true);
+    assert.equal(root.visible, true);
+    assert.equal(r.ground.geometry, r.terrain);
+    assert.equal(height(100, 40), height.film(100, 40));
+  } finally {
+    rocks?.dispose();
+    await r.dispose();
+  }
+});
+
+test("disposing a film with pending coastal programs settles ready and releases derived resources only", async () => {
+  const r = coastalFilmRig();
+  let originalFreed = 0;
+  r.original.addEventListener("dispose", () => originalFreed++);
+  try {
+    r.film.setActive(true);
+    await r.step(2);
+    const batch = r.batches[0],
+      resources = new Set();
+    for (const mesh of batch.meshes) {
+      if (!mesh.name.startsWith("estate-")) continue;
+      resources.add(mesh.geometry);
+      resources.add(mesh.material);
+    }
+    assert.equal(resources.size, 7, "four shore geometries and three owned materials");
+    const freed = new Map([...resources].map((resource) => [resource, 0]));
+    for (const resource of resources)
+      resource.addEventListener("dispose", () => freed.set(resource, freed.get(resource) + 1));
+    // The batch detaches its children after compile; the owner's root is still empty.
+    assert.equal(r.shore().length, 0);
+    r.film.dispose();
+    assert.equal(await r.film.ready, r.sampler, "the prepared visible-surface sampler stays safe");
+    assert.equal(await r.sampler.ready, false, "coastal readiness retires on disposal");
+    assert.equal(batch.valid(), false);
+    assert.equal(r.ground.geometry, r.original);
+    assert.equal(SEA_SINK.value.w, 0);
+    assert.equal(originalFreed, 0, "borrowed geometry survives");
+    assert.ok(
+      [...freed.values()].every((count) => count === 1),
+      "each derived resource is freed once",
+    );
+    batch.finish(true);
+    await r.step(2);
+    assert.equal(r.shore().length, 0, "a retired completion cannot land later");
+    assert.ok([...freed.values()].every((count) => count === 1));
+  } finally {
+    await r.dispose();
   }
 });

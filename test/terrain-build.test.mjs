@@ -2044,6 +2044,64 @@ test("the film terrain builds in idle slices and arrives only where it cannot sh
   }
 });
 
+test("the atomic film owner prepares terrain before a cut while the missing-settler fallback retains its publication gate", async () => {
+  for (const atomic of [true, false]) {
+    const clock = frames(),
+      idle = idleTasks(),
+      original = new BoxGeometry(),
+      material = new MeshStandardMaterial(),
+      ground = new Mesh(original, material),
+      tour = { running: true, transition: { cut: false } };
+    let shadows = 0,
+      prepared;
+    const rendering = {
+        renderer: { domElement: { parentNode: { classList: { contains: () => true } } } },
+        setFilmTreatment() {},
+        invalidateShadows: () => shadows++,
+      },
+      film = createFilmScene({
+        ground,
+        groundHeight: () => 0,
+        rendering,
+        atmosphere: { setFilmTreatment() {} },
+        skyMaterial: { uniforms: { sunColor: { value: new Color() } } },
+        tour,
+        loadTerrain: async () => ({ createEarthGeometry, ...(atomic && { settleRoots }) }),
+      });
+    try {
+      film.setActive(true);
+      film.ready.then((height) => (prepared = height));
+      await Promise.resolve();
+      await idle.flush();
+      await clock.step(2);
+      assert.equal(ground.geometry, original, "detached preparation never publishes mid-shot");
+      assert.equal(shadows, 0, "detached preparation never invalidates the drawn shadows");
+      if (atomic) {
+        assert.equal(
+          typeof prepared,
+          "function",
+          "prepared sampler starts optional downloads before a cut",
+        );
+        assert.equal(prepared(100, 40), 0, "walk still follows the borrowed surface");
+        assert.equal(prepared.shore(80, 80), Infinity);
+      } else assert.equal(prepared, undefined, "legacy publication still waits unseen");
+      tour.transition.cut = true;
+      await clock.step(3);
+      assert.notEqual(ground.geometry, original, "the first eligible cut publishes terrain");
+      assert.equal(shadows, 1, "only publication invalidates the drawn shadows");
+      if (atomic) assert.equal(await prepared.ready, true);
+    } finally {
+      film.dispose();
+      await idle.flush();
+      await clock.step(2);
+      original.dispose();
+      material.dispose();
+      clock.restore();
+      idle.restore();
+    }
+  }
+});
+
 test("while the terrain slices it idles while the canvas is hidden, rushes while it fades in, and stops when disposed", async () => {
   const idle = globalThis.requestIdleCallback,
     style = globalThis.getComputedStyle;
@@ -3219,13 +3277,52 @@ test("the terrain chunk is requested only when the film activates, once, and a f
   // film-scene.js holds the chunk's only import (scene-bootstrap.test.mjs).
 });
 
+test("failed terrain settlement frees its geometry and cannot expose it on film reactivation", async () => {
+  const terrain = new BoxGeometry();
+  let builds = 0,
+    settlements = 0,
+    freed = 0;
+  const r = rig(async () => ({
+    createEarthGeometry() {
+      builds++;
+      return terrain;
+    },
+    settleRoots() {
+      settlements++;
+      throw new Error("shore preparation failed");
+    },
+  }));
+  const original = r.ground.geometry;
+  terrain.addEventListener("dispose", () => {
+    freed++;
+    assert.equal(r.ground.geometry, original, "borrowed ground remains visible during cleanup");
+  });
+  try {
+    r.film.setActive(true);
+    assert.equal(await r.film.ready, undefined);
+    assert.equal(r.ground.geometry, original);
+    assert.equal(freed, 1);
+    r.film.setActive(false);
+    r.film.setActive(true);
+    assert.equal(await r.film.ready, undefined);
+    assert.equal(r.ground.geometry, original, "reactivation cannot publish failed terrain");
+    assert.deepEqual([builds, settlements, freed], [1, 1, 1], "no implicit retry or second free");
+    assert.equal(r.invalidations(), 0);
+  } finally {
+    r.film.dispose();
+    assert.equal(freed, 1);
+    original.dispose();
+    r.ground.material.dispose();
+  }
+});
+
 test("the film's ready resolves to the root-aware ground once the roots settle", async () => {
   const r = rig(() => import("../src/scene/terrain-build.js"));
   r.film.setActive(true);
   const height = await r.film.ready;
   assert.equal(typeof height, "function");
   assert.equal(r.ground.material.userData.slateRoot, shadeSlateGround);
-  assert.equal(r.invalidations(), 2, "the terrain and then its shading invalidate a paused frame");
+  assert.equal(r.invalidations(), 1, "the terrain and its shading invalidate one atomic frame");
   // On flat ground the knoll adds only its collar's dome, and the relief, the
   // crook hollows and the lips shape the soil about the tree (at a vertex,
   // exactly as built; between vertices, as rendered); open ground stays at 0.
@@ -3249,7 +3346,7 @@ test("the film's ready resolves to the root-aware ground once the roots settle",
   ])
     assert.ok(Math.abs(height(x, z) - film(x, z)) < 1e-9, `${x},${z}`);
   assert.ok(height(TREE_FOOTING.x + 30, TREE_FOOTING.z) > 0);
-  assert.equal(height.shore, coastDistance);
+  assert.equal(height.shore(80, 80), coastDistance(80, 80));
   const geometry = r.ground.geometry;
   r.film.dispose();
   assert.equal(r.ground.material.userData.slateRoot, undefined, "disposal withdraws the shading");
