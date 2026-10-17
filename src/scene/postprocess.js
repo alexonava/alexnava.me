@@ -1,7 +1,9 @@
 import {
   AdditiveBlending,
   CustomBlending,
+  Group,
   HalfFloatType,
+  Mesh,
   NoBlending,
   OneFactor,
   ShaderMaterial,
@@ -19,6 +21,7 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { CopyShader } from "three/examples/jsm/shaders/CopyShader.js";
+import { compilePrograms } from "./shader-programs.js";
 
 const PASS_VERTEX_SHADER = `
 varying vec2 vUv;
@@ -864,7 +867,9 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
   const toUv = (offset) => Math.min(1, Math.max(0, (1 - offset) / 2));
   let phase = IDLE,
     capturing = false,
-    compiled = false,
+    disposed = false,
+    compilePromise = null,
+    compileGeneration = 0,
     prevTarget = null,
     protectionFrom = 0,
     protectionTarget = 0,
@@ -1046,6 +1051,10 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
       vignetteGrain: vignetteGrainPass,
     },
     dispose() {
+      if (disposed) return;
+      disposed = true;
+      compileGeneration += 1;
+      compilePromise = Promise.resolve(false);
       transparencyQuery?.removeEventListener?.("change", onTransparencyChange);
       for (const pass of composer.passes) {
         if (typeof pass.dispose === "function") pass.dispose();
@@ -1057,25 +1066,57 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
     // A lost context takes its programs with it: the next warm-up links the
     // crossfade's programs again instead of the first dissolve after recovery.
     invalidatePrograms() {
-      compiled = false;
+      if (disposed) return;
+      compileGeneration += 1;
+      compilePromise = null;
     },
-    // Links the crossfade's programs once, from the shader warm-up. Keys
-    // differ by output colour space, so grading compiles against an off-screen
-    // target and the final pass against the canvas, as a low-tier cut draws them.
+    // Prepare every compositor program, including the high tier's bloom and
+    // scene-copy variants, without drawing or waiting on a first-use link.
+    // Grading also draws to the canvas when it is the last enabled pass.
+    // Keep each target's captured program keys through its bounded link poll.
     compile() {
-      if (compiled || typeof renderer.compile !== "function") return;
-      compiled = true;
-      const previous = renderer.getRenderTarget?.() ?? null;
+      if (compilePromise) return compilePromise;
+      const generation = compileGeneration;
+      const valid = () => generation === compileGeneration;
+      if (typeof renderer.compile !== "function") return Promise.resolve(false);
+      const geometry = gradingPass.fsQuad._mesh.geometry;
+      const group = (materials) => {
+        const objects = new Group();
+        for (const material of materials) objects.add(new Mesh(geometry, material));
+        return objects;
+      };
+      const offscreen = group([
+        renderPass.copyQuad.material,
+        bloomPass.materialHighPassFilter,
+        ...bloomPass.separableBlurMaterials,
+        bloomPass.compositeMaterial,
+        bloomPass.blendMaterial,
+        gradingPass.material,
+      ]);
+      const screen = group([gradingPass.material, vignetteGrainPass.material]);
+      const prepareTarget = (objects, target) => {
+        const previous = renderer.getRenderTarget?.() ?? null;
+        try {
+          renderer.setRenderTarget(target);
+          return compilePrograms(renderer, objects, camera, null, valid);
+        } finally {
+          renderer.setRenderTarget(previous);
+        }
+      };
+      let first;
       try {
-        renderer.setRenderTarget(composer.readBuffer);
-        renderer.compile(gradingPass.fsQuad._mesh, camera);
-        renderer.setRenderTarget(null);
-        renderer.compile(vignetteGrainPass.fsQuad._mesh, camera);
+        first = prepareTarget(offscreen, composer.readBuffer);
       } catch {
-        compiled = false;
-      } finally {
-        renderer.setRenderTarget(previous);
+        compilePromise = Promise.resolve(false);
+        return compilePromise;
       }
+      compilePromise = Promise.resolve(first)
+        .then((ready) => {
+          if (!ready || !valid()) return false;
+          return prepareTarget(screen, null);
+        })
+        .catch(() => false);
+      return compilePromise;
     },
     cancelTransition,
     setFilmTreatment(active) {

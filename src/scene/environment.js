@@ -1,5 +1,5 @@
 import { Group } from "three";
-import { createEstateGroundDetail } from "./estate-ground-detail.js";
+import { createEstateGroundDetail, prepareEstateGroundDetail } from "./estate-ground-detail.js";
 
 // The ground's root (the ground, hills, rocks, tower and tree hang under it)
 // and the film's ground detail.
@@ -9,11 +9,39 @@ export function createSceneEnvironment({ groundHeight, parent, profile }) {
 
   let disposed = false;
   let groundDetail = null,
+    pendingDetail = null,
+    filmActive = false,
     currentProfile = profile;
+
+  function adopt(detail) {
+    if (!detail) return null;
+    if (disposed || groundDetail) {
+      detail.dispose();
+      return groundDetail;
+    }
+    groundDetail = detail;
+    detail.applyQuality(currentProfile);
+    if (filmActive) root.add(detail.mesh);
+    detail.setActive(filmActive);
+    return detail;
+  }
 
   return {
     lifecycleOrder: 10,
     root,
+    // Called before the tower commits: prepare exact grass geometry during
+    // downloads, keeping it detached until the film takes it.
+    prepareFilmDetail() {
+      if (disposed) return Promise.resolve(null);
+      if (groundDetail) return Promise.resolve(groundDetail);
+      pendingDetail ||= prepareEstateGroundDetail(groundHeight, { cancelled: () => disposed })
+        .then(adopt)
+        .catch((error) => {
+          pendingDetail = null;
+          throw error;
+        });
+      return pendingDetail;
+    },
     applyQuality(nextProfile = {}) {
       if (disposed) return false;
       currentProfile = nextProfile;
@@ -38,11 +66,9 @@ export function createSceneEnvironment({ groundHeight, parent, profile }) {
     },
     setFilmTreatment(active) {
       if (disposed) return false;
-      if (active && !groundDetail) {
-        groundDetail = createEstateGroundDetail(groundHeight);
-        root.add(groundDetail.mesh);
-        groundDetail.applyQuality(currentProfile);
-      }
+      filmActive = Boolean(active);
+      if (active && !groundDetail && !pendingDetail) adopt(createEstateGroundDetail(groundHeight));
+      if (active && groundDetail && groundDetail.mesh.parent !== root) root.add(groundDetail.mesh);
       groundDetail?.setActive(active);
       return true;
     },

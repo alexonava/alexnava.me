@@ -10,6 +10,7 @@ import {
   MeshStandardMaterial,
   MirroredRepeatWrapping,
   RepeatWrapping,
+  RGBADepthPacking,
   ShaderMaterial,
   SRGBColorSpace,
   Texture,
@@ -20,7 +21,15 @@ import { createSceneRendering } from "../src/scene/rendering.js";
 import { createShaderWarmup } from "../src/scene/runtime.js";
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
+const linkedPoll = () => new Promise((resolve) => setTimeout(resolve, 25));
 const source = (path) => readFile(new URL(`../src/${path}`, import.meta.url), "utf8");
+const materialsOf = (objects) => {
+  const materials = new Set();
+  objects.traverse(({ material }) => {
+    for (const value of [material].flat()) if (value) materials.add(value);
+  });
+  return materials;
+};
 
 test("start-up User Timing entries carry the babel: prefix and never throw", () => {
   markSceneEvaluated();
@@ -132,15 +141,17 @@ test("scene quality reuses the probe's limits and opens its own context only wit
   assert.equal(contexts[0].options.powerPreference, "default");
 });
 
-function createRendering(rendererOverrides = {}) {
+function createRendering(rendererOverrides = {}, renderingOverrides = {}) {
   const calls = [];
   let target = "screen";
   let rendererOptions = null;
   const renderer = {
     capabilities: { getMaxAnisotropy: () => 8 },
+    debug: {},
     domElement: {},
     extensions: { has: (name) => name === "KHR_parallel_shader_compile" },
     shadowMap: {},
+    properties: { get: () => ({ currentProgram: { isReady: () => true } }) },
     getContext: () => ({ isContextLost: () => false }),
     getRenderTarget: () => target,
     setClearColor() {},
@@ -148,9 +159,9 @@ function createRendering(rendererOverrides = {}) {
       target = next;
       calls.push(["target", next]);
     },
-    compileAsync(scene, camera) {
+    compile(scene, camera) {
       calls.push(["compile", target, scene, camera]);
-      return Promise.resolve(scene);
+      return materialsOf(scene);
     },
     ...rendererOverrides,
   };
@@ -193,6 +204,7 @@ function createRendering(rendererOverrides = {}) {
       SHADOW_CAMERA_HALF_EXTENT: 34,
       SHADOW_CAMERA_NEAR: 0.5,
     },
+    ...renderingOverrides,
   });
   return { calls, rendering, rendererOptions, getTarget: () => target };
 }
@@ -200,6 +212,10 @@ function createRendering(rendererOverrides = {}) {
 test("shader warm-up compiles against the composer's scene target and always settles", async () => {
   const ready = createRendering();
   assert.equal(ready.rendererOptions.powerPreference, "default");
+  assert.equal(ready.rendering.renderer.debug.checkShaderErrors, false);
+  const diagnostic = createRendering({}, { debugShaders: true });
+  assert.equal(diagnostic.rendering.renderer.debug.checkShaderErrors, true);
+  diagnostic.rendering.dispose();
   assert.equal(await ready.rendering.compileShaders(), true);
   assert.deepEqual(ready.calls[0], ["post"], "the crossfade's programs link in the same task");
   const compile = ready.calls.find(([kind]) => kind === "compile");
@@ -208,21 +224,49 @@ test("shader warm-up compiles against the composer's scene target and always set
   assert.equal(compile[3], ready.rendering.camera);
   assert.equal(ready.getTarget(), "screen", "the previous target is restored");
 
-  const rejected = createRendering({ compileAsync: () => Promise.reject(new Error("lost")) });
+  const rejected = createRendering({
+    compile: () => new Set([{}]),
+    properties: {
+      get: () => ({
+        currentProgram: {
+          isReady() {
+            throw new Error("lost");
+          },
+        },
+      }),
+    },
+  });
   assert.equal(await rejected.rendering.compileShaders(), false);
 
   const throwing = createRendering({
-    compileAsync() {
+    compile() {
       throw new Error("compile failed");
     },
   });
   assert.equal(await throwing.rendering.compileShaders(), false);
   assert.equal(throwing.getTarget(), "screen");
 
-  const stalled = createRendering({ compileAsync: () => new Promise(() => {}) });
+  let stalledReads = 0;
+  const stalled = createRendering({
+    compile: () => new Set([{}]),
+    properties: {
+      get: () => ({
+        currentProgram: {
+          isReady: () => {
+            stalledReads++;
+            return false;
+          },
+        },
+      }),
+    },
+  });
   assert.equal(await stalled.rendering.compileShaders(5), false, "a stalled poll times out");
+  await linkedPoll();
+  const readsAfterTimeout = stalledReads;
+  await linkedPoll();
+  assert.equal(stalledReads, readsAfterTimeout, "the underlying poll ends too");
 
-  const unsupported = createRendering({ compileAsync: undefined });
+  const unsupported = createRendering({ compile: undefined });
   assert.equal(await unsupported.rendering.compileShaders(), false);
 
   // Without parallel compilation the draw links anyway, so there is nothing to
@@ -247,10 +291,10 @@ test("shader warm-up uploads visible maps; a quality step links its shadow varia
   let rendering = null;
   const setup = createRendering({
     initTexture: (texture) => uploaded.push(texture.name),
-    compileAsync(scene) {
+    compile(scene) {
       const { fill, sun } = rendering.lights;
       compiled.push([rendering.renderer.shadowMap.enabled, sun.castShadow, fill.visible]);
-      return Promise.resolve(scene);
+      return materialsOf(scene);
     },
   });
   rendering = setup.rendering;
@@ -310,6 +354,52 @@ test("shader warm-up uploads visible maps; a quality step links its shadow varia
   assert.equal(await rendering.prepareQuality(balanced), true);
 });
 
+test("the first draw waits for compositor and caster depth programs without changing live materials", async () => {
+  const compiles = [];
+  const programs = new WeakMap();
+  let finishDepth, finishPost;
+  const { rendering } = createRendering({
+    properties: { get: (material) => ({ currentProgram: programs.get(material) }) },
+    compile(subject) {
+      compiles.push(subject);
+      let ready = !subject.isGroup;
+      if (subject.isGroup) finishDepth = () => (ready = true);
+      const materials = materialsOf(subject);
+      for (const material of materials) programs.set(material, { isReady: () => ready });
+      return materials;
+    },
+  });
+  rendering.postprocessPipeline.compile = () => new Promise((resolve) => (finishPost = resolve));
+  rendering.renderer.shadowMap.enabled = true;
+  rendering.lights.sun.castShadow = true;
+  const material = new MeshStandardMaterial({ alphaTest: 0.4 });
+  const geometry = new BoxGeometry();
+  const caster = new Mesh(geometry, material);
+  caster.castShadow = true;
+  rendering.homeScene.add(caster);
+  let result = null;
+  const ready = rendering.compileShaders().then((value) => (result = value));
+  const depth = compiles.find((subject) => subject.isGroup).children[0];
+  assert.equal(depth.geometry, geometry);
+  assert.notEqual(depth.material, material);
+  assert.equal(depth.material.depthPacking, RGBADepthPacking);
+  assert.equal(depth.material.alphaTest, 0.4);
+  assert.equal(caster.parent, rendering.homeScene);
+  assert.equal(caster.material, material);
+  finishDepth();
+  await flush();
+  assert.equal(result, null, "compositor still linking");
+  finishPost(true);
+  await ready;
+  assert.equal(result, true);
+  let disposed = 0;
+  depth.material.addEventListener("dispose", () => disposed++);
+  rendering.dispose();
+  assert.equal(disposed, 1, "the retained warm-up program lease is freed once");
+  material.dispose();
+  geometry.dispose();
+});
+
 test("a quality step returns materials to their drawn programs and waits for its own", async () => {
   // compile() moves every material to the step's variant, which links in the
   // background; a draw with it would block until it has.
@@ -317,11 +407,11 @@ test("a quality step returns materials to their drawn programs and waits for its
   const current = new WeakMap();
   const { rendering } = createRendering({
     properties: { get: (material) => ({ currentProgram: current.get(material) }) },
-    compileAsync(scene) {
+    compile(scene) {
       scene.traverse(({ material }) => {
         if (material) current.set(material, { isReady: () => !linking });
       });
-      return Promise.resolve(scene);
+      return materialsOf(scene);
     },
   });
   const geometry = new BoxGeometry();
@@ -334,6 +424,8 @@ test("a quality step returns materials to their drawn programs and waits for its
   rendering.prepareQuality(high).then((ready) => (settled = ready));
   assert.ok(unlit.version > versions[1], "an unlit material leaves the linking variant");
   assert.ok(lit.version > versions[0]);
+  current.set(lit, { isReady: () => true });
+  current.set(unlit, { isReady: () => true });
   await new Promise((resolve) => setTimeout(resolve, 40));
   assert.equal(settled, null, "the step waits for its own programs, not the restored ones");
   linking = false;
@@ -345,6 +437,60 @@ test("a quality step returns materials to their drawn programs and waits for its
   const serial = createRendering({ extensions: { has: () => false } });
   assert.equal(await serial.rendering.prepareQuality(high), false);
   assert.deepEqual(serial.calls, [["post"]]);
+});
+
+test("pending scene and depth polls retire before disposal or context replacement", async () => {
+  for (const interruption of ["dispose", "physical loss", "restored before poll"]) {
+    const handlers = new Map();
+    let lost = false,
+      freed = false,
+      linking = true,
+      reads = 0;
+    const { rendering } = createRendering({
+      domElement: {
+        addEventListener: (type, listener) => handlers.set(type, listener),
+        removeEventListener: (type) => handlers.delete(type),
+      },
+      getContext: () => ({ isContextLost: () => lost }),
+      properties: {
+        get: () => ({
+          currentProgram: {
+            isReady() {
+              reads++;
+              assert.equal(freed, false, "never query a freed program");
+              return !linking;
+            },
+          },
+        }),
+      },
+      compileAsync() {
+        assert.fail("r160's uncancellable poll must not start");
+      },
+    });
+    const geometry = new BoxGeometry();
+    const material = new MeshStandardMaterial();
+    const caster = new Mesh(geometry, material);
+    caster.castShadow = true;
+    rendering.homeScene.add(caster);
+    rendering.renderer.shadowMap.enabled = rendering.lights.sun.castShadow = true;
+    const pending = rendering.compileShaders(100);
+    assert.equal(reads, 2, "both color and shadow programs began linking");
+    if (interruption === "dispose") rendering.dispose();
+    else if (interruption === "physical loss") lost = true;
+    else handlers.get("webglcontextlost")({ preventDefault() {} });
+    freed = true;
+    const before = reads;
+    assert.equal(await pending, false, interruption);
+    await linkedPoll();
+    assert.equal(reads, before, "the old program objects are never polled again");
+    if (interruption !== "dispose") {
+      lost = freed = linking = false;
+      assert.equal(await rendering.compileShaders(), true, "a fresh generation can prepare");
+      rendering.dispose();
+    }
+    geometry.dispose();
+    material.dispose();
+  }
 });
 
 test("shader warm-ups compile in their own task, hide waiting subjects and always settle", async () => {
@@ -473,99 +619,126 @@ function createGround(createGroundTextures, { tier = "high", groundSize = 1024 }
 
 const nextTask = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-test("the film ground starts from a flat preview and paints in full in the next task", async (t) => {
+test("the hidden film ground keeps its preview until a visible procedural surface is needed", async () => {
   const createGroundTextures = await loadGroundTextures();
-  const originalFetch = globalThis.fetch;
-  const requested = [];
-  globalThis.fetch = (url) => {
-    requested.push(url);
-    return Promise.reject(new Error("offline"));
-  };
-  t.after(() => {
-    globalThis.fetch = originalFetch;
-  });
-
   const film = createGround(createGroundTextures);
   assert.deepEqual(film.sizes(), [4, 4], "initialization fills only a preview");
   assert.equal(film.draws.filter((draw) => draw !== "fillRect").length, 0);
+  await nextTask();
+  assert.deepEqual(
+    film.sizes(),
+    [4, 4],
+    "a hidden canvas paints no unused fallback in the next task",
+  );
+
   const disposed = [];
   film.ground.colorMap.addEventListener("dispose", () => disposed.push("color"));
   film.ground.bumpMap.addEventListener("dispose", () => disposed.push("bump"));
   const versions = [film.ground.colorMap.version, film.ground.bumpMap.version];
-
-  await nextTask();
-  assert.deepEqual(
-    film.sizes(),
-    [1024, 1024],
-    "the reveal, a film reset and a fallback all find the painted ground",
+  assert.equal(
+    film.ground.ensureProcedural(),
+    true,
+    "the first visible procedural frame paints first",
   );
+  assert.deepEqual(film.sizes(), [1024, 1024]);
   assert.ok(film.draws.includes("arc") && film.draws.includes("ellipse"));
   assert.deepEqual(disposed.sort(), ["bump", "color"], "grown canvases get fresh GPU storage");
   assert.ok(
     film.ground.colorMap.version > versions[0] && film.ground.bumpMap.version > versions[1],
   );
   assert.equal(film.invalidations, 1);
+  assert.equal(film.ground.ensureProcedural(), false, "the complete paint is reused");
+  film.ground.dispose();
 
-  assert.deepEqual(requested, [], "no ground map downloads before the film activates");
-  film.ground.setFilmActive(true);
-  await flush();
-  await flush();
-  assert.deepEqual(
-    requested,
-    [
-      "/images/materials/slate-color-1024.webp",
-      "/images/materials/slate-normal-1024.webp",
-      "/images/materials/slate-detail-512.webp",
-      "/images/materials/slate-grit-1024.webp",
-      "/images/materials/slate-relief-1024.webp",
-    ],
-    "the film slate requests only its own five maps",
-  );
-  assert.ok(
-    film.statuses.some(
-      (status) => status.status === "fallback" && status.material === "Cracked Desert Ground",
-    ),
-  );
-  assert.equal(film.invalidations, 1, "a slate fallback finds the ground already painted");
-  assert.equal(film.ground.ensureProcedural(), false, "the full paint happens once");
-
-  // A fallback before that task paints at once, and the task then has nothing to do.
-  const early = createGround(createGroundTextures);
-  assert.equal(early.ground.ensureProcedural(), true);
-  assert.deepEqual(early.sizes(), [1024, 1024]);
-  const earlyDraws = early.draws.length;
-  await nextTask();
-  assert.equal(early.draws.length, earlyDraws);
-  assert.equal(early.invalidations, 1);
-
-  const disposedEarly = createGround(createGroundTextures);
-  disposedEarly.ground.dispose();
-  await nextTask();
-  assert.deepEqual(disposedEarly.sizes(), [4, 4], "disposal cancels the pending paint");
-  assert.equal(disposedEarly.invalidations, 0);
-
-  // Balanced takes the same preview and its 512 slate pair.
-  requested.length = 0;
-  const balanced = createGround(createGroundTextures, { tier: "balanced", groundSize: 768 });
-  assert.deepEqual(balanced.sizes(), [4, 4]);
-  balanced.ground.applyQuality({ tier: "balanced" }, { assetTier: "balanced" });
-  balanced.ground.setFilmActive(true);
-  await flush();
-  await flush();
-  assert.deepEqual(requested, [
-    "/images/materials/slate-color-512.webp",
-    "/images/materials/slate-normal-512.webp",
-    "/images/materials/slate-detail-512.webp",
-    "/images/materials/slate-grit-512.webp",
-    "/images/materials/slate-relief-512.webp",
-  ]);
-  balanced.ground.dispose();
-  await nextTask();
-
-  // A profile outside high and balanced paints in full at once.
   const full = createGround(createGroundTextures, { tier: "low", groundSize: 512 });
   assert.deepEqual(full.sizes(), [512, 512]);
   assert.equal(full.ground.ensureProcedural(), false);
+  full.ground.dispose();
+});
+
+function recordingGroundRequests(t) {
+  const originalFetch = globalThis.fetch;
+  const originalBitmap = globalThis.createImageBitmap;
+  const requests = [];
+  globalThis.fetch = (url, { signal }) =>
+    new Promise((resolve, reject) => {
+      requests.push({ url, signal, resolve, reject });
+    });
+  globalThis.createImageBitmap = async ({ url }) => {
+    const size = Number(url.match(/-(\d+)\.webp$/)[1]);
+    return { width: size, height: size, close() {} };
+  };
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+    if (originalBitmap === undefined) delete globalThis.createImageBitmap;
+    else globalThis.createImageBitmap = originalBitmap;
+  });
+  return requests;
+}
+
+test("successful slate maps avoid full procedural painting until a real film reset", async (t) => {
+  const createGroundTextures = await loadGroundTextures();
+  const requests = recordingGroundRequests(t);
+  for (const tier of ["high", "balanced"]) {
+    requests.length = 0;
+    const film = createGround(createGroundTextures, { tier });
+    assert.equal(requests.length, 0, "inactive film requests no maps");
+    film.ground.setFilmActive(true);
+    const size = tier === "high" ? 1024 : 512;
+    assert.deepEqual(
+      requests.map(({ url }) => url),
+      [
+        `/images/materials/slate-color-${size}.webp`,
+        `/images/materials/slate-normal-${size}.webp`,
+        "/images/materials/slate-detail-512.webp",
+        `/images/materials/slate-grit-${size}.webp`,
+        `/images/materials/slate-relief-${size}.webp`,
+      ],
+    );
+    requests.forEach(({ url, resolve }) => resolve({ ok: true, blob: async () => ({ url }) }));
+    await flush();
+    assert.equal(film.statuses.at(-1).status, "ready");
+    assert.notEqual(film.published.at(-1).colorMap, film.ground.colorMap);
+    assert.equal(film.ground.ensureProcedural(), false, "first reveal already has slate");
+    await nextTask();
+    assert.deepEqual(film.sizes(), [4, 4], "successful slate never grows the unused canvases");
+    assert.equal(film.draws.filter((draw) => draw !== "fillRect").length, 0);
+
+    film.ground.setFilmActive(false);
+    assert.deepEqual(film.sizes(), [1024, 1024], "a genuine reset prepares the procedural surface");
+    assert.equal(film.published.at(-1).colorMap, film.ground.colorMap);
+    assert.ok(film.draws.includes("arc") && film.draws.includes("ellipse"));
+    assert.equal(film.invalidations, 1);
+    film.ground.dispose();
+  }
+});
+
+test("a real slate failure paints once while disposal cancels late fallback work", async (t) => {
+  const createGroundTextures = await loadGroundTextures();
+  const requests = recordingGroundRequests(t);
+  const failed = createGround(createGroundTextures);
+  failed.ground.setFilmActive(true);
+  requests.forEach(({ reject }) => reject(new Error("offline")));
+  await flush();
+  assert.equal(failed.statuses.at(-1).status, "fallback");
+  assert.deepEqual(failed.sizes(), [1024, 1024], "fallback paints before exposing its surface");
+  assert.ok(failed.draws.includes("arc") && failed.draws.includes("ellipse"));
+  assert.equal(failed.invalidations, 1);
+  assert.equal(failed.ground.ensureProcedural(), false);
+  failed.ground.dispose();
+
+  requests.length = 0;
+  const cancelled = createGround(createGroundTextures);
+  cancelled.ground.setFilmActive(true);
+  cancelled.ground.dispose();
+  assert.ok(requests.every(({ signal }) => signal.aborted));
+  requests.forEach(({ reject }) => reject(new Error("cancelled")));
+  await flush();
+  assert.equal(cancelled.ground.ensureProcedural(), false, "a disposed ground never paints");
+  cancelled.ground.setFilmActive(false);
+  assert.deepEqual(cancelled.sizes(), [4, 4]);
+  assert.equal(cancelled.invalidations, 0);
+  assert.equal(cancelled.draws.filter((draw) => draw !== "fillRect").length, 0);
 });
 
 test("a step between the tiers' shadow map sizes frees the drawn map for one of the new size", () => {

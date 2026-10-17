@@ -18,8 +18,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // can preload them beside the entry (see buildScripts).
 const APP_ENTRY = "src/app.js";
 const SCENE_ENTRY = "src/scene-entry.js";
+const WEBGL_PROBE_ENTRY = "src/webgl-probe-worker.js";
 const SCRIPT_ENTRIES = [
   { basename: "scene", entry: SCENE_ENTRY, split: true },
+  { basename: "webgl-probe", entry: WEBGL_PROBE_ENTRY },
   { basename: "app", entry: APP_ENTRY },
 ];
 // esbuild names split output here only to resolve import paths; with
@@ -264,6 +266,7 @@ async function buildScriptBundle(
   architecture,
   materials,
   sceneModulePreloads,
+  webglProbeUrl,
 ) {
   const options = scriptBuildOptions(entry, split);
   const { urls, sizes } = architecture ?? (await architectureAssetManifest());
@@ -288,6 +291,7 @@ async function buildScriptBundle(
           // (src/ui/scene-loader.js) counts each download against.
           __BABEL_ARCHITECTURE_PREFETCH_BYTES__: JSON.stringify(towerAndTree(sizes)),
           __BABEL_SCENE_MODULE_PRELOADS__: JSON.stringify(sceneModulePreloads ?? []),
+          __BABEL_WEBGL_PROBE_URL__: JSON.stringify(webglProbeUrl ?? ""),
         };
   const result = await build(options);
   if (split) return fingerprintChunks({ basename, entry }, result);
@@ -304,14 +308,22 @@ async function buildScriptBundle(
 async function buildScripts(architecture, materials) {
   const built = [];
   let sceneModulePreloads;
+  let webglProbeUrl;
   for (const script of SCRIPT_ENTRIES) {
-    const chunks = await buildScriptBundle(script, architecture, materials, sceneModulePreloads);
+    const chunks = await buildScriptBundle(
+      script,
+      architecture,
+      materials,
+      sceneModulePreloads,
+      webglProbeUrl,
+    );
     if (script.entry === SCENE_ENTRY) {
       sceneModulePreloads = chunks
         .slice(1)
         .filter((chunk) => !chunk.lazy)
         .map(({ name }) => `/scripts/${name}`);
     }
+    if (script.entry === WEBGL_PROBE_ENTRY) webglProbeUrl = `/scripts/${chunks[0].name}`;
     built.push({ script, chunks });
   }
   return built;

@@ -434,7 +434,7 @@ test("CSS asset URLs and bytes are portable across checkout line endings", async
     ]) {
       await writeFile(path.join(fixture, file), "fixture\n");
     }
-    for (const file of ["app.js", "scene-entry.js"]) {
+    for (const file of ["app.js", "scene-entry.js", "webgl-probe-worker.js"]) {
       await writeFile(path.join(fixture, "src", file), "void 0;\n");
     }
     for (const file of ["index.html", "404.html"]) {

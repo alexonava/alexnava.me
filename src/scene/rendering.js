@@ -1,12 +1,18 @@
 import {
   AmbientLight,
+  BackSide,
   ColorManagement,
   DirectionalLight,
   Fog,
+  FrontSide,
+  Group,
   HemisphereLight,
+  Mesh,
+  MeshDepthMaterial,
   NoToneMapping,
   PCFSoftShadowMap,
   PerspectiveCamera,
+  RGBADepthPacking,
   Scene,
   SRGBColorSpace,
   WebGLRenderer,
@@ -15,26 +21,14 @@ import { createNightEnvironment } from "./night-environment.js";
 import { FILM_LIGHT } from "./film-light.js";
 import { createPostprocessPipeline } from "./postprocess.js";
 import { disposeSceneRuntimeResources } from "./runtime.js";
+import { compilePrograms } from "./shader-programs.js";
 
-// Bounds a warm-up whose materials were disposed mid-poll (compileAsync then
-// never settles); past it the next draw links whatever remains, as before.
+// Past the bound the next draw links whatever remains, as before.
 const SHADER_WARMUP_TIMEOUT_MS = 2000;
-
-// Polls KHR_parallel_shader_compile without blocking: true once every program
-// has linked, false after timeoutMs.
-function whenLinked(programs, timeoutMs = SHADER_WARMUP_TIMEOUT_MS) {
-  return new Promise((resolve) => {
-    let waited = 0;
-    (function poll() {
-      if (programs.every((program) => program.isReady())) resolve(true);
-      else if ((waited += 10) > timeoutMs) resolve(false);
-      else setTimeout(poll, 10);
-    })();
-  });
-}
 
 export function createSceneRendering({
   container,
+  debugShaders = false,
   height,
   lighting,
   onContextLost,
@@ -66,6 +60,10 @@ export function createSceneRendering({
     antialias: false,
     powerPreference: "default",
   });
+  // r160 enables synchronous shader diagnostic queries by default. Keep them
+  // for explicit scene debugging; normal visits do not flush the GPU queue to
+  // read successful program/shader logs on every program's first use.
+  if (renderer.debug) renderer.debug.checkShaderErrors = debugShaders;
   renderer.setClearColor(0, 0);
   renderer.outputColorSpace = SRGBColorSpace;
   renderer.toneMapping = NoToneMapping;
@@ -83,6 +81,7 @@ export function createSceneRendering({
 
   const handleContextLost = (event) => {
     event?.preventDefault?.();
+    compileGeneration += 1;
     // The kept crossfade frame and the linked programs go with the context.
     postprocessPipeline.cancelTransition?.();
     postprocessPipeline.invalidatePrograms?.();
@@ -178,7 +177,10 @@ export function createSceneRendering({
   }
 
   const renderTargets = new Set();
-  let disposed = false;
+  const depthMaterials = new WeakMap();
+  const ownedDepthMaterials = new Set();
+  let disposed = false,
+    compileGeneration = 0;
   let disposeResult = null;
 
   // Uploads every visible map before a shot first shows its subject, so a
@@ -200,6 +202,57 @@ export function createSceneRendering({
         Object.values(material.uniforms ?? {}).forEach((uniform) => upload(uniform?.value));
       }
     });
+  }
+
+  // Three's color compile does not prepare the separate shadow-depth programs.
+  // Borrow only the caster geometry; these probes never draw or enter the live
+  // graph. Keep the depth materials until disposal so their program leases hold
+  // the warmed variants for WebGLShadowMap's first use.
+  function prepareShadowPrograms(valid, timeoutMs) {
+    if (!renderer.shadowMap.enabled || !sunLight.castShadow) return Promise.resolve(true);
+    const probes = new Group();
+    homeScene.traverseVisible((object) => {
+      if (!object.castShadow || !object.isMesh) return;
+      for (const source of [object.material].flat()) {
+        if (!source || source.visible === false) continue;
+        let material = object.customDepthMaterial;
+        if (!material) {
+          material = depthMaterials.get(source);
+          if (!material) {
+            material = new MeshDepthMaterial({ depthPacking: RGBADepthPacking });
+            depthMaterials.set(source, material);
+            ownedDepthMaterials.add(material);
+          }
+          material.side =
+            source.shadowSide ??
+            (source.side === FrontSide
+              ? BackSide
+              : source.side === BackSide
+                ? FrontSide
+                : source.side);
+          for (const key of [
+            "map",
+            "alphaMap",
+            "alphaTest",
+            "wireframe",
+            "displacementMap",
+            "displacementScale",
+            "displacementBias",
+            "clipShadows",
+            "clippingPlanes",
+            "clipIntersection",
+          ])
+            material[key] = source[key];
+        }
+        const probe = new Mesh(object.geometry, material);
+        probe.isInstancedMesh = object.isInstancedMesh;
+        probe.instanceMatrix = object.instanceMatrix;
+        probe.instanceColor = object.instanceColor;
+        probe.isSkinnedMesh = object.isSkinnedMesh;
+        probes.add(probe);
+      }
+    });
+    return compilePrograms(renderer, probes, sunLight.shadow.camera, homeScene, valid, timeoutMs);
   }
 
   const rendering = {
@@ -296,23 +349,27 @@ export function createSceneRendering({
     // Links every scene program before its first draw. Program keys differ for
     // an off-screen target (its color space and tone mapping), where the scene
     // pass draws, so compile() runs against a composer target;
-    // compileAsync then polls KHR_parallel_shader_compile instead of blocking a
+    // captured programs then poll KHR_parallel_shader_compile instead of blocking a
     // frame. Without that extension the draw would link anyway (and Three warns
     // per call), so it is skipped; the crossfade's own programs and the visible
     // maps are prepared either way. Always settles: true once linked, false if
     // skipped, rejected or still pending after timeoutMs.
     compileShaders(timeoutMs = SHADER_WARMUP_TIMEOUT_MS) {
       if (disposed || renderer.getContext?.()?.isContextLost?.()) return Promise.resolve(false);
-      postprocessPipeline.compile?.();
+      const postprocessReady = postprocessPipeline.compile?.();
       uploadTextures();
-      if (typeof renderer.compileAsync !== "function") return Promise.resolve(false);
+      if (typeof renderer.compile !== "function") return Promise.resolve(false);
       if (renderer.extensions?.has?.("KHR_parallel_shader_compile") !== true)
         return Promise.resolve(false);
       const previousTarget = renderer.getRenderTarget?.() ?? null;
+      const generation = compileGeneration;
+      const valid = () => !disposed && generation === compileGeneration;
       let pending;
+      let shadows;
       try {
         renderer.setRenderTarget?.(composer.readBuffer ?? null);
-        pending = renderer.compileAsync(homeScene, camera);
+        pending = compilePrograms(renderer, homeScene, camera, null, valid, timeoutMs);
+        shadows = prepareShadowPrograms(valid, timeoutMs);
       } catch {
         return Promise.resolve(false);
       } finally {
@@ -320,9 +377,9 @@ export function createSceneRendering({
       }
       return new Promise((resolve) => {
         const timer = setTimeout(() => resolve(false), timeoutMs);
-        Promise.resolve(pending)
+        Promise.all([pending, postprocessReady, shadows])
           .then(
-            () => true,
+            (results) => results.every((ready) => ready !== false),
             () => false,
           )
           .then((ready) => {
@@ -349,7 +406,6 @@ export function createSceneRendering({
       if (disposed || unchanged) return Promise.resolve(true);
       shadowMap.enabled = sunLight.castShadow = shadows;
       fillLight.visible = fill;
-      const programs = new Set();
       let compiled;
       try {
         compiled = rendering.compileShaders();
@@ -361,14 +417,11 @@ export function createSceneRendering({
         homeScene.traverse((object) => {
           for (const material of [object.material].flat()) {
             if (!material) continue;
-            const program = renderer.properties?.get(material)?.currentProgram;
-            if (program?.isReady) programs.add(program);
             material.needsUpdate = true;
           }
         });
       }
-      // compileAsync polls the programs the next draw restores; poll the step's.
-      return compiled.then((ready) => ready && whenLinked([...programs]));
+      return compiled;
     },
     applyQuality(nextProfile, { pixelRatio } = {}) {
       if (disposed) return false;
@@ -412,6 +465,8 @@ export function createSceneRendering({
       renderer.domElement?.removeEventListener?.("webglcontextrestored", handleContextRestored);
       homeScene.environment = null;
       environment.dispose();
+      ownedDepthMaterials.forEach((material) => material.dispose());
+      ownedDepthMaterials.clear();
       disposeResult = disposeResources({
         postprocessPipeline,
         renderer,

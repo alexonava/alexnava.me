@@ -50,9 +50,13 @@ import {
   SRGBColorSpace,
   Vector3,
 } from "three";
-import { createArchitectureAssetController } from "./architecture-assets.js";
+import { createArchitectureAssetController, loadArchitectureAsset } from "./architecture-assets.js";
 import { createLanternMount } from "./lantern.js";
-import { createCompleteTowerArchitecture, createTreeArchitecture } from "./architecture.js";
+import {
+  createCompleteTowerArchitecture,
+  createTreeArchitecture,
+  prepareArchitecture,
+} from "./architecture.js";
 import { createSceneAtmosphere } from "./atmosphere.js";
 import { createSceneEnvironment } from "./environment.js";
 import {
@@ -231,6 +235,7 @@ const ORBIT_SPEED = 0.06;
     const subsystemRegistry = createSceneSubsystemRegistry();
     const rendering = createSceneRendering({
       container,
+      debugShaders: qualityControls.debug,
       height: window.innerHeight,
       lighting: lightingConfig,
       onInvalidate() {
@@ -443,6 +448,7 @@ const ORBIT_SPEED = 0.06;
         profile: state.profile,
       });
       subsystemRegistry.register(environmentSystem);
+      const filmDetailReady = environmentSystem.prepareFilmDetail().catch(() => null);
       const environmentRoot = environmentSystem.root;
       const circleGeometry = new CircleGeometry(
           WORLD.GROUND_RADIUS,
@@ -734,6 +740,19 @@ const ORBIT_SPEED = 0.06;
       });
       subsystemRegistry.register(lanternMount);
       const architectureAssets = createArchitectureAssetController({
+        async loadAsset(url, options) {
+          const asset = await loadArchitectureAsset(url, options);
+          if (options.role === "tower" || options.role === "tree")
+            await prepareArchitecture(asset, options);
+          // The environment's own sky and filter programs link while models
+          // download. The synchronous commit then borrows a finished capture,
+          // rather than blocking to introspect shaders in fromScene().
+          if (options.role === "tower")
+            await Promise.all([rendering.environment.ready, filmDetailReady]);
+          // Finish preparation in its own task before the atomic model commit.
+          await new Promise((resolve) => window.setTimeout(resolve, 0));
+          return asset;
+        },
         includeLantern: true,
         onLanternReady: (asset) => lanternMount.stage(asset),
         onTowerReady(assets) {
@@ -1258,6 +1277,9 @@ const ORBIT_SPEED = 0.06;
         if (qualityDebug) qualityDebug.walk = walk?.state ?? null;
         // Drawing while a warm-up links would block on it; the hidden canvas waits.
         if (canvasShown || !shaderWarmup.pending) {
+          // Slate may still be loading at the reveal; keep the first visible
+          // procedural surface detailed without painting an unused fallback.
+          if (!canvasShown && cinematic.ready) groundTextures.ensureProcedural();
           rendering.update();
           if (!firstFrameDrawn) {
             firstFrameDrawn = true;

@@ -108,11 +108,28 @@ async function readSceneStatic() {
   return [...(await sceneScripts()).loaded.values()].join("\n");
 }
 
-test("UI bundle stays under the LCP budget", async () => {
+test("UI and capability worker together stay under the existing LCP budget", async () => {
   const file = await findHashedScript("app");
   const { size } = await stat(file);
-  const kb = size / 1024;
-  assert.ok(kb < 30, `app bundle is ${kb.toFixed(1)} kB; budget is 30 kB`);
+  const worker = await stat(await findHashedScript("webgl-probe"));
+  const kb = (size + worker.size) / 1024;
+  assert.ok(kb < 30, `app and worker total ${kb.toFixed(1)} kB; budget is 30 kB`);
+});
+
+test("the cold WebGL probe is a separate same-origin worker named by the UI", async () => {
+  const worker = await findHashedScript("webgl-probe");
+  const workerSource = await readFile(worker, "utf8");
+  const app = await readFile(await findHashedScript("app"), "utf8");
+  const page = await readFile(path.join(distDir, "index.html"), "utf8");
+  assert.ok(app.includes(`/scripts/${path.basename(worker)}`));
+  assert.ok(
+    !page.includes(path.basename(worker)),
+    "static visitors do not preload or run the worker",
+  );
+  assert.match(workerSource, /postMessage/);
+  assert.match(workerSource, /OffscreenCanvas/);
+  assert.doesNotMatch(workerSource, /gl_Position/, "the capability worker contains no Three.js");
+  assert.deepEqual(chunkImports(workerSource), { static: [], dynamic: [] });
 });
 
 test("scene bundle stays under the deferred-payload budget", async () => {
@@ -133,9 +150,10 @@ test("scene bundle stays under the deferred-payload budget", async () => {
   );
 });
 
-test("the film's optional effects and the walk are the only lazy chunks, and Three.js ships once", async () => {
+test("model preparation, optional effects and the walk are the only lazy chunks, and Three.js ships once", async () => {
   const { entry, loaded, lazy } = await sceneScripts();
   assert.deepEqual(lazy.map((name) => name.replace(/\.[a-f0-9]{8}\.js$/, "")).sort(), [
+    "scene.architecture-prepare",
     "scene.lantern-flame",
     "scene.mountain-build",
     "scene.rock-build",
@@ -152,6 +170,27 @@ test("the film's optional effects and the walk are the only lazy chunks, and Thr
       assert.doesNotMatch(text, /BabelSite/, `${name} carries ordered scene side effects`);
     }
   }
+});
+
+test("cooperative model preparation loads on demand and reuses the scene's Three.js chunk", async () => {
+  const { entry, loaded, lazy } = await sceneScripts();
+  const name = lazy.find((item) => item.startsWith("scene.architecture-prepare."));
+  assert.ok(name);
+  const preparation = await readFile(path.join(scriptsDir, name), "utf8");
+  const statics = [...loaded.values()].join("\n");
+  const app = await readFile(await findHashedScript("app"), "utf8");
+  assert.match(preparation, /Prepared architecture must have no morph targets/);
+  assert.doesNotMatch(statics, /Prepared architecture must have no morph targets/);
+  assert.doesNotMatch(app, /architecture-prepare/);
+  const imports = chunkImports(preparation);
+  assert.deepEqual(imports.dynamic, []);
+  assert.ok(imports.static.length > 0, "preparation imports its Three.js classes");
+  for (const dependency of imports.static)
+    assert.ok(loaded.has(dependency), "preparation reuses the existing Three.js instance");
+  assert.match(
+    loaded.get(entry),
+    new RegExp(`import\\(\\s*"\\./${name.replaceAll(".", "\\.")}"\\s*\\)`),
+  );
 });
 
 test("the optional lantern flame shader stays in its own lazy chunk", async () => {
@@ -264,8 +303,8 @@ test("every published script is named for the hash of its bytes under an immutab
   const scene = names.filter((name) => name.startsWith("scene."));
   assert.ok(scene.length >= 2, "the scene entry and its chunks are published");
   for (const name of names) {
-    // _headers marks /scripts/app.*.js and /scripts/scene.*.js immutable.
-    assert.match(name, /^(?:app|scene)\.(?:[a-z][a-z-]*\.)?[a-f0-9]{8}\.js$/);
+    // Each entry and scene chunk has an immutable rule in _headers.
+    assert.match(name, /^(?:app|scene|webgl-probe)\.(?:[a-z][a-z-]*\.)?[a-f0-9]{8}\.js$/);
     const bytes = await readFile(path.join(scriptsDir, name));
     const hash = createHash("sha256").update(bytes).digest("hex").slice(0, 8);
     assert.ok(name.endsWith(`.${hash}.js`), `${name} must fingerprint its emitted bytes`);
@@ -444,6 +483,7 @@ test("the build refuses a shared scene chunk that would carry first-party module
     await cp(path.join(projectRoot, "tools"), path.join(fixture, "tools"), { recursive: true });
     await mkdir(path.join(fixture, "src"));
     await writeFile(path.join(fixture, "src", "app.js"), "void 0;");
+    await writeFile(path.join(fixture, "src", "webgl-probe-worker.js"), "void 0;");
     // A lazily imported module that shares a registration with the entry moves
     // it into a chunk that would evaluate before the entry's ordered imports.
     await writeFile(
@@ -496,6 +536,7 @@ test("changing only a fixture tower model changes only its URL and size in the U
       'import "./ui/scene-loader.js";\nimport "./main.js";\n',
     );
     await writeFile(path.join(fixture, "src", "scene-entry.js"), "void 0;");
+    await writeFile(path.join(fixture, "src", "webgl-probe-worker.js"), "void 0;");
     async function buildApp() {
       await execFileP(
         process.execPath,

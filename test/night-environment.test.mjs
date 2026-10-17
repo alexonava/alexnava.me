@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
-import { BackSide, HalfFloatType, Vector3 } from "three";
+import { BackSide, HalfFloatType, PlaneGeometry, ShaderMaterial, Texture, Vector3 } from "three";
 import { createEstateSkyMaterial } from "../src/scene/estate-sky.js";
 import { createNightEnvironment, NIGHT_SKY } from "../src/scene/night-environment.js";
 import { createSceneRendering } from "../src/scene/rendering.js";
@@ -37,6 +37,288 @@ function parallelRenderer() {
     },
   };
 }
+
+test("the first environment capture waits for both sky and filter programs and caches its exact result", async () => {
+  const renderer = parallelRenderer();
+  const links = [];
+  renderer.compileAsync = (scene) => new Promise((resolve) => links.push({ scene, resolve }));
+  const tasks = [];
+  const geometry = new PlaneGeometry(2, 2);
+  const blur = new ShaderMaterial();
+  const texture = new Texture();
+  let draws = 0,
+    disposed = 0;
+  const environment = createNightEnvironment(renderer, {
+    schedule: (task) => tasks.push(task),
+    createGenerator: () => ({
+      _setSize() {},
+      _allocateTargets: () => ({ dispose() {} }),
+      _lodPlanes: [geometry],
+      _blurMaterial: blur,
+      fromScene() {
+        draws++;
+        return { texture, dispose: () => disposed++ };
+      },
+      dispose() {},
+    }),
+  });
+  const sky = skyMaterial();
+  const flush = () => new Promise((resolve) => setImmediate(resolve));
+  environment.setSky(sky);
+  assert.equal(draws, 0);
+  assert.equal(links.length, 1);
+  links[0].resolve();
+  await flush();
+  tasks.shift()();
+  await flush();
+  assert.equal(links.length, 2);
+  assert.equal(draws, 0, "neither a pending sky nor filter program is first used by a draw");
+  links[1].resolve();
+  await flush();
+  tasks.shift()();
+  assert.equal(await environment.ready, texture);
+  assert.equal(environment.status, "ready");
+  assert.equal(draws, 1);
+  assert.equal(environment.capture(), texture, "the model commit reuses the prepared capture");
+  assert.equal(draws, 1);
+  environment.dispose();
+  assert.equal(disposed, 1);
+  geometry.dispose();
+  blur.dispose();
+  sky.dispose();
+  texture.dispose();
+});
+
+test("disposing during environment preparation never starts a late capture", async () => {
+  const renderer = parallelRenderer();
+  let settle;
+  renderer.compileAsync = () => new Promise((resolve) => (settle = resolve));
+  let generators = 0;
+  const environment = createNightEnvironment(renderer, {
+    createGenerator: () => {
+      generators++;
+      throw new Error("must not capture");
+    },
+  });
+  const sky = skyMaterial();
+  environment.setSky(sky);
+  environment.dispose();
+  assert.equal(await environment.ready, null);
+  assert.equal(generators, 0);
+  assert.equal(environment.capture(), null, "a disposed environment cannot force a capture");
+  settle();
+  sky.dispose();
+});
+
+test("disposing during the filter link settles readiness but waits for an adapter's raw poll before freeing it", async () => {
+  const renderer = parallelRenderer();
+  const links = [];
+  renderer.compileAsync = (scene) => new Promise((resolve) => links.push({ scene, resolve }));
+  const tasks = [];
+  const geometry = new PlaneGeometry(2, 2);
+  const blur = new ShaderMaterial();
+  let draws = 0,
+    disposals = 0;
+  const environment = createNightEnvironment(renderer, {
+    schedule: (task) => tasks.push(task),
+    createGenerator: () => ({
+      _setSize() {},
+      _allocateTargets: () => ({ dispose() {} }),
+      _lodPlanes: [geometry],
+      _blurMaterial: blur,
+      fromScene() {
+        draws++;
+        throw new Error("must not draw after disposal");
+      },
+      dispose() {
+        disposals++;
+      },
+    }),
+  });
+  const sky = skyMaterial();
+  const flush = () => new Promise((resolve) => setImmediate(resolve));
+  environment.setSky(sky);
+  links[0].resolve();
+  await flush();
+  tasks.shift()();
+  await flush();
+  assert.equal(links.length, 2);
+  environment.dispose();
+  assert.equal(await environment.ready, null);
+  assert.equal(disposals, 0, "the compileAsync-only adapter may still read its materials");
+  assert.equal(draws, 0);
+  links[1].resolve();
+  await flush();
+  assert.equal(disposals, 1);
+  geometry.dispose();
+  blur.dispose();
+  sky.dispose();
+});
+
+test("a never-settling sky link times out and leaves the normal capture available", async () => {
+  const renderer = parallelRenderer();
+  renderer.compileAsync = () => new Promise(() => {});
+  const texture = new Texture();
+  let captures = 0;
+  const environment = createNightEnvironment(renderer, {
+    prepareTimeoutMs: 5,
+    createGenerator: () => ({
+      fromScene() {
+        captures++;
+        return { texture, dispose() {} };
+      },
+      dispose() {},
+    }),
+  });
+  const sky = skyMaterial();
+  environment.setSky(sky);
+  assert.equal(await environment.ready, null);
+  assert.equal(captures, 0, "timeout alone never forces a blocking draw");
+  assert.equal(environment.capture(), texture, "the film may use the established capture path");
+  assert.equal(captures, 1);
+  environment.dispose();
+  sky.dispose();
+  texture.dispose();
+});
+
+test("a lost context settles a pending environment without a late draw", async () => {
+  const renderer = parallelRenderer();
+  let lost = false;
+  renderer.getContext = () => ({ isContextLost: () => lost });
+  renderer.compileAsync = () => new Promise(() => {});
+  let draws = 0;
+  const environment = createNightEnvironment(renderer, {
+    createGenerator: () => {
+      draws++;
+      throw new Error("must not enter a lost context");
+    },
+  });
+  const sky = skyMaterial();
+  environment.setSky(sky);
+  lost = true;
+  assert.equal(await environment.ready, null);
+  assert.equal(environment.capture(), null);
+  assert.equal(draws, 0);
+  environment.dispose();
+  sky.dispose();
+});
+
+test("context restoration can capture after preparation lost its context before making a target", async () => {
+  const renderer = parallelRenderer();
+  let lost = false;
+  renderer.getContext = () => ({ isContextLost: () => lost });
+  renderer.compileAsync = () => new Promise(() => {});
+  const texture = new Texture();
+  let draws = 0;
+  const environment = createNightEnvironment(renderer, {
+    createGenerator: () => ({
+      fromScene() {
+        draws++;
+        return { texture, dispose() {} };
+      },
+      dispose() {},
+    }),
+  });
+  const sky = skyMaterial();
+  environment.setSky(sky);
+  lost = true;
+  assert.equal(await environment.ready, null);
+  lost = false;
+  assert.equal(environment.restore(), texture);
+  assert.equal(await environment.ready, texture, "restored readiness reports the current target");
+  assert.equal(draws, 1);
+  environment.dispose();
+  sky.dispose();
+  texture.dispose();
+});
+
+test("a never-settling filter link also times out without freeing an adapter's polled materials", async () => {
+  const renderer = parallelRenderer();
+  const links = [];
+  renderer.compileAsync = () => new Promise((resolve) => links.push(resolve));
+  const geometry = new PlaneGeometry(2, 2);
+  const blur = new ShaderMaterial();
+  let draws = 0,
+    disposals = 0;
+  const environment = createNightEnvironment(renderer, {
+    prepareTimeoutMs: 5,
+    createGenerator: () => ({
+      _setSize() {},
+      _allocateTargets: () => ({ dispose() {} }),
+      _lodPlanes: [geometry],
+      _blurMaterial: blur,
+      fromScene() {
+        draws++;
+        throw new Error("timeout must not force a draw");
+      },
+      dispose() {
+        disposals++;
+      },
+    }),
+  });
+  const sky = skyMaterial();
+  environment.setSky(sky);
+  links[0]();
+  assert.equal(await environment.ready, null);
+  assert.equal(links.length, 2);
+  assert.equal(draws, 0);
+  environment.dispose();
+  assert.equal(disposals, 0);
+  links[1]();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(disposals, 1);
+  geometry.dispose();
+  blur.dispose();
+  sky.dispose();
+});
+
+test("the real renderer's bounded poll snapshots programs instead of polling mutable material properties", async () => {
+  const renderer = parallelRenderer();
+  const properties = new Map();
+  renderer.properties = { get: (material) => properties.get(material) };
+  renderer.compileAsync = () => {
+    throw new Error("the real renderer must not start r160's unbounded material poll");
+  };
+  let calls = 0,
+    skyReady = false;
+  renderer.compile = (scene) => {
+    const materials = new Set();
+    scene.traverse((object) => {
+      if (!object.material) return;
+      materials.add(object.material);
+      const sky = calls === 0;
+      properties.set(object.material, { currentProgram: { isReady: () => !sky || skyReady } });
+    });
+    calls++;
+    return materials;
+  };
+  const geometry = new PlaneGeometry(2, 2);
+  const blur = new ShaderMaterial();
+  const texture = new Texture();
+  const environment = createNightEnvironment(renderer, {
+    createGenerator: () => ({
+      _setSize() {},
+      _allocateTargets: () => ({ dispose() {} }),
+      _lodPlanes: [geometry],
+      _blurMaterial: blur,
+      fromScene: () => ({ texture, dispose() {} }),
+      dispose() {},
+    }),
+  });
+  const sky = skyMaterial();
+  environment.setSky(sky);
+  assert.equal(calls, 1);
+  for (const material of properties.keys())
+    properties.set(material, { currentProgram: { isReady: () => false } });
+  skyReady = true;
+  assert.equal(await environment.ready, texture);
+  assert.equal(calls, 2, "sky and filter groups both use the owned readiness poll");
+  environment.dispose();
+  geometry.dispose();
+  blur.dispose();
+  sky.dispose();
+  texture.dispose();
+});
 
 test("the environment is the film sky shell's own shader, with the moon's glow, the ranges and the ground", () => {
   const renderer = parallelRenderer(),

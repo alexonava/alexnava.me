@@ -90,6 +90,8 @@ Another process holds the port; `npm run preview` also uses 4173. Start on anoth
 - `Build failed; keeping the last successful output.`, followed by `Builder exited with 1.`, means the last edit broke the build; `dist/` still serves the previous output and the watcher keeps watching. The build's own message ([below](#the-build-fails)) is printed above those lines. Fix it and save again.
 - A failed first build stops `npm run dev` and `npm run watch`; fix the error and start the command again.
 
+The initial capability check normally runs in `/scripts/webgl-probe.HASH.js`. A blocked worker, worker error, malformed reply, no worker WebGL, or a 2 s timeout falls back to the document canvas probe. Check that request and `worker-src 'self'` when diagnosing startup; a worker failure alone should not suppress a capable document scene. The loading line starts only after this gate selects a live tier.
+
 ## The build fails
 
 `npm run build:dist` stops with these messages from [build.mjs](../build.mjs) and [tools/build-output.mjs](../tools/build-output.mjs); `npm run verify` builds only the scripts, so it reports only the chunk messages. Under `npm run dev` or `npm run watch` the same message comes from the child build, and the watcher carries on ([above](#a-change-does-not-show-in-development)).

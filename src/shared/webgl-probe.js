@@ -1,4 +1,4 @@
-// WebGL feature probe shared between the UI boot path and the scene bundle.
+// WebGL feature probe shared by UI boot, its one-shot worker and the scene.
 //
 // `main.js` calls this before triggering the scene-bundle download so we skip
 // the network cost on browsers without hardware WebGL. `scene/helpers.js`
@@ -6,7 +6,8 @@
 // The cached result also carries the texture limits the quality tier reads,
 // so the scene does not open a second probe context for them.
 (() => {
-  const site = (window.BabelSite = window.BabelSite || {});
+  const scope = typeof window !== "undefined" ? window : globalThis;
+  const site = (scope.BabelSite = scope.BabelSite || {});
   const shared = (site.shared = site.shared || {});
 
   // The scene entry also imports this module. Keep the first implementation
@@ -21,6 +22,7 @@
   const SOFTWARE_RENDERER_PATTERN =
     /swiftshader|llvmpipe|software (?:rasterizer|renderer)|microsoft basic render driver/i;
   let cachedCapabilities = null;
+  let preparation = null;
 
   function releaseProbeContext(gl) {
     try {
@@ -83,12 +85,15 @@
 
     let gl = null;
     try {
-      if (!window.WebGLRenderingContext && !window.WebGL2RenderingContext) {
+      if (!scope.WebGLRenderingContext && !scope.WebGL2RenderingContext) {
         cachedCapabilities = Object.freeze({ available: false, softwareRenderer: false });
         return cachedCapabilities;
       }
 
-      const probe = document.createElement("canvas");
+      const probe =
+        typeof document !== "undefined"
+          ? document.createElement("canvas")
+          : new scope.OffscreenCanvas(1, 1);
       if (!probe || typeof probe.getContext !== "function") {
         cachedCapabilities = Object.freeze({ available: false, softwareRenderer: false });
         return cachedCapabilities;
@@ -96,7 +101,7 @@
 
       // The ambient scene does not need a discrete GPU; this matches the renderer.
       const options = { powerPreference: "default" };
-      if (window.WebGL2RenderingContext) gl = tryGetContext(probe, "webgl2", options);
+      if (scope.WebGL2RenderingContext) gl = tryGetContext(probe, "webgl2", options);
       gl =
         gl || tryGetContext(probe, "webgl", options) || tryGetContext(probe, "experimental-webgl");
 
@@ -117,6 +122,63 @@
     } finally {
       releaseProbeContext(gl);
     }
+  };
+
+  // Boot alone uses this async companion. Existing scene guards keep their
+  // synchronous API and reuse the same frozen result once the worker answers.
+  // A worker's missing context does not prove a document canvas cannot work.
+  shared.prepareWebGLCapabilities = function prepareWebGLCapabilities() {
+    if (cachedCapabilities) return cachedCapabilities;
+    if (preparation) return preparation;
+    const url = typeof __BABEL_WEBGL_PROBE_URL__ !== "undefined" ? __BABEL_WEBGL_PROBE_URL__ : "";
+    if (
+      !url ||
+      (!scope.WebGLRenderingContext && !scope.WebGL2RenderingContext) ||
+      typeof scope.Worker !== "function" ||
+      typeof scope.OffscreenCanvas !== "function"
+    ) {
+      return shared.getWebGLCapabilities();
+    }
+    preparation = new Promise((resolve) => {
+      let worker = null;
+      let timer = null;
+      let settled = false;
+      const finish = (capabilities) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        worker?.terminate();
+        if (
+          !cachedCapabilities &&
+          capabilities?.available === true &&
+          typeof capabilities.softwareRenderer === "boolean" &&
+          Number.isFinite(capabilities.maxTextureSize) &&
+          capabilities.maxTextureSize >= 0 &&
+          Number.isFinite(capabilities.maxAnisotropy) &&
+          capabilities.maxAnisotropy >= 1
+        ) {
+          cachedCapabilities = Object.freeze({
+            available: true,
+            softwareRenderer: capabilities.softwareRenderer,
+            maxTextureSize: capabilities.maxTextureSize,
+            maxAnisotropy: Math.round(capabilities.maxAnisotropy),
+          });
+        }
+        resolve(cachedCapabilities || shared.getWebGLCapabilities());
+      };
+      try {
+        worker = new scope.Worker(url);
+        worker.onmessage = (event) => finish(event.data);
+        worker.onerror = () => finish();
+        worker.onmessageerror = () => finish();
+        // Cold GPU processes may take a moment; a stalled or blocked worker
+        // must still fall back to the established document probe.
+        timer = setTimeout(() => finish(), 2000);
+      } catch {
+        finish();
+      }
+    });
+    return preparation;
   };
 
   shared.supportsWebGL = function supportsWebGL() {
