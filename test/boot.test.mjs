@@ -189,7 +189,7 @@ function createContext({
   const loadScript = (script) => {
     window.BabelSite.scene.initHomeScene = () => {
       sceneInitCount += 1;
-      return initResult;
+      return typeof initResult === "function" ? initResult(window.BabelSite.scene) : initResult;
     };
     script.dispatch("load");
   };
@@ -723,6 +723,289 @@ test("clearing an initial static preference loads and reveals the scene exactly 
   await Promise.resolve();
 
   assert.equal(harness.scripts.length, 1, "preference changes after recovery do not reload");
+});
+
+test("preferences interrupting a pending bundle rearm recovery and initialize the cached scene once", async () => {
+  for (const preference of ["connection", "data", "motion", "colors"])
+    for (const initiallyBlocked of [false, true]) {
+      const tiers = [];
+      const harness = createContext({
+        ...CAPABLE,
+        modulePreloads: ["/scripts/scene.shared.0123abcd.js"],
+        scriptOutcomes: ["pending"],
+        initResult(scene) {
+          // The real scene declines the low tier selected by this actual
+          // quality helper. navigator.connection alone carries Save-Data.
+          const tier = scene.createSceneQualityState({ caps: CAPABLE }).initialTier;
+          tiers.push(tier);
+          return tier !== "low";
+        },
+      });
+      const change = {
+        connection: (value) => harness.connection.setSaveData(value),
+        data: (value) => harness.dataQuery.setMatches(value),
+        motion: (value) => harness.motionQuery.setMatches(value),
+        colors: (value) => harness.forcedColorsQuery.setMatches(value),
+      }[preference];
+      change(initiallyBlocked);
+      await loadMainWithQuality(harness.context);
+      harness.dispatchDOMContentLoaded();
+      const boot = harness.flushIdleCallbacks();
+      if (initiallyBlocked) {
+        await boot;
+        assert.equal(harness.scripts.length, 0);
+        change(false);
+      }
+      const pending = harness.context.window.BabelSite.ensureSceneReady();
+      assert.equal(harness.getScriptAppendCount(), 1);
+      change(true);
+      harness.loadPendingScripts();
+      assert.equal(await pending, false);
+      await boot;
+      assert.equal(harness.getSceneInitCount(), 0, `${preference}: recheck before initializing`);
+      assert.equal(harness.host.hidden, true);
+      assert.equal(await harness.context.window.BabelSite.ensureSceneReady(), false);
+      assert.equal(harness.getSceneInitCount(), 0, "a cached entry still respects the gate");
+      assert.ok(
+        harness.fetches.every(({ options }) => !options.signal.aborted),
+        "retain reusable requests",
+      );
+
+      change(false);
+      assert.equal(
+        harness.getSceneInitCount(),
+        1,
+        `${preference}: the change handler recovers itself`,
+      );
+      assert.equal(harness.host.hidden, false);
+      assert.deepEqual(tiers, ["high"]);
+      for (let i = 0; i < 3; i++) {
+        change(false);
+        assert.equal(await harness.context.window.BabelSite.ensureSceneReady(), true);
+      }
+      assert.equal(harness.getSceneInitCount(), 1);
+      assert.equal(harness.getScriptAppendCount(), 1);
+      assert.equal(harness.links.length, 1);
+      assert.equal(harness.fetches.length, 2, "recovery makes no duplicate model requests");
+      for (const request of harness.fetches) assert.equal(request.options.signal.aborted, false);
+    }
+});
+
+test("visibility recovery does not prefetch models under a preference enabled during bundle loading", async () => {
+  for (const preference of ["data", "motion", "colors"])
+    for (const shownBeforeBundle of [false, true]) {
+      const harness = createContext({ ...CAPABLE, hidden: true, scriptOutcomes: ["pending"] });
+      await loadMainWithQuality(harness.context);
+      const ready = harness.context.window.BabelSite.ensureSceneReady();
+      assert.equal(harness.visibilityListenerCount, 1);
+      const change = {
+        data: (value) => harness.connection.setSaveData(value),
+        motion: (value) => harness.motionQuery.setMatches(value),
+        colors: (value) => harness.forcedColorsQuery.setMatches(value),
+      }[preference];
+      change(true);
+      if (shownBeforeBundle) harness.setHidden(false);
+      harness.loadPendingScripts();
+      assert.equal(await ready, false);
+      harness.setHidden(false);
+      assert.equal(harness.visibilityListenerCount, 0);
+      assert.equal(harness.fetches.length, 0);
+      change(false);
+      assert.equal(harness.getSceneInitCount(), 1);
+      assert.equal(harness.getScriptAppendCount(), 1);
+    }
+});
+
+test("a cached scene's preference-driven low-tier decline can rearm another eligible transition", async () => {
+  const tiers = [];
+  const harness = createContext({
+    ...CAPABLE,
+    reducedMotion: true,
+    scriptOutcomes: ["pending"],
+    initResult(scene) {
+      // Exercise a change observed by the actual initializer after main's
+      // last gate check; only the first cached initialization declines.
+      if (tiers.length === 0) harness.connection.setSaveData(true);
+      const tier = scene.createSceneQualityState({ caps: CAPABLE }).initialTier;
+      tiers.push(tier);
+      return tier !== "low";
+    },
+  });
+  await loadMainWithQuality(harness.context);
+  harness.dispatchDOMContentLoaded();
+  await harness.flushIdleCallbacks();
+  harness.motionQuery.setMatches(false);
+  const ready = harness.context.window.BabelSite.ensureSceneReady();
+  harness.connection.setSaveData(true);
+  harness.loadPendingScripts();
+  assert.equal(await ready, false);
+  harness.connection.setSaveData(false);
+  assert.deepEqual(tiers, ["low"]);
+  assert.equal(harness.host.hidden, true);
+  harness.connection.setSaveData(false);
+  assert.deepEqual(tiers, ["low", "high"]);
+  assert.equal(harness.host.hidden, false);
+  assert.equal(harness.getScriptAppendCount(), 1);
+  assert.equal(harness.fetches.length, 2);
+  assert.ok(harness.fetches.every(({ options }) => !options.signal.aborted));
+});
+
+test("eligible cached-entry recovery restarts the retired loading line through initialization", async () => {
+  let initializedWithVisibleHost = false;
+  const harness = createContext({
+    ...CAPABLE,
+    sceneLoader: true,
+    scriptOutcomes: ["pending"],
+    initResult() {
+      assert.equal(
+        harness.host.hidden,
+        false,
+        "the recovered renderer can measure its visible host",
+      );
+      initializedWithVisibleHost = true;
+      return true;
+    },
+  });
+  harness.connection.setSaveData(true);
+  await loadMainWithQuality(harness.context);
+  harness.dispatchDOMContentLoaded();
+  await harness.flushIdleCallbacks();
+  assert.ok(!harness.events.includes("loader:begin"));
+  harness.connection.setSaveData(false);
+  const pending = harness.context.window.BabelSite.ensureSceneReady();
+  harness.connection.setSaveData(true);
+  harness.loadPendingScripts();
+  assert.equal(await pending, false);
+  const firstBegin = harness.events.indexOf("loader:begin");
+  assert.deepEqual(
+    harness.events.slice(firstBegin).filter((event) => event.startsWith("loader:")),
+    ["loader:begin", "loader:bundle", "loader:end:static"],
+  );
+  harness.connection.setSaveData(false);
+  assert.equal(harness.getSceneInitCount(), 1);
+  assert.equal(initializedWithVisibleHost, true);
+  assert.deepEqual(
+    harness.events.slice(firstBegin).filter((event) => event.startsWith("loader:")),
+    [
+      "loader:begin",
+      "loader:bundle",
+      "loader:end:static",
+      "loader:begin",
+      "loader:bundle",
+      "loader:init",
+    ],
+  );
+  assert.deepEqual(
+    harness.loaderCalls.filter(({ method }) => method === "begin").map(({ tier }) => tier),
+    ["high", "high"],
+  );
+  harness.connection.setSaveData(false);
+  assert.equal(await harness.context.window.BabelSite.ensureSceneReady(), true);
+  assert.equal(harness.loaderCalls.filter(({ method }) => method === "begin").length, 2);
+  assert.equal(harness.getSceneInitCount(), 1);
+  assert.equal(harness.getScriptAppendCount(), 1);
+  assert.equal(harness.fetches.length, 2);
+});
+
+test("bundle-time preference checks preserve explicit quality and debug controls", async () => {
+  for (const search of ["?quality=high", "?quality=balanced", "?sceneDebug=1"])
+    for (const preference of ["data", "motion", "colors"]) {
+      const tiers = [];
+      const harness = createContext({
+        ...CAPABLE,
+        search,
+        scriptOutcomes: ["pending"],
+        initResult(scene) {
+          const tier = scene.createSceneQualityState({ caps: CAPABLE }).initialTier;
+          tiers.push(tier);
+          return tier !== "low";
+        },
+      });
+      await loadMainWithQuality(harness.context);
+      const ready = harness.context.window.BabelSite.ensureSceneReady();
+      const change = {
+        data: (value) => harness.connection.setSaveData(value),
+        motion: (value) => harness.motionQuery.setMatches(value),
+        colors: (value) => harness.forcedColorsQuery.setMatches(value),
+      }[preference];
+      change(true);
+      harness.loadPendingScripts();
+      const debugData = search === "?sceneDebug=1" && preference === "data";
+      assert.equal(await ready, preference !== "colors" && !debugData);
+      assert.equal(harness.host.hidden, preference === "colors" || debugData);
+      const beforeClear = harness.getSceneInitCount();
+      change(false);
+      assert.equal(harness.getSceneInitCount(), preference === "colors" ? 1 : beforeClear);
+      if (debugData) {
+        assert.deepEqual(tiers, ["low"]);
+        assert.ok(harness.fetches.every(({ options }) => options.signal.aborted));
+      } else {
+        assert.deepEqual(tiers, [search === "?quality=balanced" ? "balanced" : "high"]);
+        assert.equal(harness.getSceneInitCount(), 1);
+      }
+      assert.equal(harness.getScriptAppendCount(), 1);
+    }
+});
+
+test("bundle and non-preference initialization failures do not create automatic retry loops", async () => {
+  for (const failBundle of [false, true]) {
+    const harness = createContext({
+      ...CAPABLE,
+      reducedMotion: true,
+      logger: { warn() {} },
+      scriptOutcomes: ["pending"],
+      initResult: false,
+    });
+    await loadMainWithQuality(harness.context);
+    harness.dispatchDOMContentLoaded();
+    await harness.flushIdleCallbacks();
+    harness.motionQuery.setMatches(false);
+    const pending = harness.context.window.BabelSite.ensureSceneReady();
+    if (failBundle) {
+      harness.forcedColorsQuery.setMatches(true);
+      assert.equal(await harness.context.window.BabelSite.ensureSceneReady(), false);
+      harness.scripts[0].dispatch("error", new Error("Simulated pending bundle failure"));
+    } else harness.loadPendingScripts();
+    assert.equal(await pending, false);
+    harness.forcedColorsQuery.setMatches(false);
+    const initializations = harness.getSceneInitCount();
+    for (let i = 0; i < 3; i++) {
+      harness.motionQuery.setMatches(true);
+      harness.motionQuery.setMatches(false);
+      harness.connection.setSaveData(false);
+      harness.forcedColorsQuery.setMatches(false);
+    }
+    assert.equal(harness.getScriptAppendCount(), 1);
+    assert.equal(harness.getSceneInitCount(), initializations);
+    assert.equal(harness.host.hidden, true);
+    assert.ok(harness.fetches.every(({ options }) => options.signal.aborted));
+  }
+});
+
+test("initialization throwing after a bundle-time preference interruption retires without retrying", async () => {
+  const warnings = [];
+  const harness = createContext({
+    ...CAPABLE,
+    scriptOutcomes: ["pending"],
+    logger: { warn: (...args) => warnings.push(args) },
+    initResult() {
+      throw new Error("Simulated initialized renderer failure");
+    },
+  });
+  await loadMainWithQuality(harness.context);
+  const ready = harness.context.window.BabelSite.ensureSceneReady();
+  harness.motionQuery.setMatches(true);
+  harness.loadPendingScripts();
+  assert.equal(await ready, false);
+  harness.motionQuery.setMatches(false);
+  assert.equal(harness.getSceneInitCount(), 1);
+  assert.equal(harness.host.hidden, true);
+  assert.equal(warnings.length, 1);
+  assert.ok(harness.fetches.every(({ options }) => options.signal.aborted));
+  harness.motionQuery.setMatches(true);
+  harness.motionQuery.setMatches(false);
+  assert.equal(harness.getSceneInitCount(), 1);
+  assert.equal(harness.getScriptAppendCount(), 1);
 });
 
 test("scene loader keeps the title card for software-rendered WebGL and releases the probe", async () => {

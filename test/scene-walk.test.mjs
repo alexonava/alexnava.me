@@ -4,6 +4,8 @@
 // with a stand-in page.
 import assert from "node:assert/strict";
 import test from "node:test";
+import { getEventListeners } from "node:events";
+import vm from "node:vm";
 import {
   BoxGeometry,
   Fog,
@@ -19,6 +21,7 @@ import { createCinematicCamera } from "../src/scene/cinematic.js";
 import { createCameraTour, TOUR_IDLE } from "../src/scene/camera-tour.js";
 import { ESTATE, estateLantern } from "../src/scene/estate-layout.js";
 import { isWalkKey, walkAllowed } from "../src/scene/walk-key.js";
+import { source } from "./support/code.mjs";
 import {
   WALK,
   boundStep,
@@ -322,6 +325,25 @@ function page({ lock = true } = {}) {
   let clock = 0,
     blurred = 0,
     exits = 0;
+  const forcedColorListeners = new Set();
+  const forcedColors = {
+    matches: false,
+    addEventListener(type, listener) {
+      if (type === "change") forcedColorListeners.add(listener);
+    },
+    removeEventListener(type, listener) {
+      if (type === "change") forcedColorListeners.delete(listener);
+    },
+    setMatches(matches) {
+      this.matches = matches;
+      for (const listener of [...forcedColorListeners]) listener({ matches });
+    },
+    get listenerCount() {
+      return forcedColorListeners.size;
+    },
+  };
+  win.matchMedia = (query) =>
+    query === "(forced-colors: active)" ? forcedColors : { matches: true };
   Object.assign(doc, {
     hidden: false,
     pointerLockElement: null,
@@ -350,6 +372,7 @@ function page({ lock = true } = {}) {
     win,
     doc,
     canvas,
+    forcedColors,
     now: () => clock,
     tick: (ms) => (clock += ms),
     get blurred() {
@@ -412,6 +435,176 @@ function walkIn(rig, start = 0) {
   assert.equal(rig.walk.drives, true);
   return t;
 }
+
+// Runs the actual index.js walk/media wiring and teardown around the real walk
+// owner. The scene's other owners need only their disposal hooks in this race.
+function wireSceneWalk(rig) {
+  const forcedColors = rig.site.forcedColors;
+  const noop = () => {};
+  const owner = { dispose: noop };
+  const context = {
+    window: rig.site.win,
+    document: rig.site.doc,
+    scene: {},
+    walk: rig.walk,
+    // An existing controller has already loaded its optional module.
+    walkLoad: Promise.resolve(),
+    renderer: { domElement: rig.site.canvas },
+    rendering: { disposeResult: {} },
+    isWalkKey,
+    walkAllowed,
+    canvasShown: true,
+    cinematic: { ready: true },
+    runtimeDisposed: false,
+    webglContextAvailable: true,
+    sceneFailed: false,
+    sceneReadyMarked: true,
+    filmActive: true,
+    walkGround: () => 0,
+    reducedMotion: false,
+    visitorHold: { ...owner, paused: false },
+    qualityState: { touchPrimary: false },
+    container: { classList: { remove: noop } },
+    onFontsLoaded: noop,
+    onWindowResize: noop,
+    onWindowScroll: noop,
+    onDocumentVisibilityChange: noop,
+    onReducedMotionChange: noop,
+    reducedMotionMQ: new EventTarget(),
+    sceneIntersectionObserver: null,
+    pixelRatioWatcher: owner,
+    footerLinksObserver: null,
+    containerResizeObserver: null,
+    resizeController: owner,
+    frameScheduler: owner,
+    subsystemRegistry: { disposed: false, dispose: () => rig.walk.dispose() },
+  };
+  const index = source("src/scene/index.js");
+  const start = index.indexOf("const finePointer =");
+  const end = index.indexOf('warmShaders("scene");', start);
+  assert.ok(start > 0 && end > start, "locate real scene walk wiring and teardown");
+  vm.runInNewContext(index.slice(start, end), context);
+  return { context, forcedColors, dispose: () => context.scene.disposeHomeSceneRuntime() };
+}
+
+test("forced colors immediately restores the page and mouse during walk arming or walking", async () => {
+  for (const phase of ["arming", "walking"]) {
+    const rig = walkRig();
+    const integration = wireSceneWalk(rig);
+    if (phase === "arming") rig.walk.enter();
+    else walkIn(rig);
+    await rig.site.canvas.requestPointerLock();
+    assert.equal(integration.forcedColors.listenerCount, 1);
+    assert.equal(rig.walk.active, true);
+    assert.equal(rig.site.classes.has("scene-walk-hidden"), true);
+    const exits = rig.site.exits;
+
+    // No animation frame follows this event: forced-colors CSS hides the canvas.
+    integration.forcedColors.setMatches(true);
+    assert.equal(rig.walk.active, false, phase);
+    assert.equal(rig.walk.drives, false);
+    assert.equal(rig.walk.holdsTour, false);
+    assert.equal(rig.walk.textHidden, false);
+    assert.equal(rig.site.classes.size, 0, "the hero and Contact are visible immediately");
+    assert.equal(rig.site.doc.pointerLockElement, null);
+    assert.equal(rig.site.exits, exits + 1, "release the scene's mouse capture exactly once");
+    const tab = key("keydown", "Tab");
+    const movement = key("keydown", "KeyW");
+    rig.site.win.dispatchEvent(tab);
+    rig.site.win.dispatchEvent(movement);
+    assert.equal(tab.defaultPrevented, false, "native focus navigation is available again");
+    assert.equal(movement.defaultPrevented, false, "walk input has detached");
+    rig.site.win.dispatchEvent(key("keydown", "Backquote"));
+    await Promise.resolve();
+    assert.equal(rig.walk.active, false, "the existing shortcut stays blocked under forced colors");
+
+    integration.forcedColors.setMatches(false);
+    assert.equal(rig.walk.active, false, "clearing the preference does not restart the walk");
+    rig.site.win.dispatchEvent(key("keydown", "Backquote"));
+    await Promise.resolve();
+    assert.equal(rig.walk.active, true, "the existing shortcut can start it after recovery");
+    integration.forcedColors.setMatches(true);
+    assert.equal(rig.site.classes.size, 0);
+    integration.dispose();
+  }
+});
+
+test("a pending optional walk releases mouse capture on arrival if forced colors became active", async () => {
+  const rig = walkRig();
+  const integration = wireSceneWalk(rig);
+  rig.walk.dispose();
+  integration.context.walk = null;
+  let arrive;
+  integration.context.walkLoad = new Promise((resolve) => {
+    arrive = resolve;
+  });
+  rig.site.win.dispatchEvent(key("keydown", "Backquote"));
+  assert.equal(rig.site.doc.pointerLockElement, rig.site.canvas);
+  assert.equal(
+    integration.forcedColors.listenerCount,
+    0,
+    "no walk owner exists before its module arrives",
+  );
+  integration.forcedColors.setMatches(true);
+  arrive();
+  await Promise.resolve();
+  assert.equal(rig.site.doc.pointerLockElement, null, "the existing arrival gate releases capture");
+  assert.equal(rig.walk.active, false);
+  assert.equal(rig.site.classes.size, 0);
+  integration.dispose();
+});
+
+test("forced colors releases a late asynchronous pointer grant after arming cancellation or while idle", async () => {
+  for (const phase of ["arming", "idle"]) {
+    const rig = walkRig();
+    let grant;
+    rig.site.canvas.requestPointerLock = () =>
+      new Promise((resolve) => {
+        grant = () => {
+          rig.site.doc.pointerLockElement = rig.site.canvas;
+          rig.site.doc.dispatchEvent(new Event("pointerlockchange"));
+          resolve();
+        };
+      });
+    if (phase === "arming") rig.walk.enter();
+    const requested = rig.site.canvas.requestPointerLock();
+    assert.equal(
+      rig.site.doc.pointerLockElement,
+      null,
+      "the asynchronous request has not granted yet",
+    );
+    rig.site.forcedColors.setMatches(true);
+    assert.equal(rig.walk.active, false);
+    assert.equal(rig.site.classes.size, 0);
+    const exits = rig.site.exits;
+
+    // No scene frame runs, and this native event has no MediaQueryList.matches.
+    grant();
+    await requested;
+    assert.equal(rig.site.doc.pointerLockElement, null, phase);
+    assert.equal(rig.site.exits, exits + 1, "the late capture is released exactly once");
+    assert.equal(rig.walk.active, false);
+    assert.equal(rig.walk.textHidden, false);
+    assert.equal(rig.site.classes.size, 0, "the late event cannot hide the restored page");
+    rig.walk.dispose();
+  }
+});
+
+test("the walk removes its forced-colors listener when the scene is torn down", async () => {
+  const rig = walkRig();
+  const integration = wireSceneWalk(rig);
+  assert.equal(integration.forcedColors.listenerCount, 1);
+  assert.equal(getEventListeners(rig.site.doc, "pointerlockchange").length, 1);
+  integration.dispose();
+  assert.equal(integration.forcedColors.listenerCount, 0);
+  assert.equal(getEventListeners(rig.site.doc, "pointerlockchange").length, 0);
+  integration.forcedColors.setMatches(false);
+  await rig.site.canvas.requestPointerLock();
+  const exits = rig.site.exits;
+  integration.forcedColors.setMatches(true);
+  assert.equal(rig.site.exits, exits, "the disposed scene no longer reacts to media changes");
+  rig.site.doc.exitPointerLock();
+});
 
 test("into the walk: the page fades, the tour's dissolve settles, its frame is kept, and the visitor stands under the shot", () => {
   const rig = walkRig(),
