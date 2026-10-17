@@ -542,6 +542,7 @@ function createRecordingRenderer(draws) {
   return {
     ...createRendererMock(),
     autoClear: true,
+    properties: { get: () => ({ currentProgram: { isReady: () => true } }) },
     getRenderTarget: () => target,
     setRenderTarget(next) {
       target = next;
@@ -550,9 +551,40 @@ function createRecordingRenderer(draws) {
       draws.push([object.isMesh ? object.material.name : "scene", target]);
     },
     compile(object) {
-      draws.push(["compile", object.material.name, target]);
+      const materials = new Set();
+      object.traverse((child) => {
+        if (child.material) {
+          draws.push(["compile", child.material.name, target]);
+          materials.add(child.material);
+        }
+      });
+      return materials;
     },
   };
+}
+
+const linkPoll = () => new Promise((resolve) => setTimeout(resolve, 25));
+function controlledCompiler(renderer, { ready = false, onPoll = () => {} } = {}) {
+  const calls = [],
+    settle = [],
+    current = new WeakMap();
+  renderer.properties = { get: (material) => ({ currentProgram: current.get(material) }) };
+  renderer.compileAsync = () => assert.fail("never start r160's uncancellable poll");
+  renderer.compile = (objects) => {
+    calls.push({ objects, target: renderer.getRenderTarget() });
+    let linked = ready;
+    const program = {
+      isReady: () => {
+        onPoll();
+        return linked;
+      },
+    };
+    const materials = new Set(objects.children.map(({ material }) => material));
+    for (const material of materials) current.set(material, program);
+    settle.push(() => (linked = true));
+    return materials;
+  };
+  return { calls, settle, current };
 }
 
 function createRecordedPipeline(profile, camera = {}) {
@@ -729,23 +761,60 @@ test("the phone text band follows each pixel's dissolve instead of switching at 
   pipeline.dispose();
 });
 
-test("compile links the crossfade programs once for their real targets; dispose frees the frame", () => {
+test("compile awaits all compositor programs once for their real targets; dispose frees the frame", async () => {
   const { capture, draws, pipeline } = createRecordedPipeline(GRADING_ONLY);
   const renderer = pipeline.composer.renderer;
+  const { calls, settle, current } = controlledCompiler(renderer);
   const previous = { isWebGLRenderTarget: true };
   renderer.setRenderTarget(previous);
-  pipeline.compile();
-  pipeline.compile();
-  assert.deepEqual(draws, [
-    ["compile", "BabelGradingShader", pipeline.composer.readBuffer],
-    ["compile", "BabelVignetteGrainShader", null],
-  ]);
-  assert.equal(renderer.getRenderTarget(), previous, "the previous target is restored");
+  const pending = pipeline.compile();
+  assert.equal(pipeline.compile(), pending, "concurrent warm-ups share readiness");
+  assert.equal(calls.length, 1, "the first target must link before changing a material's key");
+  const { render, bloom, grading, vignetteGrain } = pipeline.passes;
+  assert.deepEqual(
+    calls[0].objects.children.map((object) => object.material),
+    [
+      render.copyQuad.material,
+      bloom.materialHighPassFilter,
+      ...bloom.separableBlurMaterials,
+      bloom.compositeMaterial,
+      bloom.blendMaterial,
+      grading.material,
+    ],
+  );
+  assert.equal(calls[0].target, pipeline.composer.readBuffer);
+  assert.equal(renderer.getRenderTarget(), previous, "restore the target while shaders link");
+  for (const object of calls[0].objects.children)
+    current.set(object.material, { isReady: () => true });
+  await linkPoll();
+  assert.equal(
+    calls.length,
+    1,
+    "later material keys cannot settle this target's captured programs",
+  );
+  settle.shift()();
+  await linkPoll();
+  assert.equal(calls.length, 2);
+  assert.deepEqual(
+    calls[1].objects.children.map((object) => object.material),
+    [grading.material, vignetteGrain.material],
+  );
+  assert.equal(calls[1].target, null);
+  assert.equal(renderer.getRenderTarget(), previous);
+  assert.equal(draws.length, 0, "preparing adds no draw or render target");
+  assert.equal(grading.fsQuad._mesh.parent, null, "the live fullscreen meshes stay in place");
+  settle.shift()();
+  assert.equal(await pending, true);
+  assert.equal(pipeline.compile(), pending, "linked programs remain cached");
+
   renderer.setRenderTarget(null);
   // A lost context drops the programs: the next warm-up links them again.
   pipeline.invalidatePrograms();
-  pipeline.compile();
-  assert.equal(draws.filter(([kind]) => kind === "compile").length, 4);
+  const next = controlledCompiler(renderer, { ready: true });
+  const restored = pipeline.compile();
+  assert.notEqual(restored, pending);
+  assert.equal(await restored, true);
+  assert.equal(next.calls.length, 2);
 
   const kept = capture()[1][1];
   let disposals = 0;
@@ -754,8 +823,86 @@ test("compile links the crossfade programs once for their real targets; dispose 
   assert.equal(disposals, 1);
 
   const bare = createPipeline(GRADING_ONLY);
-  assert.doesNotThrow(() => bare.compile(), "a renderer without compile() skips it");
+  assert.equal(await bare.compile(), false, "a renderer without compilation skips it");
   bare.dispose();
+});
+
+test("compositor preparation restores targets and settles false after compile or poll failure", async () => {
+  for (const failedPoll of [false, true]) {
+    const { pipeline } = createRecordedPipeline(GRADING_ONLY);
+    const renderer = pipeline.composer.renderer;
+    const previous = { isWebGLRenderTarget: true };
+    renderer.setRenderTarget(previous);
+    let calls = 0;
+    renderer.compile = () => {
+      calls += 1;
+      if (failedPoll) return new Set([{}]);
+      throw new Error("lost context");
+    };
+    renderer.properties = {
+      get: () => ({
+        currentProgram: {
+          isReady() {
+            throw new Error("lost");
+          },
+        },
+      }),
+    };
+    assert.equal(await pipeline.compile(), false);
+    assert.equal(renderer.getRenderTarget(), previous);
+    assert.equal(await pipeline.compile(), false);
+    assert.equal(calls, 1, "a failed attempt stays coalesced until context recovery");
+    pipeline.dispose();
+  }
+});
+
+test("a lost context cancels remaining preparation from an earlier generation", async () => {
+  const { pipeline } = createRecordedPipeline(GRADING_ONLY);
+  const renderer = pipeline.composer.renderer;
+  const { calls, settle } = controlledCompiler(renderer);
+  const old = pipeline.compile();
+  pipeline.invalidatePrograms();
+  const fresh = pipeline.compile();
+  assert.notEqual(old, fresh);
+  assert.equal(await old, false);
+  assert.equal(calls.length, 2, "the invalidated work adds no canvas preparation");
+  settle[1]();
+  await linkPoll();
+  assert.equal(calls.length, 3, "the fresh work proceeds to its canvas target");
+  settle[2]();
+  assert.equal(await fresh, true);
+  pipeline.dispose();
+});
+
+test("pending compositor polls stop before disposed or physically lost programs are queried", async () => {
+  for (const interruption of ["dispose", "physical loss"]) {
+    const { pipeline } = createRecordedPipeline(GRADING_ONLY);
+    const renderer = pipeline.composer.renderer;
+    let freed = false,
+      lost = false,
+      reads = 0;
+    renderer.getContext = () => ({ isContextLost: () => lost });
+    const { calls } = controlledCompiler(renderer, {
+      onPoll() {
+        reads++;
+        assert.equal(freed, false, "never query a freed program");
+      },
+    });
+    const pending = pipeline.compile();
+    assert.equal(reads, 1);
+    if (interruption === "dispose") pipeline.dispose();
+    else lost = true;
+    freed = true;
+    renderer.properties.get = () => assert.fail("no material-property lookup after capture");
+    assert.equal(await pending, false, interruption);
+    await linkPoll();
+    assert.equal(reads, 1, "no old polling survives the lifecycle interruption");
+    assert.equal(calls.length, 1, "no canvas target is prepared after interruption");
+    if (interruption !== "dispose") pipeline.dispose();
+    pipeline.invalidatePrograms();
+    assert.equal(await pipeline.compile(), false, "disposal stays terminal after invalidation");
+    assert.equal(calls.length, 1);
+  }
 });
 
 test("film always draws the final pass, staggered and opaque; outside film it is the plain crossfade", () => {

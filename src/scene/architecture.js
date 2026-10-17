@@ -19,7 +19,7 @@ import {
   Vector3,
 } from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { smoothTreeNormals } from "./tree-normals.js";
+import { smoothTreeNormals, smoothTreeNormalSteps } from "./tree-normals.js";
 import { ESTATE } from "./estate-layout.js";
 import { SLATE_TEXT_GUARD } from "./mud-ground.js";
 import { mistHook } from "./drifting-mist.js";
@@ -300,6 +300,36 @@ export function editableGeometry(source) {
   return geometry;
 }
 
+const preparedArchitecture = new WeakMap();
+
+// The model has already parsed when this helper is requested. Keep cooperative
+// geometry work out of the entry payload; an unavailable chunk preserves the
+// established synchronous constructor and the controller's source-resource lease.
+export async function prepareArchitecture(asset, options = {}) {
+  if (!["tower", "tree"].includes(options.role) || options.signal?.aborted) return false;
+  if (preparedArchitecture.has(asset)) return true;
+  try {
+    const { prepareArchitectureGeometry } = await import("./architecture-prepare.js");
+    return await prepareArchitectureGeometry(asset, options, preparedArchitecture, {
+      source: sourceMesh(asset),
+      treeHeight: ARCHITECTURE.treeHeight,
+      towerHeight: COMPLETE_TOWER_HEIGHT,
+      towerRadiusCap: COMPLETE_TOWER_RADIUS_CAP,
+      smoothTreeNormalSteps,
+    });
+  } catch {
+    return false;
+  }
+}
+
+function takePreparedArchitecture(asset, role) {
+  const record = preparedArchitecture.get(asset);
+  if (record?.role !== role) return null;
+  preparedArchitecture.delete(asset);
+  record.detach();
+  return record;
+}
+
 // The pale wood's cool grey under a shot's `pale` (film-light.js PALE), first,
 // on the map's own colour.
 const PALE_GLSL = `
@@ -516,36 +546,40 @@ export function createCompleteTowerArchitecture({
   try {
     if (![groundY, yaw, footingOffset].every(Number.isFinite))
       throw new Error("Invalid complete tower placement.");
-    const source = sourceMesh(asset);
-    geometry = editableGeometry(source.geometry).applyMatrix4(source.matrixWorld);
-    geometry.computeBoundingBox();
-    const { min, max } = geometry.boundingBox;
-    const dimensions = new Vector3().subVectors(max, min);
-    if (
-      ![dimensions.x, dimensions.y, dimensions.z].every(
-        (value) => Number.isFinite(value) && value > 0,
-      )
-    ) {
-      throw new Error("Complete tower asset has empty bounds.");
+    const prepared = takePreparedArchitecture(asset, "tower");
+    let dimensions = prepared?.dimensions,
+      radius = prepared?.radius,
+      scale = prepared?.scale;
+    if (prepared) geometry = prepared.geometry;
+    else {
+      const source = sourceMesh(asset);
+      geometry = editableGeometry(source.geometry).applyMatrix4(source.matrixWorld);
+      geometry.computeBoundingBox();
+      const { min, max } = geometry.boundingBox;
+      dimensions = new Vector3().subVectors(max, min);
+      if (
+        ![dimensions.x, dimensions.y, dimensions.z].every(
+          (value) => Number.isFinite(value) && value > 0,
+        )
+      ) {
+        throw new Error("Complete tower asset has empty bounds.");
+      }
+      geometry.translate(-(min.x + max.x) / 2, -min.y, -(min.z + max.z) / 2);
+      const position = geometry.attributes.position;
+      radius = 0;
+      for (let i = 0; i < position.count; i += 1) {
+        const x = position.getX(i),
+          y = position.getY(i),
+          z = position.getZ(i);
+        if (![x, y, z].every(Number.isFinite))
+          throw new Error("Complete tower positions must be finite.");
+        radius = Math.max(radius, Math.hypot(x, z));
+      }
+      scale = Math.min(COMPLETE_TOWER_HEIGHT / dimensions.y, COMPLETE_TOWER_RADIUS_CAP / radius);
+      geometry.scale(scale, scale, scale);
+      geometry.computeBoundingBox();
+      geometry.computeBoundingSphere();
     }
-    geometry.translate(-(min.x + max.x) / 2, -min.y, -(min.z + max.z) / 2);
-    const position = geometry.attributes.position;
-    let radius = 0;
-    for (let i = 0; i < position.count; i += 1) {
-      const x = position.getX(i),
-        y = position.getY(i),
-        z = position.getZ(i);
-      if (![x, y, z].every(Number.isFinite))
-        throw new Error("Complete tower positions must be finite.");
-      radius = Math.max(radius, Math.hypot(x, z));
-    }
-    const scale = Math.min(
-      COMPLETE_TOWER_HEIGHT / dimensions.y,
-      COMPLETE_TOWER_RADIUS_CAP / radius,
-    );
-    geometry.scale(scale, scale, scale);
-    geometry.computeBoundingBox();
-    geometry.computeBoundingSphere();
     material = materialFor(asset, anisotropy, "tower");
     const tower = new Mesh(geometry, material);
     tower.name = "complete-meshy-tower";
@@ -611,25 +645,30 @@ export function createTreeArchitecture({
     return true;
   };
   try {
-    const source = sourceMesh(asset);
-    const geometry = ownGeometry(editableGeometry(source.geometry));
-    geometry.applyMatrix4(source.matrixWorld);
-    geometry.computeBoundingBox();
-    const bounds = geometry.boundingBox;
-    const height = bounds.max.y - bounds.min.y;
-    if (!Number.isFinite(height) || height <= 0) throw new Error("Tree asset has empty bounds.");
-    const scale = ARCHITECTURE.treeHeight / height;
-    geometry.translate(0, -bounds.min.y, 0);
-    geometry.scale(scale, scale, scale);
-    geometry.computeBoundingSphere();
+    const prepared = takePreparedArchitecture(asset, "tree");
+    let geometry;
+    if (prepared) geometry = ownGeometry(prepared.geometry);
+    else {
+      const source = sourceMesh(asset);
+      geometry = ownGeometry(editableGeometry(source.geometry));
+      geometry.applyMatrix4(source.matrixWorld);
+      geometry.computeBoundingBox();
+      const bounds = geometry.boundingBox;
+      const height = bounds.max.y - bounds.min.y;
+      if (!Number.isFinite(height) || height <= 0) throw new Error("Tree asset has empty bounds.");
+      const scale = ARCHITECTURE.treeHeight / height;
+      geometry.translate(0, -bounds.min.y, 0);
+      geometry.scale(scale, scale, scale);
+      geometry.computeBoundingSphere();
+    }
     const material = ownMaterial(materialFor(asset, anisotropy, "tree", textGuard));
     const tree = new Mesh(geometry, material);
     tree.name = "meshy-tree";
     tree.castShadow = tree.receiveShadow = true;
     root.add(tree);
     const normalAttribute = geometry.attributes.normal;
-    const originalNormals = normalAttribute.array.slice(),
-      softenedNormals = smoothTreeNormals(geometry).array;
+    const originalNormals = prepared?.originalNormals ?? normalAttribute.array.slice(),
+      softenedNormals = prepared?.softenedNormals ?? smoothTreeNormals(geometry).array;
     const lantern = new Group();
     lantern.name = "tree-lantern";
     const direction = new Vector3(ESTATE.tower.x - treeX, 0, ESTATE.tower.z - treeZ).normalize();

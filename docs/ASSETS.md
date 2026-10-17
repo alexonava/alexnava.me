@@ -108,17 +108,17 @@ Only the share card is generated in the repository. Everything else is committed
 
 ## Budgets
 
-| Budget                                                 | Limit                                              | Now              | Enforced by                                                                               |
-| ------------------------------------------------------ | -------------------------------------------------- | ---------------- | ----------------------------------------------------------------------------------------- |
-| Any one model, high                                    | 6 MiB (6,291,456)                                  | 2,028,412 (tree) | The loader (`ARCHITECTURE_ASSET_BUDGETS`) and `bundle-output`                             |
-| Any one model, balanced                                | 3 MiB (3,145,728)                                  | 920,408 (tower)  | The same                                                                                  |
-| Complete scene, high: eight models and five slate maps | 6.25 MiB (6,553,600)                               | 6,477,958        | `bundle-output`: "the complete scene fits 6.25 MiB on high and 3 MiB on balanced…"        |
-| Complete scene, balanced                               | 3 MiB                                              | 3,063,140        | The same                                                                                  |
-| UI bundle (`app.HASH.js`)                              | under 30 KiB                                       |                  | `bundle-output`: "UI bundle stays under the LCP budget"                                   |
-| Scene entry and the chunks it imports statically       | under 830 KiB, exactly two files                   |                  | `bundle-output`: "scene bundle stays under the deferred-payload budget"                   |
-| `public/og.png`                                        | opaque, exactly 1200×630, at most 300 KB (300,000) | 298,931          | `hosting`: "the share image is an opaque 1200x630 PNG of at most 300 KB, as its tags say" |
+| Budget                                                                  | Limit                                              | Now              | Enforced by                                                                               |
+| ----------------------------------------------------------------------- | -------------------------------------------------- | ---------------- | ----------------------------------------------------------------------------------------- |
+| Any one model, high                                                     | 6 MiB (6,291,456)                                  | 2,028,412 (tree) | The loader (`ARCHITECTURE_ASSET_BUDGETS`) and `bundle-output`                             |
+| Any one model, balanced                                                 | 3 MiB (3,145,728)                                  | 920,408 (tower)  | The same                                                                                  |
+| Complete scene, high: eight models and five slate maps                  | 6.25 MiB (6,553,600)                               | 6,477,958        | `bundle-output`: "the complete scene fits 6.25 MiB on high and 3 MiB on balanced…"        |
+| Complete scene, balanced                                                | 3 MiB                                              | 3,063,140        | The same                                                                                  |
+| UI bundle and capability worker (`app.HASH.js` + `webgl-probe.HASH.js`) | under 30 KiB                                       |                  | `bundle-output`: "UI and capability worker together stay under the existing LCP budget"   |
+| Scene entry and the chunks it imports statically                        | under 830 KiB, exactly two files                   |                  | `bundle-output`: "scene bundle stays under the deferred-payload budget"                   |
+| `public/og.png`                                                         | opaque, exactly 1200×630, at most 300 KB (300,000) | 298,931          | `hosting`: "the share image is an opaque 1200x630 PNG of at most 300 KB, as its tags say" |
 
-Lazy scene chunks are outside the script budget. The scene's default load carries the tower's stored outline for the loading line's star ([opening-outline.js](../src/scene/opening-outline.js), about 10 kB of it). Script sizes change with every build; `npm run build:dist` prints them.
+The UI and the one-shot capability worker share the existing 30 KiB budget; the worker does not import Three.js. Lazy scene chunks are outside the script budget. The geometry preparation helper, `architecture-prepare.js`, loads after a required model has parsed; a failed chunk leaves the established synchronous constructor available. The scene's default load carries the tower's stored outline for the loading line's star ([opening-outline.js](../src/scene/opening-outline.js), about 10 kB of it). Script sizes change with every build; `npm run build:dist` prints them.
 
 ## Publication
 

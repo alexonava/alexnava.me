@@ -2,6 +2,7 @@
 // growth and ground detail, depth layers and the environment root.
 
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import {
   BoxGeometry,
@@ -21,6 +22,7 @@ import {
   BLADE_VERTICES,
   GROWTH,
   createEstateGroundDetail,
+  prepareEstateGroundDetail,
   estatePathDistance,
   streamDistance,
 } from "../src/scene/estate-ground-detail.js";
@@ -244,6 +246,182 @@ test("the slate keeps its loaded maps through adaptive profile changes with a pi
 const groundHeight = (x, z) => Math.sin(x * 0.07) + Math.cos(z * 0.04);
 
 const profile = { tier: "high" };
+
+function grassIdleTasks() {
+  const previous = globalThis.requestIdleCallback,
+    queue = [],
+    slices = [];
+  globalThis.requestIdleCallback = (task) => queue.push(task);
+  return {
+    slices,
+    async step() {
+      const task = queue.shift();
+      if (!task) return;
+      const start = performance.now();
+      task({ didTimeout: true, timeRemaining: () => 0 });
+      slices.push(performance.now() - start);
+      await Promise.resolve();
+    },
+    async flush() {
+      while (queue.length) await this.step();
+      await Promise.resolve();
+    },
+    restore() {
+      if (previous) globalThis.requestIdleCallback = previous;
+      else delete globalThis.requestIdleCallback;
+    },
+  };
+}
+
+test("prepared estate growth yields through generation, normals and bounds with identical geometry", async () => {
+  const idle = grassIdleTasks();
+  let detail;
+  try {
+    let complete = false;
+    const ready = prepareEstateGroundDetail(groundHeight).then((value) => {
+      complete = true;
+      return value;
+    });
+    await idle.step();
+    assert.equal(complete, false, "one task cannot build all of the grass");
+    await idle.flush();
+    detail = await ready;
+    assert.ok(idle.slices.length > 3, `${idle.slices.length} cooperative tasks`);
+    assert.ok(
+      Math.max(...idle.slices) < 50,
+      `no long task (${Math.max(...idle.slices).toFixed(1)} ms)`,
+    );
+    const direct = createEstateGroundDetail(groundHeight);
+    try {
+      for (const name of ["position", "normal", "color", "aGrass"])
+        assert.deepEqual(
+          detail.mesh.geometry.attributes[name].array,
+          direct.mesh.geometry.attributes[name].array,
+          name,
+        );
+      assert.deepEqual(detail.mesh.geometry.index.array, direct.mesh.geometry.index.array);
+      assert.deepEqual(detail.mesh.geometry.boundingSphere, direct.mesh.geometry.boundingSphere);
+      detail.setActive(true);
+      direct.setActive(true);
+      for (const tier of ["balanced", "high"])
+        for (const each of [detail, direct]) {
+          each.applyQuality({ tier });
+          assert.equal(each.mesh.geometry.drawRange.count, tier === "high" ? 145800 : 57348);
+        }
+    } finally {
+      direct.dispose();
+    }
+  } finally {
+    detail?.dispose();
+    idle.restore();
+  }
+});
+
+test("environment prepares once while detached and activates the ready grass at the current tier", async () => {
+  const idle = grassIdleTasks(),
+    parent = new Group(),
+    environment = createSceneEnvironment({ parent, groundHeight, profile });
+  try {
+    const first = environment.prepareFilmDetail(),
+      second = environment.prepareFilmDetail();
+    assert.equal(first, second, "parallel callers share preparation");
+    environment.applyQuality({ tier: "balanced" });
+    await idle.flush();
+    const prepared = await first;
+    assert.equal(prepared.mesh.parent, null);
+    assert.equal(prepared.mesh.visible, false);
+    assert.equal(environment.root.children.length, 0);
+    environment.setFilmTreatment(true);
+    assert.equal(environment.root.children.length, 1);
+    assert.equal(
+      environment.root.children[0],
+      prepared.mesh,
+      "activation reuses the prepared geometry",
+    );
+    assert.equal(prepared.mesh.geometry.drawRange.count, 57348);
+    assert.equal(prepared.mesh.visible, true);
+    environment.setFilmTreatment(false);
+    environment.setFilmTreatment(true);
+    assert.equal(environment.root.children[0], prepared.mesh);
+    let freed = 0;
+    prepared.mesh.geometry.addEventListener("dispose", () => freed++);
+    environment.dispose();
+    environment.dispose();
+    assert.equal(freed, 1);
+  } finally {
+    environment.dispose();
+    idle.restore();
+  }
+});
+
+test("pending grass activation and disposal never duplicate or leak the detached build", async () => {
+  for (const cancel of [false, true]) {
+    const idle = grassIdleTasks(),
+      environment = createSceneEnvironment({ parent: new Group(), groundHeight, profile });
+    const original = BufferGeometry.prototype.setAttribute;
+    let geometry = null,
+      freed = 0;
+    BufferGeometry.prototype.setAttribute = function (name, attribute) {
+      if (name === "position" && attribute.count === 64800) {
+        geometry = this;
+        this.addEventListener("dispose", () => freed++);
+      }
+      return original.call(this, name, attribute);
+    };
+    try {
+      const ready = environment.prepareFilmDetail();
+      environment.setFilmTreatment(true);
+      assert.equal(environment.root.children.length, 0, "no synchronous duplicate while pending");
+      for (let steps = 0; !geometry && steps < 1000; steps++) await idle.step();
+      assert.ok(geometry, "a partial detached geometry has been allocated");
+      if (cancel) environment.dispose();
+      await idle.flush();
+      const result = await ready;
+      assert.equal(result === null, cancel);
+      assert.equal(environment.root.children.length, cancel ? 0 : 1);
+      if (!cancel) assert.equal(environment.root.children[0].geometry, geometry);
+      environment.dispose();
+      assert.equal(freed, 1);
+    } finally {
+      BufferGeometry.prototype.setAttribute = original;
+      environment.dispose();
+      idle.restore();
+    }
+  }
+});
+
+test("estate growth retains the authored seeded buffers and tier cuts", () => {
+  const detail = createEstateGroundDetail(groundHeight),
+    geometry = detail.mesh.geometry;
+  try {
+    // Recorded before the builder's scratch-buffer optimization: all geometry,
+    // shading and wind data remain byte-identical, not only the silhouette.
+    const expected = {
+      position: "46fb366b8550834ee75c4abe759ac8d13fa1f8034fa576975ecf36aea8f333cb",
+      color: "ff0531b7c5b8049fa560788c428de2315c167fe664519d21a604e432868f4752",
+      aGrass: "85c547b010ec9a20629f541f284da0573335d884852218f05f7ed0d4cc3dfb03",
+      normal: "eac18267a15181946ff50afcf3ad4f3e408fe1ae503102ed0fe76a3e6384768f",
+      index: "46af942b22e92195b4fc932ef2942e5f78868b05b376320ed3b91a5c7ae94209",
+    };
+    assert.equal(geometry.attributes.position.count, 64800);
+    assert.equal(geometry.index.count, 145800);
+    assert.ok(geometry.index.array instanceof Uint16Array);
+    for (const [name, hash] of Object.entries(expected)) {
+      const { array } = name === "index" ? geometry.index : geometry.attributes[name];
+      const bytes = new Uint8Array(array.buffer, array.byteOffset, array.byteLength);
+      assert.equal(createHash("sha256").update(bytes).digest("hex"), hash, name);
+      assert.equal(array.buffer.byteLength, array.byteLength, `${name} keeps no unused capacity`);
+    }
+    detail.setActive(true);
+    assert.equal(geometry.drawRange.count, 145800);
+    detail.applyQuality({ tier: "balanced" });
+    assert.equal(geometry.drawRange.count, 57348);
+    detail.applyQuality({ tier: "high" });
+    assert.equal(geometry.drawRange.count, 145800);
+  } finally {
+    detail.dispose();
+  }
+});
 
 test("estate growth is seeded, terrain-seated and clear of both footprints and the winding approach", () => {
   const a = createEstateGroundDetail(groundHeight),

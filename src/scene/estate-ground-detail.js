@@ -1,9 +1,13 @@
 import {
+  Box3,
+  BufferAttribute,
   BufferGeometry,
   Float32BufferAttribute,
   DoubleSide,
   Mesh,
   MeshLambertMaterial,
+  Sphere,
+  Vector3,
 } from "three";
 import { DEPTH_LAYER, stampDepthLayer } from "./depth-layers.js";
 import { mistHook } from "./drifting-mist.js";
@@ -171,19 +175,126 @@ export function streamDistance(x, z) {
   return best - SLATE_STREAMS.meander;
 }
 
+// Both paths consume the same seeded builder. The immediate path remains for
+// callers without scene preparation; the live scene prepares during downloads.
 export function createEstateGroundDetail(groundHeight) {
+  const steps = groundDetailSteps(groundHeight);
+  for (;;) {
+    const next = steps.next();
+    if (next.done) return next.value;
+  }
+}
+
+export function prepareEstateGroundDetail(groundHeight, { cancelled = () => false } = {}) {
+  const steps = groundDetailSteps(groundHeight),
+    idle =
+      typeof globalThis.requestIdleCallback === "function"
+        ? (task) => globalThis.requestIdleCallback(task, { timeout: 100 })
+        : (task) => setTimeout(task, 0);
+  return new Promise((resolve, reject) => {
+    const slice = (deadline) => {
+      try {
+        if (cancelled()) {
+          steps.return();
+          return resolve(null);
+        }
+        const budget = deadline?.didTimeout
+            ? 2
+            : deadline
+              ? Math.max(1, Math.min(5, deadline.timeRemaining()))
+              : 5,
+          until = performance.now() + budget;
+        for (;;) {
+          const next = steps.next();
+          if (next.done) return resolve(next.value);
+          if (performance.now() >= until) break;
+        }
+        idle(slice);
+      } catch (error) {
+        reject(error);
+      }
+    };
+    idle(slice);
+  });
+}
+
+// r160's indexed normals, with the same Float32 accumulation and final
+// normalization. Bounds likewise take the same two passes, in short steps.
+function* finishGrassGeometry(geometry) {
+  const position = geometry.attributes.position,
+    index = geometry.index,
+    normal = new BufferAttribute(new Float32Array(position.count * 3), 3),
+    a = new Vector3(),
+    b = new Vector3(),
+    c = new Vector3(),
+    na = new Vector3(),
+    nb = new Vector3(),
+    nc = new Vector3(),
+    cb = new Vector3(),
+    ab = new Vector3();
+  geometry.setAttribute("normal", normal);
+  for (let i = 0; i < index.count; i += 3) {
+    const va = index.getX(i),
+      vb = index.getX(i + 1),
+      vc = index.getX(i + 2);
+    a.fromBufferAttribute(position, va);
+    b.fromBufferAttribute(position, vb);
+    c.fromBufferAttribute(position, vc);
+    cb.subVectors(c, b);
+    ab.subVectors(a, b);
+    cb.cross(ab);
+    na.fromBufferAttribute(normal, va).add(cb);
+    nb.fromBufferAttribute(normal, vb).add(cb);
+    nc.fromBufferAttribute(normal, vc).add(cb);
+    normal.setXYZ(va, na.x, na.y, na.z);
+    normal.setXYZ(vb, nb.x, nb.y, nb.z);
+    normal.setXYZ(vc, nc.x, nc.y, nc.z);
+    if (i % 1536 === 0) yield;
+  }
+  for (let i = 0; i < position.count; i++) {
+    a.fromBufferAttribute(normal, i).normalize();
+    normal.setXYZ(i, a.x, a.y, a.z);
+    if (i % 2048 === 0) yield;
+  }
+  normal.needsUpdate = true;
+  const box = new Box3(),
+    sphere = new Sphere();
+  for (let i = 0; i < position.count; i++) {
+    box.expandByPoint(a.fromBufferAttribute(position, i));
+    if (i % 2048 === 0) yield;
+  }
+  box.getCenter(sphere.center);
+  let radiusSq = 0;
+  for (let i = 0; i < position.count; i++) {
+    a.fromBufferAttribute(position, i);
+    radiusSq = Math.max(radiusSq, sphere.center.distanceToSquared(a));
+    if (i % 2048 === 0) yield;
+  }
+  sphere.radius = Math.sqrt(radiusSq);
+  geometry.boundingSphere = sphere;
+}
+
+function* groundDetailSteps(groundHeight) {
   let seed = 73421;
   const random = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296;
   const between = ([a, b]) => a + random() * (b - a);
-  const positions = [],
-    colors = [],
-    grass = [],
-    indices = [],
+  // Bound the scratch buffers by the authored tuft/blade limits. Copy only
+  // their used spans into the geometry, retaining the seeded order and exact
+  // Float32 values without growing arrays or allocating colours per row.
+  const maxBlades = GROWTH.tufts * Math.ceil(Math.max(...GROWTH.blades)),
+    maxVertices = maxBlades * BLADE_VERTICES,
+    positions = new Float32Array(maxVertices * 3),
+    colors = new Float32Array(maxVertices * 3),
+    grass = new Float32Array(maxVertices * 2),
+    indices = new Uint32Array(maxBlades * (GROWTH.rows.length - 1) * 6),
     ends = [];
-  let count = 0;
+  let count = 0,
+    vertexCount = 0,
+    indexCount = 0;
   // Growth never pokes through a scattered rock or its pebble (rock-scatter.js).
   const rocks = rockKeepouts();
   for (let attempt = 0; attempt < 9000 && count < GROWTH.tufts; attempt++) {
+    if (attempt % 8 === 0) yield;
     const tree = attempt % 2,
       angle = random() * Math.PI * 2,
       anchor = tree ? ESTATE.tree : ESTATE.tower;
@@ -234,8 +345,9 @@ export function createEstateGroundDetail(groundHeight) {
         fx = x + lx * foot,
         fz = z + lz * foot,
         twist = (random() - 0.5) * 0.9;
-      const start = positions.length / 3;
-      GROWTH.rows.forEach((narrow, row) => {
+      const start = vertexCount;
+      for (let row = 0; row < GROWTH.rows.length; row++) {
+        const narrow = GROWTH.rows[row];
         const t = row / (GROWTH.rows.length - 1),
           bend = lean * Math.pow(t, 1.7),
           // The blade's flat turns a little toward its tip.
@@ -245,94 +357,135 @@ export function createEstateGroundDetail(groundHeight) {
         const cx = fx + lx * bend,
           cz = fz + lz * bend,
           cy = y + height * t - Math.pow(t, 2.4) * lean * 0.25;
-        positions.push(cx - wx, cy, cz - wz, cx + wx, cy, cz + wz);
+        const positionAt = vertexCount * 3;
+        positions[positionAt] = cx - wx;
+        positions[positionAt + 1] = cy;
+        positions[positionAt + 2] = cz - wz;
+        positions[positionAt + 3] = cx + wx;
+        positions[positionAt + 4] = cy;
+        positions[positionAt + 5] = cz + wz;
         // Damp and dark at the foot, drying toward the tip.
         const end = dry && t > 0.5 ? GROWTH.kinds[2][4] : tip,
           mixT = Math.pow(t, 0.8);
-        const rgb = base.map((b, k) => (b + (end[k] - b) * mixT) * tone);
-        colors.push(...rgb, ...rgb.map((value) => value * 0.92));
+        for (let channel = 0; channel < 3; channel++) {
+          const value = (base[channel] + (end[channel] - base[channel]) * mixT) * tone;
+          colors[positionAt + channel] = value;
+          colors[positionAt + channel + 3] = value * 0.92;
+        }
         const sway = Math.pow(t, 1.8) * height,
-          up = GROWTH.up * (0.4 + 0.6 * t);
-        grass.push(sway * GROWTH.sway, up, sway * GROWTH.sway, up);
-      });
+          up = GROWTH.up * (0.4 + 0.6 * t),
+          grassAt = vertexCount * 2;
+        grass[grassAt] = grass[grassAt + 2] = sway * GROWTH.sway;
+        grass[grassAt + 1] = grass[grassAt + 3] = up;
+        vertexCount += 2;
+      }
       for (let row = 0; row + 1 < GROWTH.rows.length; row++) {
         const a = start + row * 2;
-        indices.push(a, a + 1, a + 3, a, a + 3, a + 2);
+        indices[indexCount++] = a;
+        indices[indexCount++] = a + 1;
+        indices[indexCount++] = a + 3;
+        indices[indexCount++] = a;
+        indices[indexCount++] = a + 3;
+        indices[indexCount++] = a + 2;
       }
     }
-    ends.push(indices.length);
+    ends.push(indexCount);
     count++;
   }
   const geometry = new BufferGeometry();
-  geometry.setAttribute("position", new Float32BufferAttribute(positions, 3));
-  geometry.setAttribute("color", new Float32BufferAttribute(colors, 3));
-  geometry.setAttribute("aGrass", new Float32BufferAttribute(grass, 2));
-  geometry.setIndex(indices);
-  geometry.computeVertexNormals();
-  geometry.computeBoundingSphere();
-  geometry.userData.bladeVertices = BLADE_VERTICES;
-  // Film-only growth dissolves with the ground it stands on.
-  const material = grassMaterial();
-  const mesh = new Mesh(geometry, material);
-  // terrain-build.js settleRoots() finds it by name and raises the blades that
-  // stand on the tree's knoll once the film terrain arrives, then hangs the
-  // litter and the river's rushes under it.
-  mesh.name = "estate-ground-growth";
-  mesh.castShadow = false;
-  mesh.receiveShadow = true;
-  mesh.matrixAutoUpdate = false;
-  mesh.updateMatrix();
-  mesh.visible = false;
-  let active = false,
-    tier = "high",
-    disposed = false;
-  function apply() {
-    mesh.visible = active && tier !== "low";
-    const share = tier === "balanced" ? GROWTH.balanced : 1;
-    geometry.setDrawRange(0, ends[Math.max(0, Math.ceil(count * share) - 1)] ?? 0);
-    // The litter's fine pieces (gravel, clods, leaves) thin out the same way.
-    for (const child of mesh.children) {
-      // Cut only at a whole piece (finePieces: each piece's first vertex), so
-      // no pebble is ever drawn half-built.
-      const { fine, finePieces: pieces } = child.geometry?.userData ?? {};
-      if (fine) {
-        const kept = Math.floor((pieces?.length ?? 0) * share);
-        child.geometry.setDrawRange(0, share < 1 && pieces ? (pieces[kept] ?? fine[1]) : fine[1]);
+  let material = null,
+    finished = false;
+  try {
+    yield;
+    geometry.setAttribute(
+      "position",
+      new Float32BufferAttribute(positions.subarray(0, vertexCount * 3), 3),
+    );
+    yield;
+    geometry.setAttribute(
+      "color",
+      new Float32BufferAttribute(colors.subarray(0, vertexCount * 3), 3),
+    );
+    yield;
+    geometry.setAttribute(
+      "aGrass",
+      new Float32BufferAttribute(grass.subarray(0, vertexCount * 2), 2),
+    );
+    const IndexArray = vertexCount > 65535 ? Uint32Array : Uint16Array;
+    geometry.setIndex(new BufferAttribute(new IndexArray(indices.subarray(0, indexCount)), 1));
+    yield;
+    yield* finishGrassGeometry(geometry);
+    geometry.userData.bladeVertices = BLADE_VERTICES;
+    // Film-only growth dissolves with the ground it stands on.
+    material = grassMaterial();
+    const mesh = new Mesh(geometry, material);
+    // terrain-build.js settleRoots() finds it by name and raises the blades that
+    // stand on the tree's knoll once the film terrain arrives, then hangs the
+    // litter and the river's rushes under it.
+    mesh.name = "estate-ground-growth";
+    mesh.castShadow = false;
+    mesh.receiveShadow = true;
+    mesh.matrixAutoUpdate = false;
+    mesh.updateMatrix();
+    mesh.visible = false;
+    let active = false,
+      tier = "high",
+      disposed = false;
+    function apply() {
+      mesh.visible = active && tier !== "low";
+      const share = tier === "balanced" ? GROWTH.balanced : 1;
+      geometry.setDrawRange(0, ends[Math.max(0, Math.ceil(count * share) - 1)] ?? 0);
+      // The litter's fine pieces (gravel, clods, leaves) thin out the same way.
+      for (const child of mesh.children) {
+        // Cut only at a whole piece (finePieces: each piece's first vertex), so
+        // no pebble is ever drawn half-built.
+        const { fine, finePieces: pieces } = child.geometry?.userData ?? {};
+        if (fine) {
+          const kept = Math.floor((pieces?.length ?? 0) * share);
+          child.geometry.setDrawRange(0, share < 1 && pieces ? (pieces[kept] ?? fine[1]) : fine[1]);
+        }
       }
     }
-  }
-  mesh.userData.retier = apply;
-  return {
-    mesh,
-    setActive(value) {
-      if (!disposed) {
-        active = Boolean(value);
+    mesh.userData.retier = apply;
+    const controller = {
+      mesh,
+      setActive(value) {
+        if (!disposed) {
+          active = Boolean(value);
+          apply();
+        }
+      },
+      applyQuality(profile = {}) {
+        if (disposed) return false;
+        tier = profile.tier || "high";
         apply();
-      }
-    },
-    applyQuality(profile = {}) {
-      if (disposed) return false;
-      tier = profile.tier || "high";
-      apply();
-      return true;
-    },
-    // The wind's clock: it runs with drawn frames (at most 0.1 s a step) and
-    // holds under reduced motion or a visitor pause.
-    update({ deltaSeconds = 0, reducedMotion = false, motionPaused = false } = {}) {
-      if (disposed || !active) return false;
-      if (!reducedMotion && !motionPaused && Number.isFinite(deltaSeconds))
-        material.userData.grassTime.value =
-          (material.userData.grassTime.value + Math.max(0, Math.min(0.1, deltaSeconds))) %
-          WIND_PERIOD;
-      return true;
-    },
-    dispose() {
-      if (disposed) return false;
-      disposed = true;
-      mesh.removeFromParent();
+        return true;
+      },
+      // The wind's clock: it runs with drawn frames (at most 0.1 s a step) and
+      // holds under reduced motion or a visitor pause.
+      update({ deltaSeconds = 0, reducedMotion = false, motionPaused = false } = {}) {
+        if (disposed || !active) return false;
+        if (!reducedMotion && !motionPaused && Number.isFinite(deltaSeconds))
+          material.userData.grassTime.value =
+            (material.userData.grassTime.value + Math.max(0, Math.min(0.1, deltaSeconds))) %
+            WIND_PERIOD;
+        return true;
+      },
+      dispose() {
+        if (disposed) return false;
+        disposed = true;
+        mesh.removeFromParent();
+        geometry.dispose();
+        material.dispose();
+        return true;
+      },
+    };
+    finished = true;
+    return controller;
+  } finally {
+    if (!finished) {
       geometry.dispose();
-      material.dispose();
-      return true;
-    },
-  };
+      material?.dispose();
+    }
+  }
 }

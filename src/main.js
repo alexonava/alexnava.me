@@ -296,30 +296,42 @@
     }
 
     const controls = readSceneQualityControls();
-    const forceLiveScene = forcesLiveScene(controls);
     if (staticPreferenceBlocksScene(controls)) {
       disableSceneHost();
+      installStaticPreferenceRecovery();
       return false;
     }
 
-    const capabilities = site.shared.getWebGLCapabilities();
-    if (!capabilities.available || (!forceLiveScene && capabilities.softwareRenderer)) {
-      disableSceneHost();
-      return false;
-    }
-
-    // The low tier keeps the static title card (?quality=low included): the
-    // scene bundle is never requested.
-    const startupTier = controls?.overrideTier || readStartupTier(capabilities);
-    if (startupTier === "low") {
-      disableSceneHost();
-      return false;
-    }
-
-    // Only the live path shows the title card's loading line.
-    site.sceneLoader?.begin?.({ tier: startupTier });
     sceneLoadPromise = (async () => {
       try {
+        const prepared =
+          site.shared.prepareWebGLCapabilities?.() ?? site.shared.getWebGLCapabilities();
+        const capabilities = typeof prepared?.then === "function" ? await prepared : prepared;
+        // The asynchronous worker may outlive a preference change. Recheck
+        // before any scene request, and keep recovery available for that visit.
+        const latestControls = readSceneQualityControls();
+        if (staticPreferenceBlocksScene(latestControls)) {
+          disableSceneHost();
+          staticRecoveryAttempted = false;
+          installStaticPreferenceRecovery();
+          return false;
+        }
+        const forceLiveScene = forcesLiveScene(latestControls);
+        if (!capabilities.available || (!forceLiveScene && capabilities.softwareRenderer)) {
+          disableSceneHost();
+          return false;
+        }
+
+        // The low tier keeps the static title card (?quality=low included): the
+        // scene bundle is never requested.
+        const startupTier = latestControls?.overrideTier || readStartupTier(capabilities);
+        if (startupTier === "low") {
+          disableSceneHost();
+          return false;
+        }
+
+        // Only the live path shows the title card's loading line.
+        site.sceneLoader?.begin?.({ tier: startupTier });
         const sceneScript = loadScriptOnce(getSceneScriptUrl(), getSceneModulePreloads());
         // Issued after the bundle request, which keeps its head start.
         prefetchArchitectureModels(startupTier);

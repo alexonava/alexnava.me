@@ -154,7 +154,10 @@ test("the reveal waits for the shader warm-up, and nothing draws while one links
     index,
     /const shaderWarmup = createShaderWarmup\(\{ compile: \(\) => rendering\.compileShaders\(\) \}\);/,
   );
-  assert.match(index, /if \(canvasShown \|\| !shaderWarmup\.pending\) \{ rendering\.update\(\);/);
+  assert.match(
+    index,
+    /if \(canvasShown \|\| !shaderWarmup\.pending\) \{ if \(!canvasShown && cinematic\.ready\) groundTextures\.ensureProcedural\(\); rendering\.update\(\);/,
+  );
   assert.match(
     index,
     /const sceneShown = !sceneFailed && cinematic\.ready && \(canvasShown \|\| !shaderWarmup\.pending\);/,

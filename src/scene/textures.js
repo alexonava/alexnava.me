@@ -260,11 +260,12 @@ import { measureScene, sceneNow } from "./perf-marks.js";
       return { colorMap: null, bumpMap: null, applyQuality: () => false, dispose: () => false };
     }
 
-    // The film slate maps replace this pair on high and balanced, so start-up
-    // fills only a flat preview and paints the detail in a task of its own
-    // right after (or sooner through ensureProcedural()). The reveal, a film
-    // ground reset and a fallback then all show the painted ground while maps load.
+    // Keep the preview while the canvas is hidden. Full procedural painting is
+    // needed only when slate fails, the film resets, or a visible frame still
+    // needs this pair; successful slate maps never pay for an unused fallback.
     let detailed = false;
+    let slateReady = false;
+    let disposed = false;
     function paintGround(detail) {
       const start = sceneNow();
       const paintSize = detail ? size : 4;
@@ -296,9 +297,9 @@ import { measureScene, sceneNow } from "./perf-marks.js";
         tex.anisotropy = aniso;
       }),
     };
-    // Never throws: it runs from a timer, load callbacks and fallback statuses.
+    // Never throws: the first visible frame, resets and fallback statuses call it.
     function ensureProcedural() {
-      if (detailed) return false;
+      if (detailed || slateReady || disposed) return false;
       try {
         paintGround(true);
       } catch {
@@ -311,23 +312,20 @@ import { measureScene, sceneNow } from "./perf-marks.js";
       invalidate();
       return true;
     }
-    let paintTimer = detailed
-      ? null
-      : setTimeout(() => {
-          paintTimer = null;
-          ensureProcedural();
-        }, 0);
-
     // The slate maps replace the procedural pair only after they decode; the
     // procedural canvases stay alive so a reset or fallback can rebind them.
     function publishGround() {
+      slateReady = false;
       onDetailChange({ ...textures, normalMap: null, roughnessMap: null, normalScale: 0 });
     }
     const filmMaps = createEarthDetail({
       profile,
       disabled: false,
       anisotropy: aniso,
-      publish: onDetailChange,
+      publish(maps) {
+        onDetailChange(maps);
+        slateReady = true;
+      },
       restore: publishGround,
       report(status) {
         if (status.status === "fallback") ensureProcedural();
@@ -338,16 +336,17 @@ import { measureScene, sceneNow } from "./perf-marks.js";
       ...textures,
       ensureProcedural,
       setFilmActive(active) {
+        if (disposed) return;
         publishGround();
         filmMaps.setActive(active);
+        if (!active) ensureProcedural();
       },
       lifecycleOrder: 21,
       applyQuality(profile, context) {
         filmMaps.applyQuality(profile, context);
       },
       dispose() {
-        clearTimeout(paintTimer);
-        paintTimer = null;
+        disposed = true;
         return filmMaps.dispose();
       },
     };

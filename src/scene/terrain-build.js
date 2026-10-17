@@ -1,4 +1,4 @@
-import { BufferAttribute, BufferGeometry, Mesh, Vector3 } from "three";
+import { Box3, BufferAttribute, BufferGeometry, Mesh, Sphere, Vector3 } from "three";
 
 // A lazy chunk: the film terrain with its foothills, the knoll under the tree
 // and its root shading, the puddles and their drips, the tufts, the litter and
@@ -2446,7 +2446,78 @@ function coverDistance(x, z, limit) {
     }
   return best;
 }
+function buildNow(steps) {
+  for (;;) {
+    const next = steps.next();
+    if (next.done) return next.value;
+  }
+}
+
+// Match r160's non-indexed normal calculation, including its Float32 write
+// before normalization, but leave a scheduling point every few triangles.
+function* litterNormals(geometry) {
+  const position = geometry.attributes.position,
+    normal = new BufferAttribute(new Float32Array(position.count * 3), 3),
+    a = new Vector3(),
+    b = new Vector3(),
+    c = new Vector3(),
+    cb = new Vector3(),
+    ab = new Vector3();
+  geometry.setAttribute("normal", normal);
+  for (let i = 0; i < position.count; i += 3) {
+    a.fromBufferAttribute(position, i);
+    b.fromBufferAttribute(position, i + 1);
+    c.fromBufferAttribute(position, i + 2);
+    cb.subVectors(c, b);
+    ab.subVectors(a, b);
+    cb.cross(ab);
+    for (let k = 0; k < 3; k++) normal.setXYZ(i + k, cb.x, cb.y, cb.z);
+    if (i % 1536 === 0) yield;
+  }
+  for (let i = 0; i < position.count; i++) {
+    a.fromBufferAttribute(normal, i).normalize();
+    normal.setXYZ(i, a.x, a.y, a.z);
+    if (i % 2048 === 0) yield;
+  }
+  normal.needsUpdate = true;
+}
+
+function* geometryBounds(geometry, keepBox = false) {
+  const position = geometry.attributes.position,
+    box = new Box3(),
+    point = new Vector3(),
+    sphere = new Sphere();
+  for (let i = 0; i < position.count; i++) {
+    box.expandByPoint(point.fromBufferAttribute(position, i));
+    if (i % 2048 === 0) yield;
+  }
+  box.getCenter(sphere.center);
+  let radiusSq = 0;
+  for (let i = 0; i < position.count; i++) {
+    point.fromBufferAttribute(position, i);
+    radiusSq = Math.max(radiusSq, sphere.center.distanceToSquared(point));
+    if (i % 2048 === 0) yield;
+  }
+  sphere.radius = Math.sqrt(radiusSq);
+  if (keepBox) geometry.boundingBox = box;
+  geometry.boundingSphere = sphere;
+}
+
+function* litterAttribute(values, size) {
+  const array = new Float32Array(values.length);
+  for (let start = 0; start < values.length; start += 8192) {
+    for (let i = start, end = Math.min(values.length, start + 8192); i < end; i++)
+      array[i] = values[i];
+    yield;
+  }
+  return new BufferAttribute(array, size);
+}
+
 export function scatterLitter(surface, groundColor) {
+  return buildNow(litterSteps(surface, groundColor));
+}
+
+function* litterSteps(surface, groundColor) {
   let seed = LITTER.seed;
   const random = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296;
   const L = LITTER,
@@ -2490,6 +2561,7 @@ export function scatterLitter(surface, groundColor) {
   const { x: left, z: top, pitch, cols, rows } = ROOT_LATTICE;
   let twigs = 0;
   for (let attempt = 0; placed.length < L.count && attempt < 20000; attempt++) {
+    if (attempt % 16 === 0) yield;
     // A point beside a root line where it meets the soil, stepped off one side.
     const line = ROOT_LINES[Math.floor(random() * ROOT_LINES.length)],
       s = Math.floor(random() * (line.length - 1));
@@ -2652,6 +2724,7 @@ export function scatterLitter(surface, groundColor) {
   const draw = () => (stoneSeed = (Math.imul(stoneSeed, 1664525) + 1013904223) >>> 0) / 4294967296;
   const between = ([a, b]) => a + draw() * (b - a);
   for (let attempt = 0; stones.length < S.count && attempt < 20000; attempt++) {
+    if (attempt % 8 === 0) yield;
     let x, z;
     if (draw() < S.rootShare) {
       // Beside a resting root, stepped off one side.
@@ -2761,34 +2834,47 @@ export function scatterLitter(surface, groundColor) {
     stones.push([x, z, width]);
   }
   const fineStart = positions.length / 3;
-  const pieces = scatterFine(surface, base, stones, triangle, () => positions.length / 3);
-  const geometry = new BufferGeometry();
-  geometry.setAttribute("position", new BufferAttribute(new Float32Array(positions), 3));
-  geometry.setAttribute("color", new BufferAttribute(new Float32Array(colors), 3));
-  // The growth material's wind and sky lean (estate-ground-detail.js): none here.
-  geometry.setAttribute(
-    "aGrass",
-    new BufferAttribute(new Float32Array((positions.length / 3) * 2), 2),
+  const pieces = yield* fineLitterSteps(
+    surface,
+    base,
+    stones,
+    triangle,
+    () => positions.length / 3,
   );
-  geometry.computeVertexNormals();
-  geometry.attributes.normal.array.set(stoneNormals, litterVertices * 3);
-  const normalArray = geometry.attributes.normal.array;
-  for (let i = 0; i < smooth.length; i += 2) {
-    const first = smooth[i] * 3,
-      normals = smooth[i + 1];
-    for (let k = 0; k < 3; k++)
-      for (let e = 0; e < 3; e++) normalArray[first + k * 3 + e] = normals[k][e];
+  const geometry = new BufferGeometry();
+  let finished = false;
+  try {
+    geometry.setAttribute("position", yield* litterAttribute(positions, 3));
+    geometry.setAttribute("color", yield* litterAttribute(colors, 3));
+    // The growth material's wind and sky lean (estate-ground-detail.js): none here.
+    geometry.setAttribute(
+      "aGrass",
+      new BufferAttribute(new Float32Array((positions.length / 3) * 2), 2),
+    );
+    yield* litterNormals(geometry);
+    geometry.attributes.normal.array.set(stoneNormals, litterVertices * 3);
+    const normalArray = geometry.attributes.normal.array;
+    for (let i = 0; i < smooth.length; i += 2) {
+      if (i % 512 === 0) yield;
+      const first = smooth[i] * 3,
+        normals = smooth[i + 1];
+      for (let k = 0; k < 3; k++)
+        for (let e = 0; e < 3; e++) normalArray[first + k * 3 + e] = normals[k][e];
+    }
+    yield* geometryBounds(geometry);
+    geometry.userData.litter = placed;
+    // The stones' vertices follow the litter's.
+    geometry.userData.stones = stones;
+    geometry.userData.litterVertices = litterVertices;
+    // The fine pieces' vertices [first, end): balanced draws a share of them.
+    geometry.userData.fine = [fineStart, positions.length / 3];
+    // Each fine piece's first vertex, in order.
+    geometry.userData.finePieces = pieces;
+    finished = true;
+    return geometry;
+  } finally {
+    if (!finished) geometry.dispose();
   }
-  geometry.computeBoundingSphere();
-  geometry.userData.litter = placed;
-  // The stones' vertices follow the litter's.
-  geometry.userData.stones = stones;
-  geometry.userData.litterVertices = litterVertices;
-  // The fine pieces' vertices [first, end): balanced draws a share of them.
-  geometry.userData.fine = [fineStart, positions.length / 3];
-  // Each fine piece's first vertex, in order.
-  geometry.userData.finePieces = pieces;
-  return geometry;
 }
 
 // A rounded pebble or clod, half-width `a` by `b`, `h` high: a top, a ring
@@ -2958,7 +3044,7 @@ function fallenLeaf(at, length, width, cup, curl, rise, rgb, triangle) {
 
 // The fine litter (LITTER.fine), appended through `triangle(a, b, c, rgb)`:
 // leaves, clods and grit interleaved, so a draw range cut thins all three.
-function scatterFine(surface, base, stones, triangle, vertices) {
+function* fineLitterSteps(surface, base, stones, triangle, vertices) {
   const pieces = [];
   const F = LITTER.fine;
   let seed = F.seed;
@@ -2968,6 +3054,7 @@ function scatterFine(surface, base, stones, triangle, vertices) {
     grey = 0.2126 * base[0] + 0.7152 * base[1] + 0.0722 * base[2];
   const { x: lx, z: lz, pitch, cols, rows } = ROOT_LATTICE;
   for (let attempt = 0; attempt < 30000 && left.leaves + left.clods + left.gravel > 0; attempt++) {
+    if (attempt % 16 === 0) yield;
     let pick = random() * (left.leaves + left.clods + left.gravel);
     const kind = (pick -= left.gravel) < 0 ? "gravel" : pick < left.clods ? "clod" : "leaf";
     const turn = (between(F.arc) * Math.PI) / 180,
@@ -3063,6 +3150,9 @@ export const RUSHES = Object.freeze({
   up: 0.35,
 });
 export function plantRushes(surface) {
+  return buildNow(rushSteps(surface));
+}
+function* rushSteps(surface) {
   const R = RUSHES;
   let seed = R.seed;
   const random = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296;
@@ -3070,6 +3160,7 @@ export function plantRushes(surface) {
   const { strip, geometry } = stemStrips();
   let clumps = 0;
   for (let attempt = 0; clumps < R.clumps && attempt < 400; attempt++) {
+    yield;
     // A point on either bank within R.reach units of where the river passes
     // the lantern, but not within R.clear of it, where the lantern and its
     // image stand between the banks.
@@ -3689,22 +3780,11 @@ export function settleRoots(
   const extras = [];
   // The water's banks, built in idle slices once the shading has switched
   // (commit()), so they never hold its early switch.
-  let buildBanks = () => {},
+  let buildRoots = () => {},
+    buildBanks = () => {},
     seatBanks = () => {};
   if (growth?.geometry.attributes.position) {
     settleTufts(growth, liftAt);
-    litter = new Mesh(
-      scatterLitter(terrainHeight(terrain), material.color ?? { r: 0.36, g: 0.31, b: 0.28 }),
-      growth.material,
-    );
-    litter.name = "estate-root-litter";
-    litter.receiveShadow = true;
-    litter.castShadow = false;
-    litter.matrixAutoUpdate = false;
-    litter.updateMatrix();
-    growth.add(litter);
-    rushes = new Mesh(plantRushes(terrainHeight(terrain)), growth.material);
-    rushes.name = "estate-river-rushes";
     const seat = (mesh) => {
       mesh.receiveShadow = true;
       mesh.castShadow = false;
@@ -3712,8 +3792,6 @@ export function settleRoots(
       mesh.updateMatrix();
       growth.add(mesh);
     };
-    seat(rushes);
-    growth.userData.retier?.();
     // The stream's reeds, the water's banks (gravel, leaves and twigs) and its
     // drifting leaves follow the shading's switch in idle slices, so they never
     // hold its early switch, and join the scene only where that cannot show
@@ -3721,6 +3799,45 @@ export function settleRoots(
     const surface = terrainHeight(terrain),
       soil = material.color ?? { r: 0.36, g: 0.31, b: 0.28 },
       landable = unseen(rendering, tour);
+    // Optional litter and rushes build detached in idle slices. Tuft seating
+    // and the rocks' analytic height stay immediate; neither the reveal nor
+    // the ground's shading link waits for these meshes.
+    buildRoots = () =>
+      inSlices(
+        (function* () {
+          const built = [];
+          let finished = false;
+          try {
+            const geometry = yield* litterSteps(surface, soil);
+            built.push(
+              Object.assign(new Mesh(geometry, growth.material), { name: "estate-root-litter" }),
+            );
+            yield;
+            const reeds = yield* rushSteps(surface);
+            built.push(
+              Object.assign(new Mesh(reeds, growth.material), { name: "estate-river-rushes" }),
+            );
+            finished = true;
+            return built;
+          } finally {
+            if (!finished) for (const mesh of built) mesh.geometry.dispose();
+          }
+        })(),
+        () => false,
+        () => !live,
+      )
+        .then((built) => {
+          if (!built) return;
+          (function land() {
+            if (!live) return built.forEach((mesh) => mesh.geometry.dispose());
+            if (!landable()) return nextFrame(land);
+            [litter, rushes] = built;
+            built.forEach(seat);
+            growth.userData.retier?.();
+            invalidate();
+          })();
+        })
+        .catch(() => {});
     seatBanks = (built) => {
       built.forEach(seat);
       extras.push(...built);
@@ -3863,6 +3980,7 @@ export function settleRoots(
       mesh.geometry.dispose();
     }
   });
+  buildRoots();
   const shadedKey = () => {
     material.userData.slateRoot = shadeSlateGround;
     const key = material.customProgramCacheKey?.();
@@ -3966,6 +4084,9 @@ export function settleRoots(
 // POOL_FIELD over a w x h grid of heights (row by row); at(i, j) gives a
 // vertex's world [x, z].
 export function poolField(heights, w, h, at) {
+  return buildNow(poolFieldSteps(heights, w, h, at));
+}
+function* poolFieldSteps(heights, w, h, at) {
   const r = POOL_FIELD.mean,
     across = new Float32Array(w * h),
     cavity = new Float32Array(w * h);
@@ -3981,9 +4102,15 @@ export function poolField(heights, w, h, at) {
       target[index(k)] = sum / count;
     }
   };
-  for (let j = 0; j < h; j++) box(heights, across, w, (i) => j * w + i);
+  for (let j = 0; j < h; j++) {
+    box(heights, across, w, (i) => j * w + i);
+    yield;
+  }
   const mean = new Float32Array(w * h);
-  for (let i = 0; i < w; i++) box(across, mean, h, (j) => j * w + i);
+  for (let i = 0; i < w; i++) {
+    box(across, mean, h, (j) => j * w + i);
+    yield;
+  }
   for (let j = 0; j < h; j++)
     for (let i = 0; i < w; i++) {
       const edge = Math.min(i, j, w - 1 - i, h - 1 - j) - r;
@@ -3993,6 +4120,7 @@ export function poolField(heights, w, h, at) {
         (mean[j * w + i] - heights[j * w + i]) *
         pinKeep(x, z) *
         Math.min(1, (edge + 1) / POOL_FIELD.edge);
+      if (i % 16 === 15) yield;
     }
   return cavity;
 }
@@ -4347,10 +4475,15 @@ function* earthSteps(groundHeight, EARTH) {
     }
     yield;
   }
-  const pools = poolField(surface, cols + 1, rows + 1, (i, j) => [xs[fineX + i], zs[fineZ + j]]);
+  const pools = yield* poolFieldSteps(surface, cols + 1, rows + 1, (i, j) => [
+    xs[fineX + i],
+    zs[fineZ + j],
+  ]);
   const pool = new Float32Array(count);
-  for (let j = 0; j <= rows; j++)
+  for (let j = 0; j <= rows; j++) {
     pool.set(pools.subarray(j * (cols + 1), (j + 1) * (cols + 1)), (fineZ + j) * xs.length + fineX);
+    if (j % 4 === 0) yield;
+  }
   yield;
   let cursor = 0,
     center = grid;
@@ -4471,35 +4604,40 @@ function* earthSteps(groundHeight, EARTH) {
     yield;
   }
   const geometry = new BufferGeometry();
-  geometry.setAttribute("position", new BufferAttribute(positions, 3));
-  geometry.setAttribute("normal", new BufferAttribute(normalArray, 3));
-  geometry.setAttribute("uv", new BufferAttribute(uvs, 2));
-  geometry.setAttribute("slateRoot", new BufferAttribute(shading, 4));
-  geometry.setAttribute("slateShade", new BufferAttribute(occlusion, 2));
-  geometry.setAttribute("slatePool", new BufferAttribute(pool, 1));
-  geometry.setIndex(new BufferAttribute(indices, 1));
-  geometry.computeBoundingBox();
-  geometry.computeBoundingSphere();
-  // Inside the river's sub-grid, its own (finer) triangles.
-  const within = (outer, inner) => (x, z) => {
-    const value = inner(x, z);
-    return Number.isNaN(value) ? outer(x, z) : value;
-  };
-  LIFTS.set(
-    geometry,
-    within(
-      liftSampler(lifts, xs[fineX], zs[fineZ], cols, rows, pitch),
-      liftSampler(riverLifts, xs[c0], zs[r0], S * nc, S * nr, pitch / S, NaN),
-    ),
-  );
-  SURFACES.set(
-    geometry,
-    within(
-      liftSampler(surface, xs[fineX], zs[fineZ], cols, rows, pitch, NaN),
-      liftSampler(riverSurface, xs[c0], zs[r0], S * nc, S * nr, pitch / S, NaN),
-    ),
-  );
-  return geometry;
+  let finished = false;
+  try {
+    geometry.setAttribute("position", new BufferAttribute(positions, 3));
+    geometry.setAttribute("normal", new BufferAttribute(normalArray, 3));
+    geometry.setAttribute("uv", new BufferAttribute(uvs, 2));
+    geometry.setAttribute("slateRoot", new BufferAttribute(shading, 4));
+    geometry.setAttribute("slateShade", new BufferAttribute(occlusion, 2));
+    geometry.setAttribute("slatePool", new BufferAttribute(pool, 1));
+    geometry.setIndex(new BufferAttribute(indices, 1));
+    yield* geometryBounds(geometry, true);
+    // Inside the river's sub-grid, its own (finer) triangles.
+    const within = (outer, inner) => (x, z) => {
+      const value = inner(x, z);
+      return Number.isNaN(value) ? outer(x, z) : value;
+    };
+    LIFTS.set(
+      geometry,
+      within(
+        liftSampler(lifts, xs[fineX], zs[fineZ], cols, rows, pitch),
+        liftSampler(riverLifts, xs[c0], zs[r0], S * nc, S * nr, pitch / S, NaN),
+      ),
+    );
+    SURFACES.set(
+      geometry,
+      within(
+        liftSampler(surface, xs[fineX], zs[fineZ], cols, rows, pitch, NaN),
+        liftSampler(riverSurface, xs[c0], zs[r0], S * nc, S * nr, pitch / S, NaN),
+      ),
+    );
+    finished = true;
+    return geometry;
+  } finally {
+    if (!finished) geometry.dispose();
+  }
 }
 
 // Runs a build in slices of a few milliseconds, never a long task, so neither
@@ -4518,7 +4656,15 @@ function inSlices(steps, early = () => false, cancelled = () => false) {
   return new Promise((resolve, reject) => {
     // Without idle callbacks (Safari), short tasks leave room for the frames.
     const slice = (deadline) => {
-      if (cancelled()) return resolve(null);
+      if (cancelled()) {
+        // Close nested builders so their detached geometries are released.
+        try {
+          steps.return?.();
+        } catch (error) {
+          return reject(error);
+        }
+        return resolve(null);
+      }
       const rush = early();
       const until =
         performance.now() +

@@ -194,7 +194,7 @@ test("Cloudflare Pages headers preserve the static security contract", async () 
   );
   assert.match(
     headers,
-    /Content-Security-Policy:\s*default-src 'self'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'; frame-src 'none'; object-src 'none'; worker-src 'none'; img-src 'self' data: blob:; font-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self' blob:/,
+    /Content-Security-Policy:\s*default-src 'self'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'; frame-src 'none'; object-src 'none'; worker-src 'self'; img-src 'self' data: blob:; font-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self' blob:/,
   );
 
   const hsts = headers.match(/Strict-Transport-Security:\s*max-age=(\d+); includeSubDomains\r?$/m);
@@ -228,7 +228,9 @@ test("static headers separate immutable fingerprints from revalidated stable ass
   const headers = await readProjectFile("public/_headers");
 
   assert.match(headers, /Strict-Transport-Security:\s*max-age=31536000; includeSubDomains\r?$/m);
-  for (const directive of ["form-action 'none'", "frame-src 'none'", "worker-src 'none'"]) {
+  // The cold WebGL probe is a dedicated hashed same-origin worker. Keep blob,
+  // data and remote workers disallowed while permitting that internal entry.
+  for (const directive of ["form-action 'none'", "frame-src 'none'", "worker-src 'self'"]) {
     assert.match(headers, new RegExp(directive.replace(" ", "\\s+")));
   }
   assert.doesNotMatch(
@@ -274,6 +276,7 @@ test("static headers separate immutable fingerprints from revalidated stable ass
   for (const fingerprintedPath of [
     "/css/styles.*.css",
     "/scripts/app.*.js",
+    "/scripts/webgl-probe.*.js",
     "/scripts/scene.*.js",
   ]) {
     assert.match(
@@ -351,6 +354,7 @@ test("Pages header rules resolve one cache policy for stable and fingerprinted p
   for (const pathname of [
     `/css/styles.${hash}.css`,
     `/scripts/app.${hash}.js`,
+    `/scripts/webgl-probe.${hash}.js`,
     `/scripts/scene.${hash}.js`,
     `/scripts/scene.shared.${hash}.js`,
     `/scripts/scene.rock-build.${hash}.js`,

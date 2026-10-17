@@ -1,6 +1,7 @@
 import test from "node:test";
 import { modelBytes, parseGlb, readAccessor } from "./support/glb.mjs";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import path from "node:path";
@@ -9,6 +10,7 @@ import { build } from "esbuild";
 import { compactShaderSource } from "../tools/shader-compact.mjs";
 import {
   BoxGeometry,
+  BufferGeometry,
   Color,
   DirectionalLight,
   Group,
@@ -1310,9 +1312,40 @@ function frames() {
   };
 }
 
+// Keep cooperative work separate from animation frames, as it is in a browser.
+function idleTasks() {
+  const previous = globalThis.requestIdleCallback,
+    queue = [],
+    slices = [];
+  globalThis.requestIdleCallback = (task) => queue.push(task);
+  return {
+    slices,
+    get pending() {
+      return queue.length;
+    },
+    async step() {
+      const task = queue.shift();
+      if (!task) return;
+      const start = performance.now();
+      task({ didTimeout: true, timeRemaining: () => 0 });
+      slices.push(performance.now() - start);
+      await Promise.resolve();
+    },
+    async flush() {
+      while (queue.length) await this.step();
+      await Promise.resolve();
+    },
+    restore() {
+      if (previous) globalThis.requestIdleCallback = previous;
+      else delete globalThis.requestIdleCallback;
+    },
+  };
+}
+
 test("settling the roots seats the tufts at once and never holds the reveal for the shaded ground", async () => {
   const r = linkRig(),
-    clock = frames();
+    clock = frames(),
+    idle = idleTasks();
   try {
     const { base, terrain, material, ground, tufts, links, rendering } = r,
       lift = terrainLift(terrain);
@@ -1376,7 +1409,11 @@ test("settling the roots seats the tufts at once and never holds the reveal for 
       `${culled} blades collapse under the roots and in the cavity`,
     );
     assert.ok(shaded > 10, `${shaded} blades darken in the tree's shade`);
-    // The litter: one draw with the tufts' material, receiving shadows.
+    // Optional detail builds later; the tufts and rocks' height never wait.
+    assert.equal(tufts.mesh.getObjectByName("estate-root-litter"), undefined);
+    await idle.flush();
+    // The litter lands while the canvas is still hidden: one draw with the
+    // tufts' material, receiving shadows.
     const litter = tufts.mesh.getObjectByName("estate-root-litter");
     assert.equal(litter.parent, tufts.mesh);
     assert.equal(litter.material, tufts.mesh.material);
@@ -1411,11 +1448,11 @@ test("settling the roots seats the tufts at once and never holds the reveal for 
     link.finish();
     await clock.step(3);
     assert.equal(material.customProgramCacheKey(), "moonlit-slate-v3", "never mid-shot");
-    assert.equal(invalidations, 0);
+    assert.equal(invalidations, 1, "only the detached detail's arrival requested a frame");
     tour.transition.cut = true;
     await clock.step();
     assert.equal(material.customProgramCacheKey(), "moonlit-slate-v3+root", "switched on the cut");
-    assert.equal(invalidations, 1);
+    assert.equal(invalidations, 2);
     assert.equal(links.length, 1, "no second link");
     // From the switch on, each draw of the ground brings the moon key's view
     // direction up to date and runs the drips' clock, which starts calm.
@@ -1466,6 +1503,109 @@ test("settling the roots seats the tufts at once and never holds the reveal for 
     material.dispose();
   } finally {
     clock.restore();
+    idle.restore();
+  }
+});
+
+test("root litter and rushes build in bounded idle slices and land together only on a cut", async () => {
+  const r = linkRig({ revealed: true }),
+    clock = frames(),
+    idle = idleTasks(),
+    tour = { running: true, transition: { cut: false } };
+  let invalidations = 0;
+  try {
+    const height = settleRoots(
+      r.terrain,
+      r.ground,
+      r.rendering,
+      r.base,
+      () => invalidations++,
+      tour,
+    );
+    assert.equal(typeof height, "function");
+    const litter = () => r.tufts.mesh.getObjectByName("estate-root-litter");
+    assert.equal(litter(), undefined);
+    await idle.flush();
+    await clock.step(2);
+    assert.equal(litter(), undefined, "completed optional detail never appears mid-shot");
+    assert.equal(invalidations, 0);
+    assert.ok(idle.slices.length > 2, `${idle.slices.length} cooperative slices`);
+    assert.ok(
+      Math.max(...idle.slices) < 50,
+      `no long task (${Math.max(...idle.slices).toFixed(1)} ms)`,
+    );
+    tour.transition.cut = true;
+    await clock.step(2);
+    const built = [litter(), r.tufts.mesh.getObjectByName("estate-river-rushes")],
+      direct = [
+        scatterLitter(terrainHeight(r.terrain), r.material.color),
+        plantRushes(terrainHeight(r.terrain)),
+      ];
+    assert.equal(invalidations, 1, "the complete detail requests one still frame");
+    for (let i = 0; i < built.length; i++) {
+      assert.ok(built[i]);
+      const geometry = built[i].geometry;
+      for (const name of ["position", "color", "normal", "aGrass"])
+        assert.deepEqual(geometry.attributes[name].array, direct[i].attributes[name].array, name);
+      assert.deepEqual(geometry.index?.array, direct[i].index?.array);
+      assert.deepEqual(geometry.boundingSphere, direct[i].boundingSphere);
+      assert.deepEqual(geometry.userData, direct[i].userData);
+      direct[i].dispose();
+    }
+  } finally {
+    r.terrain.dispose();
+    await idle.flush();
+    await clock.step(2);
+    r.tufts.dispose();
+    r.material.dispose();
+    clock.restore();
+    idle.restore();
+  }
+});
+
+test("disposing terrain cancels partial root detail or frees completed detail waiting for a cut", async () => {
+  for (const phase of ["partial", "waiting"]) {
+    const r = linkRig({ revealed: true }),
+      clock = frames(),
+      idle = idleTasks(),
+      tour = { running: true, transition: { cut: false } },
+      original = BufferGeometry.prototype.setAttribute,
+      tracked = [];
+    let invalidations = 0,
+      sharedFreed = 0;
+    r.tufts.mesh.material.addEventListener("dispose", () => sharedFreed++);
+    BufferGeometry.prototype.setAttribute = function (name, attribute) {
+      if (name === "position" && attribute.count > 200000) {
+        const record = { geometry: this, freed: 0 };
+        tracked.push(record);
+        this.addEventListener("dispose", () => record.freed++);
+      }
+      return original.call(this, name, attribute);
+    };
+    try {
+      settleRoots(r.terrain, r.ground, r.rendering, r.base, () => invalidations++, tour);
+      if (phase === "waiting") await idle.flush();
+      else while (!tracked.length && idle.pending) await idle.step();
+      assert.equal(tracked.length, 1, "the detached litter geometry exists");
+      assert.equal(r.tufts.mesh.getObjectByName("estate-root-litter"), undefined);
+      if (phase === "partial") assert.equal(tracked[0].geometry.userData.fine, undefined);
+      r.terrain.dispose();
+      await idle.flush();
+      tour.transition.cut = true;
+      await clock.step(3);
+      assert.equal(tracked[0].freed, 1, `${phase}: detached geometry released once`);
+      assert.equal(r.tufts.mesh.getObjectByName("estate-root-litter"), undefined);
+      assert.equal(r.tufts.mesh.getObjectByName("estate-river-rushes"), undefined);
+      assert.equal(invalidations, 0);
+      assert.equal(sharedFreed, 0, "borrowed growth material remains available");
+    } finally {
+      BufferGeometry.prototype.setAttribute = original;
+      r.terrain.dispose();
+      r.tufts.dispose();
+      r.material.dispose();
+      clock.restore();
+      idle.restore();
+    }
   }
 });
 
@@ -1642,9 +1782,26 @@ test("the film terrain builds in idle slices and arrives only where it cannot sh
     assert.equal(shadows, 1);
     // Exactly the terrain built at once.
     const direct = createEarthGeometry(base);
-    for (const name of ["position", "normal", "uv", "slateRoot"])
+    // Before cooperative pool/bounds passes, these complete terrain buffers
+    // (including pools and shading), indices and exact bounds had this hash.
+    const digest = createHash("sha256").update(
+      JSON.stringify({ sphere: direct.boundingSphere, box: direct.boundingBox }),
+    );
+    for (const [name, { array }] of Object.entries(direct.attributes).sort(([a], [b]) =>
+      a.localeCompare(b),
+    ))
+      digest.update(name).update(new Uint8Array(array.buffer, array.byteOffset, array.byteLength));
+    const index = direct.index.array;
+    digest.update("index").update(new Uint8Array(index.buffer, index.byteOffset, index.byteLength));
+    assert.equal(
+      digest.digest("hex"),
+      "118146a9196a6ea5cd98cc0fa74de1e8aa37de452be18b4bbb9241521a16c180",
+    );
+    for (const name of Object.keys(direct.attributes))
       assert.deepEqual(arrived.attributes[name].array, direct.attributes[name].array, name);
     assert.deepEqual(arrived.index.array, direct.index.array);
+    assert.deepEqual(arrived.boundingBox, direct.boundingBox);
+    assert.deepEqual(arrived.boundingSphere, direct.boundingSphere);
     for (const [x, z] of [
       [62, 36],
       [58.4, 33.3],
@@ -2033,6 +2190,41 @@ for (const tier of ["high", "balanced"])
       JSON.stringify(arches.filter((p) => p.gap < 0.1).slice(0, 5)),
     );
   });
+
+test("cooperative litter and rush builders retain the authored seeded geometry bytes", () => {
+  const surface = (x, z) => Math.sin(x * 0.07) + Math.cos(z * 0.04),
+    litter = scatterLitter(surface, { r: 0.36, g: 0.31, b: 0.28 }),
+    rushes = plantRushes(surface);
+  try {
+    // Captured before slicing: positions, colours, normals, wind, placement
+    // metadata and exact bounds stay identical, including Float32 rounding.
+    for (const [geometry, count, expected] of [
+      [litter, 257775, "20f8fa1f43397fe05130c62f1c1ec1e024630c4e2268f3e8d56c14500d3af1ba"],
+      [rushes, 4424, "a397b5e30a2d3b87cc751c9b88a01939bbe66b1060811181cf00530406b9d3d6"],
+    ]) {
+      assert.equal(geometry.attributes.position.count, count);
+      const digest = createHash("sha256").update(
+        JSON.stringify({ userData: geometry.userData, sphere: geometry.boundingSphere }),
+      );
+      for (const [name, { array }] of Object.entries(geometry.attributes).sort(([a], [b]) =>
+        a.localeCompare(b),
+      ))
+        digest
+          .update(name)
+          .update(new Uint8Array(array.buffer, array.byteOffset, array.byteLength));
+      assert.equal(digest.digest("hex"), expected);
+    }
+    assert.equal(rushes.index.count, 9804);
+    assert.equal(
+      createHash("sha256").update(new Uint8Array(rushes.index.array.buffer)).digest("hex"),
+      "4229126f31e4c8ccb5995c8fd7b0de73c2bf776ec95acaf424e4059e7c6c74ec",
+    );
+    assert.equal(litter.index, null);
+  } finally {
+    litter.dispose();
+    rushes.dispose();
+  }
+});
 
 test("sparse dark litter and small grey stones lie among the roots, clear of the lantern, the puddles and the roots themselves", () => {
   const base = groundBase(),
@@ -2982,13 +3174,14 @@ test("the drifting leaves ride the stream on the drips' clock and hold when it h
 test("the water's banks join the scene after the shading's switch, in idle slices, where they cannot show mid-shot", async () => {
   const clock = frames(),
     r = linkRig({ revealed: true }),
+    idle = idleTasks(),
     tour = { running: true, transition: { cut: false } };
   try {
     let invalidations = 0;
     settleRoots(r.terrain, r.ground, r.rendering, r.base, () => invalidations++, tour);
     const banks = () => r.tufts.mesh.getObjectByName("estate-water-banks");
-    // Not before the switch: the rushes are there, the banks are not.
-    assert.ok(r.tufts.mesh.getObjectByName("estate-river-rushes"));
+    // Neither optional build holds the shading's switch.
+    assert.equal(r.tufts.mesh.getObjectByName("estate-river-rushes"), undefined);
     assert.equal(banks(), undefined);
     r.links[0].finish();
     tour.transition.cut = true;
@@ -2997,21 +3190,24 @@ test("the water's banks join the scene after the shading's switch, in idle slice
     assert.equal(invalidations, 1);
     // Built in slices after it, they wait for a cut.
     tour.transition.cut = false;
-    for (let i = 0; i < 200 && !banks(); i++) {
-      await new Promise((resolve) => setTimeout(resolve, 5));
-      await clock.step();
-    }
+    await idle.flush();
+    await clock.step(2);
     assert.equal(banks(), undefined, "never mid-shot");
     tour.transition.cut = true;
     await clock.step(2);
     assert.ok(banks(), "on the cut");
     for (const name of ["estate-stream-reeds", "estate-drift-leaves"])
       assert.ok(r.tufts.mesh.getObjectByName(name), name);
-    assert.equal(invalidations, 2, "a still frame redraws with them");
+    assert.equal(
+      invalidations,
+      3,
+      "the root detail and banks each request their complete still frame",
+    );
     r.terrain.dispose();
     assert.equal(banks(), undefined, "withdrawn with the terrain");
   } finally {
     clock.restore();
+    idle.restore();
   }
 });
 

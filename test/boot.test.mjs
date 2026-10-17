@@ -95,6 +95,7 @@ function createContext({
   search = "",
   softwareRenderer = "",
   webgl = true,
+  workerProbe = false,
   width = 1280,
 } = {}) {
   const host = { hidden: false };
@@ -105,6 +106,7 @@ function createContext({
   const domContentLoadedListeners = new Set();
   const visibilityListeners = new Set();
   const pendingScripts = [];
+  const workers = [];
   const idleCallbacks = [];
   const motionQuery = createMutableChangeTarget(reducedMotion);
   const dataQuery = createMutableChangeTarget(saveData);
@@ -146,6 +148,19 @@ function createContext({
     requestAnimationFrame() {},
   };
   const navigator = { connection, hardwareConcurrency };
+  if (workerProbe) {
+    window.OffscreenCanvas = function OffscreenCanvas() {};
+    window.Worker = class Worker {
+      constructor(url) {
+        this.url = url;
+        this.terminated = false;
+        workers.push(this);
+      }
+      terminate() {
+        this.terminated = true;
+      }
+    };
+  }
   // Without the recorder main.js runs exactly as before: every call is optional.
   const loaderCalls = [];
   const tracked = new Map();
@@ -285,7 +300,9 @@ function createContext({
     URLSearchParams,
     requestAnimationFrame: window.requestAnimationFrame,
     setTimeout() {},
+    clearTimeout() {},
   };
+  if (workerProbe) context.__BABEL_WEBGL_PROBE_URL__ = "/scripts/webgl-probe.0123abcd.js";
   // The build names the scene entry's statically imported chunks in the UI bundle.
   if (modulePreloads) context.__BABEL_SCENE_MODULE_PRELOADS__ = modulePreloads;
   // The build defines the hashed model manifest in the UI bundle; fetch is
@@ -332,6 +349,7 @@ function createContext({
     motionQuery,
     links,
     scripts,
+    workers,
     getScriptAppendCount: () => scriptAppendCount,
     getSceneInitCount: () => sceneInitCount,
     getContextLossCount: () => contextLossCount,
@@ -347,6 +365,80 @@ async function loadMainWithQuality(context) {
   vm.runInNewContext(qualitySource, context, { filename: qualitySourcePath });
   vm.runInNewContext(mainSource, context, { filename: mainSourcePath });
 }
+
+const WORKER_CAPABILITIES = {
+  available: true,
+  softwareRenderer: false,
+  maxAnisotropy: 16,
+  maxTextureSize: 8192,
+};
+
+test("static preferences block the worker before cold GPU probing", async () => {
+  for (const options of [{ forcedColors: true }, { reducedMotion: true }, { saveData: true }]) {
+    const harness = createContext({ ...CAPABLE, ...options, workerProbe: true });
+    await loadMainWithQuality(harness.context);
+    harness.dispatchDOMContentLoaded();
+    await harness.flushIdleCallbacks();
+    assert.equal(harness.workers.length, 0);
+    assert.equal(harness.getWebglProbeCount(), 0);
+    assert.equal(harness.scripts.length, 0);
+    assert.equal(harness.fetches.length, 0);
+  }
+});
+
+test("concurrent cold startup shares one worker and its capability result without a UI context", async () => {
+  const harness = createContext({ ...CAPABLE, workerProbe: true, sceneLoader: true });
+  await loadMainWithQuality(harness.context);
+  const first = harness.context.window.BabelSite.ensureSceneReady();
+  const second = harness.context.window.BabelSite.ensureSceneReady();
+  assert.equal(harness.workers.length, 1);
+  assert.equal(harness.scripts.length, 0, "the live gate waits for capability detection");
+  assert.equal(harness.getWebglProbeCount(), 0);
+  assert.ok(!harness.events.includes("loader:begin"));
+  harness.workers[0].onmessage({ data: WORKER_CAPABILITIES });
+  assert.equal(await first, true);
+  assert.equal(await second, true);
+  assert.equal(harness.workers[0].terminated, true);
+  assert.equal(harness.scripts.length, 1);
+  assert.equal(harness.fetches.length, 2);
+  assert.equal(harness.getSceneInitCount(), 1);
+  assert.equal(harness.getWebglProbeCount(), 0);
+});
+
+test("forced colors changing during worker startup blocks requests and recovers from the cached result", async () => {
+  for (const forcedColors of [false, true]) {
+    const harness = createContext({
+      ...CAPABLE,
+      forcedColors,
+      workerProbe: true,
+      sceneLoader: true,
+    });
+    await loadMainWithQuality(harness.context);
+    harness.dispatchDOMContentLoaded();
+    if (forcedColors) harness.forcedColorsQuery.setMatches(false);
+    const ready = harness.context.window.BabelSite.ensureSceneReady();
+    assert.equal(harness.workers.length, 1);
+    harness.forcedColorsQuery.setMatches(true);
+    harness.workers[0].onmessage({ data: WORKER_CAPABILITIES });
+    assert.equal(await ready, false);
+    assert.equal(harness.scripts.length, 0);
+    assert.equal(harness.fetches.length, 0);
+    assert.ok(!harness.events.includes("loader:begin"));
+
+    harness.forcedColorsQuery.setMatches(false);
+    assert.equal(
+      harness.scripts.length,
+      1,
+      "the media change itself recovers after an interrupted worker wait",
+    );
+    assert.equal(await harness.context.window.BabelSite.ensureSceneReady(), true);
+    await harness.flushIdleCallbacks();
+    assert.equal(harness.workers.length, 1, "recovery reuses the frozen worker result");
+    assert.equal(harness.getWebglProbeCount(), 0);
+    assert.equal(harness.getSceneInitCount(), 1);
+    assert.equal(harness.fetches.length, 2);
+  }
+});
 
 test("forced colors blocks WebGL, scene chunks, models and the loading line even with overrides", async () => {
   for (const search of [

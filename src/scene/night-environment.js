@@ -1,7 +1,9 @@
 import {
   BackSide,
   HalfFloatType,
+  Group,
   Mesh,
+  MeshBasicMaterial,
   PerspectiveCamera,
   PMREMGenerator,
   Scene,
@@ -72,14 +74,91 @@ function insertBefore(source, anchor, text) {
 // the PMREM texture (null without a sky or on failure) and keeps it until
 // dispose(); restore() draws it again into a fresh target after a lost
 // context. status: "none" | "ready" | "failed"; ms: the capture's time.
-export function createNightEnvironment(renderer, { keyDirection, shellOpacity = 0.52 } = {}) {
+export function createNightEnvironment(
+  renderer,
+  {
+    keyDirection,
+    shellOpacity = 0.52,
+    createGenerator = () => new PMREMGenerator(renderer),
+    schedule = (task) => setTimeout(task, 0),
+    prepareTimeoutMs = 2000,
+  } = {},
+) {
   let sky = null,
     shell = shellOpacity,
     capture = null,
     target = null,
     status = "none",
     ms = 0,
-    linking = null;
+    linking = null,
+    preparing = null,
+    generation = 0,
+    disposed = false;
+  const waiting = new Set();
+  const contextLost = () => renderer.getContext?.()?.isContextLost?.() === true;
+  const current = (ticket) => !disposed && ticket === generation && !contextLost();
+  const cancelPreparation = () => {
+    for (const cancel of waiting) cancel();
+  };
+  const nextTask = () =>
+    new Promise((resolve) => {
+      const finish = () => {
+        waiting.delete(finish);
+        resolve();
+      };
+      waiting.add(finish);
+      schedule(finish);
+    });
+
+  // r160's compileAsync polls mutable material properties without a timeout.
+  // The real renderer lets us snapshot its programs and own a bounded poll;
+  // a compileAsync-only adapter keeps its resources until that raw poll settles.
+  function awaitPrograms(ticket, programs = null, raw = null) {
+    return new Promise((resolve) => {
+      let timer = null;
+      let settled = false;
+      const until = performance.now() + prepareTimeoutMs;
+      const finish = (ready = false) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        waiting.delete(cancel);
+        resolve(ready && current(ticket));
+      };
+      const cancel = () => finish(false);
+      waiting.add(cancel);
+      const poll = () => {
+        try {
+          if (!current(ticket) || performance.now() >= until) return finish(false);
+          if (programs?.every((program) => program.isReady())) return finish(true);
+        } catch {
+          return finish(false);
+        }
+        timer = setTimeout(poll, 10);
+      };
+      if (raw)
+        raw.then(
+          (ready) => finish(ready),
+          () => finish(false),
+        );
+      poll();
+    });
+  }
+  function linkPrograms(scene, camera, ticket) {
+    if (typeof renderer.compile === "function" && typeof renderer.properties?.get === "function") {
+      const materials = renderer.compile(scene, camera);
+      const programs = [...materials].map(
+        (material) => renderer.properties.get(material).currentProgram,
+      );
+      const ready = awaitPrograms(ticket, programs);
+      return { ready, settled: ready.then(() => {}) };
+    }
+    const raw = Promise.resolve(renderer.compileAsync(scene, camera)).then(
+      () => true,
+      () => false,
+    );
+    return { ready: awaitPrograms(ticket, null, raw), settled: raw.then(() => {}) };
+  }
   const key = new Vector3(...(keyDirection ?? [0, 1, 0])).normalize();
   // The sky shell's film sky, with the environment's additions, on a sphere.
   function captureScene() {
@@ -140,50 +219,101 @@ export function createNightEnvironment(renderer, { keyDirection, shellOpacity = 
     if (
       !sky ||
       target ||
-      typeof renderer.compileAsync !== "function" ||
+      (typeof renderer.compileAsync !== "function" &&
+        !(
+          typeof renderer.compile === "function" && typeof renderer.properties?.get === "function"
+        )) ||
       renderer.extensions?.has?.("KHR_parallel_shader_compile") !== true
     )
-      return;
+      return null;
     let probe = null;
     const previous = renderer.getRenderTarget?.() ?? null;
     try {
       const { scene } = captureScene();
       probe = new WebGLRenderTarget(1, 1, { type: HalfFloatType });
       renderer.setRenderTarget(probe);
-      const linked = Promise.resolve(
-        renderer.compileAsync(scene, new PerspectiveCamera(90, 1, 0.1, 100)),
-      ).then(
-        () => {},
-        () => {},
-      );
-      linking = linked;
-      linked.then(() => {
-        if (linking === linked) linking = null;
+      const job = linkPrograms(scene, new PerspectiveCamera(90, 1, 0.1, 100), generation);
+      linking = job.settled;
+      job.settled.then(() => {
+        if (linking === job.settled) linking = null;
       });
+      return job;
     } catch {
       // The capture links on its own draw instead.
+      return null;
     } finally {
       renderer.setRenderTarget?.(previous);
       probe?.dispose();
     }
   }
-  function draw() {
+  // r160 creates its blur material only when the target size is known. Warm
+  // that exact material, and the cube's background, before fromScene() first
+  // introspects either program. These are the pinned generator's allocation
+  // hooks; its actual capture and filtering remain Three's unchanged path.
+  async function prepareCapture(skyLink, ticket) {
+    if (!(await skyLink.ready) || !current(ticket) || !sky) return null;
+    await nextTask();
+    if (!current(ticket)) return null;
+    let probe = null;
+    let background = null;
+    let prefilter = null;
+    let job = null;
+    let consumed = false;
+    const previous = renderer.getRenderTarget?.() ?? null;
+    try {
+      prefilter = createGenerator();
+      prefilter._setSize(256);
+      probe = prefilter._allocateTargets();
+      background = new MeshBasicMaterial({ side: BackSide, depthWrite: false, depthTest: false });
+      const programs = new Group();
+      programs.add(new Mesh(prefilter._lodPlanes[0], prefilter._blurMaterial));
+      programs.add(new Mesh(prefilter._lodPlanes[0], background));
+      renderer.setRenderTarget(probe);
+      job = linkPrograms(programs, new PerspectiveCamera(), ticket);
+    } catch {
+      // A renderer without the pinned hooks still captures through fromScene().
+    } finally {
+      renderer.setRenderTarget?.(previous);
+    }
+    try {
+      if (job && !(await job.ready)) return null;
+      await nextTask();
+      if (!current(ticket)) return null;
+      consumed = true;
+      return attempt(prefilter);
+    } finally {
+      const free = () => {
+        probe?.dispose();
+        background?.dispose();
+        if (!consumed) prefilter?.dispose();
+      };
+      // A compileAsync-only adapter can still be polling these materials.
+      // Readiness settles promptly, but disposal waits for its raw poll.
+      if (job) job.settled.then(free);
+      else free();
+    }
+  }
+  function draw(prepared = null) {
     const start = globalThis.performance?.now?.() ?? 0;
     const { scene } = captureScene(),
-      generator = new PMREMGenerator(renderer);
+      prefilter = prepared ?? createGenerator();
     try {
-      const next = generator.fromScene(scene, 0, 0.1, 100);
+      const next = prefilter.fromScene(scene, 0, 0.1, 100);
       target?.dispose();
       target = next;
     } finally {
-      generator.dispose();
+      prefilter.dispose();
     }
     status = "ready";
     ms = (globalThis.performance?.now?.() ?? 0) - start;
   }
-  function attempt() {
+  function attempt(prepared = null) {
+    if (disposed || contextLost()) {
+      prepared?.dispose();
+      return null;
+    }
     try {
-      draw();
+      draw(prepared);
     } catch {
       status = "failed";
       target?.dispose();
@@ -192,6 +322,9 @@ export function createNightEnvironment(renderer, { keyDirection, shellOpacity = 
     return target?.texture ?? null;
   }
   return {
+    get ready() {
+      return target ? Promise.resolve(target.texture) : (preparing ?? Promise.resolve(null));
+    },
     get status() {
       return status;
     },
@@ -202,10 +335,14 @@ export function createNightEnvironment(renderer, { keyDirection, shellOpacity = 
       return target?.texture ?? null;
     },
     setSky(material, opacity) {
+      if (disposed) return;
       release();
+      generation += 1;
+      cancelPreparation();
       sky = material?.isShaderMaterial ? material : null;
       if (Number.isFinite(opacity)) shell = opacity;
-      prepare();
+      const job = prepare();
+      preparing = job ? prepareCapture(job, generation).catch(() => null) : null;
     },
     capture() {
       if (target) return target.texture;
@@ -214,9 +351,14 @@ export function createNightEnvironment(renderer, { keyDirection, shellOpacity = 
     },
     // A restored context holds no target contents: draw the sky again.
     restore() {
-      return target ? attempt() : null;
+      generation += 1;
+      cancelPreparation();
+      return target || (sky && status !== "failed") ? attempt() : null;
     },
     dispose() {
+      disposed = true;
+      generation += 1;
+      cancelPreparation();
       target?.dispose();
       target = null;
       release();
