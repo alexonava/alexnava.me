@@ -1,14 +1,21 @@
 // Three r160's compileAsync polls mutable material properties after disposal.
-// Capture this compile's programs while their keys are current, and stop before
+// Capture every retained variant while material keys are current, and stop before
 // querying a freed/lost generation. A stalled driver never holds reveal open.
 export function compilePrograms(renderer, objects, camera, targetScene, valid, timeoutMs = 2000) {
   let programs;
   const current = () => valid() && !renderer.getContext?.()?.isContextLost?.();
   try {
     if (!current()) return Promise.resolve(false);
-    programs = [...renderer.compile(objects, camera, targetScene)].map(
-      (material) => renderer.properties.get(material).currentProgram,
-    );
+    programs = [
+      ...new Set(
+        [...renderer.compile(objects, camera, targetScene)].flatMap((material) => {
+          const properties = renderer.properties.get(material);
+          return properties.programs
+            ? [...properties.programs.values()]
+            : [properties.currentProgram];
+        }),
+      ),
+    ];
   } catch {
     return Promise.resolve(false);
   }

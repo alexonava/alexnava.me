@@ -599,6 +599,9 @@ const ORBIT_SPEED = 0.06;
         invalidate: invalidateContent,
         onStatus: (status) => {
           if (qualityDebug) qualityDebug.mountains = status;
+          // Models can arrive after every earlier warm-up has finished.
+          if (!runtimeDisposed && (status === "ready" || status === "fallback"))
+            warmShaders("mountains", hillSilhouette.mesh);
         },
       });
       hillSilhouette.applyQuality(state.profile);
@@ -696,14 +699,13 @@ const ORBIT_SPEED = 0.06;
       function failToTitle(stage, error) {
         if (sceneFailed) return;
         stopFailedScene(stage, error);
-        // Three's compileAsync keeps polling its materials' programs, so dispose
-        // only once in-flight warm-ups settle (each is bounded at 2 s).
+        // Let the bounded in-flight warm-ups settle before runtime disposal.
         (function disposeWhenIdle() {
           if (shaderWarmup.pending) window.setTimeout(disposeWhenIdle, 50);
           else scene.disposeHomeSceneRuntime?.();
         })();
       }
-      // Shader warm-up links new programs through compileAsync instead of a
+      // Shader warm-up links new programs through bounded parallel polling instead of a
       // blocking first draw. Until the canvas is first shown nothing draws while
       // one is pending; afterwards a committed model that replaces nothing
       // visible stays hidden until its programs are ready.
@@ -716,6 +718,8 @@ const ORBIT_SPEED = 0.06;
         shaderWarmup.warm(subject, (ready) => {
           measureScene(`shaders:${label}`, start);
           if (qualityDebug) (qualityDebug.shaders ||= {})[label] = ready ? "ready" : "unwarmed";
+          // warm() restores visibility; retain a quality change made while linking.
+          if (subject === hillSilhouette.mesh) hillSilhouette.applyQuality(state.profile);
           rendering.invalidateShadows();
           invalidateContent();
         });
