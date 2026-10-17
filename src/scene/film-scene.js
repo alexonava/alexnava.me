@@ -1,4 +1,8 @@
 import { EARTH } from "./filmic-earth.js";
+import { MIST_PARS, MIST_UNIFORMS } from "./drifting-mist.js";
+import { FLASH_GROUND } from "./film-light.js";
+import { HIGH_VIEW, RANGE_MIST, SEA_SINK } from "./hill-silhouette.js";
+import { SLATE_TEXT_GUARD } from "./mud-ground.js";
 
 // Borrow existing resources; restore originals before freeing the derived terrain.
 export function createFilmScene({
@@ -53,7 +57,16 @@ export function createFilmScene({
             if (disposed) return terrain.dispose();
             if (active) ground.geometry = terrain;
             invalidate();
-            return settleRoots?.(terrain, ground, rendering, groundHeight, invalidate, tour);
+            // The sea (ocean.js, in the terrain's chunk) borrows the entry's shared GLSL and uniforms.
+            return settleRoots?.(terrain, ground, rendering, groundHeight, invalidate, tour, {
+              SLATE_TEXT_GUARD,
+              MIST_PARS,
+              MIST_UNIFORMS,
+              FLASH_GROUND,
+              RANGE_MIST,
+              SEA_SINK,
+              HIGH_VIEW,
+            });
           })
           .catch(() => {}); // Keep the borrowed procedural ground on failure.
         const sunColor = skyMaterial.uniforms.sunColor.value.clone(),

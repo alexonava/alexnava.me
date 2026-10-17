@@ -106,33 +106,34 @@ _lazy_ marks a chunk loaded on demand.
 
 **Sky and mountains (`src/scene/`)**
 
-| File                 | Role                                                                                                                                              |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `atmosphere.js`      | Sky shell, clouds, nebula octaves                                                                                                                 |
-| `estate-sky.js`      | Film sky gradient, horizon band, the cloud field (`cloudFieldGLSL`), its reshaping (`CLOUD_RESHAPE`) and vortex (`CLOUD_VORTEX`)                  |
-| `celestial-field.js` | Shared nebula frame and dust                                                                                                                      |
-| `starfield.js`       | Stars (`STAR_COUNTS`), hidden behind the cloud banks                                                                                              |
-| `solar-body.js`      | The star, its fire, glow and prominences, and their unrest (`SOLAR_LOOK`, `SOLAR_FIRE`)                                                           |
-| `hill-silhouette.js` | Baseline hill ring, the rings' and the Meshy massifs' materials, loading the massifs, ranges stand-in, far plain air (`HORIZON_AIR`)              |
-| `mountain-build.js`  | _lazy_ Film mountain geometry: the massifs' placements (`RANGE_PLACEMENTS`), the backdrop rings, the five-ring fallback                           |
-| `lightning.js`       | The storm's lightning (`LIGHTNING`): its seeded schedule, the bolt, and the flash on the sky shell, the film's materials, the ground and the mist |
-| `far-fires.js`       | Distant firelights on the far plain and the foothills (`FAR_FIRES`)                                                                               |
+| File                 | Role                                                                                                                                                                                 |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `atmosphere.js`      | Sky shell, clouds, nebula octaves                                                                                                                                                    |
+| `estate-sky.js`      | Film sky gradient, horizon band, the cloud field (`cloudFieldGLSL`), its reshaping (`CLOUD_RESHAPE`) and vortex (`CLOUD_VORTEX`)                                                     |
+| `celestial-field.js` | Shared nebula frame and dust                                                                                                                                                         |
+| `starfield.js`       | Stars (`STAR_COUNTS`), hidden behind the cloud banks                                                                                                                                 |
+| `solar-body.js`      | The star, its fire, glow and prominences, and their unrest (`SOLAR_LOOK`, `SOLAR_FIRE`)                                                                                              |
+| `hill-silhouette.js` | Baseline hill ring, the rings' and the Meshy massifs' materials, loading the massifs, ranges stand-in, far plain air (`HORIZON_AIR`), the ranges sinking past the fault (`SEA_SINK`) |
+| `mountain-build.js`  | _lazy_ Film mountain geometry: the massifs' placements (`RANGE_PLACEMENTS`), the backdrop rings, the five-ring fallback                                                              |
+| `lightning.js`       | The storm's lightning (`LIGHTNING`): its seeded schedule, the bolt, and the flash on the sky shell, the film's materials, the ground and the mist                                    |
+| `far-fires.js`       | Distant firelights on the far plain and the foothills (`FAR_FIRES`)                                                                                                                  |
 
 **Ground (`src/scene/`)**
 
-| File                      | Role                                                                     |
-| ------------------------- | ------------------------------------------------------------------------ |
-| `environment.js`          | Ground root and its children                                             |
-| `textures.js`             | Procedural ground canvases                                               |
-| `film-scene.js`           | Film treatment; borrows and restores the ground                          |
-| `filmic-earth.js`         | Slate map preset and terrain size                                        |
-| `stone-detail.js`         | Slate maps by asset tier                                                 |
-| `mud-ground.js`           | Slate, wetness, puddles, contacts and text boxes (`createSlateContacts`) |
-| `drifting-mist.js`        | Drifting ground mist after each film material's fog (`MIST_DRIFT`)       |
-| `estate-ground-detail.js` | Grass clumps, their wind and the winding path                            |
-| `terrain-build.js`        | _lazy_ Terrain, root supports, puddle mirror, litter, rushes, banks      |
-| `rock-scatter.js`         | Rock clusters and contacts                                               |
-| `rock-build.js`           | _lazy_ Rock placement and instancing                                     |
+| File                      | Role                                                                                                                 |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `environment.js`          | Ground root and its children                                                                                         |
+| `textures.js`             | Procedural ground canvases                                                                                           |
+| `film-scene.js`           | Film treatment; borrows and restores the ground                                                                      |
+| `filmic-earth.js`         | Slate map preset and terrain size                                                                                    |
+| `stone-detail.js`         | Slate maps by asset tier                                                                                             |
+| `mud-ground.js`           | Slate, wetness, puddles, contacts and text boxes (`createSlateContacts`)                                             |
+| `drifting-mist.js`        | Drifting ground mist after each film material's fog (`MIST_DRIFT`)                                                   |
+| `estate-ground-detail.js` | Grass clumps, their wind and the winding path                                                                        |
+| `terrain-build.js`        | _lazy_ Terrain, root supports, puddle mirror, litter, rushes, banks                                                  |
+| `ocean.js`                | _lazy_ (in the terrain's chunk) The fault (`COAST`), the sea (`SEA`), the cliffs, their stacks and the river's falls |
+| `rock-scatter.js`         | Rock clusters and contacts                                                                                           |
+| `rock-build.js`           | _lazy_ Rock placement and instancing                                                                                 |
 
 ## Tools
 

@@ -29,16 +29,23 @@ import { RANGE_LAYERS, MOUNTAINS } from "../src/scene/mountain-build.js";
 import { foothillHeight } from "../src/scene/terrain-build.js";
 import { createSlateContacts, TERRAIN_BASE } from "../src/scene/mud-ground.js";
 import { MIST_KEEP, MIST_PARS, MIST_UNIFORMS, mistOn } from "../src/scene/drifting-mist.js";
+import { coastDistance } from "../src/scene/ocean.js";
 import { flat, source } from "./support/code.mjs";
 
-test("the default is the scattered layout: a dozen small clusters of one to six fires", () => {
-  assert.equal(FAR_FIRES.clusters.length, 12);
+test("the default is the scattered layout: eight small clusters of one to six fires, all on the land", () => {
+  // The clusters out past the fault went into the sea with the ranges (ocean.js).
+  assert.equal(FAR_FIRES.clusters.length, 8);
   for (const [azimuth, distance, spread, count, power] of FAR_FIRES.clusters) {
     assert.ok(azimuth >= 0 && azimuth < 360);
     assert.ok(count >= 1 && count <= 6, "one to six fires a cluster");
     assert.ok(spread >= 0 && power > 0 && power <= 1.5);
-    // Out on the plain and the foothills, beyond the estate and its knoll.
+    // Out on the plain and the foothills, beyond the estate and its knoll, and never at sea.
     assert.ok(distance >= 120, `cluster at ${distance} units stands inside the estate`);
+    const a = (azimuth * Math.PI) / 180;
+    assert.ok(
+      coastDistance(distance * Math.cos(a), distance * Math.sin(a)) > 60,
+      `cluster at ${azimuth} degrees stands in the sea`,
+    );
   }
   assert.equal(FAR_FIRES.glow.cluster, -1, "the scattered fires lift no settlement glow");
   assert.ok(FAR_FIRES.enabled);

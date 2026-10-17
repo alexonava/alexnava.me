@@ -1390,6 +1390,7 @@ const ORBIT_SPEED = 0.06;
           win: window,
           doc: document,
           ground: (x, z) => walkGround(x, z) + environmentRoot.position.y,
+          shore: (x, z) => walkGround.shore?.(x, z),
           tower: () => completeTower?.root ?? null,
           anchors: {
             trunk: {

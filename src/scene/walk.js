@@ -14,9 +14,10 @@
 // vertical fov within [min, max]. body: the walker's radius against solids;
 // stepDown: how far the feet follow the ground down before they leave it;
 // rise: how fast the eye climbs a step. bound: outward motion fades out
-// between soft and hard (from the tower), inside the exact film terrain (88)
-// and the sky's dome (130). shadow: the moon's shadow follows a point `ahead`
-// of the walker snapped to `cell`, over `radius` (rendering.js
+// between soft and hard (from the tower, inside the sky's dome of 130), and
+// toward the sea between shore[0] and shore[1] from the cliffs' lip (the
+// fault's distance, which index.js lends). shadow: the moon's shadow follows
+// a point `ahead` of the walker snapped to `cell`, over `radius` (rendering.js
 // focusFilmShadow()), so its map redraws only on a cell change. band: the
 // tower's solid base, its vertices within this of its lowest (posts, ladder
 // feet and the low braces, all below the eye). tree: the trunk with its root
@@ -51,7 +52,7 @@ export const WALK = Object.freeze({
   body: 0.7,
   stepDown: 0.6,
   rise: 14,
-  bound: Object.freeze({ soft: 76, hard: 86 }),
+  bound: Object.freeze({ soft: 104, hard: 114, shore: Object.freeze([6, 1.2]) }),
   shadow: Object.freeze({ ahead: 16, cell: 6, radius: 40 }),
   band: 5.7,
   tree: 3.4,
@@ -367,20 +368,39 @@ export function vaultTo(u, v, fu, fv, body, fall, c = WALK, look = LOOKOUT) {
   return best;
 }
 
+// The unit direction inland at x/z: up the fault's distance `shore`.
+function inland(shore, x, z, out = [0, 0]) {
+  const e = 0.05,
+    gx = shore(x + e, z) - shore(x - e, z),
+    gz = shore(x, z + e) - shore(x, z - e),
+    l = Math.hypot(gx, gz) || 1;
+  out[0] = gx / l;
+  out[1] = gz / l;
+  return out;
+}
+
 // Limits outward motion near the edge: between bound.soft and bound.hard (from
-// the tower) the outward part of a step fades out, and no step ends beyond
-// hard. Inward and sideways motion are untouched.
-export function boundStep(px, pz, x, z, c = WALK, out = [0, 0]) {
+// the tower), and toward the sea between bound.shore[0] and [1] from the cliffs'
+// lip (shore: the fault's distance at x/z, positive inland), the outward part of
+// a step fades out, and no step ends beyond hard or nearer the lip than
+// shore[1]. Inward and sideways motion are untouched.
+export function boundStep(px, pz, x, z, c = WALK, out = [0, 0], shore = null) {
   const { soft, hard } = c.bound,
-    r = Math.hypot(x, z);
+    [ease, lip] = c.bound.shore,
+    r = Math.hypot(x, z),
+    d = shore?.(x, z) ?? Infinity;
   out[0] = x;
   out[1] = z;
-  if (r <= soft) return out;
-  const nx = x / r,
-    nz = z / r,
-    outward = (x - px) * nx + (z - pz) * nz;
+  // How far into each fade the step ends (0 at its start, 1 at the edge).
+  const ring = (r - soft) / (hard - soft),
+    cliff = (ease - d) / (ease - lip);
+  if (ring <= 0 && cliff <= 0) return out;
+  let nx, nz;
+  if (cliff > ring) [nx, nz] = inland(shore, x, z).map((v) => -v);
+  else [nx, nz] = [x / r, z / r];
+  const outward = (x - px) * nx + (z - pz) * nz;
   if (outward > 0) {
-    const t = Math.min(1, (r - soft) / (hard - soft)),
+    const t = Math.min(1, Math.max(ring, cliff)),
       cut = outward * t * t;
     out[0] -= nx * cut;
     out[1] -= nz * cut;
@@ -389,6 +409,12 @@ export function boundStep(px, pz, x, z, c = WALK, out = [0, 0]) {
   if (reach > hard) {
     out[0] *= hard / reach;
     out[1] *= hard / reach;
+  }
+  // Back from the lip along the fault's slope (its distance is about one a unit).
+  for (let i = 0, gap; shore && i < 3 && (gap = lip - shore(out[0], out[1])) > 0; i++) {
+    const [ix, iz] = inland(shore, out[0], out[1]);
+    out[0] += ix * gap;
+    out[1] += iz * gap;
   }
   return out;
 }
@@ -401,15 +427,21 @@ export function focusCell(x, z, yaw, c = WALK, out = { x: 0, z: 0 }) {
   return out;
 }
 
-// Where the walk starts: under the shot's camera, inside the bound and clear
-// of every solid, facing the shot's subject.
-export function spawn(view, solids, c = WALK) {
+// Where the walk starts: under the shot's camera, inside the bound (where its
+// fades begin) and clear of every solid, facing the shot's subject.
+export function spawn(view, solids, c = WALK, shore = null) {
   let x = view.position.x,
     z = view.position.z;
-  const r = Math.hypot(x, z);
+  const r = Math.hypot(x, z),
+    ease = c.bound.shore[0];
   if (r > c.bound.soft) {
     x *= c.bound.soft / r;
     z *= c.bound.soft / r;
+  }
+  for (let i = 0, gap; shore && i < 3 && (gap = ease - shore(x, z)) > 0; i++) {
+    const [ix, iz] = inland(shore, x, z);
+    x += ix * gap;
+    z += iz * gap;
   }
   [x, z] = settle(x, z, solids, c);
   const target = view.target ?? { x: 0, z: 0 };
@@ -601,7 +633,8 @@ export function createDesktopInput({
 // walk holds the tour (`holdsTour`). camera: the scene's camera; canvas: its
 // element (the mouse is captured on it); page: document.body, which takes
 // scene-walking (the fade) and scene-walk-hidden (styles.css); ground(x, z):
-// the ground's world height; tower(): the tower's root; anchors: the trunk
+// the ground's world height; shore(x, z): the fault's distance there, positive
+// inland (none: no cliffs to keep back from); tower(): the tower's root; anchors: the trunk
 // and the lantern in world x/z; rocks(): the committed rocks ({x, z, half,
 // height, pebble}); view(): the shot's camera position and subject target;
 // fog and fogRange(): the scene's fog and its profile's [near, far]; dissolve:
@@ -614,6 +647,7 @@ export function createWalk({
   win = globalThis,
   doc = globalThis.document,
   ground,
+  shore = null,
   tower = () => null,
   anchors = {},
   rocks = () => [],
@@ -782,7 +816,7 @@ export function createWalk({
       wasGrounded = walker.grounded;
     integrate(walker, want, jump, dt, c);
     settle(walker.x, walker.z, solids, c, point, walker.y);
-    boundStep(fromX, fromZ, point[0], point[1], c, point);
+    boundStep(fromX, fromZ, point[0], point[1], c, point, shore);
     [walker.x, walker.z] = point;
     land(walker, ground(walker.x, walker.z), c);
     if (!walker.grounded || wasGrounded) return;
@@ -878,7 +912,7 @@ export function createWalk({
   function begin() {
     refreshSolids();
     const shot = view(),
-      start = spawn(shot, solids, c);
+      start = spawn(shot, solids, c, shore);
     Object.assign(walker, {
       x: start.x,
       z: start.z,
