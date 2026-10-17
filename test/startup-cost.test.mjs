@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import {
   BoxGeometry,
+  BufferGeometry,
   CanvasTexture,
   Mesh,
   MeshBasicMaterial,
@@ -19,6 +20,7 @@ import {
 import { markSceneEvaluated, measureScene, sceneNow } from "../src/scene/perf-marks.js";
 import { createSceneRendering } from "../src/scene/rendering.js";
 import { createShaderWarmup } from "../src/scene/runtime.js";
+import { createHillSilhouette } from "../src/scene/hill-silhouette.js";
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 const linkedPoll = () => new Promise((resolve) => setTimeout(resolve, 25));
@@ -439,6 +441,80 @@ test("a quality step returns materials to their drawn programs and waits for its
   assert.deepEqual(serial.calls, [["post"]]);
 });
 
+test("shader warm-up snapshots every retained side and geometry variant, once per program", async () => {
+  const reads = { front: 0, back: 0, geometry: 0 };
+  const ready = { front: true, back: false, geometry: false };
+  const programs = Object.fromEntries(
+    Object.keys(reads).map((key) => [
+      key,
+      {
+        isReady() {
+          reads[key]++;
+          return ready[key];
+        },
+      },
+    ]),
+  );
+  const variants = new Map(Object.entries(programs));
+  let lookups = 0;
+  const properties = { programs: variants, currentProgram: programs.front };
+  const { rendering } = createRendering({
+    compile: () => new Set([{}, {}]),
+    properties: {
+      get() {
+        lookups++;
+        return properties;
+      },
+    },
+  });
+  let settled = null;
+  const pending = rendering.compileShaders(200).then((value) => (settled = value));
+  assert.deepEqual(reads, { front: 1, back: 1, geometry: 0 }, "shared variants are deduplicated");
+  assert.equal(lookups, 2, "capture properties once per material");
+  variants.clear();
+  properties.currentProgram = { isReady: () => true };
+  properties.programs = new Map([["replacement", properties.currentProgram]]);
+  await linkedPoll();
+  assert.equal(settled, null, "a ready currentProgram cannot hide the pending back side");
+  ready.back = true;
+  await linkedPoll();
+  assert.equal(settled, null, "the other geometry's captured program still links");
+  assert.ok(reads.geometry > 0);
+  assert.equal(lookups, 2, "polling never rereads mutable material properties");
+  ready.geometry = true;
+  assert.equal(await pending, true);
+  rendering.dispose();
+});
+
+test("disposal cancels a material's pending retained variants before any freed query", async () => {
+  let freed = false,
+    reads = 0;
+  const front = { isReady: () => true };
+  const back = {
+    isReady() {
+      reads++;
+      assert.equal(freed, false);
+      return false;
+    },
+  };
+  const variants = new Map([
+    ["front", front],
+    ["back", back],
+  ]);
+  const { rendering } = createRendering({
+    compile: () => new Set([{}]),
+    properties: { get: () => ({ currentProgram: front, programs: variants }) },
+  });
+  const pending = rendering.compileShaders(100);
+  assert.equal(reads, 1);
+  variants.clear();
+  rendering.dispose();
+  freed = true;
+  assert.equal(await pending, false);
+  await linkedPoll();
+  assert.equal(reads, 1, "no side variant remains polling after disposal");
+});
+
 test("pending scene and depth polls retire before disposal or context replacement", async () => {
   for (const interruption of ["dispose", "physical loss", "restored before poll"]) {
     const handlers = new Map();
@@ -559,6 +635,139 @@ test("shader warm-ups compile in their own task, hide waiting subjects and alway
   assert.equal(result, false);
   assert.equal(throwing.pending, 0, "a throwing compile cannot hold the reveal");
   assert.equal(subject.visible, true);
+});
+
+async function mountainWarmupHarness(outcome) {
+  const index = await source("scene/index.js");
+  // Execute the real integration callbacks with the real hill and warm-up
+  // owners; no WebGL context or whole-scene fixture is needed for this race.
+  const hill = index.slice(
+    index.indexOf("const hillSilhouette = createHillSilhouette("),
+    index.indexOf("hillSilhouette.applyQuality(state.profile);"),
+  );
+  const warmup = index.slice(
+    index.indexOf("const shaderWarmup = createShaderWarmup("),
+    index.indexOf("const lanternMount = createLanternMount("),
+  );
+  assert.ok(hill && warmup);
+  const tasks = [],
+    compiles = [],
+    invalidated = [];
+  let integration, finish;
+  const context = {
+    WORLD: { SKY_DOME_RADIUS: 130, SUN_POSITION: [0, 0, -1] },
+    assetTier: null,
+    canvasShown: false,
+    createHillSilhouette: (options) =>
+      createHillSilhouette({
+        ...options,
+        load: () =>
+          outcome === "ready"
+            ? Promise.resolve({
+                buildMountains: () =>
+                  new Promise((resolve) => {
+                    finish = () => resolve(new BufferGeometry());
+                  }),
+              })
+            : new Promise((_, reject) => {
+                finish = () => reject(new Error("offline"));
+              }),
+      }),
+    createShaderWarmup: (options) =>
+      createShaderWarmup({ ...options, schedule: (task) => tasks.push(task) }),
+    groundHeight: () => 0,
+    invalidateContent: () => invalidated.push(integration.hillSilhouette.mesh.visible),
+    liveView: null,
+    measureScene() {},
+    qualityDebug: {},
+    rendering: {
+      compileShaders() {
+        const compile = { shown: integration.hillSilhouette.mesh.visible };
+        compiles.push(compile);
+        return new Promise((resolve) => {
+          compile.finish = resolve;
+        });
+      },
+      invalidateShadows() {},
+    },
+    runtimeDisposed: false,
+    sceneNow: () => 0,
+    skyConfig: { shellOpacity: 0.5 },
+    state: { profile: { tier: "balanced" } },
+  };
+  vm.runInNewContext(
+    `${hill}\n${warmup}\nglobalThis.integration = { hillSilhouette, shaderWarmup, warmShaders };`,
+    context,
+  );
+  integration = context.integration;
+  return { ...integration, context, tasks, compiles, invalidated, finish: () => finish() };
+}
+
+test("a mountain commit after initial warm-ups stays hidden until its own programs settle", async () => {
+  for (const outcome of ["ready", "fallback"])
+    for (const lowDuringWait of [false, true]) {
+      const h = await mountainWarmupHarness(outcome);
+      h.warmShaders("scene");
+      h.tasks.shift()();
+      h.compiles[0].finish(true);
+      await flush();
+      assert.equal(h.shaderWarmup.pending, 0, "all earlier preparation has already finished");
+      h.hillSilhouette.setFilmTreatment(true);
+      await flush();
+      assert.equal(h.context.qualityDebug.mountains, "loading");
+      assert.equal(h.shaderWarmup.pending, 0, "loading alone cannot start an empty warm-up");
+      h.finish();
+      await h.hillSilhouette.ready;
+      assert.equal(h.context.qualityDebug.mountains, outcome);
+      assert.equal(
+        h.shaderWarmup.pending,
+        1,
+        "the late committed subject gets its own readiness gate",
+      );
+      assert.equal(h.hillSilhouette.mesh.visible, false, "no first draw with unlinked materials");
+      if (lowDuringWait) {
+        h.context.state.profile = { tier: "low" };
+        h.hillSilhouette.applyQuality(h.context.state.profile);
+      }
+      h.tasks.shift()();
+      assert.equal(
+        h.compiles[1].shown,
+        true,
+        "the new subject is shown for synchronous compilation",
+      );
+      assert.equal(h.hillSilhouette.mesh.visible, false, "and hidden again while programs link");
+      assert.equal(h.shaderWarmup.pending, 1);
+      h.compiles[1].finish(true);
+      await flush();
+      assert.equal(h.shaderWarmup.pending, 0);
+      assert.equal(
+        h.hillSilhouette.mesh.visible,
+        !lowDuringWait,
+        "settling retains the current quality",
+      );
+      assert.equal(
+        h.invalidated.at(-1),
+        !lowDuringWait,
+        "quality applies before the redraw request",
+      );
+      assert.equal(h.context.qualityDebug.shaders.mountains, "ready");
+      h.hillSilhouette.dispose();
+    }
+});
+
+test("a late mountain result after teardown cannot start another warm-up", async () => {
+  for (const outcome of ["ready", "fallback"]) {
+    const h = await mountainWarmupHarness(outcome);
+    h.hillSilhouette.setFilmTreatment(true);
+    await flush();
+    h.context.runtimeDisposed = true;
+    h.hillSilhouette.dispose();
+    h.finish();
+    await h.hillSilhouette.ready;
+    assert.equal(h.shaderWarmup.pending, 0);
+    assert.equal(h.tasks.length, 0);
+    assert.equal(h.compiles.length, 0);
+  }
 });
 
 function recordingCanvas(draws) {
