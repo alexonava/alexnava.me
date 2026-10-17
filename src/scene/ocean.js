@@ -233,7 +233,9 @@ const waveTerms = (list) =>
 // seaLight(), the scene's own lights as uniforms (lighting()).
 const NOISE_GLSL = `float seaHash(vec2 p){vec3 q=fract(p.xyx*.1031);q+=dot(q,q.yzx+33.33);return fract((q.x+q.y)*q.z);}
 vec3 seaNoiseD(vec2 p){vec2 i=floor(p),f=fract(p),u=f*f*(3.-2.*f),du=6.*f*(1.-f);float a=seaHash(i),b=seaHash(i+vec2(1,0)),c=seaHash(i+vec2(0,1)),d=seaHash(i+1.),k=a-b-c+d;return vec3(a+(b-a)*u.x+(c-a)*u.y+k*u.x*u.y,du*(vec2(b-a,c-a)+k*u.yx));}
-float seaNoise(vec2 p){return seaNoiseD(p).x;}`;
+float seaNoise(vec2 p){return seaNoiseD(p).x;}
+// White water's grain: two turned octaves, so up close it never shows the noise's square cells.
+float seaFoam(vec2 p){return .6*seaNoise(mat2(.8,.6,-.6,.8)*p)+.4*seaNoise(mat2(.28,-.96,.96,.28)*p*2.13+5.2);}`;
 const ENV_PARS = `#include <envmap_common_pars_fragment>
 #include <cube_uv_reflection_fragment>
 vec3 seaEnv(vec3 d,float r){
@@ -349,14 +351,14 @@ ${stacksSurfGlsl()}
 if(z<${glsl(surf.reach)}||sf>0.){
 float u=fract(z/${glsl(surf.period)}+seaTime*${glsl(surf.speed / surf.period)}),n=seaNoise(P.xz/${glsl(surf.cell)}+seaTime*vec2(.03,-.02));
 float burst=smoothstep(${glsl(1 - surf.cover)},${glsl(1 - surf.cover + 0.25)},n)*exp(-u*2.6);
-float foot=(1.-smoothstep(3.5,6.5+fp,z))*(.6+.4*seaNoise(P.xz/2.2+seaTime*vec2(.35,-.2)));
+float foot=(1.-smoothstep(3.5,6.5+fp,z))*(.6+.4*seaFoam(P.xz/2.2+seaTime*vec2(.35,-.2)));
 float foam=max(foot,burst*(1.-smoothstep(${glsl(surf.reach * 0.3)},${glsl(surf.reach)},z)));
 // Where the falls land: a churning patch, whitest at its heart.
-if(seaFalls.w>0.){float fd=length(P.xz-seaFalls.xy)/seaFalls.z;foam=max(foam,(1.-smoothstep(.25,1.,fd))*(.55+.45*seaNoise(P.xz/1.6+seaTime*vec2(.5,-.4))));}
-foam*=mix(.55,1.,seaLace*smoothstep(.3,.7,seaNoise(P.xz*1.7+seaTime*vec2(.12,-.08))));
+if(seaFalls.w>0.){float fd=length(P.xz-seaFalls.xy)/seaFalls.z;foam=max(foam,(1.-smoothstep(.25,1.,fd))*(.55+.45*seaFoam(P.xz/1.6+seaTime*vec2(.5,-.4))));}
+foam*=mix(.55,1.,seaLace*smoothstep(.25,.75,seaFoam(P.xz*1.7+seaTime*vec2(.12,-.08))));
 foam=mix(foam,${glsl(surf.far)}*(1.-smoothstep(0.,${glsl(surf.reach)},z)),clamp(fp*1.2-.6,0.,1.));
 // About the stacks: swells breaking on them, their far mean where they fall under pixels.
-foam=max(foam,sf*mix((.6+.4*seaNoise(P.xz/1.7+seaTime*vec2(.4,-.3)))*(.8+.2*sin(seaTime*1.3+P.x*.2+P.z*.13)),.45,clamp(fp*1.2-.6,0.,1.)));
+foam=max(foam,sf*mix((.6+.4*seaFoam(P.xz/1.7+seaTime*vec2(.4,-.3)))*(.8+.2*sin(seaTime*1.3+P.x*.2+P.z*.13)),.45,clamp(fp*1.2-.6,0.,1.)));
 foam*=1.-${glsl(sea.text)}*b;
 vec3 lit=seaLight(vec3(0.,1.,0.),babelFlash.x*(1.-b));
 c=mix(c,${glsl(surf.albedo)}*lit,clamp(foam,0.,1.));}
@@ -952,15 +954,16 @@ earthHorizon = max(earthHorizon, slateHigh*smoothstep(${glsl(fade[0])}, ${glsl(f
 }
 
 // The river's falls: where the river (reversed, it runs to the fault) meets
-// the cliffs it pours over the lip into the sea. tongue: how far inland of the lip the falling sheet starts, lift: above the
-// shelf there; rows: the falling sheet's; push: its speed off the lip;
+// the cliffs it pours over the lip into the sea. head: how far inland of the
+// fault the falling sheet leaves the cliffs' shelf (whose last row, 0.9
+// inland, carries the ground's own river), lift: above the shelf there; rows: the falling sheet's; push: its speed off the lip;
 // spread: how much wider it falls; albedo: the white water's; plunge: the
 // radius of the white water where it lands, as a share of its width.
 export const FALLS = Object.freeze({
-  tongue: 1.2,
-  lift: 0.22,
+  head: 0.95,
+  lift: 0.2,
   rows: 22,
-  push: 3.4,
+  push: 4,
   spread: 0.5,
   albedo: 0.5,
   plunge: 2.2,
@@ -997,29 +1000,26 @@ export function riverFalls(line) {
 }
 
 // The falls' geometry: across the river (aFall.x, -1 to 1) and along its
-// course (aFall.y: 0 at the tongue's head, 1 at the lip, 2 at the sea): the
-// tongue laid over the shelf (height: the land's height at x/z) and the sheet
-// falling from the lip under gravity, pushed out along the flow.
+// course (aFall.y: from 0.85 where it leaves the shelf to 2 at the sea): the
+// sheet leaves the shelf's last row (height: the land's height at x/z) and
+// falls under gravity, pushed out along the flow, clear of the rock's lip.
 export function fallsGeometry(drop, height, falls = FALLS, level = SEA.level) {
   const { lip, heading } = drop,
     across = 9,
     [hx, hz] = heading,
-    head = [lip[0] - hx * falls.tongue, lip[1] - hz * falls.tongue],
-    top = height(lip[0], lip[1]) + falls.lift - 0.1,
-    rows = [
-      { x: head[0], z: head[1], y: height(...head) + falls.lift, hw: lip[2], v: 0 },
-      { x: lip[0], z: lip[1], y: top, hw: lip[2], v: 1 },
-    ],
+    head = [lip[0] - hx * falls.head, lip[1] - hz * falls.head],
+    top = height(...head) + falls.lift,
+    rows = [{ x: head[0], z: head[1], y: top, hw: lip[2], v: 0.85 }],
     fall = Math.sqrt((2 * (top - level + 1)) / 32.2);
   for (let k = 1; k <= falls.rows; k++) {
     const t = (k / falls.rows) * fall,
       out = falls.push * t;
     rows.push({
-      x: lip[0] + heading[0] * out,
-      z: lip[1] + heading[1] * out,
+      x: head[0] + hx * out,
+      z: head[1] + hz * out,
       y: top - 16.1 * t * t,
       hw: lip[2] * (1 + falls.spread * (k / falls.rows)),
-      v: 1 + k / falls.rows,
+      v: 0.85 + 1.15 * (k / falls.rows),
     });
   }
   const positions = new Float32Array(rows.length * across * 3),
@@ -1069,12 +1069,12 @@ ${NOISE_GLSL}
 ${coastGlsl()}
 void main(){
 float a=abs(vF.x),v=vF.y;
-// Ragged edges, and the tongue's head easing in from the shelf's water.
+// Ragged edges.
 float edge=1.-smoothstep(.72,1.,a+.25*(seaNoise(vec2(v*6.,vF.x*3.)-seaTime*vec2(2.,0.))-.5));
-if(edge<.02||v<.35*seaNoise(vec2(vF.x*4.,seaTime*.5)))discard;
+if(edge<.02)discard;
 vec3 E=normalize(cameraPosition-vW),n=normalize(vN);
 if(dot(n,E)<0.)n=-n;
-// Over the lip it is dark, fast water mirroring the sky; off it, it whitens into falling streaks.
+// Leaving the lip it is dark, fast water mirroring the sky; falling, it whitens into streaks.
 float white=smoothstep(.85,1.25,v);
 float streak=seaNoise(vec2(vF.x*7.,v*2.5-seaTime*(1.2+2.2*white)))*.6+seaNoise(vec2(vF.x*19.,v*6.-seaTime*(2.+4.*white)))*.4;
 float foam=mix(smoothstep(.55,.95,streak)*.35,.55+.45*streak,white)*edge;
