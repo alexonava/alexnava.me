@@ -666,6 +666,7 @@ export function createWalk({
     outProgress = 1,
     order = null,
     towerRoot = null,
+    towerMatrix = null,
     rockList = null,
     fadeTimer = null,
     disposed = false;
@@ -694,15 +695,29 @@ export function createWalk({
     const range = fogRange();
     if (fog && range) [fog.near, fog.far] = range;
   }
-  // The solids follow the models: the tower's hull and frame once per root,
-  // the rocks once they commit.
+  // The frame follows ancestor moves, carrying a walker attached to the
+  // lookout. Its expensive hull changes only with its footprint, not a lift.
+  // The rocks change once they commit.
   function refreshSolids() {
     const root = tower();
-    if (root !== towerRoot) {
+    root?.updateWorldMatrix?.(true, false);
+    const matrix = root?.matrixWorld?.elements,
+      sameRoot = root === towerRoot;
+    if (!sameRoot || matrix?.some((value, i) => value !== towerMatrix?.[i])) {
+      const carry =
+        drives && sameRoot && lookout && ["ladder", "deck", "vault"].includes(walker.on);
+      if (carry) lookout.local(walker.x, walker.y, walker.z, at);
+      if (!sameRoot || !matrix?.every((value, i) => i === 13 || value === towerMatrix?.[i]))
+        solids.hull = towerFootprint(root, c.band);
       towerRoot = root;
-      solids.hull = towerFootprint(root, c.band);
+      towerMatrix = matrix?.slice() ?? null;
       lookout = towerFrame(root);
       solids.top = lookout ? lookout.world(0, c.band, 0).y : Infinity;
+      if (carry && lookout) {
+        lookout.world(at.u, at.h, at.v, spot);
+        sight.eye += spot.y - walker.y;
+        Object.assign(walker, { x: spot.x, y: spot.y, z: spot.z });
+      }
     }
     const list = rocks() ?? [];
     if (list !== rockList || solids.circles.length === 0) {
@@ -754,7 +769,7 @@ export function createWalk({
       if (
         Math.abs(at.u) < LOOKOUT.ladder.half &&
         at.h < LOOKOUT.deck.floor - 1 &&
-        at.v - ladderLine(at.h, body) <= c.climb.grab &&
+        Math.abs(at.v - ladderLine(at.h, body)) <= c.climb.grab &&
         intoLadder() > 0.5
       ) {
         walker.on = "ladder";

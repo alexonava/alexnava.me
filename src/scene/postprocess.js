@@ -99,7 +99,7 @@ const GRADING_SHADER = {
     uInkVary: { value: new Vector2(0, 9) },
   },
   vertexShader: PASS_VERTEX_SHADER,
-  fragmentShader: `
+  fragmentShader: /* glsl */ `
 uniform sampler2D tDiffuse;
 uniform sampler2D tHalation;
 uniform vec3 uHalation;
@@ -497,7 +497,7 @@ const VIGNETTE_GRAIN_SHADER = {
     slateAspect: { value: 1 },
   },
   vertexShader: PASS_VERTEX_SHADER,
-  fragmentShader: `
+  fragmentShader: /* glsl */ `
 uniform sampler2D tDiffuse;
 uniform int uVignetteEnabled;
 uniform float uVignetteStrength;
@@ -635,7 +635,7 @@ void main() {
       start = 3.0 * uStagger.x * clamp(max(codePrev, codeNow), 0.0, 1.0);
       span = uStagger.y;${
         DISSOLVE_BRUSH.on
-          ? `
+          ? /* glsl */ `
       // The wash (DISSOLVE_BRUSH): this pixel's own turn within its layer's window.
       start += span * (1.0 - ${lensNumber(DISSOLVE_BRUSH.edge)}) * brushTurn(vUv);
       span *= ${lensNumber(DISSOLVE_BRUSH.edge)};`
@@ -645,7 +645,7 @@ void main() {
     w = smoothstep(start, start + span, uProgress);
     vec4 prevTexel = uLayered > 0.5 ? lensView(tPrev, prevUv, prevUv, uBlurPrev, uStarPrev, uFlamePrev, uKeepPrev, guard) : texture2D(tPrev, prevUv);${
       DISSOLVE_SOFT.on
-        ? `
+        ? /* glsl */ `
     // The incoming subject washes in on one long weight, its gaps with it (DISSOLVE_SOFT.wash).
     if (uLayered > 0.5) w = mix(w, smoothstep(0.0, 1.0, uProgress), smoothstep(${lensNumber(DISSOLVE_SOFT.wash[0])}, ${lensNumber(DISSOLVE_SOFT.wash[1])}, subNow));`
         : ""

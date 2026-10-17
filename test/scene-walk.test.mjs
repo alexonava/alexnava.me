@@ -20,6 +20,7 @@ import {
 } from "three";
 import { glbAsset, modelBytes } from "./support/glb.mjs";
 import { createCompleteTowerArchitecture } from "../src/scene/architecture.js";
+import { createSceneEnvironment } from "../src/scene/environment.js";
 import { createCinematicCamera } from "../src/scene/cinematic.js";
 import { createCameraTour, TOUR_IDLE } from "../src/scene/camera-tour.js";
 import { ESTATE, estateLantern } from "../src/scene/estate-layout.js";
@@ -392,7 +393,12 @@ function page({ lock = true } = {}) {
   };
 }
 
-function walkRig({ lock = true, tower = null, target = new Vector3(0, 10, 0) } = {}) {
+function walkRig({
+  lock = true,
+  tower = null,
+  target = new Vector3(0, 10, 0),
+  ground = (x, z) => 1 + 0.02 * x + 0.5 * Math.sin(z / 9),
+} = {}) {
   const site = page({ lock }),
     camera = new PerspectiveCamera(40, 1, 0.1, 450),
     fog = new Fog(0x2d3242, 30, 120),
@@ -404,7 +410,7 @@ function walkRig({ lock = true, tower = null, target = new Vector3(0, 10, 0) } =
     page: site.body,
     win: site.win,
     doc: site.doc,
-    ground: (x, z) => 1 + 0.02 * x + 0.5 * Math.sin(z / 9),
+    ground,
     tower: () => tower,
     anchors: {
       trunk: { x: ESTATE.tree.x + ESTATE.tree.trunk[0], z: ESTATE.tree.z + ESTATE.tree.trunk[1] },
@@ -1257,6 +1263,126 @@ function lookoutRig() {
     },
   };
 }
+
+test("the ladder takes hold only near its access side, never from behind the tower", () => {
+  for (const tier of ["high", "balanced"]) {
+    const tower = towerRoot(tier),
+      frame = towerFrame(tower);
+    for (const front of [false, true]) {
+      const rig = walkRig({ tower }),
+        { walk, site, shot } = rig,
+        start = frame.world(0, 8, front ? 16 : -30),
+        aim = frame.world(0, 8, front ? 0 : -40),
+        local = () => frame.local(walk.state.x, walk.state.y, walk.state.z);
+      shot.position.set(start.x, start.y, start.z);
+      shot.target.set(aim.x, aim.y, aim.z);
+      walkIn(rig);
+      site.canvas.requestPointerLock();
+      const initial = local();
+      site.win.dispatchEvent(key("keydown", "KeyW"));
+      if (front) {
+        for (let i = 0; i < 180 && walk.state.on === "ground"; i++) walk.update(1 / 60, 1600, 900);
+        assert.equal(walk.state.on, "ladder", `${tier}: the ordinary front approach still grabs`);
+        assert.ok(
+          Math.abs(local().v - ladderLine(local().h, WALK.body)) <= WALK.climb.grab,
+          `${tier}: takes hold near the ladder's line`,
+        );
+      } else {
+        let previous = local();
+        for (let i = 0; i < 60; i++) {
+          walk.update(1 / 60, 1600, 900);
+          const at = local();
+          assert.equal(walk.state.on, "ground", `${tier}: no remote grab from behind`);
+          assert.ok(walk.state.grounded, `${tier}: stays on the ground`);
+          assert.ok(
+            Math.hypot(at.u - previous.u, at.v - previous.v) <= WALK.speed.walk / 60 + 1e-9,
+            `${tier}: no snap across the base`,
+          );
+          previous = at;
+        }
+        assert.ok(local().v < initial.v - 4, `${tier}: keeps walking away from the tower`);
+      }
+      walk.dispose();
+    }
+  }
+});
+
+test("layout resizes carry a walker on the ladder, gallery and vault without rebuilding the base hull", () => {
+  const scope = { window: { BabelSite: {} } };
+  vm.runInNewContext(source("src/scene/quality.js"), scope);
+  const composition = scope.window.BabelSite.scene.getSceneCompositionProfile,
+    groundHeight = () => 1.36,
+    environment = createSceneEnvironment({ parent: new Group(), groundHeight }),
+    architecture = createCompleteTowerArchitecture({
+      asset: glbAsset(modelBytes("tower", "high")),
+      groundY: groundHeight(),
+      footingOffset: -0.22,
+    }),
+    tower = architecture.root;
+  environment.root.add(tower);
+  environment.resize({ composition: composition({ width: 1440, height: 900 }) });
+  const rig = walkRig({ tower, ground: () => groundHeight() + environment.root.position.y }),
+    { walk, site, shot, camera } = rig,
+    frame = towerFrame(tower),
+    start = frame.world(0, 8, 16),
+    aim = frame.world(0, 20, 0),
+    local = () => towerFrame(tower).local(walk.state.x, walk.state.y, walk.state.z);
+  shot.position.set(start.x, start.y, start.z);
+  shot.target.set(aim.x, aim.y, aim.z);
+  let traversals = 0;
+  const traverse = tower.traverse;
+  tower.traverse = function (callback) {
+    traversals++;
+    return traverse.call(this, callback);
+  };
+  walkIn(rig);
+  site.canvas.requestPointerLock();
+  const hullTraversals = traversals,
+    hold = (code, until) => {
+      site.win.dispatchEvent(key("keydown", code));
+      for (let i = 0; i < 900 && !until(); i++) walk.update(1 / 60, 1440, 900);
+      site.win.dispatchEvent(key("keyup", code));
+      assert.ok(until(), `reached the next ${code} state`);
+    },
+    resize = (width, height, on) => {
+      const feet = walk.state.y,
+        eye = camera.position.y,
+        h = local().h,
+        y = environment.root.position.y;
+      environment.resize({ composition: composition({ width, height }) });
+      const shift = environment.root.position.y - y;
+      assert.ok(Math.abs(shift) > 0.5, "the actual composition moves the same tower root");
+      walk.update(1 / 60, width, height);
+      assert.equal(walk.state.on, on);
+      close(local().h, h);
+      close(walk.state.y, feet + shift);
+      close(camera.position.y, eye + shift);
+      assert.equal(traversals, hullTraversals, "no geometry traversal for a pure vertical move");
+    };
+  hold("KeyW", () => walk.state.on === "ladder" && local().h > 10);
+  resize(700, 900, "ladder");
+  hold("KeyW", () => walk.state.on === "deck");
+  close(local().h, LOOKOUT.deck.floor);
+  resize(1440, 900, "deck");
+  hold("KeyW", () => local().v <= LOOKOUT.deck.back + WALK.deckBody + 1e-6);
+  hold("Space", () => walk.state.on === "vault");
+  resize(700, 900, "vault");
+  for (let i = 0; i < 60 && walk.state.on !== "drop"; i++) walk.update(1 / 60, 700, 900);
+  assert.equal(walk.state.on, "drop");
+  const fallingY = walk.state.y;
+  environment.resize({ composition: composition({ width: 1440, height: 900 }) });
+  walk.update(1 / 60, 1440, 900);
+  assert.equal(walk.state.on, "drop");
+  assert.ok(Math.abs(walk.state.y - fallingY) < 0.1, "a free drop follows gravity, not the tower");
+  assert.equal(
+    traversals,
+    hullTraversals,
+    "idle frames and repeated vertical moves reuse the hull",
+  );
+  walk.dispose();
+  architecture.dispose();
+  environment.dispose();
+});
 
 test("into the ladder climbs it to the gallery, through the cabin, and away from it comes back down", () => {
   const rig = lookoutRig(),

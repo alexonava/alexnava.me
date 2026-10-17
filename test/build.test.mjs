@@ -637,6 +637,88 @@ test("shader compaction strips GLSL indentation, comments and spaces but keeps d
   assert.throws(() => compactShaderSource("const a = `float x;"), /unterminated template literal/);
 });
 
+test("shader compaction explicitly opts nested GLSL fragments in without changing ordinary templates", () => {
+  const source = [
+    "const shader = `uniform float edge;${enabled ? /* glsl */ `",
+    "  // A fragment without declarations still holds GLSL.",
+    "  start += span * (1.0 - ${edge});",
+    '  span *= ${edge};` : ""}`;',
+    "const plain = `  1.0   plain text  `;",
+    "const decoy = // /* glsl */",
+    "  `  0.5   ordinary text  `;",
+    'const quoted = "/* glsl */" + `  1.0   ordinary text  `;',
+  ].join("\n");
+  const compact = compactShaderSource(source);
+  assert.doesNotMatch(compact, /fragment without declarations/);
+  assert.match(compact, /start\+=span\*\(1\.- \$\{edge\}\);/);
+  for (const line of source.split("\n").slice(4)) assert.ok(compact.includes(line), line);
+  const generated = (code) => new Function("enabled", "edge", code + "\nreturn shader;")(true, 0.3);
+  const tokens = (shader) => shader.replace(/\/\/[^\n]*/g, "").replace(/\s+/g, "");
+  assert.equal(tokens(generated(compact)), tokens(generated(source)).replace("1.0", "1."));
+  assert.equal(compactShaderSource(compact), compact, "annotated fragments stay idempotent");
+});
+
+test("shader compaction shortens float spelling while preserving values, float types and directives", () => {
+  const anchored = "const shader = `float anchor=1.0;`;";
+  assert.equal(
+    compactShaderSource(anchored),
+    anchored,
+    "inferred GLSL keeps downstream text anchors",
+  );
+  const source = [
+    "const shader = /* glsl */ `",
+    "#define EXACT 0.0",
+    "float a=0.0,b=1.000,c=.000,d=0.125,e=-0.50,f=2.0e-3,g=0.50E+2,h=3.0F;",
+    "vec2 unchanged=vec2(10,20);`;",
+    'const quoted = "float untouched = 0.5;";',
+  ].join("\n");
+  const compact = compactShaderSource(source);
+  assert.ok(compact.includes("#define EXACT 0.0\n"), "preprocessor text stays verbatim");
+  assert.ok(compact.includes("a=0.,b=1.,c=0.,d=.125,e=-.50,f=2.e-3,g=.50E+2,h=3.F;"));
+  assert.ok(compact.includes('const quoted = "float untouched = 0.5;";'));
+  const generated = (code) => new Function(code + "\nreturn shader;")();
+  const floats = (shader) =>
+    [...shader.matchAll(/(?<![\w.])(?:\d+\.\d*|\.\d+)(?:[eE][+-]?\d+)?[fF]?(?![\w.])/g)].map(
+      ([token]) => Number(token.replace(/[fF]$/, "")),
+    );
+  assert.deepEqual(
+    floats(generated(compact)),
+    floats(generated(source)),
+    "same float tokens and values",
+  );
+  assert.equal(compactShaderSource(compact), compact);
+});
+
+test("shader compaction leaves numbers split across interpolations intact", () => {
+  const source = [
+    "const shader = /* glsl */ `float a=${whole}.0;float b=1.0${fraction};",
+    "float c=${prefix}0.5;float d=1.0${exponent};float e=${whole}.0${suffix};`;",
+  ].join("\n");
+  const compact = compactShaderSource(source);
+  const generated = (code) =>
+    new Function("whole", "fraction", "prefix", "exponent", "suffix", code + "\nreturn shader;")(
+      2,
+      5,
+      2,
+      "e-2",
+      "f",
+    );
+  assert.equal(generated(compact), generated(source));
+  assert.equal(compactShaderSource(compact), compact);
+});
+
+test("shader compaction preserves cooked numeric text in templates with escapes", () => {
+  for (const source of [
+    "const shader = /* glsl */ `float a=1.0\\\n${tail};`;",
+    "const shader = /* glsl */ `float a=\\u{31}.0;`;",
+  ]) {
+    const compact = compactShaderSource(source);
+    const generated = (code) => new Function("tail", code + "\nreturn shader;")("5");
+    assert.equal(generated(compact), generated(source));
+    assert.equal(compactShaderSource(compact), compact);
+  }
+});
+
 test("every scene module compacts to JavaScript that still parses and minifies no larger", async () => {
   const dir = new URL("../src/scene/", import.meta.url);
   let before = 0,
