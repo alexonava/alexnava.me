@@ -1274,6 +1274,8 @@ test("into the ladder climbs it to the gallery, through the cabin, and away from
     }
     if (walk.state.on === "ground")
       assert.ok(outside(hull, walk.state.x, walk.state.z) >= WALK.body - 1e-6);
+    if (walk.state.on === "deck")
+      assert.ok(at.v <= ladderLine(deck.floor, WALK.body) + 1e-6, `past the gap's lane, ${at.v}`);
   };
   // Up: on the ground into the ladder, then up it in about six seconds.
   let climbing = 0;

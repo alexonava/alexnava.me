@@ -783,10 +783,13 @@ export function createWalk({
       drop(0, 1, c.vault.push, 0);
       return;
     }
+    // The feet ease onto the line from where they took hold; on it, they
+    // follow it exactly as it leans.
     const rate = intoLadder() * (intent.jog ? c.climb.jog : c.climb.speed);
-    const ease = Math.min(1, c.climb.ease * dt),
-      h = Math.min(top, at.h + (rate * dt) / s);
-    place(at.u * (1 - ease), h, at.v + (ladderLine(h, c.body / s) - at.v) * ease);
+    const keep = 1 - Math.min(1, c.climb.ease * dt),
+      h = Math.min(top, at.h + (rate * dt) / s),
+      off = at.v - ladderLine(at.h, c.body / s);
+    place(at.u * keep, h, ladderLine(h, c.body / s) + off * keep);
     walker.grounded = true;
     if (h >= top && rate > 0) {
       walker.on = "deck";
