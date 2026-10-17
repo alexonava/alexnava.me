@@ -3951,8 +3951,8 @@ export function settleRoots(
     if (drip) [DRIP.value[0], DRIP.value[1], DRIP.value[2]] = drip;
     drift?.geometry.userData.update(RIPPLE_TIME.value);
   }
-  // A stand-in's material is freed only once its link has settled: Three
-  // polls the program of every material it is still linking.
+  // The bounded captured-program poll settles before its stand-in's material
+  // is freed. Releasing a probe also invalidates every old polling generation.
   const release = () => {
     const stale = probe;
     probe = null;
@@ -3966,6 +3966,7 @@ export function settleRoots(
       material.needsUpdate = true;
     }
     if (ground.onBeforeRender === beforeRender) delete ground.onBeforeRender;
+    if (ground.onAfterRender === afterRender) delete ground.onAfterRender;
     if (ground.userData.slateDrips === clock) delete ground.userData.slateDrips;
     if (litter) {
       litter.removeFromParent();
@@ -4005,7 +4006,8 @@ export function settleRoots(
     parallel =
       typeof key === "string" &&
       key.endsWith("+root") &&
-      typeof renderer?.compileAsync === "function" &&
+      typeof rendering.compilePrograms === "function" &&
+      typeof renderer?.compile === "function" &&
       renderer.extensions?.has?.("KHR_parallel_shader_compile") === true &&
       !renderer.getContext?.()?.isContextLost?.();
     if (!parallel) {
@@ -4024,28 +4026,40 @@ export function settleRoots(
     );
     // Against a composer target, whose program keys the scene pass uses
     // (rendering.compileShaders()), with the scene's lights and fog.
-    const previous = renderer.getRenderTarget?.() ?? null;
+    const previous = renderer.getRenderTarget?.() ?? null,
+      properties = renderer.properties;
+    const valid = () =>
+      live &&
+      probe === stand &&
+      renderer.properties === properties &&
+      !renderer.getContext?.()?.isContextLost?.();
+    stand.userData.valid = valid;
+    probe = stand;
+    linking = true;
     let pending = null;
     try {
       renderer.setRenderTarget?.(rendering.composer?.readBuffer ?? null);
-      pending = renderer.compileAsync(stand, rendering.camera, scene);
+      pending = rendering.compilePrograms(renderer, stand, rendering.camera, scene, valid);
     } catch {
       pending = null;
     } finally {
       renderer.setRenderTarget?.(previous);
     }
     stand.userData.settled = Promise.resolve(pending).catch(() => {});
-    probe = stand;
-    linking = true;
     // A link still pending after two seconds is left to the switch's draw.
-    Promise.race([
-      stand.userData.settled,
-      new Promise((resolve) => setTimeout(resolve, 2000)),
-    ]).then(() => {
+    stand.userData.settled.then(() => {
       if (probe !== stand) return;
       linking = false;
+      if (!valid()) {
+        release();
+        return;
+      }
       linked = state;
     });
+  }
+  function afterRender() {
+    delete ground.onAfterRender;
+    release();
   }
   function commit() {
     material.userData.slateRoot = shadeSlateGround;
@@ -4061,15 +4075,19 @@ export function settleRoots(
       ground.userData.slateDrips = clock;
     }
     // Hold the stand-in's program until the ground has drawn with it.
-    if (probe)
-      ground.onAfterRender = function () {
-        delete this.onAfterRender;
-        release();
-      };
+    if (probe) ground.onAfterRender = afterRender;
     invalidate();
   }
   (function check() {
     if (!live) return;
+    // r160 replaces renderer.properties on restoration. Identity catches a
+    // loss and restore between poll ticks, even when isContextLost() is false.
+    if (probe && !probe.userData.valid()) {
+      release();
+      linking = false;
+      linked = "";
+    }
+    if (renderer?.getContext?.()?.isContextLost?.()) return nextFrame(check);
     const container = renderer?.domElement?.parentNode;
     if (!linking && !linked && (!container || container.classList?.contains("is-ready"))) link();
     if (linked && allowed()) {

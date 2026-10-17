@@ -507,6 +507,17 @@ export function createWalk({
     onLost: () => exit({ immediate: true }),
     ...(now ? { now } : {}),
   });
+  const forcedColors = win.matchMedia?.("(forced-colors: active)");
+  const onForcedColorsChange = () => {
+    if (!forcedColors?.matches) return;
+    // The hidden canvas stops drawing: restore the page without a dissolve.
+    exit({ immediate: true });
+    // Arming may already have captured the mouse before input attaches.
+    if (doc?.pointerLockElement === canvas) doc.exitPointerLock();
+  };
+  forcedColors?.addEventListener?.("change", onForcedColorsChange);
+  // A capture requested earlier may be granted after the media change exited.
+  doc?.addEventListener?.("pointerlockchange", onForcedColorsChange);
   const set = (capture, cut, progress) =>
     Object.assign(transition, { capture, cut, progress, zoom: 0 });
   function applyFog() {
@@ -732,6 +743,8 @@ export function createWalk({
       if (disposed) return false;
       exit({ immediate: true });
       disposed = true;
+      forcedColors?.removeEventListener?.("change", onForcedColorsChange);
+      doc?.removeEventListener?.("pointerlockchange", onForcedColorsChange);
       clearTimeout(fadeTimer);
       return true;
     },

@@ -23,9 +23,6 @@ import { createPostprocessPipeline } from "./postprocess.js";
 import { disposeSceneRuntimeResources } from "./runtime.js";
 import { compilePrograms } from "./shader-programs.js";
 
-// Past the bound the next draw links whatever remains, as before.
-const SHADER_WARMUP_TIMEOUT_MS = 2000;
-
 export function createSceneRendering({
   container,
   debugShaders = false,
@@ -257,6 +254,7 @@ export function createSceneRendering({
 
   const rendering = {
     camera,
+    compilePrograms,
     composer,
     get disposeResult() {
       return disposeResult;
@@ -354,7 +352,7 @@ export function createSceneRendering({
     // per call), so it is skipped; the crossfade's own programs and the visible
     // maps are prepared either way. Always settles: true once linked, false if
     // skipped, rejected or still pending after timeoutMs.
-    compileShaders(timeoutMs = SHADER_WARMUP_TIMEOUT_MS) {
+    compileShaders(timeoutMs = 2000) {
       if (disposed || renderer.getContext?.()?.isContextLost?.()) return Promise.resolve(false);
       const postprocessReady = postprocessPipeline.compile?.();
       uploadTextures();

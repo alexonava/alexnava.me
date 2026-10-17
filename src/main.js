@@ -2,6 +2,7 @@
   const site = (window.BabelSite = window.BabelSite || {});
   let sceneInitialized = false;
   let sceneLoadPromise = null;
+  let sceneStartupTier = null;
   let staticRecoveryInstalled = false;
   let staticRecoveryAttempted = false;
   const staticRecoveryCleanups = [];
@@ -134,6 +135,18 @@
     staticRecoveryInstalled = staticRecoveryCleanups.length > 0;
   }
 
+  // A preference can interrupt the worker or the scene download after an
+  // earlier recovery consumed its listener. Keep the loaded bundle and model
+  // responses, and rearm only this preference-driven static exit.
+  function deferForStaticPreference(controls = readSceneQualityControls()) {
+    if (!staticPreferenceBlocksScene(controls)) return false;
+    cancelDeferredPrefetch();
+    disableSceneHost();
+    staticRecoveryAttempted = false;
+    installStaticPreferenceRecovery();
+    return true;
+  }
+
   function loadScriptOnce(src, modulePreloads = []) {
     const existing = document.querySelector(`script[data-dynamic-src="${src}"]`);
     if (existing) {
@@ -253,6 +266,7 @@
     deferredPrefetch = () => {
       if (document.hidden === true) return;
       cancelDeferredPrefetch();
+      if (staticPreferenceBlocksScene(readSceneQualityControls())) return;
       prefetchArchitectureModels(tier);
     };
     document.addEventListener("visibilitychange", deferredPrefetch);
@@ -279,27 +293,41 @@
       // CSS hides an initialized scene while forced colors is active. Keep its
       // host available when the preference clears after one-shot recovery.
       if (!sceneInitialized) {
-        disableSceneHost();
-        installStaticPreferenceRecovery();
+        deferForStaticPreference();
       }
       return false;
     }
     if (sceneLoadPromise) return sceneLoadPromise;
 
-    if (site.scene?.initHomeScene) {
-      const initialized = initScene();
-      if (initialized) {
-        enableSceneHost();
-        clearStaticPreferenceRecovery();
-      }
-      return initialized;
-    }
+    // The entry may already be downloaded after a preference interrupted it.
+    // Its presence does not bypass the startup gates on the next call.
+    if (!sceneInitialized && deferForStaticPreference()) return false;
 
-    const controls = readSceneQualityControls();
-    if (staticPreferenceBlocksScene(controls)) {
-      disableSceneHost();
-      installStaticPreferenceRecovery();
-      return false;
+    if (site.scene?.initHomeScene) {
+      try {
+        const starting = !sceneInitialized;
+        if (starting) {
+          site.sceneLoader?.begin?.({ tier: sceneStartupTier });
+          site.sceneLoader?.stage?.("bundle");
+        }
+        enableSceneHost();
+        const initialized = initScene();
+        if (initialized) {
+          if (starting) site.sceneLoader?.stage?.("init");
+          clearStaticPreferenceRecovery();
+        } else if (!deferForStaticPreference()) {
+          releaseArchitecturePrefetch();
+          disableSceneHost();
+          clearStaticPreferenceRecovery();
+        }
+        return initialized;
+      } catch (error) {
+        console.warn("Scene bundle failed to load.", error);
+        releaseArchitecturePrefetch();
+        disableSceneHost();
+        clearStaticPreferenceRecovery();
+        return false;
+      }
     }
 
     sceneLoadPromise = (async () => {
@@ -310,12 +338,7 @@
         // The asynchronous worker may outlive a preference change. Recheck
         // before any scene request, and keep recovery available for that visit.
         const latestControls = readSceneQualityControls();
-        if (staticPreferenceBlocksScene(latestControls)) {
-          disableSceneHost();
-          staticRecoveryAttempted = false;
-          installStaticPreferenceRecovery();
-          return false;
-        }
+        if (deferForStaticPreference(latestControls)) return false;
         const forceLiveScene = forcesLiveScene(latestControls);
         if (!capabilities.available || (!forceLiveScene && capabilities.softwareRenderer)) {
           disableSceneHost();
@@ -331,6 +354,7 @@
         }
 
         // Only the live path shows the title card's loading line.
+        sceneStartupTier = startupTier;
         site.sceneLoader?.begin?.({ tier: startupTier });
         const sceneScript = loadScriptOnce(getSceneScriptUrl(), getSceneModulePreloads());
         // Issued after the bundle request, which keeps its head start.
@@ -338,11 +362,17 @@
         await sceneScript;
         site.sceneLoader?.stage?.("bundle");
         cancelDeferredPrefetch();
+        // Preferences may change during the download too. Wait to initialize
+        // until they permit it, reusing this entry and its model requests.
+        if (deferForStaticPreference()) return false;
         enableSceneHost();
         const initialized = initScene();
         if (!initialized) {
-          releaseArchitecturePrefetch();
-          disableSceneHost();
+          if (!deferForStaticPreference()) {
+            releaseArchitecturePrefetch();
+            disableSceneHost();
+            clearStaticPreferenceRecovery();
+          }
           return false;
         }
         site.sceneLoader?.stage?.("init");
@@ -353,6 +383,7 @@
         cancelDeferredPrefetch();
         releaseArchitecturePrefetch();
         disableSceneHost();
+        clearStaticPreferenceRecovery();
         return false;
       }
     })();

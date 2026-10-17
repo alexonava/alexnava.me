@@ -8,6 +8,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { compactShaderSource } from "../tools/shader-compact.mjs";
+import { compilePrograms } from "../src/scene/shader-programs.js";
 import {
   BoxGeometry,
   BufferGeometry,
@@ -1241,8 +1242,9 @@ test("the ground shading also finds its anchors in the published, compacted chun
   }
 });
 
-// A slate ground in a stand-in scene, with a renderer that links through
-// compileAsync (held until finish()) and a container that takes "is-ready".
+// A slate ground with the real bounded compiler and controllable driver polls.
+// Each finish() readies its captured program; poll() and advance() expose pending
+// loss/restore and timeout cases without relying on wall-clock timer races.
 function linkRig({ revealed = false, parallel = true } = {}) {
   const base = groundBase(),
     terrain = createEarthGeometry(base),
@@ -1254,10 +1256,37 @@ function linkRig({ revealed = false, parallel = true } = {}) {
   root.add(ground, tufts.mesh);
   const names = new Set(revealed ? ["is-ready"] : []),
     links = [];
+  let lost = false,
+    at = Date.now();
+  const properties = () => {
+    const cache = new WeakMap();
+    return {
+      get(material) {
+        if (!cache.has(material)) cache.set(material, {});
+        return cache.get(material);
+      },
+    };
+  };
+  const withPolls = (run, owner = null) => {
+    const schedule = globalThis.setTimeout,
+      now = Date.now;
+    globalThis.setTimeout = (task, delay) => {
+      assert.equal(delay, 10, "only the bounded compiler's driver poll is captured");
+      (owner ?? links.at(-1)).polls.push(task);
+    };
+    Date.now = () => at;
+    try {
+      return run();
+    } finally {
+      globalThis.setTimeout = schedule;
+      Date.now = now;
+    }
+  };
   const renderer = {
     domElement: { parentNode: { classList: { contains: (name) => names.has(name) } } },
     extensions: { has: (name) => parallel && name === "KHR_parallel_shader_compile" },
-    getContext: () => ({ isContextLost: () => false }),
+    getContext: () => ({ isContextLost: () => lost }),
+    properties: properties(),
     shadowMap: { enabled: false },
     target: null,
     getRenderTarget() {
@@ -1266,15 +1295,44 @@ function linkRig({ revealed = false, parallel = true } = {}) {
     setRenderTarget(target) {
       this.target = target;
     },
-    compileAsync(object, camera, scene) {
-      const link = { object, camera, scene, target: this.target };
+    compile(object, camera, scene) {
+      const link = {
+        object,
+        camera,
+        scene,
+        target: this.target,
+        ready: false,
+        reads: 0,
+        freed: 0,
+        polls: [],
+      };
       links.push(link);
-      return new Promise((resolve) => {
-        link.finish = resolve;
-      });
+      const program = {
+        isReady() {
+          assert.equal(link.freed, 0, "no driver query after its material was freed");
+          link.reads++;
+          return link.ready;
+        },
+      };
+      this.properties.get(object.material).currentProgram = program;
+      this.properties.get(object.material).programs = new Map([["root", program]]);
+      object.material.addEventListener("dispose", () => link.freed++);
+      link.poll = () => {
+        const task = link.polls.shift();
+        if (task) withPolls(task, link);
+      };
+      link.finish = () => {
+        link.ready = true;
+        link.poll();
+      };
+      return new Set([object.material]);
+    },
+    compileAsync() {
+      assert.fail("terrain must not start r160's uncancellable material-property poll");
     },
   };
   const rendering = {
+    compilePrograms: (...args) => withPolls(() => compilePrograms(...args)),
     renderer,
     homeScene: root,
     camera: { isCamera: true },
@@ -1290,6 +1348,16 @@ function linkRig({ revealed = false, parallel = true } = {}) {
     links,
     rendering,
     reveal: () => names.add("is-ready"),
+    loseContext: () => (lost = true),
+    restoreContext() {
+      // initGLContext() replaces this object in the pinned r160 renderer.
+      renderer.properties = properties();
+      lost = false;
+    },
+    advance(ms) {
+      at += ms;
+      links.forEach((link) => link.poll());
+    },
   };
 }
 
@@ -1712,15 +1780,15 @@ test("the shaded ground switches early in the canvas's fade-in, on a still frame
     tour.transition.cut = true;
     await clock.step();
     assert.equal(serial.material.customProgramCacheKey(), "moonlit-slate-v3+root");
-    // Disposed while linking: the stand-in is freed only once its link settles.
+    // Disposal invalidates the captured poll before freeing the stand-in.
     const pending = linkRig({ revealed: true });
     settleRoots(pending.terrain, pending.ground, pending.rendering, pending.base, () => {}, tour);
     let freed = 0;
     pending.links[0].object.material.addEventListener("dispose", () => freed++);
     pending.terrain.dispose();
     await clock.step(2);
-    assert.equal(freed, 0, "Three still polls the linking program");
-    pending.links[0].finish();
+    assert.equal(freed, 0, "the scheduled bounded poll has not yet observed disposal");
+    pending.links[0].poll();
     await clock.step(2);
     assert.equal(freed, 1);
     assert.equal(pending.material.customProgramCacheKey(), "moonlit-slate-v3");
@@ -1736,6 +1804,131 @@ test("the shaded ground switches early in the canvas's fade-in, on a still frame
     performance.getEntriesByName = getEntriesByName;
     if (style) globalThis.getComputedStyle = style;
     else delete globalThis.getComputedStyle;
+  }
+});
+
+test("root shader preparation retires lost generations and relinks after context restoration", async () => {
+  for (const phase of ["lost", "restored between polls", "linked before restoration"]) {
+    const r = linkRig({ revealed: true }),
+      clock = frames(),
+      idle = idleTasks(),
+      tour = { running: true, transition: { cut: false } };
+    try {
+      settleRoots(r.terrain, r.ground, r.rendering, r.base, () => {}, tour);
+      const old = r.links[0];
+      assert.equal(old.reads, 1);
+      if (phase === "linked before restoration") {
+        old.finish();
+        await clock.step();
+      }
+      const reads = old.reads;
+      r.loseContext();
+      if (phase === "lost") {
+        old.poll();
+        await clock.step(2);
+        assert.equal(r.links.length, 1, "a lost context cannot start another link");
+      }
+      // Lost and restored synchronously: a pending poll never sees true from
+      // isContextLost(), so only the renderer's replaced property-store identity
+      // distinguishes the old program from the current generation.
+      r.restoreContext();
+      old.poll();
+      await clock.step(2);
+      assert.equal(old.reads, reads, `${phase}: no query of the lost program`);
+      assert.equal(old.freed, 1, `${phase}: the retired stand-in material is released once`);
+      assert.equal(r.links.length, 2, "the restored renderer gets a fresh root program");
+      assert.equal(r.material.customProgramCacheKey(), "moonlit-slate-v3", "no stale commit");
+      r.links[1].finish();
+      await clock.step(2);
+      assert.equal(r.material.customProgramCacheKey(), "moonlit-slate-v3", "wait for a cut");
+      tour.transition.cut = true;
+      await clock.step();
+      assert.equal(r.material.customProgramCacheKey(), "moonlit-slate-v3+root");
+      assert.equal(r.links[1].freed, 0, "the new program lease survives until the ground draws");
+      r.ground.onAfterRender();
+      await clock.step();
+      assert.equal(r.links[1].freed, 1);
+    } finally {
+      r.terrain.dispose();
+      r.links.forEach((link) => link.poll());
+      await idle.flush();
+      await clock.step();
+      r.tufts.dispose();
+      r.material.dispose();
+      clock.restore();
+      idle.restore();
+    }
+  }
+});
+
+test("root shader timeout leaves the cut available and never retains a raw material poll", async () => {
+  const r = linkRig({ revealed: true }),
+    clock = frames(),
+    idle = idleTasks(),
+    tour = { running: true, transition: { cut: true } };
+  try {
+    settleRoots(r.terrain, r.ground, r.rendering, r.base, () => {}, tour);
+    const link = r.links[0];
+    r.advance(1999);
+    await clock.step();
+    assert.equal(r.material.customProgramCacheKey(), "moonlit-slate-v3", "still linking");
+    r.advance(1);
+    await clock.step(2);
+    assert.equal(
+      r.material.customProgramCacheKey(),
+      "moonlit-slate-v3+root",
+      "the 2 s bound settles",
+    );
+    assert.equal(link.ready, false, "the driver never reported readiness");
+    assert.equal(link.polls.length, 0, "no underlying poll survives the readiness timeout");
+    assert.equal(link.freed, 0, "keep the program lease through its first actual draw");
+    r.ground.onAfterRender();
+    await clock.step();
+    assert.equal(link.freed, 1, "the never-ready material is still released after the draw");
+  } finally {
+    r.terrain.dispose();
+    r.links.forEach((link) => link.poll());
+    await idle.flush();
+    r.tufts.dispose();
+    r.material.dispose();
+    clock.restore();
+    idle.restore();
+  }
+});
+
+test("terrain disposal retires pending root polls and removes a committed material lease hook", async () => {
+  for (const phase of ["pending", "committed before first draw"]) {
+    const r = linkRig({ revealed: true }),
+      clock = frames(),
+      idle = idleTasks();
+    let sharedFreed = 0;
+    r.material.addEventListener("dispose", () => sharedFreed++);
+    try {
+      settleRoots(r.terrain, r.ground, r.rendering, r.base, () => {}, null);
+      const link = r.links[0];
+      if (phase === "committed before first draw") {
+        link.finish();
+        await clock.step(2);
+        assert.notEqual(r.ground.onAfterRender, Mesh.prototype.onAfterRender);
+      }
+      const reads = link.reads;
+      r.terrain.dispose();
+      link.poll();
+      await clock.step(2);
+      assert.equal(link.reads, reads, "the disposed generation never queries its driver program");
+      assert.equal(link.freed, 1, `${phase}: derived material is disposed exactly once`);
+      assert.equal(sharedFreed, 0, "the original ground material stays owned by its caller");
+      assert.equal(r.ground.onAfterRender, Mesh.prototype.onAfterRender, "no stale lease hook");
+      assert.equal(r.material.customProgramCacheKey(), "moonlit-slate-v3");
+    } finally {
+      r.terrain.dispose();
+      r.links.forEach((link) => link.poll());
+      await idle.flush();
+      r.tufts.dispose();
+      r.material.dispose();
+      clock.restore();
+      idle.restore();
+    }
   }
 });
 
