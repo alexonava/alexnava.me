@@ -143,10 +143,12 @@ test("scene bundle stays under the deferred-payload budget", async () => {
   for (const name of loaded.keys()) bytes += (await stat(path.join(scriptsDir, name))).size;
   const kb = bytes / 1024;
   // 830 kB since the loading line's star lines up with the opening shot's: the tower's
-  // stored outline (opening-outline.js) is about 10 kB of it.
+  // stored outline (opening-outline.js) is about 10 kB of it. 831 kB since the walk's
+  // view from up high (hill-silhouette.js HIGH_VIEW), the slate's fade into the far
+  // plain seen from the lookout's gallery: about 0.3 kB (the owner's pick of 2026-10-16).
   assert.ok(
-    kb < 830,
-    `scene bundle (${[...loaded.keys()].join(" + ")}) is ${kb.toFixed(1)} kB; budget is 830 kB`,
+    kb < 831,
+    `scene bundle (${[...loaded.keys()].join(" + ")}) is ${kb.toFixed(1)} kB; budget is 831 kB`,
   );
 });
 

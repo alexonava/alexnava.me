@@ -127,7 +127,7 @@ Enforced budgets and windows:
 | Limit                                                                                            | Held by                                                               |
 | ------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
 | UI bundle under 30 KiB                                                                           | bundle-output                                                         |
-| Scene entry and its static chunks under 830 KiB                                                  | bundle-output                                                         |
+| Scene entry and its static chunks under 831 KiB                                                  | bundle-output                                                         |
 | The walk's lazy chunk under 16 KiB                                                               | bundle-output                                                         |
 | Complete scene within 6.25 MiB (high) and 3 MiB (balanced); each model within the loader's limit | bundle-output, `ARCHITECTURE_ASSET_BUDGETS` in architecture-assets.js |
 | Lighthouse thresholds                                                                            | [lighthouserc.json](../lighthouserc.json), locked by workflows        |

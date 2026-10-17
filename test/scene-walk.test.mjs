@@ -1264,6 +1264,8 @@ test("into the ladder climbs it to the gallery, through the cabin, and away from
     { deck } = LOOKOUT;
   walkIn(rig);
   site.canvas.requestPointerLock();
+  walk.update(1 / 60, 1600, 900);
+  assert.equal(walk.high, 0, "no view from up high on the ground");
   const states = [];
   const track = () => {
     const at = local();
@@ -1291,6 +1293,8 @@ test("into the ladder climbs it to the gallery, through the cabin, and away from
   track();
   assert.deepEqual(states, ["ground", "ladder", "deck"]);
   assert.ok(climbing > 5 && climbing < 7.5, `climbed in ${climbing} s`);
+  // Up here the view from high up is whole (it is 0 on the ground).
+  assert.equal(walk.high, 1);
   close(local().h, deck.floor, 1e-6);
   // Still into it: through the gap into the open cabin, where Space (no
   // railing within reach) does nothing, and on to the back railing.
@@ -1307,6 +1311,7 @@ test("into the ladder climbs it to the gallery, through the cabin, and away from
   rig.hold(["KeyS"], () => walk.state.on === "ground" && local().v > 11, 14, track);
   assert.deepEqual(states, ["ground", "ladder", "deck", "ladder", "ground"]);
   assert.ok(walk.state.grounded);
+  assert.equal(walk.high, 0);
   walk.dispose();
 });
 

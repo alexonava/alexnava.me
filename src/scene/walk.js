@@ -33,6 +33,8 @@
 // second, then dropping with that push and a `lift`; a let-go from the ladder
 // drops the same way. landing: a landing dips the eye by up to `dip`, for
 // impacts from `from` over `span` a second, and it recovers at `recover`.
+// high: the eye's height over the ground below it across which the view from up
+// high (hill-silhouette.js HIGH_VIEW) eases in.
 export const WALK = Object.freeze({
   eye: 5.3,
   speed: Object.freeze({ walk: 6.75, jog: 13.5, back: 4.8, strafe: 5.7 }),
@@ -62,6 +64,7 @@ export const WALK = Object.freeze({
   deckBody: 0.45,
   vault: Object.freeze({ reach: 0.3, facing: 0.3, clear: 0.1, push: 5, lift: 2 }),
   landing: Object.freeze({ dip: 0.6, from: 14, span: 30, recover: 2 }),
+  high: Object.freeze([8, 20]),
 });
 
 // The lookout in its own frame (architecture.js createCompleteTowerArchitecture):
@@ -649,7 +652,8 @@ export function createWalk({
   // The lookout's frame (null until its model commits) and a vault under way.
   let lookout = null,
     vault = null,
-    dip = 0;
+    dip = 0,
+    high = 0;
   let phase = "idle",
     holdsTour = false,
     drives = false,
@@ -872,6 +876,7 @@ export function createWalk({
     });
     vault = null;
     dip = 0;
+    high = 0;
     walker.y = ground(walker.x, walker.z);
     sight.eye = walker.y + c.eye;
     sight.yaw = start.yaw;
@@ -949,6 +954,10 @@ export function createWalk({
     },
     get focus() {
       return focus;
+    },
+    // How high the eye stands for the view from up high, 0 to 1 (WALK.high).
+    get high() {
+      return high;
     },
     get frame() {
       return frame;
@@ -1028,6 +1037,9 @@ export function createWalk({
       sight.eye =
         eye < sight.eye || eye - sight.eye > c.eye ? eye : Math.min(eye, sight.eye + c.rise * dt);
       camera.position.set(walker.x, sight.eye, walker.z);
+      const above = (sight.eye - ground(walker.x, walker.z) - c.high[0]) / (c.high[1] - c.high[0]),
+        rise = Math.min(1, Math.max(0, above));
+      high = rise * rise * (3 - 2 * rise);
       camera.rotation.set(sight.pitch, sight.yaw, 0);
       camera.aspect = width / Math.max(1, height);
       camera.fov = walkFov(camera.aspect, c);

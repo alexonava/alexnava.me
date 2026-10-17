@@ -33,7 +33,7 @@ import {
 import { ESTATE, estateLantern } from "./estate-layout.js";
 import { isWalkKey, walkAllowed } from "./walk-key.js";
 import { createRockScatter, estateContacts } from "./rock-scatter.js";
-import { createHillSilhouette } from "./hill-silhouette.js";
+import { HIGH_VIEW, createHillSilhouette } from "./hill-silhouette.js";
 import { createLightning } from "./lightning.js";
 import { createFarFires } from "./far-fires.js";
 import { markScene, measureScene, sceneNow } from "./perf-marks.js";
@@ -1137,6 +1137,8 @@ const ORBIT_SPEED = 0.06;
           );
           camera.lookAt(0, lookAtHeight, 0);
         }
+        // The view from up high (hill-silhouette.js HIGH_VIEW) only while the walk drives.
+        HIGH_VIEW.value = walking ? walk.high : 0;
         if (cinematicApplied) lookTarget.copy(cinematic.target);
         else if (walking) lookTarget.copy(walk.focus);
         else lookTarget.set(0, lookAtHeight, 0);
