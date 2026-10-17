@@ -1,6 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { BoxGeometry, Color, Group, Mesh, MeshStandardMaterial, Scene, Vector3 } from "three";
+import {
+  BoxGeometry,
+  Color,
+  Group,
+  Mesh,
+  MeshStandardMaterial,
+  RepeatWrapping,
+  Scene,
+  ShaderLib,
+  SRGBColorSpace,
+  Texture,
+  Vector2,
+  Vector3,
+} from "three";
 import {
   CLIFF,
   COAST,
@@ -30,7 +43,12 @@ import { MIST_PARS, MIST_UNIFORMS, mistOn } from "../src/scene/drifting-mist.js"
 import { FLASH_GROUND } from "../src/scene/film-light.js";
 import { createFilmScene } from "../src/scene/film-scene.js";
 import { HIGH_VIEW, HORIZON_AIR, RANGE_MIST, SEA_SINK } from "../src/scene/hill-silhouette.js";
-import { configureGroundShading, SLATE_TEXT_GUARD } from "../src/scene/mud-ground.js";
+import {
+  configureGroundShading,
+  createSlateContacts,
+  SLATE_TEXT_GUARD,
+  SLATE_TILING,
+} from "../src/scene/mud-ground.js";
 import {
   createEarthGeometry,
   dripClock,
@@ -269,6 +287,55 @@ test("the cliffs cover the terrain's drop with their shelf, fall below the sea, 
     assert.ok(coastDistance(q.getX(i), q.getZ(i)) < -SEA.surf.reach, "every stack is out at sea");
   }
   assert.ok(top < SEA.level + 25);
+  assert.equal(q.count, STACKS.list.length * STACKS.sides * (STACKS.rings * 6 + 3));
+  const normal = stacks.attributes.normal,
+    va = new Vector3(),
+    vb = new Vector3(),
+    vc = new Vector3(),
+    face = new Vector3(),
+    shade = new Vector3(),
+    joins = new Map();
+  let smoothed = 0,
+    sharp = false;
+  for (let i = 0; i < q.count; i += 3) {
+    va.fromBufferAttribute(q, i);
+    vb.fromBufferAttribute(q, i + 1);
+    vc.fromBufferAttribute(q, i + 2);
+    face.subVectors(vb, va).cross(vc.sub(va)).normalize();
+    for (let j = 0; j < 3; j++) {
+      shade.fromBufferAttribute(normal, i + j);
+      assert.ok(Math.abs(shade.length() - 1) < 1e-6, "finite unit normals");
+      const dot = shade.dot(face),
+        key = [q.getX(i + j), q.getY(i + j), q.getZ(i + j)].join(",");
+      assert.ok(dot >= Math.cos(Math.PI / 6) - 1e-4, "shading stays within the 30-degree crease");
+      if (dot < 1 - 1e-5) smoothed++;
+      if (!joins.has(key)) joins.set(key, []);
+      for (const other of joins.get(key)) if (shade.dot(other) < 0.5) sharp = true;
+      joins.get(key).push(shade.clone());
+    }
+  }
+  assert.ok(smoothed > q.count / 4, "shallow joins do not show every triangle");
+  assert.ok(sharp, "the broken rim and real fractures keep sharp normals");
+  // More rings refine the same geology instead of moving whole ledges to
+  // different heights. Check matching sections on all five authored stacks.
+  const dense = stackGeometry({ ...STACKS, rings: STACKS.rings * 2 }),
+    section = (geometry, rings, k, r, j) => {
+      const i =
+          k * STACKS.sides * (rings * 6 + 3) +
+          (Math.min(r, rings - 1) * STACKS.sides + j) * 6 +
+          (r === rings ? 2 : 0),
+        p = geometry.attributes.position;
+      return [p.getX(i), p.getY(i), p.getZ(i)];
+    };
+  for (let k = 0; k < STACKS.list.length; k++)
+    for (let r = 0; r <= STACKS.rings; r++)
+      for (let j = 0; j < STACKS.sides; j++)
+        assert.deepEqual(
+          section(stacks, STACKS.rings, k, r, j),
+          section(dense, STACKS.rings * 2, k, r * 2, j),
+          "ledge positions follow height, not mesh density",
+        );
+  dense.dispose();
   stacks.dispose();
   // One material for both: the stacks ride on the cliff's mesh, and go with it.
   const cliff = createCliff({
@@ -287,6 +354,179 @@ test("the cliffs cover the terrain's drop with their shelf, fall below the sea, 
   child.geometry.addEventListener("dispose", () => freed++);
   cliff.dispose();
   assert.equal(freed, 2);
+});
+
+test("the cliff shelf shares the ground material, UV phase and neutral root attributes without owning borrowed resources", () => {
+  const maps = Array.from({ length: 10 }, () => new Texture()),
+    [color, normal, nextColor, nextNormal, procedural, detail, grit, relief, nextGrit, nextRelief] =
+      maps,
+    freed = new Map(maps.map((map) => [map, 0])),
+    ground = new MeshStandardMaterial({ color: 0x5c5048 }),
+    view = rendering(),
+    ambient = { color: new Color(0.2, 0.3, 0.4), intensity: 0.8 };
+  let groundFreed = 0;
+  ground.addEventListener("dispose", () => groundFreed++);
+  for (const map of maps) map.addEventListener("dispose", () => freed.set(map, freed.get(map) + 1));
+  color.wrapS = color.wrapT = normal.wrapS = normal.wrapT = RepeatWrapping;
+  color.repeat.setScalar(384 / SLATE_TILING.tile);
+  normal.repeat.copy(color.repeat);
+  color.colorSpace = SRGBColorSpace;
+  ground.map = color;
+  ground.normalMap = normal;
+  ground.normalScale.set(0.45, 0.45);
+  ground.userData.slateRoot = shadeSlateGround;
+  configureGroundShading(ground, true, { detail, grit, relief, contacts: createSlateContacts() });
+  view.lights.ambient = ambient;
+  const cliff = createCliff({
+      lib,
+      clock: dripClock({ value: 0 }),
+      rendering: view,
+      height: () => 1.25,
+      groundMaterial: ground,
+      drop: riverFalls(RIVER_LINE),
+    }),
+    geometry = cliff.mesh.geometry,
+    { position, uv, aCliff, slateRoot, slateShade, slatePool } = geometry.attributes,
+    ownResources = [geometry, cliff.mesh.children[0].geometry, cliff.material],
+    ownFreed = new Map(ownResources.map((resource) => [resource, 0])),
+    version = cliff.material.version;
+  for (const resource of ownResources)
+    resource.addEventListener("dispose", () => ownFreed.set(resource, ownFreed.get(resource) + 1));
+  let disposed = false;
+  const sameMaterial = () => {
+    assert.deepEqual(cliff.mesh.material, [ground, cliff.material]);
+    assert.equal(
+      cliff.mesh.material[0],
+      ground,
+      "the shelf takes the actual ground material, not a copy",
+    );
+    assert.equal(
+      cliff.mesh.children[0].material,
+      cliff.material,
+      "the stacks keep the custom cliff lighting",
+    );
+    assert.notEqual(cliff.material, ground);
+    assert.equal(cliff.material.version, version);
+  };
+  const compileShelf = () => {
+    const shader = {
+      uniforms: {},
+      vertexShader: ShaderLib.physical.vertexShader,
+      fragmentShader: ShaderLib.physical.fragmentShader,
+    };
+    cliff.mesh.material[0].onBeforeCompile(shader);
+    return shader;
+  };
+  try {
+    sameMaterial();
+    assert.equal(
+      cliff.material.uniforms.cliffRiver.value.w,
+      0,
+      "the borrowed river is not painted again on the rock bevel",
+    );
+    const shelfCount =
+      (position.count / (CLIFF.rows + CLIFF.shelfRows + 2) - 1) * CLIFF.shelfRows * 6;
+    assert.deepEqual(
+      geometry.groups,
+      [
+        { start: 0, count: shelfCount, materialIndex: 0 },
+        { start: shelfCount, count: geometry.index.count - shelfCount, materialIndex: 1 },
+      ],
+      "two contiguous draw groups cover the shelf and exposed rock exactly once",
+    );
+    for (let i = 0; i < geometry.index.count; i += 3) {
+      const vertices = [0, 1, 2].map((j) => geometry.index.getX(i + j));
+      if (i < shelfCount)
+        assert.ok(
+          vertices.every((v) => aCliff.getY(v) === 0),
+          "the ground material stays on the shelf",
+        );
+      else
+        assert.ok(
+          vertices.some((v) => aCliff.getY(v) > 0),
+          "the lip and face retain their own material",
+        );
+    }
+    assert.equal(uv.itemSize, 2);
+    assert.equal(slateRoot.itemSize, 4);
+    assert.equal(slateShade.itemSize, 2);
+    assert.equal(slatePool.itemSize, 1);
+    for (const attribute of [uv, slateRoot, slateShade, slatePool])
+      assert.equal(attribute.count, position.count);
+    for (let i = 0; i < position.count; i++) {
+      assert.ok(Math.abs(uv.getX(i) - (position.getX(i) / 384 + 0.5)) < 1e-7);
+      assert.ok(Math.abs(uv.getY(i) - (0.5 - position.getZ(i) / 384)) < 1e-7);
+      assert.deepEqual(
+        [slateRoot.getX(i), slateRoot.getY(i), slateRoot.getZ(i), slateRoot.getW(i)],
+        [0, 0, 0, 1],
+      );
+      assert.deepEqual([slateShade.getX(i), slateShade.getY(i), slatePool.getX(i)], [0, 0, 0]);
+    }
+    const initial = compileShelf();
+    assert.equal(initial.uniforms.slateGrit.value, grit);
+    assert.equal(initial.uniforms.slateRelief.value, relief);
+    assert.ok(
+      initial.vertexShader.includes("attribute vec4 slateRoot;"),
+      "the shelf supports the ground's real root program",
+    );
+    ground.map = nextColor;
+    ground.normalMap = nextNormal;
+    ground.color = new Color(0x665248);
+    ground.normalScale = new Vector2(0.31, 0.42);
+    ground.roughness = 0.72;
+    configureGroundShading(ground, true, {
+      detail,
+      grit: nextGrit,
+      relief: nextRelief,
+      contacts: createSlateContacts(),
+    });
+    ground.needsUpdate = true;
+    sameMaterial();
+    assert.equal(cliff.mesh.material[0].map, nextColor);
+    assert.equal(cliff.mesh.material[0].normalMap, nextNormal);
+    assert.equal(cliff.mesh.material[0].normalScale, ground.normalScale);
+    assert.equal(cliff.mesh.material[0].color, ground.color);
+    assert.equal(cliff.mesh.material[0].roughness, 0.72);
+    const replacement = compileShelf();
+    assert.equal(replacement.uniforms.slateGrit.value, nextGrit);
+    assert.equal(replacement.uniforms.slateRelief.value, nextRelief);
+    ambient.intensity = 1.7;
+    cliff.mesh.children[0].onBeforeRender();
+    assert.deepEqual(
+      cliff.material.uniforms.seaAmbient.value.toArray(),
+      ambient.color.clone().multiplyScalar(1.7).toArray(),
+    );
+    ground.map = procedural;
+    ground.normalMap = null;
+    configureGroundShading(ground, false);
+    sameMaterial();
+    assert.equal(cliff.mesh.material[0].map, procedural);
+    assert.equal(cliff.mesh.material[0].normalMap, null);
+    assert.equal(
+      compileShelf().fragmentShader,
+      ShaderLib.physical.fragmentShader,
+      "fallback uses the ground's own current shader",
+    );
+    assert.ok(
+      [...freed.values()].every((count) => count === 0),
+      "profile and map replacement never release borrowed textures",
+    );
+    cliff.dispose();
+    disposed = true;
+    assert.equal(groundFreed, 0, "the ground material remains owned by the ground");
+    assert.ok(
+      [...freed.values()].every((count) => count === 0),
+      "cliff disposal leaves every borrowed texture alive",
+    );
+    assert.ok(
+      [...ownFreed.values()].every((count) => count === 1),
+      "only the derived geometry and cliff material are released, once each",
+    );
+  } finally {
+    if (!disposed) cliff.dispose();
+    ground.dispose();
+    maps.forEach((map) => map.dispose());
+  }
 });
 
 test("the river pours off the cliffs where it meets the fault, into white water at their foot", () => {
@@ -866,8 +1106,10 @@ test("rocks loading across film withdrawal retain the committed film height whil
 
 test("disposing a film with pending coastal programs settles ready and releases derived resources only", async () => {
   const r = coastalFilmRig();
-  let originalFreed = 0;
+  let originalFreed = 0,
+    materialFreed = 0;
   r.original.addEventListener("dispose", () => originalFreed++);
+  r.ground.material.addEventListener("dispose", () => materialFreed++);
   try {
     r.film.setActive(true);
     await r.step(2);
@@ -876,7 +1118,8 @@ test("disposing a film with pending coastal programs settles ready and releases 
     for (const mesh of batch.meshes) {
       if (!mesh.name.startsWith("estate-")) continue;
       resources.add(mesh.geometry);
-      resources.add(mesh.material);
+      for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material])
+        if (material !== r.ground.material) resources.add(material);
     }
     assert.equal(resources.size, 7, "four shore geometries and three owned materials");
     const freed = new Map([...resources].map((resource) => [resource, 0]));
@@ -891,6 +1134,7 @@ test("disposing a film with pending coastal programs settles ready and releases 
     assert.equal(r.ground.geometry, r.original);
     assert.equal(SEA_SINK.value.w, 0);
     assert.equal(originalFreed, 0, "borrowed geometry survives");
+    assert.equal(materialFreed, 0, "borrowed shelf material survives");
     assert.ok(
       [...freed.values()].every((count) => count === 1),
       "each derived resource is freed once",

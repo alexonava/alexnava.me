@@ -244,10 +244,11 @@ return mix(vec3(.062,.065,.073),vec3(.07,.085,.13),smoothstep(0.,.5,d.y));
 #endif
 }
 uniform vec3 seaKey,seaKeyColor,seaFill,seaFillColor,seaAmbient,seaHemiSky,seaHemiGround;
+vec3 seaDiffuse(vec3 n){return seaKeyColor*max(dot(n,seaKey),0.)+seaFillColor*max(dot(n,seaFill),0.)+seaAmbient+mix(seaHemiGround,seaHemiSky,.5*n.y+.5);}
 // The shore's subdued diffuse response: raw scene light intensities over pi,
 // without the legacy-light pi boost used by the standard materials. The
 // environment remains separate, lifted by a flash.
-vec3 seaLight(vec3 n,float flash){return (seaKeyColor*max(dot(n,seaKey),0.)+seaFillColor*max(dot(n,seaFill),0.)+seaAmbient+mix(seaHemiGround,seaHemiSky,.5*n.y+.5))/SEA_PI+seaEnv(n,1.)*(1.+flash);}`;
+vec3 seaLight(vec3 n,float flash){return seaDiffuse(n)/SEA_PI+seaEnv(n,1.)*(1.+flash);}`;
 
 function seaVertex(sea) {
   const swell = waveTerms(sea.swell)
@@ -277,7 +278,7 @@ function seaFragment(sea, lib) {
   const waves = waveTerms(sea.waves)
       .map(
         ({ k, a, d, w, length }, i) =>
-          `{float f=smoothstep(1.5,3.,${glsl(length)}/fp),s=${glsl(a * k)}*cos(dot(${glslVec(...d)},P.xz)*${glsl(k)}-seaTime*${glsl(w)}+${glsl(i * 2.3)});g+=${glslVec(...d)}*s*f;v+=${glsl((a * k) ** 2 * 0.5)}*(1.-f*f);}`,
+          `{float f=smoothstep(1.5,3.,${glsl(length)}/fp),s=${glsl(a * k)}*cos(dot(${glslVec(...d)},P.xz)*${glsl(k)}-seaTime*${glsl(w)}+${glsl(i * 2.3)}+(phaseWarp.x-.5)*1.4*warpFade);g+=(${glslVec(...d)}+phaseWarp.yz*${glsl(1.4 / (31 * k))}*warpFade)*s*f;v+=${glsl((a * k) ** 2 * 0.5)}*(1.-f*f);}`,
       )
       .join("\n"),
     [rl, rs, rk] = sea.ripple,
@@ -314,6 +315,10 @@ float d=seaCoast(P.xz);
 if(d>${glsl(sea.margin)})discard;
 float z=-d;
 vec2 g=vec2(0.);float v=${glsl(sea.rough * sea.rough)};
+// Broad, slow phase variation breaks long ruled crests; its derivative
+// keeps the reflected normal consistent, and unresolved waves still fade.
+vec3 phaseWarp=seaNoiseD(P.xz/31.+seaTime*vec2(.008,-.006));
+float warpFade=smoothstep(1.5,3.,31./fp);
 ${waves}
 ${ripple}
 // Broad slicks: patches of calmer and rougher water drifting with the wind.
@@ -323,11 +328,11 @@ v*=mix(.45,1.6,smoothstep(.25,.75,slick));
 float s=sqrt(v);vec2 eh=normalize(-V.xz+1e-6);
 vec3 N=normalize(vec3(-g.x+eh.x*${glsl(sea.mask)}*s*(1.-smoothstep(.1,.6,-V.y)),1.,-g.y+eh.y*${glsl(sea.mask)}*s*(1.-smoothstep(.1,.6,-V.y)))),E=-V;
 // Near the horizon the surface's slopes blur its mirror (grazing, the slopes along the ray stretch it).
-float rough=s+.9*(1.-smoothstep(.02,.3,-V.y));
+float rough=s+.65*(1.-smoothstep(.02,.3,-V.y));
 vec3 R=reflect(V,N);R.y=${glsl(sea.horizon)}+(1.-${glsl(sea.horizon)})*max(R.y,0.);R=normalize(R);
 float ne=max(dot(N,E),0.),F=${glsl(sea.f0)}+${glsl(1 - sea.f0)}*pow(1.-ne,5.);
 float b=slateBehindText();
-vec3 sky=seaEnv(R,clamp(rough*2.5,0.,1.))*${glsl(sea.sky)}*(1.+babelFlash.y*(1.-b));
+vec3 sky=seaEnv(R,clamp(rough*1.8,0.,1.))*${glsl(sea.sky)}*(1.+babelFlash.y*(1.-b));
 // The water's mirror, through the river's knee (keeping its hue).
 vec3 refl=sky*F;float rY=dot(refl,vec3(.2126,.7152,.0722));refl*=${glsl(sea.knee)}*(1.-exp(-rY/${glsl(sea.knee)}))/max(rY,1e-5);
 // The moon's glitter: a GGX lobe at the slopes the pixel holds (Smith-masked), through its own knee.
@@ -351,7 +356,7 @@ if(seaFalls.w>0.){float fd=length(P.xz-seaFalls.xy)/seaFalls.z;foam=max(foam,(1.
 foam*=mix(.55,1.,seaLace*smoothstep(.3,.7,seaNoise(P.xz*1.7+seaTime*vec2(.12,-.08))));
 foam=mix(foam,${glsl(surf.far)}*(1.-smoothstep(0.,${glsl(surf.reach)},z)),clamp(fp*1.2-.6,0.,1.));
 // About the stacks: swells breaking on them, their far mean where they fall under pixels.
-foam=max(foam,sf*mix((.45+.55*seaNoise(P.xz/1.7+seaTime*vec2(.4,-.3)))*(.6+.4*sin(seaTime*1.3+P.x*.2+P.y*.13)),.4,clamp(fp*1.2-.6,0.,1.)));
+foam=max(foam,sf*mix((.6+.4*seaNoise(P.xz/1.7+seaTime*vec2(.4,-.3)))*(.8+.2*sin(seaTime*1.3+P.x*.2+P.z*.13)),.45,clamp(fp*1.2-.6,0.,1.)));
 foam*=1.-${glsl(sea.text)}*b;
 vec3 lit=seaLight(vec3(0.,1.,0.),babelFlash.x*(1.-b));
 c=mix(c,${glsl(surf.albedo)}*lit,clamp(foam,0.,1.));}
@@ -481,13 +486,14 @@ export function createSea({ lib, clock, rendering, sea = SEA, plunge = null } = 
 // terrain with no rim; wet: the band above the sea the spray keeps dark.
 export const CLIFF = Object.freeze({
   step: 0.8,
+  shelfRows: 6,
   rows: 16,
   foot: -16,
   lean: 2.6,
   jag: 2.4,
   cell: 7,
   band: 2.6,
-  lip: Object.freeze([0.04, 0.3]),
+  lip: Object.freeze([0.04, 0.48]),
   rock: Object.freeze([Object.freeze([0.1, 0.09, 0.088]), Object.freeze([0.24, 0.215, 0.205])]),
   dust: Object.freeze([0.3, 0.25, 0.25]),
   wet: 3.5,
@@ -544,12 +550,14 @@ export function cliffGeometry(height, cliff = CLIFF, half = 190, notch = null) {
       z = TZ * s + NZ * (COAST.offset + w);
     if (Math.abs(x) <= half && Math.abs(z) <= half) span.push(s);
   }
-  const shelfRows = 3,
+  const shelfRows = cliff.shelfRows,
     lipRows = 2,
     cols = span.length,
     rows = shelfRows + lipRows + cliff.rows;
   const positions = new Float32Array(cols * rows * 3),
-    attrs = new Float32Array(cols * rows * 3);
+    attrs = new Float32Array(cols * rows * 3),
+    uvs = new Float32Array(cols * rows * 2),
+    roots = new Float32Array(cols * rows * 4);
   span.forEach((s, i) => {
     const [ox, oz] = faultNormal(s),
       [px, pz] = faultPoint(s),
@@ -561,6 +569,8 @@ export function cliffGeometry(height, cliff = CLIFF, half = 190, notch = null) {
       positions[k + 1] = y;
       positions[k + 2] = pz + oz * off;
       attrs.set([s, v, off], (i * rows + row) * 3);
+      uvs.set([positions[k] / 384 + 0.5, 0.5 - positions[k + 2] / 384], (i * rows + row) * 2);
+      roots[(i * rows + row) * 4 + 3] = 1;
     };
     const ground = (off) => height(px + ox * off, pz + oz * off);
     const inner = -SHORE.shelf - 1.2 * fbm(s / 9, 0.3);
@@ -569,7 +579,7 @@ export function cliffGeometry(height, cliff = CLIFF, half = 190, notch = null) {
       at(off, ground(off) + 0.04 + 0.12 * (r / shelfRows) * fbm(s / 3, r), r, 0);
     }
     // The broken edge: low teeth along it (ridged noise) and a crisp, ragged break.
-    const tooth = 1 - Math.abs(2 * fbm(s / 1.6, 7.1) - 1),
+    const tooth = 1 - Math.abs(2 * fbm(s / 3.4, 7.1) - 1),
       top =
         ground(-1) +
         (cliff.lip[0] + (cliff.lip[1] - cliff.lip[0]) * tooth) * (1 - slot) +
@@ -592,24 +602,32 @@ export function cliffGeometry(height, cliff = CLIFF, half = 190, notch = null) {
     }
   });
   const indices = new Uint32Array((cols - 1) * (rows - 1) * 6);
-  let k = 0;
+  const shelfCount = (cols - 1) * shelfRows * 6;
+  let topIndex = 0,
+    faceIndex = shelfCount;
   for (let i = 0; i < cols - 1; i++)
     for (let r = 0; r < rows - 1; r++) {
       const a = i * rows + r,
         b = a + 1,
         c = a + rows,
         d = c + 1;
-      indices[k++] = a;
-      indices[k++] = c;
-      indices[k++] = b;
-      indices[k++] = b;
-      indices[k++] = c;
-      indices[k++] = d;
+      const k = r < shelfRows ? topIndex : faceIndex;
+      indices.set([a, c, b, b, c, d], k);
+      if (r < shelfRows) topIndex += 6;
+      else faceIndex += 6;
     }
   const geometry = new BufferGeometry();
   geometry.setAttribute("position", new BufferAttribute(positions, 3));
   geometry.setAttribute("aCliff", new BufferAttribute(attrs, 3));
+  // The shelf shares the ground's complete material and UV phase. Neutral
+  // root attributes leave the estate's root treatment away from the fault.
+  geometry.setAttribute("uv", new BufferAttribute(uvs, 2));
+  geometry.setAttribute("slateRoot", new BufferAttribute(roots, 4));
+  geometry.setAttribute("slateShade", new BufferAttribute(new Float32Array(cols * rows * 2), 2));
+  geometry.setAttribute("slatePool", new BufferAttribute(new Float32Array(cols * rows), 1));
   geometry.setIndex(new BufferAttribute(indices, 1));
+  geometry.addGroup(0, shelfCount, 0);
+  geometry.addGroup(shelfCount, indices.length - shelfCount, 1);
   geometry.computeVertexNormals();
   return geometry;
 }
@@ -659,12 +677,17 @@ function stackFrame([s, out, , , , lean, turn]) {
   };
 }
 
-// The stacks' faceted geometry (flat-shaded rock), with the cliff's
+// The stacks' fractured geometry (shallow joins smooth, deep creases sharp), with the cliff's
 // attributes: around each (for its grain), a stack's mark (2: past the face's
 // 0 to 1, so it takes STACKS.wet), and across (1: none of the shelf's dust).
 export function stackGeometry(stacks = STACKS, level = SEA.level) {
   const positions = [],
-    attrs = [];
+    attrs = [],
+    normals = [],
+    crease = Math.cos(Math.PI / 6),
+    edgeA = new Vector3(),
+    edgeB = new Vector3(),
+    average = new Vector3();
   stacks.list.forEach((stack, k) => {
     const [, , height, half, stretch] = stack,
       { c, U, Y, W } = stackFrame(stack),
@@ -677,22 +700,28 @@ export function stackGeometry(stacks = STACKS, level = SEA.level) {
     ];
     // Ring r's points: a ragged section (broad lumps and fine fractures, so the
     // outline never reads as a polygon, even veiled in mist), its middle
-    // wandering, ledged now and then, a stack tapering up.
+    // wandering, ledged now and then, a stack tapering up. Broad ledges follow
+    // height, independent of tessellation, and end unevenly around the rock.
     const ring = (r) => {
       const v = r / rings,
         ly = -base + (height + base) * v,
         taper = slab ? 1 : 1 - 0.28 * v * v,
-        ledge = fbm(k * 3.1, r * 0.83) > 0.55 ? 0.78 : 1,
+        ledge = smooth(0.42, 0.7, fbm(k * 3.1, v * 3)),
         du = (fbm(k * 5.3, v * 3.1) - 0.5) * half * stretch * 0.35,
         dw = (fbm(k * 6.1 + 2, v * 3.1) - 0.5) * half * 0.35;
       return [...Array(sides).keys()].map((j) => {
         const a = (j / sides) * 2 * Math.PI,
+          cover = smooth(
+            0.3,
+            0.7,
+            noise2(k * 7.2 + Math.cos(a) * 1.3, Math.sin(a) * 1.3 + v * 1.1),
+          ),
           rad =
             (0.72 +
               0.5 * fbm(k * 13 + j * 0.9, v * 4.1) +
               0.32 * (noise2(k * 31 + j * 2.7, v * 9.3) - 0.5)) *
             taper *
-            ledge,
+            (1 - 0.12 * ledge * cover),
           // The top ring is broken: its points stand at ragged heights.
           crown = r === rings ? (fbm(k * 7 + j * 1.3, 5.1) - 0.5) * (slab ? 5 : 3.4) : 0;
         return {
@@ -705,11 +734,22 @@ export function stackGeometry(stacks = STACKS, level = SEA.level) {
         };
       });
     };
-    const face = (a, b, d) =>
-      [a, b, d].forEach(({ p, arc }) => {
+    const faces = [],
+      adjoining = new Map();
+    const face = (a, b, d) => {
+      edgeA.fromArray(b.p).sub(edgeB.fromArray(a.p));
+      edgeB.fromArray(d.p).sub(average.fromArray(a.p));
+      const points = [a, b, d],
+        normal = edgeA.cross(edgeB).normalize().clone();
+      faces.push({ points, normal });
+      points.forEach((vertex) => {
+        const { p, arc } = vertex;
         positions.push(...p);
         attrs.push(arc, 2, 1);
+        if (!adjoining.has(vertex)) adjoining.set(vertex, []);
+        adjoining.get(vertex).push(normal);
       });
+    };
     let below = ring(0);
     for (let r = 1; r <= rings; r++) {
       const above = ring(r);
@@ -721,15 +761,25 @@ export function stackGeometry(stacks = STACKS, level = SEA.level) {
       below = above;
     }
     // The cap: broken, a little domed.
-    // (Its peak over the top ring's middle, which wanders.)
+    // Its peak follows the top ring's wandering middle. Separate vertices
+    // keep the cap's broken rim sharp even where a side join is shallow.
     const mid = [0, 1, 2].map((i) => below.reduce((sum, { p }) => sum + p[i], 0) / sides),
-      top = { p: [mid[0], mid[1] + 0.4 * fbm(k, 9.1) * Y[1], mid[2]], arc: k * 50 };
-    for (let j = 0; j < sides; j++) face(below[j], below[(j + 1) % sides], top);
+      top = { p: [mid[0], mid[1] + 0.4 * fbm(k, 9.1) * Y[1], mid[2]], arc: k * 50 },
+      cap = below.map(({ p, arc }) => ({ p, arc }));
+    for (let j = 0; j < sides; j++) face(cap[j], cap[(j + 1) % sides], top);
+    for (const { points, normal } of faces)
+      for (const vertex of points) {
+        average.set(0, 0, 0);
+        for (const other of adjoining.get(vertex))
+          if (normal.dot(other) >= crease) average.add(other);
+        average.normalize();
+        normals.push(average.x, average.y, average.z);
+      }
   });
   const geometry = new BufferGeometry();
   geometry.setAttribute("position", new BufferAttribute(new Float32Array(positions), 3));
   geometry.setAttribute("aCliff", new BufferAttribute(new Float32Array(attrs), 3));
-  geometry.computeVertexNormals();
+  geometry.setAttribute("normal", new BufferAttribute(new Float32Array(normals), 3));
   return geometry;
 }
 
@@ -820,11 +870,26 @@ gl_FragColor=vec4(c,${SEA_SHARED.layer});
 // the land's height at x/z in that frame; drop: where the river falls
 // (riverFalls()), whose slot the cliffs leave and whose last run their shelf
 // paints.
-export function createCliff({ lib, clock, rendering, height, cliff = CLIFF, drop = null } = {}) {
+export function createCliff({
+  lib,
+  clock,
+  rendering,
+  height,
+  groundMaterial = null,
+  cliff = CLIFF,
+  drop = null,
+} = {}) {
   const uniforms = sharedUniforms(lib, clock),
     notch = drop ? [drop.along, drop.lip[2] + 1.5] : null;
   uniforms.cliffRiver = {
-    value: { x: drop?.lip[0] ?? 0, y: drop?.lip[1] ?? 0, z: 0, w: drop?.lip[2] ?? 0 },
+    // The borrowed ground already draws the river up to the lip. Painting it
+    // again on the rock bevel makes the notch read as folded flat panels.
+    value: {
+      x: drop?.lip[0] ?? 0,
+      y: drop?.lip[1] ?? 0,
+      z: 0,
+      w: groundMaterial ? 0 : (drop?.lip[2] ?? 0),
+    },
   };
   uniforms.cliffFlow = { value: { x: drop?.heading[0] ?? 1, y: drop?.heading[1] ?? 0 } };
   const material = new ShaderMaterial({
@@ -845,7 +910,9 @@ vSlateClip=gl_Position;
     extensions: { derivatives: true },
   });
   const update = lighting(rendering, material, uniforms);
-  const mesh = new Mesh(cliffGeometry(height, cliff, 190, notch), material),
+  const geometry = cliffGeometry(height, cliff, 190, notch);
+  if (!groundMaterial) geometry.clearGroups();
+  const mesh = new Mesh(geometry, groundMaterial ? [groundMaterial, material] : material),
     stacks = new Mesh(stackGeometry(), material);
   mesh.name = "estate-cliff";
   stacks.name = "estate-stacks";

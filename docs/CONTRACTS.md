@@ -245,6 +245,8 @@ Inside the scene bundle most modules meet through the subsystem hooks ([Architec
 
 `createEarthGeometry()`'s sixth argument, `prepareOnly`, is internal to film-scene.js when `settleRoots` is available: the detached sliced build resolves immediately on completion, leaving publication and shadow invalidation to the atomic owner. Default callers and the missing-settler fallback retain its existing unseen publication gate and shadow invalidation.
 
+`settleRoots()` lends the ground's material to `createCliff()` for the cliff geometry's shelf group. The shelf has the terrain's UV phase and neutral root attributes, so the same material supplies its current maps, close soil and lighting through replacement or fallback. The lip/face group and the stacks retain the cliff owner's rock material. This adds one draw in the existing scene pass and reuses the ground's program; there is no new texture or effect pass. The cliff never changes or frees the borrowed material or its textures. Without a lender the standalone cliff retains its single rock material.
+
 ### Shared uniform objects
 
 A uniform object passed to another material is lent, not copied: both materials hold the same `{ value }`, so one write reaches both. Only the writers listed below change `value`; no material copies, frees or replaces a lent object, and disposing a borrower leaves the lender and its uniforms intact.

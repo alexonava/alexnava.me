@@ -4015,6 +4015,7 @@ export function settleRoots(
           clock: seaClock,
           rendering,
           height: landHeight,
+          groundMaterial: material,
           drop,
         }),
         ...(falls ? [falls] : []),

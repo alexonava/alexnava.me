@@ -124,6 +124,7 @@ The rules for visual, motion and typographic changes. Read them before changing 
 - The river's falls (`FALLS`): north-east of the tree the river runs out over the cliffs' shelf as dark, fast water whitening at the lip, and falls the cliffs' height as a white sheet into white water at their foot; the cliffs stand straighter and set back in the slot it has cut.
 - The tour sees the sea as the open horizon behind the tree (Root and lantern, Lantern study, Portrait, Close-up); the look-ups and the lookout's land-facing shots are unchanged. The cliffs, the falls and the surf show from the lookout's gallery and from the cliffs' edge, which the walk reaches.
 - All of it is realistic, as the ground is: no cel step, no ink, no new light (it reads the scene's own lights).
+- The shelf borrows the ground's complete material, continuing its authored slate, close grit, relief and lighting in the same world phase right to the broken lip. The vertical face keeps its rock treatment. The fault's teeth are broad, irregular breaks. Stack ledges vary continuously over their height and around their circumference; shallow joins share normals, while real fractures and crown edges stay sharp. Broad, subdued sky variation remains on the sea below its dark horizon, and broken wash at the stacks' feet seats them in the water.
 
 ## Static images
 
