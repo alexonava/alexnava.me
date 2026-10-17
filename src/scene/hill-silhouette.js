@@ -177,6 +177,13 @@ export const HORIZON_AIR = Object.freeze({ horizon: 1.65, edge: 1.9, ground: 1.7
 // The film terrain's half-width (filmic-earth.js EARTH, 384 units wide about the
 // world origin); a test holds them equal.
 export const TERRAIN_EDGE = 192;
+// The walk's view from up high (walk.js WALK.high): 0 on every shot, rising to 1
+// as the walker's eye climbs the lookout. From its gallery the terrain's square
+// edge lies 8 to 11 degrees below eye level, past it the flat band of the far
+// plain's air, so up there the slate fades into that air (at HORIZON_AIR.edge,
+// as the band starts) from `fade` units out to its edge (mud-ground.js), and
+// the plain runs on into the band with no square edge.
+export const HIGH_VIEW = { value: 0, fade: Object.freeze([80, 188]) };
 
 function sampleProfile(angle) {
   const n = HILL_PROFILE.length,
