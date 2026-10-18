@@ -284,13 +284,15 @@ test("the byte tables in Assets match the files they list", () => {
   const [limit, now] = ["Limit", "Now"].map((name) => budgets.header.indexOf(name));
   const sum = (files) => files.reduce((total, file) => total + sizes.get(file), 0);
   const models = (tier) => [...sizes.keys()].filter((file) => file.endsWith(`-${tier}.glb`));
-  const [slateTable] = tables(section(markdown, "## Slate maps"));
-  const tierColumn = slateTable.header.indexOf("Tier");
   const slateTier = new Map(
-    slateTable.rows.map((row) => [
-      "images/materials/" + row[0].replaceAll("`", ""),
-      row[tierColumn],
-    ]),
+    ["## Slate maps", "## Coast detail"].flatMap((heading) => {
+      const [table] = tables(section(markdown, heading)),
+        tierColumn = table.header.indexOf("Tier");
+      return table.rows.map((row) => [
+        "images/materials/" + row[0].replaceAll("`", ""),
+        row[tierColumn],
+      ]);
+    }),
   );
   const slates = (tier) =>
     [...slateTier].filter(([, own]) => own === tier || own === "both").map(([file]) => file);

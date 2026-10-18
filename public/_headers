@@ -109,3 +109,8 @@
 /images/materials/slate-:map.:hash.webp
   ! Cache-Control
   Cache-Control: public, max-age=31536000, immutable
+
+# One optional packed coast data map, with no un-hashed published copy.
+/images/materials/coast-detail-256.:hash.webp
+  ! Cache-Control
+  Cache-Control: public, max-age=31536000, immutable

@@ -4,6 +4,9 @@ import {
   coastDistance,
   coastLand,
   coastPlane,
+  coastGeometrySteps,
+  COAST_SHOTS,
+  coastShot,
   createCliff,
   createFalls,
   createSea,
@@ -3951,6 +3954,15 @@ export function settleRoots(
   // module (lantern-flame.js) keeps its flicker on the lantern root, beside the
   // light; without it the mirror shows no flame.
   function beforeRender(_renderer, _scene, camera) {
+    // Optional coast maps never hold the reveal and only enter on an unseen
+    // tour cut. A cached map can rejoin after the film was withdrawn.
+    const revealed = Boolean(renderer?.domElement?.parentNode?.classList?.contains("is-ready"));
+    for (const part of shore)
+      part.take?.({
+        revealed,
+        running: Boolean(tour?.running),
+        cut: Boolean(tour?.transition.cut),
+      });
     const sun = rendering.lights?.sun;
     if (sun?.target)
       keyWorld
@@ -4016,14 +4028,27 @@ export function settleRoots(
           rendering,
           height: landHeight,
           groundMaterial: material,
+          prepared: terrain.userData.coastGeometry,
           drop,
+          plunge: falls?.plunge,
         }),
         ...(falls ? [falls] : []),
       ]
     : [];
+  // The fault's own shots (ocean.js COAST_SHOTS) join the tree's list, and
+  // with it the tour, while the sea stands.
+  const coastShots =
+      shore.length && lib.DIRECTED_SHOTS
+        ? COAST_SHOTS.map((shot) => coastShot(shot, ground.parent, falls))
+        : [],
+    shotList = lib?.DIRECTED_SHOTS?.tree;
   const landShore = () => {
     if (!shore.length || shore[0].mesh.parent || !ground.parent) return;
-    for (const part of shore) ground.parent.add(part.mesh);
+    for (const part of shore) {
+      ground.parent.add(part.mesh);
+      part.setActive?.(true);
+    }
+    for (const shot of coastShots) if (!shotList.includes(shot)) shotList.push(shot);
     const sink = lib.SEA_SINK?.value;
     if (sink) [sink.x, sink.y, sink.z, sink.w] = [...coastPlane(), 1];
     if (globalThis.BabelSite?.sceneDebug) globalThis.BabelSite.sceneDebug.sea = "ready";
@@ -4036,7 +4061,12 @@ export function settleRoots(
     }
     if (ground.geometry === terrain) ground.geometry = originalGeometry;
     landed = false;
-    for (const part of shore) part.mesh.removeFromParent();
+    for (const part of shore) {
+      part.setActive?.(false);
+      part.mesh.removeFromParent();
+    }
+    for (const shot of coastShots)
+      if (shotList.includes(shot)) shotList.splice(shotList.indexOf(shot), 1);
     if (lib?.SEA_SINK) lib.SEA_SINK.value.w = 0;
     if (globalThis.BabelSite?.sceneDebug) delete globalThis.BabelSite.sceneDebug.sea;
     if (material.userData.slateRoot === shadeSlateGround) {
@@ -4840,6 +4870,40 @@ function inSlices(steps, early = () => false, cancelled = () => false) {
 // is gone, so the build stops, or the finished geometry is freed, and it
 // resolves to nothing. prepareOnly leaves publication and shadow invalidation
 // to settleRoots()'s atomic commit, so detached preparation never waits a cut.
+function* preparedEarthSteps(groundHeight, EARTH, rendering) {
+  const tier = rendering.assetTier ?? rendering.tier ?? "high";
+  let geometry,
+    prepared,
+    complete = false;
+  const release = () => {
+    for (const key of ["cliff", "stacks"]) {
+      prepared?.[key]?.dispose();
+      if (prepared) prepared[key] = null;
+    }
+  };
+  try {
+    geometry = yield* earthSteps(groundHeight, EARTH);
+    yield;
+    // Reuse the terrain's idle scheduler for the much denser coast. No map or
+    // shader starts here, and the same arithmetic produces the same buffers.
+    prepared = yield* coastGeometrySteps(
+      filmHeight(groundHeight, true),
+      tier,
+      riverFalls(RIVER_LINE),
+    );
+    prepared.tier = tier;
+    geometry.userData.coastGeometry = prepared;
+    geometry.addEventListener("dispose", release);
+    complete = true;
+    return geometry;
+  } finally {
+    if (!complete) {
+      geometry?.dispose();
+      release();
+    }
+  }
+}
+
 export function createEarthGeometry(
   groundHeight,
   EARTH = { width: 384, subdivisions: 128 },
@@ -4848,7 +4912,10 @@ export function createEarthGeometry(
   cancelled = () => false,
   prepareOnly = false,
 ) {
-  const steps = earthSteps(groundHeight, EARTH);
+  const steps =
+    prepareOnly && rendering?.homeScene
+      ? preparedEarthSteps(groundHeight, EARTH, rendering)
+      : earthSteps(groundHeight, EARTH);
   if (!rendering) {
     for (;;) {
       const next = steps.next();

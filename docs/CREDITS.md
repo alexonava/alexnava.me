@@ -9,7 +9,8 @@
 - **Artwork and content**: the 3D models and textures as prepared for this site
   (made on a paid Meshy plan, so owned by Alex Nava), the images, the icons, the
   share card (`public/og.png` and `tools/og-card-backdrop.webp`), the writing
-  and the visual design are © 2026 Alex Nava, all rights reserved. The MIT
+  and the visual design are © 2026 Alex Nava, all rights reserved, except the
+  third-party assets credited below, which retain their stated licenses. The MIT
   License does not cover them.
 - **Fonts**: Cormorant Garamond and Instrument Sans are licensed under the SIL
   Open Font License 1.1 ([fonts/OFL.txt](../fonts/OFL.txt)).
@@ -141,6 +142,22 @@ integrated from its normal map, both greyscale and tiling
 (`Assets/Materials/dirt-close-v1/scripts/make-dirt-close.py`; the source and its
 provenance are in `Assets/Materials/PolyHaven-Dirt`). Credit is not required
 under CC0; it is given here.
+
+## Coast rock detail
+
+`images/materials/coast-detail-256.webp` is derived from
+[“Seaside Rock”](https://polyhaven.com/a/seaside_rock) by Dimitrios Savva on
+Poly Haven, released under [CC0](https://polyhaven.com/license). It uses only
+the source's OpenGL normal and roughness maps, keeping the site's procedural
+rock colour. The normal's green channel is not inverted.
+
+The local preparation script downsamples to 256×256, normalizes the normal,
+packs its X/Y into red/green and roughness into blue, quantizes the channels
+independently to 5/5/4 bits, then encodes lossless WebP. The source's 2 m tile
+is 6.56 estate units. The original maps, official API metadata, script and
+provenance are in `Assets/Materials/coast-detail-v1` in the owner's private
+archive; none of those source files is published. Credit is not required under
+CC0; it is given here.
 
 ## Icons
 

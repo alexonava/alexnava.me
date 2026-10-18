@@ -4,14 +4,17 @@ import { PUSH_IN } from "./cinematic.js";
 // Visitors get each shot's own hold; ?tour=3, 5 and 20 are fixed cadences for review.
 export const TOUR_PER_SHOT = "shot";
 export const DEFAULT_TOUR_INTERVAL = TOUR_PER_SHOT;
-const TOUR_INTERVALS = Object.freeze([3, 5, 20]);
+const TOUR_INTERVALS = [3, 5, 20];
 export const TOUR_HOLD_FALLBACK = 7;
 // The tour opens on The watch and alternates the lookout and the tree while
 // it can: two lookout shots and four of the tree leave two pairs of tree shots
 // together, Portrait then Lantern study and Close-up then Root and lantern,
 // each a change of height and bearing (Lantern study and Root and lantern
 // nearly share both, so they are kept apart). Against the moon left the tour
-// (the owner's call of 2026-10-14) and stays at its URL.
+// (the owner's call of 2026-10-14) and stays at its URL. The fault's three
+// shots (ocean.js COAST_SHOTS) join once the sea has landed, one after each
+// lookout-and-tree run: wide down the coast after Portrait, the falls after
+// Threshold, and the bay from above to close the loop.
 export const TOUR_ORDER = Object.freeze([
   "The watch",
   "Portrait",
@@ -20,10 +23,16 @@ export const TOUR_ORDER = Object.freeze([
   "Close-up",
   "Root and lantern",
 ]);
-const directedViews = Object.entries(DIRECTED_SHOTS).flatMap(([subject, shots]) =>
-  shots.map((shot, angle) => ({ subject, angle, shot })),
-);
-const tourViews = TOUR_ORDER.map((name) => directedViews.find(({ shot }) => shot.name === name));
+// The tour's views as the lists stand: the fault's shots join the tree's when
+// the sea lands (ocean.js COAST_SHOTS), and until then the tour passes them by.
+const tourViews = () =>
+  TOUR_ORDER.flatMap((name) =>
+    Object.entries(DIRECTED_SHOTS).flatMap(([subject, shots]) =>
+      shots.flatMap((shot, angle) =>
+        (shot.after || shot.name) === name ? { subject, angle } : [],
+      ),
+    ),
+  );
 
 export function readTourInterval(search = "") {
   const query = new URLSearchParams(search);
@@ -97,11 +106,12 @@ export function createCameraTour({
   const running = () => !disposed && ready && !paused && !reduced && !held;
   // A shot outside the tour (a URL's) is followed by the tour's first.
   function findNext(accept) {
-    const start = tourViews.findIndex(
-      ({ subject, angle }) => subject === camera.current && angle === camera.angle,
-    );
-    for (let offset = 1; offset <= tourViews.length; offset++) {
-      const view = tourViews[(start + offset) % tourViews.length];
+    const views = tourViews(),
+      start = views.findIndex(
+        ({ subject, angle }) => subject === camera.current && angle === camera.angle,
+      );
+    for (let offset = 1; offset <= views.length; offset++) {
+      const view = views[(start + offset) % views.length];
       if (accept(view)) return view;
     }
     return null;
@@ -154,7 +164,8 @@ export function createCameraTour({
     },
     get state() {
       const subject = camera.current,
-        tourIndex = tourViews.findIndex(
+        views = tourViews(),
+        tourIndex = views.findIndex(
           (view) => view.subject === subject && view.angle === camera.angle,
         );
       return {
@@ -165,7 +176,7 @@ export function createCameraTour({
         ready,
         name: DIRECTED_SHOTS[subject]?.[camera.angle]?.name || "Loading views",
         index: tourIndex < 0 ? null : tourIndex + 1,
-        total: tourViews.length,
+        total: views.length,
       };
     },
     update({ elapsedSeconds, reducedMotion = false, held: holding = false }) {
@@ -173,7 +184,7 @@ export function createCameraTour({
       reduced = reducedMotion;
       held = holding;
       ready = camera.ready && camera.isAvailable(camera.current);
-      const active = ready && !paused && !reduced && !held;
+      const active = running();
       cut = false;
       if (!active) capturing = dissolving = false;
       else {
@@ -182,7 +193,8 @@ export function createCameraTour({
           capturing = false;
           cut = dissolving = true;
         }
-        if (wasActive && lastTime !== null) elapsed += Math.max(0, elapsedSeconds - lastTime);
+        // An active update always records lastTime; settle clears wasActive too.
+        if (wasActive) elapsed += Math.max(0, elapsedSeconds - lastTime);
         if (dissolving && elapsed >= dissolveSeconds) dissolving = false;
         const seconds = hold();
         if (!cut && !dissolving && elapsed >= seconds) {

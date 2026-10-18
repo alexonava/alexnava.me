@@ -4,6 +4,7 @@ import { BoxGeometry, Group, Mesh, MeshBasicMaterial, PerspectiveCamera } from "
 import { createCinematicCamera } from "../src/scene/cinematic.js";
 import * as tourModule from "../src/scene/camera-tour.js";
 import { DIRECTED_SHOTS, shotAnchor } from "../src/scene/directed-shots.js";
+import { COAST_SHOTS, coastShot } from "../src/scene/ocean.js";
 import { createPostprocessPipeline } from "../src/scene/postprocess.js";
 
 const {
@@ -84,8 +85,16 @@ function setup(interval = 5, { prepare } = {}) {
 
 const idle = (f) => assert.deepEqual(f.transition, { ...TOUR_IDLE });
 
+// The tour before the sea lands: the fault's shots (ocean.js COAST_SHOTS) join it then.
 const allShots = Object.values(DIRECTED_SHOTS).flat();
-const tourShots = TOUR_ORDER.map((name) => allShots.find((shot) => shot.name === name));
+const coastNames = COAST_SHOTS.map((shot) => shot.name);
+const coastalTourOrder = TOUR_ORDER.flatMap((name) => [
+  name,
+  ...COAST_SHOTS.filter((shot) => shot.after === name).map((shot) => shot.name),
+]);
+const tourShots = TOUR_ORDER.filter((name) => !coastNames.includes(name)).map((name) =>
+  allShots.find((shot) => shot.name === name),
+);
 
 const tourHolds = tourShots.map((shot) => shot.hold),
   tourNames = tourShots.map((shot) => shot.name);
@@ -537,12 +546,31 @@ test("the tour order alternates subjects while it can, opens on The watch and ke
     ),
   );
   for (const name of TOUR_ORDER) {
+    if (coastNames.includes(name)) continue;
     assert.ok(subjects.has(name), `${name} is a directed shot`);
     assert.notEqual(subjects.get(name).shot.tour, false, `${name} is a tour shot`);
   }
   for (const [name, { shot }] of subjects)
     assert.equal(TOUR_ORDER.includes(name), shot.tour !== false, `${name} membership`);
-  const pairs = TOUR_ORDER.map((name, i) => [name, TOUR_ORDER[(i + 1) % TOUR_ORDER.length]]);
+  // Every one of the fault's shots is in the tour, none beside another, none first.
+  assert.deepEqual(coastalTourOrder, [
+    "The watch",
+    "Portrait",
+    "The broken coast",
+    "Lantern study",
+    "Threshold",
+    "The falls",
+    "Close-up",
+    "Root and lantern",
+    "Over the fault",
+  ]);
+  coastalTourOrder.forEach((name, i) => {
+    const next = coastalTourOrder[(i + 1) % coastalTourOrder.length];
+    assert.ok(!(coastNames.includes(name) && coastNames.includes(next)), `${name} then ${next}`);
+  });
+  // Before the sea lands the lookout and the tree alternate as they did.
+  const land = TOUR_ORDER.filter((name) => !coastNames.includes(name));
+  const pairs = land.map((name, i) => [name, land[(i + 1) % land.length]]);
   const together = pairs.filter(([a, b]) => subjects.get(a).subject === subjects.get(b).subject);
   assert.deepEqual(together, [
     ["Portrait", "Lantern study"],
@@ -702,4 +730,54 @@ test("tour shots open without black and dissolve the kept outgoing frame into ea
   assert.deepEqual({ ...f.tour.transition }, { ...TOUR_IDLE });
   pipeline.dispose();
   f.controller.dispose();
+});
+
+test("the fault's shots join the tour when the sea lands, frame themselves from the estate's frame, and leave with it", () => {
+  const f = setup(TOUR_PER_SHOT),
+    estate = new Group();
+  estate.position.y = -2;
+  estate.updateMatrixWorld(true);
+  const coast = COAST_SHOTS.map((shot) => coastShot(shot, estate));
+  try {
+    f.render(0);
+    const names = () => {
+      const seen = [];
+      for (let k = 0, n = f.tour.state.total; k < n; k++) {
+        seen.push(f.tour.state.name);
+        f.tour.next();
+        f.render(0);
+      }
+      return seen;
+    };
+    assert.deepEqual(names(), tourNames);
+    DIRECTED_SHOTS.tree.push(...coast);
+    assert.equal(f.tour.state.total, coastalTourOrder.length);
+    assert.deepEqual(names(), coastalTourOrder);
+    // A coast shot looks at its aim from its reach and rise, its shadow on the land.
+    for (const shot of coast) {
+      assert.ok(f.controller.setPreviewShot("tree", DIRECTED_SHOTS.tree.indexOf(shot)));
+      f.render(0, { reducedMotion: true });
+      const { camera, controller } = f,
+        yaw = (shot.azimuth * Math.PI) / 180,
+        scale = shot.move.dolly ? (shot.move.dolly[0] + shot.move.dolly[1]) / 2 : 1;
+      assert.equal(controller.shot.name, shot.name);
+      close(controller.target.x, shot.aim[0]);
+      close(controller.target.y, shot.aim[1] - 2);
+      close(controller.target.z, shot.aim[2]);
+      close(camera.position.x - shot.aim[0], Math.cos(yaw) * shot.reach * scale, 0.05 * shot.reach);
+      close(camera.position.z - shot.aim[2], Math.sin(yaw) * shot.reach * scale, 0.05 * shot.reach);
+      assert.ok(camera.position.y >= shot.rise - 2 - 1e-9);
+      assert.deepEqual(controller.frame.shadow.toArray(), [
+        shot.shadow[0],
+        1.25 - 2,
+        shot.shadow[1],
+      ]);
+      // Every camera stays well inside the sky's shell (radius 130 about the lookout).
+      assert.ok(Math.hypot(camera.position.x, camera.position.z) < 122, shot.name);
+    }
+  } finally {
+    for (const shot of coast) DIRECTED_SHOTS.tree.splice(DIRECTED_SHOTS.tree.indexOf(shot), 1);
+  }
+  assert.equal(f.tour.state.total, tourNames.length, "they leave with the sea");
+  f.dispose();
 });

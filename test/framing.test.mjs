@@ -40,6 +40,11 @@ import {
   letterboxShare,
 } from "../src/scene/cinematic.js";
 import { TOUR_ORDER } from "../src/scene/camera-tour.js";
+import { COAST_SHOTS, coastShot } from "../src/scene/ocean.js";
+const coastalTourOrder = TOUR_ORDER.flatMap((name) => [
+  name,
+  ...COAST_SHOTS.filter((shot) => shot.after === name).map((shot) => shot.name),
+]);
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import { MASSIF_SNOW, MASSIFS, SNOW, snowReach } from "../src/scene/hill-silhouette.js";
@@ -55,6 +60,14 @@ import {
 
 // The live scene's level plain and terraces.
 const ground = sceneGround;
+
+// The fault's shots (ocean.js COAST_SHOTS) join the tree's list once the sea lands;
+// here they stand on it throughout, set in the estate's frame (at the film's scene
+// offset, as the ground), so every tour check below holds for them too.
+const estate = new Group();
+estate.position.y = -6.8;
+estate.updateMatrixWorld(true);
+DIRECTED_SHOTS.tree.push(...COAST_SHOTS.map((shot) => coastShot(shot, estate)));
 
 // The delivered models' actual normalized, quantized vertices: texture
 // decoding is irrelevant to projection; component types and normalization are not.
@@ -156,7 +169,8 @@ for (const tier of ["high", "balanced"])
         ]) {
           for (let angle = 0; angle < DIRECTED_SHOTS[kind].length; angle++) {
             const shot = resolveDirectedShot(DIRECTED_SHOTS[kind][angle], width, height);
-            const measured = measureShot(object.root, shot);
+            // The fault's shots measure themselves: their aim stays in the safe area.
+            const measured = (shot.measure || measureShot)(object.root, shot);
             const camera = new PerspectiveCamera(38, width / height, 0.1, 450);
             const controller = createCinematicCamera({
               camera,
@@ -688,7 +702,7 @@ test("the camera-centred ranges frame every tour shot: sun, roof lane, tree shot
         portrait = height > width,
         // What the bars cover is hidden.
         bar = letterboxShare(width, height) * height;
-      for (const name of TOUR_ORDER) {
+      for (const name of coastalTourOrder) {
         const kind = DIRECTED_SHOTS.tower.some((shot) => shot.name === name) ? "tower" : "tree",
           angle = DIRECTED_SHOTS[kind].findIndex((shot) => shot.name === name);
         const camera = new PerspectiveCamera(38, width / height, 0.1, CAMERA_FAR);
@@ -901,7 +915,7 @@ test("the Meshy massifs frame every tour shot: sun, roof lane, open sky over the
         portrait = height > width,
         // What the bars cover is hidden.
         bar = letterboxShare(width, height) * height;
-      for (const name of TOUR_ORDER) {
+      for (const name of coastalTourOrder) {
         const kind = DIRECTED_SHOTS.tower.some((shot) => shot.name === name) ? "tower" : "tree",
           angle = DIRECTED_SHOTS[kind].findIndex((shot) => shot.name === name);
         const camera = new PerspectiveCamera(38, width / height, 0.1, CAMERA_FAR);
@@ -1125,7 +1139,7 @@ test("under the milky sky the lookout's giants look up at it, and every tour sho
     for (const { width, height, hero, nav } of LAYOUTS) {
       const landscapeDesktop = width >= 1000 && width > height && height > 500,
         bar = letterboxShare(width, height) * height;
-      for (const name of TOUR_ORDER) {
+      for (const name of coastalTourOrder) {
         const kind = DIRECTED_SHOTS.tower.some((shot) => shot.name === name) ? "tower" : "tree",
           angle = DIRECTED_SHOTS[kind].findIndex((shot) => shot.name === name);
         const camera = new PerspectiveCamera(38, width / height, 0.1, CAMERA_FAR);
@@ -1158,12 +1172,17 @@ test("under the milky sky the lookout's giants look up at it, and every tour sho
           if (giant)
             assert.ok(nearest(camera.position) >= 6, `${label} lens inside the lookout or tree`);
           // One landmark a giant: the tree never stands in its picture (between the bars).
-          if (giant) {
+          // The fault's shots show neither: they are the coast's own.
+          const coast = COAST_SHOTS.some((shot) => shot.name === name);
+          for (const other of giant
+            ? [landmarks[kind === "tower" ? "tree" : "tower"]]
+            : coast
+              ? [landmarks.tower, landmarks.tree]
+              : []) {
             const m = new Matrix4().multiplyMatrices(
                 camera.projectionMatrix,
                 camera.matrixWorldInverse,
               ).elements,
-              other = landmarks[kind === "tower" ? "tree" : "tower"],
               top = 1 - (2 * bar) / height;
             let shown = 0,
               where = "";

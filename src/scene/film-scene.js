@@ -1,3 +1,4 @@
+import { DIRECTED_SHOTS } from "./directed-shots.js";
 import { EARTH } from "./filmic-earth.js";
 import { MIST_PARS, MIST_UNIFORMS } from "./drifting-mist.js";
 import { FLASH_GROUND } from "./film-light.js";
@@ -55,7 +56,8 @@ export function createFilmScene({
               return;
             // A terrain finished after disposal is freed, never kept.
             if (disposed) return terrain.dispose();
-            // The sea (ocean.js, in the terrain's chunk) borrows the entry's shared GLSL and uniforms.
+            // The sea (ocean.js, in the terrain's chunk) borrows the entry's shared GLSL and
+            // uniforms, and adds the fault's own shots to the tree's list while it stands.
             settled = settleRoots?.(terrain, ground, rendering, groundHeight, invalidate, tour, {
               SLATE_TEXT_GUARD,
               MIST_PARS,
@@ -64,6 +66,7 @@ export function createFilmScene({
               RANGE_MIST,
               SEA_SINK,
               HIGH_VIEW,
+              DIRECTED_SHOTS,
               originalGeometry,
               active,
             });
@@ -104,7 +107,7 @@ export function createFilmScene({
     },
     finishFrame(camera, target, frame, phoneDetail = false, textBottom = 0.25) {
       if (!active || disposed) return;
-      rendering.focusFilmShadow(target, frame?.radius || 20);
+      rendering.focusFilmShadow(frame?.shadow || target, frame?.radius || 20);
       rendering.postprocessPipeline.setTextProtection?.(phoneDetail, textBottom);
     },
     dispose() {

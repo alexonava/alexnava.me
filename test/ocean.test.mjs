@@ -17,6 +17,7 @@ import {
 import {
   CLIFF,
   COAST,
+  COAST_SHOTS,
   FALLS,
   SEA,
   SEA_SHARED,
@@ -24,6 +25,7 @@ import {
   STACKS,
   cliffGeometry,
   coastDistance,
+  coastShot,
   coastGlsl,
   coastLand,
   coastPlane,
@@ -39,6 +41,8 @@ import {
   stacksSurfGlsl,
 } from "../src/scene/ocean.js";
 import { DEPTH_LAYER } from "../src/scene/depth-layers.js";
+import { DIRECTED_SHOTS, shotPose } from "../src/scene/directed-shots.js";
+import { TOUR_ORDER } from "../src/scene/camera-tour.js";
 import { MIST_PARS, MIST_UNIFORMS, mistOn } from "../src/scene/drifting-mist.js";
 import { FLASH_GROUND } from "../src/scene/film-light.js";
 import { createFilmScene } from "../src/scene/film-scene.js";
@@ -261,7 +265,8 @@ test("the cliffs cover the terrain's drop with their shelf, fall below the sea, 
     assert.ok(Number.isFinite(x + y + z));
     if (v === 0) inner = Math.min(inner, off);
     foot = Math.min(foot, y);
-    // The shelf lies just over the plain; nothing stands far above it.
+    // The shelf lies just over the plain; nothing stands far above it, the ribs
+    // and the rubble included.
     assert.ok(y < 1.25 + CLIFF.lip[1] + 0.2, `${y} at ${x},${z}`);
   }
   assert.ok(inner <= -SHORE.shelf, "the shelf reaches over the whole drop");
@@ -424,8 +429,7 @@ test("the cliff shelf shares the ground material, UV phase and neutral root attr
       0,
       "the borrowed river is not painted again on the rock bevel",
     );
-    const shelfCount =
-      (position.count / (CLIFF.rows + CLIFF.shelfRows + 2) - 1) * CLIFF.shelfRows * 6;
+    const shelfCount = (geometry.userData.coastGeometry.columns - 1) * CLIFF.shelfRows * 6;
     assert.deepEqual(
       geometry.groups,
       [
@@ -443,8 +447,10 @@ test("the cliff shelf shares the ground material, UV phase and neutral root attr
         );
       else
         assert.ok(
-          vertices.some((v) => aCliff.getY(v) > 0),
-          "the lip and face retain their own material",
+          vertices.some(
+            (v) => aCliff.getY(v) > 0 || v >= geometry.userData.coastGeometry.baseVertices,
+          ),
+          "the lip, face and added broken rock retain their own material",
         );
     }
     assert.equal(uv.itemSize, 2);
@@ -552,7 +558,8 @@ test("the river pours off the cliffs where it meets the fault, into white water 
     assert.ok(f.getY(i) >= 0 && f.getY(i) <= 2);
   }
   assert.ok(low <= SEA.level, "the sheet reaches the sea");
-  assert.ok(high <= 1.25 + FALLS.lift + 1e-6, "and starts on the shelf");
+  // At most the shelf's last row over the land (cliffGeometry(): 0.04 + 0.1 of its relief).
+  assert.ok(high <= 1.25 + 0.14 + FALLS.lift + 1e-6, "and starts on the shelf");
   assert.ok(coastDistance(plunge[0], plunge[1]) < 0, "it lands out at sea");
   assert.ok(Math.hypot(plunge[0] - x, plunge[1] - z) < 8, "at the cliffs' foot");
   assert.equal(plunge[2], half * FALLS.plunge);
@@ -602,6 +609,11 @@ test("the sea, the cliffs and the falls land with the film terrain, sink the ran
   const names = root.children.map((child) => child.name);
   for (const name of ["estate-sea", "estate-cliff", "estate-falls"])
     assert.ok(names.includes(name), `${name} in ${names}`);
+  // The fault's shots join the tree's list with the sea, framed from the ground's parent.
+  const treeShots = () => DIRECTED_SHOTS.tree.map((shot) => shot.name),
+    coastNames = COAST_SHOTS.map((shot) => shot.name),
+    landNames = treeShots().filter((name) => !coastNames.includes(name));
+  assert.deepEqual(treeShots(), [...landNames, ...coastNames]);
   assert.deepEqual(
     [SEA_SINK.value.x, SEA_SINK.value.y, SEA_SINK.value.z, SEA_SINK.value.w],
     [...coastPlane(), 1],
@@ -616,7 +628,9 @@ test("the sea, the cliffs and the falls land with the film terrain, sink the ran
   assert.equal(SEA_SINK.value.w, 0);
   assert.equal(height(100, 40), 0, "the live sampler follows the borrowed ground");
   assert.equal(height.shore(80, 80), Infinity, "the inactive coast cannot constrain the walk");
+  assert.deepEqual(treeShots(), landNames, "the fault's shots leave with the sea");
   film.setActive(true);
+  assert.deepEqual(treeShots(), [...landNames, ...coastNames], "and join it again, once");
   assert.ok(
     meshes.every((mesh) => mesh.parent === root),
     "reuse the shore on reactivation",
@@ -626,7 +640,45 @@ test("the sea, the cliffs and the falls land with the film terrain, sink the ran
   for (const name of ["estate-sea", "estate-cliff", "estate-falls"])
     assert.ok(!root.children.some((child) => child.name === name), `${name} stays`);
   assert.equal(SEA_SINK.value.w, 0, "the ranges stand again");
+  assert.deepEqual(treeShots(), landNames);
   ground.material.dispose();
+});
+
+test("the fault's shots look over the broken coast from the land, inside the sky's shell, their shadow on the land", () => {
+  assert.equal(new Set(COAST_SHOTS.map((shot) => shot.name)).size, COAST_SHOTS.length);
+  const estate = new Group();
+  estate.position.y = -6.8;
+  estate.updateMatrixWorld(true);
+  for (const base of COAST_SHOTS) {
+    assert.ok(Object.isFrozen(base) && TOUR_ORDER.includes(base.after), base.name);
+    assert.ok(base.landscape.move === null, "landscape phones hold it still");
+    for (const shot of [base, { ...base, ...base.landscape }]) {
+      const view = coastShot(shot, estate),
+        measured = view.measure(null, view),
+        fitted = view.fit(measured, view, null);
+      assert.deepEqual(measured.target.toArray(), [shot.aim[0], shot.aim[1] - 6.8, shot.aim[2]]);
+      assert.equal(measured.cameraY, shot.rise - 6.8);
+      assert.equal(fitted.distance, shot.reach);
+      // Its camera, through its whole move: on the land, back from the cliffs' lip, high
+      // over the plain, and inside the sky's shell (radius 130 about the lookout).
+      for (const phase of [0, 0.25, 0.5, 0.75, 1]) {
+        const pose = shotPose(shot, phase),
+          yaw = (shot.azimuth * Math.PI) / 180,
+          reach = shot.reach * pose.scale,
+          side = pose.truck * reach,
+          x = shot.aim[0] + Math.cos(yaw) * reach - Math.sin(yaw) * side,
+          z = shot.aim[2] + Math.sin(yaw) * reach + Math.cos(yaw) * side,
+          label = `${shot.name} at ${phase}`;
+        assert.ok(coastDistance(x, z) > 3, `${label} stands on the land`);
+        assert.ok(Math.hypot(x, z) < 122, `${label} inside the sky's shell`);
+        assert.ok(shot.rise + pose.crane * measured.height > 1.25 + 4, `${label} over the plain`);
+        // The film's shadow (a box 48 either side) covers the land at its feet.
+        assert.ok(Math.hypot(x - shot.shadow[0], z - shot.shadow[1]) < 40, label);
+      }
+      assert.ok(coastDistance(...shot.shadow) > 0, `${shot.name}'s shadow keeps to the land`);
+      assert.deepEqual(fitted.shadow.toArray(), [shot.shadow[0], 1.25 - 6.8, shot.shadow[1]]);
+    }
+  }
 });
 
 test("the ranges sink past the fault in both mountain programs, off until the sea lands", () => {
@@ -640,11 +692,13 @@ test("the ranges sink past the fault in both mountain programs, off until the se
   assert.equal(silhouette.match(/uSea: SEA_SINK|uniforms\.uSea = SEA_SINK/g)?.length, 2);
   assert.equal(silhouette.match(/\$\{SINK_GLSL\}/g)?.length, 2);
   // The sea's module is the terrain chunk's own (terrain-build.js imports it), and imports
-  // nothing first-party: what it shares with the entry is restated or lent.
+  // only its optional texture owner: nothing first-party enters from the
+  // entry, and what it shares with that entry is restated or lent.
   const imports = (path) =>
     [...flat(source(path)).matchAll(/import [^;]*? from "([^"]+)";/g)].map((match) => match[1]);
   assert.ok(imports("src/scene/terrain-build.js").includes("./ocean.js"));
-  assert.deepEqual(imports("src/scene/ocean.js"), ["three"]);
+  assert.deepEqual(imports("src/scene/ocean.js"), ["three", "./coast-detail.js"]);
+  assert.deepEqual(imports("src/scene/coast-detail.js"), ["three"]);
 });
 
 test("the sea, the cliffs and the falls link with the slate's root shading and land only with it, unseen", async () => {

@@ -32,7 +32,13 @@ import {
   shotPose,
 } from "../src/scene/directed-shots.js";
 import { createCameraTour, TOUR_ORDER } from "../src/scene/camera-tour.js";
+import { COAST_SHOTS, coastShot } from "../src/scene/ocean.js";
 import { MOON_LIGHTS } from "../src/scene/mud-ground.js";
+
+const coastalTourOrder = TOUR_ORDER.flatMap((name) => [
+  name,
+  ...COAST_SHOTS.filter((shot) => shot.after === name).map((shot) => shot.name),
+]);
 
 const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-6, `${a} != ${b}`);
 
@@ -506,8 +512,14 @@ test("large height changes, rotation, a moved hero and still framing refit at on
 
   // On a phone (the name as measured, 390x844) an address bar's 10% keeps every tour shot's
   // fit, the lookout's giants included, though they stand on the bottom of their frame: the
-  // crop takes a little more of the lookout's foot, already cut by the bottom edge.
-  for (const name of TOUR_ORDER) {
+  // crop takes a little more of the lookout's foot, already cut by the bottom edge. The
+  // fault's shots too, on the tree's list as they stand once the sea lands.
+  const estate = new Group();
+  estate.position.y = -6.8;
+  estate.updateMatrixWorld(true);
+  const coast = COAST_SHOTS.map((shot) => coastShot(shot, estate));
+  DIRECTED_SHOTS.tree.push(...coast);
+  for (const name of coastalTourOrder) {
     const f = terrainSetup(390, 844);
     f.hero.bottom = 177;
     const subject = DIRECTED_SHOTS.tower.some((shot) => shot.name === name) ? "tower" : "tree";
@@ -518,9 +530,11 @@ test("large height changes, rotation, a moved hero and still framing refit at on
     f.apply(390, 844);
     const fit = f.controller.frame;
     f.apply(390, 760);
+    assert.equal(f.controller.shot.name, name);
     assert.equal(f.controller.frame, fit, `${name} keeps its fit through an address bar`);
     f.dispose();
   }
+  for (const shot of coast) DIRECTED_SHOTS.tree.splice(DIRECTED_SHOTS.tree.indexOf(shot), 1);
 });
 
 const close = (a, b) => assert.ok(Math.abs(a - b) < 1e-5, `${a} != ${b}`);
