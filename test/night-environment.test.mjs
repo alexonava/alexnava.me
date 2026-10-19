@@ -7,6 +7,7 @@ import { BackSide, HalfFloatType, PlaneGeometry, ShaderMaterial, Texture, Vector
 import { createEstateSkyMaterial } from "../src/scene/estate-sky.js";
 import { createNightEnvironment, NIGHT_SKY } from "../src/scene/night-environment.js";
 import { createSceneRendering } from "../src/scene/rendering.js";
+import { FILM_UNTONE_GLSL } from "../src/scene/film-light.js";
 import { compactShaderSource } from "../tools/shader-compact.mjs";
 
 const skyMaterial = () =>
@@ -357,10 +358,18 @@ test("the environment is the film sky shell's own shader, with the moon's glow, 
   assert.equal(sky.uniforms.uCloudReshape.value, 1);
   // The additions sit after the film sky, before the shell's opacity, which they divide out.
   const fragment = material.fragmentShader;
-  assert.match(fragment, /uniform float envCapture;\nuniform vec3 envKeyDirection;\nvoid main\(\)/);
+  assert.ok(
+    fragment.includes(
+      `uniform float envCapture;\nuniform vec3 envKeyDirection;\n${FILM_UNTONE_GLSL}\nvoid main()`,
+    ),
+  );
   assert.ok(fragment.indexOf("if(envCapture>.5){") < fragment.indexOf("gl_FragColor=uFilm>.5?"));
   assert.ok(fragment.indexOf("col+=filmBand(altitude);") < fragment.indexOf("if(envCapture>.5){"));
   assert.match(fragment, /\/0\.52;/);
+  // Last, the sky as shown goes back through the tone curve to the scene light
+  // that shows as it (film-light.js filmUntone()): the lit layers' materials take
+  // it in scene light, so a mirror in it shows the sky as the frame does.
+  assert.match(fragment, /col=filmUntone\(col\*0\.52\)\/0\.52;\s*\}\s*gl_FragColor=uFilm>\.5\?/);
   const key = material.uniforms.envKeyDirection.value;
   assert.ok(key.distanceTo(new Vector3(32, 28, 14).normalize()) < 1e-9);
   // Below the horizon the dark ground, never the shell's pale horizon colour.

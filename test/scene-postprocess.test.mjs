@@ -11,6 +11,7 @@ import {
   ZeroFactor,
 } from "three";
 import { DEPTH_LAYER, STAR_LAYER } from "../src/scene/depth-layers.js";
+import { FILM_TONE, FILM_TONE_UNIFORM, filmExposure } from "../src/scene/film-light.js";
 import {
   createPostprocessPipeline,
   DISSOLVE_BRUSH,
@@ -508,16 +509,23 @@ test("in film the grade's cel step and ink are the sky's alone; everything else 
     shader,
     /color = mix\(color, celColor, uCelMix \* celWeight \* \(1\.0 - groundLayer\) \* \(1\.0 - starLayer\)\);/,
   );
-  assert.equal(g.uShadowToe.value, 0.24);
-  assert.match(shader, /color \*= 1\.0 - uShadowToe \* \(1\.0 - skyLayer\)/);
+  // The lit layers (codes from .2: the ranges, the ground, the subjects) pass the
+  // film's tone curve in scene light (film-light.js FILM_TONE); the sky and the
+  // star stay as shown, and the curve's toe is their deep shade.
+  assert.match(
+    shader,
+    /float scene = uLayerRelief \* uTone\.w \* smoothstep\(0\.17, 0\.25, texel\.a\);\s*vec3 color = mix\(texel\.rgb, filmTone\(texel\.rgb\), scene\);/,
+  );
+  assert.equal(g.uTone, FILM_TONE_UNIFORM, "the shared tone uniform");
+  assert.doesNotMatch(shader, /uShadowToe/);
   assert.doesNotMatch(shader, /uSubjectCel|float relief|skySide/);
   // The star's mask, STAR_LAYER from each of its four parts, stays inside the
   // exemption's plateau.
   assert.ok(4 * STAR_LAYER <= 0.22);
-  // A soft highlight shoulder from 0.75 rolls off toward white before the clamp.
+  // The sky's soft highlight shoulder from 0.75 rolls off toward white before the clamp.
   assert.match(
     shader,
-    /vec3 over = max\(color - 0\.75, 0\.0\);\s*color = mix\(color, min\(color, 0\.75\) \+ 0\.25 \* \(1\.0 - exp\(-over \/ 0\.25\)\), uLayerRelief\);\s*gl_FragColor = vec4\(clamp\(color, 0\.0, 1\.0\), texel\.a\);/,
+    /vec3 over = max\(color - 0\.75, 0\.0\);\s*color = mix\(color, min\(color, 0\.75\) \+ 0\.25 \* \(1\.0 - exp\(-over \/ 0\.25\)\), uLayerRelief \* \(1\.0 - scene\)\);\s*gl_FragColor = vec4\(clamp\(color, 0\.0, 1\.0\), texel\.a\);/,
   );
   // The post ink, in film, only where the pixel and its four neighbours are all
   // sky (the clouds' own edges): no outline on the subjects, mountains or ground.
@@ -531,11 +539,10 @@ test("in film the grade's cel step and ink are the sky's alone; everything else 
   pipeline.dispose();
 });
 
-test("the generated film grade has no non-sky cel response and preserves a continuous independent toe", () => {
+test("the generated film grade has no non-sky cel response; the lit layers' tone curve is monotone and anchored", () => {
   const pipeline = createPipeline({ postprocessGrading: true });
   pipeline.setFilmTreatment(true);
   const shader = pipeline.passes.grading.material.fragmentShader,
-    uniform = pipeline.passes.grading.uniforms,
     smoothstep = (a, b, x) => {
       const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
       return t * t * (3 - 2 * t);
@@ -548,17 +555,7 @@ test("the generated film grade has no non-sky cel response and preserves a conti
     ground = layer("groundLayer"),
     star = layer("starLayer"),
     cel = new Function("skyLayer", "uLayerRelief", "mix", `return ${expression("celWeight")};`),
-    toeExpression = shader.match(/color \*= ([^;]*uShadowToe[^;]*);/)[1],
-    toe = new Function(
-      "uShadowToe",
-      "skyLayer",
-      "groundLayer",
-      "starLayer",
-      "gradedLuma",
-      "smoothstep",
-      `return ${toeExpression};`,
-    );
-  assert.doesNotMatch(toeExpression, /uCelMix|tonalBand|celColor/);
+    lit = (code) => smoothstep(0.17, 0.25, code);
   for (const code of [
     0,
     STAR_LAYER,
@@ -572,30 +569,35 @@ test("the generated film grade has no non-sky cel response and preserves a conti
       t = star(texel, 1, smoothstep, Math.abs),
       weight = cel(s, 1, mix) * (1 - g) * (1 - t);
     assert.equal(weight, code === 0 ? 1 : 0, `cel coverage for depth ${code}`);
-    let last = 0;
-    for (let i = 1; i <= 1000; i++) {
-      const luma = i / 1000,
-        factor = toe(uniform.uShadowToe.value, s, g, t, luma, smoothstep),
-        output = luma * factor;
-      assert.ok(output > last && output - last < 0.002, "continuous monotone environment shading");
-      if (code === 0 || code === STAR_LAYER || code === Number(DEPTH_LAYER.ground))
-        assert.equal(factor, 1, "sky, glow and ground keep their existing tones");
-      if (
-        code >= Number(DEPTH_LAYER.mountains) &&
-        code !== Number(DEPTH_LAYER.ground) &&
-        luma <= 0.05
-      )
-        assert.equal(
-          factor,
-          0.76,
-          "preserve the former deepest shadow exposure without a cel band",
-        );
-      last = output;
-    }
+    assert.equal(lit(code), code < 0.17 ? 0 : 1, `tone coverage for depth ${code}`);
     assert.equal(cel(s, 0, mix), 1, "the debug baseline retains its previous palette");
   }
-  pipeline.setFilmTreatment(false);
-  assert.equal(uniform.uShadowToe.value, 0);
+  // The curve on luminance: exposure, x^p/(x^p+k), the display's encode. The
+  // exposure shows FILM_TONE.anchor where it was; below it the toe keeps the
+  // shade near as it was, above it the shoulder rolls highlights off, and it
+  // rises continuously everywhere.
+  const [exposure, p, k, on] = FILM_TONE_UNIFORM.value.toArray(),
+    oetf = (v) => (v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055),
+    curve = (v) => {
+      const t = (v * exposure) ** p;
+      return oetf(t / (t + k));
+    };
+  assert.equal(on, 1);
+  assert.deepEqual([exposure, p, k], [filmExposure(), FILM_TONE.contrast, FILM_TONE.mid]);
+  assert.ok(Math.abs(curve(FILM_TONE.anchor) - FILM_TONE.anchor) < 1e-9);
+  assert.ok(Math.abs(curve(0.05) - 0.05) < 0.04, "the shade near as it was");
+  assert.ok(curve(1) < 0.75 && curve(16) < 1, "highlights roll off, never clip");
+  let last = 0;
+  for (let i = 1; i <= 4000; i++) {
+    const out = curve(i / 1000);
+    assert.ok(out > last && out - last < 0.01, "continuous and monotone");
+    last = out;
+  }
+  // The night's colour: a camera balanced a little warm of the moon, and dimmed colour.
+  const [r, g, b] = FILM_TONE.balance;
+  assert.ok(b > g && g > r && r > 0.9 && b < 1.1);
+  assert.ok(FILM_TONE.saturation > 0.7 && FILM_TONE.saturation < 1);
+  assert.match(shader, /uniform vec4 uTone;\nvec3 filmTone\(vec3 x\)\{/);
   pipeline.dispose();
 });
 

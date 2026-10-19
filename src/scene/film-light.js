@@ -1,9 +1,57 @@
 import { Matrix4, Vector2, Vector3, Vector4 } from "three";
 
-// The film's moonlight balance over the base rig (rendering.js): a strong cool
-// key over a dimmer fill, sky and ambient, so lit faces read about four times
-// their shadow side.
-export const FILM_LIGHT = Object.freeze({ key: 1.12, fill: 1.15, hemisphere: 0.88, ambient: 0.72 });
+// The film's moonlight over the base rig (rendering.js): the moon, a cool white
+// in the camera's balance (moon), is the key, many times the night sky's
+// light, so its shadows fall deep; the fill (the sky opposite the moon), the
+// hemisphere and the ambient are what the sky leaves in them. A candle in the
+// lantern (candle: its colour, architecture.js) is the one warm light.
+export const FILM_LIGHT = Object.freeze({
+  key: 2.4,
+  fill: 0.3,
+  hemisphere: 0.4,
+  ambient: 0.15,
+  moon: Object.freeze([0.62, 0.74, 1]),
+  candle: Object.freeze([1, 0.58, 0.24]),
+});
+
+// The film's tone curve (the owner's 2026-10-19 "the sky is the only artistic
+// element. everything else is photoreal"): the lit layers' scene-linear light,
+// exposed, white-balanced as a camera balanced warmer than the moon sees it
+// (`balance`), as dim as night vision's colour (`saturation`), rolls through a
+// toe and a shoulder (x^p/(x^p+k): contrast p, mid k) and is encoded for the
+// display (sRGB), on its luminance so warm and cool light keep their hue (only
+// near white do its channels roll off on their own, as film's do); the painted
+// sky and the star stay as shown (postprocess.js grading). The exposure keeps a
+// display level of `anchor` where it was, the brightest lit ground and subjects
+// behind the text, so the text's guards hold. Review variants (temporary):
+// ?tone=a|b|c, off.
+const TONES = { a: [1.15, 0.63], b: [1.3, 0.49], c: [1.5, 0.35] };
+const tonePick = globalThis.location?.search?.match(/[?&]tone=(\w+)/)?.[1];
+export const FILM_TONE = Object.freeze({
+  contrast: (TONES[tonePick] ?? TONES.b)[0],
+  mid: (TONES[tonePick] ?? TONES.b)[1],
+  anchor: 0.3,
+  balance: Object.freeze([0.96, 0.99, 1.04]),
+  saturation: 0.85,
+});
+// The exposure that shows a display level of FILM_TONE.anchor unchanged.
+export function filmExposure({ contrast, mid, anchor } = FILM_TONE) {
+  const y = ((anchor + 0.055) / 1.055) ** 2.4;
+  return ((mid * y) / (1 - y)) ** (1 / contrast) / anchor;
+}
+const toneOn = tonePick !== "off";
+export const FILM_TONE_UNIFORM = {
+  value: new Vector4(filmExposure(), FILM_TONE.contrast, FILM_TONE.mid, toneOn ? 1 : 0),
+};
+const toneVec = (v) => `vec3(${v.map((c) => c.toFixed(4)).join(",")})`;
+export const FILM_TONE_GLSL = `uniform vec4 uTone;
+vec3 filmTone(vec3 x){x=max(x*uTone.x*${toneVec(FILM_TONE.balance)},0.);float l=max(dot(x,vec3(.2126,.7152,.0722)),1e-6),t=pow(l,uTone.y);x=mix(vec3(l),x,${FILM_TONE.saturation.toFixed(4)});t/=t+uTone.z;vec3 h=x*(t/l),q=pow(x,vec3(uTone.y));q/=q+uTone.z;return sRGBTransferOETF(vec4(mix(h,q,smoothstep(.6,1.,max(h.r,max(h.g,h.b)))),1.)).rgb;}`;
+// Its inverse, channel by channel, for colours given as shown that light the lit
+// layers (the night sky as their environment, night-environment.js): the scene
+// light the curve shows as them.
+export const FILM_UNTONE_GLSL = toneOn
+  ? `vec3 filmUntone(vec3 d){vec3 y=min(mix(pow((max(d,0.)+.055)/1.055,vec3(2.4)),d/12.92,step(d,vec3(.04045))),.995),x=pow(${FILM_TONE.mid.toFixed(4)}*y/(1.-y),vec3(${(1 / FILM_TONE.contrast).toFixed(4)}));return max(mix(vec3(dot(x,vec3(.2126,.7152,.0722))),x,${(1 / FILM_TONE.saturation).toFixed(4)}),0.)/${toneVec(FILM_TONE.balance)}/${filmExposure().toFixed(4)};}`
+  : "vec3 filmUntone(vec3 d){return d;}";
 
 // A shot's `light` mood multiplies the film balance (key, fill) and the lantern.
 // Legacy rim, pale and rimText keys remain accepted without changing materials.

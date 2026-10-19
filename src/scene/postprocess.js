@@ -15,6 +15,7 @@ import {
   WebGLRenderTarget,
   ZeroFactor,
 } from "three";
+import { FILM_TONE_GLSL, FILM_TONE_UNIFORM } from "./film-light.js";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { FullScreenQuad } from "three/examples/jsm/postprocessing/Pass.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
@@ -52,7 +53,7 @@ void main() {
 export const FILM_LOOK = Object.freeze({
   halation: Object.freeze({
     on: 1,
-    strength: 1.2,
+    strength: 0.8,
     color: Object.freeze([1, 0.32, 0.12]),
     warm: Object.freeze([0.1, 0.35]),
   }),
@@ -90,7 +91,6 @@ const GRADING_SHADER = {
     uShadowCoolMix: { value: 0.34 },
     uTexelSize: { value: new Vector2(1, 1) },
     uLayerRelief: { value: 0 },
-    uShadowToe: { value: 0 },
     // The film look (FILM_LOOK): the bloom's composite and its halation tint (0: none),
     // the print toe (lift, toe) and its tint, and the ink's brush weight (vary, scale).
     tHalation: { value: null },
@@ -114,8 +114,8 @@ uniform float uHighlightWarmMix;
 uniform float uShadowCoolMix;
 uniform vec2 uTexelSize;
 uniform float uLayerRelief;
-uniform float uShadowToe;
 varying vec2 vUv;
+${FILM_TONE_GLSL}
 
 float inkHash(vec2 p) {
   vec3 q = fract(vec3(p.xyx) * 0.1031);
@@ -135,7 +135,10 @@ vec3 saturateColor(vec3 color, float amount) {
 
 void main() {
   vec4 texel = texture2D(tDiffuse, vUv);
-  vec3 color = texel.rgb;
+  // The lit layers' scene-linear light through the film's tone curve (film-light.js
+  // FILM_TONE); the painted sky and the star (codes under .2) as shown.
+  float scene = uLayerRelief * uTone.w * smoothstep(0.17, 0.25, texel.a);
+  vec3 color = mix(texel.rgb, filmTone(texel.rgb), scene);
   float luma = dot(color, vec3(0.299, 0.587, 0.114));
 
   color = (color - 0.5) * uContrast + 0.5;
@@ -149,7 +152,7 @@ void main() {
   float midMix = smoothstep(0.22, 0.46, luma) * (1.0 - smoothstep(0.62, 0.82, luma));
   float highlightMix = smoothstep(0.72, 0.97, luma);
 
-  color = mix(color, max(coolShadow, shadowLift), uShadowCoolMix * shadowMix);
+  color = mix(color, max(coolShadow, shadowLift * (1.0 - scene)), uShadowCoolMix * shadowMix);
   color = mix(color, warmMidtone, 0.3 * midMix);
   color = mix(color, parchmentHighlight, uHighlightWarmMix * highlightMix);
 
@@ -162,11 +165,9 @@ void main() {
   // The star and its glow (depth-layers.js STAR_LAYER over the sky's 0) stay
   // continuous: the cloud banks' steps never ring them.
   float starLayer = uLayerRelief * smoothstep(0.0005, 0.006, texel.a) * (1.0 - smoothstep(0.22, 0.28, texel.a));
-  // Only the sky takes the cel palette. The separate continuous toe retains the
-  // subjects' and ranges' deep shade without tying it to a quantized palette or
-  // its strength. Partly covered edges blend toward the sky's code as before.
+  // Only the sky takes the cel palette; the lit layers' deep shade is the tone
+  // curve's toe. Partly covered edges blend toward the sky's code as before.
   float skyLayer = 1.0 - smoothstep(0.0, 0.3, texel.a);
-  color *= 1.0 - uShadowToe * (1.0 - skyLayer) * (1.0 - groundLayer) * (1.0 - starLayer) * (1.0 - smoothstep(0.05, 0.1, gradedLuma));
   float celWeight = mix(1.0, skyLayer, uLayerRelief);
   color = mix(color, celColor, uCelMix * celWeight * (1.0 - groundLayer) * (1.0 - starLayer));
   color = saturateColor(color, 1.04);
@@ -192,9 +193,10 @@ void main() {
   color += halo * uHalation * smoothstep(${FILM_LOOK.halation.warm[0].toFixed(3)}, ${FILM_LOOK.halation.warm[1].toFixed(3)}, (halo.r - halo.b) / max(halo.r, 1e-4));
   // A print film's toe: the blacks lift toward a cool, milky tint.
   color += uPrintTint * uPrint.x * (1.0 - smoothstep(0.0, uPrint.y, dot(color, vec3(0.299, 0.587, 0.114))));
-  // A soft shoulder: highlights past the knee roll off toward white, not clip.
+  // A soft shoulder for the sky (the lit layers have the tone curve's): highlights
+  // past the knee roll off toward white, not clip.
   vec3 over = max(color - 0.75, 0.0);
-  color = mix(color, min(color, 0.75) + 0.25 * (1.0 - exp(-over / 0.25)), uLayerRelief);
+  color = mix(color, min(color, 0.75) + 0.25 * (1.0 - exp(-over / 0.25)), uLayerRelief * (1.0 - scene));
 
   gl_FragColor = vec4(clamp(color, 0.0, 1.0), texel.a);
 }
@@ -825,6 +827,8 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
   const size = getSize(renderer);
   const bloomPass = new UnrealBloomPass(size, 0.18, 0.45, 0.9);
   const gradingPass = new ShaderPass(GRADING_SHADER);
+  // ShaderPass clones its uniforms: the tone curve's is the shared one.
+  gradingPass.uniforms.uTone = FILM_TONE_UNIFORM;
   const vignetteGrainPass = new ShaderPass(VIGNETTE_GRAIN_SHADER);
   // Bloom adds light, not depth: in film its composite keeps the layer codes.
   Object.assign(bloomPass.blendMaterial, {
@@ -980,7 +984,6 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
     gradingPass.uniforms.uHighlightWarmMix.value = settings.highlightWarmMix ?? 0.14;
     gradingPass.uniforms.uShadowCoolMix.value = settings.shadowCoolMix ?? 0.25;
     gradingPass.uniforms.uLayerRelief.value = film ? 1 : 0;
-    gradingPass.uniforms.uShadowToe.value = film ? 0.24 : 0;
     // In film the final pass always draws: it staggers the dissolve and writes
     // opaque alpha, so layer codes never reach the transparent canvas.
     vignetteGrainPass.enabled = film || vignetteEnabled || grainEnabled || phase !== IDLE;

@@ -675,9 +675,9 @@ export const MOON_LIGHTS = Object.freeze({
 });
 
 // How the film ground takes the night's light. The moon key rakes it and casts
-// the tree's shadow across it, so it dominates: the unshadowed fills, which
-// model the tower and the bark, keep only a share here (the crown's point fill
-// stands where no light is), and the flat ambient and hemisphere give way to
+// the tree's shadow across it, so it dominates: the unshadowed fill, which
+// models the tower and the bark, keeps only a share here, and the flat ambient
+// and hemisphere give way to
 // the night sky's own light from the environment (night-environment.js),
 // brighter toward the lit clouds and the horizon, which the cracks and relief
 // catch. The lantern's light also comes back off its own pool and the near
@@ -693,9 +693,8 @@ export const MOON_LIGHTS = Object.freeze({
 export const SLATE_LIGHT = Object.freeze({
   key: 1.35,
   fill: 0.35,
-  crown: 0.15,
   ambient: 0.3,
-  sky: 3.4, // the environment's diffuse light, times (its colours are the sky as shown)
+  sky: 1.5, // the environment's diffuse light, times (the open plain sees all of the sky)
   bounce: 0.18,
   poolKnee: 0.08,
 });
@@ -709,9 +708,8 @@ export const SLATE_LIGHT = Object.freeze({
 // (roughness[0]) as it follows the soil; standing water (the knoll's low-spot
 // pools) is whole and sharp (roughness[1]). The authored puddles take none of
 // this: terrain-build.js's zone mirror draws their sky, at the sky as shown.
-// The sky the water mirrors is the sky as shown times gain ([film, standing
-// water]: above 1 the stylised night's dimmed sky lights its own reflection
-// more), and in standing water the tree's trunk darkens it where
+// The sky the water mirrors is the sky at its own radiance times gain ([film,
+// standing water]), and in standing water the tree's trunk darkens it where
 // it stands in the way (terrain-build.js sets slateWaterVeil; the rough film
 // would only smear it). It fades with view distance
 // (far), so the far plain behind the intro text stays calm.
@@ -740,7 +738,7 @@ export const SLATE_WATER = Object.freeze({
   film: Object.freeze([0.12, 0.18]),
   patch: Object.freeze([9, 0.55]),
   roughness: Object.freeze([0.3, 0.02]),
-  gain: Object.freeze([1.5, 1.8]),
+  gain: Object.freeze([1, 1]),
   far: Object.freeze([70.0, 130.0]),
   moon: Object.freeze({ roughness: 0.25, gain: 1, knee: 0.06 }),
   lamp: Object.freeze({ roughness: 0.18, gain: 1.6, knee: 0.35 }),
@@ -1215,10 +1213,10 @@ const WATER = SLATE_WATER,
   LIGHT = SLATE_LIGHT;
 // The film ground's own direct light (SLATE_LIGHT): it finds the key and the
 // fill among the directional lights by their fixed directions and the lantern
-// by its warm colour; any other light is the crown's cool point fill. Three's light loops fetch each light through get*LightInfo(), so
-// wrapping those marks a directional one (slateDirectional): where the crown's
-// point light lines up with the key or the fill from some spot on the ground,
-// it stays the crown's.
+// by its warm colour. Three's light loops fetch each light through
+// get*LightInfo(), so wrapping those marks a directional one (slateDirectional):
+// where the lantern lines up with the key from some spot on the ground, it
+// stays the lantern's.
 // Where the soil is wet (slateWetLamp, set before the lights) the moon and the
 // lantern also light the water film over it (SLATE_WATER.moon, .lamp), on the
 // water's normal (slateWaterN), into slateMoonSpec and slateLampSpec.
@@ -1268,7 +1266,7 @@ void RE_Direct_Moonlit(const in IncidentLight directLight, const in vec3 geometr
   bool slateWarm = directLight.color.b < .7*directLight.color.r;
   bool slateKey = slateDirectional && !slateWarm && dot(directLight.direction, normalize(mat3(viewMatrix)*${unitGlsl(MOON_LIGHTS.key)})) > .9999;
   #ifdef USE_ENVMAP
-  if (!slateWarm) slateL.color *= slateKey ? ${glslNumber(LIGHT.key)} : slateDirectional && dot(directLight.direction, normalize(mat3(viewMatrix)*${unitGlsl(MOON_LIGHTS.fill)})) > .9999 ? ${glslNumber(LIGHT.fill)} : ${glslNumber(LIGHT.crown)};
+  if (!slateWarm) slateL.color *= slateKey ? ${glslNumber(LIGHT.key)} : ${glslNumber(LIGHT.fill)};
   #endif
   RE_Direct_Physical(slateL, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight);
   #ifdef USE_ENVMAP

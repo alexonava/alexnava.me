@@ -16,7 +16,7 @@ import {
   PointLight,
 } from "three";
 import { createLanternArchitecture, createLanternMount } from "../src/scene/lantern.js";
-import { createTreeArchitecture, LANTERN_FILM_INTENSITY } from "../src/scene/architecture.js";
+import { createTreeArchitecture, LANTERN_REACH } from "../src/scene/architecture.js";
 import { LANTERN_MOOD } from "../src/scene/film-light.js";
 import { createPropScale } from "../src/scene/prop-scale.js";
 import { createCinematicCamera, cinematicSafeArea } from "../src/scene/cinematic.js";
@@ -934,7 +934,7 @@ test("the mounted supplied lantern drives the tree's practical light and leaves 
   );
   approx(
     tree.light.intensity,
-    LANTERN_FILM_INTENSITY * 0.84 * shader.uniforms.lanternFlicker.value[0],
+    LANTERN_REACH.intensity * 0.84 * shader.uniforms.lanternFlicker.value[0],
   );
   for (const [material, hook, key] of standIn) {
     assert.equal(material.onBeforeCompile, hook);
@@ -943,7 +943,7 @@ test("the mounted supplied lantern drives the tree's practical light and leaves 
   mount.dispose();
   assert.equal(mesh.material.isMaterial, true, "dispose restored the single material");
   assert.equal(mesh.geometry.groups.length, 0);
-  approx(tree.light.intensity, LANTERN_FILM_INTENSITY * 0.84);
+  approx(tree.light.intensity, LANTERN_REACH.intensity * 0.84);
   tree.dispose();
 });
 
@@ -954,31 +954,31 @@ test("point-light flicker uses cached film/quality base without accumulating or 
   tree.setFilmTreatment(true);
   tree.applyQuality({ tier: "high", lighting: { practicalIntensityScale: 1.08 } });
   const version = normal.version,
-    base = LANTERN_FILM_INTENSITY * 1.08;
+    base = LANTERN_REACH.intensity * 1.08;
   const fill = tree.fillLight.intensity;
   for (let i = 0; i < 100; i++) tree.setLanternFlicker(1.12);
   approx(tree.light.intensity, base * 1.12);
   assert.equal(normal.version, version);
   assert.equal(tree.fillLight.intensity, fill);
   tree.applyQuality({ tier: "balanced", lighting: { practicalIntensityScale: 0.84 } });
-  approx(tree.light.intensity, LANTERN_FILM_INTENSITY * 0.84 * 1.12);
+  approx(tree.light.intensity, LANTERN_REACH.intensity * 0.84 * 1.12);
   tree.setLanternFlicker(0.88);
-  approx(tree.light.intensity, LANTERN_FILM_INTENSITY * 0.84 * 0.88);
+  approx(tree.light.intensity, LANTERN_REACH.intensity * 0.84 * 0.88);
   tree.setLanternFlicker();
-  approx(tree.light.intensity, LANTERN_FILM_INTENSITY * 0.84);
+  approx(tree.light.intensity, LANTERN_REACH.intensity * 0.84);
   tree.setLanternFlicker(NaN);
-  approx(tree.light.intensity, LANTERN_FILM_INTENSITY * 0.84);
+  approx(tree.light.intensity, LANTERN_REACH.intensity * 0.84);
   // The shot's lantern mood (film-light.js) scales the flickering practical in
   // film, from the same cached base, and never accumulates.
   try {
     LANTERN_MOOD.value = 1.45;
     const moodVersion = normal.version;
     for (let i = 0; i < 10; i++) tree.setLanternFlicker(1.12);
-    approx(tree.light.intensity, LANTERN_FILM_INTENSITY * 0.84 * 1.12 * 1.45);
+    approx(tree.light.intensity, LANTERN_REACH.intensity * 0.84 * 1.12 * 1.45);
     assert.equal(normal.version, moodVersion);
     LANTERN_MOOD.value = 0.7;
     tree.setLanternFlicker(0.88);
-    approx(tree.light.intensity, LANTERN_FILM_INTENSITY * 0.84 * 0.88 * 0.7);
+    approx(tree.light.intensity, LANTERN_REACH.intensity * 0.84 * 0.88 * 0.7);
     // Outside film the mood is ignored.
     tree.setFilmTreatment(false);
     tree.setLanternFlicker(1);
