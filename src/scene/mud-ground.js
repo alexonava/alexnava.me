@@ -1,6 +1,6 @@
 import { DEPTH_LAYER } from "./depth-layers.js";
 import { FLASH_GROUND, FLASH_UNIFORMS } from "./film-light.js";
-import { HIGH_VIEW, HORIZON_AIR, RANGE_MIST, TERRAIN_HORIZON } from "./hill-silhouette.js";
+import { HORIZON_AIR, RANGE_MIST, TERRAIN_HORIZON } from "./hill-silhouette.js";
 import { ESTATE, estateLantern, estatePoint } from "./estate-layout.js";
 import { MIST_PARS, MIST_UNIFORMS, mistOn } from "./drifting-mist.js";
 // The estate's human scale for props and trees: one doorway height. The
@@ -456,31 +456,30 @@ export function streamLines({ courses, step, bed } = SLATE_STREAMS) {
 // The river through the set (the owner's picks of 2026-10-10, a broad, slow
 // river past the lantern, and 2026-10-11, "much more water", carried through
 // the set across Portrait's foreground and into a lake behind the lookout): it
-// comes off the north-east plain behind the tree, rounds a meander north-west
-// of the lantern, runs 4 units wide about 4.3 units in front of the lantern on
-// the lantern shots' side and bends away south toward their lens, as before,
-// clear of the roots, the rocks and the puddles; then it crosses Portrait's
-// foreground, rounds past its lens, passes well south of the lookout (its
-// water 10 units beyond the lookout's grass) and widens across The watch's
-// plain into a lake 60 units across, before running off the plain toward the
-// summit. Its course is a smooth centreline through `path` ([dx, dz] offsets from the
-// lantern's foot, upstream first), sampled every `step` units; its half-width
+// pours off the cliffs north-east behind the tree (the owner's open sea of
+// 2026-10-17, terrain-build.js and ocean.js riverFalls()); along it from there
+// it rounds a meander north-west of the lantern, runs 4 units wide about 4.3
+// units in front of the lantern on the lantern shots' side and bends away
+// south toward their lens, as before, clear of the roots, the rocks and the
+// puddles; then it crosses Portrait's foreground, rounds past its lens, passes
+// well south of the lookout (its water 10 units beyond the lookout's grass)
+// and widens across The watch's plain into a lake 60 units across, where it
+// comes in off the plain from toward the summit. Its course is a smooth
+// centreline through `path` ([dx, dz] offsets from the lantern's foot, from the
+// falls first), sampled every `step` units; its half-width
 // is `width` (the normalised radius is 1 on its shore), wobbled along its
 // length (`wobble`) so its banks never run parallel. A point may carry its own
 // half-width and step ([dx, dz, half-width, step]): the half-width changes
 // linearly to the next point's, and the step cuts the span the point starts.
-// Its distance downstream is `datum[1]` at the `datum[0]`th point, and the
-// wobble stretches with the half-width (`width` sets its pace). Its bed and
-// banks are SLATE_RIVER_BED, and its water runs downstream at `flow` units a
-// second. Where `valley` is set, the foothills open along it (terrain-build.js
+// Its distance along its course is `datum[1]` at the `datum[0]`th point, and
+// the wobble stretches with the half-width (`width` sets its pace). Its bed
+// and banks are SLATE_RIVER_BED, and its water runs at `flow` units a second
+// along its course (negative: back toward its first point, to the falls). Where `valley` is set, the foothills open along it (terrain-build.js
 // valleyGap()): flat within `floor` half-widths of its centreline, rising to
 // their full height over `shoulder` units beyond.
 export const SLATE_RIVER = Object.freeze({
   path: Object.freeze(
     [
-      [99.1, 171.6, 6, 12],
-      [73.1, 118.6, 5.5, 12],
-      [51.1, 78.6, 4.6, 8],
       [33.1, 52.6, 3.9, 5],
       [17.1, 36.6, 3.3, 3],
       [1.1, 30.6, 2.9, 3],
@@ -530,8 +529,8 @@ export const SLATE_RIVER = Object.freeze({
   step: 0.9,
   width: 2,
   wobble: Object.freeze([0.08, 0.05]),
-  flow: 0.25,
-  datum: Object.freeze([12, 8.109509849439533]),
+  flow: -0.25,
+  datum: Object.freeze([9, 8.109509849439533]),
   valley: Object.freeze({ floor: 1.6, shoulder: 30 }),
 });
 // The river's centreline, sampled (Catmull-Rom through `path`): world [x, z]
@@ -806,8 +805,6 @@ export function createSlateContacts(values = new Float32Array(SLATE_CONTACTS * 4
     slateClearLight: { value: { x: 1, y: 1, z: 1, w: 1 } },
     slateClearShade: { value: { x: 0, y: 0, z: 1, w: 0 } },
     slateMist: RANGE_MIST,
-    // The walk's view from up high (hill-silhouette.js HIGH_VIEW), 0 on every shot.
-    slateHigh: HIGH_VIEW,
     slateGloss: { value: { x: 0, y: 0, z: 0, w: 0 } },
     slateShadowFade: { value: { x: 0, y: 0 } },
   };
@@ -1388,8 +1385,7 @@ uniform vec4 slateText, slateAbout;
 ${authored ? "uniform sampler2D slateDetail;\n" : ""}${close ? "uniform sampler2D slateGrit, slateRelief;\n" : ""}${RIVER_BED_GLSL}float slateHash(vec2 p){vec3 q=fract(p.xyx*.1031);q+=dot(q,q.yzx+33.33);return fract((q.x+q.y)*q.z);}
 float slateNoise(vec2 p){vec2 i=floor(p),f=fract(p);f*=f*(3.-2.*f);return mix(mix(slateHash(i),slateHash(i+vec2(1,0)),f.x),mix(slateHash(i+vec2(0,1)),slateHash(i+1.),f.x),f.y);}
 ${STREAM_GLSL}
-${SLATE_TEXT_GLSL}${LOOK_GLSL}uniform float slateHigh;
-${mistOn ? `uniform mat4 projectionMatrix;\n${MIST_PARS}` : ""}`
+${SLATE_TEXT_GLSL}${LOOK_GLSL}${mistOn ? `uniform mat4 projectionMatrix;\n${MIST_PARS}` : ""}`
         : "") +
       shader.fragmentShader;
     if (authored)
@@ -1544,10 +1540,6 @@ ${mistOn ? `uniform mat4 projectionMatrix;\n${MIST_PARS}` : ""}`
         smoothstep(230.0, 330.0, vFogDepth));
       vec3 earthAir = ${TERRAIN_HORIZON}*${glslNumber(HORIZON_AIR.ground)};
       earthHorizon *= smoothstep(1.0, 1.15, dot(gl_FragColor.rgb, ${LUMA})/dot(earthAir, ${LUMA}));
-      // Up high in the walk (HIGH_VIEW) it fades, lighter or darker, into the
-      // far plain's air where the band past its edge starts.
-      earthAir *= 1.+slateHigh*${glslNumber(+(HORIZON_AIR.edge / HORIZON_AIR.ground - 1).toFixed(4))};
-      earthHorizon = max(earthHorizon, slateHigh*smoothstep(${HIGH_VIEW.fade.map(glslNumber).join(", ")}, length(vMudWorld.xz)));
       gl_FragColor.rgb = mix(gl_FragColor.rgb, earthAir, earthHorizon);
       #endif${LOOK_AFTER}${useWet && mistOn ? "\n      gl_FragColor.rgb = mistGround(gl_FragColor.rgb, vMudWorld);" : ""}
       gl_FragColor.a = ${DEPTH_LAYER.ground};

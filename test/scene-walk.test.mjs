@@ -266,9 +266,11 @@ test("solids push the walker out to its body's radius and let it slide along the
   assert.ok(wx > 5, `slid past the square to ${wx}`);
 });
 
-test("the bound fades outward steps between 76 and 86 and never lets the walker past 86", () => {
+test("the bound fades outward steps between soft and hard and never lets the walker past hard, inside the sky's dome", () => {
   const { soft, hard } = WALK.bound;
-  let x = 70,
+  // The sky's shell (index.js, WORLD.SKY_DOME_RADIUS 130) stays well about the eye.
+  assert.ok(hard + 15 <= 130);
+  let x = soft - 6,
     z = 0;
   for (let i = 0; i < 2000; i++) {
     [x, z] = boundStep(x, z, x + 0.15, z, WALK);
@@ -276,10 +278,47 @@ test("the bound fades outward steps between 76 and 86 and never lets the walker 
   }
   assert.ok(x > soft + 5, `pressed toward the edge: ${x}`);
   // Inward and sideways motion is untouched.
-  assert.deepEqual(boundStep(80, 0, 79, 0), [79, 0]);
-  const [tx, tz] = boundStep(80, 0, 80, 1);
-  close(Math.hypot(tx, tz), Math.hypot(80, 1), 0.06);
+  assert.deepEqual(boundStep(soft + 4, 0, soft + 3, 0), [soft + 3, 0]);
+  const [tx, tz] = boundStep(soft + 4, 0, soft + 4, 1);
+  close(Math.hypot(tx, tz), Math.hypot(soft + 4, 1), 0.06);
   assert.deepEqual(boundStep(10, 0, 11, 0), [11, 0], "inside soft: free");
+});
+
+test("the walk keeps back from the cliffs' lip: outward steps fade from shore[0], none ends nearer than shore[1]", () => {
+  const [ease, lip] = WALK.bound.shore;
+  assert.ok(ease > lip && lip >= WALK.body, "the feet stay on the shelf");
+  // A straight fault 90 out along +x, the land inland of it (its distance positive).
+  const shore = (x) => 90 - x;
+  let x = 80,
+    z = 3;
+  for (let i = 0; i < 2000; i++) {
+    [x, z] = boundStep(x, z, x + 0.15, z, WALK, [0, 0], shore);
+    assert.ok(shore(x, z) >= lip - 1e-6, `past the lip at ${x}`);
+  }
+  assert.ok(shore(x, z) < lip + 0.2, `pressed to the lip: ${shore(x, z)}`);
+  // Along the lip, and back from it, it walks free.
+  const along = boundStep(x, z, x, z + 0.5, WALK, [0, 0], shore);
+  close(along[0], x, 1e-6);
+  close(along[1], z + 0.5, 1e-6);
+  assert.deepEqual(boundStep(x, z, x - 1, z, WALK, [0, 0], shore), [x - 1, z]);
+  // Well inland, nothing changes; a lent shore that has none (no film terrain yet) is no bound.
+  assert.deepEqual(boundStep(10, 0, 11, 0, WALK, [0, 0], shore), [11, 0]);
+  assert.deepEqual(
+    boundStep(88, 0, 89, 0, WALK, [0, 0], () => undefined),
+    [89, 0],
+  );
+  // A walk that starts over the edge starts back on the land, where the fade begins.
+  const solids = { circles: [], hull: [] };
+  const start = spawn(
+    { position: new Vector3(95, 9, 0), target: new Vector3(0, 0, 0) },
+    solids,
+    WALK,
+    shore,
+  );
+  assert.ok(
+    shore(start.x, start.z) >= ease - 1e-6,
+    `starts ${shore(start.x, start.z)} from the lip`,
+  );
 });
 
 test("the moon's shadow follows a snapped point ahead, changing only on a cell", () => {
@@ -474,7 +513,7 @@ function wireSceneWalk(rig) {
     sceneFailed: false,
     sceneReadyMarked: true,
     filmActive: true,
-    walkGround: () => 0,
+    walkGround: Object.assign(() => 0, { shore: () => 1 }),
     reducedMotion: false,
     visitorHold: { ...owner, paused: false },
     qualityState: { touchPrimary: false },
@@ -500,6 +539,87 @@ function wireSceneWalk(rig) {
   vm.runInNewContext(index.slice(start, end), context);
   return { context, forcedColors, dispose: () => context.scene.disposeHomeSceneRuntime() };
 }
+
+test("the scene's actual ground consumer enables walk only after a successful current coastal commit", async () => {
+  const index = source("src/scene/index.js"),
+    start = index.indexOf("onGroundChange(active) {"),
+    end = index.indexOf("\n      });", start);
+  assert.ok(start > 0 && end > start, "locate the actual film readiness consumer");
+  for (const phase of ["commit", "failed", "missing", "disposed"]) {
+    const rig = walkRig(),
+      integration = wireSceneWalk(rig),
+      context = integration.context,
+      owner = { setFilmTreatment() {}, setFilmActive() {} };
+    let finish,
+      landed = false;
+    const height = Object.assign(() => 2, {
+      ready: new Promise((resolve) => (finish = resolve)),
+      shore: () => (landed ? 10 : Infinity),
+    });
+    Object.assign(context, {
+      filmScene: { ready: Promise.resolve(phase === "missing" ? undefined : height) },
+      environmentSystem: owner,
+      hillSilhouette: owner,
+      groundTextures: owner,
+      rockScatter: owner,
+      farFires: owner,
+      completeTower: null,
+      groundHeight: () => 0,
+      walkGround: null,
+    });
+    vm.runInNewContext(`onGroundChange = ({${index.slice(start, end)}}).onGroundChange;`, context);
+    const press = async () => {
+      const event = key("keydown", "Backquote");
+      rig.site.win.dispatchEvent(event);
+      await new Promise((resolve) => setImmediate(resolve));
+      return event;
+    };
+    try {
+      context.onGroundChange(true);
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(
+        context.walkGround,
+        phase === "missing" ? null : height,
+        "prepared height may be retained without enabling walk",
+      );
+      assert.equal((await press()).defaultPrevented, false);
+      assert.equal(rig.walk.active, false);
+      if (phase === "disposed") integration.dispose();
+      landed = phase === "commit";
+      finish(phase === "commit");
+      await new Promise((resolve) => setImmediate(resolve));
+      if (phase !== "commit") {
+        assert.notEqual(
+          context.walkGround,
+          context.groundHeight,
+          `${phase}: no analytic fallback enables expanded walk`,
+        );
+        assert.equal((await press()).defaultPrevented, false);
+        assert.equal(rig.walk.active, false);
+        continue;
+      }
+      assert.equal(context.walkGround, height);
+      assert.equal((await press()).defaultPrevented, true);
+      assert.equal(rig.walk.active, true, "first successful commit enables the actual shortcut");
+      rig.walk.exit({ immediate: true });
+      landed = false;
+      context.onGroundChange(false);
+      context.onGroundChange(true);
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(
+        (await press()).defaultPrevented,
+        false,
+        "cached first readiness cannot enable withdrawn terrain",
+      );
+      assert.equal(rig.walk.active, false);
+      landed = true;
+      assert.equal((await press()).defaultPrevented, true);
+      assert.equal(rig.walk.active, true, "reactivation waits for its own current coastal commit");
+    } finally {
+      integration.dispose();
+    }
+  }
+});
 
 test("forced colors immediately restores the page and mouse during walk arming or walking", async () => {
   for (const phase of ["arming", "walking"]) {

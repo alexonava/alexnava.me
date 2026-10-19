@@ -123,8 +123,9 @@ const NO_ROCKS = Object.freeze([]);
 
 // Fetches rock-build.js once the scene has revealed, the film is on and the
 // tree channel has settled, on high and balanced only. Nothing about the rocks delays the reveal. terrain()
-// resolves to the film terrain's height once its root supports settle
-// (film-scene.js ready); the rocks are placed on it, or on groundHeight without.
+// resolves to the prepared film sampler (film-scene.js ready). rock-build.js
+// starts its GLBs then, waits for the coastal commit before placement, and
+// takes the stable film height even if film withdraws during those loads.
 export function createRockScatter({
   tier,
   onStatus = () => {},

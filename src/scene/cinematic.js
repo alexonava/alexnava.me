@@ -116,7 +116,8 @@ export function createCinematicCamera({
   getSafeArea,
   getGroundY,
   // How a subject is measured for a shot: the model itself (measureShot), or a
-  // stored measurement that stands in for it before it loads.
+  // stored measurement that stands in for it before it loads. A shot with its
+  // own measure and fit (ocean.js coastShot()) frames itself.
   measure = measureShot,
 }) {
   let tower = null,
@@ -145,7 +146,7 @@ export function createCinematicCamera({
   function measurementFor(root, shot) {
     let measured = cachedMeasurement(root, shot);
     if (!measured) {
-      measured = measure(root, shot);
+      measured = (shot.measure || measure)(root, shot);
       measurements.set(shot, {
         root,
         matrix: Float64Array.from(root.matrixWorld.elements),
@@ -174,7 +175,7 @@ export function createCinematicCamera({
       fitted;
     const targetFoot = measured.groundAnchor;
     for (let pass = 0; pass < 6; pass++) {
-      fitted = fitShot({ ...measured, cameraY }, shot, area, width, height);
+      fitted = (shot.fit || fitShot)({ ...measured, cameraY }, shot, area, width, height);
       fitted.cameraY = cameraY;
       if (!getGroundY) break;
       let clearanceY = cameraY;
@@ -444,6 +445,7 @@ export function createCinematicCamera({
       const [across, down] = shotAnchor(shot),
         centerX = lock.area.left + lock.area.width * across,
         centerY = lock.area.top + lock.area.height * down;
+      fov = fitted.fov ?? fov;
       camera.fov =
         height === lock.height
           ? fov

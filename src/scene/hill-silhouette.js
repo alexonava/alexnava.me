@@ -184,6 +184,14 @@ export const TERRAIN_EDGE = 192;
 // as the band starts) from `fade` units out to its edge (mud-ground.js), and
 // the plain runs on into the band with no square edge.
 export const HIGH_VIEW = { value: 0, fade: Object.freeze([80, 188]) };
+// The ranges past the fault (ocean.js, the owner's open sea of 2026-10-17):
+// where a range's point stands out over the sea, beyond uSea's plane (its
+// direction x, y and offset z), it sinks under the sea's horizon over 60 units,
+// so the open sea runs to the sky and the ranges either side slope down into
+// it. Off (w 0) until the sea lands with the film terrain (terrain-build.js).
+export const SEA_SINK = { value: { x: 0, y: 0, z: 0, w: 0 } };
+const SINK_GLSL =
+  "w.y-=uSea.w*smoothstep(0.,60.,dot(w.xz,uSea.xy)-uSea.z)*(w.y-modelMatrix[3].y+40.);vL=w.xyz-cameraPosition;";
 
 function sampleProfile(angle) {
   const n = HILL_PROFILE.length,
@@ -370,12 +378,15 @@ function mountainMaterial({ skyRadius, shellOpacity, sunPosition }) {
     // Compress backdrop depth so it cannot cut through world-space foothills.
     vertexShader: `
 attribute vec4 aTerrain, aForm;
+uniform vec4 uSea;
 varying vec4 vT, vF;
 varying vec3 vL;
 varying float vD, vH;
 void main() {
 vT=aTerrain; vF=aForm; vL=position;
-vec4 w=vec4(cameraPosition+position,1.0), m=viewMatrix*w;
+vec4 w=vec4(cameraPosition+position,1.0);
+${SINK_GLSL}
+vec4 m=viewMatrix*w;
 vH=w.y-modelMatrix[3].y; vD=-m.z;
 gl_Position=projectionMatrix*m;
 gl_Position.z=mix(gl_Position.z,gl_Position.w,.8);
@@ -475,6 +486,7 @@ gl_FragColor=vec4(c,${DEPTH_LAYER.mountains});
   });
   // Set after the merge, so every mountain material shares the ground's one object.
   material.uniforms.uMist = RANGE_MIST;
+  material.uniforms.uSea = SEA_SINK;
   if (mistOn) Object.assign(material.uniforms, MIST_UNIFORMS);
   return material;
 }
@@ -570,13 +582,16 @@ function massifMaterial({ skyRadius, shellOpacity, sunPosition, normalMap, maskM
     ]),
     vertexShader: `
 attribute vec4 aTerrain, aInst;
+uniform vec4 uSea;
 varying vec4 vT, vI;
 varying vec3 vL;
 varying vec2 vU;
 varying float vD, vH;
 void main() {
 vT=aTerrain; vI=aInst; vU=uv; vL=position;
-vec4 w=vec4(cameraPosition+position,1.0), m=viewMatrix*w;
+vec4 w=vec4(cameraPosition+position,1.0);
+${SINK_GLSL}
+vec4 m=viewMatrix*w;
 vH=w.y-modelMatrix[3].y; vD=-m.z;
 gl_Position=projectionMatrix*m;
 gl_Position.z=mix(gl_Position.z,gl_Position.w,.8);
@@ -659,6 +674,7 @@ gl_FragColor=vec4(c,${DEPTH_LAYER.mountains});
     uMask: { value: maskMap },
     uNearer: { value: nearerMap },
     uMist: RANGE_MIST,
+    uSea: SEA_SINK,
     ...(mistOn ? MIST_UNIFORMS : {}),
   });
   return material;

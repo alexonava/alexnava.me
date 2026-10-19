@@ -674,10 +674,10 @@ const ORBIT_SPEED = 0.06;
           groundTextures.setFilmActive(active);
           rockScatter.setFilmActive(active);
           farFires.setFilmActive(active);
-          // The walk stands on the film terrain's height (the procedural one without it).
+          // Retain the film sampler; its shore gates walk entry until it lands.
           if (active)
             filmScene.ready?.then((height) => {
-              walkGround = typeof height === "function" ? height : groundHeight;
+              walkGround = typeof height === "function" ? height : null;
             });
         },
       });
@@ -1375,7 +1375,7 @@ const ORBIT_SPEED = 0.06;
         walkAllowed({
           shown: canvasShown && cinematic.ready && !runtimeDisposed && webglContextAvailable,
           failed: sceneFailed,
-          ground: filmActive && typeof walkGround === "function",
+          ground: filmActive && walkGround?.shore?.(0, 0) < Infinity,
           reducedMotion,
           paused: visitorHold.paused,
           finePointer: !qualityState.touchPrimary && finePointer?.matches !== false,
@@ -1390,6 +1390,7 @@ const ORBIT_SPEED = 0.06;
           win: window,
           doc: document,
           ground: (x, z) => walkGround(x, z) + environmentRoot.position.y,
+          shore: (x, z) => walkGround.shore?.(x, z),
           tower: () => completeTower?.root ?? null,
           anchors: {
             trunk: {

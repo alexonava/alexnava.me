@@ -592,9 +592,9 @@ test("each ground shading has its own program cache key; the slate's shading nee
   const { fragment, uniforms } = compile(true, { detail, contacts });
   // The slate's far edge darkens toward the far plain's air, the shared slate
   // lifted by HORIZON_AIR.ground, and never lightens: slate already darker
-  // than that air keeps its tone, except from up high in the walk (HIGH_VIEW,
-  // the shared object, 0 on every shot), where it fades either way into the far
-  // plain the ranges draw. Only a shot's look follows it: its clearing and its
+  // than that air keeps its tone. The walk's view from up high (HIGH_VIEW) is
+  // the lazy terrain's own edit (ocean.js slateShoreEdits(), terrain-build.test.mjs),
+  // never the entry's. Only a shot's look follows it: its clearing and its
   // mist, each off unless a shot asks for it.
   const horizon = TERRAIN_HORIZON.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
     LUMA = "vec3\\(\\.2126,\\.7152,\\.0722\\)";
@@ -603,15 +603,14 @@ test("each ground shading has its own program cache key; the slate's shading nee
     new RegExp(
       `vec3 earthAir = ${horizon}\\*${String(HORIZON_AIR.ground).replace(".", "\\.")};\\s*` +
         `earthHorizon \\*= smoothstep\\(1\\.0, 1\\.15, dot\\(gl_FragColor\\.rgb, ${LUMA}\\)/dot\\(earthAir, ${LUMA}\\)\\);\\s*` +
-        `(?://[^\\n]*\\s*)*earthAir \\*= 1\\.\\+slateHigh\\*0\\.0857;\\s*` +
-        `earthHorizon = max\\(earthHorizon, slateHigh\\*smoothstep\\(80\\.0, 188\\.0, length\\(vMudWorld\\.xz\\)\\)\\);\\s*` +
         `gl_FragColor\\.rgb = mix\\(gl_FragColor\\.rgb, earthAir, earthHorizon\\);\\s*#endif\\s*` +
         `if \\(slateClearShade\\.w > 0\\.\\) \\{[^}]*\\}\\s*if \\(slateMist\\.w > 0\\.\\) \\{[^}]*\\}\\s*` +
         // Then the drifting mist (drifting-mist.js mistGround), over the slate's own air and look.
         `${mistOn ? "gl_FragColor\\.rgb = mistGround\\(gl_FragColor\\.rgb, vMudWorld\\);\\s*" : ""}gl_FragColor\\.a = 0\\.6667;`,
     ),
   );
-  assert.equal(uniforms.slateHigh, HIGH_VIEW);
+  assert.equal(uniforms.slateHigh, undefined);
+  assert.doesNotMatch(fragment, /slateHigh/);
   assert.equal(HIGH_VIEW.value, 0);
   // Delay distance haze so the phone foreground retains texture; the outer
   // 190-unit square boundary still reaches the far plain's air.

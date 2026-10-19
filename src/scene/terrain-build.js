@@ -1,4 +1,19 @@
-import { Box3, BufferAttribute, BufferGeometry, Mesh, Sphere, Vector3 } from "three";
+import { Box3, BufferAttribute, BufferGeometry, Group, Mesh, Sphere, Vector3 } from "three";
+import {
+  SEA,
+  coastDistance,
+  coastLand,
+  coastPlane,
+  coastGeometrySteps,
+  COAST_SHOTS,
+  coastShot,
+  createCliff,
+  createFalls,
+  createSea,
+  landFactor,
+  riverFalls,
+  slateShoreEdits,
+} from "./ocean.js";
 
 // A lazy chunk: the film terrain with its foothills, the knoll under the tree
 // and its root shading, the puddles and their drips, the tufts, the litter and
@@ -623,9 +638,6 @@ export const RIVER_BED = Object.freeze({
 export const RIVER = Object.freeze({
   path: Object.freeze(
     [
-      [99.1, 171.6, 6, 12],
-      [73.1, 118.6, 5.5, 12],
-      [51.1, 78.6, 4.6, 8],
       [33.1, 52.6, 3.9, 5],
       [17.1, 36.6, 3.3, 3],
       [1.1, 30.6, 2.9, 3],
@@ -675,8 +687,8 @@ export const RIVER = Object.freeze({
   step: 0.9,
   width: 2,
   wobble: Object.freeze([0.08, 0.05]),
-  flow: 0.25,
-  datum: Object.freeze([12, 8.109509849439533]),
+  flow: -0.25,
+  datum: Object.freeze([9, 8.109509849439533]),
   valley: Object.freeze({ floor: 1.6, shoulder: 30 }),
 });
 // Sampled: [x, z, distance along, half-width, the wobble's phase less that
@@ -2134,8 +2146,14 @@ float slateMargin = smoothstep(${glsl(M.margin[0])}-slateShore, ${glsl(M.margin[
 // then the root shading, each all or nothing on its own.
 export function shadeSlateGround(shader) {
   const puddles = shadeSlatePuddles(shader);
-  return { puddles, roots: shadeSlateRoots(shader) };
+  // The fault (ocean.js): its distance, and the walk's view from up high.
+  const shore = applyEdits(shader, slateShoreEdits(HIGH_VIEW.fade));
+  if (shore) shader.uniforms.slateHigh = HIGH_VIEW;
+  return { puddles, shore, roots: shadeSlateRoots(shader) };
 }
+// The walk's view from up high (hill-silhouette.js HIGH_VIEW, lent at
+// settleRoots()): 0 until then, and on every shot.
+let HIGH_VIEW = { value: 0, fade: [80, 188] };
 
 // The drips' clock: it advances by each drawn frame's time, at most 0.1 s,
 // only while the scene animates (never under reduced motion or a visitor
@@ -3749,9 +3767,11 @@ function streamAlong(x, z, line = STREAM_LINES[0]) {
   return along;
 }
 
-// Once the film terrain is in place (film-scene.js): settle the estate tufts
-// (settleTufts()), strew the litter as a child of their mesh, and return the
-// terrain-aware height the rocks are seated with. The slate's ground shading
+// Prepare the film terrain's tufts, shore and shading, then land them together
+// over film-scene.js's borrowed geometry. The returned sampler's ready promise
+// settles at its first commit; setActive(false) withdraws the tuple, and its
+// height and shore then follow the borrowed ground until a new eligible cut.
+// Tufts and optional litter follow the rendered surface. The slate's shading
 // (shadeSlateGround(): the puddle mirror and the root shading) never holds the
 // reveal or links in a draw: once the canvas shows, its program links on a
 // detached stand-in, and the ground switches to it where the change cannot
@@ -3769,14 +3789,27 @@ export function settleRoots(
   groundHeight,
   invalidate = () => {},
   tour = null,
+  lib = null,
 ) {
+  let landed = ground.geometry === terrain,
+    resolveReady;
   const liftAt = terrainLift(terrain),
-    material = ground.material;
-  const height = (x, z) => groundHeight(x, z) + liftAt(x, z);
+    material = ground.material,
+    landHeight = filmHeight(groundHeight, true),
+    originalGeometry = lib?.originalGeometry ?? ground.geometry;
+  // The walk follows the visible surface and fault. Asynchronous rock builds
+  // take the stable film height, even if film withdraws while their GLBs load.
+  const film = (x, z) => landHeight(x, z) + liftAt(x, z);
+  const height = Object.assign((x, z) => (landed ? film(x, z) : groundHeight(x, z)), {
+    film,
+    shore: (x, z) => (landed ? coastDistance(x, z) : Infinity),
+    ready: new Promise((resolve) => (resolveReady = resolve)),
+  });
   const growth = ground.parent?.getObjectByName("estate-ground-growth");
   let litter = null,
     rushes = null,
-    drift = null;
+    drift = null,
+    tuftsSettled = false;
   const extras = [];
   // The water's banks, built in idle slices once the shading has switched
   // (commit()), so they never hold its early switch.
@@ -3784,7 +3817,10 @@ export function settleRoots(
     buildBanks = () => {},
     seatBanks = () => {};
   if (growth?.geometry.attributes.position) {
-    settleTufts(growth, liftAt);
+    if (landed) {
+      settleTufts(growth, liftAt);
+      tuftsSettled = true;
+    }
     const seat = (mesh) => {
       mesh.receiveShadow = true;
       mesh.castShadow = false;
@@ -3798,7 +3834,8 @@ export function settleRoots(
     // mid-shot (unseen(): in the fade-in, on a cut or while the tour is still).
     const surface = terrainHeight(terrain),
       soil = material.color ?? { r: 0.36, g: 0.31, b: 0.28 },
-      landable = unseen(rendering, tour);
+      unseenNow = unseen(rendering, tour),
+      landable = () => landed && active && unseenNow();
     // Optional litter and rushes build detached in idle slices. Tuft seating
     // and the rocks' analytic height stay immediate; neither the reveal nor
     // the ground's shading link waits for these meshes.
@@ -3883,6 +3920,8 @@ export function settleRoots(
     lean = new Vector3(),
     origin = new Vector3();
   let live = true,
+    active = lib?.active ?? true,
+    checking = false,
     probe = null,
     linking = false,
     linked = "",
@@ -3915,6 +3954,15 @@ export function settleRoots(
   // module (lantern-flame.js) keeps its flicker on the lantern root, beside the
   // light; without it the mirror shows no flame.
   function beforeRender(_renderer, _scene, camera) {
+    // Optional coast maps never hold the reveal and only enter on an unseen
+    // tour cut. A cached map can rejoin after the film was withdrawn.
+    const revealed = Boolean(renderer?.domElement?.parentNode?.classList?.contains("is-ready"));
+    for (const part of shore)
+      part.take?.({
+        revealed,
+        running: Boolean(tour?.running),
+        cut: Boolean(tour?.transition.cut),
+      });
     const sun = rendering.lights?.sun;
     if (sun?.target)
       keyWorld
@@ -3958,9 +4006,69 @@ export function settleRoots(
     probe = null;
     stale?.userData.settled.then(() => stale.material.dispose());
   };
-  terrain.addEventListener("dispose", () => {
-    live = false;
-    release();
+  // The sea, the cliffs and the falls (ocean.js) meet the terrain's fault: their
+  // programs link with the slate's shading (link()) and they land with it
+  // (commit(), unseen), the ranges past the fault sinking then
+  // (hill-silhouette.js SEA_SINK); all of it goes with the terrain.
+  if (lib?.HIGH_VIEW) HIGH_VIEW = lib.HIGH_VIEW;
+  const seaClock = dripClock(SEA_TIME, motionHeld()),
+    drop = riverFalls(RIVER_LINE),
+    seaside = lib && rendering?.homeScene && ground.parent;
+  // The river pours off the cliff where it meets the fault (ocean.js riverFalls()).
+  const falls =
+    seaside && drop
+      ? createFalls({ lib, clock: seaClock, rendering, drop, height: landHeight })
+      : null;
+  const shore = seaside
+    ? [
+        createSea({ lib, clock: seaClock, rendering, plunge: falls?.plunge }),
+        createCliff({
+          lib,
+          clock: seaClock,
+          rendering,
+          height: landHeight,
+          groundMaterial: material,
+          prepared: terrain.userData.coastGeometry,
+          drop,
+          plunge: falls?.plunge,
+        }),
+        ...(falls ? [falls] : []),
+      ]
+    : [];
+  // The fault's own shots (ocean.js COAST_SHOTS) join the tree's list, and
+  // with it the tour, while the sea stands.
+  const coastShots =
+      shore.length && lib.DIRECTED_SHOTS
+        ? COAST_SHOTS.map((shot) => coastShot(shot, ground.parent, falls))
+        : [],
+    shotList = lib?.DIRECTED_SHOTS?.tree;
+  const landShore = () => {
+    if (!shore.length || shore[0].mesh.parent || !ground.parent) return;
+    for (const part of shore) {
+      ground.parent.add(part.mesh);
+      part.setActive?.(true);
+    }
+    for (const shot of coastShots) if (!shotList.includes(shot)) shotList.push(shot);
+    const sink = lib.SEA_SINK?.value;
+    if (sink) [sink.x, sink.y, sink.z, sink.w] = [...coastPlane(), 1];
+    if (globalThis.BabelSite?.sceneDebug) globalThis.BabelSite.sceneDebug.sea = "ready";
+  };
+  height.setActive = (next) => {
+    active = Boolean(next);
+    if (active) {
+      if (live && !landed && !checking) check();
+      return;
+    }
+    if (ground.geometry === terrain) ground.geometry = originalGeometry;
+    landed = false;
+    for (const part of shore) {
+      part.setActive?.(false);
+      part.mesh.removeFromParent();
+    }
+    for (const shot of coastShots)
+      if (shotList.includes(shot)) shotList.splice(shotList.indexOf(shot), 1);
+    if (lib?.SEA_SINK) lib.SEA_SINK.value.w = 0;
+    if (globalThis.BabelSite?.sceneDebug) delete globalThis.BabelSite.sceneDebug.sea;
     if (material.userData.slateRoot === shadeSlateGround) {
       delete material.userData.slateRoot;
       material.needsUpdate = true;
@@ -3968,6 +4076,16 @@ export function settleRoots(
     if (ground.onBeforeRender === beforeRender) delete ground.onBeforeRender;
     if (ground.onAfterRender === afterRender) delete ground.onAfterRender;
     if (ground.userData.slateDrips === clock) delete ground.userData.slateDrips;
+    release();
+    linking = false;
+    linked = "";
+    if (live) invalidate();
+  };
+  terrain.addEventListener("dispose", () => {
+    live = false;
+    height.setActive(false);
+    resolveReady(false);
+    for (const part of shore.splice(0)) part.dispose();
     if (litter) {
       litter.removeFromParent();
       litter.geometry.dispose();
@@ -4037,13 +4155,17 @@ export function settleRoots(
     probe = stand;
     linking = true;
     let pending = null;
+    // The shore's programs link beside the stand-in's, before the shore lands.
+    const waiting = shore.filter(({ mesh }) => !mesh.parent).map(({ mesh }) => mesh),
+      batch = waiting.length ? new Group().add(stand, ...waiting) : stand;
     try {
       renderer.setRenderTarget?.(rendering.composer?.readBuffer ?? null);
-      pending = rendering.compilePrograms(renderer, stand, rendering.camera, scene, valid);
+      pending = rendering.compilePrograms(renderer, batch, rendering.camera, scene, valid);
     } catch {
       pending = null;
     } finally {
       renderer.setRenderTarget?.(previous);
+      if (batch !== stand) batch.remove(...batch.children);
     }
     stand.userData.settled = Promise.resolve(pending).catch(() => {});
     // A link still pending after two seconds is left to the switch's draw.
@@ -4062,6 +4184,12 @@ export function settleRoots(
     release();
   }
   function commit() {
+    ground.geometry = terrain;
+    landed = true;
+    if (!tuftsSettled && growth?.geometry.attributes.position) {
+      settleTufts(growth, liftAt);
+      tuftsSettled = true;
+    }
     material.userData.slateRoot = shadeSlateGround;
     material.needsUpdate = true;
     // Then the water's banks are built, in idle slices.
@@ -4070,16 +4198,20 @@ export function settleRoots(
     if (!clocked) {
       clocked = true;
       clock.reset();
-      ground.onBeforeRender = beforeRender;
-      // Scripted review can read or set the drips' time here.
-      ground.userData.slateDrips = clock;
     }
+    ground.onBeforeRender = beforeRender;
+    // Scripted review can read or set the drips' time here.
+    ground.userData.slateDrips = clock;
     // Hold the stand-in's program until the ground has drawn with it.
     if (probe) ground.onAfterRender = afterRender;
+    landShore();
+    resolveReady(true);
+    rendering.invalidateShadows?.();
     invalidate();
   }
-  (function check() {
-    if (!live) return;
+  function check() {
+    checking = false;
+    if (!live || !active) return;
     // r160 replaces renderer.properties on restoration. Identity catches a
     // loss and restore between poll ticks, even when isContextLost() is false.
     if (probe && !probe.userData.valid()) {
@@ -4087,15 +4219,20 @@ export function settleRoots(
       linking = false;
       linked = "";
     }
-    if (renderer?.getContext?.()?.isContextLost?.()) return nextFrame(check);
+    if (renderer?.getContext?.()?.isContextLost?.()) {
+      checking = true;
+      return nextFrame(check);
+    }
     const container = renderer?.domElement?.parentNode;
     if (!linking && !linked && (!container || container.classList?.contains("is-ready"))) link();
     if (linked && allowed()) {
       if (linked === programState()) return commit();
       linked = "";
     }
+    checking = true;
     nextFrame(check);
-  })();
+  }
+  check();
   return height;
 }
 
@@ -4191,24 +4328,39 @@ const OPEN_SOIL = [3, 0, 0, 1];
 // The plain's level, restating mud-ground.js TERRAIN_BASE (a test holds them
 // equal): this chunk imports no first-party code.
 export const TERRAIN_BASE = 1.25;
+// Coarse triangles wholly below this height lie under the sea (ocean.js SEA.level).
+const SEA_CULL = SEA.level - 0.6;
+// The sea's own clock (its swell, waves and surf), held as the drips' are.
+const SEA_TIME = { value: 0 };
 
-// The film terrain's surface before the root supports (the dunes blended out
-// beyond 88 units, and the foothills), a few rows at a time. Returns its
-// sampler: height, and optionally the shading normal, at x/z.
-function* coarseSurface(baseHeight, EARTH) {
-  // Beyond the blend the base term is exactly the plain's level; its swell is
-  // not evaluated there.
-  const groundHeight = (x, z) => {
+// The film terrain's analytic height over a base (the procedural ground): the
+// dunes blended out beyond 88 units, the foothills (open along the river and
+// fading before the fault), and past the fault the fall to the seabed
+// (ocean.js), unless `land` asks for the plain's own height there (the cliff's
+// shelf).
+export function filmHeight(baseHeight, land = false) {
+  return (x, z) => {
     const t = Math.min(1, Math.max(0, (Math.hypot(x, z) - 88) / 25));
     // The foothills open where the river crosses them (valleyGap()).
     let hills = foothillHeight(x, z);
     if (hills > 0 && RIVER.valley) hills *= 1 - valleyGap(x, z);
-    return (
+    const d = coastDistance(x, z);
+    if (hills > 0) hills *= landFactor(d);
+    const h =
       TERRAIN_BASE +
       (t < 1 ? (baseHeight(x, z) - TERRAIN_BASE) * (1 - t * t * (3 - 2 * t)) : 0) +
-      hills
-    );
+      hills;
+    return land ? h : coastLand(d, h);
   };
+}
+
+// The film terrain's surface before the root supports (filmHeight()), a few
+// rows at a time. Returns its sampler: height, and optionally the shading
+// normal, at x/z.
+function* coarseSurface(baseHeight, EARTH) {
+  // Beyond the blend the base term is exactly the plain's level; its swell is
+  // not evaluated there.
+  const groundHeight = filmHeight(baseHeight);
   // First reconstruct the pre-support surface, including its triangle planes
   // and normals, at the float precision the coarse grid stores. Re-sampling
   // the analytic dunes on a finer grid would itself change the puddle's slopes
@@ -4549,7 +4701,10 @@ function* earthSteps(groundHeight, EARTH) {
       return [d, a, b, ...along((k) => riverVertex((col - c0) * S + k, 0)), c];
     return null;
   };
+  // A coarse triangle wholly under the sea is left out (the sea covers it).
+  const sunk = (i) => positions[i * 3 + 2] < SEA_CULL;
   const triangle = (corners, polygon, x, z) => {
+    if (polygon.length === 3 && corners.every(sunk)) return;
     if (polygon.length === 3) {
       for (const corner of corners) indices[cursor++] = corner;
       return;
@@ -4630,7 +4785,7 @@ function* earthSteps(groundHeight, EARTH) {
     geometry.setAttribute("slateRoot", new BufferAttribute(shading, 4));
     geometry.setAttribute("slateShade", new BufferAttribute(occlusion, 2));
     geometry.setAttribute("slatePool", new BufferAttribute(pool, 1));
-    geometry.setIndex(new BufferAttribute(indices, 1));
+    geometry.setIndex(new BufferAttribute(indices.subarray(0, cursor), 1));
     yield* geometryBounds(geometry, true);
     // Inside the river's sub-grid, its own (finer) triangles.
     const within = (outer, inner) => (x, z) => {
@@ -4713,15 +4868,54 @@ function inSlices(steps, early = () => false, cancelled = () => false) {
 // (inSlices()) and resolves only where the new ground cannot show mid-shot
 // (unseen()); without it (tests), it builds at once. cancelled: the film scene
 // is gone, so the build stops, or the finished geometry is freed, and it
-// resolves to nothing.
+// resolves to nothing. prepareOnly leaves publication and shadow invalidation
+// to settleRoots()'s atomic commit, so detached preparation never waits a cut.
+function* preparedEarthSteps(groundHeight, EARTH, rendering) {
+  const tier = rendering.assetTier ?? rendering.tier ?? "high";
+  let geometry,
+    prepared,
+    complete = false;
+  const release = () => {
+    for (const key of ["cliff", "stacks"]) {
+      prepared?.[key]?.dispose();
+      if (prepared) prepared[key] = null;
+    }
+  };
+  try {
+    geometry = yield* earthSteps(groundHeight, EARTH);
+    yield;
+    // Reuse the terrain's idle scheduler for the much denser coast. No map or
+    // shader starts here, and the same arithmetic produces the same buffers.
+    prepared = yield* coastGeometrySteps(
+      filmHeight(groundHeight, true),
+      tier,
+      riverFalls(RIVER_LINE),
+    );
+    prepared.tier = tier;
+    geometry.userData.coastGeometry = prepared;
+    geometry.addEventListener("dispose", release);
+    complete = true;
+    return geometry;
+  } finally {
+    if (!complete) {
+      geometry?.dispose();
+      release();
+    }
+  }
+}
+
 export function createEarthGeometry(
   groundHeight,
   EARTH = { width: 384, subdivisions: 128 },
   rendering = null,
   tour = null,
   cancelled = () => false,
+  prepareOnly = false,
 ) {
-  const steps = earthSteps(groundHeight, EARTH);
+  const steps =
+    prepareOnly && rendering?.homeScene
+      ? preparedEarthSteps(groundHeight, EARTH, rendering)
+      : earthSteps(groundHeight, EARTH);
   if (!rendering) {
     for (;;) {
       const next = steps.next();
@@ -4734,8 +4928,8 @@ export function createEarthGeometry(
       new Promise((resolve) => {
         (function check() {
           if (!geometry || cancelled()) return resolve(geometry?.dispose());
-          if (!allowed()) return nextFrame(check);
-          rendering.invalidateShadows?.();
+          if (!prepareOnly && !allowed()) return nextFrame(check);
+          if (!prepareOnly) rendering.invalidateShadows?.();
           resolve(geometry);
         })();
       }),

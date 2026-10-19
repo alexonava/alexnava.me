@@ -9,6 +9,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { compactShaderSource } from "../tools/shader-compact.mjs";
 import { compilePrograms } from "../src/scene/shader-programs.js";
+import { coastDistance, coastLand, SEA, SHORE } from "../src/scene/ocean.js";
 import {
   BoxGeometry,
   BufferGeometry,
@@ -26,6 +27,7 @@ import {
 import {
   createEarthGeometry,
   DRIP_RIPPLES,
+  filmHeight,
   dripAt,
   dripClock,
   FINE_WINDOW,
@@ -225,8 +227,11 @@ test("root supports preserve coarse terrain vertices, map scale and bounded mesh
     // Nothing of the knoll reaches a coarse vertex beyond the fine grid.
     if (r < 88 && x % 3 === 0 && z % 3 === 0 && !refined(x, z))
       assert.equal(b.getZ(i), Math.fround(base(x, z)));
-    // Past the foothills the terrain lies at the plain's level.
-    if (r > 184) assert.equal(b.getZ(i), Math.fround(TERRAIN_BASE));
+    // Past the foothills the terrain lies at the plain's level, and past the
+    // fault (ocean.js) on the seabed under the cliffs' shelf (a coarse vertex:
+    // a stitched one on a coarse edge across the drop lies on that edge).
+    if (r > 184 && x % 3 === 0 && z % 3 === 0)
+      assert.equal(b.getZ(i), Math.fround(coastLand(coastDistance(x, z), TERRAIN_BASE)));
     assert.ok(Math.abs(hills.attributes.normal.getZ(i)) <= 1);
     assert.ok(Math.abs(hills.attributes.uv.getX(i) - (x / 384 + 0.5)) < 1e-7);
     assert.ok(Math.abs(hills.attributes.uv.getY(i) - (0.5 - z / 384)) < 1e-7);
@@ -237,6 +242,7 @@ test("root supports preserve coarse terrain vertices, map scale and bounded mesh
     assert.ok(foothillHeight(88.001 * Math.cos(a), 88.001 * Math.sin(a)) < 0.001);
   }
   assert.ok(hills.boundingBox.max.z < 9 + TERRAIN_BASE);
+  assert.equal(hills.boundingBox.min.z, SHORE.deep);
   assert.ok(foothillHeight(106.8, 106.8) < 1.5, "keep the lantern's north-east horizon low");
   // The root rectangle and the river's sub-grid (each of its 0.75 cells cut
   // RIVER_STEPS x RIVER_STEPS, each cell beside it a fan) and their stitching.
@@ -254,9 +260,24 @@ test("root supports preserve coarse terrain vertices, map scale and bounded mesh
   hills.dispose();
 });
 
-test("local refinement joins the coarse mesh without holes, T-junctions or overlapping triangles", () => {
+test("local refinement joins the coarse mesh without holes, T-junctions or overlapping triangles, but the sea's", () => {
   const geometry = createEarthGeometry(groundBase()),
     p = geometry.attributes.position;
+  // Under the sea (ocean.js): a coarse vertex past the fault's drop; every
+  // triangle with all its corners there is left out.
+  const sunk = (x, z) => coastDistance(x, z) < SHORE.drop,
+    under = (i) => p.getZ(i) < SEA.level - 0.6;
+  let cells = 0,
+    corners = 0;
+  for (let x = -192; x < 192; x += 3)
+    for (let z = -192; z < 192; z += 3) {
+      const n = [sunk(x, z), sunk(x + 3, z), sunk(x, z + 3), sunk(x + 3, z + 3)].filter(
+        Boolean,
+      ).length;
+      if (n === 4) cells++;
+      else if (n === 3) corners++;
+    }
+  assert.ok(cells > 1000, `${cells} coarse cells under the sea`);
   const indices = geometry.index.array,
     edges = new Map();
   let area = 0;
@@ -276,15 +297,21 @@ test("local refinement joins the coarse mesh without holes, T-junctions or overl
       edges.set(key, (edges.get(key) || 0) + 1);
     }
   }
-  assert.ok(Math.abs(area - 384 * 384) < 0.0001);
+  // The square, less every sunk cell and at most one triangle of each cell sunk at three corners.
+  const square = 384 * 384;
+  assert.ok(
+    area <= square - 9 * cells + 1e-4 && area >= square - 9 * cells - 4.5 * corners - 1e-4,
+    `area ${area}, ${cells} cells and ${corners} corners under the sea`,
+  );
   for (const [edge, count] of edges) {
     assert.ok(count <= 2);
     if (count === 2) continue;
     const [a, b] = edge.split(":").map(Number);
     assert.ok(
       (Math.abs(p.getX(a)) === 192 && p.getX(a) === p.getX(b)) ||
-        (Math.abs(p.getY(a)) === 192 && p.getY(a) === p.getY(b)),
-      "only the world boundary has an unshared edge",
+        (Math.abs(p.getY(a)) === 192 && p.getY(a) === p.getY(b)) ||
+        (under(a) && under(b)),
+      "only the world boundary and the sea's edge have an unshared edge",
     );
   }
   geometry.dispose();
@@ -1103,7 +1130,8 @@ test("the lazy ground shading extends only the slate's program, under its own ke
     );
     assert.equal(after.uniforms.slateFlow, dripClock().uniform, "the drips' own clock");
     // Gentle: slow, the ripples drawn out along the flow, their tilt below the drips'.
-    assert.ok(RIVER.flow > 0 && RIVER.flow <= 0.4);
+    // (Negative: the river runs back along its line, from the plain to the fault, ocean.js riverFalls().)
+    assert.ok(RIVER.flow < 0 && RIVER.flow >= -0.4);
     assert.ok(
       RIVER_RIPPLE.coarse[0] < RIVER_RIPPLE.coarse[1] &&
         RIVER_RIPPLE.fine[0] < RIVER_RIPPLE.fine[1],
@@ -1125,7 +1153,7 @@ test("the lazy ground shading extends only the slate's program, under its own ke
   const bare = { uniforms: {}, ...SLATE_CHUNKS };
   assert.equal(shadeSlateRoots(bare), false);
   assert.equal(shadeSlatePuddles(bare), false);
-  assert.deepEqual(shadeSlateGround(bare), { puddles: false, roots: false });
+  assert.deepEqual(shadeSlateGround(bare), { puddles: false, shore: false, roots: false });
   assert.deepEqual(bare, { uniforms: {}, ...SLATE_CHUNKS });
   material.dispose();
 });
@@ -1139,11 +1167,12 @@ test("the puddle mirror and the root shading apply without each other", () => {
       material.onBeforeCompile(shader);
       return shader;
     };
-    // Without a puddle anchor, the roots still apply; the puddle list changes nothing.
+    // Without a puddle anchor (which the shore's list shares), the roots still apply;
+    // the puddle and shore lists change nothing.
     const noWater = program();
     noWater.fragmentShader = noWater.fragmentShader.replace("#define STANDARD", "");
     const water = noWater.fragmentShader;
-    assert.deepEqual(shadeSlateGround(noWater), { puddles: false, roots: true });
+    assert.deepEqual(shadeSlateGround(noWater), { puddles: false, shore: false, roots: true });
     assert.equal(noWater.fragmentShader.includes("slateDrip"), false);
     assert.equal(noWater.uniforms.slateDrip, undefined);
     assert.match(noWater.fragmentShader, /vSlateShade/);
@@ -1153,7 +1182,7 @@ test("the puddle mirror and the root shading apply without each other", () => {
       "#define RE_Direct RE_Direct_Moonlit",
       "",
     );
-    assert.deepEqual(shadeSlateGround(noRoots), { puddles: true, roots: false });
+    assert.deepEqual(shadeSlateGround(noRoots), { puddles: true, shore: true, roots: false });
     assert.equal(noRoots.fragmentShader.includes("vSlateRoot"), false);
     assert.equal(noRoots.vertexShader.includes("slateShade"), false);
     assert.match(noRoots.fragmentShader, /slateDrip/);
@@ -1975,8 +2004,8 @@ test("the film terrain builds in idle slices and arrives only where it cannot sh
     assert.equal(shadows, 1);
     // Exactly the terrain built at once.
     const direct = createEarthGeometry(base);
-    // Before cooperative pool/bounds passes, these complete terrain buffers
-    // (including pools and shading), indices and exact bounds had this hash.
+    // These complete terrain buffers (including pools and shading), indices and
+    // exact bounds, with the fault's drop and the sea's cut (ocean.js), have this hash.
     const digest = createHash("sha256").update(
       JSON.stringify({ sphere: direct.boundingSphere, box: direct.boundingBox }),
     );
@@ -1988,7 +2017,7 @@ test("the film terrain builds in idle slices and arrives only where it cannot sh
     digest.update("index").update(new Uint8Array(index.buffer, index.byteOffset, index.byteLength));
     assert.equal(
       digest.digest("hex"),
-      "118146a9196a6ea5cd98cc0fa74de1e8aa37de452be18b4bbb9241521a16c180",
+      "f32ce7b313f46cfb439a9b33a3d03addb2acb4f660beec4d42daf22f88d97c93",
     );
     for (const name of Object.keys(direct.attributes))
       assert.deepEqual(arrived.attributes[name].array, direct.attributes[name].array, name);
@@ -2012,6 +2041,64 @@ test("the film terrain builds in idle slices and arrives only where it cannot sh
     clock.restore();
     if (idle) globalThis.requestIdleCallback = idle;
     else delete globalThis.requestIdleCallback;
+  }
+});
+
+test("the atomic film owner prepares terrain before a cut while the missing-settler fallback retains its publication gate", async () => {
+  for (const atomic of [true, false]) {
+    const clock = frames(),
+      idle = idleTasks(),
+      original = new BoxGeometry(),
+      material = new MeshStandardMaterial(),
+      ground = new Mesh(original, material),
+      tour = { running: true, transition: { cut: false } };
+    let shadows = 0,
+      prepared;
+    const rendering = {
+        renderer: { domElement: { parentNode: { classList: { contains: () => true } } } },
+        setFilmTreatment() {},
+        invalidateShadows: () => shadows++,
+      },
+      film = createFilmScene({
+        ground,
+        groundHeight: () => 0,
+        rendering,
+        atmosphere: { setFilmTreatment() {} },
+        skyMaterial: { uniforms: { sunColor: { value: new Color() } } },
+        tour,
+        loadTerrain: async () => ({ createEarthGeometry, ...(atomic && { settleRoots }) }),
+      });
+    try {
+      film.setActive(true);
+      film.ready.then((height) => (prepared = height));
+      await Promise.resolve();
+      await idle.flush();
+      await clock.step(2);
+      assert.equal(ground.geometry, original, "detached preparation never publishes mid-shot");
+      assert.equal(shadows, 0, "detached preparation never invalidates the drawn shadows");
+      if (atomic) {
+        assert.equal(
+          typeof prepared,
+          "function",
+          "prepared sampler starts optional downloads before a cut",
+        );
+        assert.equal(prepared(100, 40), 0, "walk still follows the borrowed surface");
+        assert.equal(prepared.shore(80, 80), Infinity);
+      } else assert.equal(prepared, undefined, "legacy publication still waits unseen");
+      tour.transition.cut = true;
+      await clock.step(3);
+      assert.notEqual(ground.geometry, original, "the first eligible cut publishes terrain");
+      assert.equal(shadows, 1, "only publication invalidates the drawn shadows");
+      if (atomic) assert.equal(await prepared.ready, true);
+    } finally {
+      film.dispose();
+      await idle.flush();
+      await clock.step(2);
+      original.dispose();
+      material.dispose();
+      clock.restore();
+      idle.restore();
+    }
   }
 });
 
@@ -3190,13 +3277,52 @@ test("the terrain chunk is requested only when the film activates, once, and a f
   // film-scene.js holds the chunk's only import (scene-bootstrap.test.mjs).
 });
 
+test("failed terrain settlement frees its geometry and cannot expose it on film reactivation", async () => {
+  const terrain = new BoxGeometry();
+  let builds = 0,
+    settlements = 0,
+    freed = 0;
+  const r = rig(async () => ({
+    createEarthGeometry() {
+      builds++;
+      return terrain;
+    },
+    settleRoots() {
+      settlements++;
+      throw new Error("shore preparation failed");
+    },
+  }));
+  const original = r.ground.geometry;
+  terrain.addEventListener("dispose", () => {
+    freed++;
+    assert.equal(r.ground.geometry, original, "borrowed ground remains visible during cleanup");
+  });
+  try {
+    r.film.setActive(true);
+    assert.equal(await r.film.ready, undefined);
+    assert.equal(r.ground.geometry, original);
+    assert.equal(freed, 1);
+    r.film.setActive(false);
+    r.film.setActive(true);
+    assert.equal(await r.film.ready, undefined);
+    assert.equal(r.ground.geometry, original, "reactivation cannot publish failed terrain");
+    assert.deepEqual([builds, settlements, freed], [1, 1, 1], "no implicit retry or second free");
+    assert.equal(r.invalidations(), 0);
+  } finally {
+    r.film.dispose();
+    assert.equal(freed, 1);
+    original.dispose();
+    r.ground.material.dispose();
+  }
+});
+
 test("the film's ready resolves to the root-aware ground once the roots settle", async () => {
   const r = rig(() => import("../src/scene/terrain-build.js"));
   r.film.setActive(true);
   const height = await r.film.ready;
   assert.equal(typeof height, "function");
   assert.equal(r.ground.material.userData.slateRoot, shadeSlateGround);
-  assert.equal(r.invalidations(), 2, "the terrain and then its shading invalidate a paused frame");
+  assert.equal(r.invalidations(), 1, "the terrain and its shading invalidate one atomic frame");
   // On flat ground the knoll adds only its collar's dome, and the relief, the
   // crook hollows and the lips shape the soil about the tree (at a vertex,
   // exactly as built; between vertices, as rendered); open ground stays at 0.
@@ -3208,7 +3334,19 @@ test("the film's ready resolves to the root-aware ground once the roots settle",
   ])
     assert.ok(Math.abs(height(x, z) - rootSupportHeight(x, z, () => 0)) < 0.03, `${x},${z}`);
   assert.equal(height(0, 0), 0);
-  assert.equal(height(TREE_FOOTING.x + 30, TREE_FOOTING.z), 0);
+  // Past 88 units it is the film terrain's own surface (the procedural ground
+  // easing into the plain, the foothills), as the walk stands on it, the cliffs'
+  // shelf at the plain's height; and it lends the walk the fault's distance.
+  const film = filmHeight(() => 0, true);
+  for (const [x, z] of [
+    [TREE_FOOTING.x + 30, TREE_FOOTING.z],
+    [100, 40],
+    [-120, 30],
+    [79, 80.5],
+  ])
+    assert.ok(Math.abs(height(x, z) - film(x, z)) < 1e-9, `${x},${z}`);
+  assert.ok(height(TREE_FOOTING.x + 30, TREE_FOOTING.z) > 0);
+  assert.equal(height.shore(80, 80), coastDistance(80, 80));
   const geometry = r.ground.geometry;
   r.film.dispose();
   assert.equal(r.ground.material.userData.slateRoot, undefined, "disposal withdraws the shading");
@@ -3454,9 +3592,11 @@ test("the river runs through the set: today's reach past the lantern, wider out 
       if (sj - si > 3 * (wi + wj) * reach)
         assert.ok(Math.hypot(xi - xj, zi - zj) > (wi + wj) * reach, `${xi},${zi} near ${xj},${zj}`);
     }
-  // Both ends run off the plain, past its edge; the lake is the widest, 60 units across.
+  // One end pours off the cliffs past the fault (ocean.js riverFalls()), the other runs
+  // off the plain past its edge; the lake is the widest, 60 units across.
   const out = ([x, z]) => Math.max(Math.abs(x), Math.abs(z));
-  assert.ok(out(RIVER_LINE[0]) > 192 && out(RIVER_LINE.at(-1)) > 192);
+  assert.ok(coastDistance(RIVER_LINE[0][0], RIVER_LINE[0][1]) < 0);
+  assert.ok(out(RIVER_LINE.at(-1)) > 192);
   assert.equal(Math.max(...RIVER_LINE.map(([, , , w]) => w)), 30);
   // Its water keeps 10 units beyond the lookout's grass (its tufts grow 10.5 to 27.5 out), so no
   // tuft about the lookout or the tree moves; and every rock and its pebbles stand out of the water.
@@ -3477,7 +3617,8 @@ test("the river runs through the set: today's reach past the lantern, wider out 
   const surface = terrainSurface(groundBase());
   let far = 0;
   for (const [x, z, , w] of RIVER_LINE) {
-    if (out([x, z]) > 185) continue;
+    // (Its last run to the falls is on the cliffs' shelf, over the terrain's drop.)
+    if (out([x, z]) > 185 || coastDistance(x, z) < SHORE.drop + 4.5) continue;
     if (foothillHeight(x, z) > 0) assert.equal(valleyGap(x, z), 1, `${x},${z}`);
     if (Math.hypot(x, z) > 113) {
       assert.ok(Math.abs(surface(x, z) - TERRAIN_BASE) < 0.02, `${x},${z}: ${surface(x, z)}`);
@@ -3488,7 +3629,8 @@ test("the river runs through the set: today's reach past the lantern, wider out 
       beside = riverAt(nx, nz);
     if (beside.d > floor * beside.w + shoulder) assert.equal(valleyGap(nx, nz), 0);
   }
-  assert.ok(far > 20, `${far} samples out on the far plain`);
+  // (Its north-east reach ends at the cliffs now: only the south-west runs out on the far plain.)
+  assert.ok(far > 12, `${far} samples out on the far plain`);
   // The far fires stand on the foothills' full height, never in the gap.
   for (const fire of farFireLayout())
     if (Math.abs(fire.x) < 192 && Math.abs(fire.z) < 192 && foothillHeight(fire.x, fire.z) > 0)

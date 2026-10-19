@@ -84,15 +84,9 @@ export const FAR_FIRES = Object.freeze({
     Object.freeze([184, 900, 26, 5, 0.95]),
     Object.freeze([189, 360, 9, 2, 0.8]),
     Object.freeze([157, 300, 8, 2, 0.8]),
-    // Portrait: the plain left and right of the trunk.
-    Object.freeze([92, 950, 24, 4, 0.9]),
-    Object.freeze([117, 1600, 45, 6, 1]),
-    Object.freeze([108, 620, 14, 3, 0.85]),
     // Watch and tree: on the far foothills' crests, either side of the lookout.
     Object.freeze([232, 151, 6, 3, 0.8]),
     Object.freeze([266, 153, 5, 2, 0.75]),
-    // Root and lantern: past the roots, right of the trunk.
-    Object.freeze([66, 1300, 34, 4, 0.9]),
   ]),
   glow: Object.freeze({ cluster: -1, gain: 0.05, width: 1.2, aspect: 0.34, lift: 0.2 }),
   size: Object.freeze({
