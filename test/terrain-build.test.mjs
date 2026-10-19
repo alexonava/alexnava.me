@@ -9,7 +9,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { compactShaderSource } from "../tools/shader-compact.mjs";
 import { compilePrograms } from "../src/scene/shader-programs.js";
-import { coastDistance, coastLand, SEA, SHORE } from "../src/scene/ocean.js";
+import { coastDistance, coastLand, RAPIDS, rapidsGlsl, SEA, SHORE } from "../src/scene/ocean.js";
 import {
   BoxGeometry,
   BufferGeometry,
@@ -25,6 +25,7 @@ import {
   Vector3,
 } from "three";
 import {
+  RAPIDS_AT,
   createEarthGeometry,
   DRIP_RIPPLES,
   filmHeight,
@@ -2976,6 +2977,33 @@ test("the mirrored flame takes the flame module's draught: height and lean, none
   } finally {
     clock.restore();
   }
+});
+
+test("the rapids quicken the river's last stretch toward the falls: streaks, standing waves and froth under the text guard", () => {
+  const shader = PHYSICAL(),
+    material = new MeshStandardMaterial();
+  configureGroundShading(material, true, { detail: { isTexture: true } });
+  material.onBeforeCompile(shader);
+  assert.equal(shadeSlatePuddles(shader), true);
+  const fragment = shader.fragmentShader;
+  // The rapids' own copy (ocean.js rapidsGlsl()), the falls' run takes the same.
+  assert.ok(fragment.includes(rapidsGlsl("slateRp", RAPIDS_AT)));
+  // Their froth joins the stream's before the froth's roughness and the mirror give way to it.
+  const call = fragment.indexOf(
+      "slateRpP = slateRpRapids(slateRpU.y, slateRpA, slateRiverR, slateFlow, slateRpFP)",
+    ),
+    froth = fragment.indexOf("slateFoam = max(slateFoam, slateRapid);"),
+    rough = fragment.indexOf("roughnessFactor = mix(roughnessFactor, .85, slateFoam);");
+  assert.ok(call > 0 && froth > call && rough > froth);
+  assert.ok(
+    fragment.includes(
+      `slateRapid = slateRpP.z*slatePuddle*(1.0-${RAPIDS.text}*slateBehindText());`,
+    ),
+  );
+  // Only on the river's last stretch, and their slopes and blur in the mirror.
+  assert.match(fragment, /step\(slateRiverQ\.y-\(-114\.\d+\), 22\.0\)/);
+  assert.ok(fragment.includes("slateRoughT = max(slateRoughT, slateRpP.w);"));
+  material.dispose();
 });
 
 test("the mirrored flame is the flame's own light as the frame shows it, after the knee, at the flame's size", () => {

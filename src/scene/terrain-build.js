@@ -12,6 +12,9 @@ import {
   createSea,
   landFactor,
   riverFalls,
+  RAPIDS,
+  rapidsFrame,
+  rapidsGlsl,
   slateShoreEdits,
 } from "./ocean.js";
 
@@ -877,6 +880,16 @@ export function riverPoint(s) {
 }
 // How far downstream the river passes the lantern.
 export const RIVER_NEAR = riverAt(LANTERN_FOOT.x, LANTERN_FOOT.z).s;
+// The rapids' frame at the falls (ocean.js rapidsFrame()) and the river's own
+// distance along its course at the lip (`s`): past a few units up from the lip
+// its own course takes over from the frame's straight line.
+const RAPIDS_DROP = riverFalls(RIVER_LINE);
+export const RAPIDS_AT = RAPIDS_DROP
+  ? Object.freeze({
+      ...rapidsFrame(RAPIDS_DROP),
+      s: riverAt(RAPIDS_DROP.lip[0], RAPIDS_DROP.lip[1]).s,
+    })
+  : null;
 // Its height above the water at normalised radius r (mud-ground.js riverBed()).
 export function riverBedAt(r) {
   const { depth, rise } = RIVER_BED;
@@ -1855,6 +1868,7 @@ vec2 slateRipples(vec2 p, float fp) {
   vec2 g = s*q/max(r, .001)/sqrt(1.0+2.0*r)*(1.0-smoothstep(${glsl(DRIP_RIPPLES.life - 0.6)}, ${glsl(DRIP_RIPPLES.life)}, a));
   return g*min(1.0, ${glsl(DRIP_RIPPLES.maxTilt)}/max(length(g), 1e-5));
 }
+${RAPIDS_AT ? rapidsGlsl("slateRp", RAPIDS_AT) : ""}
 `;
 // The flame's colours and glass light; its core's luminance, and the core's once the gain is clipped at white.
 const MF = MIRROR_FLAME,
@@ -1913,6 +1927,17 @@ if (slateWater > 0.0) {
       slateRoughT = min(length(slateSG)/.08, 1.0)*slateStreamQ.x;
       slateGT = (slateStreamDir*slateSG.x+vec2(-slateStreamDir.y, slateStreamDir.x)*slateSG.y)*slateStreamQ.x*mix(${glsl(RIVER_RIPPLE.mouth[2])}, 1.0, smoothstep(${glsl(RIVER_RIPPLE.mouth[0])}, ${glsl(RIVER_RIPPLE.mouth[1])}, slateRiverR));
     }
+${
+  RAPIDS_AT
+    ? `    // The rapids' streaks and standing waves (STREAM_FOAM's slateRpP) take over from the calm current as it quickens;
+    // where they are steep the sky blurs.
+    if (slateRpWt > 0.0) {
+      slateGC = slateGC*(1.0-slateRpWt)+slateRiverDir*slateRpP.x+vec2(-slateRiverDir.y, slateRiverDir.x)*slateRpP.y;
+      slateRoughT = max(slateRoughT, slateRpP.w);
+    }
+`
+    : ""
+}
     // The lantern's image: the still water's tilt, swayed across the view by the river's coarse ripples.
     vec2 slateSide = normalize(vec2(slateV.z, -slateV.x)+1e-6);
     slateSWG = clamp(${glsl(RIVER_RIPPLE.swayLow[0])}/max(slateV.y, .02), 1.0, ${glsl(RIVER_RIPPLE.swayLow[1])});
@@ -2073,7 +2098,26 @@ if (slateStreamQ.x > 0.0) {
   slateFoam *= 1.0-${glsl(SF.text)}*slateBehindText();
 }
 diffuseColor.rgb = mix(diffuseColor.rgb, vec3(${glsl(SF.albedo)}), slateFoam);
-roughnessFactor = mix(roughnessFactor, .85, slateFoam);
+${
+  RAPIDS_AT
+    ? `// The rapids (ocean.js RAPIDS): over its last units the river quickens toward the falls, its
+// streaks, standing waves and white water (the falls' run takes the same, so they meet at the
+// shelf's edge). Near the lip in the falls' straight frame, farther up along its own course; only
+// on its last stretch. The froth thins behind the text.
+vec2 slateRpU = slateRpUQ(vMudWorld.xz);
+slateRpU = mix(slateRpU, vec2(slateRiverQ.y-(${glsl(RAPIDS_AT.s)}), slateRiverQ.z), smoothstep(3.0, 8.0, slateRpU.x));
+float slateRpA = slateRpRA(slateRpU), slateRpFP = max(length(fwidth(vMudWorld.xz)), 1e-4), slateRapid = 0.0;
+float slateRpWt = slateRpW(slateRpA, slateRiverR)*step(slateRiverQ.y-(${glsl(RAPIDS_AT.s)}), ${glsl(RAPIDS.reach + 8)});
+vec4 slateRpP = vec4(0.0);
+if (slateRpWt > 0.0) {
+  slateRpP = slateRpRapids(slateRpU.y, slateRpA, slateRiverR, slateFlow, slateRpFP)*step(slateRiverQ.y-(${glsl(RAPIDS_AT.s)}), ${glsl(RAPIDS.reach + 8)});
+  slateRapid = slateRpP.z*slatePuddle*(1.0-${glsl(RAPIDS.text)}*slateBehindText());
+}
+diffuseColor.rgb = mix(diffuseColor.rgb, vec3(${glsl(RAPIDS.albedo)}), slateRapid);
+slateFoam = max(slateFoam, slateRapid);
+`
+    : ""
+}roughnessFactor = mix(roughnessFactor, .85, slateFoam);
 slatePuddle *= 1.0-slateFoam;
 slateLanternPuddle *= 1.0-slateFoam;
 `;
@@ -4017,7 +4061,14 @@ export function settleRoots(
   // The river pours off the cliff where it meets the fault (ocean.js riverFalls()).
   const falls =
     seaside && drop
-      ? createFalls({ lib, clock: seaClock, rendering, drop, height: landHeight })
+      ? createFalls({
+          lib,
+          clock: seaClock,
+          rendering,
+          drop,
+          height: landHeight,
+          flow: RIPPLE_TIME,
+        })
       : null;
   const shore = seaside
     ? [

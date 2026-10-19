@@ -244,10 +244,12 @@ test("the sea reads raw light intensities and applies its subdued custom 1/pi no
   assert.deepEqual(u.seaHemiGround.value.toArray(), [0, 0, 0]);
   assert.equal(material.envMap, view.homeScene.environment);
   assert.equal(u.envMap.value, view.homeScene.environment);
-  // The balanced tier draws no lace in the foam.
+  // The balanced tier draws no lace in the foam, and only the coarser fine ripples.
+  assert.equal(u.seaFine.value, 1);
   view.tier = "balanced";
   mesh.onBeforeRender();
   assert.equal(u.seaLace.value, 0);
+  assert.equal(u.seaFine.value, 0);
   material.dispose();
 });
 
