@@ -221,6 +221,15 @@ export function createRocks(
     committed = false,
     placed = NONE;
   const abort = new AbortController();
+  // Start observing a promised sampler and its cut immediately, while GLBs
+  // load. A late chunk/asset/disposal path must never leave either rejection
+  // unobserved; placement still takes only the resolved stable film height.
+  const terrainReady = Promise.resolve(groundHeight).then(async (height) => {
+    if (typeof height !== "function" || (await height.ready) === false)
+      throw new Error("Terrain unavailable");
+    return height;
+  });
+  terrainReady.catch(() => {});
   const step = lib.createDeferredQualityStep({
     prepare() {
       // Linking needs the meshes visible for this one synchronous traversal.
@@ -292,7 +301,7 @@ export function createRocks(
         throw new Error("Rock asset unavailable");
       // Downloads overlap coastal linking. Own completed assets while waiting,
       // so disposal can release them even if no coastal cut ever arrives.
-      if ((await groundHeight?.ready) === false) throw new Error("Terrain unavailable");
+      groundHeight = await terrainReady;
       if (disposed) return;
       build(assets);
     } catch {

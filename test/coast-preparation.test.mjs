@@ -21,17 +21,16 @@ vm.runInNewContext(
 );
 const height = filmHeight(context.window.BabelSite.scene.groundHeight, true),
   drop = riverFalls(RIVER_LINE),
-  // Captured from the synchronous constructors (re-taken 2026-10-17 for the ribs
-  // below the clifftop, the stacks at the plateau's height and the lip sunk
-  // under the river's run to the falls' brink).
+  // Captured from the synchronous constructors (re-taken 2026-10-19 for
+  // variable-thickness bedding; the stack buffers are unchanged).
   // Include every attribute's bytes, in order, and the complete index buffer.
   baseline = {
     high: [
-      "2bf42b62eec4ad9beb6dd59229094192e0fc7bad617ab59c238712a6ce2fbf45",
+      "37e49edfc9e8a2309c1468fa0a54d3a2e8e5c6060d1b4224984587341f321180",
       "50cc3e86adeb69d114106c98a5717601d5c65d2a524d1cb842fdd3d5c02326d6",
     ],
     balanced: [
-      "b24c557c8c2398aa641f5aed30da710b9b9c8a903f4e4e0931cc34f15e730bad",
+      "77d2161f109afc57a42420ba04599d03b37343d812958c4a5034a6c343529d7b",
       "5409d1d0c1b9992b400f49ceb9ea26873494b31eee5e37f16b053ea79385ea69",
     ],
   };
@@ -101,7 +100,7 @@ for (const tier of ["high", "balanced"])
       }
       assert.ok(slices > 150, "preparation can yield throughout both expensive builders");
       for (const [i, geometry] of [prepared.cliff, prepared.stacks].entries()) {
-        assert.equal(fingerprint(geometry), baseline[tier][i], "pre-yield byte baseline");
+        assert.equal(fingerprint(geometry), baseline[tier][i], "physical bedding byte baseline");
         assert.deepEqual(geometry.groups, original[i].groups);
         assert.deepEqual(geometry.userData, original[i].userData);
         assert.deepEqual(geometry.index?.array, original[i].index?.array);

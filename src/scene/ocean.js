@@ -1,5 +1,10 @@
 import { Box3, BufferAttribute, BufferGeometry, Mesh, ShaderMaterial, Vector3 } from "three";
-import { COAST_DETAIL, createCoastDetail } from "./coast-detail.js";
+import {
+  COAST_ALBEDO,
+  COAST_DETAIL,
+  createCoastAlbedo,
+  createCoastDetail,
+} from "./coast-detail.js";
 
 // The sea beyond the fault. Only terrain-build.js imports this module, so it
 // ships in the terrain's lazy chunk and lands with the film terrain
@@ -352,7 +357,13 @@ vSlateClip=gl_Position;
 }
 
 function seaFragment(sea, lib) {
-  const waves = waveTerms(sea.waves)
+  const swell = waveTerms(sea.swell)
+      .map(
+        ({ k, a, d, w, length }, i) =>
+          `{float f=smoothstep(1.5,3.,${glsl(length)}/fp);g+=${glslVec(...d)}*${glsl(a * k)}*cos(dot(${glslVec(...d)},P.xz)*${glsl(k)}-seaTime*${glsl(w)}+${glsl(i * 1.7)})*f;v+=${glsl((a * k) ** 2 * 0.5)}*(1.-f*f);}`,
+      )
+      .join("\n"),
+    waves = waveTerms(sea.waves)
       .map(
         ({ k, a, d, w, length }, i) =>
           `{float f=smoothstep(1.5,3.,${glsl(length)}/fp),s=${glsl(a * k)}*cos(dot(${glslVec(...d)},P.xz)*${glsl(k)}-seaTime*${glsl(w)}+${glsl(i * 2.3)}+(phaseWarp.x-.5)*1.4*warpFade);g+=(${glslVec(...d)}+phaseWarp.yz*${glsl(1.4 / (31 * k))}*warpFade)*s*f;v+=${glsl((a * k) ** 2 * 0.5)}*(1.-f*f);}`,
@@ -391,10 +402,12 @@ ${stackOutlineGlsl()}
 void main(){
 vec3 V=vSeaW-cameraPosition;float L=length(V);V/=max(L,1e-4);
 float h=max(cameraPosition.y-vSeaY,.05),t=min(h/max(-V.y,1e-5),1e4);
-// The sea's own point along the ray (the level plane), even where the rim has risen.
-vec3 P=cameraPosition+V*t;
-// The pixel's footprint there: its angle at that distance, stretched along a grazing ray.
-float fp=max(t*length(fwidth(V))/max(-V.y,.01),1e-3);
+// At the shore the foam and mirror belong to the displaced surface being drawn.
+// Only the raised far rim returns to the level plane's projection along the ray.
+float rim=smoothstep(${glsl(sea.rim.from * sea.radius)},${glsl(sea.radius)},length(vSeaW.xz-cameraPosition.xz));
+vec3 P=mix(vSeaW,cameraPosition+V*t,rim);
+// Its pixel footprint follows the same surface, stretched along a grazing ray.
+float fp=max(mix(L,t,rim)*length(fwidth(V))/max(-V.y,.01),1e-3);
 float d=seaCoast(P.xz);
 if(d>${glsl(sea.margin)})discard;
 float z=-d;
@@ -403,6 +416,8 @@ vec2 g=vec2(0.);float v=${glsl(sea.rough * sea.rough)};
 // keeps the reflected normal consistent, and unresolved waves still fade.
 vec3 phaseWarp=seaNoiseD(P.xz/31.+seaTime*vec2(.008,-.006));
 float warpFade=smoothstep(1.5,3.,31./fp);
+// The displaced mesh's broad swell and the mirror share the same phase and slope.
+${swell}
 ${waves}
 // The swell's and waves' slope alone: the cliffs' image in the water follows it.
 vec2 gw=g,gr=vec2(0.);
@@ -412,6 +427,10 @@ float slick=.5+(seaNoise(mat2(.8,.6,-.6,.8)*P.xz/90.+seaTime*vec2(.004,.003))-.5
 float sv=mix(.45,1.6,smoothstep(.25,.75,slick)),sa=sqrt(sv);
 ${ripple}
 v*=sv;
+// Impact roughens only the plunge, leaving the open sea's calm swell intact.
+if(seaFalls.w>0.){vec2 pool=(P.xz-seaFalls.xy)/max(seaFalls.z,1e-4);float impact=1.-smoothstep(.15,.95,length(pool));
+if(impact>0.){vec3 churn=seaFlowD(pool*4.+seaTime*vec2(.13,-.09),seaTime*.45);float resolve=smoothstep(1.5,3.,seaFalls.z/(4.*fp));
+g+=churn.yz*${glsl(0.09 / FLOW_RMS)}*impact*resolve;v+=.006*impact+${glsl(0.09 ** 2)}*impact*impact*(1.-resolve*resolve);}}
 // At a graze the facets facing the eye hide the rest: the slopes the pixel holds tilt toward the eye, mirroring higher sky, more weakly.
 float s=sqrt(v);vec2 eh=normalize(-V.xz+1e-6);
 vec3 N=normalize(vec3(-g.x+eh.x*${glsl(sea.mask)}*s*(1.-smoothstep(.1,.6,-V.y)),1.,-g.y+eh.y*${glsl(sea.mask)}*s*(1.-smoothstep(.1,.6,-V.y)))),E=-V;
@@ -450,7 +469,7 @@ vec3 c=${glslVec(...sea.body)}*(1.-F)+refl+glit;
 // White water at the cliffs' foot: swells breaking against the rock, broken along it, and a far mean where they fall under pixels.
 float sf=0.;
 ${stacksSurfGlsl()}
-if(z<${glsl(surf.reach)}||sf>0.){
+if(z<${glsl(surf.reach)}||sf>0.||(seaFalls.w>0.&&length(P.xz-seaFalls.xy)<.95*seaFalls.z)){
 float u=fract(z/${glsl(surf.period)}+seaTime*${glsl(surf.speed / surf.period)}+.14*sin(P.x*.13+P.z*.09)),n=seaNoise(P.xz/${glsl(surf.cell)}+seaTime*vec2(.03,-.02));
 float burst=smoothstep(${glsl(1 - surf.cover)},${glsl(1 - surf.cover + 0.25)},n)*exp(-u*2.6);
 // How thick the white water lies: a narrow lace against the rock (the fault's distance
@@ -458,14 +477,17 @@ float burst=smoothstep(${glsl(1 - surf.cover)},${glsl(1 - surf.cover + 0.25)},n)
 // breaking swell surging in thinner near it, so it breaks into strands, never one
 // flat sheet; about the stacks (breathing with the swell) and in the churning heart
 // of where the falls land; beyond, it thins into lace.
-float k=max(.75*(1.-smoothstep(.3,2.6+fp,z)),.6*burst*(1.-smoothstep(${glsl(surf.reach * 0.15)},${glsl(surf.reach * 0.6)},z)));
-k=max(k,sf*(.85+.15*sin(seaTime*1.3+P.x*.2+P.z*.13)));
+float k=max(.75*(1.-smoothstep(.3,2.6+fp,z)),.6*burst*(1.-smoothstep(${glsl(surf.reach * 0.15)},${glsl(surf.reach * 0.6)},z))),shore=1.;
 if(seaFalls.w>0.){
 vec2 pool=(P.xz-seaFalls.xy)/seaFalls.z;
 // A persistent turbulent core, with broken expanding fans carried seaward.
-float pr=length(pool),angle=atan(pool.y,pool.x),fan=sin(pr*10.-seaTime*1.7+1.4*sin(angle*3.));
+float pr=length(pool),angle=atan(pool.y,pool.x),fan=sin(pr*10.-seaTime*1.7+1.4*sin(angle*3.)+1.2*seaFlowD(pool*2.5+seaTime*.08,seaTime*.15).x);
 float core=1.-smoothstep(.06,.3,pr),wash=.45*(1.-smoothstep(.25,.95,pr))*mix(.5,1.,smoothstep(-.4,.8,fan))*(.65+.35*seaFoam(pool*3.+seaTime*.08));
-k=max(k,max(core,wash));}
+// The falling current clears the shore's steady blanket. Its broken fans,
+// rather than a uniform contact band, carry foam across the exposed water.
+shore=1.-.8*(1.-smoothstep(.25,.95,pr));
+k=max(k*shore,max(core,wash));}
+k=max(k,sf*(.85+.15*sin(seaTime*1.3+P.x*.2+P.z*.13)));
 // Thick, it covers the water; thinning, only its lace's strands stay, drifting.
 // The balanced tier, and white water under the pixel, take its mean.
 // Against the rock it lies solid; elsewhere the swell's patches thin it a little.
@@ -473,8 +495,8 @@ k*=.86+.14*smoothstep(.25,.75,n);
 vec2 fq=mat2(.8,.6,-.6,.8)*(P.xz/1.6+seaTime*vec2(.12,-.08));
 fq+=vec2(.4*sin(fq.y*.6+seaTime*.17),.3*sin(fq.x*.4-seaTime*.12));
 float far=clamp(fp*1.2-.6,0.,1.),lace=.65*seaFoam(fq)+.35*seaFoam(fq*2.7+3.1),fw=.18+fp*.6;
-float foam=mix(k,smoothstep(1.-k-fw,1.-k+fw,lace),seaLace*(1.-far));
-foam=mix(foam,max(${glsl(surf.far)}*(1.-smoothstep(0.,${glsl(surf.reach)},z)),.45*sf),far);
+float foam=mix(k,smoothstep(1.-k-fw,1.-k+fw,lace)*smoothstep(0.,.02,k),seaLace*(1.-far));
+foam=mix(foam,max(${glsl(surf.far)}*(1.-smoothstep(0.,${glsl(surf.reach)},z))*shore,.45*sf),far);
 foam*=1.-${glsl(sea.text)}*b;
 vec3 lit=seaLight(vec3(0.,1.,0.),babelFlash.x*(1.-b));
 c=mix(c,${glsl(surf.albedo)}*lit,clamp(foam,0.,1.));}
@@ -694,11 +716,12 @@ export const faultAlong = (x, z) => x * TX + z * TZ;
 // noise hashes their CPU/GPU phases agree, including through layout lifts.
 export function coastBedPhase(s, y, bed = CLIFF.bed) {
   return (
-    (y +
+    (y * (1 + 0.13 * Math.sin(s / 47 + 0.4)) +
+      1.1 * Math.sin(y * 0.29 + s * 0.017) +
       1.5 * Math.sin(s / 31 + 0.7) +
       0.45 * Math.sin(s / 9.3 + 1.1) +
       s * 0.02 +
-      0.2 * Math.sin(y * 1.9 + s * 0.035)) /
+      0.15 * Math.sin(y * 0.91 + s * 0.035)) /
     bed
   );
 }
@@ -712,7 +735,7 @@ export function coastFracture(s, y, v) {
   );
 }
 export const coastRockGlsl = () => `
-float coastBedPhase(float s,float y,float bed){return (y+1.5*sin(s/31.+.7)+.45*sin(s/9.3+1.1)+s*.02+.2*sin(y*1.9+s*.035))/bed;}
+float coastBedPhase(float s,float y,float bed){return (y*(1.+.13*sin(s/47.+.4))+1.1*sin(y*.29+s*.017)+1.5*sin(s/31.+.7)+.45*sin(s/9.3+1.1)+s*.02+.15*sin(y*.91+s*.035))/bed;}
 float coastFracture(float s,float y,float v){float j=floor(s/13.),seam=(j+.5+.16*sin(j*1.7+4.))*13.+.35*sin(y*.7+j),width=.6+.35*(.5+.5*sin(j*2.1+2.)),end=.45+.25*(.5+.5*sin(j*.9+7.));return (1.-smoothstep(0.,width,abs(s-seam)))*smoothstep(.03,.15,v)*(1.-smoothstep(end,.9,v));}
 `;
 
@@ -1347,6 +1370,8 @@ uniform vec4 uMist, babelFlash, cliffRiver;
 uniform vec2 cliffFlow;
 uniform sampler2D coastDetail;
 uniform float coastDetailOn;
+uniform sampler2D coastAlbedo;
+uniform float coastAlbedoOn;
 uniform mat4 projectionMatrix;
 varying vec3 vW, vN, vRock;
 varying vec4 vSlateClip;
@@ -1368,25 +1393,32 @@ vec3 n=normalize(vN);
 float top=smoothstep(.55,.85,n.y),side=1.-top;
 vec2 q=mix(vec2(vC.x/3.,vRock.y/1.3),vRock.xz/2.2,top);
 vec3 n1=seaNoiseD(q),n2=seaNoiseD(q*3.1+7.),n3=seaNoiseD(q*9.7+3.);
+float px=max(fwidth(vC.x),fwidth(vRock.y)),f1=1.-smoothstep(.35,1.1,px/1.3),f2=1.-smoothstep(.35,1.1,px*3.1/1.3),f3=1.-smoothstep(.35,1.1,px*9.7/1.3);
+n1=vec3(mix(.5,n1.x,f1),n1.yz*f1);n2=vec3(mix(.5,n2.x,f2),n2.yz*f2);n3=vec3(mix(.5,n3.x,f3),n3.yz*f3);
 float yb=coastBedPhase(vC.x,vRock.y,${glsl(cliff.bed)});
-float bi=floor(yb),bf=fract(yb),bh=seaHash(vec2(bi,.7));
+float bi=floor(yb),bf=fract(yb);
 // Long fractures run across several beds, with short splinters between them.
 // They interrupt strata instead of making a staggered masonry grid.
 float fracture=vC.x/7.3+.24*seaNoise(vec2(vRock.y*.23,2.7))+.12*seaNoise(vec2(vC.x*.29,vRock.y*.4));
 float ub=fracture+(seaHash(vec2(floor(vRock.y/5.7),4.4))-.5)*.16;
 float ji=floor(ub),jf=fract(ub),hb=seaHash(vec2(bi*1.31,ji)),hc=seaHash(vec2(ji,bi*.73+5.));
-float px=max(fwidth(vC.x),fwidth(vRock.y)),detail=(1.-smoothstep(.06,.3,px))*side;
+float detail=(1.-smoothstep(.06,.3,px))*side,exposed=smoothstep(.25,.75,seaNoise(vec2(vC.x/11.,vRock.y/3.7)));
 // Joints: some open, some tight; the bedding planes open only here and there.
 float joint=min(jf,1.-jf)*7.3*(.6+.8*seaNoise(vec2(vRock.y*1.7,ji))),plane=min(bf,1.-bf)*${glsl(cliff.bed)}*(.6+.8*seaNoise(vec2(vC.x*.9,bi)));
 float fu=ub*3.1+hb,fine=(1.-smoothstep(.01,.04+px,min(fract(fu),1.-fract(fu))*7.3/3.1))*smoothstep(.5,.8,seaHash(vec2(floor(fu),bi*2.)))*.5*(1.-smoothstep(.02,.06,px));
-float crack=max(fine,max((1.-smoothstep(.02,.11+2.*px,joint))*smoothstep(.15,.55,seaHash(vec2(ji,floor(bi/3.)+1.5))),(1.-smoothstep(.015,.07+2.*px,plane))*smoothstep(.3,.75,seaNoise(vec2(vC.x/5.,bi))))*(1.-smoothstep(.03,.16,px)))*detail;
+float crack=max(fine,max((1.-smoothstep(.02,.11+2.*px,joint))*smoothstep(.15,.55,seaHash(vec2(ji,floor(bi/3.)+1.5))),(1.-smoothstep(.015,.07+2.*px,plane))*exposed*smoothstep(.3,.75,seaNoise(vec2(vC.x/5.,bi))))*(1.-smoothstep(.03,.16,px)))*detail;
 crack=max(crack,.75*coastFracture(vC.x,vRock.y,vC.y)*side);
-vec3 alb=mix(${glslVec(...dark)},${glslVec(...pale)},.2+.45*bh*side+.25*n2.x)*(.8+.4*n3.x)*mix(1.,.85+.3*hb,detail);
+vec3 alb=mix(${glslVec(...dark)},${glslVec(...pale)},.5+.16*(hb-.5)*detail+.16*(n2.x-.5))*(.94+.12*n3.x);
+// The scan is already linear from sRGB storage. Normalize its measured mean
+// to the same stone reflectance as the shelf, preserving local colour and
+// mineral variation without multiplying the night stone into black.
+if(coastAlbedoOn>.5){vec3 scan=mix(texture2D(coastAlbedo,vec2(vC.x,vRock.y)/${glsl(COAST_ALBEDO.tile)}).rgb,texture2D(coastAlbedo,vRock.xz/${glsl(COAST_ALBEDO.tile)}).rgb,top);
+vec3 relative=clamp(scan/${glslVec(...COAST_ALBEDO.mean)},vec3(.5),vec3(1.8));alb=mix(alb,${glslVec(...dark.map((value, i) => (value + pale[i]) * 0.5))}*mix(vec3(1.),relative,.6),.9);}
 // Thinner beds of uneven thickness within the broad ones, each its own tone, so the face never reads as regular stripes.
 float yt=(vRock.y+.45*seaNoise(vec2(vC.x/6.,4.1))+.6*seaNoise(vec2(vC.x/23.,1.7))+.25*seaNoise(vec2(vRock.y*.37,9.3)))/${glsl(cliff.beds)};
-alb*=mix(1.,.84+.32*seaHash(vec2(floor(yt),3.3)),detail*.85);
+alb*=1.+.08*(seaHash(vec2(floor(yt),floor(vC.x/9.)))-.5)*detail*exposed;
 // Broad weathering over the face, then the cracks and each bed's shaded underside.
-alb*=(.85+.3*seaNoise(vec2(vC.x/8.,vRock.y/5.)))*(1.-.5*crack)*mix(1.,.8+.2*smoothstep(0.,.35,bf),detail);
+alb*=(.94+.12*seaNoise(vec2(vC.x/8.,vRock.y/5.)))*(1.-.5*crack)*mix(1.,.94+.06*smoothstep(0.,.35,bf),detail*exposed);
 // Stains washed down the face under its ledges.
 alb*=1.-.22*side*smoothstep(.55,.85,seaNoise(vec2(vC.x*1.4,vRock.y*.13)));
 // The shelf takes the plain's dust up to the break, so it meets the terrain without a seam; the stacks stand dark with spray.
@@ -1394,7 +1426,7 @@ alb=mix(alb,${glslVec(...cliff.dust)}*(.85+.3*n3.x),top*smoothstep(.2,1.,-vC.z))
 alb*=mix(1.,${glsl(STACKS.wet)},step(1.5,vC.y));
 vec3 t=normalize(mix(cross(n,vec3(0.,1.,0.)),cross(n,vec3(0.,0.,1.)),top)+1e-4),bt=cross(t,n);
 // Each block's own facet, and the bed's lip tipped up to the light, its underside down.
-n=normalize(n+(t*(hb-.5)*.4+bt*(hc-.5)*.3+vec3(0.,smoothstep(.72,1.,bf)*.35-smoothstep(.3,0.,bf)*.25,0.))*detail+(t*(n1.y*.5+n2.y*.35+n3.y*.15)+bt*(n1.z*.5+n2.z*.35+n3.z*.15))*.3);
+n=normalize(n+(t*(hb-.5)*.24+bt*(hc-.5)*.2+vec3(0.,smoothstep(.72,1.,bf)*.16-(1.-smoothstep(0.,.3,bf))*.12,0.)*exposed)*detail+(t*(n1.y*.5+n2.y*.35+n3.y*.15)+bt*(n1.z*.5+n2.z*.35+n3.z*.15))*.24);
 // A single small, mipmapped scan adds pitting and worn stone, in the rock's
 // existing basis. The data map never changes the established stone colours.
 float rockRough=.8;
@@ -1455,6 +1487,8 @@ export function createCliff({
     notch = fallsNotch(drop);
   uniforms.coastDetail = { value: null };
   uniforms.coastDetailOn = { value: 0 };
+  uniforms.coastAlbedo = { value: null };
+  uniforms.coastAlbedoOn = { value: 0 };
   uniforms.cliffRiver = {
     // The borrowed ground already draws the river up to the lip. Painting it
     // again on the rock bevel makes the notch read as folded flat panels.
@@ -1485,6 +1519,11 @@ vSlateClip=gl_Position;
   });
   const update = lighting(rendering, material, uniforms);
   const geometry = prepared?.cliff ?? cliffGeometry(height, cliff, 190, notch);
+  if (groundMaterial && !geometry.getAttribute("slateRiverSurface"))
+    geometry.setAttribute(
+      "slateRiverSurface",
+      new BufferAttribute(new Float32Array(geometry.attributes.position.count * 2), 2),
+    );
   if (!groundMaterial) geometry.clearGroups();
   const mesh = new Mesh(geometry, groundMaterial ? [groundMaterial, material] : material),
     stacks = new Mesh(prepared?.stacks ?? stackGeometry(settings.stacks), material);
@@ -1505,15 +1544,44 @@ vSlateClip=gl_Position;
       uniforms.coastDetail.value = null;
     },
   });
+  const albedo = createCoastAlbedo({
+    tier: rendering?.assetTier ?? rendering?.tier ?? "high",
+    apply(texture) {
+      uniforms.coastAlbedo.value = texture;
+      uniforms.coastAlbedoOn.value = 1;
+      const ground = groundMaterial?.userData.coastAlbedoUniforms;
+      if (ground) {
+        ground.coastAlbedo.value = texture;
+        ground.coastAlbedoOn.value = 1;
+      }
+    },
+    reset() {
+      const texture = uniforms.coastAlbedo.value;
+      uniforms.coastAlbedoOn.value = 0;
+      uniforms.coastAlbedo.value = null;
+      const ground = groundMaterial?.userData.coastAlbedoUniforms;
+      if (ground && ground.coastAlbedo.value === texture) {
+        ground.coastAlbedoOn.value = 0;
+        ground.coastAlbedo.value = null;
+      }
+    },
+  });
   // The detached terrain owns these buffers until the complete shore owner
   // exists. Clearing its record transfers disposal to this owner exactly once.
   if (prepared) prepared.cliff = prepared.stacks = null;
   return {
     mesh,
     material,
-    setActive: (active) => detail.setActive(active),
-    take: (state) => detail.take(state),
+    setActive(active) {
+      detail.setActive(active);
+      albedo.setActive(active);
+    },
+    take(state) {
+      detail.take(state);
+      albedo.take(state);
+    },
     dispose() {
+      albedo.dispose();
       detail.dispose();
       mesh.removeFromParent();
       mesh.geometry.dispose();
@@ -1612,12 +1680,12 @@ export const COAST_SHOTS = Object.freeze([
     // Upright screens stand farther back, round toward the land and higher, so
     // they look over the near rim into the bay, and may open the lens further
     // (their frame is narrow), so the falls never shrink into a thread.
-    portrait: Object.freeze({ azimuth: -60, reach: 46, rise: 16, fovMax: 62 }),
+    portrait: Object.freeze({ azimuth: -55, reach: 44, rise: 24, fovMax: 62 }),
     // Short landscape phones hold it still, farther back, higher and a little
     // wider for their short frame.
     landscape: Object.freeze({ move: null, azimuth: -55, reach: 42, rise: 15, fovMax: 48 }),
     azimuth: -44,
-    reach: 32,
+    reach: 33,
     rise: 10.25,
     shadow: Object.freeze([76, 74]),
     fov: 34,
@@ -1773,12 +1841,13 @@ export const FALLS = Object.freeze({
   run: 3,
   draw: 0.12,
   rows: 22,
-  push: 4,
+  push: 6.4,
+  depth: 1.64,
   drag: 0.25,
   spread: 0,
   albedo: 0.5,
   plunge: 2.2,
-  spray: Object.freeze([3.1, 0.55, 0.085, 0.42]),
+  spray: Object.freeze([3.1, 0.55, 0.11, 0.42]),
 });
 
 // Where the river (its sampled line, [x, z, along, half-width], from its
@@ -1850,8 +1919,8 @@ export function alongToFault(x, z, [hx, hz], d) {
 // smooth middle breaks; text: how much of it thins behind the text.
 export const RAPIDS = Object.freeze({
   reach: 14,
-  from: 0.25,
-  to: 3.6,
+  from: 3.2,
+  to: 6.4,
   ease: Object.freeze([0.3, 1]),
   streak: Object.freeze([1.2, 0.5, 0.05, 0.09]),
   waves: Object.freeze([1.7, 0.06, 1.5, 3.5, 7, 10]),
@@ -1868,6 +1937,8 @@ export const RAPIDS = Object.freeze({
 });
 // The rapids' speed's length scale (its speed grows by e over it).
 const rapidsScale = (rapids) => rapids.reach / Math.log(rapids.to / rapids.from);
+export const rapidsSpeed = (ra, rapids = RAPIDS) =>
+  rapids.to * Math.exp(-Math.min(Math.max(ra, 0), rapids.reach) / rapidsScale(rapids));
 // The travel time to the brink from `ra` units above it, and the rapids' weight
 // there, `radius` river radii from its middle (as rapidsGlsl()'s).
 export const rapidsTravel = (ra, rapids = RAPIDS) => {
@@ -1943,9 +2014,14 @@ float T=${glsl(L / rapids.to)}*(exp(e/${glsl(L)})-1.)+max(ra-${glsl(R)},0.)/${gl
 vec3 s=${p}F(vec2(q*${glsl(SA)},T*${glsl(ST)}),t*.5);
 vec2 g=vec2(s.z*min(${glsl(ST)}/sp,2.)*${glsl(TA)},s.y*${glsl(SA * TQ)})*${glsl(1 / FLOW_RMS)}*smoothstep(1.5,3.,min(${glsl(1 / SA)},sp/${glsl(ST)})/fp);
 // Standing waves held in place where it quickens, and a crossing pair off the banks (a diamond).
-float ph=ra*${glsl(K)}+1.4*${p}F(vec2(q*.3,7.1),0.).x,a=smoothstep(${glsl(W2)},${glsl(W3)},ra)*(1.-smoothstep(${glsl(W4)},${glsl(W5)},ra))*(.8+.2*sin(t*1.3+q))*smoothstep(1.5,3.,${glsl(SP)}/fp);
-float c2=(ra*.92+q*.39)*${glsl(K)}+2.,c3=(ra*.92-q*.39)*${glsl(K)}+.7;
-g+=${glsl(WT)}*a*vec2(cos(ph)+.37*(cos(c2)+cos(c3)),.16*(cos(c2)-cos(c3)));
+vec3 waveBend=${p}F(vec2(q*.3,7.1+ra*.11),0.);
+vec2 phaseGrad=vec2(${glsl(K)}+1.4*.11*waveBend.z,1.4*.3*waveBend.y);
+float ph=ra*${glsl(K)}+1.4*waveBend.x,a=smoothstep(${glsl(W2)},${glsl(W3)},ra)*(1.-smoothstep(${glsl(W4)},${glsl(W5)},ra))*(.8+.2*sin(t*1.3+q))*smoothstep(1.5,3.,min(${glsl(SP)},6.28319/max(length(phaseGrad),1e-4))/fp);
+float banks=smoothstep(.6,.95,r),c2=(ra*.92+q*.39)*${glsl(K)}+2.,c3=(ra*.92-q*.39)*${glsl(K)}+.7;
+g+=${glsl(WT)}*a*vec2(cos(ph)+.22*banks*(cos(c2)+cos(c3)),.16*banks*(cos(c2)-cos(c3)));
+// The wandering standing crest and its reflected normal are one height
+// field. Its compressed local wavelength also sets the footprint filter.
+g+=${glsl(WT)}*a*cos(ph)*(phaseGrad/${glsl(K)}-vec2(1.,0.));
 // Its churn: thickening toward the brink, along the banks and on the waves' crests.
 float churn=mix(${glsl(rapids.white[0])},${glsl(rapids.white[1])},k*k)+${glsl(rapids.banks)}*smoothstep(.5,.95,r)+${glsl(rapids.crests)}*a*smoothstep(.5,1.,sin(ph));
 // The lace: the borders of cells drifting with the current, thicker where it churns;
@@ -1955,8 +2031,37 @@ vec2 li=floor(lc),lf=fract(lc);float f1=8.,f2=8.;
 for(int j=-1;j<=1;j++)for(int i=-1;i<=1;i++){vec2 c=vec2(float(i),float(j)),o=c+vec2(${p}H(li+c),${p}H(li+c+17.3))*.8+.1-lf;float d=dot(o,o);if(d<f1){f2=f1;f1=d;}else if(d<f2)f2=d;}
 float cell=min(${glsl(1 / LA)},sp/${glsl(LT)})/fp,lace=(1.-smoothstep(0.,mix(.08,.3,clamp(churn,0.,1.))+1./max(cell,.5),sqrt(f2)-sqrt(f1)))*smoothstep(.15,.6,churn+.3*${p}F(lc*.4+41.,0.).x);
 // White streaks drawn out along the flow where it churns, whiter toward the brink.
-float foam=max(mix(lace,.3*churn,clamp(1.5-cell*.25,0.,1.)),smoothstep(.05,.7,s.x)*smoothstep(.15,.6,churn)*mix(.55,1.,k));
+float streakFoam=mix(.22,smoothstep(.05,.7,s.x),smoothstep(1.5,3.,min(${glsl(1 / SA)},sp/${glsl(ST)})/fp));
+float foam=max(mix(lace,.3*churn,clamp(1.5-cell*.25,0.,1.)),streakFoam*smoothstep(.15,.6,churn)*mix(.55,1.,k));
 return vec4(g*w,clamp(foam*w,0.,1.),w*(k*${glsl(rapids.rough)}+min(length(g)*4.,.3)));}`;
+}
+
+// The upper river's continuous handoff to the cliff shelf, including the
+// falls' small surface offset. The cap and the falls borrow this one datum;
+// the channel bed remains independent below it.
+export function riverShelfLift(x, z, falls = FALLS) {
+  const s = faultAlong(x, z),
+    last = CLIFF.shelfRows - 1,
+    head = (SHORE.shelf + 1.2 * fbm(s / 9, 0.3)) / CLIFF.shelfRows;
+  return (
+    (0.04 + 0.12 * (last / CLIFF.shelfRows) * fbm(s / 3, last) + falls.lift) *
+    (1 - smooth(head, SHORE.shelf, coastDistance(x, z)))
+  );
+}
+
+// The cap's last cross-section is the falls' first, on the actual irregular
+// shelf edge. Both owners use these points rather than nearby cutoff lines.
+export function riverRunStart(drop, w) {
+  const { lip, heading } = drop,
+    [hx, hz] = heading,
+    bx = lip[0] - hz * lip[2] * w,
+    bz = lip[1] + hx * lip[2] * w,
+    brink = alongToFault(bx, bz, heading, 0),
+    shelf = (u) =>
+      (SHORE.shelf + 1.2 * fbm(faultAlong(bx + hx * u, bz + hz * u) / 9, 0.3)) / CLIFF.shelfRows;
+  let from = alongToFault(bx, bz, heading, shelf(brink));
+  from = alongToFault(bx, bz, heading, shelf(from));
+  return [bx + hx * from, bz + hz * from];
 }
 
 // The falls' geometry: across the river (aFall.x, -1 to 1) and along its
@@ -1964,9 +2069,9 @@ return vec4(g*w,clamp(foam*w,0.,1.),w*(k*${glsl(rapids.rough)}+min(length(g)*4.,
 // The river meets the fault at a slant, so each of its streams runs on to its
 // own brink on the fault: from the shelf's edge, where the river on it ends
 // (at the shelf's height there), over the sunken lip, its surface drawing down, then
-// off the brink under gravity, pushed out along the flow. The sheet's top so
-// follows the lip and the curtain hangs along the cliff, spreading along it
-// (never into it), folding into the curtains its streams make as it falls.
+// off the brink under gravity, pushed out along the flow. This guide carries
+// a closed water body: an uneven front and back joined by rounded lateral
+// currents, closed under the river at its head and below the sea at its toe.
 export function fallsGeometry(drop, height, falls = FALLS, level = SEA.level) {
   const { lip, heading } = drop,
     across = 15,
@@ -1985,15 +2090,13 @@ export function fallsGeometry(drop, height, falls = FALLS, level = SEA.level) {
         bx = lip[0] - hz * lip[2] * w,
         bz = lip[1] + hx * lip[2] * w,
         brink = reach(bx, bz, 0);
-      let from = reach(bx, bz, shelfEdge(faultAlong(bx + hx * brink, bz + hz * brink))[0]);
-      from = reach(bx, bz, shelfEdge(faultAlong(bx + hx * from, bz + hz * from))[0]);
-      const sx = bx + hx * from,
-        sz = bz + hz * from,
-        top = height(sx, sz) + shelfEdge(faultAlong(sx, sz))[1] + falls.lift,
+      const [sx, sz] = riverRunStart(drop, w),
+        top =
+          height.water?.(sx, sz) ?? height(sx, sz) + shelfEdge(faultAlong(sx, sz))[1] + falls.lift,
         edge = top - falls.draw;
       return {
         w,
-        start: [bx + hx * from, bz + hz * from],
+        start: [sx, sz],
         brink: [bx + hx * brink, bz + hz * brink],
         top,
         edge,
@@ -2025,35 +2128,118 @@ export function fallsGeometry(drop, height, falls = FALLS, level = SEA.level) {
         t = k * fall,
         v = 0.85 + 1.15 * k,
         hw = lip[2] * (1 + falls.spread * k),
+        folding = smooth(1.2, 1.65, v),
         // The middle carries the most water and shoots out farthest; the
         // thinner edges fall closer to the rock, so the curtain bows outward
         // and has body from any side.
         out =
           falls.push * t * (1 - falls.drag * w * w) +
           hw *
-            (0.045 * Math.sin(w * 11 + 0.7) * smooth(0.85, 1.2, v) +
-              0.025 * Math.sin(w * 23 + 2.1) * smooth(0.9, 1.5, v)),
+            (0.045 *
+              (Math.sin(w * 11 + 0.7) * (1 - folding) +
+                (Math.sin(w * 11 + 0.9 * Math.sin(w * 4) + k * 3.2) - Math.sin(k * 3.2)) *
+                  folding) *
+              smooth(0.85, 1.2, v) +
+              0.025 *
+                (Math.sin(w * 23 + 2.1) * (1 - folding) +
+                  (Math.sin(w * 23 + 1.1 * Math.sin(w * 5 + k * 4.7)) -
+                    Math.sin(1.1 * Math.sin(k * 4.7))) *
+                    folding) *
+                smooth(0.9, 1.5, v)),
         // Along the cliff it spreads from its middle's brink.
         x = middle.brink[0] + (brink[0] - middle.brink[0]) * (1 + falls.spread * k),
         z = middle.brink[1] + (brink[1] - middle.brink[1]) * (1 + falls.spread * k);
       positions.set([x + hx * out, edge - 16.1 * t * t, z + hz * out], i * 3);
       attrs.set([w, v], i * 2);
     });
-  const indices = new Uint16Array((rows - 1) * (across - 1) * 6);
+  // Around each course station: the outer face, the rounded right side,
+  // the inner face in reverse, and the rounded left side. The lip's surface
+  // stays on the river; its depth turns outward as it leaves the brink, then
+  // the guide is its inner face, retaining the known clearance from the rock.
+  const ring = across * 2 + 4,
+    count = rows * ring,
+    body = new Float32Array((count + ring) * 3),
+    course = new Float32Array((count + ring) * 3),
+    depths = new Float32Array(across),
+    sides = [0, 1 / 3, 2 / 3, 1];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < across; c++) {
+      const i = r * across + c,
+        w = attrs[i * 2],
+        v = attrs[i * 2 + 1],
+        t = Math.max(0, (v - 0.85) / 1.15) * streams[c].fall,
+        velocity = Math.hypot(falls.push, 32.2 * t),
+        aeration = 1 + 0.25 * smooth(0.95, 1.8, v);
+      depths[c] =
+        ((falls.depth * falls.push) / velocity) *
+        aeration *
+        (0.78 + 0.22 * (1 - w * w)) *
+        (1 + 0.07 * Math.sin(w * 7.3 + r * 0.43));
+    }
+    const put = (slot, c, depth) => {
+      const source = r * across + c,
+        i = r * ring + slot,
+        w = attrs[source * 2],
+        v = attrs[source * 2 + 1],
+        front = smooth(0.85, 1.05, v),
+        out = depths[c] * front * (1 - depth),
+        down = depths[c] * (1 - front) * depth,
+        bulge = 0.08 * Math.sin(depth * Math.PI) * Math.sign(w);
+      body.set(
+        [
+          positions[source * 3] + hx * out - hz * bulge,
+          positions[source * 3 + 1] - down,
+          positions[source * 3 + 2] + hz * out + hx * bulge,
+        ],
+        i * 3,
+      );
+      course.set([w, v, depth], i * 3);
+    };
+    for (let c = 0; c < across; c++) put(c, c, sides[0]);
+    put(across, across - 1, sides[1]);
+    put(across + 1, across - 1, sides[2]);
+    for (let c = 0; c < across; c++) put(across + 2 + c, across - 1 - c, sides[3]);
+    put(ring - 2, 0, sides[2]);
+    put(ring - 1, 0, sides[1]);
+  }
+  const indices = new Uint16Array(((rows - 1) * ring * 2 + ((across - 1) * 2 + 4) * 2) * 3);
   let k = 0;
   for (let r = 0; r < rows - 1; r++)
-    for (let c = 0; c < across - 1; c++) {
-      const a = r * across + c,
-        b = a + 1,
-        d = a + across,
-        e = d + 1;
-      indices.set([a, d, b, b, d, e], k);
+    for (let c = 0; c < ring; c++) {
+      const a = r * ring + c,
+        b = r * ring + ((c + 1) % ring),
+        d = a + ring,
+        e = b + ring;
+      indices.set([a, b, d, b, e, d], k);
       k += 6;
     }
+  // The submerged upstream closure has its own normal. Sharing it with the
+  // water's first row would tilt the upper surface into a false raised bar.
+  body.set(body.subarray(0, ring * 3), count * 3);
+  course.set(course.subarray(0, ring * 3), count * 3);
+  for (const r of [0, rows - 1]) {
+    // Paired front/back strips follow the concave folded profile. A fan from
+    // its centroid would cross folds and reverse some submerged toe faces.
+    const cap = (a, b, c) => {
+      const at = r ? r * ring : count;
+      indices.set(r ? [at + a, at + b, at + c] : [at + a, at + c, at + b], k);
+      k += 3;
+    };
+    for (let c = 0; c < across - 1; c++) {
+      const back = across + 2 + across - 1 - c;
+      cap(c, c + 1, back);
+      cap(c + 1, back - 1, back);
+    }
+    cap(across - 1, across, across + 1);
+    cap(across - 1, across + 1, across + 2);
+    cap(ring - 3, ring - 2, ring - 1);
+    cap(ring - 3, ring - 1, 0);
+  }
   const geometry = new BufferGeometry();
-  geometry.setAttribute("position", new BufferAttribute(positions, 3));
-  geometry.setAttribute("aFall", new BufferAttribute(attrs, 2));
+  geometry.setAttribute("position", new BufferAttribute(body, 3));
+  geometry.setAttribute("aFall", new BufferAttribute(course, 3));
   geometry.setIndex(new BufferAttribute(indices, 1));
+  geometry.userData.falls = { across, ring, rows };
   geometry.computeVertexNormals();
   const out = falls.push * middle.fall;
   return {
@@ -2070,7 +2256,7 @@ uniform vec4 uMist, babelFlash;
 uniform mat4 projectionMatrix;
 varying vec3 vW, vN;
 varying vec4 vSlateClip;
-varying vec2 vF;
+varying vec3 vF;
 varying float vSeaY;
 ${lib.SLATE_TEXT_GUARD}
 ${lib.MIST_PARS}
@@ -2078,10 +2264,11 @@ ${ENV_PARS}
 ${NOISE_GLSL}
 ${sprayGlsl(falls)}
 ${coastGlsl()}
+${flowNoiseGlsl("fallsSheet", "seaHash")}
 ${frame ? rapidsGlsl("fallsRp", frame, rapids) : ""}
 void main(){
 // It whitens over the first eighth of its drop (its rows are spaced by time: v 1.25 is about 12% of the height down).
-float a=abs(vF.x),v=vF.y,fall=smoothstep(.86,1.1,v),white=smoothstep(.9,1.25,v);
+float a=abs(vF.x),v=vF.y,fall=smoothstep(.86,1.1,v),white=smoothstep(.9,1.25,v),q=vF.x+.18*vF.z;
 // Its streams: ribbons sliding down with the water, finer ones over them (each
 // fading to its mean under the pixel, across and along). They move with its
 // travel time to v (slow over the lip, then speeding up; the falling rows are
@@ -2090,17 +2277,20 @@ float a=abs(vF.x),v=vF.y,fall=smoothstep(.86,1.1,v),white=smoothstep(.9,1.25,v);
 // resolves, so from afar the falls still read as streams of white water, never
 // one smooth band.
 float tau=min(v,.86)/.8+.0706*log(1.+4.25*clamp((v-.86)/.24,0.,1.))+max(v-1.1,0.)/4.2;
-float fx=fwidth(vF.x),ft=fwidth(tau);
-float a2=1.-smoothstep(.3,1.05,max(fx*21.,ft*16.8)),a3=1.-smoothstep(.32,1.06,max(fx*53.,ft*37.8));
-float r1=seaNoise(vec2(vF.x*8.,6.72*tau-3.36*seaTime)),r2=mix(.5,seaNoise(vec2(vF.x*21.+3.,16.8*tau-6.3*seaTime)),a2),r3=mix(.5,seaNoise(vec2(vF.x*53.+7.,37.8*tau-10.92*seaTime)),a3);
-float streak=r1*.5+r2*.32+r3*.18,d=smoothstep(.25,.75,.5+(streak-.5)*1.4/sqrt(.25+.1024*a2*a2+.0324*a3*a3));
-// Ragged edges; near its foot the sheet tears into ribbons.
-float edge=1.-smoothstep(.62,1.,a+.3*(r2-.5)*smoothstep(.86,1.,v)+.3*smoothstep(1.2,2.,v)*(r1-.5));
+float fx=fwidth(q),ft=fwidth(tau);
+float a1=1.-smoothstep(.3,1.05,max(fx*3.2,ft*8.4)),a2=1.-smoothstep(.3,1.05,max(fx*17.,ft*22.)),a3=1.-smoothstep(.32,1.06,max(fx*43.,ft*45.));
+// Broad channels wander and merge; finer aerated folds ride them. Their
+// coordinates follow travel time, so neither the lip nor the falling sheet
+// slides at a constant world speed or resets its clock at a cut.
+vec3 bend=fallsSheet(vec2(q*2.3+.7,tau*1.1-seaTime*.42),seaTime*.13);
+float r1=mix(.5,.5+.5*fallsSheet(vec2(q*3.2+bend.x*.9,8.4*tau-4.2*seaTime),seaTime*.35).x,a1),r2=mix(.5,.5+.5*fallsSheet(vec2(q*17.+bend.x*1.7+3.,22.*tau-8.45*seaTime),seaTime*.53).x,a2),r3=mix(.5,.5+.5*fallsSheet(vec2(q*43.+bend.x*2.4+7.,45.*tau-13.*seaTime),seaTime*.71).x,a3);
+float streak=r1*.68+r2*.22+r3*.1,d=smoothstep(.22,.78,.5+(streak-.5)*1.4/max(.5,sqrt(.4624*a1*a1+.0484*a2*a2+.01*a3*a3)));
+// The closed skin defines the silhouette. The same current turns around its
+// real lateral faces; froth may thin, but never discards a wall of the body.
+float side=4.*vF.z*(1.-vF.z),edge=max(side,1.-smoothstep(.62-fx,1.+fx,a+.3*(r2-.5)*smoothstep(.86,1.,v)+.4*smoothstep(1.2,2.,v)*(r1-.5)));
 // Where it runs over the lip, in the rapids' frame (the shelf's, ocean.js rapidsFrame()).
 ${frame ? "vec2 rpU=fallsRpUQ(vW.xz);float rpA=fallsRpRA(rpU),rpFP=max(length(fwidth(vW.xz)),1e-4);" : ""}
-if(edge<.02||d<.4*smoothstep(1.8,2.,v))discard;
 vec3 E=normalize(cameraPosition-vW),n=normalize(vN);
-if(dot(n,E)<0.)n=-n;
 // Over the lip it is the river's rapids (RAPIDS: the shelf's own, on the ground's
 // clock, so they meet at its edge): their streaks, standing waves and white
 // water, breaking white at each stream's own brink (raV units up from it), its
@@ -2116,8 +2306,18 @@ vec3 rn=normalize(n-vec3((${glsl(-hx)})*rp.x+(${glsl(hz)})*rp.y,0.,(${glsl(-hz)}
 }
 float tongue=1.-smoothstep(.15,.45,a),crest=(1.-smoothstep(0.,${glsl(rapids.brink[0])}*(1.-${glsl(rapids.tongue)}*tongue),raV))*(1.-fall);
 float runFoam=max(rp.z,${glsl(rapids.brink[1])}*crest*(.7+.3*rp.z));
-white=smoothstep(.9-.05*smoothstep(.2,.5,a),1.25,v);
-float foam=mix(max(smoothstep(.5,.9,streak)*.4*smoothstep(.835,.87,v),runFoam),mix(.2,1.,d),white)*mix(1.,smoothstep(.02,.45,edge),fall);
+// Adjacent streams aerate at slightly different depths, keeping the head
+// joined while white water gathers gradually into broader current clusters.
+white=smoothstep(.92+.045*bend.x-.04*smoothstep(.2,.5,a),1.26+.065*bend.x,v);
+float foam=mix(max(smoothstep(.5,.9,streak)*.4*smoothstep(.835,.87,v),runFoam),mix(.08,.98,d),white)*mix(1.,smoothstep(.02,.45,edge),fall);
+// Near the plunge, broken pockets of aerated water interrupt long ribbons
+// without widening the sheet or adding another particle/effect pass.
+float impact=smoothstep(1.5,2.,v)*(.5+.5*bend.x);
+foam=mix(foam,max(foam,.4+.5*r2),impact*.45);
+// Fine streams thin unevenly into the existing impact cloud. Lower coverage
+// changes optical thickness, not geometry or an opaque grey overlay.
+float toe=1.-smoothstep(vSeaY+.15,vSeaY+1.8,vW.y);
+foam*=1.-toe*.45*(1.-smoothstep(.2,.7,r2));
 float b=slateBehindText();
 vec3 R=reflect(-E,rn);R.y=max(R.y,.08);
 // Its mirror at the river's gain, through its knee, blurred where the rapids are steep.
@@ -2130,7 +2330,7 @@ vec3 lit=(mix(seaLight(n,babelFlash.x*(1.-b)),seaLight(vec3(0.,1.,0.),babelFlash
 // and its froth the shelf's soil-lit froth's light, up from the crest (RAPIDS.run).
 water*=mix(vec3(1.),vec3(1.25,1.25,1.5),1.-fall);
 lit*=mix(1.,${glsl(rapids.run)},smoothstep(.3,1.6,raV)*(1.-fall));
-water=mix(water,lit*.22,white);
+water=mix(water,lit*.12,white);
 vec3 c=mix(water,lit,foam*(1.-${glsl(SEA.text)}*b));
 ${landMist(lib)}
 gl_FragColor=vec4(c,${SEA_SHARED.layer});
@@ -2154,8 +2354,9 @@ export function createFalls({
     // The run over the lip in the river's own units: its half-width, its length
     // per unit of aFall.y (the middle stream's) and the flow's heading.
     p = geometry.attributes.position,
-    middle = (p.count / (falls.rows + 1) - 1) / 2,
-    brink = falls.run * (p.count / (falls.rows + 1)) + middle,
+    { across, ring } = geometry.userData.falls,
+    middle = (across - 1) / 2,
+    brink = falls.run * ring + middle,
     run = [
       drop.lip[2],
       Math.hypot(p.getX(brink) - p.getX(middle), p.getZ(brink) - p.getZ(middle)) / 0.05,
@@ -2166,11 +2367,11 @@ export function createFalls({
   const material = new ShaderMaterial({
     name: "EstateFalls",
     uniforms,
-    side: 2,
-    vertexShader: `attribute vec2 aFall;
+    side: 0,
+    vertexShader: `attribute vec3 aFall;
 varying vec3 vW, vN;
 varying vec4 vSlateClip;
-varying vec2 vF;
+varying vec3 vF;
 varying float vSeaY;
 void main(){
 vec4 w=modelMatrix*vec4(position,1.);

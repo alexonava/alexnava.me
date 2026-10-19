@@ -329,39 +329,46 @@ test("Three.js does not leak into the UI bundle", async () => {
   assert.doesNotMatch(text, /gl_Position/, "app bundle contains Three.js GLSL");
 });
 
-test("the scene requests only the slate maps and one lazy coastal data map", async () => {
+test("the scene requests only the slate maps and two lazy coastal maps", async () => {
   const app = await readFile(await findHashedScript("app"), "utf8");
   const scene = await readSceneStatic();
   assert.doesNotMatch(app, /images\/materials\//);
   assert.match(scene, /images\/materials\/slate-/);
   const materials = await readdir(path.join(projectRoot, "images", "materials"));
   assert.ok(
-    materials.every((name) => name.startsWith("slate-") || name === "coast-detail-256.webp"),
+    materials.every(
+      (name) => name.startsWith("slate-") || /^coast-(?:detail-256|albedo-512)\.webp$/.test(name),
+    ),
     materials.join(", "),
   );
   const published = await readdir(path.join(distDir, "images", "materials"));
   assert.ok(
-    published.every((name) => /^(?:slate-[\w-]+|coast-detail-256)\.[a-f0-9]{8}\.webp$/.test(name)),
+    published.every((name) =>
+      /^(?:slate-[\w-]+|coast-detail-256|coast-albedo-512)\.[a-f0-9]{8}\.webp$/.test(name),
+    ),
     published.join(", "),
   );
 });
 
-test("the packed coastal map is fingerprinted and named only in the lazy terrain owner", async () => {
-  const file = "coast-detail-256.webp",
-    bytes = await readFile(path.join(projectRoot, "images", "materials", file)),
-    hash = createHash("sha256").update(bytes).digest("hex").slice(0, 8),
-    published = file.replace(".webp", `.${hash}.webp`),
-    url = `/images/materials/${published}`;
-  assert.equal(bytes.toString("ascii", 8, 12), "WEBP");
-  assert.ok(bytes.length <= 48 * 1024, "one compact data map stays within its streaming limit");
-  assert.deepEqual(await readFile(path.join(distDir, "images", "materials", published)), bytes);
-  const { loaded, lazy } = await sceneScripts(),
-    terrain = lazy.find((name) => name.startsWith("scene.terrain-build."));
-  assert.ok(terrain);
-  assert.ok((await readFile(path.join(scriptsDir, terrain), "utf8")).includes(url));
-  for (const text of loaded.values()) assert.doesNotMatch(text, /coast-detail-256/);
-  assert.doesNotMatch(await readFile(await findHashedScript("app"), "utf8"), /coast-detail-256/);
-});
+for (const [file, budget] of [
+  ["coast-detail-256.webp", 48 * 1024],
+  ["coast-albedo-512.webp", 96 * 1024],
+])
+  test(`${file} is fingerprinted and named only in the lazy terrain owner`, async () => {
+    const bytes = await readFile(path.join(projectRoot, "images", "materials", file)),
+      hash = createHash("sha256").update(bytes).digest("hex").slice(0, 8),
+      published = file.replace(".webp", `.${hash}.webp`),
+      url = `/images/materials/${published}`;
+    assert.equal(bytes.toString("ascii", 8, 12), "WEBP");
+    assert.ok(bytes.length <= budget, "each compact map stays within its streaming limit");
+    assert.deepEqual(await readFile(path.join(distDir, "images", "materials", published)), bytes);
+    const { loaded, lazy } = await sceneScripts(),
+      terrain = lazy.find((name) => name.startsWith("scene.terrain-build."));
+    assert.ok(terrain);
+    assert.ok((await readFile(path.join(scriptsDir, terrain), "utf8")).includes(url));
+    for (const text of loaded.values()) assert.ok(!text.includes(file.slice(0, -5)));
+    assert.ok(!(await readFile(await findHashedScript("app"), "utf8")).includes(file.slice(0, -5)));
+  });
 
 test("dist/images publishes fingerprinted sources only under their hashed names", async () => {
   async function files(directory, prefix = "") {
@@ -660,14 +667,14 @@ test("models and slate maps are deferred: the scene entry names their hashed cop
   }
 });
 
-test("the complete scene fits 6.25 MiB on high and 3 MiB on balanced, and each model the loader's limit", async () => {
+test("the complete scene fits 7.25 MiB on high and 3.5 MiB on balanced, and each model the loader's limit", async () => {
   // A live scene downloads the tower, tree, lantern, both rocks, the three
-  // Meshy massifs, the slate's five maps and the coast's one packed data map.
-  // High holds a quarter MiB more than its old 6 MiB, the owner's allowance
-  // for the close soil's maps (2026-10-03).
+  // Meshy massifs, the slate's five maps and both optional coastal maps.
+  // Photographic materials have an explicit aggregate allowance; deferring
+  // their requests never removes them from this full-scene accounting.
   for (const [tier, budget] of [
-    ["high", 6.25 * 1024 * 1024],
-    ["balanced", 3 * 1024 * 1024],
+    ["high", 7.25 * 1024 * 1024],
+    ["balanced", 3.5 * 1024 * 1024],
   ]) {
     let total = 0;
     for (const role of ROLES) {
@@ -680,7 +687,7 @@ test("the complete scene fits 6.25 MiB on high and 3 MiB on balanced, and each m
       );
       total += size;
     }
-    for (const file of [...slateMaps(tier), "coast-detail-256.webp"])
+    for (const file of [...slateMaps(tier), "coast-detail-256.webp", "coast-albedo-512.webp"])
       total += (await stat(path.join(projectRoot, "images", "materials", file))).size;
     assert.ok(total <= budget, `${tier} complete scene is ${total} bytes; budget ${budget}`);
   }

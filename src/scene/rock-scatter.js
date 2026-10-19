@@ -123,8 +123,8 @@ const NO_ROCKS = Object.freeze([]);
 
 // Fetches rock-build.js once the scene has revealed, the film is on and the
 // tree channel has settled, on high and balanced only. Nothing about the rocks delays the reveal. terrain()
-// resolves to the prepared film sampler (film-scene.js ready). rock-build.js
-// starts its GLBs then, waits for the coastal commit before placement, and
+// resolves to the prepared film sampler (film-scene.js ready). The chunk and
+// GLBs start while that sampler is preparing, wait for its coastal commit before placement, and
 // takes the stable film height even if film withdraws during those loads.
 export function createRockScatter({
   tier,
@@ -151,15 +151,22 @@ export function createRockScatter({
       return;
     started = true;
     onStatus({ status: "loading", tier });
-    // Seat the rocks on the film terrain (the tree's knoll) once it exists.
-    Promise.all([load(), terrain()]).then(
-      ([{ createRocks }, groundHeight = options.groundHeight]) => {
+    // Observe both stages even if the chunk fails or the owner is disposed.
+    // Neither terrain preparation nor its eventual cut delays the downloads.
+    const groundHeight = Promise.resolve()
+      .then(terrain)
+      .then((height) => (height === undefined ? options.groundHeight : height));
+    groundHeight.then((height) => height?.ready).catch(() => {});
+    Promise.resolve()
+      .then(load)
+      .then(({ createRocks }) => {
         if (disposed) return;
         rocks = createRocks(ROCK_LIB, { ...options, groundHeight, tier, onStatus });
         rocks.setFilmActive(film);
-      },
-      () => onStatus({ status: "fallback", tier }),
-    );
+      })
+      .catch(() => {
+        if (!disposed) onStatus({ status: "fallback", tier });
+      });
   }
   return {
     get committed() {

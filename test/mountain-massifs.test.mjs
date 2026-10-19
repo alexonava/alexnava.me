@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { BufferGeometry, PerspectiveCamera, Texture } from "three";
 import { glbAsset, modelBytes, parseGlb } from "./support/glb.mjs";
 import {
@@ -34,7 +35,7 @@ import {
 import { DEPTH_LAYER } from "../src/scene/depth-layers.js";
 
 const near = (a, b, eps = 1e-4) => assert.ok(Math.abs(a - b) < eps, `${a} != ${b}`);
-const TIERS = Object.freeze({ high: 125_000, balanced: 95_000 });
+const TIERS = Object.freeze({ high: 280_000, balanced: 140_000 });
 
 // A delivered massif as placeRange() takes it, with its node extras.
 function massif(role, tier = "high") {
@@ -69,7 +70,9 @@ test("the Meshy massifs ship as compact, quantized, object-space GLBs within the
       assert.deepEqual(type(attributes.TEXCOORD_0), [5123, true], "uint16 UVs");
       assert.equal(json.accessors[indices].componentType, 5123, "uint16 indices");
       const m = json.materials[material];
-      assert.ok(m.pbrMetallicRoughness.baseColorTexture, "the mask");
+      assert.ok(m.pbrMetallicRoughness.baseColorTexture, "the photographic albedo");
+      assert.ok(m.occlusionTexture, "the AO/snow data mask");
+      assert.notEqual(m.pbrMetallicRoughness.baseColorTexture.index, m.occlusionTexture.index);
       assert.ok(m.normalTexture, "the object-space normal map");
       assert.equal(m.emissiveTexture, undefined, "the supplied emissive glow is dropped");
       assert.equal(m.pbrMetallicRoughness.metallicRoughnessTexture, undefined);
@@ -80,6 +83,9 @@ test("the Meshy massifs ship as compact, quantized, object-space GLBs within the
       assert.equal(extras.quality, tier);
       assert.equal(extras.front, "+Z");
       assert.equal(extras.mountain.normalSpace, "object");
+      assert.equal(extras.mountain.materialLayout, "albedo-ao-snow-v1");
+      assert.ok(extras.mountain.albedoMean > 0 && extras.mountain.albedoMean < 1);
+      assert.match(extras.mountain.albedoBakeSHA256, /^[a-f0-9]{64}$/);
       assert.ok(extras.height > 0 && extras.height <= 1);
       for (const key of ["yaw", "distance", "height"]) assert.ok(key in extras.mountain.envelope);
       shapes.push(massif(role, tier).position.array);
@@ -87,6 +93,55 @@ test("the Meshy massifs ship as compact, quantized, object-space GLBs within the
     // One composition on every tier: the tiers differ only in their maps.
     assert.deepEqual(shapes[0], shapes[1], `${role} geometry differs between tiers`);
   }
+});
+
+test("photographic packaging preserves every original mountain geometry byte", () => {
+  const geometry = {
+    "mountain-ridge": "5c6c74e7f07f707e9ed14e16358db397da4f2725e6a6e2dd5980a3c86a2379b8",
+    "mountain-spine": "ffbc690f85b8e92d6a913d09b07dd6ab5b220f7e2e685c91f72f620cb27fda6b",
+    "mountain-summit": "558f9c1f1594106c0cc91d659b03b6e7b571008037bd9f0e9548fd7cfba62d07",
+  };
+  const normal = {
+    "mountain-ridge": [
+      "5226d70878db2307432588d6b57fc49c49e34d62baf532cbb9996a4d375f7753",
+      "a3e3439352d02a49b934a6cdf5660c4a889ed07270e2a1f8e9499532787b611e",
+    ],
+    "mountain-spine": [
+      "5eba27522ed67bf98551c0aa755fc09f8925a673ef0f1c3a6149340bf2413415",
+      "3c602339790f762f51539eb6af17a738317b7a2c75aac9ddcc77b9cde1e98156",
+    ],
+    "mountain-summit": [
+      "218d99f4cb8fa30dde009bc1ffa781d3230aff4ed609dde67de93c2016883119",
+      "9c9b6df802c2704672abe244ab133ce317ec0411f6a8505fd2d6920981cfada4",
+    ],
+  };
+  const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
+  for (const role of MASSIFS.roles)
+    for (const [tierIndex, tier] of ["high", "balanced"].entries()) {
+      const bytes = modelBytes(role, tier),
+        { json, bin } = parseGlb(bytes),
+        first = Math.min(
+          ...json.images.map((image) => json.bufferViews[image.bufferView].byteOffset),
+        );
+      assert.equal(
+        digest(bytes.subarray(bin, bin + first)),
+        geometry[role],
+        `${role}-${tier} preserves topology, UVs and normals`,
+      );
+      const material = json.materials[0],
+        image = (index) => {
+          const source = json.textures[index].extensions.EXT_texture_webp.source,
+            view = json.bufferViews[json.images[source].bufferView];
+          return bytes.subarray(bin + view.byteOffset, bin + view.byteOffset + view.byteLength);
+        };
+      assert.equal(digest(image(material.normalTexture.index)), normal[role][tierIndex]);
+      assert.equal(
+        image(material.occlusionTexture.index).toString("ascii", 12, 16),
+        "VP8L",
+        "AO/snow channel exchange is lossless",
+      );
+      assert.equal(json.accessors[json.meshes[0].primitives[0].indices].count / 3, 3799);
+    }
 });
 
 test("every placement is one eye inside its model's culled envelope, in its layer's shell", () => {
@@ -337,7 +392,7 @@ function deliver(log) {
     log.push({ url, tier, role, priority, signal });
     const asset = glbAsset(modelBytes(role, tier)),
       mesh = asset.scene.children[0];
-    for (const kind of ["normalMap", "map"]) {
+    for (const kind of ["normalMap", "map", "aoMap"]) {
       const texture = new Texture({ close: () => log.push(`close ${role} ${kind}`) });
       texture.dispose = () => log.push(`dispose ${role} ${kind}`);
       mesh.material[kind] = texture;
@@ -383,7 +438,7 @@ test("at a model tier the ranges load the massifs at low priority and land them 
     assert.equal(mesh.renderOrder, MASSIFS.renderOrder);
     assert.equal(mesh.frustumCulled, false);
     assert.ok(mesh.geometry.attributes.aTerrain.count > 0);
-    const { uNormal, uMask, uNearer, uMist } = mesh.material.uniforms;
+    const { uNormal, uMask, uAlbedo, uAlbedoMean, uNearer, uMist } = mesh.material.uniforms;
     // The ground's low mist reaches the massifs' feet too.
     assert.equal(uMist, RANGE_MIST);
     assert.match(
@@ -391,6 +446,13 @@ test("at a model tier the ranges load the massifs at low priority and land them 
       /if\(uMist\.w>0\.\)\{[^}]*\}\s*gl_FragColor=vec4\(c,0\.3333\);/,
     );
     assert.ok(uNormal.value.isTexture && uMask.value.isTexture);
+    assert.ok(uAlbedo.value.isTexture && uAlbedo.value !== uMask.value);
+    assert.equal(
+      uAlbedo.value.colorSpace,
+      "srgb",
+      "photographic albedo is decoded to linear light",
+    );
+    assert.ok(uAlbedoMean.value > 0 && uAlbedoMean.value < 1);
     assert.equal(uMask.value.colorSpace, "", "the mask is data");
     assert.equal(uNearer.value.image.width, MASSIFS.sky.texture);
     assert.ok(
@@ -406,7 +468,7 @@ test("at a model tier the ranges load the massifs at low priority and land them 
   // Freed on dispose: each map before the bitmap it reads.
   hill.dispose();
   for (const role of MASSIFS.roles)
-    for (const kind of ["normalMap", "map"])
+    for (const kind of ["normalMap", "map", "aoMap"])
       assert.ok(
         log.indexOf(`dispose ${role} ${kind}`) < log.indexOf(`close ${role} ${kind}`),
         `${role} ${kind} disposed before its bitmap closes`,
@@ -464,6 +526,38 @@ test("a failed massif GLB lands the five rings instead; low and baseline never l
     await other.ready;
     assert.equal(calls.length, 0);
     other.dispose();
+  }
+});
+
+test("a missing photographic or AO mask texture frees all models and retains the procedural ranges", async () => {
+  for (const missing of ["map", "aoMap"]) {
+    const log = [],
+      statuses = [],
+      loader = deliver(log),
+      hill = createHillSilhouette({
+        groundHeight: () => 0,
+        tier: "high",
+        urls: URLS,
+        loadAsset: async (url, options) => {
+          const asset = await loader(url, options);
+          if (options.role === "mountain-ridge") {
+            const material = asset.scene.children[0].material;
+            material[missing].dispose();
+            material[missing].image.close();
+            material[missing] = null;
+          }
+          return asset;
+        },
+        onStatus: (status) => statuses.push(status),
+      });
+    hill.applyQuality({ tier: "high" });
+    hill.setFilmTreatment(true);
+    await hill.ready;
+    assert.deepEqual(statuses, ["loading", "fallback"]);
+    for (const role of MASSIFS.roles)
+      for (const kind of ["normalMap", "map", "aoMap"])
+        assert.equal(log.filter((entry) => entry === `close ${role} ${kind}`).length, 1);
+    hill.dispose();
   }
 });
 
@@ -527,7 +621,7 @@ test("a failed ranges chunk frees the massifs that arrive after it", async () =>
   const root = hill.mesh.children.find((child) => child.name === "film-massifs");
   assert.equal(root.children.length, 0, "no massif mesh kept");
   for (const role of MASSIFS.roles)
-    for (const kind of ["normalMap", "map"])
+    for (const kind of ["normalMap", "map", "aoMap"])
       assert.ok(log.includes(`close ${role} ${kind}`), `${role} ${kind} freed`);
   hill.dispose();
 });
@@ -596,7 +690,7 @@ test("the massif shader is the ranges' moonlit style on the models' own relief",
     assert.doesNotMatch(shader, /float cr=/);
   }
   // Snow holds off near-vertical rock with an anti-aliased edge; its tongues read a blurred mask.
-  assert.ok(fragmentShader.includes("vec2 mb=texture2D(uMask,vU,2.5).rg;"));
+  assert.ok(fragmentShader.includes("vec2 mb=texture2D(uMask,vU,2.5).gr;"));
   assert.ok(
     fragmentShader.includes(
       `if(vT.z>.5&&cap>0.){float snow=smoothstep(0.,1.6*sw,se)*mix(clamp((bare+.04)/hw+.5,0.,1.),clamp((hold+.04)/hw+.5,0.,1.),${MASSIF_SNOW.ribShare});`,
@@ -623,10 +717,10 @@ test("the massif shader is the ranges' moonlit style on the models' own relief",
   const float = (v) => (Number.isInteger(v) ? v.toFixed(1) : String(v));
   for (const pin of [
     `vec3 nh=relief(${float(MASSIF_SNOW.hold)}), ns=relief(${float(MASSIF_SNOW.soft)}), ne=relief(${float(MASSIF_SNOW.edge)});`,
-    `float rib=(mk.x-texture2D(uMask,vU,3.).r)*smoothstep(${float(MASSIF_SNOW.ribScale[0])},${float(MASSIF_SNOW.ribScale[1])},ppd);`,
+    `float rib=(mk.x-texture2D(uMask,vU,3.).g)*smoothstep(${float(MASSIF_SNOW.ribScale[0])},${float(MASSIF_SNOW.ribScale[1])},ppd);`,
     "float wv=smoothstep(.45,.85,mb.x), gully=max(wv,smoothstep(.95,.75,mb.y));",
     `float bare=nh.y+${float(MASSIF_SNOW.white)}*(wv-.5), hold=bare+${float(MASSIF_SNOW.rib)}*rib,`,
-    `float sk=mix(smoothstep(-.3,1.,dot(ns,K)),smoothstep(.3-tk,.3+tk,ke),.5)*(1.+${float(MASSIF_SNOW.tone)}*min(dot(nh,K)-dot(ns,K),${float(MASSIF_SNOW.toneCap)}));`,
+    `float sk=clamp((dot(normalize(mix(ns,ne,.15)),K)+.15)/1.15,0.,1.)*(1.+${float(MASSIF_SNOW.tone)}*clamp(dot(nh,K)-dot(ns,K),-${float(MASSIF_SNOW.toneCap)},${float(MASSIF_SNOW.toneCap)}));`,
     `c=mix(c,sn,snow*(1.-mist)*(${float(1 - MASSIF_SNOW.thin)}+${float(MASSIF_SNOW.thin)}*wv));}`,
   ])
     assert.ok(fragmentShader.includes(pin), pin);
@@ -641,9 +735,8 @@ test("the massif shader is the ranges' moonlit style on the models' own relief",
     "vec2 mb=texture2D(uMask,vU,2.5)",
     "sw=max(fwidth(se)",
     "vec3 nh=relief(",
-    "float rib=(mk.x-texture2D(uMask,vU,3.).r)",
+    "float rib=(mk.x-texture2D(uMask,vU,3.).g)",
     "hw=max(1.5*fwidth(hold)",
-    "tk=max(.05,1.5*fwidth(ke))",
   ])
     assert.ok(fragmentShader.indexOf(derived) < branch, `${derived} before the branch`);
   assert.equal(MASSIFS.air, 1);
@@ -680,6 +773,57 @@ test("the massifs' constants agree across the entry and the lazy chunk", async (
     [...chunk.matchAll(/^import [\s\S]*? from "([^"]+)";$/gm)].map((m) => m[1]),
     ["three"],
   );
+});
+
+test("photographic colour enters before haze and snow lighting has no threshold at the former terminator", async () => {
+  const hill = createHillSilhouette({
+    groundHeight: () => 0,
+    tier: "high",
+    urls: URLS,
+    loadAsset: deliver([]),
+  });
+  hill.applyQuality({ tier: "high" });
+  hill.setFilmTreatment(true);
+  await hill.ready;
+  try {
+    const shader = hill.mesh.children[0].children[0].material.fragmentShader,
+      sample = shader.indexOf("texture2D(uAlbedo,vU)"),
+      haze = shader.indexOf("c=mix(air,c,Th)");
+    assert.ok(sample > 0 && sample < haze, "photographic rock is shaded before atmospheric haze");
+    assert.ok(shader.includes("vec2 mk=texture2D(uMask,vU).gr;"));
+    const expression = /float sk=(clamp\(\(dot\(normalize[^;]+);/.exec(shader);
+    assert.ok(expression, "the snow's actual continuous lighting expression");
+    const light = (cosine) => {
+      const normal = [cosine, Math.sqrt(1 - cosine * cosine), 0],
+        functions = {
+          dot: (a, b) => a.reduce((n, v, i) => n + v * b[i], 0),
+          normalize: (v) => v.map((n) => n / Math.hypot(...v)),
+          mix: (a, b, t) => a.map((n, i) => n + (b[i] - n) * t),
+          clamp: (x, lo, hi) => Math.max(lo, Math.min(hi, x)),
+        };
+      return new Function(
+        ...Object.keys(functions),
+        "ns",
+        "ne",
+        "nh",
+        "K",
+        `return ${expression[1]}`,
+      )(...Object.values(functions), normal, normal, normal, [1, 0, 0]);
+    };
+    let previous = 0;
+    for (let i = 0; i <= 2000; i++) {
+      const value = light(-1 + i / 1000);
+      assert.ok(Number.isFinite(value) && value >= 0 && value <= 1);
+      assert.ok(value >= previous && value - previous < 0.002);
+      previous = value;
+    }
+    assert.ok(
+      light(0.31) - light(0.29) < 0.03,
+      "the old stepped terminator no longer reads as a light band",
+    );
+  } finally {
+    hill.dispose();
+  }
 });
 
 test("the composed build lands in short slices and frees itself when cancelled", async () => {

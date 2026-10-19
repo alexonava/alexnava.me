@@ -5,9 +5,9 @@ import { Matrix4, Vector2, Vector3, Vector4 } from "three";
 // their shadow side.
 export const FILM_LIGHT = Object.freeze({ key: 1.12, fill: 1.15, hemisphere: 0.88, ambient: 0.72 });
 
-// A shot's `light` mood multiplies the film balance (key, fill), the lantern and
-// the rim, sets how much of the tree's pale wood reads moonlit grey (pale),
-// the share of the tree's rim kept off the text (rimText), the share of the
+// A shot's `light` mood multiplies the film balance (key, fill) and the lantern.
+// Legacy rim, pale and rimText keys remain accepted without changing materials.
+// Active guards set the share of the
 // grass's colour read inside its blades (grassInside), the share of the bark's
 // glints kept off the name and intro (glintText), the share of the stones'
 // lamplight that passes its knee behind the name and intro (stoneText,
@@ -30,8 +30,8 @@ export function shotLight(shot) {
   return { ...SHOT_LIGHT_DEFAULT, ...(shot?.light ?? {}) };
 }
 
-// The moon rim on the lookout and the tree (architecture.js): a cool Fresnel
-// edge, strongest where the moon is behind the subject from the lens.
+// Legacy shot-mood state retained for callers. Materials no longer add a
+// Fresnel diffuse outline: the moon key and their PBR response light their edges.
 // light: rgb strength and, in w, the share it keeps facing the moon; key: the
 // moon's direction in view space, kept current per frame; textReach: how far
 // past the name, the intro and Contact (a share of the screen's smaller side)
@@ -80,9 +80,8 @@ export const FLASH_GROUND = Object.freeze({
 // - babelFlashKey: that light's world direction, toward it;
 // - babelFlashSky: rgb the sky's added light on faces turned up (as the
 //   hemisphere lends it), w the flat ambient's;
-// - babelFlashRim: rgb the cold rim on the lookout and the tree (a Fresnel
-//   edge, as the moon's RIM), strongest with the flash behind them, w the share
-//   it keeps facing it; babelFlashView: the flash's direction in view space;
+// - babelFlashRim and babelFlashView: legacy shared state, no longer read by
+//   the physical material's flash shader;
 // - babelFlashProj: the camera's projection, babelFlashReach: how far the
 //   flash eases back in past the name and intro [x] and Contact [y] (a share of
 //   the screen's smaller side), and babelFlashText, babelFlashAbout,
@@ -116,23 +115,18 @@ float babelFlashBox(vec4 r, vec2 v, float d){vec2 f=max(max(r.xy-v,v-r.zw),0.)*v
 float babelFlashKeep(vec3 viewPosition){vec4 c=babelFlashProj*vec4(viewPosition,1.);vec2 v=c.xy/c.w*.5+.5;
 float b=max(babelFlashBox(babelFlashText,v,babelFlashReach.x),babelFlashBox(babelFlashAbout,v,babelFlashReach.y));return (1.-b)*(1.-b);}`;
 // The flash's light after the lights, before the ambient occlusion and the
-// sum: `sky` scales its sky and flat light (a material's own share of them),
-// `rim` adds the cold rim.
-const flashTerm = (rim, sky) => `if (babelFlashLight.w > 0.0) {
+// sum: `sky` scales its sky and flat light (a material's own share of them).
+// No view-dependent diffuse rim is added to physical materials.
+const flashTerm = (sky) => `if (babelFlashLight.w > 0.0) {
   float babelFK = babelFlashKeep(-vViewPosition);
   vec3 babelFL = (viewMatrix*vec4(babelFlashKey, 0.0)).xyz, babelFU = (viewMatrix*vec4(0.0, 1.0, 0.0, 0.0)).xyz;
-  reflectedLight.directDiffuse += babelFK*(babelFlashLight.rgb*saturate(dot(normal, babelFL))+(babelFlashSky.rgb*(.5+.5*dot(normal, babelFU))+babelFlashSky.w)*(${sky}))*material.diffuseColor;${
-    rim
-      ? `
-  reflectedLight.directDiffuse += babelFK*babelFlashRim.rgb*pow(1.0-saturate(dot(geometryNormal, geometryViewDir)), 4.0)*mix(babelFlashRim.w, 1.0, saturate(dot(-geometryViewDir, babelFlashView)));`
-      : ""
-  }
+  reflectedLight.directDiffuse += babelFK*(babelFlashLight.rgb*saturate(dot(normal, babelFL))+(babelFlashSky.rgb*(.5+.5*dot(normal, babelFU))+babelFlashSky.w)*(${sky}))*material.diffuseColor;
 }`;
 // A lit film material (standard, Lambert) takes the flash: the shared uniforms,
 // the text test and the term after its lights, composed with its own
 // onBeforeCompile and cache key. `sky` is a GLSL expression for its share of
-// the sky's and the flat light; `rim` adds the cold rim (the lookout, the tree).
-export function flashHook(material, { rim = false, sky = "1.0" } = {}) {
+// the sky's and the flat light. The former `rim` option is harmlessly ignored.
+export function flashHook(material, { sky = "1.0" } = {}) {
   if (material.userData.flash) return material;
   material.userData.flash = true;
   const before = material.onBeforeCompile,
@@ -148,21 +142,18 @@ ${FLASH_PARS}`,
       )
       .replace(
         "#include <aomap_fragment>",
-        `${flashTerm(rim, sky)}
+        `${flashTerm(sky)}
 #include <aomap_fragment>`,
       );
   };
   material.customProgramCacheKey = function () {
-    return `${key?.call(this) ?? ""}|flash${rim ? "-rim" : ""}`;
+    return `${key?.call(this) ?? ""}|flash`;
   };
   return material;
 }
 
-// The tree's pale, bleached wood under a shot's `pale` (architecture.js): up to
-// that share of its colour turns cool moonlit grey (tint), easing in over
-// `luma` (the map's linear luma), so the bare limbs read silver under the moon
-// rather than pink-beige; the darker bark keeps its colour. Off (0) unless a
-// shot asks for it.
+// Legacy shot-mood exports retained for callers; physical bark keeps one
+// albedo across shots instead of consuming PALE_MOOD in its material shader.
 export const PALE = Object.freeze({
   luma: Object.freeze([0.04, 0.22]),
   tint: Object.freeze([0.88, 0.96, 1.12]),

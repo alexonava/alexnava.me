@@ -11,6 +11,7 @@ import {
   createSea,
   rapidsFrame,
   rapidsGlsl,
+  rapidsSpeed,
   rapidsTravel,
   rapidsWeight,
   rippleOctaves,
@@ -23,7 +24,7 @@ import { SLATE_TEXT_GUARD } from "../src/scene/mud-ground.js";
 import {
   dripClock,
   RAPIDS_AT,
-  RIVER,
+  RIVER_CHANNEL,
   RIVER_LINE,
   RIVER_NEAR,
   riverAt,
@@ -43,6 +44,10 @@ const rendering = () => ({ homeScene: new Scene(), lights: {}, tier: "high" });
 
 // The flow noise (ocean.js flowNoiseGlsl()) over seaHash, read back as JavaScript.
 const fract = (x) => x - Math.floor(x);
+const smoothstep = (a, b, x) => {
+  const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
 function seaHash(x, y) {
   let q = [fract(x * 0.1031), fract(y * 0.1031), fract(x * 0.1031)];
   const d = q[0] * (q[1] + 33.33) + q[1] * (q[2] + 33.33) + q[2] * (q[0] + 33.33);
@@ -147,7 +152,11 @@ test("the flow noise is smooth: its gradient is exact and it has none of the val
 });
 
 test("the rapids quicken the river's last stretch toward the falls without shear, and only there", () => {
-  assert.equal(RAPIDS.from, -RIVER.flow, "they start at the river's own current");
+  assert.equal(
+    RAPIDS.from,
+    RIVER_CHANNEL.speed,
+    "they start at the physical cap's whole-river current",
+  );
   assert.ok(
     RAPIDS.to > 2 && RAPIDS.to <= FALLS.push,
     "and reach about the falls' speed off the brink",
@@ -159,6 +168,13 @@ test("the rapids quicken the river's last stretch toward the falls without shear
   assert.ok(Math.abs(speed(1e-3) - RAPIDS.to) < 0.01);
   assert.ok(Math.abs(speed(RAPIDS.reach - 1e-3) - RAPIDS.from) < 1e-3);
   assert.ok(Math.abs(speed(RAPIDS.reach + 1e-3) - RAPIDS.from) < 1e-3, "continuous at the reach");
+  for (let ra = 0.01; ra <= RAPIDS.reach + 2; ra += 0.19)
+    assert.ok(
+      Math.abs(rapidsSpeed(ra) - speed(ra)) < 1e-5,
+      "the shared bed/flow speed is the travel derivative",
+    );
+  assert.equal(rapidsSpeed(0), FALLS.push, "the physical volume launches at the lip's current");
+  assert.ok(Math.abs(rapidsSpeed(RAPIDS.reach * 2) - RAPIDS.from) < 1e-12);
   // The frame is the falls' own, and the river's own course meets it at the lip.
   const drop = riverFalls(RIVER_LINE),
     frame = rapidsFrame(drop);
@@ -189,6 +205,105 @@ test("the rapids quicken the river's last stretch toward the falls without shear
   assert.equal(rapidsWeight(RAPIDS.reach + 0.01, 0), 0);
   assert.ok(RIVER_NEAR - RAPIDS_AT.s > RAPIDS.reach + 8, "the lantern's stretch is calm");
   assert.equal(rapidsWeight(1, 1.25), 0, "and none past the banks");
+});
+
+test("wandering standing crests keep a positive phase gradient, matching reflected slopes and a local footprint bound", () => {
+  const shader = rapidsGlsl("probe", rapidsFrame(riverFalls(RIVER_LINE))),
+    coordinate = shader.match(/waveBend=probeF\(vec2\(q\*([\d.]+),([\d.]+)\+ra\*([\d.]+)\),0\.\)/),
+    phase = shader.match(/float ph=ra\*([\d.]+)\+([\d.]+)\*waveBend.x/),
+    gradient = shader.match(
+      /phaseGrad=vec2\(([\d.]+)\+([\d.]+)\*([\d.]+)\*waveBend.z,([\d.]+)\*([\d.]+)\*waveBend.y\)/,
+    ),
+    footprint = shader.split("*(.8+.2*sin(t*1.3+q))*smoothstep(1.5,3.,")[1]?.split(");")[0];
+  assert.ok(coordinate && phase && gradient && footprint);
+  const [, qScale, offset, raScale] = coordinate.map(Number),
+    [, k, warp] = phase.map(Number),
+    [, gk, ga, gy, gb, gx] = gradient.map(Number),
+    ph = (q, ra) => k * ra + warp * flow(q * qScale, offset + ra * raScale)[0],
+    grad = (q, ra) => {
+      const [, dx, dy] = flow(q * qScale, offset + ra * raScale);
+      return [gk + ga * gy * dy, gb * gx * dx];
+    },
+    pixel = new Function(
+      "gradient",
+      "fp",
+      "min",
+      "max",
+      `return ${footprint.replace("length(phaseGrad)", "gradient")};`,
+    );
+  assert.ok(/g\+=[\d.]+\*a\*cos\(ph\)\*\(phaseGrad\/[\d.]+-vec2\(1\.,0\.\)\)/.test(shader));
+  assert.equal(k, gk);
+  for (let q = -5; q <= 5; q += 0.37) {
+    assert.ok(
+      Math.abs(ph(q, 0) - warp * flow(q * qScale, offset)[0]) < 1e-12,
+      "same crest phase at the joined brink",
+    );
+    for (let ra = 0; ra <= RAPIDS.reach; ra += 0.29) {
+      const [along, across] = grad(q, ra),
+        h = 1e-4,
+        exactAlong = (ph(q, ra + h) - ph(q, ra - h)) / (2 * h),
+        exactAcross = (ph(q + h, ra) - ph(q - h, ra)) / (2 * h);
+      assert.ok(along > k * 0.6 && along < k * 1.5, "ordered, bounded crests never reverse");
+      assert.ok(Math.abs(along - exactAlong) < 1e-5 && Math.abs(across - exactAcross) < 1e-5);
+      const span = pixel(Math.hypot(along, across), 1, Math.min, Math.max);
+      assert.ok(span <= RAPIDS.waves[0] + 1e-6, "warping cannot bypass the nominal filter");
+      assert.ok(
+        span <= (2 * Math.PI) / Math.hypot(along, across) + 1e-5,
+        "compressed crests use their actual local wavelength",
+      );
+    }
+  }
+  assert.ok(pixel(k * 1.5, 1, Math.min, Math.max) < pixel(k, 1, Math.min, Math.max));
+});
+
+test("the joined waterfall's per-stream aeration stays bounded, monotone and continuous on the native clock", () => {
+  const falls = createFalls({
+    lib,
+    clock: dripClock({ value: 0 }),
+    drop: riverFalls(RIVER_LINE),
+    height: () => 1.25,
+  });
+  try {
+    const shader = falls.material.fragmentShader,
+      expression = [...shader.matchAll(/\bwhite=(smoothstep[^;]+);/g)].at(-1)?.[1],
+      field = shader.match(
+        /vec3 bend=fallsSheet\(vec2\(q\*([\d.]+)\+([\d.]+),tau\*([\d.]+)-seaTime\*([\d.]+)\),seaTime\*([\d.]+)\)/,
+      );
+    assert.ok(expression && field);
+    const white = new Function(
+        "v",
+        "bend",
+        "a",
+        "smoothstep",
+        `return ${expression.replaceAll("bend.x", "bend")};`,
+      ),
+      [, xScale, offset, tauScale, drift, turn] = field.map(Number);
+    for (let bend = -1; bend <= 1; bend += 0.2)
+      for (let across = 0; across <= 1; across += 0.1) {
+        let previous = 0;
+        for (let v = 0.8; v <= 1.4; v += 0.005) {
+          const value = white(v, bend, across, smoothstep);
+          assert.ok(value >= previous - 1e-12 && value >= 0 && value <= 1);
+          if (v <= 0.835) assert.equal(value, 0, "the joined head remains its river");
+          if (v >= 1.33) assert.equal(value, 1, "the lower current aerates fully");
+          previous = value;
+        }
+      }
+    const at = (t) =>
+      white(
+        1.06,
+        flow(0.27 * xScale + offset, 1.2 * tauScale - t * drift, t * turn)[0],
+        0.27,
+        smoothstep,
+      );
+    for (let t = 0; t < 6; t += 0.17) {
+      const coarse = (at(t + 1 / 60) - at(t)) * 60,
+        fine = (at(t + 1 / 600) - at(t)) * 600;
+      assert.ok(Math.abs(coarse - fine) < 0.1, "no clock cut or discontinuous per-stream onset");
+    }
+  } finally {
+    falls.dispose();
+  }
 });
 
 test("the falls' run takes the shelf's rapids on the ground's clock, so they meet at its edge", () => {

@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import vm from "node:vm";
 import {
   BoxGeometry,
   Color,
@@ -17,15 +19,18 @@ import {
   COAST_SHOTS,
   FALLS,
   SEA,
+  SHORE,
   SPRAY_FIT,
   coastShot,
+  coastDistance,
   createFalls,
   riverFalls,
   coastGeometrySettings,
   cliffGeometry,
+  fallsNotch,
   stackGeometry,
 } from "../src/scene/ocean.js";
-import { dripClock, filmHeight, RIVER_LINE } from "../src/scene/terrain-build.js";
+import { dripClock, filmHeight, riverChannel, RIVER_LINE } from "../src/scene/terrain-build.js";
 import { MIST_UNIFORMS } from "../src/scene/drifting-mist.js";
 
 // Actual page layout measurements for phones, with short/full desktop boxes.
@@ -59,7 +64,7 @@ for (const tier of ["high", "balanced"])
           clock: dripClock({ value: 0 }),
           rendering: { homeScene: new Scene(), tier },
           drop: riverFalls(RIVER_LINE),
-          height: filmHeight(() => 0, true),
+          height: riverChannel(filmHeight(() => 0, true)).bed,
         }),
         coast = COAST_SHOTS.map((base) => coastShot(base, estate, falls)),
         shot = coast.find((base) => base.frameFalls),
@@ -339,6 +344,114 @@ for (const tier of ["high", "balanced"])
       DIRECTED_SHOTS.tree.splice(DIRECTED_SHOTS.tree.indexOf(shot), 1);
       controller.dispose();
       for (const mesh of [cliff, stacks, tower, tree]) mesh.geometry.dispose();
+      material.dispose();
+    }
+  });
+
+for (const tier of ["high", "balanced"])
+  test(`${tier} portrait falls keep the actual brink, curtain and plunge visible past foreground land`, () => {
+    const context = { window: { BabelSite: {} } };
+    vm.runInNewContext(
+      readFileSync(new URL("../src/scene/helpers.js", import.meta.url), "utf8"),
+      context,
+    );
+    const estate = new Group(),
+      material = new MeshBasicMaterial({ side: 2 }),
+      tower = new Mesh(new BoxGeometry(10, 30, 10), material),
+      tree = new Mesh(new BoxGeometry(10, 20, 10), material),
+      height = riverChannel(filmHeight(context.window.BabelSite.scene.groundHeight, true)).bed,
+      drop = riverFalls(RIVER_LINE),
+      cliff = new Mesh(
+        cliffGeometry(height, coastGeometrySettings(tier).cliff, 190, fallsNotch(drop)),
+        material,
+      ),
+      falls = createFalls({
+        lib: {
+          MIST_UNIFORMS,
+          FLASH_GROUND: { babelFlash: { value: new Color() } },
+          RANGE_MIST: { value: { x: 0, y: 0, z: 0, w: 0 } },
+          SLATE_TEXT_GUARD: "",
+          MIST_PARS: "",
+        },
+        clock: dripClock({ value: 0 }),
+        rendering: { homeScene: new Scene(), tier },
+        drop,
+        height,
+      }),
+      shot = coastShot(
+        COAST_SHOTS.find((base) => base.frameFalls),
+        estate,
+        falls,
+      ),
+      camera = new PerspectiveCamera(45, 1, 0.1, 450),
+      area = cinematicSafeArea(390, 844, layouts[0][2], layouts[0][3]),
+      controller = createCinematicCamera({ camera, selected: "tree", getSafeArea: () => area }),
+      ray = new Raycaster(),
+      position = falls.mesh.geometry.attributes.position,
+      course = falls.mesh.geometry.attributes.aFall,
+      targets = [];
+    estate.position.y = -6.8;
+    estate.add(tower, tree, cliff, falls.mesh);
+    // Sample both actual skins and their rounded sides, not just the old
+    // zero-thickness central curtain or the fit proxy. A point can project
+    // inside the safe area while the near shelf still hides it.
+    for (let i = 0; i < position.count; i++)
+      if (
+        ((Math.abs(course.getX(i)) < 0.01 && course.getZ(i) === 0) ||
+          (course.getY(i) >= 1.05 &&
+            (Math.abs(course.getX(i)) < 0.01 || Math.abs(course.getX(i)) > 0.99))) &&
+        course.getY(i) >= 0.85 &&
+        position.getY(i) >= SEA.level
+      )
+        targets.push(new Vector3().fromBufferAttribute(position, i));
+    assert.ok(targets.length > 40, "the complete curtain contains multiple rows and streams");
+    const [x, z] = falls.plunge;
+    targets.push(new Vector3(x, SEA.level + 0.05, z));
+    DIRECTED_SHOTS.tree.push(shot);
+    for (const [kind, root] of [
+      ["tower", tower],
+      ["tree", tree],
+    ]) {
+      controller.setSubject(kind, root);
+      controller.setStatus({ kind, status: "ready" });
+    }
+    try {
+      assert.ok(controller.setPreviewShot("tree", DIRECTED_SHOTS.tree.indexOf(shot)));
+      for (let phase = 0; phase <= 16; phase++) {
+        controller.apply({ width: 390, height: 844, tourPhase: phase / 16 });
+        camera.updateMatrixWorld();
+        estate.updateWorldMatrix(true, true);
+        for (const local of targets) {
+          const world = local.clone().applyMatrix4(estate.matrixWorld),
+            direction = world.clone().sub(camera.position);
+          ray.set(camera.position, direction.clone().normalize());
+          ray.far = direction.length() - 0.08;
+          assert.equal(
+            ray.intersectObject(cliff).length,
+            0,
+            `phase ${phase / 16}: the near cliff hides ${local.toArray()}`,
+          );
+          // The mesh includes the cliff's own shelf. Inland of that shelf,
+          // check the live terrain sampler too: fitting a point inside the
+          // viewport does not establish that foreground land leaves it visible.
+          for (let step = 1; step < 80; step++) {
+            const point = camera.position
+              .clone()
+              .lerp(world, step / 80)
+              .sub(estate.position);
+            if (coastDistance(point.x, point.z) >= SHORE.shelf)
+              assert.ok(
+                point.y > height(point.x, point.z),
+                `phase ${phase / 16}: terrain hides ${local.toArray()}`,
+              );
+          }
+        }
+      }
+    } finally {
+      DIRECTED_SHOTS.tree.splice(DIRECTED_SHOTS.tree.indexOf(shot), 1);
+      controller.dispose();
+      falls.dispose();
+      for (const mesh of [cliff, tower, tree]) mesh.geometry.dispose();
       material.dispose();
     }
   });

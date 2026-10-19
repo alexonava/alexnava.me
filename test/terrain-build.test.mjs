@@ -46,14 +46,15 @@ import {
   nearWater,
   RIVER,
   RIVER_BED,
+  RIVER_CHANNEL,
   RIVER_LINE,
   RIVER_NEAR,
   RIVER_RIPPLE,
-  RIVER_STEPS,
   riverAt,
   riverPoint,
   riverBounds,
   riverCarve,
+  riverChannel,
   channelCarve,
   driftLeaves,
   plantReeds,
@@ -201,7 +202,12 @@ test("rain stands where the soil lies below its neighbours, never on the pinned 
     );
     assert.ok(Math.hypot(x - LANTERN_FOOT.x, z - LANTERN_FOOT.z) > PIN_KEEP.lantern);
     for (const zone of PUDDLE_ZONES) assert.ok(zoneDistance(zone, x, z) > zone.radius * 0.5);
-    assert.ok(riverRadius(x, z) > RIVER_BED.reach[1], `a pool on the river's bank at ${x},${z}`);
+    const radius = riverRadius(x, z);
+    assert.ok(
+      radius > RIVER_BED.reach[1] ||
+        (Math.abs(radius - RIVER_BED.reach[1]) < 1e-6 && Math.abs(value) < 1e-8),
+      `a pool on the river's bank at ${x},${z}`,
+    );
     if (value > SLATE_SOIL.pool.water[0]) wet++;
     if (value < 0) dry++;
   }
@@ -212,8 +218,10 @@ test("rain stands where the soil lies below its neighbours, never on the pinned 
 test("root supports preserve coarse terrain vertices, map scale and bounded mesh cost", () => {
   const base = (x, z) => Math.sin(x * 0.055) + Math.cos(z * 0.052);
   const original = plainDunes(base),
-    hills = createEarthGeometry(base);
-  const b = hills.attributes.position;
+    hills = createEarthGeometry(base),
+    channel = riverChannel(filmHeight(base, true));
+  const b = hills.attributes.position,
+    water = hills.attributes.slateRiverSurface;
   // The refined rectangle: every coarse cell whose centre lies in FINE_WINDOW.
   const refined = (x, z) =>
     x - TREE_FOOTING.x > FINE_WINDOW.x[0] - 1.5 &&
@@ -225,14 +233,19 @@ test("root supports preserve coarse terrain vertices, map scale and bounded mesh
       z = -b.getY(i),
       r = Math.hypot(x, z);
     assert.ok(Number.isFinite(b.getZ(i)));
-    // Nothing of the knoll reaches a coarse vertex beyond the fine grid.
-    if (r < 88 && x % 3 === 0 && z % 3 === 0 && !refined(x, z))
-      assert.equal(b.getZ(i), Math.fround(base(x, z)));
+    // Nothing of the knoll reaches a coarse bed vertex beyond the fine grid;
+    // the full-course channel is the only additional change there.
+    if (!water.getX(i) && r < 88 && x % 3 === 0 && z % 3 === 0 && !refined(x, z)) {
+      const before = Math.fround(base(x, z));
+      assert.equal(b.getZ(i), Math.fround(before + channel.delta(x, z, before)));
+    }
     // Past the foothills the terrain lies at the plain's level, and past the
     // fault (ocean.js) on the seabed under the cliffs' shelf (a coarse vertex:
     // a stitched one on a coarse edge across the drop lies on that edge).
-    if (r > 184 && x % 3 === 0 && z % 3 === 0)
-      assert.equal(b.getZ(i), Math.fround(coastLand(coastDistance(x, z), TERRAIN_BASE)));
+    if (!water.getX(i) && r > 184 && x % 3 === 0 && z % 3 === 0) {
+      const before = Math.fround(coastLand(coastDistance(x, z), TERRAIN_BASE));
+      assert.equal(b.getZ(i), Math.fround(before + channel.delta(x, z, before)));
+    }
     assert.ok(Math.abs(hills.attributes.normal.getZ(i)) <= 1);
     assert.ok(Math.abs(hills.attributes.uv.getX(i) - (x / 384 + 0.5)) < 1e-7);
     assert.ok(Math.abs(hills.attributes.uv.getY(i) - (0.5 - z / 384)) < 1e-7);
@@ -245,13 +258,15 @@ test("root supports preserve coarse terrain vertices, map scale and bounded mesh
   assert.ok(hills.boundingBox.max.z < 9 + TERRAIN_BASE);
   assert.equal(hills.boundingBox.min.z, SHORE.deep);
   assert.ok(foothillHeight(106.8, 106.8) < 1.5, "keep the lantern's north-east horizon low");
-  // The root rectangle and the river's sub-grid (each of its 0.75 cells cut
-  // RIVER_STEPS x RIVER_STEPS, each cell beside it a fan) and their stitching.
-  const [px0, px1, pz0, pz1] = riverBounds(),
-    cells = (Math.ceil((px1 - px0) / 0.75) + 1) * (Math.ceil((pz1 - pz0) / 0.75) + 1);
+  // Full-course conforming refinement and the separate surface cap stay within
+  // their explicit budgets; the root rectangle retains its pinned vertices.
+  const { bedTriangles, waterTriangles } = hills.userData.riverStats;
+  assert.equal(bedTriangles * 3, hills.userData.riverBedIndexCount);
+  assert.equal((bedTriangles + waterTriangles) * 3, hills.index.count);
+  assert.ok(bedTriangles <= RIVER_CHANNEL.bedTriangles, "bounded solid-bed refinement");
   assert.ok(
-    hills.index.count < original.index.count * 1.15 + cells * (RIVER_STEPS * RIVER_STEPS + 1) * 6,
-    "only the root rectangle, the river and their stitched boundaries are refined",
+    waterTriangles > 0 && waterTriangles <= RIVER_CHANNEL.waterTriangles,
+    "bounded water cap",
   );
   assert.equal(hills.groups.length, 0, "one ground material and draw");
   const repeat = createEarthGeometry(base);
@@ -282,7 +297,7 @@ test("local refinement joins the coarse mesh without holes, T-junctions or overl
   const indices = geometry.index.array,
     edges = new Map();
   let area = 0;
-  for (let i = 0; i < indices.length; i += 3) {
+  for (let i = 0; i < geometry.userData.riverBedIndexCount; i += 3) {
     const [a, b, c] = indices.subarray(i, i + 3);
     const doubled =
       (p.getX(b) - p.getX(a)) * (p.getY(c) - p.getY(a)) -
@@ -328,7 +343,16 @@ function groundBase() {
 }
 
 function surface(geometry) {
-  const mesh = new Mesh(geometry, new MeshStandardMaterial());
+  // These probes measure the solid bed and its root contacts. The separately
+  // marked upper water cap legitimately intercepts a normal top-down ray.
+  const bed = new BufferGeometry();
+  for (const [name, attribute] of Object.entries(geometry.attributes))
+    bed.setAttribute(name, attribute);
+  bed.setIndex(geometry.index);
+  bed.setDrawRange(0, geometry.userData.riverBedIndexCount ?? geometry.index.count);
+  bed.boundingBox = geometry.boundingBox;
+  bed.boundingSphere = geometry.boundingSphere;
+  const mesh = new Mesh(bed, new MeshStandardMaterial());
   mesh.rotation.x = -Math.PI / 2;
   mesh.updateMatrixWorld(true);
   const ray = new Raycaster(new Vector3(), new Vector3(0, -1, 0));
@@ -338,6 +362,7 @@ function surface(geometry) {
       return ray.intersectObject(mesh)[0];
     },
     dispose() {
+      bed.dispose();
       geometry.dispose();
       mesh.material.dispose();
     },
@@ -364,7 +389,8 @@ test("the river lowers only its channel and banks: the lantern's footing and the
   );
   const base = groundBase(),
     original = plainDunes(base),
-    restored = createEarthGeometry(base);
+    restored = createEarthGeometry(base),
+    channel = riverChannel(filmHeight(base, true));
   // Vertex normals are normalized in the real material's vertex shader.
   // Include that step before interpolating them across the rendered triangles.
   restored.normalizeNormals();
@@ -375,6 +401,21 @@ test("the river lowers only its channel and banks: the lantern's footing and the
     foot = a.at(lamp.x, lamp.z).point.y,
     water = foot + RIVER_BED.level;
   const sub = riverBounds();
+  const expectedVertices = new Map(),
+    bedPosition = restored.attributes.position,
+    expectedVertex = (index) => {
+      if (!expectedVertices.has(index)) {
+        const x = bedPosition.getX(index),
+          z = -bedPosition.getY(index),
+          before = a.at(x, z).point.y;
+        expectedVertices.set(index, [
+          x,
+          z,
+          before + channelCarve(x, z, before, foot) + channel.delta(x, z, before),
+        ]);
+      }
+      return expectedVertices.get(index);
+    };
   let footing = 0,
     beyond = 0,
     basin = 0;
@@ -418,7 +459,14 @@ test("the river lowers only its channel and banks: the lantern's footing and the
             [0, -0.3],
           ].some(([u, v]) => Math.abs(riverAt(x + u, z + v).s - here) > 1);
         // Where the stream pours in, the deeper of the two channels.
-        const expected = before.point.y + channelCarve(x, z, before.point.y, foot);
+        // A deeper bowl is represented by linear triangles, not the analytic
+        // curve between vertices. Hold its vertex field and interpolate the
+        // actual hit triangle independently, retaining the original tolerance.
+        const [v0, v1, v2] = [after.face.a, after.face.b, after.face.c].map(expectedVertex),
+          det = (v1[1] - v2[1]) * (v0[0] - v2[0]) + (v2[0] - v1[0]) * (v0[1] - v2[1]),
+          w0 = ((v1[1] - v2[1]) * (x - v2[0]) + (v2[0] - v1[0]) * (z - v2[1])) / det,
+          w1 = ((v2[1] - v0[1]) * (x - v2[0]) + (v0[0] - v2[0]) * (z - v2[1])) / det,
+          expected = w0 * v0[2] + w1 * v1[2] + (1 - w0 - w1) * v2[2];
         if (!fold) assert.ok(Math.abs(after.point.y - expected) < 0.012, `basin at ${x},${z}`);
         // Where the channel is carved in full (it eases out over 2.5 units inside the fine
         // grid's edge, beyond the lantern shots' frames), its bed lies under its water.
@@ -439,14 +487,22 @@ test("the river lowers only its channel and banks: the lantern's footing and the
     }
   assert.ok(footing > 30 && beyond > 150 && basin > 400, `${footing} ${beyond} ${basin}`);
   // Deep down its middle, as deep as the shape says.
-  assert.ok(Math.abs(b.at(cx, cz).point.y - (water + riverBedAt(riverRadius(cx, cz)))) < 0.015);
-  // Out on the plain, beyond the fine grid (and inside the dunes' reach), its water lies on the uncarved soil.
+  assert.ok(Math.abs(b.at(cx, cz).point.y - channel.bed(cx, cz)) < 0.015);
+  // The full-course bed also continues beyond the original local refinement.
   const [wx, wz] = RIVER_LINE.find(
     ([x, z]) => x < TREE_FOOTING.x + FINE_WINDOW.x[0] - 6 && Math.hypot(x, z) < 80,
   );
   assert.ok(wx < TREE_FOOTING.x + FINE_WINDOW.x[0] && riverRadius(wx, wz) < 1e-9);
-  assert.ok(riverCarve(wx, wz, base(wx, wz), foot) === 0, "no carve on the plain");
-  assert.ok(Math.abs(b.at(wx, wz).point.y - a.at(wx, wz).point.y) < 0.000002);
+  assert.ok(riverCarve(wx, wz, base(wx, wz), foot) === 0, "the original shallow carve stays local");
+  assert.ok(b.at(wx, wz).point.y < a.at(wx, wz).point.y - 0.5, "a real bed now lowers the plain");
+  assert.ok(
+    channel.water(wx, wz) - b.at(wx, wz).point.y > 1,
+    "water has depth outside the old window",
+  );
+  assert.ok(
+    Math.abs(height(wx, wz) - b.at(wx, wz).point.y) < 1e-5,
+    "the sampler reads that bed too",
+  );
   a.dispose();
   b.dispose();
 });
@@ -736,6 +792,7 @@ test("root contact shading is neutral away from the roots and settles the soil a
   assert.equal(shade.itemSize, 4);
   assert.equal(shade.count, geometry.attributes.position.count);
   const p = geometry.attributes.position,
+    surfaceKind = geometry.attributes.slateRiverSurface,
     lift = terrainLift(geometry);
   let near = 0;
   for (let i = 0; i < p.count; i++) {
@@ -744,12 +801,21 @@ test("root contact shading is neutral away from the roots and settles the soil a
     const [vx, vz, contact, open] = [shade.getX(i), shade.getY(i), shade.getZ(i), shade.getW(i)];
     assert.ok(Number.isFinite(vx + vz + contact + open));
     assert.ok(contact >= 0 && contact <= 1 && open >= 0 && open <= 1);
+    if (surfaceKind.getX(i)) {
+      assert.deepEqual([contact, open], [0, 1], "water never acquires root-contact shading");
+      continue;
+    }
     if (Math.hypot(x - TRUNK[0], z - TRUNK[1]) > 20) {
       assert.deepEqual([contact, open], [0, 1], "neutral away from the roots");
       // Nothing lifts there; only the river's channel may lower it.
-      const at = lift(p.getX(i), -p.getY(i));
+      const at = lift(p.getX(i), -p.getY(i)),
+        radius = riverRadius(p.getX(i), -p.getY(i));
+      // Constrained bank cuts round their x/z on steep coastal triangles.
+      // The resulting Float32 plane residue is under 0.00003 units and is
+      // limited to the reach boundary; dry ground keeps its stricter check.
+      const roundedBank = Math.abs(radius - RIVER_BED.reach[1]) < 3e-6 && Math.abs(at) < 3e-5;
       assert.ok(
-        at === 0 || (at < 0 && riverRadius(p.getX(i), -p.getY(i)) < RIVER_BED.reach[1]),
+        Math.abs(at) < 1e-5 || roundedBank || (at < 0 && radius < RIVER_BED.reach[1] + 0.35),
         `${at} at ${p.getX(i)},${-p.getY(i)}`,
       );
     }
@@ -762,6 +828,10 @@ test("root contact shading is neutral away from the roots and settles the soil a
   // The rendered lift: the terrain above its lift-free surface, at vertices and between them.
   const flat = surface(plainDunes(base)),
     raised = surface(createEarthGeometry(base));
+  // Newly inserted vertices expose the original bank triangles' one-cell
+  // interpolation fringe; they must not change that fringe or dry ground.
+  assert.ok(Math.abs(raised.at(43.60342025756836, 23.25).point.y - 1.6803538647582121) < 2e-6);
+  assert.ok(Math.abs(raised.at(47.25, 12).point.y - flat.at(47.25, 12).point.y) < 2e-6);
   let lifted = 0;
   for (let x = TREE_FOOTING.x - 8; x < TREE_FOOTING.x + 14.5; x += 0.61)
     for (let z = TREE_FOOTING.z - 12; z < TREE_FOOTING.z + 12; z += 0.53) {
@@ -1016,9 +1086,12 @@ test("the lazy ground shading extends only the slate's program, under its own ke
       fragment.indexOf("if (slateWater > 0.0) {") <
         fragment.indexOf("reflectedLight.indirectDiffuse *= 1.0-0.75*slateSky;"),
     );
-    // No 2D texture lookup, light or pass is added (the water reads the film's
-    // environment cube, night-environment.js).
-    assert.equal(count(fragment, "texture2D("), count(before.fragmentShader, "texture2D("));
+    // The optional photographic rock adds one guarded lookup; the water
+    // continues to read the existing environment cube without another pass.
+    assert.equal(
+      count(fragment, "texture2D("),
+      count(before.fragmentShader, "texture2D(") + Number(Boolean(after.uniforms.coastAlbedo)),
+    );
     assert.equal(count(vertex, "texture2D("), count(before.vertexShader, "texture2D("));
     // The tree in the water: its trunk tapering to the crotch and two limbs leaning
     // apart above it, its edges soft (never under 1.5 pixels, softer the farther the
@@ -1032,18 +1105,18 @@ test("the lazy ground shading extends only the slate's program, under its own ke
     );
     assert.ok(fragment.includes("abs(slateTD-1.1-0.55*max(slateTH-7.5, 0.0))"));
     // The river's current: ripples drawn out along the flow, drifting downstream
-    // at RIVER.flow on the drips' clock (the same uniform, so they hold as the
+    // at the full river's physical speed on the drips' clock (the same uniform, so they hold as the
     // drips do), easing out toward the shore; the finer octave fades out
     // before it aliases.
     assert.match(fragment, /^uniform vec4 slateDrip, slateFlame;\nuniform float slateFlow;\n/m);
     assert.ok(
       fragment.includes(
-        `vec2 slateFU = vec2(slateRiverQ.y-slateFlow*${RIVER.flow}, slateRiverQ.z);`,
+        `vec2 slateFU = vec2(slateRiverQ.y+slateFlow*${RIVER_CHANNEL.speed}, slateRiverQ.z);`,
       ),
     );
     assert.ok(
       fragment.includes(
-        "float slateFS = 1.0-smoothstep(.8, 1.1, slateRiverR);\n      slateGC = (slateRiverDir*slateFG.x+slateFX*slateFG.y)*slateFS;\n      slateGS = (slateRiverDir*slateFC.x+slateFX*slateFC.y)*slateFS;",
+        "float slateFS = 1.0-smoothstep(.8, 1.1, slateRiverR);\n      slateGC = (slateRiverDir*slateFG.x+slateFX*slateFG.y)*slateFS*mix(1.,3.,vSlateRiverSurface.x);\n      slateGS = (slateRiverDir*slateFC.x+slateFX*slateFC.y)*slateFS;",
       ),
     );
     assert.match(fragment, /\*smoothstep\(1\.5, 3\.0, [\d.]+\/slateFP\);/);
@@ -1259,7 +1332,7 @@ test("the ground shading also finds its anchors in the published, compacted chun
       assert.match(shaded.fragmentShader, /#if NUM_POINT_LIGHTS > 0\n/);
       assert.equal(
         count(shaded.fragmentShader, "texture2D("),
-        count(plain.fragmentShader, "texture2D("),
+        count(plain.fragmentShader, "texture2D(") + Number(Boolean(shaded.uniforms.coastAlbedo)),
       );
       assert.ok(
         shaded.uniforms.slateDrip && shaded.uniforms.slateFlame && shaded.uniforms.slateKeyView,
@@ -2005,8 +2078,9 @@ test("the film terrain builds in idle slices and arrives only where it cannot sh
     assert.equal(shadows, 1);
     // Exactly the terrain built at once.
     const direct = createEarthGeometry(base);
-    // These complete terrain buffers (including pools and shading), indices and
-    // exact bounds, with the fault's drop and the sea's cut (ocean.js), have this hash.
+    // These complete terrain buffers (including pools, shading and the full
+    // river's bed/cap), indices and exact bounds, with the fault's drop and
+    // the sea's cut (ocean.js), have this hash.
     const digest = createHash("sha256").update(
       JSON.stringify({ sphere: direct.boundingSphere, box: direct.boundingBox }),
     );
@@ -2018,7 +2092,7 @@ test("the film terrain builds in idle slices and arrives only where it cannot sh
     digest.update("index").update(new Uint8Array(index.buffer, index.byteOffset, index.byteLength));
     assert.equal(
       digest.digest("hex"),
-      "f32ce7b313f46cfb439a9b33a3d03addb2acb4f660beec4d42daf22f88d97c93",
+      "0e0a68de9643b13bb6856514a1ddb26e9d035b8bdb27fbd78c19535d846270b4",
     );
     for (const name of Object.keys(direct.attributes))
       assert.deepEqual(arrived.attributes[name].array, direct.attributes[name].array, name);
@@ -2209,11 +2283,20 @@ test("the root shading keeps full float precision beside a 16-bit index", () => 
   assert.equal(occlusion.count, geometry.attributes.position.count);
   assert.ok(geometry.index.array instanceof Uint16Array, "the index stays 16-bit");
   const p = geometry.attributes.position,
+    surfaceKind = geometry.attributes.slateRiverSurface,
     [px0, px1, pz0, pz1] = riverBounds(),
     inRiver = (x, z) => x > px0 - 0.75 && x < px1 + 0.75 && z > pz0 - 0.75 && z < pz1 + 0.75;
   let checked = 0,
     occluded = 0;
   for (let i = 0; i < p.count; i++) {
+    if (surfaceKind.getX(i)) {
+      assert.deepEqual(
+        [occlusion.getX(i), occlusion.getY(i)],
+        [0, 0],
+        "the water cap has no baked root occlusion",
+      );
+      continue;
+    }
     const x = p.getX(i) - TREE_FOOTING.x,
       z = -p.getY(i) - TREE_FOOTING.z;
     // The river's sub-grid points carry the lattice's occlusion where they lie
@@ -3349,7 +3432,8 @@ test("the film's ready resolves to the root-aware ground once the roots settle",
   r.film.setActive(true);
   const height = await r.film.ready;
   assert.equal(typeof height, "function");
-  assert.equal(r.ground.material.userData.slateRoot, shadeSlateGround);
+  assert.equal(typeof r.ground.material.userData.slateRoot, "function");
+  assert.equal(r.ground.material.userData.coastAlbedoUniforms.coastAlbedoOn.value, 0);
   assert.equal(r.invalidations(), 1, "the terrain and its shading invalidate one atomic frame");
   // On flat ground the knoll adds only its collar's dome, and the relief, the
   // crook hollows and the lips shape the soil about the tree (at a vertex,
@@ -3362,17 +3446,24 @@ test("the film's ready resolves to the root-aware ground once the roots settle",
   ])
     assert.ok(Math.abs(height(x, z) - rootSupportHeight(x, z, () => 0)) < 0.03, `${x},${z}`);
   assert.equal(height(0, 0), 0);
-  // Past 88 units it is the film terrain's own surface (the procedural ground
-  // easing into the plain, the foothills), as the walk stands on it, the cliffs'
-  // shelf at the plain's height; and it lends the walk the fault's distance.
-  const film = filmHeight(() => 0, true);
+  // Past 88 units it keeps the film's analytic land with the rendered bed's
+  // lift from its coarse plane; at the coastal shelf it uses the physical
+  // channel directly. The walk reads the bed, never the separate water cap.
+  const film = filmHeight(() => 0, true),
+    coarse = terrainSurface(() => 0),
+    bed = terrainHeight(r.ground.geometry),
+    channel = riverChannel(film);
   for (const [x, z] of [
     [TREE_FOOTING.x + 30, TREE_FOOTING.z],
     [100, 40],
     [-120, 30],
     [79, 80.5],
-  ])
-    assert.ok(Math.abs(height(x, z) - film(x, z)) < 1e-9, `${x},${z}`);
+  ]) {
+    const expected =
+      coastDistance(x, z) < SHORE.shelf ? channel.bed(x, z) : film(x, z) + bed(x, z) - coarse(x, z);
+    assert.ok(Math.abs(height(x, z) - expected) < 1e-9, `${x},${z}`);
+  }
+  assert.ok(height(-120, 30) < film(-120, 30) - 0.2, "the published walk height follows the bed");
   assert.ok(height(TREE_FOOTING.x + 30, TREE_FOOTING.z) > 0);
   assert.equal(height.shore(80, 80), coastDistance(80, 80));
   const geometry = r.ground.geometry;

@@ -11,6 +11,7 @@ import {
   NoBlending,
   NoColorSpace,
   RepeatWrapping,
+  SRGBColorSpace,
   ShaderMaterial,
   UniformsLib,
   UniformsUtils,
@@ -267,11 +268,12 @@ float b=dot(o,d), t=-b+sqrt(max(b*b-dot(o,o)+uSky.x,0.)), a=(o.y+d.y*t)*inverses
 vec3 s0=(filmSky(a)+filmBand(a))*uSky.y, lift=vec3(.24,.24,.3)*smoothstep(-.03,.17,a)*uSky.y, s=s0+lift, air=s0+${glslFloat(MOUNTAIN_AIR.lift)}*lift;`;
 // The rock body from the face's moonlight (lit), its upward share (n.y) and occlusion (ao), seen
 // through the air of range `at` (MOUNTAIN_AIR) and never lighter than the sky behind it.
-const rockBodyGLSL = (at) => {
+const rockBodyGLSL = (at, surface = "") => {
   const { transmittance, albedo, thin, moon, ambient, rockMax } = MOUNTAIN_AIR;
   return `float T=${perRange(transmittance, at)}, alb=${perRange(albedo, at)};
 // Lit neutral grey to blue shadow, in units of the sky's luma.
 vec3 c=(vec3(.9705,.9999,1.0881)*${glslFloat(moon)}*lit+vec3(.8117,.9991,1.5611)*${glslFloat(ambient)}*(.6+.4*n.y))*ao*alb*sL;
+${surface}
 float Th=mix(T,sqrt(T),${glslFloat(thin)}*smoothstep(.5,6.,el));
 c=mix(air,c,Th);
 c*=min(1.,${glslFloat(rockMax)}*sL/max(dot(c,W),1e-4));`;
@@ -550,8 +552,9 @@ const STRATA_GLSL = (() => {
 // The Meshy massifs' shading: the ranges' moonlit style on the models' own
 // relief. The object-space normal map (the GLB's normalTexture) is turned into
 // the world by each copy's placement (aInst: the turn's cos and sin, mirror,
-// squash); the mask (baseColorTexture: R the source's whiteness, G its ambient
-// occlusion) shades crevices and lays the snow. The rock, its air, the orb's
+// squash); photographic albedo follows the same UVs. The mask (occlusionTexture:
+// R ambient occlusion, G the source's whiteness) shades crevices and lays snow.
+// The rock, its air, the orb's
 // glow and the far plain are the ranges' own (the shared GLSL above), with
 // aTerrain = (degrees below the copy's own crest, layer, snowline: 0 on a bare
 // copy, massif height).
@@ -562,7 +565,16 @@ const STRATA_GLSL = (() => {
 // snow holds on all but near-vertical rock (of the smoothed relief) and the
 // source's dark ribs, and is lit by a smoother relief still. Only copies with
 // `snow` carry it.
-function massifMaterial({ skyRadius, shellOpacity, sunPosition, normalMap, maskMap, nearerMap }) {
+function massifMaterial({
+  skyRadius,
+  shellOpacity,
+  sunPosition,
+  normalMap,
+  maskMap,
+  albedoMap,
+  albedoMean,
+  nearerMap,
+}) {
   const { texture: bins, floor, span } = MASSIFS.sky;
   const material = new ShaderMaterial({
     name: "EstateMeshyRanges",
@@ -602,7 +614,8 @@ ${MOUNTAIN_MIST_PARS}
 uniform vec2 uSky;
 uniform vec3 uSun, fogColor;
 uniform float fogNear, fogFar;
-uniform sampler2D uNormal, uMask, uNearer;
+uniform sampler2D uNormal, uMask, uAlbedo, uNearer;
+uniform float uAlbedoMean;
 varying vec4 vT, vI;
 varying vec3 vL;
 varying vec2 vU;
@@ -630,11 +643,11 @@ ${SKY_BEHIND_GLSL}
 float sL=max(dot(s,W),1e-4), far=step(.5,vT.y), k=vT.y*.25, px=vT.x/max(fwidth(vT.x),1e-5), r=length(vL.xz), slim=0.;
 float el=degrees(atan(vL.y,r)), az=degrees(atan(vL.z,vL.x)), ppd=1./max(fwidth(el),1e-4);
 vec3 n=relief(${glslFloat(MASSIFS.sharpen)});
-vec2 mk=texture2D(uMask,vU).rg;
+vec2 mk=texture2D(uMask,vU).gr;
 // Moonlight wrapped softly round the faces, as the ranges' (MOUNTAIN_AIR.wrap).
 ${WRAP_GLSL}, ao=mix(1.,mk.y,.6);
 ${STRATA_GLSL}
-${rockBodyGLSL(`(vT.y+${glslFloat(MASSIFS.air)})`)}
+${rockBodyGLSL(`(vT.y+${glslFloat(MASSIFS.air)})`, "c*=clamp(texture2D(uAlbedo,vU).rgb/max(uAlbedoMean,.03),vec3(.15),vec3(2.));")}
 // Valley mist rising from the nearer layers' skyline: at most .9 degrees, 70% at its foot.
 vec2 nr=nearer(az);
 float under=mix(nr.x,nr.y,step(1.5,vT.y)), rise=el+vT.x-under;
@@ -643,7 +656,7 @@ c=mix(c,mix(air,s,.9),mist);
 float cap=clamp((vT.w-vT.z)*${glslFloat(MASSIF_SNOW.depth)},0.,${glslFloat(MASSIF_SNOW.max)});
 // The tongues follow the mask a few mip levels down, so they never step with its texels.
 // The snowline, its edge and the hold are derived outside the branch below.
-vec2 mb=texture2D(uMask,vU,2.5).rg;
+vec2 mb=texture2D(uMask,vU,2.5).gr;
 float wv=smoothstep(.45,.85,mb.x), gully=max(wv,smoothstep(.95,.75,mb.y));
 float line=vT.w-cap*(1.+${glslFloat(MASSIF_SNOW.tongue)}*gully)-max(cap*${glslFloat(MASSIF_SNOW.jitter)},${glslFloat(MASSIF_SNOW.jitterMin)})*vn(vec2(az*1.7,el*.8));
 float se=el-line, sw=max(fwidth(se),.5/ppd);
@@ -654,11 +667,10 @@ float se=el-line, sw=max(fwidth(se),.5/ppd);
 // thinner too. Its light comes from smoother relief still, so the source's flutes never
 // stripe it, with a share of the finer relief's, so a lit face is never one flat tone.
 vec3 nh=relief(${glslFloat(MASSIF_SNOW.hold)}), ns=relief(${glslFloat(MASSIF_SNOW.soft)}), ne=relief(${glslFloat(MASSIF_SNOW.edge)});
-float rib=(mk.x-texture2D(uMask,vU,3.).r)*smoothstep(${glslFloat(MASSIF_SNOW.ribScale[0])},${glslFloat(MASSIF_SNOW.ribScale[1])},ppd);
+float rib=(mk.x-texture2D(uMask,vU,3.).g)*smoothstep(${glslFloat(MASSIF_SNOW.ribScale[0])},${glslFloat(MASSIF_SNOW.ribScale[1])},ppd);
 float bare=nh.y+${glslFloat(MASSIF_SNOW.white)}*(wv-.5), hold=bare+${glslFloat(MASSIF_SNOW.rib)}*rib, hw=max(1.5*fwidth(hold),.04);
-float ke=dot(ne,K), tk=max(.05,1.5*fwidth(ke));
 if(vT.z>.5&&cap>0.){float snow=smoothstep(0.,1.6*sw,se)*mix(clamp((bare+.04)/hw+.5,0.,1.),clamp((hold+.04)/hw+.5,0.,1.),${glslFloat(MASSIF_SNOW.ribShare)});
-float sk=mix(smoothstep(-.3,1.,dot(ns,K)),smoothstep(.3-tk,.3+tk,ke),.5)*(1.+${glslFloat(MASSIF_SNOW.tone)}*min(dot(nh,K)-dot(ns,K),${glslFloat(MASSIF_SNOW.toneCap)}));
+float sk=clamp((dot(normalize(mix(ns,ne,.15)),K)+.15)/1.15,0.,1.)*(1.+${glslFloat(MASSIF_SNOW.tone)}*clamp(dot(nh,K)-dot(ns,K),-${glslFloat(MASSIF_SNOW.toneCap)},${glslFloat(MASSIF_SNOW.toneCap)}));
 vec3 sn=mix(vec3(.8485,1.0027,1.4193)*${glslFloat(MASSIF_SNOW.shade)},vec3(.9691,1.0014,1.0768)*${glslFloat(MASSIF_SNOW.lit)},sk)*sL;
 sn=mix(air,sn,mix(1.,T,.55));
 c=mix(c,sn,snow*(1.-mist)*(${glslFloat(1 - MASSIF_SNOW.thin)}+${glslFloat(MASSIF_SNOW.thin)}*wv));}
@@ -672,6 +684,8 @@ gl_FragColor=vec4(c,${DEPTH_LAYER.mountains});
   Object.assign(material.uniforms, {
     uNormal: { value: normalMap },
     uMask: { value: maskMap },
+    uAlbedo: { value: albedoMap },
+    uAlbedoMean: { value: albedoMean },
     uNearer: { value: nearerMap },
     uMist: RANGE_MIST,
     uSea: SEA_SINK,
@@ -794,6 +808,11 @@ export function createHillSilhouette({
           part.geometry.index &&
           part.material?.normalMap &&
           part.material.map &&
+          part.material.aoMap &&
+          part.userData?.mountain?.materialLayout === "albedo-ao-snow-v1" &&
+          Number.isFinite(part.userData.mountain.albedoMean) &&
+          part.userData.mountain.albedoMean > 0 &&
+          part.userData.mountain.albedoMean <= 1 &&
           part.userData?.height > 0,
       );
       if (disposed || failed || late || !usable) {
@@ -812,12 +831,14 @@ export function createHillSilhouette({
         models = {};
       MASSIFS.roles.forEach((role, i) => {
         const part = parts[i],
-          { normalMap, map } = part.material;
+          { normalMap, map, aoMap } = part.material;
         // The mask is data, not colour.
-        map.colorSpace = NoColorSpace;
+        aoMap.colorSpace = NoColorSpace;
+        aoMap.needsUpdate = true;
+        map.colorSpace = SRGBColorSpace;
         map.needsUpdate = true;
-        maps.add(normalMap).add(map);
-        for (const texture of [normalMap, map]) {
+        maps.add(normalMap).add(map).add(aoMap);
+        for (const texture of [normalMap, map, aoMap]) {
           const image = texture.source?.data ?? texture.image;
           if (typeof image?.close === "function") maps.add(image);
         }
@@ -828,7 +849,9 @@ export function createHillSilhouette({
             shellOpacity,
             sunPosition,
             normalMap,
-            maskMap: map,
+            maskMap: aoMap,
+            albedoMap: map,
+            albedoMean: part.userData.mountain.albedoMean,
             nearerMap: nearer,
           }),
         );

@@ -471,6 +471,7 @@ test("CSS asset URLs and bytes are portable across checkout line endings", async
       await writeFile(path.join(fixture, "images", "materials", `slate-${map}.webp`), binary);
     }
     await writeFile(path.join(fixture, "images", "materials", "coast-detail-256.webp"), binary);
+    await writeFile(path.join(fixture, "images", "materials", "coast-albedo-512.webp"), binary);
     // The stylesheet's fonts, under their source names.
     for (const name of (await readdir(path.join(projectRoot, "fonts"))).filter((file) =>
       file.endsWith(".woff2"),

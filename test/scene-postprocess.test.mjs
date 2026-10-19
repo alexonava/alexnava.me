@@ -500,21 +500,16 @@ test("in film the grade's cel step and ink are the sky's alone; everything else 
     shader,
     /float starLayer = uLayerRelief \* smoothstep\(0\.0005, 0\.006, texel\.a\) \* \(1\.0 - smoothstep\(0\.22, 0\.28, texel\.a\)\);/,
   );
-  // In film the bands are the sky's alone (the clouds are the artistic part):
-  // off the sky only the deepest band stays, below graded luma .1, where it never
-  // stepped (a smooth pull toward black that keeps the deep shade's tone),
-  // easing over partly covered edges, whose codes blend toward the sky's 0.
+  // The sky alone uses the quantized palette; the environment's shadow toe
+  // is independent of cel strength and eases smoothly out before .1 luma.
   assert.match(shader, /float skyLayer = 1\.0 - smoothstep\(0\.0, 0\.3, texel\.a\);/);
-  assert.match(
-    shader,
-    /float celWeight = mix\(1\.0, mix\(1\.0 - smoothstep\(0\.05, 0\.1, gradedLuma\), 1\.0, skyLayer\), uLayerRelief\);/,
-  );
+  assert.match(shader, /float celWeight = mix\(1\.0, skyLayer, uLayerRelief\);/);
   assert.match(
     shader,
     /color = mix\(color, celColor, uCelMix \* celWeight \* \(1\.0 - groundLayer\) \* \(1\.0 - starLayer\)\);/,
   );
-  // That deepest band is flat: below .1 the band rounds to 0, so no step shows.
-  for (const luma of [0.02, 0.05, 0.08, 0.099]) assert.equal(Math.floor(luma * 5 + 0.5), 0);
+  assert.equal(g.uShadowToe.value, 0.24);
+  assert.match(shader, /color \*= 1\.0 - uShadowToe \* \(1\.0 - skyLayer\)/);
   assert.doesNotMatch(shader, /uSubjectCel|float relief|skySide/);
   // The star's mask, STAR_LAYER from each of its four parts, stays inside the
   // exemption's plateau.
@@ -533,6 +528,74 @@ test("in film the grade's cel step and ink are the sky's alone; everything else 
   );
   assert.match(shader, /clamp\(inkContour \* uInkMix \* skyInk \* inkWeight, 0\.0, 1\.0\)\);/);
   // With uLayerRelief 0 every film factor is 1: the grade of every other view is unchanged.
+  pipeline.dispose();
+});
+
+test("the generated film grade has no non-sky cel response and preserves a continuous independent toe", () => {
+  const pipeline = createPipeline({ postprocessGrading: true });
+  pipeline.setFilmTreatment(true);
+  const shader = pipeline.passes.grading.material.fragmentShader,
+    uniform = pipeline.passes.grading.uniforms,
+    smoothstep = (a, b, x) => {
+      const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+      return t * t * (3 - 2 * t);
+    },
+    mix = (a, b, t) => a * (1 - t) + b * t,
+    expression = (name) => shader.match(new RegExp(`float ${name} = ([^;]+);`))[1],
+    layer = (name) =>
+      new Function("texel", "uLayerRelief", "smoothstep", "abs", `return ${expression(name)};`),
+    sky = layer("skyLayer"),
+    ground = layer("groundLayer"),
+    star = layer("starLayer"),
+    cel = new Function("skyLayer", "uLayerRelief", "mix", `return ${expression("celWeight")};`),
+    toeExpression = shader.match(/color \*= ([^;]*uShadowToe[^;]*);/)[1],
+    toe = new Function(
+      "uShadowToe",
+      "skyLayer",
+      "groundLayer",
+      "starLayer",
+      "gradedLuma",
+      "smoothstep",
+      `return ${toeExpression};`,
+    );
+  assert.doesNotMatch(toeExpression, /uCelMix|tonalBand|celColor/);
+  for (const code of [
+    0,
+    STAR_LAYER,
+    Number(DEPTH_LAYER.mountains),
+    Number(DEPTH_LAYER.ground),
+    1,
+  ]) {
+    const texel = { a: code },
+      s = sky(texel, 1, smoothstep, Math.abs),
+      g = ground(texel, 1, smoothstep, Math.abs),
+      t = star(texel, 1, smoothstep, Math.abs),
+      weight = cel(s, 1, mix) * (1 - g) * (1 - t);
+    assert.equal(weight, code === 0 ? 1 : 0, `cel coverage for depth ${code}`);
+    let last = 0;
+    for (let i = 1; i <= 1000; i++) {
+      const luma = i / 1000,
+        factor = toe(uniform.uShadowToe.value, s, g, t, luma, smoothstep),
+        output = luma * factor;
+      assert.ok(output > last && output - last < 0.002, "continuous monotone environment shading");
+      if (code === 0 || code === STAR_LAYER || code === Number(DEPTH_LAYER.ground))
+        assert.equal(factor, 1, "sky, glow and ground keep their existing tones");
+      if (
+        code >= Number(DEPTH_LAYER.mountains) &&
+        code !== Number(DEPTH_LAYER.ground) &&
+        luma <= 0.05
+      )
+        assert.equal(
+          factor,
+          0.76,
+          "preserve the former deepest shadow exposure without a cel band",
+        );
+      last = output;
+    }
+    assert.equal(cel(s, 0, mix), 1, "the debug baseline retains its previous palette");
+  }
+  pipeline.setFilmTreatment(false);
+  assert.equal(uniform.uShadowToe.value, 0);
   pipeline.dispose();
 });
 
@@ -1011,37 +1074,65 @@ test("the dissolve stages sky, mountains, ground and subject over the transition
 
 // JS restatement of the wash (DISSOLVE_BRUSH): a pixel's turn (0-1, brushTurn) moves its
 // start within its layer's window and narrows its own change to `edge` of it.
-function washWeight(progress, code, turn) {
+function washWeight(progress, code, turn, brush = 1) {
   const span = LAYER_STAGGER.window,
-    start = 3 * LAYER_STAGGER.step * code + span * (1 - DISSOLVE_BRUSH.edge) * turn;
-  return glslSmoothstep(start, start + span * DISSOLVE_BRUSH.edge, progress);
+    start = 3 * LAYER_STAGGER.step * code + span * (1 - DISSOLVE_BRUSH.edge) * turn * brush;
+  return glslSmoothstep(start, start + span * (1 + (DISSOLVE_BRUSH.edge - 1) * brush), progress);
 }
 
-test("the wash paints each layer in through brush-direction patches, each done by its window's end", () => {
+test("only sky in both frames takes the painted wash; other layers dissolve evenly", () => {
   assert.equal(DISSOLVE_BRUSH.on, 1, "the owner's pick of 2026-10-13");
   assert.ok(Object.isFrozen(DISSOLVE_BRUSH));
   assert.ok(DISSOLVE_BRUSH.stretch[0] < DISSOLVE_BRUSH.stretch[1], "long patches along the brush");
   const pipeline = createPipeline(GRADING_ONLY);
   const shader = pipeline.passes.vignetteGrain.material.fragmentShader;
-  // Only in film, inside the layer's own window.
+  // The actual shader mask excludes a nearer layer in either frame, including
+  // neighboring antialiased silhouettes, without changing the sky's brush field.
   assert.match(
     shader,
-    /span = uStagger\.y;\s*\/\/ The wash[^\n]*\n\s*start \+= span \* \(1\.0 - 0\.4\) \* brushTurn\(vUv\);\s*span \*= 0\.4;\s*\}\s*w = smoothstep/,
+    /start \+= span \* \(1\.0 - 0\.4\) \* brushTurn\(vUv\) \* brush;\s*span \*= mix\(1\.0, 0\.4, brush\);/,
   );
+  const brushExpression = shader.match(/float brush = ([^;]+);/)[1],
+    brushMask = new Function(
+      "nearPrev",
+      "nearNow",
+      "smoothstep",
+      "max",
+      `return ${brushExpression};`,
+    ),
+    mask = (prev, now) => brushMask(prev, now, glslSmoothstep, Math.max);
+  assert.equal(mask(0, 0), 1, "bare sky retains the original painted wash");
+  for (const code of [
+    0.006,
+    STAR_LAYER,
+    Number(DEPTH_LAYER.mountains),
+    Number(DEPTH_LAYER.ground),
+    1,
+  ]) {
+    assert.equal(mask(0, code), 0, "incoming non-sky is not painted");
+    assert.equal(mask(code, 0), 0, "outgoing non-sky is not painted");
+  }
   const turn = shader.slice(shader.indexOf("float brushTurn("), shader.indexOf("float layerCode("));
   assert.match(turn, /return clamp\(/, "a turn within 0..1");
   assert.ok(shader.indexOf("float hash(") < shader.indexOf("float brushNoise("));
   const codes = [DEPTH_LAYER.sky, DEPTH_LAYER.mountains, DEPTH_LAYER.ground, "1.0"].map(Number);
   for (const code of codes) {
     const start = 3 * LAYER_STAGGER.step * code,
-      end = start + LAYER_STAGGER.window;
+      end = start + LAYER_STAGGER.window,
+      brush = mask(code, code);
     for (const t of [0, 0.25, 0.5, 0.75, 1]) {
-      assert.equal(washWeight(start, code, t), 0, "nothing before the layer's window");
-      assert.equal(washWeight(end, code, t), 1, "every patch done by its end");
+      assert.equal(washWeight(start, code, t, brush), 0, "nothing before the layer's window");
+      assert.equal(washWeight(end, code, t, brush), 1, "every layer done by its end");
       let last = 0;
       for (let progress = 0; progress <= 1.0001; progress += 0.01) {
-        const w = washWeight(progress, code, t);
+        const w = washWeight(progress, code, t, brush);
         assert.ok(w >= last && w >= 0 && w <= 1, "a mix of the two frames, only forward");
+        if (code !== 0)
+          assert.equal(
+            w,
+            layerWeight(progress, code, code),
+            "non-sky does not depend on brush noise",
+          );
         last = w;
       }
     }
@@ -1066,8 +1157,13 @@ test("the final pass decodes each frame's layer from a 5-tap cross and mixes by 
   assert.ok(DISSOLVE_SOFT.on && DISSOLVE_SOFT.radius > 0 && DISSOLVE_SOFT.radius <= 0.05);
   const softAt = shader.indexOf("float softCode(");
   const soft = shader.slice(softAt, shader.indexOf("\n}\n", softAt));
-  assert.match(soft, /float softCode\(sampler2D map, vec2 uv, out float subject\)/);
-  assert.match(soft, /own = layerCode\(map, uv\), sum = own;\s*subject = step\(0\.9, own\);/);
+  assert.match(soft, /float softCode\(sampler2D map, vec2 uv, float own, out float subject\)/);
+  assert.match(soft, /sum = own;\s*subject = step\(0\.9, own\);/);
+  assert.doesNotMatch(
+    soft,
+    /layerCode\(/,
+    "reuse the nearest classification instead of adding texture fetches",
+  );
   assert.ok(soft.includes(`for (int i = 1; i <= ${DISSOLVE_SOFT.taps}; i++)`));
   const taps = (DISSOLVE_SOFT.taps + 1).toFixed(1);
   assert.ok(soft.includes(`subject /= ${taps};`));
@@ -1075,7 +1171,7 @@ test("the final pass decodes each frame's layer from a 5-tap cross and mixes by 
   assert.doesNotMatch(shader, /, own \* |closing/, "no subject held whole against the sky");
   assert.match(
     shader,
-    /float codePrev = min\(softCode\(tPrev, prevUv, subPrev\), layerCode\(tPrev, prevUv\)\), codeNow = softCode\(tDiffuse, vUv, subNow\);\s*start = 3\.0 \* uStagger\.x \* clamp\(max\(codePrev, codeNow\), 0\.0, 1\.0\);\s*span = uStagger\.y;/,
+    /float nearPrev = layerCode\(tPrev, prevUv\), nearNow = layerCode\(tDiffuse, vUv\);\s*float codePrev = min\(softCode\(tPrev, prevUv, nearPrev, subPrev\), nearPrev\), codeNow = softCode\(tDiffuse, vUv, nearNow, subNow\);\s*start = 3\.0 \* uStagger\.x \* clamp\(max\(codePrev, codeNow\), 0\.0, 1\.0\);\s*span = uStagger\.y;/,
   );
   // The incoming subject washes in on one long weight, its gaps with it (`wash`): never a
   // stencil of the outgoing frame.

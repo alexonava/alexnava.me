@@ -293,6 +293,7 @@ test("static headers separate immutable fingerprints from revalidated stable ass
     "/images/architecture/:name.:hash.glb",
     "/images/materials/slate-:map.:hash.webp",
     "/images/materials/coast-detail-256.:hash.webp",
+    "/images/materials/coast-albedo-512.:hash.webp",
   ]) {
     assert.match(
       headers,
@@ -400,7 +401,7 @@ test("Pages header rules resolve one cache policy for stable and fingerprinted p
     const stable = `/images/${relative}`;
     const hashed = stable.replace(/\.(\w+)$/, `.${hash}.$1`);
     const hashedByBuild =
-      /^(?:architecture\/[^/]+\.glb|materials\/(?:slate-[^/]+|coast-detail-256)\.webp)$/.test(
+      /^(?:architecture\/[^/]+\.glb|materials\/(?:slate-[^/]+|coast-detail-256|coast-albedo-512)\.webp)$/.test(
         relative,
       );
     fingerprintable += hashedByBuild;
@@ -408,7 +409,7 @@ test("Pages header rules resolve one cache policy for stable and fingerprinted p
     assert.equal(cacheControl(hashed), hashedByBuild ? immutable : revalidated, hashed);
     assert.equal(headersFor(hashed).get("x-content-type-options"), "nosniff", hashed);
   }
-  assert.equal(fingerprintable, 26, "16 models, 9 slate maps and 1 optional coast data map");
+  assert.equal(fingerprintable, 27, "16 models, 9 slate maps and 2 optional coast maps");
 });
 
 test("hosting files publish security.txt, raster icons and a stable manifest id", async () => {

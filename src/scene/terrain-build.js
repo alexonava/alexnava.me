@@ -1,4 +1,5 @@
 import { Box3, BufferAttribute, BufferGeometry, Group, Mesh, Sphere, Vector3 } from "three";
+import { COAST_ALBEDO } from "./coast-detail.js";
 import {
   SEA,
   coastDistance,
@@ -15,6 +16,10 @@ import {
   RAPIDS,
   rapidsFrame,
   rapidsGlsl,
+  rapidsSpeed,
+  riverShelfLift,
+  riverRunStart,
+  SHORE,
   slateShoreEdits,
 } from "./ocean.js";
 
@@ -894,6 +899,69 @@ export const RAPIDS_AT = RAPIDS_DROP
 export function riverBedAt(r) {
   const { depth, rise } = RIVER_BED;
   return r < 1 ? -depth * (1 - r * r) : rise * (1 - Math.exp((-(r - 1) * 2 * depth) / rise));
+}
+// The original shallow profile remains the pinned ground's baseline. The
+// main course has a metre of water, shoaling as the same discharge accelerates
+// toward the falls. Both the cap and the falls use this upper datum.
+export const RIVER_CHANNEL = Object.freeze({
+  depth: 3.28,
+  speed: 3.2,
+  freeboard: 0.65,
+  pitch: 1.5,
+  across: 14,
+  bedTriangles: 78000,
+  waterTriangles: 8000,
+});
+export function riverChannel(landHeight) {
+  const foot = landHeight(LANTERN_FOOT.x, LANTERN_FOOT.z);
+  const water = (x, z) => {
+    const away = ease(...PUDDLE_MIRROR.plane, Math.hypot(x - LANTERN_FOOT.x, z - LANTERN_FOOT.z));
+    return (
+      foot +
+      RIVER_BED.level +
+      (landHeight(x, z) - foot) * away -
+      RIVER_CHANNEL.freeboard * away * keep(x, z) +
+      riverShelfLift(x, z)
+    );
+  };
+  const keep = (x, z) => {
+    let value = ease(
+      PIN_KEEP.lantern,
+      PIN_KEEP.lantern + PIN_KEEP.feather,
+      Math.hypot(x - LANTERN_FOOT.x, z - LANTERN_FOOT.z),
+    );
+    if (Math.hypot(x - TREE_FOOTING.x, z - TREE_FOOTING.z) < SUPPORT_REACH) {
+      value *= ease(...STREAM_ROOTS, rootClearance(x, z));
+      for (const zone of PUDDLE_ZONES)
+        value *= ease(
+          zone.radius + PIN_KEEP.drip,
+          zone.radius + PIN_KEEP.drip + PIN_KEEP.feather,
+          zoneDistance(zone, x, z),
+        );
+    }
+    return value;
+  };
+  const depth = (x, z) =>
+    (RIVER_CHANNEL.depth * RIVER_CHANNEL.speed) /
+    rapidsSpeed(RAPIDS_AT ? riverAt(x, z).s - RAPIDS_AT.s : RAPIDS.reach);
+  const carve = (x, z, base) => {
+    if (!riverWithin(x, z, RIVER_BED.reach[1]) || coastDistance(x, z) < 0) return 0;
+    const r = riverRadius(x, z),
+      bowl = Math.max(0, 1 - r * r),
+      shape = water(x, z) + riverBedAt(r) - (depth(x, z) - RIVER_BED.depth) * bowl * bowl,
+      k = RIVER_BED.blend,
+      h = Math.max(k - Math.abs(base - shape), 0) / k;
+    return (Math.min(base, shape) - (h * h * k) / 4 - base) * (1 - ease(...RIVER_BED.reach, r));
+  };
+  const delta = (x, z, base) => (carve(x, z, base) - riverCarve(x, z, base, foot)) * keep(x, z);
+  const bed = Object.assign(
+    (x, z) => {
+      const base = landHeight(x, z);
+      return base + riverCarve(x, z, base, foot) + delta(x, z, base);
+    },
+    { water },
+  );
+  return { water, depth, keep, delta, bed };
 }
 // The fine grid's 0.75 cells under the river are cut RIVER_STEPS x RIVER_STEPS
 // (0.25 units), so its bed and banks are smooth curves.
@@ -1904,14 +1972,14 @@ if (slateWater > 0.0) {
     // The river's current: ripples drawn out along the flow drift downstream at RIVER.flow (on the drips' clock, so they hold
     // as the drips do); the finer octave fades where it would fall under three pixels of ground. They ease out toward the shore.
     if (slateRiverR < 1.1) {
-      vec2 slateFU = vec2(slateRiverQ.y-slateFlow*${glsl(RIVER.flow)}, slateRiverQ.z);
+      vec2 slateFU = vec2(slateRiverQ.y+slateFlow*${glsl(RIVER_CHANNEL.speed)}, slateRiverQ.z);
       float slateFP = slatePx*slateView/max(abs(dot(normal, normalize(vViewPosition))), .3);
       vec3 slateF1 = slateNoiseD(slateFU*${glslVec(...RIVER_RIPPLE.coarse)}), slateF2 = slateNoiseD(slateFU*${glslVec(...RIVER_RIPPLE.fine)}+13.0);
       float slateFF = ${RIVER_RIPPLE.fade ? `smoothstep(${glsl(RIVER_RIPPLE.fade[0])}, ${glsl(RIVER_RIPPLE.fade[1])}, ${glsl(+(1 / RIVER_RIPPLE.coarse[1]).toFixed(4))}/slateFP)` : "1.0"};
       vec2 slateFC = slateF1.yz*${glslVec(...RIVER_RIPPLE.coarse)}*${glsl(RIVER_RIPPLE.tilt[0])}*slateFF, slateFG = slateFC+slateF2.yz*${glslVec(...RIVER_RIPPLE.fine)}*${glsl(RIVER_RIPPLE.tilt[1])}*smoothstep(1.5, 3.0, ${glsl(1 / RIVER_RIPPLE.fine[1])}/slateFP);
       vec2 slateFX = vec2(-slateRiverDir.y, slateRiverDir.x);
       float slateFS = 1.0-smoothstep(.8, 1.1, slateRiverR);
-      slateGC = (slateRiverDir*slateFG.x+slateFX*slateFG.y)*slateFS;
+      slateGC = (slateRiverDir*slateFG.x+slateFX*slateFG.y)*slateFS*mix(1.,3.,vSlateRiverSurface.x);
       slateGS = (slateRiverDir*slateFC.x+slateFX*slateFC.y)*slateFS;
       slateRough = slateFS;
     }
@@ -2132,6 +2200,13 @@ const RIPPLE_TIME = { value: DRIP_RIPPLES.start },
 // leaving the shader unchanged, if the slate program lacks an anchor.
 export function shadeSlatePuddles(shader) {
   const edits = [
+    [
+      "vertexShader",
+      "|#include <common>",
+      "attribute vec2 slateRiverSurface;\nvarying vec2 vSlateRiverSurface;\n",
+    ],
+    ["vertexShader", "|#include <begin_vertex>", "vSlateRiverSurface=slateRiverSurface;\n"],
+    ["fragmentShader", "|#include <common>", "varying vec2 vSlateRiverSurface;\n"],
     ["fragmentShader", "|#define STANDARD", PUDDLE_HEAD],
     // The continuous water level (depth above the detail map's floor).
     ["fragmentShader", "|float slatePuddle =", "float slateLevel;\n"],
@@ -2146,6 +2221,7 @@ export function shadeSlatePuddles(shader) {
       `float slateShore = fwidth(slateLevel), slatePx = length(fwidth(normalize(vViewPosition))), slateZoneW = smoothstep(0.0, .04, slateLevel+slateH);
 slatePuddle = mix(slatePuddle, smoothstep(${glsl(M.shore[0])}-slateShore, ${glsl(M.shore[1])}+slateShore, slateLevel)*(1.0-slateDry), slateZoneW);
 float slateMargin = smoothstep(${glsl(M.margin[0])}-slateShore, ${glsl(M.margin[1])}, slateLevel)*(1.0-slateDry)*(1.0-slatePuddle)*slateZoneW, slateCoat = mix(1.0, smoothstep(0.0, ${glsl(M.coat)}, slateLevel), slateZoneW);
+if(vSlateRiverSurface.x>.5){slateDry=0.;slatePuddle=1.;slateLevel=max(.06,vSlateRiverSurface.y);slateZoneW=1.;slateCoat=1.;slateMargin=0.;}
 `,
     ],
     [
@@ -2168,7 +2244,21 @@ float slateMargin = smoothstep(${glsl(M.margin[0])}-slateShore, ${glsl(M.margin[
     [
       "fragmentShader",
       "|float slateAo =",
-      `slatePuddle = slateBody;\nslateLanternPuddle = slateBodyL;\ndiffuseColor.rgb *= 1.0-${glsl(M.marginAlbedo)}*slateMargin;\n${STREAM_FOAM}`,
+      `slatePuddle = slateBody;
+slateLanternPuddle = slateBodyL;
+diffuseColor.rgb *= 1.0-${glsl(M.marginAlbedo)}*slateMargin;
+if(vSlateRiverSurface.x>.5){
+float riverDepth=max(0.,vSlateRiverSurface.y),riverClear=exp(-riverDepth*.8);
+vec2 riverUV=vec2(slateRiverQ.y+slateFlow*${glsl(RIVER_CHANNEL.speed)},slateRiverQ.z);
+float riverCurrent=slateNoise(riverUV*vec2(.8,2.7))*.65+slateNoise(riverUV*vec2(1.9,5.1)+19.)*.35;
+float riverFP=max(.001,length(fwidth(vMudWorld.xz))),riverAA=1.-smoothstep(.18,.6,riverFP);
+float riverCrest=smoothstep(.56,.79,riverCurrent)*smoothstep(.3,.7,slateNoise(riverUV*vec2(.23,6.8)+7.))*riverAA;
+float riverBank=smoothstep(.7,1.,slateRiverR)*smoothstep(.36,.74,riverCurrent)*.24;
+diffuseColor.rgb=mix(vec3(.016,.035,.037),diffuseColor.rgb*.32,riverClear)*(1.+.48*(riverCurrent-.5));
+diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.19,.23,.23),max(riverBank,riverCrest*.2));
+roughnessFactor=.13+.045*riverCurrent;
+}
+${STREAM_FOAM}`,
     ],
     // In the zone's water, the water film's and the puddles' sky mirror give way to the zone's own.
     [
@@ -2177,6 +2267,11 @@ float slateMargin = smoothstep(${glsl(M.margin[0])}-slateShore, ${glsl(M.margin[
       "slateWaterCover *= 1.0-slatePuddle*slateZoneW;\n",
     ],
     ["fragmentShader", "|#include <aomap_fragment>", MIRROR],
+    [
+      "fragmentShader",
+      "|#include <clearcoat_normal_fragment_begin>",
+      "if(vSlateRiverSurface.x>.5)normal=normalize(mat3(viewMatrix)*vec3(0.,1.,0.));\n",
+    ],
   ];
   if (!applyEdits(shader, edits)) return false;
   shader.uniforms.slateDrip = DRIP;
@@ -2188,11 +2283,69 @@ float slateMargin = smoothstep(${glsl(M.margin[0])}-slateShore, ${glsl(M.margin[
 // The hook settleRoots() sets as the ground material's userData.slateRoot
 // (mud-ground.js applies it last under the "+root" key): the puddle mirror,
 // then the root shading, each all or nothing on its own.
-export function shadeSlateGround(shader) {
+export const COAST_BEDROCK = Object.freeze({ near: 2, far: 18, wobble: 4, cell: 11 });
+
+// The eroded shelf is the same rock as the face. Soil returns gradually
+// inland along irregular pockets rather than a straight strip at the rim.
+export function coastBedrockWeight(x, z) {
+  const d = Math.max(0, coastDistance(x, z));
+  return (
+    1 -
+    ease(
+      COAST_BEDROCK.near,
+      COAST_BEDROCK.far,
+      d + (slateNoise(x / COAST_BEDROCK.cell, z / COAST_BEDROCK.cell) - 0.5) * COAST_BEDROCK.wobble,
+    )
+  );
+}
+
+export function shadeCoastBedrock(shader, uniforms) {
+  const edits = [
+    [
+      "fragmentShader",
+      "|#define STANDARD",
+      "uniform sampler2D coastAlbedo;\nuniform float coastAlbedoOn;\n",
+    ],
+    [
+      "fragmentShader",
+      "diffuseColor *= sampledDiffuseColor;|",
+      `
+float slateBedrock = 0.;
+if(coastAlbedoOn>.5){
+float rockEdge=max(0.,seaCoast(vMudWorld.xz))+(slateNoise(vMudWorld.xz/${glsl(COAST_BEDROCK.cell)})-.5)*${glsl(COAST_BEDROCK.wobble)};
+slateBedrock=1.-smoothstep(${glsl(COAST_BEDROCK.near)},${glsl(COAST_BEDROCK.far)},rockEdge);
+if(slateBedrock>0.){
+vec3 rockScan=clamp(texture2D(coastAlbedo,vMudWorld.xz/${glsl(COAST_ALBEDO.tile)}).rgb/${glslVec(...COAST_ALBEDO.mean)},vec3(.5),vec3(1.8));
+vec3 rockColour=vec3(.17,.1525,.1465)*mix(vec3(1.),rockScan,.6);
+diffuseColor.rgb=mix(diffuseColor.rgb,rockColour,slateBedrock*.9);
+}}
+`,
+    ],
+    [
+      "fragmentShader",
+      "|#include <clearcoat_normal_fragment_begin>",
+      "normal=normalize(mix(normal,nonPerturbedNormal,slateBedrock*.8));\n",
+    ],
+  ];
+  if (!applyEdits(shader, edits)) return false;
+  Object.assign(shader.uniforms, uniforms);
+  return true;
+}
+
+export function shadeSlateGround(
+  shader,
+  coastAlbedo = {
+    coastAlbedo: { value: null },
+    coastAlbedoOn: { value: 0 },
+  },
+) {
   const puddles = shadeSlatePuddles(shader);
   // The fault (ocean.js): its distance, and the walk's view from up high.
   const shore = applyEdits(shader, slateShoreEdits(HIGH_VIEW.fade));
-  if (shore) shader.uniforms.slateHigh = HIGH_VIEW;
+  if (shore) {
+    shader.uniforms.slateHigh = HIGH_VIEW;
+    shadeCoastBedrock(shader, coastAlbedo);
+  }
   return { puddles, shore, roots: shadeSlateRoots(shader) };
 }
 // The walk's view from up high (hill-silhouette.js HIGH_VIEW, lent at
@@ -3841,9 +3994,15 @@ export function settleRoots(
     material = ground.material,
     landHeight = filmHeight(groundHeight, true),
     originalGeometry = lib?.originalGeometry ?? ground.geometry;
+  const coastHeight = terrain.userData.riverCoastHeight ?? landHeight;
+  const previousAlbedo = material.userData.coastAlbedoUniforms,
+    coastAlbedo = { coastAlbedo: { value: null }, coastAlbedoOn: { value: 0 } },
+    shadeGround = (shader) => shadeSlateGround(shader, coastAlbedo);
+  material.userData.coastAlbedoUniforms = coastAlbedo;
   // The walk follows the visible surface and fault. Asynchronous rock builds
   // take the stable film height, even if film withdraws while their GLBs load.
-  const film = (x, z) => landHeight(x, z) + liftAt(x, z);
+  const film = (x, z) =>
+    coastDistance(x, z) < SHORE.shelf ? coastHeight(x, z) : landHeight(x, z) + liftAt(x, z);
   const height = Object.assign((x, z) => (landed ? film(x, z) : groundHeight(x, z)), {
     film,
     shore: (x, z) => (landed ? coastDistance(x, z) : Infinity),
@@ -4066,7 +4225,7 @@ export function settleRoots(
           clock: seaClock,
           rendering,
           drop,
-          height: landHeight,
+          height: coastHeight,
           flow: RIPPLE_TIME,
         })
       : null;
@@ -4077,7 +4236,7 @@ export function settleRoots(
           lib,
           clock: seaClock,
           rendering,
-          height: landHeight,
+          height: coastHeight,
           groundMaterial: material,
           prepared: terrain.userData.coastGeometry,
           drop,
@@ -4120,7 +4279,7 @@ export function settleRoots(
       if (shotList.includes(shot)) shotList.splice(shotList.indexOf(shot), 1);
     if (lib?.SEA_SINK) lib.SEA_SINK.value.w = 0;
     if (globalThis.BabelSite?.sceneDebug) delete globalThis.BabelSite.sceneDebug.sea;
-    if (material.userData.slateRoot === shadeSlateGround) {
+    if (material.userData.slateRoot === shadeGround) {
       delete material.userData.slateRoot;
       material.needsUpdate = true;
     }
@@ -4137,6 +4296,10 @@ export function settleRoots(
     height.setActive(false);
     resolveReady(false);
     for (const part of shore.splice(0)) part.dispose();
+    if (material.userData.coastAlbedoUniforms === coastAlbedo) {
+      if (previousAlbedo) material.userData.coastAlbedoUniforms = previousAlbedo;
+      else delete material.userData.coastAlbedoUniforms;
+    }
     if (litter) {
       litter.removeFromParent();
       litter.geometry.dispose();
@@ -4152,7 +4315,7 @@ export function settleRoots(
   });
   buildRoots();
   const shadedKey = () => {
-    material.userData.slateRoot = shadeSlateGround;
+    material.userData.slateRoot = shadeGround;
     const key = material.customProgramCacheKey?.();
     delete material.userData.slateRoot;
     return key;
@@ -4189,7 +4352,7 @@ export function settleRoots(
         customProgramCacheKey: () => key,
         onBeforeCompile(shader, target) {
           material.onBeforeCompile(shader, target);
-          shadeSlateGround(shader);
+          shadeGround(shader);
         },
       }),
     );
@@ -4241,7 +4404,7 @@ export function settleRoots(
       settleTufts(growth, liftAt);
       tuftsSettled = true;
     }
-    material.userData.slateRoot = shadeSlateGround;
+    material.userData.slateRoot = shadeGround;
     material.needsUpdate = true;
     // Then the water's banks are built, in idle slices.
     if (!clocked) buildBanks();
@@ -4504,6 +4667,404 @@ export function terrainSurface(groundHeight, EARTH = { width: 384, subdivisions:
 // The film terrain, a few vertices at a time: the coarse dune grid, then a
 // grid refined around the roots and raised onto their supports, then its
 // triangles. Returns the geometry.
+// Conforming subdivision only along the wet course. A marked edge is shared
+// by both neighbours, so its midpoint cannot leave a T-junction in dry soil.
+// The cap is appended after the bed index range and shares its material/draw.
+function* riverSurfaceSteps(geometry, sample, landHeight, EARTH) {
+  const channel = riverChannel(landHeight),
+    arrays = Object.fromEntries(
+      Object.entries(geometry.attributes).map(([name, attribute]) => [
+        name,
+        { size: attribute.itemSize, data: Array.from(attribute.array) },
+      ]),
+    ),
+    p = arrays.position.data,
+    normal = new Vector3();
+  let indices = Array.from(geometry.index.array);
+  const key = (a, b) => (a < b ? `${a}:${b}` : `${b}:${a}`);
+  const midpoint = (a, b) => {
+    const at = p.length / 3;
+    for (const { size, data } of Object.values(arrays))
+      for (let k = 0; k < size; k++) data.push((data[a * size + k] + data[b * size + k]) / 2);
+    return at;
+  };
+  for (let round = 0; round < 3; round++) {
+    const edges = new Map();
+    for (let i = 0; i < indices.length; i += 3) {
+      const corners = indices.slice(i, i + 3);
+      for (let k = 0; k < 3; k++) {
+        const a = corners[k],
+          b = corners[(k + 1) % 3],
+          ax = p[a * 3],
+          az = -p[a * 3 + 1],
+          bx = p[b * 3],
+          bz = -p[b * 3 + 1],
+          length = Math.hypot(ax - bx, az - bz),
+          x = (ax + bx) / 2,
+          z = (az + bz) / 2;
+        if (
+          length > RIVER_CHANNEL.pitch * 1.43 &&
+          coastDistance(x, z) >= -2 &&
+          riverWithin(x, z, RIVER_BED.reach[1] + length / RIVER.width)
+        ) {
+          const id = key(a, b);
+          if (!edges.has(id)) edges.set(id, midpoint(a, b));
+        }
+      }
+      if (i % 768 === 0) yield;
+    }
+    if (!edges.size) break;
+    const next = [];
+    for (let i = 0; i < indices.length; i += 3) {
+      const [a, b, c] = indices.slice(i, i + 3),
+        ab = edges.get(key(a, b)),
+        bc = edges.get(key(b, c)),
+        ca = edges.get(key(c, a)),
+        mask =
+          Number(ab !== undefined) |
+          (Number(bc !== undefined) << 1) |
+          (Number(ca !== undefined) << 2);
+      if (mask === 0) next.push(a, b, c);
+      else if (mask === 1) next.push(a, ab, c, ab, b, c);
+      else if (mask === 2) next.push(b, bc, a, bc, c, a);
+      else if (mask === 4) next.push(c, ca, b, ca, a, b);
+      else if (mask === 3) next.push(b, bc, ab, a, ab, c, ab, bc, c);
+      else if (mask === 6) next.push(c, ca, bc, b, bc, a, bc, ca, a);
+      else if (mask === 5) next.push(a, ab, ca, c, ca, b, ca, ab, b);
+      else next.push(a, ab, ca, ab, b, bc, ca, bc, c, ab, bc, ca);
+      if (i % 1536 === 0) yield;
+    }
+    indices = next;
+    yield;
+  }
+  // Pin the sampled course itself into the bed, so the authored metre depth
+  // is represented physically even where a narrow bend crosses a grid cell.
+  for (const [x, z] of RIVER_LINE) {
+    if (
+      coastDistance(x, z) < SHORE.shelf ||
+      Math.abs(x) >= EARTH.width / 2 ||
+      Math.abs(z) >= EARTH.width / 2
+    )
+      continue;
+    for (let i = 0; i < indices.length; i += 3) {
+      const tri = indices.slice(i, i + 3),
+        [a, b, c] = tri,
+        ax = p[a * 3],
+        az = -p[a * 3 + 1],
+        bx = p[b * 3],
+        bz = -p[b * 3 + 1],
+        cx = p[c * 3],
+        cz = -p[c * 3 + 1],
+        det = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz),
+        u = ((bz - cz) * (x - cx) + (cx - bx) * (z - cz)) / det,
+        v = ((cz - az) * (x - cx) + (ax - cx) * (z - cz)) / det,
+        w = 1 - u - v;
+      if (u >= -1e-8 && v >= -1e-8 && w >= -1e-8) {
+        if (Math.max(u, v, w) > 1 - 1e-7) break;
+        // An exact edge hit is already represented by its shared endpoints;
+        // leaving it untouched avoids a one-sided split of its neighbour.
+        if (Math.min(u, v, w) < 1e-7) break;
+        const at = p.length / 3;
+        for (const { size, data } of Object.values(arrays))
+          for (let k = 0; k < size; k++)
+            data.push(
+              Math.fround(u * data[a * size + k] + v * data[b * size + k] + w * data[c * size + k]),
+            );
+        p[at * 3] = x;
+        p[at * 3 + 1] = -z;
+        indices.splice(i, 3, a, b, at, b, c, at, c, a, at);
+        break;
+      }
+      if (i % 1536 === 0) yield;
+    }
+    yield;
+  }
+  // Constrain the carved reach explicitly. Its zero-lift rim splits both
+  // incident triangles, keeping dry triangle planes beyond it unchanged.
+  const reach = RIVER_BED.reach[1],
+    signed = [],
+    cuts = new Map(),
+    constrained = [];
+  for (let i = 0; i < p.length / 3; i++) {
+    signed[i] = riverWithin(p[i * 3], -p[i * 3 + 1], reach + 1)
+      ? riverRadius(p[i * 3], -p[i * 3 + 1]) - reach
+      : 1;
+    if (i % 128 === 0) yield;
+  }
+  const cut = (a, b) => {
+    const id = key(a, b);
+    if (cuts.has(id)) return cuts.get(id);
+    let lo = 0,
+      hi = 1;
+    for (let k = 0; k < 18; k++) {
+      const t = (lo + hi) / 2,
+        x = p[a * 3] + (p[b * 3] - p[a * 3]) * t,
+        z = -p[a * 3 + 1] - (p[b * 3 + 1] - p[a * 3 + 1]) * t;
+      if (riverRadius(x, z) < reach === signed[a] < 0) lo = t;
+      else hi = t;
+    }
+    const t = (lo + hi) / 2,
+      at = p.length / 3;
+    for (const { size, data } of Object.values(arrays))
+      for (let k = 0; k < size; k++)
+        data.push(data[a * size + k] + (data[b * size + k] - data[a * size + k]) * t);
+    signed[at] = 0;
+    cuts.set(id, at);
+    return at;
+  };
+  for (let i = 0; i < indices.length; i += 3) {
+    const tri = indices.slice(i, i + 3),
+      inside = tri.map((v) => signed[v] < 0);
+    if (inside.every(Boolean) || inside.every((v) => !v)) constrained.push(...tri);
+    else
+      for (const side of [true, false]) {
+        const polygon = [];
+        for (let k = 0; k < 3; k++) {
+          const a = tri[k],
+            b = tri[(k + 1) % 3];
+          if (inside[k] === side) polygon.push(a);
+          if (inside[k] !== inside[(k + 1) % 3]) polygon.push(cut(a, b));
+        }
+        for (let k = 1; k < polygon.length - 1; k++)
+          constrained.push(polygon[0], polygon[k], polygon[k + 1]);
+      }
+    if (i % 768 === 0) yield;
+  }
+  indices = constrained;
+  const count = p.length / 3,
+    oldLift = terrainLift(geometry),
+    h = 0.1;
+  for (let i = 0; i < count; i++) {
+    p[i * 3] = Math.fround(p[i * 3]);
+    p[i * 3 + 1] = Math.fround(p[i * 3 + 1]);
+    const x = p[i * 3],
+      z = -p[i * 3 + 1],
+      delta = channel.delta(x, z, sample(x, z));
+    if (delta) {
+      p[i * 3 + 2] = Math.fround(p[i * 3 + 2] + delta);
+      const n = arrays.normal.data,
+        sx =
+          (channel.delta(x + h, z, sample(x + h, z)) - channel.delta(x - h, z, sample(x - h, z))) /
+          (2 * h),
+        sz =
+          (channel.delta(x, z + h, sample(x, z + h)) - channel.delta(x, z - h, sample(x, z - h))) /
+          (2 * h);
+      normal.set(n[i * 3] / n[i * 3 + 2] - sx, n[i * 3 + 1] / n[i * 3 + 2] + sz, 1).normalize();
+      n.splice(i * 3, 3, normal.x, normal.y, normal.z);
+    }
+    if (i % 32 === 0) yield;
+  }
+  // A small spatial index samples only the solid bed, never the upper cap.
+  const buckets = new Map(),
+    cell = 3,
+    cellKey = (x, z) => `${Math.floor(x / cell)}:${Math.floor(z / cell)}`;
+  for (let i = 0; i < indices.length; i += 3) {
+    const tri = indices.slice(i, i + 3),
+      xs = tri.map((v) => p[v * 3]),
+      zs = tri.map((v) => -p[v * 3 + 1]);
+    for (let x = Math.floor(Math.min(...xs) / cell); x <= Math.floor(Math.max(...xs) / cell); x++)
+      for (
+        let z = Math.floor(Math.min(...zs) / cell);
+        z <= Math.floor(Math.max(...zs) / cell);
+        z++
+      ) {
+        const id = `${x}:${z}`;
+        if (!buckets.has(id)) buckets.set(id, []);
+        buckets.get(id).push(...tri);
+      }
+    if (i % 768 === 0) yield;
+  }
+  const bed = (x, z) => {
+    const bucket = buckets.get(cellKey(x, z));
+    if (!bucket) return NaN;
+    for (let i = 0; i < bucket.length; i += 3) {
+      const [a, b, c] = bucket.slice(i, i + 3),
+        ax = p[a * 3],
+        az = -p[a * 3 + 1],
+        bx = p[b * 3],
+        bz = -p[b * 3 + 1],
+        cx = p[c * 3],
+        cz = -p[c * 3 + 1],
+        det = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz),
+        u = ((bz - cz) * (x - cx) + (cx - bx) * (z - cz)) / det,
+        v = ((cz - az) * (x - cx) + (ax - cx) * (z - cz)) / det;
+      if (u >= -1e-7 && v >= -1e-7 && u + v <= 1 + 1e-7)
+        return u * p[a * 3 + 2] + v * p[b * 3 + 2] + (1 - u - v) * p[c * 3 + 2];
+    }
+    return NaN;
+  };
+  const solidBed = (x, z) => (coastDistance(x, z) < SHORE.shelf ? channel.bed(x, z) : bed(x, z));
+  const bedCount = indices.length,
+    cap = new Array(count * 2).fill(0),
+    across = RIVER_CHANNEL.across;
+  const capPoint = (px, pz) => {
+    const at = p.length / 3,
+      top = channel.water(px, pz),
+      bottom = solidBed(px, pz);
+    for (const [name, { size, data }] of Object.entries(arrays)) {
+      if (name === "position") data.push(px, -pz, top);
+      else if (name === "normal") data.push(0, 0, 1);
+      else if (name === "uv") data.push(px / EARTH.width + 0.5, 0.5 - pz / EARTH.width);
+      else if (name === "slateRoot") data.push(...OPEN_SOIL);
+      else for (let k = 0; k < size; k++) data.push(0);
+    }
+    cap.push(1, Number.isFinite(bottom) ? top - bottom : -1);
+    return at;
+  };
+  const clip = (polygon, distance, physical = false) => {
+    const result = [];
+    for (let k = 0; k < polygon.length; k++) {
+      const a = polygon[k],
+        b = polygon[(k + 1) % polygon.length],
+        da = distance(p[a * 3], -p[a * 3 + 1]),
+        db = distance(p[b * 3], -p[b * 3 + 1]);
+      if (da >= 0) result.push(a);
+      if (da >= 0 !== db >= 0) {
+        let t = da / (da - db);
+        if (physical) {
+          let lo = 0,
+            hi = 1;
+          for (let j = 0; j < 16; j++) {
+            const v = (lo + hi) / 2,
+              d = distance(
+                p[a * 3] + (p[b * 3] - p[a * 3]) * v,
+                -p[a * 3 + 1] - (p[b * 3 + 1] - p[a * 3 + 1]) * v,
+              );
+            if (d >= 0 === da >= 0) lo = v;
+            else hi = v;
+          }
+          t = (lo + hi) / 2;
+        }
+        result.push(
+          capPoint(
+            p[a * 3] + (p[b * 3] - p[a * 3]) * t,
+            -p[a * 3 + 1] - (p[b * 3 + 1] - p[a * 3 + 1]) * t,
+          ),
+        );
+      }
+    }
+    return result;
+  };
+  const wet = (x, z) => {
+    const bottom = solidBed(x, z);
+    return Number.isFinite(bottom) ? channel.water(x, z) - bottom - 0.003 : -1;
+  };
+  const emit = (polygon) => {
+    for (let k = 1; k < polygon.length - 1; k++) {
+      const [a, b, c] = [polygon[0], polygon[k], polygon[k + 1]],
+        area =
+          (p[b * 3] - p[a * 3]) * (p[c * 3 + 1] - p[a * 3 + 1]) -
+          (p[b * 3 + 1] - p[a * 3 + 1]) * (p[c * 3] - p[a * 3]);
+      if (area > 1e-9) indices.push(a, b, c);
+    }
+  };
+  // The finely sampled root window contains the course's tight, folding
+  // bends. Its actual wet-bed polygons give a non-overlapping water outline;
+  // a parallel offset strip cannot represent that union reliably.
+  const box = [
+      TREE_FOOTING.x + FINE_WINDOW.x[0],
+      TREE_FOOTING.x + FINE_WINDOW.x[1],
+      TREE_FOOTING.z + FINE_WINDOW.z[0],
+      TREE_FOOTING.z + FINE_WINDOW.z[1],
+    ],
+    sides = [(x) => x - box[0], (x) => box[1] - x, (_x, z) => z - box[2], (_x, z) => box[3] - z];
+  const strip = (tri) => {
+    let rest = clip(tri, wet, true);
+    for (const side of sides) {
+      if (rest.length < 3) break;
+      emit(clip(rest, (x, z) => -side(x, z)));
+      rest = clip(rest, side);
+    }
+  };
+  const seam = RAPIDS_DROP
+      ? Array.from({ length: across + 1 }, (_, k) =>
+          riverRunStart(RAPIDS_DROP, 1 - (k / across) * 2),
+        )
+      : null,
+    seamS = seam ? Math.max(...seam.map(([x, z]) => riverAt(x, z).s)) : -Infinity,
+    course = RIVER_LINE.filter(([x, z, s]) => s > seamS && coastDistance(x, z) > 0);
+  let previous = null;
+  for (let row = seam ? -1 : 0; row < course.length; row++) {
+    const [x, z, s, width, phase] = course[Math.max(0, row)];
+    if (Math.abs(x) > EARTH.width / 2 + width || Math.abs(z) > EARTH.width / 2 + width) {
+      previous = null;
+      continue;
+    }
+    const [, , dx, dz] = riverPoint(s),
+      half = (width / RIVER.width) * riverSpan(s + phase),
+      current = [];
+    for (let k = 0; k <= across; k++) {
+      const r = ((k / across) * 2 - 1) * 1.18,
+        [px, pz] = row === -1 ? seam[k] : [x - dz * half * r, z + dx * half * r],
+        at = capPoint(px, pz);
+      current.push(at);
+    }
+    if (previous)
+      for (let k = 0; k < across; k++) {
+        const a = previous[k],
+          b = current[k],
+          c = current[k + 1],
+          d = previous[k + 1];
+        for (const tri of [
+          [a, d, b],
+          [b, d, c],
+        ]) {
+          strip(tri);
+        }
+      }
+    previous = current;
+    yield;
+  }
+  const upper = new Map();
+  const capVertex = (i) => {
+    if (!upper.has(i)) upper.set(i, capPoint(p[i * 3], -p[i * 3 + 1]));
+    return upper.get(i);
+  };
+  for (let i = 0; i < bedCount; i += 3) {
+    const tri = indices.slice(i, i + 3),
+      xs = tri.map((v) => p[v * 3]),
+      zs = tri.map((v) => -p[v * 3 + 1]);
+    if (
+      Math.max(...xs) < box[0] ||
+      Math.min(...xs) > box[1] ||
+      Math.max(...zs) < box[2] ||
+      Math.min(...zs) > box[3]
+    )
+      continue;
+    if (!tri.some((v) => riverWithin(p[v * 3], -p[v * 3 + 1], 1.3))) continue;
+    let polygon = tri.map(capVertex);
+    for (const side of sides) polygon = clip(polygon, side);
+    emit(clip(polygon, wet, true));
+    if (i % 768 === 0) yield;
+  }
+  for (const [name, { size, data }] of Object.entries(arrays)) {
+    geometry.setAttribute(name, new BufferAttribute(new Float32Array(data), size));
+    yield;
+  }
+  geometry.setAttribute("slateRiverSurface", new BufferAttribute(new Float32Array(cap), 2));
+  const Index = p.length / 3 > 65535 ? Uint32Array : Uint16Array;
+  geometry.setIndex(new BufferAttribute(new Index(indices), 1));
+  geometry.userData.riverBedIndexCount = bedCount;
+  geometry.userData.riverWater = channel.water;
+  geometry.userData.riverCoastHeight = channel.bed;
+  geometry.userData.riverStats = {
+    bedTriangles: bedCount / 3,
+    waterTriangles: (indices.length - bedCount) / 3,
+  };
+  if (
+    EARTH.subdivisions === 128 &&
+    (bedCount / 3 > RIVER_CHANNEL.bedTriangles ||
+      (indices.length - bedCount) / 3 > RIVER_CHANNEL.waterTriangles)
+  )
+    throw new Error("River geometry budget exceeded");
+  SURFACES.set(geometry, bed);
+  LIFTS.set(geometry, (x, z) => {
+    const here = bed(x, z);
+    return Number.isNaN(here) ? oldLift(x, z) : here - sample(x, z);
+  });
+  yield* geometryBounds(geometry, true);
+}
+
 function* earthSteps(groundHeight, EARTH) {
   const sample = yield* coarseSurface(groundHeight, EARTH);
   const n = EARTH.subdivisions,
@@ -4857,6 +5418,7 @@ function* earthSteps(groundHeight, EARTH) {
         liftSampler(riverSurface, xs[c0], zs[r0], S * nc, S * nr, pitch / S, NaN),
       ),
     );
+    yield* riverSurfaceSteps(geometry, sample, filmHeight(groundHeight, true), EARTH);
     finished = true;
     return geometry;
   } finally {
@@ -4938,7 +5500,7 @@ function* preparedEarthSteps(groundHeight, EARTH, rendering) {
     // Reuse the terrain's idle scheduler for the much denser coast. No map or
     // shader starts here, and the same arithmetic produces the same buffers.
     prepared = yield* coastGeometrySteps(
-      filmHeight(groundHeight, true),
+      geometry.userData.riverCoastHeight ?? filmHeight(groundHeight, true),
       tier,
       riverFalls(RIVER_LINE),
     );
