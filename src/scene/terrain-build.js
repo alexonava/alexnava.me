@@ -1707,9 +1707,8 @@ sampledDiffuseColor.rgb = mix(sampledDiffuseColor.rgb, slateSoilTone, mix(${glsl
 // (RIVER_RIPPLE) ripples it as it flows, and rare drips ruffle it. The
 // drip-line puddles keep SLATE_PUDDLES' roughness .12 and specular gain 4.
 export const PUDDLE_MIRROR = Object.freeze({
-  // The sky in the water, times the sky as shown: the night's dim sky and its
-  // moonlit clouds read in it at a glance.
-  sky: 2.4,
+  // The sky in the water, times its own radiance: the water's Fresnel alone dims it.
+  sky: 1,
   undulation: 0.006,
   undulationFade: Object.freeze([12, 34]),
   imageSoft: 0.45,

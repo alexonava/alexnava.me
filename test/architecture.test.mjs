@@ -11,6 +11,7 @@ import {
   Vector3,
   Box3,
   PointLight,
+  ShaderChunk,
   ShaderLib,
 } from "three";
 import {
@@ -23,7 +24,7 @@ import {
   ENVIRONMENT_ROLES,
   ROCK_TEXT_LIGHTS,
   LANTERN_REACH,
-  LANTERN_FILM_INTENSITY,
+  FILM_GRADES,
   FLAME_STREAK,
   WET_BARK,
   ROOT_MOSS,
@@ -38,6 +39,7 @@ import {
 } from "../src/scene/mud-ground.js";
 import { createPropScale } from "../src/scene/prop-scale.js";
 import {
+  FILM_LIGHT,
   GLINT,
   GLINT_MOOD,
   LANTERN_MOOD,
@@ -79,27 +81,34 @@ test("tree retains its anchor and height with a quality-scaled non-shadow lanter
   replacement.fillLight.distance = 37.8;
   replacement.setFilmTreatment(true);
   replacement.applyQuality({ lighting: { practicalIntensityScale: 1 } });
-  // The film lantern: a hot core at its foot, brighter than the 4.0 practical.
-  assert.equal(replacement.light.intensity, LANTERN_FILM_INTENSITY);
-  assert.ok(LANTERN_FILM_INTENSITY > 4 && LANTERN_FILM_INTENSITY <= 10);
-  // A candle's warm pool on the wet soil out to about six units (LANTERN_REACH):
-  // a short reach with a fast falloff, so the pool stays at the lantern's foot.
+  // The film lantern: a candle with a hot core at its foot, brighter than the
+  // 4.0 practical.
+  assert.equal(replacement.light.intensity, LANTERN_REACH.intensity);
+  assert.ok(LANTERN_REACH.intensity > 4);
+  assert.deepEqual(replacement.light.color.toArray(), [...FILM_LIGHT.candle]);
+  // Its light falls off with the square of the distance (decay 2, patched into
+  // r160's legacy lights), held within half its anchor, eased out at its reach.
   assert.equal(replacement.light.distance, LANTERN_REACH.distance);
-  assert.equal(replacement.light.decay, LANTERN_REACH.decay);
-  assert.ok(LANTERN_REACH.distance >= 8 && LANTERN_REACH.distance <= 12);
-  assert.ok(LANTERN_REACH.decay >= 1.5 && LANTERN_REACH.decay <= 2);
-  // At six units the pool keeps under a tenth of its one-unit strength.
+  assert.equal(replacement.light.decay, 2);
+  const a = LANTERN_REACH.anchor;
+  assert.ok(
+    ShaderChunk.lights_pars_begin.includes(
+      `if ( decayExponent == 2.0 ) return ${(a * a).toFixed(2)} / max( lightDistance * lightDistance, ${((a * a) / 4).toFixed(2)} ) * pow2( saturate( 1.0 - pow4( lightDistance / cutoffDistance ) ) );`,
+    ),
+  );
   const falloff = (d) =>
-    Math.pow(Math.max(0, 1 - Math.pow(d / LANTERN_REACH.distance, 4)), 2) /
-    Math.pow(d, LANTERN_REACH.decay);
-  assert.ok(falloff(6) / falloff(1) < 0.1);
-  assert.equal(replacement.fillLight.intensity, 2.4 * 0.95);
-  assert.equal(replacement.fillLight.color.getHex(), 0xc2d2ec);
+    ((a * a) / Math.max(d * d, (a * a) / 4)) *
+    Math.max(0, 1 - (d / LANTERN_REACH.distance) ** 4) ** 2;
+  assert.equal(falloff(a), (1 - (a / LANTERN_REACH.distance) ** 4) ** 2);
+  assert.ok(Math.abs(falloff(6) / falloff(3) - 0.25) < 0.04, "inverse square in the pool");
+  assert.equal(falloff(LANTERN_REACH.distance), 0);
+  // In film the crown's fill goes: the moon, the sky and the lantern light the tree.
+  assert.equal(replacement.fillLight.visible, false);
   assert.equal(tree.material.emissiveIntensity, 0);
-  // The unshadowed crown fill stops short of the lantern clearing in film.
-  assert.equal(replacement.fillLight.distance, 24);
   replacement.setFilmTreatment(false);
   assert.equal(replacement.light.distance, 39);
+  assert.equal(replacement.light.color.getHex(), 0xffbe72);
+  assert.equal(replacement.fillLight.visible, true);
   assert.equal(tree.material.emissiveIntensity, 0);
   assert.equal(replacement.fillLight.distance, 37.8);
   replacement.applyQuality({ lighting: { practicalIntensityScale: 0.5 } });
@@ -393,7 +402,7 @@ test("timber lookout reads its baked normal map at full strength with one unifor
   for (const resource of [geometry, material, material.map, material.normalMap]) resource.dispose();
 });
 
-test("the night environment preserves material direction with restrained matte timber and bark reflections", () => {
+test("the night environment lights and is mirrored at its own radiance", () => {
   const source = sourceAsset(true),
     tree = createTreeArchitecture({ asset: source, groundHeight: () => 0 }),
     material = tree.root.getObjectByName("meshy-tree").material;
@@ -415,18 +424,14 @@ test("the night environment preserves material direction with restrained matte t
   assert.deepEqual(environment.toArray(), [...ENVIRONMENT_ROLES.tree]);
   tree.setFilmTreatment(false);
   assert.deepEqual(environment.toArray(), [1, 0, 0]);
-  // The timber trades a little flat ambient for sky-shaped light, without a broad glossy coat.
-  const [towerAmbient, towerSky, towerReflection] = ENVIRONMENT_ROLES.tower;
-  assert.ok(towerAmbient >= 0.8 && towerAmbient < 1);
-  assert.ok(towerSky > 0 && towerSky < 1);
-  assert.ok(towerReflection > 0 && towerReflection < 0.5);
-  for (const role of ["tree", "rock"]) {
+  // The sky lights and is mirrored at its own radiance (no gain); the flat
+  // lights keep only what it leaves out.
+  for (const role of ["tower", "tree", "rock"]) {
     const [ambient, sky, reflection] = ENVIRONMENT_ROLES[role];
-    assert.ok(ambient > 0.5 && ambient < 1, role);
-    assert.ok(sky > 1 && sky <= 2.5, role);
-    assert.ok(reflection >= 0.75 && reflection <= 2, role);
+    assert.ok(ambient > 0 && ambient < 0.5, role);
+    assert.equal(sky, 1, role);
+    assert.equal(reflection, 1, role);
   }
-  assert.ok(ENVIRONMENT_ROLES.tree[2] < 1, "avoid amplified sky sheen over the bark");
   const towerSource = sourceAsset(false),
     tower = createCompleteTowerArchitecture({ asset: towerSource, groundY: 0 }),
     towerMaterial = tower.root.getObjectByName("complete-meshy-tower").material,
@@ -495,9 +500,9 @@ test("the bare tree takes no procedural film extras and the rocks darken above t
   assert.ok(WET_BARK.mudTone.every((v) => v >= 0.5 && v < 1));
   assert.ok(WET_BARK.mudRoughness < WET_BARK.roughness);
   // Damp moss on the roots' sky-facing tops above the mud, in film only,
-  // under the role's tint, matte; the rocks and the tower take none.
+  // matte; the rocks and the tower take none.
   assert.ok(treeShader.fragmentShader.includes("float babelMoss = babelFilm*"));
-  assert.ok(treeShader.fragmentShader.includes(")*babelTint*(.65+.7*babelMossFine)"));
+  assert.ok(treeShader.fragmentShader.includes(")*(.65+.7*babelMossFine)"));
   assert.ok(
     treeShader.fragmentShader.includes(
       `roughnessFactor = mix(roughnessFactor, ${ROOT_MOSS.roughness.toFixed(2)}, babelMoss);`,
@@ -660,18 +665,16 @@ test("supplied tower and tree switch between source and moonlight grades without
   const u = material.userData.babelGrade.uniforms;
   assert.equal(material.userData.babelGrade.role, "tower");
   closeTo(u.babelSaturation.value, 0.94);
-  assert.equal(u.babelLift.value, 0);
+  closeTo(u.babelHighlights.value, 0.18);
+  // In film the maps keep their colour (the camera's balance and night's colour
+  // are the tone curve's); only their baked highlights come down.
   tower.setFilmTreatment(true);
-  closeTo(u.babelSaturation.value, 0.75);
-  closeTo(u.babelHighlights.value, 0.3);
-  closeTo(u.babelTint.value.r, 0.93);
-  closeTo(u.babelShadowTint.value.b, 0.2);
-  closeTo(u.babelLift.value, 0.14);
+  assert.equal(u.babelSaturation.value, 1);
+  closeTo(u.babelHighlights.value, FILM_GRADES.tower);
+  assert.ok(FILM_GRADES.tower > 0 && FILM_GRADES.tower < 0.3);
   tower.setFilmTreatment(false);
   closeTo(u.babelSaturation.value, 0.94);
-  assert.equal(u.babelTint.value.r, 1);
-  closeTo(u.babelShadowTint.value.r, 0.19);
-  assert.equal(u.babelLift.value, 0);
+  closeTo(u.babelHighlights.value, 0.18);
   assert.equal(applyFilmGrade(new MeshStandardMaterial(), true), false);
   const shader = {
     uniforms: {},
@@ -679,18 +682,17 @@ test("supplied tower and tree switch between source and moonlight grades without
     fragmentShader: "#include <common>\n#include <map_fragment>\n#include <roughnessmap_fragment>",
   };
   material.onBeforeCompile(shader);
-  assert.equal(shader.uniforms.babelTint, u.babelTint);
-  assert.equal(shader.uniforms.babelShadowTint, u.babelShadowTint);
-  assert.match(shader.fragmentShader, /babelLift/);
+  assert.equal(shader.uniforms.babelHighlights, u.babelHighlights);
+  assert.doesNotMatch(shader.fragmentShader, /babelTint|babelShadowTint|babelLift/);
   tower.dispose();
   tower.setFilmTreatment(true);
-  assert.equal(u.babelLift.value, 0);
+  closeTo(u.babelHighlights.value, 0.18);
 
   const tree = createTreeArchitecture({ asset: boxAsset(), groundHeight: () => 0 });
   const treeUniforms =
     tree.root.getObjectByName("meshy-tree").material.userData.babelGrade.uniforms;
   tree.setFilmTreatment(true);
-  closeTo(treeUniforms.babelSaturation.value, 0.8);
+  assert.equal(treeUniforms.babelSaturation.value, 1);
   tree.setFilmTreatment(false);
   assert.equal(treeUniforms.babelSaturation.value, 1);
   tree.dispose();
@@ -1112,11 +1114,11 @@ test("the flame streak shows in film only and follows the flicker and the shot's
   try {
     tree.setFilmTreatment(true);
     closeTo(strength.value, FLAME_STREAK.strength * 1.1);
-    closeTo(tree.light.intensity, LANTERN_FILM_INTENSITY * 1.1);
+    closeTo(tree.light.intensity, LANTERN_REACH.intensity * 1.1);
     LANTERN_MOOD.value = 1.4;
     tree.setLanternFlicker(0.9);
     closeTo(strength.value, FLAME_STREAK.strength * 0.9 * 1.4);
-    closeTo(tree.light.intensity, LANTERN_FILM_INTENSITY * 0.9 * 1.4);
+    closeTo(tree.light.intensity, LANTERN_REACH.intensity * 0.9 * 1.4);
     tree.setFilmTreatment(false);
     assert.equal(strength.value, 0);
     closeTo(tree.light.intensity, 4 * 0.9, 1e-9);

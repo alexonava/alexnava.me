@@ -688,7 +688,8 @@ test("each ground shading has its own program cache key; the slate's shading nee
   // twice the sky as shown.
   assert.equal(SLATE_WATER.f0, 0.02);
   assert.ok(SLATE_WATER.far[0] >= 50 && SLATE_WATER.far[1] <= 140, "the far plain stays calm");
-  assert.ok(SLATE_WATER.gain.every((gain) => gain >= 1 && gain <= 2));
+  // The water mirrors the sky at its own radiance.
+  assert.deepEqual([...SLATE_WATER.gain], [1, 1]);
   assert.ok(
     SLATE_WATER.film.every((share) => share >= 0) && SLATE_WATER.film[0] + SLATE_WATER.film[1] <= 1,
   );
@@ -794,11 +795,13 @@ test("each ground shading has its own program cache key; the slate's shading nee
     /slateLampSpec \*= [\d.]+\*slateShow;\s*slateMoonSpec \*= [\d.]+\*slateShow;/,
   );
   // The night's light on the film ground: the key dominates, the unshadowed
-  // fills and the flat ambient keep a share, the sky lights it; only with the
-  // environment (night-environment.js), else the fills and ambient stay whole.
+  // fill and the flat ambient keep a share, the sky lights it; only with the
+  // environment (night-environment.js), else the fill and ambient stay whole.
+  // No crown fill: in film no light stands in the crown.
   assert.ok(SLATE_LIGHT.key >= 1 && SLATE_LIGHT.key <= 1.5);
-  for (const share of [SLATE_LIGHT.fill, SLATE_LIGHT.crown, SLATE_LIGHT.ambient])
-    assert.ok(share > 0 && share < 1);
+  for (const share of [SLATE_LIGHT.fill, SLATE_LIGHT.ambient]) assert.ok(share > 0 && share < 1);
+  assert.equal(SLATE_LIGHT.crown, undefined);
+  assert.ok(SLATE_LIGHT.sky >= 1 && SLATE_LIGHT.sky <= 2, "near the sky's own radiance");
   assert.ok(SLATE_LIGHT.bounce > 0 && SLATE_LIGHT.bounce <= 0.25);
   // Behind Contact, under a shot's poolAbout, the lantern's pool (its direct
   // diffuse and its bounce) passes its own knee, gentler than the reflections'
@@ -839,8 +842,8 @@ test("each ground shading has its own program cache key; the slate's shading nee
   );
   // Three's light loops fetch each light through get*LightInfo(): wrapped (after
   // Three defines them), they mark a directional light, so the key and the fill
-  // are found among those by direction, and the crown's point light, lined up
-  // with either from some spot on the ground, keeps its own share there.
+  // are found among those by direction, and the lantern, lined up with the key
+  // from some spot on the ground, stays the lantern there.
   assert.match(
     fragment,
     /#if NUM_DIR_LIGHTS > 0\s*void slateDirectionalInfo\(const in DirectionalLight light, out IncidentLight incident\) \{\s*getDirectionalLightInfo\(light, incident\);\s*slateDirectional = true;\s*\}\s*#define getDirectionalLightInfo slateDirectionalInfo\s*#endif/,
@@ -853,10 +856,7 @@ test("each ground shading has its own program cache key; the slate's shading nee
     fragment,
     /bool slateKey = slateDirectional && !slateWarm && dot\(directLight\.direction,/,
   );
-  assert.match(
-    fragment,
-    /: slateDirectional && dot\(directLight\.direction, normalize\(mat3\(viewMatrix\)\*/,
-  );
+  assert.match(fragment, /if \(!slateWarm\) slateL\.color \*= slateKey \? [\d.]+ : [\d.]+;/);
   assert.match(fragment, /#ifdef USE_ENVMAP\s*irradiance \*= [\d.]+;\s*iblIrradiance \*= [\d.]+;/);
   assert.ok(
     fragment.indexOf("if (!slateWarm) slateL.color *=") > fragment.indexOf("#ifdef USE_ENVMAP"),
@@ -1581,7 +1581,7 @@ test("the look's shading changes nothing until a shot asks for it", () => {
   );
   assert.ok(
     fragment.includes(
-      "*mix(mix(1.5, slateGloss.y, slateGlossT)*mix(vec3(1.0), mix(vec3(1.0,0.97,0.94), vec3(0.72,0.88,1.18), slateGloss.w), slateGlossT), vec3(1.8), slatePuddle)",
+      "*mix(mix(1.0, slateGloss.y, slateGlossT)*mix(vec3(1.0), mix(vec3(1.0,0.97,0.94), vec3(0.72,0.88,1.18), slateGloss.w), slateGlossT), vec3(1.0), slatePuddle)",
     ),
   );
   // The gloss's weights are set once, before the water's share and the lights,

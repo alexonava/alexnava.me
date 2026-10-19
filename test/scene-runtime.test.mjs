@@ -1390,10 +1390,24 @@ test("a shot's light mood scales only the film key and fill, without redrawing t
   assert.equal(rendering.setShotLight({ key: 2 }), false, "a disposed rig ignores moods");
 });
 
-test("the film's moonlight balance keeps a strong key over a dimmer sky and ambient", () => {
+test("the film's moonlight: a cool moon key many times the sky's light, a candle the one warm light", () => {
   assert.ok(Object.isFrozen(FILM_LIGHT));
-  assert.deepEqual(FILM_LIGHT, { key: 1.12, fill: 1.15, hemisphere: 0.88, ambient: 0.72 });
-  assert.ok(FILM_LIGHT.key > FILM_LIGHT.hemisphere && FILM_LIGHT.key > FILM_LIGHT.ambient);
+  assert.deepEqual(FILM_LIGHT, {
+    key: 2.4,
+    fill: 0.3,
+    hemisphere: 0.4,
+    ambient: 0.15,
+    moon: [0.62, 0.74, 1],
+    candle: [1, 0.58, 0.24],
+  });
+  assert.ok(
+    FILM_LIGHT.key > 5 * Math.max(FILM_LIGHT.fill, FILM_LIGHT.hemisphere, FILM_LIGHT.ambient),
+  );
+  const [r, g, b] = FILM_LIGHT.moon;
+  assert.ok(b >= g && g > r, "a cool moon");
+  // The ground finds the lantern by its warm colour (mud-ground.js: b < .7 r).
+  const [cr, cg, cb] = FILM_LIGHT.candle;
+  assert.ok(cr > cg && cg > cb && cb < 0.7 * cr, "a warm candle");
 });
 
 test("a shot's light mood merges over the neutral default and never shares it", () => {

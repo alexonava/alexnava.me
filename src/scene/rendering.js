@@ -158,7 +158,7 @@ export function createSceneRendering({
   function applyLightingTreatment() {
     sunLight.color.copy(baselineKeyColor);
     if (groundedLighting) sunLight.color.setHex(0xd9e2f2);
-    if (filmLighting) sunLight.color.setHex(0xd9def0);
+    if (filmLighting) sunLight.color.setRGB(...FILM_LIGHT.moon);
     const film = filmLighting ? FILM_LIGHT : null;
     sunLight.intensity =
       baselineKeyIntensity * (groundedLighting ? 0.8 : 1) * (film ? film.key * shotMood.key : 1);

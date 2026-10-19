@@ -4,7 +4,6 @@ import {
   SrcAlphaFactor,
   ZeroFactor,
   BoxGeometry,
-  Color,
   CylinderGeometry,
   DoubleSide,
   Float32BufferAttribute,
@@ -13,6 +12,7 @@ import {
   MeshStandardMaterial,
   PlaneGeometry,
   PointLight,
+  ShaderChunk,
   ShaderMaterial,
   SphereGeometry,
   TorusGeometry,
@@ -31,6 +31,7 @@ import {
   STONE_MOOD,
   STONE_TEXT,
   flashHook,
+  FILM_LIGHT,
 } from "./film-light.js";
 
 export const ARCHITECTURE = Object.freeze({
@@ -104,17 +105,17 @@ float babelNoise(vec3 x){vec3 i=floor(x),f=fract(x);f=f*f*(3.-2.*f);return mix(m
 const f2 = (v) => v.toFixed(3);
 const ROOT_MOSS_MAP = `float babelMossFine = babelNoise(babelLocal*${f2(ROOT_MOSS.scale[1])});
 float babelMoss = babelFilm*smoothstep(${f2(ROOT_MOSS.band[0])}, ${f2(ROOT_MOSS.band[1])}, babelLocal.y)*(1.0-smoothstep(${f2(ROOT_MOSS.band[2])}, ${f2(ROOT_MOSS.band[3])}, babelLocal.y))*smoothstep(${f2(ROOT_MOSS.up[0])}, ${f2(ROOT_MOSS.up[1])}, normalize(babelLocalN).y)*smoothstep(${f2(ROOT_MOSS.patch[0])}, ${f2(ROOT_MOSS.patch[1])}, .7*babelNoise(babelLocal*${f2(ROOT_MOSS.scale[0])})+.3*babelMossFine);
-diffuseColor.rgb = mix(diffuseColor.rgb, vec3(${ROOT_MOSS.tone.map(f2).join(", ")})*babelTint*(.65+.7*babelMossFine), babelMoss*${f2(ROOT_MOSS.cover)});`;
+diffuseColor.rgb = mix(diffuseColor.rgb, vec3(${ROOT_MOSS.tone.map(f2).join(", ")})*(.65+.7*babelMossFine), babelMoss*${f2(ROOT_MOSS.cover)});`;
 
 // How each film material takes the night sky (night-environment.js) once the
 // film sets it as the scene's environment: [the share of the flat ambient and
-// hemisphere it keeps, the sky's diffuse light (times the sky as shown), its
-// reflection]. The matte timber takes a restrained sky contribution; the bark
-// stays rough away from its damp base, and wet stones mirror the sky more strongly.
+// hemisphere it keeps, the sky's diffuse light, its reflection]. The sky lights
+// and is mirrored at its own radiance; the flat lights keep only what it leaves
+// out (the ground's bounce among them).
 export const ENVIRONMENT_ROLES = Object.freeze({
-  tower: Object.freeze([0.85, 0.55, 0.35]),
-  tree: Object.freeze([0.7, 1.8, 0.85]),
-  rock: Object.freeze([0.6, 2, 1.8]),
+  tower: Object.freeze([0.4, 1, 1]),
+  tree: Object.freeze([0.4, 1, 1]),
+  rock: Object.freeze([0.4, 1, 1]),
 });
 
 // Beside Contact the bark's highlights from the point lights (the lantern and
@@ -194,50 +195,18 @@ if (babelStoneBehind > 0.0) {
 // backdrops; at 0 the factor is exactly 1.
 export const BARK_RIM_TEXT = `*(1.0-babelRimText*max(slateBehind(slateText, vSlateClip.xy/vSlateClip.w*.5+.5, ${RIM.textReach.toFixed(2)}), slateBehind(slateAbout, vSlateClip.xy/vSlateClip.w*.5+.5, ${RIM.textReach.toFixed(2)})))`;
 
-// Moonlight grade for the supplied maps, which carry baked daylight and
-// ambient occlusion: cooler, less saturated, compressed sunlit highlights and
-// lifted black undersides. Uniform values switch without a shader rebuild.
-const FILM_GRADES = Object.freeze({
-  // The supplied maps contain their own warm daylight. Keep their authored
-  // detail, but compress it beneath a cool moon key instead of just tinting
-  // the entire asset blue. This leaves the lantern as the sole warm accent.
-  // The timber atlas is mid-dark with few bright texels, so it needs less
-  // highlight compression than the stone did, and a lighter shadow lift keeps
-  // the wood reading grey-brown rather than veiled blue-grey.
-  tower: {
-    saturation: 0.75,
-    highlights: 0.3,
-    tint: [0.93, 0.97, 1.0],
-    shadowTint: [0.12, 0.15, 0.2],
-    lift: 0.14,
-  },
-  tree: {
-    saturation: 0.8,
-    highlights: 0.3,
-    tint: [0.9, 0.95, 1.0],
-    shadowTint: [0.1, 0.14, 0.18],
-    lift: 0.1,
-  },
-  // The pale Meshy stones, wet from the rain, read clearly against the slate
-  // without glowing through the fog.
-  rock: {
-    saturation: 0.6,
-    highlights: 0.35,
-    tint: [0.9, 0.95, 1.0],
-    shadowTint: [0.08, 0.1, 0.13],
-    lift: 0.1,
-  },
-});
+// The supplied maps carry baked daylight in their brightest texels: in film
+// those highlights come down by the role's share, and the moon, the sky and the
+// lantern light the maps as they are (the camera's balance and night's
+// colour are the tone curve's, film-light.js FILM_TONE).
+export const FILM_GRADES = Object.freeze({ tower: 0.15, tree: 0.15, rock: 0.15 });
 export function applyFilmGrade(material, active) {
   const grade = material?.userData?.babelGrade;
   if (!grade) return false;
-  const film = active ? FILM_GRADES[grade.role] : null;
+  const film = active ? FILM_GRADES[grade.role] : undefined;
   const profile = MATERIAL_PROFILES[grade.role] || {};
-  grade.uniforms.babelSaturation.value = film?.saturation ?? profile.saturation ?? 1;
-  grade.uniforms.babelHighlights.value = film?.highlights ?? profile.highlights ?? 0;
-  grade.uniforms.babelTint.value.setRGB(...(film?.tint ?? [1, 1, 1]));
-  grade.uniforms.babelShadowTint.value.setRGB(...(film?.shadowTint ?? [0.19, 0.17, 0.15]));
-  grade.uniforms.babelLift.value = film?.lift ?? 0;
+  grade.uniforms.babelSaturation.value = film === undefined ? (profile.saturation ?? 1) : 1;
+  grade.uniforms.babelHighlights.value = film ?? profile.highlights ?? 0;
   grade.uniforms.babelFilm.value = active ? 1 : 0;
   grade.uniforms.babelEnvironment.value.set(
     ...((active && ENVIRONMENT_ROLES[grade.role]) || [1, 0, 0]),
@@ -250,11 +219,21 @@ const COMPLETE_TOWER_HEIGHT = 39;
 const COMPLETE_TOWER_RADIUS_CAP = 20.4;
 
 const TREE_LANTERN_INTENSITY = 4.0;
-// The film lantern's reach: a candle's warm pool about its foot on the wet
-// soil, the near roots and stones, out to about six units.
-export const LANTERN_REACH = Object.freeze({ distance: 10, decay: 1.7 });
-// The film lantern's strength: a hot core at its foot falling off fast.
-export const LANTERN_FILM_INTENSITY = 8.2;
+// The film lantern, a candle (its colour FILM_LIGHT.candle): its light falls off
+// with the square of the distance, as a real light's does (decay 2), at its
+// `intensity` `anchor` units out, held under four times that within half of
+// it, and eased to nothing at `distance` (r160's physical window). Three's
+// legacy lights fall off linearly to their reach, so the falloff is patched in
+// for decay 2 alone; the near roots and stones take a hot core that the tone
+// curve's shoulder rolls off (film-light.js FILM_TONE).
+export const LANTERN_REACH = Object.freeze({ distance: 12, decay: 2, anchor: 2, intensity: 16 });
+const LEGACY_FALLOFF =
+  "return pow( saturate( - lightDistance / cutoffDistance + 1.0 ), decayExponent );";
+ShaderChunk.lights_pars_begin = ShaderChunk.lights_pars_begin.replace(
+  LEGACY_FALLOFF,
+  `if ( decayExponent == 2.0 ) return ${(LANTERN_REACH.anchor ** 2).toFixed(2)} / max( lightDistance * lightDistance, ${(LANTERN_REACH.anchor ** 2 / 4).toFixed(2)} ) * pow2( saturate( 1.0 - pow4( lightDistance / cutoffDistance ) ) );
+${LEGACY_FALLOFF}`,
+);
 // The flame's anamorphic streak: world length and height, peak opacity.
 export const FLAME_STREAK = Object.freeze({ length: 4.2, height: 0.3, strength: 0.75, near: 0.9 });
 
@@ -362,9 +341,6 @@ roughnessFactor = mix(roughnessFactor, ${ROOT_MOSS.roughness.toFixed(2)}, babelM
     const uniforms = {
       babelSaturation: { value: profile.saturation ?? 1 },
       babelHighlights: { value: profile.highlights ?? 0 },
-      babelTint: { value: new Color(1, 1, 1) },
-      babelShadowTint: { value: new Color(0.19, 0.17, 0.15) },
-      babelLift: { value: 0 },
       babelFilm: { value: 0 },
       babelEnvironment: { value: new Vector3(1, 0, 0) },
     };
@@ -388,9 +364,6 @@ roughnessFactor = mix(roughnessFactor, ${ROOT_MOSS.roughness.toFixed(2)}, babelM
           `#include <common>
           uniform float babelSaturation;
           uniform float babelHighlights;
-          uniform vec3 babelTint;
-          uniform vec3 babelShadowTint;
-          uniform float babelLift;
           uniform float babelFilm;
           uniform vec3 babelEnvironment;
           varying vec3 babelLocal;
@@ -415,8 +388,6 @@ roughnessFactor = mix(roughnessFactor, ${ROOT_MOSS.roughness.toFixed(2)}, babelM
           float babelLuma = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
           diffuseColor.rgb = mix(vec3(babelLuma), diffuseColor.rgb, babelSaturation);
           diffuseColor.rgb *= 1.0 - babelHighlights * smoothstep(0.30, 0.85, babelLuma);
-          diffuseColor.rgb = mix(diffuseColor.rgb, babelShadowTint, babelLift * (1.0 - smoothstep(0.02, 0.22, babelLuma)));
-          diffuseColor.rgb *= babelTint;
           ${role === "rock" ? "diffuseColor.rgb *= mix(.62, 1., smoothstep(.1, .5, babelLocal.y));" : ""}
           ${
             role === "tree"
@@ -782,34 +753,32 @@ gl_FragColor=vec4(vec3(1.,.66,.34)*line*uStrength,1.);
     let film = false,
       currentProfile = {},
       savedDistance = light.distance,
-      savedDecay = light.decay,
-      savedFillDistance = fillLight.distance;
+      savedDecay = light.decay;
     let lanternBaseIntensity = TREE_LANTERN_INTENSITY,
       lanternFlicker = 1;
-    const originalFillColor = fillLight.color.clone();
+    const originalLampColor = light.color.clone();
     function applyTreeLighting() {
       const intensityScale = currentProfile.lighting?.practicalIntensityScale ?? 1;
       lanternBaseIntensity =
-        (film ? LANTERN_FILM_INTENSITY : TREE_LANTERN_INTENSITY) * intensityScale;
+        (film ? LANTERN_REACH.intensity : TREE_LANTERN_INTENSITY) * intensityScale;
       light.intensity = lanternBaseIntensity * lanternFlicker * (film ? LANTERN_MOOD.value : 1);
       streakUniforms.uStrength.value = film
         ? FLAME_STREAK.strength * lanternFlicker * LANTERN_MOOD.value
         : 0;
-      fillLight.intensity = TREE_FILL_INTENSITY * (film ? 0.95 : 1) * intensityScale;
-      fillLight.color.copy(originalFillColor);
-      if (film) fillLight.color.setHex(0xc2d2ec);
+      fillLight.intensity = TREE_FILL_INTENSITY * intensityScale;
+      // In film the moon, the sky and the lantern light the tree: the crown fill
+      // stands where no light is, so it goes.
+      fillLight.visible = !film;
       glowMaterial.emissiveIntensity = film ? 1.35 : 2;
       glassMaterial.emissiveIntensity = film ? 0.018 : 0.3;
+      light.color.copy(originalLampColor);
+      if (film) light.color.setRGB(...FILM_LIGHT.candle);
       applyFilmGrade(material, film);
       normalAttribute.array.set(film ? softenedNormals : originalNormals);
       normalAttribute.needsUpdate = true;
-      // The unshadowed fill sits in the crown about 10 units above the lantern.
-      // In film its reach drops from the prop-scaled 37.8 to 24, so it models
-      // the bark and the lantern cap without flooding the clearing.
       if (film) {
         light.distance = LANTERN_REACH.distance;
         light.decay = LANTERN_REACH.decay;
-        fillLight.distance = 24;
       }
     }
     return {
@@ -841,13 +810,11 @@ gl_FragColor=vec4(vec3(1.,.66,.34)*line*uStrength,1.);
         if (next) {
           savedDistance = light.distance;
           savedDecay = light.decay;
-          savedFillDistance = fillLight.distance;
         }
         film = next;
         if (!film) {
           light.distance = savedDistance;
           light.decay = savedDecay;
-          fillLight.distance = savedFillDistance;
         }
         applyTreeLighting();
       },
