@@ -902,8 +902,12 @@ export function riverBedAt(r) {
 }
 // The original shallow profile remains the pinned ground's baseline. The
 // main course has a metre of water, shoaling as the same discharge accelerates
-// toward the falls. Both the cap and the falls use this upper datum.
+// toward the falls. Both the cap and the falls use this upper datum. Its water
+// takes up light by depth, red first, as water does (`absorb`, per unit of
+// depth, red, green, blue): the bed shows through the shallows cooled, and the
+// deep water keeps the colour it scatters back.
 export const RIVER_CHANNEL = Object.freeze({
+  absorb: Object.freeze([1.1, 0.75, 0.65]),
   depth: 3.28,
   speed: 3.2,
   freeboard: 0.65,
@@ -2247,7 +2251,7 @@ if(vSlateRiverSurface.x>.5){slateDry=0.;slatePuddle=1.;slateLevel=max(.06,vSlate
 slateLanternPuddle = slateBodyL;
 diffuseColor.rgb *= 1.0-${glsl(M.marginAlbedo)}*slateMargin;
 if(vSlateRiverSurface.x>.5){
-float riverDepth=max(0.,vSlateRiverSurface.y),riverClear=exp(-riverDepth*.8);
+float riverDepth=max(0.,vSlateRiverSurface.y);vec3 riverClear=exp(-riverDepth*${glslVec(...RIVER_CHANNEL.absorb)});
 vec2 riverUV=vec2(slateRiverQ.y+slateFlow*${glsl(RIVER_CHANNEL.speed)},slateRiverQ.z);
 float riverCurrent=slateNoise(riverUV*vec2(.8,2.7))*.65+slateNoise(riverUV*vec2(1.9,5.1)+19.)*.35;
 float riverFP=max(.001,length(fwidth(vMudWorld.xz))),riverAA=1.-smoothstep(.18,.6,riverFP);
