@@ -221,21 +221,27 @@ const COMPLETE_TOWER_RADIUS_CAP = 20.4;
 const TREE_LANTERN_INTENSITY = 4.0;
 // The film lantern, a candle (its colour FILM_LIGHT.candle): its light falls off
 // with the square of the distance, as a real light's does (decay 2), at its
-// `intensity` `anchor` units out, held under four times that within half of
-// it, and eased to nothing at `distance` (r160's physical window). Three's
+// `intensity` `anchor` units out, held at its value `hold` units out within
+// that (the lantern's own glass and frame), and eased to nothing at `distance` (r160's physical window). Three's
 // legacy lights fall off linearly to their reach, so the falloff is patched in
 // for decay 2 alone; the near roots and stones take a hot core that the tone
 // curve's shoulder rolls off (film-light.js FILM_TONE).
-export const LANTERN_REACH = Object.freeze({ distance: 12, decay: 2, anchor: 2, intensity: 16 });
+export const LANTERN_REACH = Object.freeze({
+  distance: 12,
+  decay: 2,
+  anchor: 2,
+  hold: 1.25,
+  intensity: 16,
+});
 const LEGACY_FALLOFF =
   "return pow( saturate( - lightDistance / cutoffDistance + 1.0 ), decayExponent );";
 ShaderChunk.lights_pars_begin = ShaderChunk.lights_pars_begin.replace(
   LEGACY_FALLOFF,
-  `if ( decayExponent == 2.0 ) return ${(LANTERN_REACH.anchor ** 2).toFixed(2)} / max( lightDistance * lightDistance, ${(LANTERN_REACH.anchor ** 2 / 4).toFixed(2)} ) * pow2( saturate( 1.0 - pow4( lightDistance / cutoffDistance ) ) );
+  `if ( decayExponent == 2.0 ) return ${(LANTERN_REACH.anchor ** 2).toFixed(2)} / max( lightDistance * lightDistance, ${(LANTERN_REACH.hold ** 2).toFixed(2)} ) * pow2( saturate( 1.0 - pow4( lightDistance / cutoffDistance ) ) );
 ${LEGACY_FALLOFF}`,
 );
 // The flame's anamorphic streak: world length and height, peak opacity.
-export const FLAME_STREAK = Object.freeze({ length: 4.2, height: 0.3, strength: 0.75, near: 0.9 });
+export const FLAME_STREAK = Object.freeze({ length: 4.2, height: 0.3, strength: 0.4, near: 0.9 });
 
 const TREE_FILL_INTENSITY = 2.4;
 

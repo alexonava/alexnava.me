@@ -1160,14 +1160,14 @@ test("the shared horizon slate reads as distant ground: lighter than a void, bel
   assert.ok(b >= r && b - r <= 0.02, "a cool, near-neutral slate rather than a blue veil");
 });
 
-test("the ranges read as real rock: a softly wrapped key, no drawn rim or ink about the crests", () => {
+test("the ranges read as real rock: the moon's Lambert light, no drawn rim or ink about the crests", () => {
   const hill = createHillSilhouette({ groundHeight });
   hill.setFilmTreatment(true);
   const shader = hill.mesh.material.fragmentShader;
-  // The key wraps a little past the terminator, never a crisp, faceted edge.
+  // The moon lights the faces as it lights the ground: no wrap past the terminator; the sky fills the shade.
   const { wrap } = MOUNTAIN_AIR,
     g = (v) => (Number.isInteger(v) ? v.toFixed(1) : String(v));
-  assert.ok(wrap > 0 && wrap < 0.5);
+  assert.equal(wrap, 0);
   assert.ok(shader.includes(`float nl=dot(n,K), lit=clamp((nl+${g(wrap)})/${g(1 + wrap)},0.,1.)`));
   assert.doesNotMatch(shader, /crisp=smoothstep/);
   // Every name the ring shader reads is declared: the snow's terminator width among them.
@@ -1176,8 +1176,9 @@ test("the ranges read as real rock: a softly wrapped key, no drawn rim or ink ab
   // No cool or warm rim drawn about the crests, and no crest ink line.
   assert.doesNotMatch(shader, /float cr=|vec3\(\.55,\.62,\.8\)/);
   assert.ok(!shader.includes("c=mix(c,vec3(.012,.016,.03)"));
-  // The faint warm glow toward the orb stays.
-  assert.ok(shader.includes("c*=1.+vec3(.06,.02,-.04)*pow(max(dot(v,toSun),0.),10.);"));
+  // The air glows faintly warm toward the orb; the rock takes no glow of its own.
+  assert.ok(shader.includes("air*=1.+vec3(.1,.03,-.05)*pow(max(dot(v,toSun),0.),10.);"));
+  assert.ok(!shader.includes("c*=1.+vec3(.06,.02,-.04)"));
   hill.dispose();
 });
 

@@ -128,10 +128,10 @@ export const MOUNTAIN_AIR = Object.freeze({
   lift: 0.3,
   moon: 1,
   ambient: 0.05,
-  // The key wraps softly round the faces (the owner's direction of 2026-10-09:
-  // realistic mountains): light reaches `wrap` past the terminator, as rough rock
-  // under a bright sky takes it, never a crisp, faceted edge.
-  wrap: 0.25,
+  // The moon lights the faces as it lights the ground (Lambert: no wrap past the
+  // terminator, the owner's 2026-10-19 "everything else is photoreal"); the sky's
+  // own light (`ambient`) fills the shade.
+  wrap: 0,
   rockMax: 0.95,
   footHazeHeight: 3,
   renderOrder: -0.5,
@@ -265,7 +265,10 @@ const perRange = (values, at = "vT.y") =>
 // (s0), with the cloud banks' average lift (s) and the path light the rock hazes toward (air).
 const SKY_BEHIND_GLSL = `vec3 d=normalize(vL), o=cameraPosition, W=vec3(.2126,.7152,.0722), K=vec3(.715,.625,.313);
 float b=dot(o,d), t=-b+sqrt(max(b*b-dot(o,o)+uSky.x,0.)), a=(o.y+d.y*t)*inversesqrt(uSky.x);
-vec3 s0=(filmSky(a)+filmBand(a))*uSky.y, lift=vec3(.24,.24,.3)*smoothstep(-.03,.17,a)*uSky.y, s=s0+lift, air=s0+${glslFloat(MOUNTAIN_AIR.lift)}*lift;`;
+vec3 s0=(filmSky(a)+filmBand(a))*uSky.y, lift=vec3(.24,.24,.3)*smoothstep(-.03,.17,a)*uSky.y, s=s0+lift, air=s0+${glslFloat(MOUNTAIN_AIR.lift)}*lift;
+// The air glows warm toward the orb, as haze does toward a bright light (forward scattering).
+vec2 v=d.xz/max(length(d.xz),1e-4), toSun=normalize(uSun.xz-o.xz);
+air*=1.+vec3(.1,.03,-.05)*pow(max(dot(v,toSun),0.),10.);`;
 // The rock body from the face's moonlight (lit), its upward share (n.y) and occlusion (ao), seen
 // through the air of range `at` (MOUNTAIN_AIR) and never lighter than the sky behind it.
 const rockBodyGLSL = (at, surface = "") => {
@@ -278,11 +281,7 @@ float Th=mix(T,sqrt(T),${glslFloat(thin)}*smoothstep(.5,6.,el));
 c=mix(air,c,Th);
 c*=min(1.,${glslFloat(rockMax)}*sL/max(dot(c,W),1e-4));`;
 };
-// The orb's faint warm glow on the ranges (no drawn rim about the crests).
-const GLOW_GLSL = `// A faint warm glow toward the orb.
-vec2 v=d.xz/max(length(d.xz),1e-4), toSun=normalize(uSun.xz-o.xz);
-c*=1.+vec3(.06,.02,-.04)*pow(max(dot(v,toSun),0.),10.);`;
-// The key's soft wrap (MOUNTAIN_AIR.wrap) on a face's normal n.
+// The key's light on a face's normal n (MOUNTAIN_AIR.wrap: none, Lambert).
 const WRAP_GLSL = `float nl=dot(n,K), lit=clamp((nl+${glslFloat(MOUNTAIN_AIR.wrap)})/${glslFloat(1 + MOUNTAIN_AIR.wrap)},0.,1.)`;
 // The ranges' feet below eye level break into a rocky skirt (the owner's pick of
 // 2026-10-09) instead of meeting the far plain's air at one level line: along
@@ -340,8 +339,8 @@ c=mix(c,uMist.rgb,uMist.w*(1.-smoothstep(${glslFloat(RANGE_MIST_SHAPE.floor)},${
 // face's turn along the ring, its lean to the viewer, convex/concave fold, and the
 // nearer ranges' skyline in degrees).
 // Each pixel is lit by the moon key: faces turn toward or away from it (wrapped
-// softly past the terminator, MOUNTAIN_AIR.wrap, lit neutral grey to blue shadow),
-// broken by spurs, gullies and strata from polar noise whose cells stay at least
+// as the ground's are, MOUNTAIN_AIR.wrap, lit neutral grey to blue shadow),
+// broken by spurs, gullies and fine bands from polar noise whose cells stay at least
 // 6 px wide; gullies and spurs slant down each flank along its fall line. The rock
 // is seen through the range's air (MOUNTAIN_AIR) toward the path light and never
 // lighter than the sky behind it, found by casting the ray onto the real sky shell
@@ -351,8 +350,8 @@ c=mix(c,uMist.rgb,uMist.w*(1.-smoothstep(${glslFloat(RANGE_MIST_SHAPE.floor)},${
 // rather than echoing stripes. Snow (SNOW) is set against the sky: a
 // level, noisy snowline per massif with tongues down the gullies, bare ribs and
 // steep faces, and blue in shadow; its edge is anti-aliased across its own screen
-// gradient, so steep tongue sides stay smooth. A faint warm glow leans toward the
-// orb. No rim or ink is drawn about the crests, and the grade takes no cel step
+// gradient, so steep tongue sides stay smooth. The air glows faintly warm toward
+// the orb. No rim or ink is drawn about the crests, and the grade takes no cel step
 // or ink on this layer (postprocess.js uLayerRelief): the ranges read as real rock
 // under the moon. Below eye level the body eases into the far
 // plain's air (HORIZON_AIR, the lifted TERRAIN_HORIZON slate), and feet near the
@@ -449,7 +448,7 @@ if(st>0.)st*=pn(vec2(az*.3,el*2.2+.8*g1.x),108.).x-.5;
 // or fold contour runs parallel to the crest below it.
 float lean=mix(vF.y,1.3-.33*k,slim), fold=vF.z*(1.-.7*slim);
 vec3 n=normalize(X*(vF.x+gd)+I*lean*(1.+.25*fold)+vec3(0.,1.,0.));
-// Moonlight wrapped softly round the faces (MOUNTAIN_AIR.wrap); te, the terminator's
+// Moonlight on the faces (MOUNTAIN_AIR.wrap); te, the terminator's
 // width on screen, keeps the snow's own light crisp where it turns (below).
 ${WRAP_GLSL};
 float te=max(.05,1.5*fwidth(nl));
@@ -480,7 +479,6 @@ float sk=mix(smoothstep(-.3,1.,ns),smoothstep(.3-te,.3+te,ns),.5);
 vec3 sn=mix(vec3(.8485,1.0027,1.4193)*${glslFloat(SNOW.shade)},vec3(.9691,1.0014,1.0768)*${glslFloat(SNOW.lit)},sk)*sL*(1.-.1*gully*det)*(1.+.12*(2.*st+.6*(g2.x-.5)*f2));
 sn=mix(air,sn,mix(1.,T,.55));
 c=mix(c,sn,snow*(1.-mist));}
-${GLOW_GLSL}
 ${FAR_PLAIN_GLSL}
 ${MOUNTAIN_MIST}${RANGE_MIST_GLSL}
 gl_FragColor=vec4(c,${DEPTH_LAYER.mountains});
@@ -512,50 +510,13 @@ export const MASSIFS = Object.freeze({
   sharpen: -0.75,
 });
 
-// Rock strata on the massifs' bare rock (the owner's picks of 2026-10-09: strata,
-// then natural ones): irregular layers `spacing` to a degree of elevation,
-// warped along the ring by two noises (`warp`: [frequency per degree of azimuth,
-// of elevation, depth] each; the azimuth's wraps whole about the ring, so there
-// is no seam at +-180 degrees). They show only on steep rock (`steep`: the
-// relief's upward share where they fade in and out, read `steepBlur` mip levels
-// down, so the mask never shimmers with the relief's fine detail) and in broken patches along
-// the ring (`broken`: a noise's band where they come and go, its frequencies as
-// the warp's), each layer of its own strength (`amount`: base and spread). A
-// layer is a faint moonlit ledge at its base (`ledge`: rise, then fading from
-// [0] to [1] of the layer) lifting the face's light by up to `light` (less
-// `mean` everywhere, so it never steps between layers), over a dark seam
-// (`seam`: width and depth, of the occlusion, ramping in on both sides of the
-// layer's edge, its patches the same for both layers). Both are anti-aliased by
-// the layer's own gradient, before the snow, so the snow lies over them.
-export const MASSIF_STRATA = Object.freeze({
-  spacing: 2.1,
-  warp: Object.freeze([Object.freeze([0.35, 0.5, 1.6]), Object.freeze([1.1, 1.7, 0.6])]),
-  steep: Object.freeze([0.45, 0.8]),
-  steepBlur: 1.5,
-  broken: Object.freeze([0.9, 0.8, 0.35, 0.65]),
-  amount: Object.freeze([0.5, 0.5]),
-  ledge: Object.freeze([0.15, 0.3, 1]),
-  light: 0.16,
-  mean: 0.1,
-  seam: Object.freeze([0.07, 0.14]),
-});
-const STRATA_GLSL = (() => {
-  const { spacing, warp, steep, steepBlur, broken, amount, ledge, light, mean, seam } =
-      MASSIF_STRATA,
-    [[a1, e1, d1], [a2, e2, d2]] = warp,
-    [ba, be, b0, b1] = broken,
-    g = glslFloat,
-    wrap = (a) => g(Math.round(a * 360));
-  return `{float azw=mod(az,360.),w1=vnw(vec2(azw*${g(a1)},el*${g(e1)}),${wrap(a1)}),w2=vnw(vec2(azw*${g(a2)},el*${g(e2)}),${wrap(a2)});float sk=el*${g(spacing)}+${g(d1)}*w1+${g(d2)}*w2,sw=max(fwidth(sk),1e-3),f=fract(sk),id=floor(sk);float amp=${g(amount[0])}+${g(amount[1])}*fract(sin(id*12.9898)*43758.5453);float st=1.-smoothstep(${g(steep[0])},${g(steep[1])},relief(${g(steepBlur)}).y);float p0=smoothstep(${g(b0)},${g(b1)},vnw(vec2(azw*${g(ba)},el*${g(be)}),${wrap(ba)}));float p1=smoothstep(${g(b0)},${g(b1)},vnw(vec2(azw*${g(ba)}+id*7.,el*${g(be)}),${wrap(ba)}));float ledge=smoothstep(0.,${g(ledge[0])}+sw,f)*(1.-smoothstep(${g(ledge[1])},${g(ledge[2])},f));float seam=max(1.-smoothstep(0.,${g(seam[0])}+sw,f),smoothstep(1.-sw,1.,f));ao*=1.-${g(seam[1])}*st*p0*seam;lit*=1.+${g(light)}*(amp*p1*st*ledge-${g(mean)});}`;
-})();
-
 // The Meshy massifs' shading: the ranges' moonlit style on the models' own
 // relief. The object-space normal map (the GLB's normalTexture) is turned into
 // the world by each copy's placement (aInst: the turn's cos and sin, mirror,
 // squash); photographic albedo follows the same UVs. The mask (occlusionTexture:
 // R ambient occlusion, G the source's whiteness) shades crevices and lays snow.
-// The rock, its air, the orb's
-// glow and the far plain are the ranges' own (the shared GLSL above), with
+// The rock, its air (glowing toward the
+// orb) and the far plain are the ranges' own (the shared GLSL above), with
 // aTerrain = (degrees below the copy's own crest, layer, snowline: 0 on a bare
 // copy, massif height).
 // Valley mist rises from the nearer layers' skyline (uNearer: layer 0's and
@@ -625,10 +586,6 @@ ${FILM_SKY_GLSL}
 float vn(vec2 p){vec2 i=floor(p),f=fract(p),u=f*f*(3.-2.*f);
 vec4 h=fract(sin(vec4(dot(i,vec2(127.1,311.7)),dot(i+vec2(1,0),vec2(127.1,311.7)),dot(i+vec2(0,1),vec2(127.1,311.7)),dot(i+1.,vec2(127.1,311.7))))*43758.5453);
 return mix(mix(h.x,h.y,u.x),mix(h.z,h.w,u.x),u.y);}
-// The same noise wrapped every w cells along x (the ring's azimuth), seamless at +-180 degrees.
-float vnw(vec2 p,float w){vec2 i=floor(p),f=fract(p),u=f*f*(3.-2.*f);float i0=mod(i.x,w),i1=mod(i.x+1.,w);
-vec4 h=fract(sin(vec4(dot(vec2(i0,i.y),vec2(127.1,311.7)),dot(vec2(i1,i.y),vec2(127.1,311.7)),dot(vec2(i0,i.y+1.),vec2(127.1,311.7)),dot(vec2(i1,i.y+1.),vec2(127.1,311.7))))*43758.5453);
-return mix(mix(h.x,h.y,u.x),mix(h.z,h.w,u.x),u.y);}
 // The relief b mip levels down, turned by the copy's placement: mirror x, undo
 // the squash, turn about the vertical.
 vec3 relief(float b){vec3 m=texture2D(uNormal,vU,b).xyz*2.-1.;
@@ -644,9 +601,8 @@ float sL=max(dot(s,W),1e-4), far=step(.5,vT.y), k=vT.y*.25, px=vT.x/max(fwidth(v
 float el=degrees(atan(vL.y,r)), az=degrees(atan(vL.z,vL.x)), ppd=1./max(fwidth(el),1e-4);
 vec3 n=relief(${glslFloat(MASSIFS.sharpen)});
 vec2 mk=texture2D(uMask,vU).gr;
-// Moonlight wrapped softly round the faces, as the ranges' (MOUNTAIN_AIR.wrap).
+// Moonlight on the faces, as the ranges' (MOUNTAIN_AIR.wrap).
 ${WRAP_GLSL}, ao=mix(1.,mk.y,.6);
-${STRATA_GLSL}
 ${rockBodyGLSL(`(vT.y+${glslFloat(MASSIFS.air)})`, "c*=clamp(texture2D(uAlbedo,vU).rgb/max(uAlbedoMean,.03),vec3(.15),vec3(2.));")}
 // Valley mist rising from the nearer layers' skyline: at most .9 degrees, 70% at its foot.
 vec2 nr=nearer(az);
@@ -674,7 +630,6 @@ float sk=clamp((dot(normalize(mix(ns,ne,.15)),K)+.15)/1.15,0.,1.)*(1.+${glslFloa
 vec3 sn=mix(vec3(.8485,1.0027,1.4193)*${glslFloat(MASSIF_SNOW.shade)},vec3(.9691,1.0014,1.0768)*${glslFloat(MASSIF_SNOW.lit)},sk)*sL;
 sn=mix(air,sn,mix(1.,T,.55));
 c=mix(c,sn,snow*(1.-mist)*(${glslFloat(1 - MASSIF_SNOW.thin)}+${glslFloat(MASSIF_SNOW.thin)}*wv));}
-${GLOW_GLSL}
 ${FAR_PLAIN_GLSL}
 ${MOUNTAIN_MIST}${RANGE_MIST_GLSL}
 gl_FragColor=vec4(c,${DEPTH_LAYER.mountains});

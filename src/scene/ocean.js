@@ -130,8 +130,9 @@ export const landFactor = (d) => smooth(SHORE.shelf, SHORE.shelf + SHORE.hills, 
 // (`ride`). Each fades where it would fall under three pixels, its slope
 // turning to roughness (rough: a calm surface's own); the far water's
 // roughness is theirs together. mirror: how far the ripples' spread softens
-// the cliffs' image in the water. body:
-// the deep water's colour. sky, f0, knee: the river's mirror (terrain-build.js
+// the cliffs' image in the water. body: the deep water's albedo (the share of
+// the light it takes that it scatters back up); turbid: the clouded water's by
+// the rock, out to turbidReach. sky, f0, knee: the river's mirror (terrain-build.js
 // PUDDLE_MIRROR, at half its gain: a whole open sea at the river's would
 // outshine the sky it mirrors); horizon: how far its sky is lifted where it is
 // read (the open sea's horizon has no ranges to mirror). mask: how far the
@@ -174,7 +175,9 @@ export const SEA = Object.freeze({
   }),
   mirror: 0.5,
   rough: 0.05,
-  body: Object.freeze([0.004, 0.0075, 0.01]),
+  body: Object.freeze([0.008, 0.012, 0.014]),
+  turbid: Object.freeze([0.03, 0.045, 0.042]),
+  turbidReach: Object.freeze([2, 16]),
   sky: 1.2,
   f0: 0.02,
   knee: 0.5,
@@ -261,7 +264,10 @@ const NOISE_GLSL = `float seaHash(vec2 p){vec3 q=fract(p.xyx*.1031);q+=dot(q,q.y
 vec3 seaNoiseD(vec2 p){vec2 i=floor(p),f=fract(p),u=f*f*(3.-2.*f),du=6.*f*(1.-f);float a=seaHash(i),b=seaHash(i+vec2(1,0)),c=seaHash(i+vec2(0,1)),d=seaHash(i+1.),k=a-b-c+d;return vec3(a+(b-a)*u.x+(c-a)*u.y+k*u.x*u.y,du*(vec2(b-a,c-a)+k*u.yx));}
 float seaNoise(vec2 p){return seaNoiseD(p).x;}
 // White water's grain: two turned octaves, so up close it never shows the noise's square cells.
-float seaFoam(vec2 p){return .6*seaNoise(mat2(.8,.6,-.6,.8)*p)+.4*seaNoise(mat2(.28,-.96,.96,.28)*p*2.13+5.2);}`;
+float seaFoam(vec2 p){return .6*seaNoise(mat2(.8,.6,-.6,.8)*p)+.4*seaNoise(mat2(.28,-.96,.96,.28)*p*2.13+5.2);}
+// Cells (x: the distance between the nearest two centres' borders), their rows
+// repeating every n (so the cells close round a circle with no seam).
+float seaCells(vec2 p,float n){vec2 i=floor(p),f=fract(p);float d1=8.,d2=8.;for(int y=-1;y<=1;y++)for(int x=-1;x<=1;x++){vec2 o=vec2(x,y),k=vec2(i.x+o.x,mod(i.y+o.y,n)),e=o+vec2(seaHash(k),seaHash(k+19.7))-f;float d=dot(e,e);if(d<d1){d2=d1;d1=d;}else d2=min(d2,d);}return sqrt(d2)-sqrt(d1);}`;
 // Smooth 2D simplex noise with its gradient (x: value, yz: d/dp), named `name`
 // over the hash `hash`: its lattice gradients turn by `a` radians, each corner
 // at its own rate (flow noise), so its pattern evolves in place rather than
@@ -330,7 +336,13 @@ vec3 seaDiffuse(vec3 n){return seaKeyColor*max(dot(n,seaKey),0.)+seaFillColor*ma
 // The shore's subdued diffuse response: raw scene light intensities over pi,
 // without the legacy-light pi boost used by the standard materials. The
 // environment remains separate, lifted by a flash.
-vec3 seaLight(vec3 n,float flash){return seaDiffuse(n)/SEA_PI+seaEnv(n,1.)*(1.+flash);}`;
+vec3 seaLight(vec3 n,float flash){return seaDiffuse(n)/SEA_PI+seaEnv(n,1.)*(1.+flash);}
+// The moon's highlight off a surface of normal N seen from E: a GGX lobe of
+// roughness ag (Smith-masked) with Schlick's Fresnel from f0.
+vec3 seaGGX(vec3 N,vec3 E,float ag,float f0){vec3 H=normalize(seaKey+E);float nh=max(dot(N,H),0.),nl=max(dot(N,seaKey),0.),ne=max(dot(N,E),0.),a2=ag*ag,dn=nh*nh*(a2-1.)+1.;
+return seaKeyColor*(a2/(SEA_PI*dn*dn))*(f0+(1.-f0)*pow(1.-max(dot(E,H),0.),5.))*2.*nl/(nl+sqrt(a2+(1.-a2)*nl*nl)+1e-5)*nl/(2.*(ne+sqrt(a2+(1.-a2)*ne*ne))+1e-5);}
+// The share of light a cloud of droplets scatters through angle cos c (Henyey-Greenstein, g forward).
+float seaHG(float c,float g){float d=1.+g*g-2.*g*c;return (1.-g*g)/(4.*SEA_PI*d*sqrt(d));}`;
 
 function seaVertex(sea) {
   const swell = waveTerms(sea.swell)
@@ -459,13 +471,14 @@ sky=mix(sky,${glslVec(...CLIFF.rock[0])}*${glsl(STACKS.wet)}*seaLight(-normalize
 // The water's mirror, through the river's knee (keeping its hue).
 vec3 refl=sky*F;float rY=dot(refl,vec3(.2126,.7152,.0722));refl*=${glsl(sea.knee)}*(1.-exp(-rY/${glsl(sea.knee)}))/max(rY,1e-5);
 // The moon's glitter: a GGX lobe at the slopes the pixel holds (Smith-masked), through its own knee.
-vec3 Hm=normalize(seaKey+E);float nh=max(dot(N,Hm),0.),nl=max(dot(N,seaKey),0.),ag=max(sg,${glsl(glitter.alpha)}),a2=ag*ag,dn=nh*nh*(a2-1.)+1.;
-float gL=2.*nl/(nl+sqrt(a2+(1.-a2)*nl*nl)+1e-5),vis=1./(2.*(ne+sqrt(a2+(1.-a2)*ne*ne))+1e-5);
-vec3 glit=seaKeyColor*(a2/(SEA_PI*dn*dn))*(${glsl(sea.f0)}+${glsl(1 - sea.f0)}*pow(1.-max(dot(E,Hm),0.),5.))*gL*nl*vis*${glsl(glitter.gain)};
+vec3 glit=seaGGX(N,E,max(sg,${glsl(glitter.alpha)}),${glsl(sea.f0)})*${glsl(glitter.gain)};
 float gY=dot(glit,vec3(.2126,.7152,.0722));glit*=${glsl(glitter.knee)}*(1.-exp(-gY/${glsl(glitter.knee)}))/max(gY,1e-5);
 // Behind the text the light keeps 70%, then passes the ground's text knee.
 refl=slateTextKnee(refl*(1.-.3*b),b);glit=slateTextKnee(glit*(1.-.3*b),b);
-vec3 c=${glslVec(...sea.body)}*(1.-F)+refl+glit;
+// The water's own body: what of the moon's and the sky's light it scatters back
+// up (body: deep water's albedo), clouded by the surf's sand and bubbles near the
+// rock (turbid, fading out over turbidReach units), in drifting plumes.
+vec3 c=mix(${glslVec(...sea.body)},${glslVec(...sea.turbid)},(1.-smoothstep(${glsl(sea.turbidReach[0])},${glsl(sea.turbidReach[1])},z))*(.55+.45*seaNoise(P.xz/7.+seaTime*vec2(.05,-.03))))*seaLight(vec3(0.,1.,0.),babelFlash.x*(1.-b))*(1.-F)+refl+glit;
 // White water at the cliffs' foot: swells breaking against the rock, broken along it, and a far mean where they fall under pixels.
 float sf=0.;
 ${stacksSurfGlsl()}
@@ -481,8 +494,10 @@ float k=max(.75*(1.-smoothstep(.3,2.6+fp,z)),.6*burst*(1.-smoothstep(${glsl(surf
 if(seaFalls.w>0.){
 vec2 pool=(P.xz-seaFalls.xy)/seaFalls.z;
 // A persistent turbulent core, with broken expanding fans carried seaward.
-float pr=length(pool),angle=atan(pool.y,pool.x),fan=sin(pr*10.-seaTime*1.7+1.4*sin(angle*3.)+1.2*seaFlowD(pool*2.5+seaTime*.08,seaTime*.15).x);
-float core=1.-smoothstep(.06,.3,pr),wash=.45*(1.-smoothstep(.25,.95,pr))*mix(.5,1.,smoothstep(-.4,.8,fan))*(.65+.35*seaFoam(pool*3.+seaTime*.08));
+// Boils well up where it lands and spread outward (cells in log-polar space:
+// they grow as they go), foam gathering along their borders (FALLS.boil).
+float pr=length(pool),angle=atan(pool.y,pool.x),cell=seaCells(vec2(log(pr+.08)*${glsl(FALLS.boil[1])}-seaTime*${glsl(FALLS.boil[2])}+.35*seaNoise(pool*3.1-seaTime*.04),angle*${glsl(FALLS.boil[0] / (2 * Math.PI))}+.4*seaNoise(pool*2.+seaTime*.05)),${glsl(FALLS.boil[0])}),bw=.25+.35*seaFoam(pool*4.+seaTime*.1);
+float core=1.-smoothstep(.06,.3,pr),wash=.45*(1.-smoothstep(.25,.95,pr))*mix(.35,1.,(1.-smoothstep(0.,bw,cell))*smoothstep(.15,.6,seaFoam(pool*7.-seaTime*.07)))*(.65+.35*seaFoam(pool*3.+seaTime*.08));
 // The falling current clears the shore's steady blanket. Its broken fans,
 // rather than a uniform contact band, carry foam across the exposed water.
 shore=1.-.8*(1.-smoothstep(.25,.95,pr));
@@ -1064,7 +1079,9 @@ function* cliffGeometrySteps(height, cliff = CLIFF, half = 190, notch = null) {
 // under the sea each stands from; sides, rings: the faceted prism each is; bed:
 // its beds' thickness, each a little fuller or leaner than the next;
 // surf: how far its white water reaches; wet: its rock's share of the cliffs'
-// albedo, so seen through the mist it never stands paler than the sea.
+// albedo, so seen through the mist it never stands paler than the sea; weed,
+// weedTone: the weedy band the tides keep about its foot (its top over the
+// sea, its tint).
 export const STACKS = Object.freeze({
   list: Object.freeze(
     [
@@ -1080,7 +1097,9 @@ export const STACKS = Object.freeze({
   rings: 36,
   bed: 1.8,
   surf: 3.5,
-  wet: 0.5,
+  wet: 0.6,
+  weed: 3,
+  weedTone: Object.freeze([0.55, 0.6, 0.42]),
 });
 const COAST_GEOMETRY = Object.freeze({
   high: Object.freeze({ cliff: CLIFF, stacks: STACKS, maxTriangles: 45000 }),
@@ -1423,7 +1442,10 @@ alb*=(.94+.12*seaNoise(vec2(vC.x/8.,vRock.y/5.)))*(1.-.5*crack)*mix(1.,.94+.06*s
 alb*=1.-.22*side*smoothstep(.55,.85,seaNoise(vec2(vC.x*1.4,vRock.y*.13)));
 // The shelf takes the plain's dust up to the break, so it meets the terrain without a seam; the stacks stand dark with spray.
 alb=mix(alb,${glslVec(...cliff.dust)}*(.85+.3*n3.x),top*smoothstep(.2,1.,-vC.z));
-alb*=mix(1.,${glsl(STACKS.wet)},step(1.5,vC.y));
+// The stacks stand in the swell: a weedy band the tides keep up to STACKS.weed
+// over the sea, their own rock above it, darker than the cliffs' (wet).
+float stack=step(1.5,vC.y),hs=vW.y-vSeaY+.7*seaNoise(vec2(vC.x*.6,vRock.y*.2+3.3));
+alb*=mix(1.,${glsl(STACKS.wet)},stack)*mix(vec3(1.),mix(${glslVec(...STACKS.weedTone)},vec3(1.),smoothstep(${glsl(STACKS.weed - 0.5)},${glsl(STACKS.weed + 0.5)},hs)),stack);
 vec3 t=normalize(mix(cross(n,vec3(0.,1.,0.)),cross(n,vec3(0.,0.,1.)),top)+1e-4),bt=cross(t,n);
 // Each block's own facet, and the bed's lip tipped up to the light, its underside down.
 n=normalize(n+(t*(hb-.5)*.24+bt*(hc-.5)*.2+vec3(0.,smoothstep(.72,1.,bf)*.16-(1.-smoothstep(0.,.3,bf))*.12,0.)*exposed)*detail+(t*(n1.y*.5+n2.y*.35+n3.y*.15)+bt*(n1.z*.5+n2.z*.35+n3.z*.15))*.24);
@@ -1445,6 +1467,8 @@ vec3 c=alb*light;
 // A wet foot's dull sheen of the sky.
 vec3 E=normalize(cameraPosition-vW),R=reflect(-E,n);R.y=max(R.y,.1);
 c+=wet*seaEnv(normalize(R),.25+.4*rockRough)*(.09+.04*(1.-rockRough))*pow(1.-max(dot(n,E),0.),3.);
+// The moon's sheen: broad on the dry rock, tighter and brighter where it is wet.
+c+=seaGGX(n,E,mix(.6,.18,wet),.04)*mix(.2,1.,wet)*(1.-.8*b);
 // The river's last run over the shelf to the lip (riverFalls(): lip xz, half-width; flow), dark fast
 // water whitening at the lip, across the whole shelf (inland of it the terrain paints the river).
 if(cliffRiver.w>0.&&vC.y<.03){
@@ -1835,7 +1859,10 @@ export function coastShot(shot, frame, falls = null) {
 // the white water's; plunge: the radius of the white water where it lands, as
 // a share of its width. spray: the cloud it raises there: its centre's height
 // over the sea, its size (a share of the plunge's radius), its density and
-// its albedo.
+// its albedo. boil: the boils where it lands: how many round, their size
+// outward (in the log of the radius) and how fast they spread. scatter: falling
+// white water lit through, as a cloud of droplets is: its forward lean (g) and
+// how much of the moon it carries toward an eye looking into the light.
 export const FALLS = Object.freeze({
   lift: -0.01,
   run: 3,
@@ -1845,9 +1872,11 @@ export const FALLS = Object.freeze({
   depth: 1.64,
   drag: 0.25,
   spread: 0,
-  albedo: 0.5,
+  albedo: 0.7,
   plunge: 2.2,
-  spray: Object.freeze([3.1, 0.55, 0.11, 0.42]),
+  spray: Object.freeze([2.6, 0.7, 0.16, 0.42]),
+  boil: Object.freeze([9, 2, 0.25]),
+  scatter: Object.freeze([0.55, 1.4]),
 });
 
 // Where the river (its sampled line, [x, z, along, half-width], from its
@@ -2278,13 +2307,13 @@ float a=abs(vF.x),v=vF.y,fall=smoothstep(.86,1.1,v),white=smoothstep(.9,1.25,v),
 // one smooth band.
 float tau=min(v,.86)/.8+.0706*log(1.+4.25*clamp((v-.86)/.24,0.,1.))+max(v-1.1,0.)/4.2;
 float fx=fwidth(q),ft=fwidth(tau);
-float a1=1.-smoothstep(.3,1.05,max(fx*3.2,ft*8.4)),a2=1.-smoothstep(.3,1.05,max(fx*17.,ft*22.)),a3=1.-smoothstep(.32,1.06,max(fx*43.,ft*45.));
+float a1=1.-smoothstep(.3,1.05,max(fx*6.,ft*4.5)),a2=1.-smoothstep(.3,1.05,max(fx*16.,ft*5.)),a3=1.-smoothstep(.32,1.06,max(fx*40.,ft*10.));
 // Broad channels wander and merge; finer aerated folds ride them. Their
 // coordinates follow travel time, so neither the lip nor the falling sheet
 // slides at a constant world speed or resets its clock at a cut.
-vec3 bend=fallsSheet(vec2(q*2.3+.7,tau*1.1-seaTime*.42),seaTime*.13);
-float r1=mix(.5,.5+.5*fallsSheet(vec2(q*3.2+bend.x*.9,8.4*tau-4.2*seaTime),seaTime*.35).x,a1),r2=mix(.5,.5+.5*fallsSheet(vec2(q*17.+bend.x*1.7+3.,22.*tau-8.45*seaTime),seaTime*.53).x,a2),r3=mix(.5,.5+.5*fallsSheet(vec2(q*43.+bend.x*2.4+7.,45.*tau-13.*seaTime),seaTime*.71).x,a3);
-float streak=r1*.68+r2*.22+r3*.1,d=smoothstep(.22,.78,.5+(streak-.5)*1.4/max(.5,sqrt(.4624*a1*a1+.0484*a2*a2+.01*a3*a3)));
+vec3 bend=fallsSheet(vec2(q*2.3+.7,tau*.5-seaTime*.3),seaTime*.13);
+float r1=mix(.5,.5+.5*fallsSheet(vec2(q*6.+bend.x*.9,4.5*(tau-.6*seaTime)),seaTime*.35).x,a1),r2=mix(.5,.5+.5*fallsSheet(vec2(q*16.+bend.x*1.7+3.,5.*(tau-.6*seaTime)),seaTime*.53).x,a2),r3=mix(.5,.5+.5*fallsSheet(vec2(q*40.+bend.x*2.4+7.,10.*(tau-.6*seaTime)),seaTime*.71).x,a3);
+float streak=r1*.45+r2*.35+r3*.2,d=smoothstep(.22,.78,.5+(streak-.5)*1.4/max(.3,sqrt(.2025*a1*a1+.1225*a2*a2+.04*a3*a3)));
 // The closed skin defines the silhouette. The same current turns around its
 // real lateral faces; froth may thin, but never discards a wall of the body.
 float side=4.*vF.z*(1.-vF.z),edge=max(side,1.-smoothstep(.62-fx,1.+fx,a+.3*(r2-.5)*smoothstep(.86,1.,v)+.4*smoothstep(1.2,2.,v)*(r1-.5)));
@@ -2312,6 +2341,8 @@ white=smoothstep(.92+.045*bend.x-.04*smoothstep(.2,.5,a),1.26+.065*bend.x,v);
 float foam=mix(max(smoothstep(.5,.9,streak)*.4*smoothstep(.835,.87,v),runFoam),mix(.08,.98,d),white)*mix(1.,smoothstep(.02,.45,edge),fall);
 // Near the plunge, broken pockets of aerated water interrupt long ribbons
 // without widening the sheet or adding another particle/effect pass.
+// Packets of denser white water fall through the streams, each at its own pace.
+foam*=mix(1.,.7+.6*smoothstep(.25,.75,.5+.5*fallsSheet(vec2(q*2.6+5.,1.3*(tau-.75*seaTime)),seaTime*.2).x),white*a1);
 float impact=smoothstep(1.5,2.,v)*(.5+.5*bend.x);
 foam=mix(foam,max(foam,.4+.5*r2),impact*.45);
 // Fine streams thin unevenly into the existing impact cloud. Lower coverage
@@ -2324,11 +2355,14 @@ vec3 R=reflect(-E,rn);R.y=max(R.y,.08);
 vec3 water=seaEnv(normalize(R),.25+.5*rp.w)*(.02+.98*pow(1.-max(dot(rn,E),0.),5.))*${glsl(2 * SEA.sky)};
 float wY=dot(water,vec3(.2126,.7152,.0722));water=vec3(.004,.007,.009)+water*${glsl(SEA.knee)}*(1.-exp(-wY/${glsl(SEA.knee)}))/max(wY,1e-5);
 // Lit through as well as on: falling white water scatters the light from every side, as the surf does.
-vec3 lit=(mix(seaLight(n,babelFlash.x*(1.-b)),seaLight(vec3(0.,1.,0.),babelFlash.x*(1.-b)),white)+seaKeyColor*.25/SEA_PI)*${glsl(falls.albedo)};
+// Falling, it is a cloud of droplets: lit through, it glows toward an eye looking into the moon (FALLS.scatter).
+vec3 lit=(mix(seaLight(n,babelFlash.x*(1.-b)),seaLight(vec3(0.,1.,0.),babelFlash.x*(1.-b)),white)+seaKeyColor*(.25/SEA_PI+${glsl(falls.scatter[1])}*seaHG(dot(-seaKey,E),${glsl(falls.scatter[0])})*white))*${glsl(falls.albedo)};
 // Falling, the water between its streams is thinner white water, never a mirror: only the lip is glassy.
 // Over the lip it takes the river's bluer, brighter sheen (the ground's own mirror of the film's sky),
 // and its froth the shelf's soil-lit froth's light, up from the crest (RAPIDS.run).
 water*=mix(vec3(1.),vec3(1.25,1.25,1.5),1.-fall);
+// Glassy over the lip, it catches the moon.
+water+=seaGGX(rn,E,.07+.3*rp.w,.02)*(1.-white)*(1.-.8*b);
 lit*=mix(1.,${glsl(rapids.run)},smoothstep(.3,1.6,raV)*(1.-fall));
 water=mix(water,lit*.12,white);
 vec3 c=mix(water,lit,foam*(1.-${glsl(SEA.text)}*b));

@@ -28,8 +28,8 @@ export const FILM_LIGHT = Object.freeze({
 const TONES = { a: [1.15, 0.63], b: [1.3, 0.49], c: [1.5, 0.35] };
 const tonePick = globalThis.location?.search?.match(/[?&]tone=(\w+)/)?.[1];
 export const FILM_TONE = Object.freeze({
-  contrast: (TONES[tonePick] ?? TONES.b)[0],
-  mid: (TONES[tonePick] ?? TONES.b)[1],
+  contrast: (TONES[tonePick] ?? TONES.c)[0],
+  mid: (TONES[tonePick] ?? TONES.c)[1],
   anchor: 0.3,
   balance: Object.freeze([0.96, 0.99, 1.04]),
   saturation: 0.85,

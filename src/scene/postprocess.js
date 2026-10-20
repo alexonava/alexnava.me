@@ -15,7 +15,7 @@ import {
   WebGLRenderTarget,
   ZeroFactor,
 } from "three";
-import { FILM_TONE_GLSL, FILM_TONE_UNIFORM } from "./film-light.js";
+import { FILM_TONE, FILM_TONE_GLSL, FILM_TONE_UNIFORM, filmExposure } from "./film-light.js";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { FullScreenQuad } from "three/examples/jsm/postprocessing/Pass.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
@@ -297,8 +297,9 @@ export const LENS_FX = Object.freeze({
   // disc) in `color`, and any ghosts along the line from the star through the
   // frame's centre: [t along it (1 at the centre), radius in frame heights,
   // r, g, b, strength]: a film lens's few soft ghosts (the owner's pick of
-  // 2026-10-13), amber, blue, a small green dot past the centre, a large faint
-  // violet ring and an amber disc, spread far enough along the line that they
+  // 2026-10-13), faint and in the star's own amber as a coated lens tints them
+  // (2026-10-19, photoreal), a cooler one, a small dot past the centre, a large
+  // faint ring and an amber disc, spread far enough along the line that they
   // never bunch about a star near the centre.
   flare: Object.freeze({
     on: 1,
@@ -307,11 +308,11 @@ export const LENS_FX = Object.freeze({
     shineDisc: 0.25,
     color: Object.freeze([1, 0.6, 0.3]),
     ghosts: Object.freeze([
-      Object.freeze([0.35, 0.03, 1, 0.62, 0.3, 0.18]),
-      Object.freeze([0.75, 0.06, 0.45, 0.7, 1, 0.09]),
-      Object.freeze([1.35, 0.018, 0.6, 1, 0.7, 0.16]),
-      Object.freeze([1.9, 0.1, 0.9, 0.5, 1, 0.06]),
-      Object.freeze([2.6, 0.04, 1, 0.75, 0.4, 0.12]),
+      Object.freeze([0.35, 0.03, 1, 0.62, 0.3, 0.108]),
+      Object.freeze([0.75, 0.06, 0.73, 0.66, 0.65, 0.054]),
+      Object.freeze([1.35, 0.018, 0.8, 0.81, 0.5, 0.096]),
+      Object.freeze([1.9, 0.1, 0.95, 0.56, 0.65, 0.036]),
+      Object.freeze([2.6, 0.04, 1, 0.69, 0.35, 0.072]),
     ]),
   }),
   // None of it reaches the text: it eases out over `text[0]` of the screen's
@@ -821,11 +822,23 @@ class SceneRenderPass extends RenderPass {
   }
 }
 
+// The scene light the tone curve shows at .9 (EOTF .787), over .9.
+const BLOOM_LIT =
+  ((FILM_TONE.mid * 0.787) / 0.213) ** (1 / FILM_TONE.contrast) / filmExposure() / 0.9;
+
 export function createPostprocessPipeline(renderer, scene, camera, qualityProfile, options = {}) {
   const composer = new EffectComposer(renderer);
   const renderPass = new SceneRenderPass(scene, camera);
   const size = getSize(renderer);
   const bloomPass = new UnrealBloomPass(size, 0.18, 0.45, 0.9);
+  // Bloom finds the bright lights: the lit layers' (codes from .2) scene light
+  // against its threshold as the tone curve shows it (BLOOM_LIT: the scene light
+  // shown at .9, over .9), so moonlit ground never glows; the painted sky's as shown.
+  bloomPass.materialHighPassFilter.fragmentShader =
+    bloomPass.materialHighPassFilter.fragmentShader.replace(
+      "float v = dot( texel.xyz, luma );",
+      `float v = dot( texel.xyz, luma ) / mix( 1.0, ${BLOOM_LIT.toFixed(3)}, smoothstep( 0.17, 0.25, texel.a ) );`,
+    );
   const gradingPass = new ShaderPass(GRADING_SHADER);
   // ShaderPass clones its uniforms: the tone curve's is the shared one.
   gradingPass.uniforms.uTone = FILM_TONE_UNIFORM;
