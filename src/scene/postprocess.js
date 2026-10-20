@@ -421,12 +421,12 @@ vec2 lensFringe(vec2 v, vec4 star) {
 // The scene through the lens at uv (screen position v): the heat's drift, the
 // shot's focus, then the aberration's fringes, all eased off behind the text
 // and the kept banks.
-vec4 lensView(sampler2D map, vec2 uv, vec2 v, float blur, vec4 star, vec4 flame, vec4 keep, float guard) {
+vec4 lensView(sampler2D map, vec2 uv, vec2 v, float blur, vec3 ground, vec4 star, vec4 flame, vec4 keep, float guard) {
   // No early return: the focus's taps stay in uniform control flow.
   float open = (1.0 - guard) * (1.0 - lensKeep(keep, v, 0.0));
   vec2 q = uv;
   if (uLens.x > 0.0 && open > 0.0) q += lensHeat(v, star, flame) * (uLens.x * open);
-  vec4 texel = lensBlur(map, q, blur);
+  vec4 texel = lensBlur(map, q, blur, ground);
   if (uLens.y > 0.0) {
     vec2 s = lensFringe(v, star) * (uLens.y * open);
     vec4 centre = blur > 0.0 ? texture2D(map, q) : texel;
@@ -478,6 +478,9 @@ const VIGNETTE_GRAIN_SHADER = {
     uCssTexel: { value: new Vector2(1, 1) },
     uBlur: { value: 0 },
     uBlurPrev: { value: 0 },
+    // The focus over the plain's depth, affine in UV (setLens()), live and kept.
+    uGround: { value: new Vector3() },
+    uGroundPrev: { value: new Vector3() },
     uBars: { value: 0 },
     uGrainTime: { value: 0 },
     // The gate weave (FILM_LOOK.weave): the frame's offset in UV.
@@ -518,16 +521,22 @@ uniform vec2 uPrevOrigin;
 uniform vec2 uCssTexel;
 uniform float uBlur;
 uniform float uBlurPrev;
+uniform vec3 uGround;
+uniform vec3 uGroundPrev;
 uniform float uBars;
 uniform float uGrainTime;
 varying vec2 vUv;
 
 // The lens's shallow focus: the sky and the ranges (film depth layers below
-// the ground's) soften over a disc of radius CSS px. Only taps from the same
-// layer or a farther one count, so the subject never bleeds into the sky.
-vec4 lensBlur(sampler2D map, vec2 uv, float radius) {
+// the ground's) soften over a disc of radius CSS px; the ground as a thin lens
+// sees it, by how far it lies from the focus along this pixel's ray (ground:
+// the focus's distance over the plain's depth there, affine in uv), at most
+// 1.5 radii nearer the lens; the subject never. Only taps from the same layer
+// or a farther one count, so the subject never bleeds into the sky.
+vec4 lensBlur(sampler2D map, vec2 uv, float radius, vec3 ground) {
   vec4 centre = texture2D(map, uv);
   if (radius <= 0.0) return centre;
+  if (centre.a > 0.5) radius *= min(abs(1.0 - max(dot(ground, vec3(uv, 1.0)), 0.0)), 1.5) * step(centre.a, 0.8);
   vec3 sum = centre.rgb;
   float weight = 1.0;
   for (int i = 1; i < 13; i++) {
@@ -537,10 +546,10 @@ vec4 lensBlur(sampler2D map, vec2 uv, float radius) {
     sum += tap.rgb * w;
     weight += w;
   }
-  // The ground and the subject stay sharp, their anti-aliased edges too: the
-  // nearest layer over a 1px cross decides.
+  // The subject stays sharp, its anti-aliased edges too: the nearest layer
+  // over a 1px cross decides.
   float near = max(max(centre.a, texture2D(map, uv + vec2(uCssTexel.x, 0.0)).a), max(texture2D(map, uv - vec2(uCssTexel.x, 0.0)).a, max(texture2D(map, uv + vec2(0.0, uCssTexel.y)).a, texture2D(map, uv - vec2(0.0, uCssTexel.y)).a)));
-  return vec4(mix(sum / weight, centre.rgb, step(0.5, near)), centre.a);
+  return vec4(mix(sum / weight, centre.rgb, step(0.8, near)), centre.a);
 }
 
 float hash(vec2 p) {
@@ -622,7 +631,7 @@ vec3 starSky(vec2 uv, vec2 c, float r, vec2 aspect, vec3 own) {
   }
 void main() {
   float guard = uLayered > 0.5 ? max(lensBehind(slateText, vUv, ${lensNumber(LENS_FX.text[0])}), lensBehind(slateAbout, vUv, ${lensNumber(LENS_FX.text[1])})) : 0.0;
-  vec4 texel = uLayered > 0.5 ? lensView(tDiffuse, vUv, vUv, uBlur, uStar, uFlame, uKeep, guard) : texture2D(tDiffuse, vUv);
+  vec4 texel = uLayered > 0.5 ? lensView(tDiffuse, vUv, vUv, uBlur, uGround, uStar, uFlame, uKeep, guard) : texture2D(tDiffuse, vUv);
   // The kept frame pushes in about its origin: here it shows its own pixel prevUv,
   // so its lens (heat, fringes, kept rect and flare) is placed in its own UV and
   // stays on its own star and flame.
@@ -647,7 +656,7 @@ void main() {
       }
     }
     w = smoothstep(start, start + span, uProgress);
-    vec4 prevTexel = uLayered > 0.5 ? lensView(tPrev, prevUv, prevUv, uBlurPrev, uStarPrev, uFlamePrev, uKeepPrev, guard) : texture2D(tPrev, prevUv);${
+    vec4 prevTexel = uLayered > 0.5 ? lensView(tPrev, prevUv, prevUv, uBlurPrev, uGroundPrev, uStarPrev, uFlamePrev, uKeepPrev, guard) : texture2D(tPrev, prevUv);${
       DISSOLVE_SOFT.on
         ? /* glsl */ `
     // The incoming subject washes in on one long weight, its gaps with it (DISSOLVE_SOFT.wash).
@@ -1158,6 +1167,7 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
         if (phase !== BLENDING) {
           phase = ARMED;
           finalUniforms.uBlurPrev.value = finalUniforms.uBlur.value;
+          finalUniforms.uGroundPrev.value.copy(finalUniforms.uGround.value);
         }
       } else if (progress >= 1 || phase === ARMED) {
         phase = IDLE;
@@ -1169,10 +1179,24 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
       syncProtection();
       if (wasIdle !== (phase === IDLE)) applyProfile(currentProfile);
     },
-    // The shot's lens: background blur in CSS px, set with the shot (on a cut).
-    setLens(lens = null) {
-      const blur = lens?.blur ?? 0;
-      finalUniforms.uBlur.value = film ? blur : 0;
+    // The shot's lens: background blur in CSS px, set with the shot (on a cut), and
+    // its focus on the camera's subject at `focus`: the plain (a level plane at
+    // `ground`) lies out of focus by its depth along each ray, whose inverse is
+    // affine in the frame's UV (uGround: that times the focus's distance).
+    setLens(lens = null, camera = null, focus = null, ground = 0) {
+      const blur = film ? (lens?.blur ?? 0) : 0,
+        g = finalUniforms.uGround.value.set(0, 0, 0);
+      finalUniforms.uBlur.value = blur;
+      if (blur && camera && focus) {
+        const m = camera.matrixWorld.elements,
+          p = camera.projectionMatrix.elements,
+          f =
+            ((focus.x - m[12]) * m[8] + (focus.y - m[13]) * m[9] + (focus.z - m[14]) * m[10]) /
+            (m[13] - ground),
+          a = m[1] / p[0],
+          b = m[5] / p[5];
+        g.set(2 * a * f, 2 * b * f, ((p[8] - 1) * a + (p[9] - 1) * b - m[9]) * f);
+      }
     },
     // Widescreen bars as a share of the height at each edge.
     setBars(share = 0) {

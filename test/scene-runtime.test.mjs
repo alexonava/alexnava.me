@@ -1558,7 +1558,12 @@ test("each frame applies the shot's light, lens, bars and grain, holding the gra
       "RIM_UNIFORMS.babelKeyView.value .set(...WORLD.SUN_DIRECTION) .transformDirection(camera.matrixWorldInverse);",
     ),
   );
-  assert.ok(index.includes("post.setLens?.(cinematicApplied ? cinematic.shot?.lens : null);"));
+  // The lens focuses on the shot's subject, the plain under it taking its depth (postprocess.js setLens()).
+  assert.ok(
+    index.includes(
+      "post.setLens?.(cinematicApplied ? cinematic.shot?.lens : null, camera, lookTarget, cinematicGroundY(lookTarget.x, lookTarget.z));",
+    ),
+  );
   assert.ok(!index.includes("setGrade"), "no per-shot grade: the cel step is the sky's alone");
   // The bars ease out under the dissolve into the walk and back in after it (walk.js bars).
   assert.ok(

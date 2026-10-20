@@ -1183,7 +1183,12 @@ const ORBIT_SPEED = 0.06;
         // The shot's lens and the film's bars and grain follow the shot on screen;
         // the bars ease out under the dissolve into the walk and back in after it.
         const post = rendering.postprocessPipeline;
-        post.setLens?.(cinematicApplied ? cinematic.shot?.lens : null);
+        post.setLens?.(
+          cinematicApplied ? cinematic.shot?.lens : null,
+          camera,
+          lookTarget,
+          cinematicGroundY(lookTarget.x, lookTarget.z),
+        );
         post.setBars?.(
           filmActive && (cinematicApplied || walking)
             ? letterboxShare(viewport.width, viewport.height) * (walk?.bars ?? 1)
