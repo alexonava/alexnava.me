@@ -55,7 +55,7 @@ export function createPropScale({ groundRoot, groundHeight }) {
       // Measured by its own geometry, so nothing parented to the tree changes
       // its size, footing or camera fit.
       const size = bounds(t, true).getSize(new Vector3());
-      // 4.2 doorways tall, the tree reads as a mature tree beside the tower.
+      // 4.2 doorways tall, the tree reads as a mature tree.
       t.scale.multiplyScalar((4.2 * D) / size.y);
       ground(t, true, ESTATE.tree.sink);
       // directed-shots.js frames it from the soil line, not its buried toe.

@@ -66,9 +66,9 @@ test("the storm's lightning is occasional, calm and off nothing but a debug over
   assert.equal(balanced.sky.thin, 0, "and a plain glow");
   assert.equal(lightningTier(LIGHTNING, "high"), LIGHTNING);
   assert.equal(balanced.relight.fill, LIGHTNING.relight.fill, "a tier overrides only its own");
-  // The lookout's giants look up at least 15 degrees, so their flickers rise into the frame
+  // The watch looks up at least 15 degrees, so its flickers rise into the frame
   // (2026-10-12); every other shot keeps the storm low over the ranges.
-  assert.deepEqual(Object.keys(LIGHTNING.shots), ["The watch", "Threshold"]);
+  assert.deepEqual(Object.keys(LIGHTNING.shots), ["The watch"]);
   for (const over of Object.values(LIGHTNING.shots)) {
     assert.deepEqual(Object.keys(over), ["altitude"]);
     assert.deepEqual([...over.altitude], [12, 24]);
@@ -134,9 +134,9 @@ test("a pulse rises over its attack and falls to exactly nothing", () => {
   assert.equal(event.peaks[0].t, 24);
   assert.equal(lightningLevel(event, 24), 1);
   assert.equal(schedule.at(24, "Portrait"), event, "an event with no shot shows in any");
-  const only = createLightningSchedule({ ...LIGHTNING, forceAt: [{ at: 24, shot: "Threshold" }] });
+  const only = createLightningSchedule({ ...LIGHTNING, forceAt: [{ at: 24, shot: "The watch" }] });
   assert.equal(only.at(24, "Portrait"), null);
-  assert.equal(only.at(24, "Threshold").forced.shot, "Threshold");
+  assert.equal(only.at(24, "The watch").forced.shot, "The watch");
 });
 
 test("a flash keeps exactly off The watch's reference banks, its crop's span", () => {
@@ -381,7 +381,7 @@ test("a cut ends a flash, whose place belonged to the shot before", () => {
   const rig = lightningRig({ forceAt: [{ at: 1, u: 0.7, v: 0.6, strength: 1 }] });
   rig.step(1);
   assert.ok(rig.sky.uFlash.value.w > 0.99);
-  rig.state.shot = "Threshold";
+  rig.state.shot = "Lantern study";
   rig.step(1 / 60);
   assert.equal(rig.sky.uFlash.value.w, 0);
   assert.equal(FLASH_UNIFORMS.babelFlashLight.value.w, 0);
@@ -495,11 +495,11 @@ test("flashHook adds the flash after a material's lights, composed and keyed, gu
         "#include <lights_fragment_end>\nOWN_RIM;",
       );
     },
-    customProgramCacheKey: () => "tower-v9",
+    customProgramCacheKey: () => "tree-v9",
   };
   assert.equal(flashHook(material, { rim: true, sky: "babelEnvironment.x" }), material);
   assert.equal(flashHook(material), material, "once");
-  assert.equal(material.customProgramCacheKey(), "tower-v9|flash");
+  assert.equal(material.customProgramCacheKey(), "tree-v9|flash");
   const shader = { uniforms: {}, fragmentShader: FRAGMENT };
   material.onBeforeCompile(shader);
   assert.deepEqual(calls, ["own"], "its own hook first");
@@ -551,7 +551,7 @@ test("every lit film material takes the flash, and none of the scene's lights mo
     architecture.includes(
       'flashHook(material, { sky: "babelEnvironment.x" }); return mistHook(material);',
     ),
-    "the lookout, the tree and the rocks",
+    "the tree and the rocks",
   );
   assert.equal(architecture.match(/flashHook\(\s*mistHook\(new MeshStandardMaterial/g)?.length, 2);
   assert.ok(

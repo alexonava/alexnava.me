@@ -18,7 +18,7 @@ import { rockKeepouts } from "./rock-scatter.js";
 import { SLATE_PUDDLES, SLATE_STREAMS, riverAt, streamLines } from "./mud-ground.js";
 
 // The same winding approach stays clear in every camera and quality tier.
-// Its centerline joins the tower's entrance side to the tree's lantern clearing.
+// Its centerline joins the watch's terrace to the tree's lantern clearing.
 export { estatePathDistance };
 
 // The estate's grass: sparse clumps of curved, tapering blades. Each blade is
@@ -313,7 +313,7 @@ function* groundDetailSteps(groundHeight) {
     if (attempt % 8 === 0) yield;
     const tree = attempt % 2,
       angle = random() * Math.PI * 2,
-      anchor = tree ? ESTATE.tree : ESTATE.tower;
+      anchor = tree ? ESTATE.tree : ESTATE.watch;
     const radius = (tree ? 5.9 : 10.5) + Math.pow(random(), 1.7) * (tree ? 10 : 17);
     const x = anchor.x + Math.cos(angle) * radius;
     const z = anchor.z + Math.sin(angle) * radius;

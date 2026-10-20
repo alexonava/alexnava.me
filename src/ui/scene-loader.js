@@ -2,10 +2,11 @@
 //
 // main.js begins a run only on the live path, after every static gate has
 // passed, and reports two stages: the scene bundle loaded and the scene
-// initialized. The required models report their downloaded bytes through
-// track(), and the scene's User Timing measures (perf-marks.js names) report
-// each one's parse, assembly and shader warm-up. The value is that real
-// progress, as the label's percentage and as the fill of a bar along the
+// initialized. The opening subjects' build steps follow, as the scene's User
+// Timing measures (perf-marks.js names) report them: the watch's commit
+// (assembly) and shader warm-up, and with ?view=tree the tree's download
+// (its bytes, through track()), parse, assembly and warm-up. The value is that
+// real progress, as the label's percentage and as the fill of a bar along the
 // window's top edge, held below 100% until #home-scene gains is-ready (the
 // reveal); it then reads 100% and fades out with the canvas's fade-in. A
 // scene host that is hidden (a failed scene) or a run that stops progressing
@@ -13,18 +14,21 @@
 // never see it.
 //
 // Its star (#scene-star) is the scene's star as the opening shot will show it:
-// the scene reports where (star()), first from its opening fit to the tower's
+// the scene reports where (star()), first from its opening fit to the watch's
 // stored outline, then from its own camera, and from then on the star warms
 // with the progress: an ember at that progress, the scene's star at the reveal,
 // where the canvas fades in over it.
 (() => {
   const site = (window.BabelSite = window.BabelSite || {});
   // The early and the scene's own model requests: ROLE-TIER[.HASH].glb.
-  const MODEL = /\/(tower|tree)-(high|balanced)(?:\.[0-9a-f]{8})?\.glb(?:[?#]|$)/;
-  // A required model's build steps, as the scene measures them.
-  const STEP = /^babel:(glb-parse|assembly|shaders):(tower|tree)$/;
+  const MODEL = /\/(tree)-(high|balanced)(?:\.[0-9a-f]{8})?\.glb(?:[?#]|$)/;
+  // A required subject's build steps, as the scene measures them; the watch
+  // has no model to parse.
+  const STEP = /^babel:(glb-parse|assembly|shaders):(watch|tree)$/;
   const STEPS = { "glb-parse": 0.35, assembly: 0.25, shaders: 0.4 };
-  // Before the reveal: 10% bundle, 4% initialization, 70% bytes, 12% build.
+  const MODELS = ["tree"];
+  // Before the reveal: 10% bundle, 4% initialization, 70% bytes, 12% build;
+  // with no model to download, the build takes the bytes' share.
   const CAP = 0.96;
   // Longer than the line's own 120ms + 360ms fade.
   const EXIT_MS = 600;
@@ -48,7 +52,7 @@
       [2.6, 0.04],
     ]),
   });
-  // Each tier's tower and tree sizes in bytes (build.mjs), as decoded bodies.
+  // Each tier's tree size in bytes (build.mjs), as decoded bodies.
   const SIZES =
     typeof __BABEL_ARCHITECTURE_PREFETCH_BYTES__ !== "undefined"
       ? __BABEL_ARCHITECTURE_PREFETCH_BYTES__
@@ -89,26 +93,31 @@
   }
 
   function measure(r) {
-    const bytes = r.roles.map((role) => roleBytes(r, role));
+    const bytes = r.roles.filter((role) => MODELS.includes(role)).map((role) => roleBytes(r, role));
     const known = bytes.filter((entry) => entry.expected);
     // A role of unknown size weighs as much as the average known one.
     const fallback = known.reduce((sum, entry) => sum + entry.expected, 0) / known.length || 1;
     let total = 0;
     let got = 0;
     let built = 0;
+    let steps = 0;
     for (const entry of bytes) {
       const weight = entry.expected || fallback;
       total += weight;
       got += weight * fraction(entry);
     }
     for (const role of r.roles) {
-      for (const step in STEPS) if (r.built[role][step]) built += STEPS[step];
+      for (const step in r.built[role]) {
+        steps += STEPS[step];
+        if (r.built[role][step]) built += STEPS[step];
+      }
     }
+    const share = bytes.length ? 0.7 : 0;
     const value =
       0.1 * r.stages.bundle +
       0.04 * r.stages.init +
-      0.7 * (got / total) +
-      (0.12 * built) / r.roles.length;
+      (share && (share * got) / total) +
+      ((0.82 - share) * built) / steps;
     return Math.min(Math.round(value * 1e6) / 1e6, CAP);
   }
 
@@ -212,11 +221,11 @@
     const starEl = document.getElementById("scene-star");
     const starParts = starEl ? Array.from(starEl.children) : [];
     if (run.exit) window.clearTimeout(run.exit);
-    // The tower opens the film; ?view=tree also waits for the tree.
+    // The watch opens the film; ?view=tree also waits for the tree.
     const roles =
       new URLSearchParams(window.location?.search || "").get("view") === "tree"
-        ? ["tower", "tree"]
-        : ["tower"];
+        ? ["watch", "tree"]
+        : ["watch"];
     const r = (run = {
       el,
       fill,
@@ -231,7 +240,12 @@
       ledger: [],
       stages: { bundle: false, init: false },
       built: Object.fromEntries(
-        roles.map((role) => [role, { "glb-parse": false, assembly: false, shaders: false }]),
+        roles.map((role) => [
+          role,
+          MODELS.includes(role)
+            ? { "glb-parse": false, assembly: false, shaders: false }
+            : { assembly: false, shaders: false },
+        ]),
       ),
       target: 0,
       seen: 0,
@@ -258,7 +272,7 @@
           // The reveal's mark backs up the class change.
           if (name === "babel:reveal" && entryType === "mark") return end("revealed");
           const [, step, role] = (entryType === "measure" && STEP.exec(name)) || [];
-          if (r.built[role]) {
+          if (r.built[role] && step in r.built[role]) {
             r.built[role][step] = true;
             update(r);
           }
@@ -395,7 +409,9 @@
         progress: r.target,
         tier: r.tier,
         roles: [...r.roles],
-        bytes: Object.fromEntries(r.roles.map((role) => [role, roleBytes(r, role)])),
+        bytes: Object.fromEntries(
+          r.roles.filter((role) => MODELS.includes(role)).map((role) => [role, roleBytes(r, role)]),
+        ),
         stages: { ...r.stages },
         built: JSON.parse(JSON.stringify(r.built)),
         star: r.star ? { ...r.star } : null,

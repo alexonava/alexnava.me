@@ -1041,8 +1041,8 @@ body.scene-walk-hidden > :not(.scene-shell) {
   }
 
   /* The intro runs on one line here, its end past the reach of the hero's
-     scrim and over the subject in the close shots (Masonry study's lit post,
-     Close-up's pale branches), so it keeps its own text scrim, as Contact does: a
+     scrim and over the subject in the close shots (Close-up's pale
+     branches), so it keeps its own text scrim, as Contact does: a
      soft oval centred on the line that reaches transparent before every edge of
      its box (the hero's (1 - t²)² falloff), 0.6 at its centre. It guards the
      line over the live scene only: hero.js marks the hero is-over-scene while

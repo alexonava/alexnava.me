@@ -322,7 +322,7 @@ export const LENS_FX = Object.freeze({
   // frame's share [x0, y0, x1, y1] from its top-left corner, kept whole, with
   // the lens easing in over `keepSoft` frame heights beyond it. Looking up toward the star
   // from the east, The watch sees them across the lower middle of the frame, behind the name
-  // and under the lookout (0.09-0.76 of the width, from 0.37 of the height down, at 1440x800
+  // (0.09-0.76 of the width, from 0.37 of the height down, at 1440x800
   // to 2560x1080); the star stands to their right.
   keep: Object.freeze({ "The watch": Object.freeze([0.08, 0.36, 0.78, 1]) }),
   keepSoft: 0.03,

@@ -485,7 +485,7 @@ export function createSceneRendering({
       composer.setSize(nextWidth, nextHeight);
       // Grading samples its ink contour in CSS pixels.
       postprocessPipeline.resize?.(nextWidth, nextHeight);
-      // Composition offsets and tower scale move shadow casters.
+      // Composition offsets move shadow casters.
       sunLight.shadow.needsUpdate = true;
       return true;
     },

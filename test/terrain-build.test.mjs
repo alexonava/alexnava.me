@@ -3745,8 +3745,8 @@ test("the river runs through the set: today's reach past the lantern, wider out 
   assert.ok(coastDistance(RIVER_LINE[0][0], RIVER_LINE[0][1]) < 0);
   assert.ok(out(RIVER_LINE.at(-1)) > 192);
   assert.equal(Math.max(...RIVER_LINE.map(([, , , w]) => w)), 30);
-  // Its water keeps 10 units beyond the lookout's grass (its tufts grow 10.5 to 27.5 out), so no
-  // tuft about the lookout or the tree moves; and every rock and its pebbles stand out of the water.
+  // Its water keeps 10 units beyond the watch's grass (its tufts grow 10.5 to 27.5 out), so no
+  // tuft about the watch or the tree moves; and every rock and its pebbles stand out of the water.
   for (const [x, z, , w] of RIVER_LINE)
     assert.ok(Math.hypot(x, z) - w * wobble > 37.5, `${x},${z}`);
   for (const rock of rockKeepouts()) {

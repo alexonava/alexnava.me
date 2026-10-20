@@ -1,76 +1,41 @@
 // The walk (src/scene/walk.js) and its key (walk-key.js): the visitor's
-// first-person camera on the ground and up the lookout's ladder. Its geometry
-// and motion are pure functions, the lookout's measures are held to both
-// delivered models, and its phases run against the real tour and cinematic
-// camera, with a stand-in page.
+// first-person camera on the ground. Its geometry and motion are pure
+// functions, and its phases run against the real tour and cinematic camera,
+// with a stand-in page.
 import assert from "node:assert/strict";
 import test from "node:test";
 import { getEventListeners } from "node:events";
 import vm from "node:vm";
 import {
   BoxGeometry,
-  DoubleSide,
   Fog,
   Group,
   Mesh,
   MeshBasicMaterial,
   PerspectiveCamera,
-  Raycaster,
   Vector3,
 } from "three";
-import { glbAsset, modelBytes } from "./support/glb.mjs";
-import { createCompleteTowerArchitecture } from "../src/scene/architecture.js";
-import { createSceneEnvironment } from "../src/scene/environment.js";
 import { createCinematicCamera } from "../src/scene/cinematic.js";
 import { createCameraTour, TOUR_IDLE } from "../src/scene/camera-tour.js";
 import { ESTATE, estateLantern } from "../src/scene/estate-layout.js";
 import { isWalkKey, walkAllowed } from "../src/scene/walk-key.js";
 import { source } from "./support/code.mjs";
 import {
-  LOOKOUT,
   WALK,
   boundStep,
-  convexHull,
   createWalk,
-  deckStep,
   focusCell,
   integrate,
-  ladderLine,
   land,
   look,
   pushOutCircles,
-  pushOutHull,
   settle,
   spawn,
-  towerFootprint,
-  towerFrame,
-  vaultTo,
   walkFov,
   wish,
 } from "../src/scene/walk.js";
 
 const close = (a, b, eps = 1e-6) => assert.ok(Math.abs(a - b) < eps, `${a} != ${b}`);
-const area = (hull) =>
-  hull.reduce((sum, [ax, az], i) => {
-    const [bx, bz] = hull[(i + 1) % hull.length];
-    return sum + (ax * bz - bx * az) / 2;
-  }, 0);
-// Signed distance from a convex hull's outline: inside, the nearest edge's
-// (negative); outside, the true distance to the outline, corners included.
-const outside = (hull, x, z) => {
-  let side = -Infinity,
-    near = Infinity;
-  hull.forEach(([ax, az], i) => {
-    const [bx, bz] = hull[(i + 1) % hull.length],
-      ex = bx - ax,
-      ez = bz - az,
-      length = Math.hypot(ex, ez),
-      t = Math.min(1, Math.max(0, ((x - ax) * ex + (z - az) * ez) / (length * length)));
-    side = Math.max(side, ((x - ax) * ez - (z - az) * ex) / length);
-    near = Math.min(near, Math.hypot(x - ax - ex * t, z - az - ez * t));
-  });
-  return side <= 0 ? side : near;
-};
 // A key event; its fields (target too, a getter on Event) as own properties.
 const key = (type, code, extra = {}) => {
   const event = new Event(type, { cancelable: true });
@@ -78,20 +43,6 @@ const key = (type, code, extra = {}) => {
     Object.defineProperty(event, name, { value, configurable: true });
   return event;
 };
-const towers = new Map();
-function towerRoot(tier) {
-  if (!towers.has(tier))
-    towers.set(
-      tier,
-      createCompleteTowerArchitecture({
-        asset: glbAsset(modelBytes("tower", tier)),
-        groundY: 1.36,
-        footingOffset: -0.22,
-      }).root,
-    );
-  return towers.get(tier);
-}
-
 test("the walk's key is ` or ~ wherever a layout types them, never a chord, a repeat or typing", () => {
   assert.ok(isWalkKey(key("keydown", "Backquote", { key: "`" })));
   assert.ok(isWalkKey(key("keydown", "Backquote", { key: "~", shiftKey: true })));
@@ -231,39 +182,19 @@ test("solids push the walker out to its body's radius and let it slide along the
     [1.9, 0.1],
     [5.5, 0.2],
   ]) {
-    const [sx, sz] = settle(px, pz, { circles, hull: [] });
+    const [sx, sz] = settle(px, pz, { circles });
     for (const circle of circles)
       assert.ok(Math.hypot(sx - circle.x, sz - circle.z) >= circle.r + WALK.body - 1e-9);
   }
-  // A square's hull, counter-clockwise, interior points dropped.
-  const square = convexHull([
-    [-2, -2],
-    [2, -2],
-    [2, 2],
-    [-2, 2],
-    [0, 0],
-    [1, -1],
-  ]);
-  assert.equal(square.length, 4);
-  close(area(square), 16);
-  for (const [px, pz] of [
-    [0, 0],
-    [1.9, 0.3],
-    [2.3, 0],
-    [2.3, 2.3],
-  ]) {
-    const [qx, qz] = pushOutHull(px, pz, square, WALK.body);
-    assert.ok(outside(square, qx, qz) >= WALK.body - 1e-9, `${px},${pz}`);
-  }
-  assert.deepEqual(pushOutHull(5, 5, square, WALK.body), [5, 5]);
-  // Walking along a wall into it at a slant, the walker slides along it.
+  // Walking into a solid a little off its centre, the walker slides round it.
+  const [solid] = circles;
   let wx = -5,
-    wz = 3.2;
+    wz = 0.5;
   for (let i = 0; i < 60; i++) {
-    [wx, wz] = pushOutHull(wx + 0.2, wz - 0.05, square, WALK.body);
-    assert.ok(outside(square, wx, wz) >= WALK.body - 1e-9);
+    [wx, wz] = settle(wx + 0.2, wz, { circles: [solid] });
+    assert.ok(Math.hypot(wx - solid.x, wz - solid.z) >= solid.r + WALK.body - 1e-9);
   }
-  assert.ok(wx > 5, `slid past the square to ${wx}`);
+  assert.ok(wx > solid.x + solid.r, `slid round the solid to ${wx}`);
 });
 
 test("the bound fades outward steps between soft and hard and never lets the walker past hard, inside the sky's dome", () => {
@@ -308,7 +239,7 @@ test("the walk keeps back from the cliffs' lip: outward steps fade from shore[0]
     [89, 0],
   );
   // A walk that starts over the edge starts back on the land, where the fade begins.
-  const solids = { circles: [], hull: [] };
+  const solids = { circles: [] };
   const start = spawn(
     { position: new Vector3(95, 9, 0), target: new Vector3(0, 0, 0) },
     solids,
@@ -333,28 +264,8 @@ test("the moon's shadow follows a snapped point ahead, changing only on a cell",
   }
 });
 
-test("the tower's base is solid: a hull of its posts, ladder feet and low braces on both tiers", () => {
-  for (const tier of ["high", "balanced"]) {
-    const hull = towerFootprint(towerRoot(tier));
-    assert.ok(Math.abs(area(hull) - 228) < 10, `${tier} area ${area(hull)}`);
-    const reach = Math.max(...hull.map(([x, z]) => Math.hypot(x, z)));
-    assert.ok(reach > 9 && reach <= 10.6, `${tier} reach ${reach}`);
-    // The four posts (at about 9 on the axes) and the centre are inside.
-    for (const [x, z] of [
-      [8.1, -0.5],
-      [-8.9, -0.45],
-      [-0.6, -8.9],
-      [-0.3, 8.2],
-      [0, 0],
-    ])
-      assert.ok(outside(hull, x, z) < 0, `${tier} ${x},${z}`);
-    assert.ok(outside(hull, 11, 0) > 0);
-  }
-  assert.deepEqual(towerFootprint(null), []);
-});
-
 test("the walk starts under the shot's camera, clear of solids and inside the bound, facing the subject", () => {
-  const solids = { circles: [{ x: 0, z: 0, r: 3 }], hull: [] };
+  const solids = { circles: [{ x: 0, z: 0, r: 3 }] };
   const start = spawn({ position: new Vector3(1, 9, 0), target: new Vector3(-20, 5, 0) }, solids);
   assert.ok(Math.hypot(start.x, start.z) >= 3 + WALK.body - 1e-9, "pushed out of the solid");
   const ahead = wish({ forward: 1, strafe: 0 }, start.yaw);
@@ -434,7 +345,6 @@ function page({ lock = true } = {}) {
 
 function walkRig({
   lock = true,
-  tower = null,
   target = new Vector3(0, 10, 0),
   ground = (x, z) => 1 + 0.02 * x + 0.5 * Math.sin(z / 9),
 } = {}) {
@@ -450,7 +360,6 @@ function walkRig({
     win: site.win,
     doc: site.doc,
     ground,
-    tower: () => tower,
     anchors: {
       trunk: { x: ESTATE.tree.x + ESTATE.tree.trunk[0], z: ESTATE.tree.z + ESTATE.tree.trunk[1] },
       lantern: estateLantern(),
@@ -563,7 +472,6 @@ test("the scene's actual ground consumer enables walk only after a successful cu
       groundTextures: owner,
       rockScatter: owner,
       farFires: owner,
-      completeTower: null,
       groundHeight: () => 0,
       walkGround: null,
     });
@@ -789,6 +697,12 @@ test("into the walk: the page fades, the tour's dissolve settles, its frame is k
   assert.equal(camera.projectionMatrix.elements[9], 0);
   close(camera.fov, walkFov(16 / 9));
   close(camera.aspect, 16 / 9);
+  // The moon's shadow follows the snapped point ahead, on the ground there.
+  const cell = focusCell(x, z, walk.state.yaw);
+  assert.deepEqual(
+    { ...walk.focus },
+    { x: cell.x, y: rig.options.ground(cell.x, cell.z), z: cell.z },
+  );
   // Facing the subject: the camera's forward points at the target's side.
   const forward = new Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
   assert.ok(forward.x < 0 && forward.z < 0);
@@ -993,17 +907,14 @@ test("without a captured mouse a held button drags the view", () => {
   walk.dispose();
 });
 
-test("walking into the tower, the trunk, a rock or the edge, the walker never enters them", () => {
-  const tower = towerRoot("high"),
-    hull = towerFootprint(tower);
-  const rig = walkRig({ tower }),
+test("walking into the trunk, a rock or the edge, the walker never enters them", () => {
+  const rig = walkRig(),
     { walk, site, shot } = rig;
   const trunk = {
     x: ESTATE.tree.x + ESTATE.tree.trunk[0],
     z: ESTATE.tree.z + ESTATE.tree.trunk[1],
   };
   for (const [from, aim] of [
-    [new Vector3(-25, 6, 1), new Vector3(0, 6, 0)],
     [new Vector3(trunk.x - 15, 6, trunk.z + 0.5), new Vector3(trunk.x, 6, trunk.z)],
     [new Vector3(22, 6, 14), new Vector3(30, 6, 20)],
     [new Vector3(70, 6, 5), new Vector3(200, 6, 14)],
@@ -1016,7 +927,6 @@ test("walking into the tower, the trunk, a rock or the edge, the walker never en
     for (let i = 0; i < 600; i++) {
       walk.update(1 / 60, 1600, 900);
       const { x, z } = walk.state;
-      assert.ok(outside(hull, x, z) >= WALK.body - 1e-6, `inside the tower at ${x},${z}`);
       assert.ok(Math.hypot(x - trunk.x, z - trunk.z) >= WALK.tree + WALK.body - 1e-6);
       assert.ok(Math.hypot(x - 30, z - 20) >= 1.5 + WALK.body - 1e-6, "the rock");
       assert.ok(Math.hypot(x, z) <= WALK.bound.hard + 1e-9);
@@ -1024,7 +934,6 @@ test("walking into the tower, the trunk, a rock or the edge, the walker never en
     site.win.dispatchEvent(key("keyup", "KeyW"));
     site.win.dispatchEvent(key("keyup", "ShiftLeft"));
     assert.equal(walk.state.circles, 3, "trunk, lantern and the one rock (never the pebble)");
-    assert.ok(walk.state.hull >= 3);
     walk.exit({ immediate: true });
   }
   walk.dispose();
@@ -1032,11 +941,11 @@ test("walking into the tower, the trunk, a rock or the edge, the walker never en
 
 test("the walk holds the real tour on its shot and hands it back without a time jump", () => {
   const camera = new PerspectiveCamera(),
-    tower = new Group(),
+    watch = new Group(),
     tree = new Group(),
     material = new MeshBasicMaterial();
   for (const [root, width] of [
-    [tower, 10],
+    [watch, 10],
     [tree, 3],
   ]) {
     const mesh = new Mesh(new BoxGeometry(width, 20, width), material);
@@ -1046,12 +955,12 @@ test("the walk holds the real tour on its shot and hands it back without a time 
   tree.position.set(ESTATE.tree.x, 0, ESTATE.tree.z);
   const cinematic = createCinematicCamera({
     camera,
-    selected: "tower",
+    selected: "watch",
     angle: 0,
     getSafeArea: () => ({ left: 450, top: 32, width: 940, height: 720 }),
   });
   for (const [kind, root] of [
-    ["tower", tower],
+    ["watch", watch],
     ["tree", tree],
   ]) {
     cinematic.setSubject(kind, root);
@@ -1085,6 +994,7 @@ test("the walk holds the real tour on its shot and hands it back without a time 
   let before = null;
   while (!walk.holdsTour) before = frame((t += 1 / 60));
   const held = frame((t += 1 / 60));
+  assert.equal(before.shot, "The watch", "the walk starts over the opening shot");
   assert.equal(held.applied, false, "the walk drives from the cut");
   for (let i = 0; i < 600; i++) {
     const during = frame((t += 1 / 60));
@@ -1123,513 +1033,63 @@ test("disposing a walk frees the mouse and its listeners, and it never starts ag
   assert.equal(walk.dispose(), false);
 });
 
-// The lookout's model as a probe: its first hit along a ray from a point in
-// its own frame (u, h, v) heading (du, dh, dv), in lookout units, or Infinity.
-function probe(tier) {
-  const root = towerRoot(tier),
-    frame = towerFrame(root),
-    mesh = root.children[0],
-    solid = new Mesh(mesh.geometry, new MeshBasicMaterial({ side: DoubleSide })),
-    caster = new Raycaster();
-  solid.matrixWorld.copy(mesh.matrixWorld);
-  return {
-    frame,
-    hit(u, h, v, du, dh, dv, far = 40) {
-      const from = frame.world(u, h, v),
-        way = frame.outward(du, dv);
-      caster.set(new Vector3(from.x, from.y, from.z), new Vector3(way.x, dh, way.z).normalize());
-      caster.far = far * frame.scale;
-      const first = caster.intersectObject(solid, false)[0];
-      return first ? first.distance / frame.scale : Infinity;
-    },
-  };
-}
-const steps = (from, to, step) =>
-  Array.from({ length: Math.floor((to - from) / step + 1e-9) + 1 }, (_, i) => from + i * step);
+// A shelf 30 high that ends at x = 45, the plain below it: walking off it falls.
+const shelf = (x) => (x < 45 ? 30 : 0);
 
-test("the lookout's gallery, railing, cabin, roof and ladder are where both models have them", () => {
-  const { deck, cabin, ladder } = LOOKOUT,
-    body = WALK.deckBody,
-    walls = steps(deck.floor + 0.15, deck.floor + 3.45, 0.1);
-  for (const tier of ["high", "balanced"]) {
-    const { hit } = probe(tier);
-    // The floor under the gallery's walks, the lane and the cabin.
-    for (const [u, v] of [
-      [4.5, -3],
-      [-4.5, 0],
-      [0, -5.5],
-      [4.7, 4.5],
-      [-4.7, -5.5],
-      [0, 0],
-      [0, 4.5],
-      [0.7, 4.9],
-    ])
-      close(deck.floor + 4 - hit(u, deck.floor + 4, v, 0, -1, 0), deck.floor, 0.07);
-    // The railing's inner faces: never inside the walks, at most 0.3 beyond.
-    const inner = (ray) => Math.min(...walls.map(ray));
-    for (const v of [-5.5, -3, 0, 3, 4.6]) {
-      const right = 3.5 + inner((h) => hit(3.5, h, v, 1, 0, 0, 3)),
-        left = -3.5 - inner((h) => hit(-3.5, h, v, -1, 0, 0, 3));
-      assert.ok(right >= deck.x - 0.03 && right <= deck.x + 0.3, `${tier} +x ${right} at ${v}`);
-      assert.ok(left <= -deck.x + 0.03 && left >= -deck.x - 0.3, `${tier} -x ${left} at ${v}`);
-    }
-    for (const u of [-4.7, -3.5, 3.5, 4.7]) {
-      const back = -5 - inner((h) => hit(u, h, -5, 0, 0, -1, 3)),
-        front = 4.2 + inner((h) => hit(u, h, 4.2, 0, 0, 1, 3));
-      assert.ok(
-        back <= deck.back + 0.03 && back >= deck.back - 0.3,
-        `${tier} back ${back} at ${u}`,
-      );
-      assert.ok(front >= deck.front - 0.03 && front <= deck.front + 0.3, `${tier} front ${front}`);
-    }
-    // The gap over the ladder stays open across the lane and a body either
-    // side, out past the ladder's line.
-    const end = ladderLine(deck.floor, WALK.body);
-    for (const u of [-deck.gap + 0.05, 0, deck.gap - 0.05])
-      for (const h of steps(deck.floor + 0.15, deck.floor + 1.55, 0.1))
-        assert.equal(hit(u, h, 4, 0, 0, 1, end + 1 - 4), Infinity, `${tier} gap ${u},${h}`);
-    // The cabin's walls and end posts, and the walks past its ends.
-    for (const v of [-4, -2, 0, 2, 3]) {
-      for (const s of [1, -1]) {
-        const into = inner((h) => hit(0, h, v, s, 0, 0, 4)),
-          out = 4.6 - inner((h) => hit(4.6 * s, h, v, -s, 0, 0, 4));
-        assert.ok(into >= cabin.inner - 0.03 && into <= cabin.inner + 0.2, `${tier} in ${into}`);
-        assert.ok(out <= cabin.outer + 0.03, `${tier} wall ${out} at ${v}`);
-      }
-    }
-    for (const v of [cabin.back + 0.05, cabin.front - 0.05])
-      assert.ok(
-        4.6 - inner((h) => hit(4.6, h, v, -1, 0, 0, 4)) <= cabin.post + 0.03,
-        `${tier} post`,
-      );
-    for (const v of [
-      (cabin.front + deck.front) / 2,
-      (cabin.back + deck.back) / 2,
-      cabin.back - body - 0.02,
-      cabin.front + body + 0.02,
-    ])
-      for (const h of walls) assert.equal(hit(-4.7, h, v, 1, 0, 0, 9.4), Infinity, `${tier} ${v}`);
-    // The roof: half a unit or more above the eye anywhere on the walks.
-    for (const u of steps(-4.75, 4.75, 0.25))
-      for (const v of steps(-5.6, 4.6, 0.25))
-        if (Math.abs(u) < cabin.inner - 0.1 || Math.abs(u) > cabin.post + 0.1)
-          assert.ok(
-            hit(u, deck.floor + 0.3, v, 0, 1, 0, 12) + 0.3 >= WALK.eye + 0.5,
-            `${tier} roof at ${u},${v}`,
-          );
-    // The ladder's rails along their line, foot to deck.
-    for (const h of steps(1.5, 28.5, 1.5))
-      for (const u of [-0.85, 0.85])
-        close(12 - hit(u, h, 12, 0, 0, -1, 12), ladder.face - ladder.lean * h, 0.15);
-    // The climber's eye keeps 0.5 or more off the model in every direction.
-    for (const h of steps(0, deck.floor, 0.5)) {
-      const v = ladderLine(h, WALK.body),
-        eye = h + WALK.eye;
-      for (const [du, dh, dv] of [
-        [1, 0, 0],
-        [-1, 0, 0],
-        [0, 0, 1],
-        [0, 0, -1],
-        [0, 1, 0],
-        [0.7, 0, -0.7],
-        [-0.7, 0, -0.7],
-      ])
-        assert.ok(hit(0, eye, v, du, dh, dv, 2) >= 0.5, `${tier} eye at ${h} toward ${du},${dv}`);
-    }
-  }
-});
-
-test("a drop off the lookout falls clear of it: a vault over each side, or letting go of the ladder", () => {
-  const { deck } = LOOKOUT,
-    g = WALK.gravity,
-    { push, lift } = WALK.vault;
-  // The fall from (u, h, v) out along (nu, nv): rays back toward the lookout
-  // from the body's centre at its feet, its middle and its eye.
-  const fall = ({ hit }, u, h, v, nu, nv, rise, label) => {
-    for (let t = 0; h + rise * t - (g / 2) * t * t > 0; t += 0.05) {
-      const y = h + rise * t - (g / 2) * t * t,
-        pu = u + nu * push * t,
-        pv = v + nv * push * t;
-      for (const up of [0.3, WALK.eye / 2, WALK.eye])
-        for (const [du, dv] of [
-          [-nu, -nv],
-          [-nu - nv * 0.6, -nv + nu * 0.6],
-          [-nu + nv * 0.6, -nv - nu * 0.6],
-        ])
-          assert.ok(
-            hit(pu, y + up, pv, du, 0, dv, 3) >= WALK.body * 0.9,
-            `${label} at t ${t.toFixed(2)}`,
-          );
-    }
-  };
-  for (const tier of ["high", "balanced"]) {
-    const model = probe(tier),
-      hull = towerFootprint(towerRoot(tier)),
-      body = WALK.deckBody;
-    // From each side's walk, facing out.
-    for (const [u, v, fu, fv] of [
-      [deck.x - body, 0, 1, 0],
-      [-deck.x + body, -3, -1, 0],
-      [3.5, deck.back + body, 0, -1],
-      [-3.8, deck.front - body, 0, 1],
-      [0, ladderLine(deck.floor, WALK.body), 0, 1],
-    ]) {
-      const to = vaultTo(u, v, fu, fv, body, WALK.body);
-      assert.ok(to, `${tier} vault from ${u},${v}`);
-      fall(model, to.u, deck.floor, to.v, to.nu, to.nv, lift, `${tier} vault ${u},${v}`);
-      // It lands well outside the base's hull.
-      const t = (lift + Math.sqrt(lift * lift + 2 * g * deck.floor)) / g,
-        landing = model.frame.world(to.u + to.nu * push * t, 0, to.v + to.nv * push * t);
-      assert.ok(outside(hull, landing.x, landing.z) >= WALK.body + 2, `${tier} lands ${u},${v}`);
-    }
-    // Letting go anywhere up the ladder.
-    for (const h of [1, 3, 6, 10, 15, 21, 27, deck.floor]) {
-      fall(model, 0, h, ladderLine(h, WALK.body), 0, 1, 0, `${tier} let go at ${h}`);
-      const t = Math.sqrt((2 * h) / g),
-        landing = model.frame.world(0, 0, ladderLine(h, WALK.body) + push * t);
-      assert.ok(outside(hull, landing.x, landing.z) >= WALK.body - 0.6, `${tier} let go ${h}`);
-    }
-  }
-});
-
-test("the gallery holds the walker inside its railing and clear of the cabin, out only by the ladder's lane", () => {
-  const { deck, cabin } = LOOKOUT,
-    body = WALK.deckBody,
-    end = ladderLine(deck.floor, WALK.body),
-    lane = deck.gap - body,
-    inBox = (u, v, u0, u1, v0, v1) =>
-      u > u0 - body + 1e-9 && u < u1 + body - 1e-9 && v > v0 - body + 1e-9 && v < v1 + body - 1e-9;
-  let seed = 7;
-  const random = () => ((seed = (seed * 16807) % 2147483647) / 2147483647) * 2 - 1;
-  for (let walker = 0; walker < 40; walker++) {
-    let u = 4 * random(),
-      v = -5.4;
-    [u, v] = deckStep(u, v, u, v, body, end);
-    let heading = Math.PI * random();
-    for (let i = 0; i < 600; i++) {
-      if (i % 40 === 0) heading = Math.PI * random();
-      const [nu, nv] = deckStep(
-        u,
-        v,
-        u + 0.2 * Math.sin(heading),
-        v + 0.2 * Math.cos(heading),
-        body,
-        end,
-      );
-      assert.ok(Math.abs(nu) <= deck.x - body + 1e-9, `the side railing at ${nu}`);
-      assert.ok(nv >= deck.back + body - 1e-9 && nv <= end + 1e-9, `the ends at ${nv}`);
-      if (nv > deck.front - body + 1e-9) assert.ok(Math.abs(nu) <= lane + 1e-9, `the gap at ${nu}`);
-      for (const s of [1, -1]) {
-        const [a, b] = s > 0 ? [cabin.inner, cabin.outer] : [-cabin.outer, -cabin.inner];
-        assert.ok(!inBox(nu, nv, a, b, cabin.back, cabin.front), `the wall at ${nu},${nv}`);
-      }
-      [u, v] = [nu, nv];
-    }
-  }
-  // Round the cabin's ends: the walks past its front and back stay open.
-  assert.deepEqual(deckStep(3.9, 4.4, 3.4, 4.4, body, end), [3.4, 4.4]);
-  assert.deepEqual(deckStep(-3.9, -5.5, -3.4, -5.5, body, end), [-3.4, -5.5]);
-  // Into the lane from the gallery, never through the railing beside it.
-  assert.deepEqual(deckStep(0, 4.6, 0, 4.9, body, end), [0, 4.9]);
-  const [beside, held] = deckStep(2, 4.6, 2, 4.9, body, end);
-  assert.equal(beside, 2);
-  close(held, deck.front - body, 1e-9);
-  assert.deepEqual(deckStep(0, 6, 2, 7, body, end), [lane, end]);
-  // A vault needs the railing within reach and the view facing out.
-  assert.equal(vaultTo(0, 0, 1, 0, body, WALK.body), null);
-  assert.equal(vaultTo(deck.x - body, 0, -1, 0, body, WALK.body), null);
-  assert.equal(vaultTo(deck.x - body, 0, 0, 1, body, WALK.body), null);
-  assert.ok(vaultTo(deck.x - body - 0.2, 0, 0.8, 0.6, body, WALK.body));
-});
-
-// A rig over the real lookout, its shot in front of the ladder; turn() faces
-// the walker along a direction in the lookout's frame (the captured mouse),
-// hold() keeps keys down until a check passes.
-function lookoutRig() {
-  const tower = towerRoot("high"),
-    frame = towerFrame(tower),
-    rig = walkRig({ tower }),
-    { site, shot, walk } = rig;
-  const from = frame.world(0, 8, 16),
-    aim = frame.world(0, 20, 0);
-  shot.position.set(from.x, from.y, from.z);
-  shot.target.set(aim.x, aim.y, aim.z);
-  const local = () => frame.local(walk.state.x, walk.state.y, walk.state.z);
-  return {
-    ...rig,
-    frame,
-    local,
-    hull: towerFootprint(tower),
-    turn(u, v) {
-      const way = frame.outward(u, v),
-        yaw = Math.atan2(-way.x, -way.z);
-      let turn = yaw - walk.state.yaw;
-      turn = Math.atan2(Math.sin(turn), Math.cos(turn));
-      site.win.dispatchEvent(
-        Object.assign(new Event("mousemove"), { movementX: -turn / WALK.look, movementY: 0 }),
-      );
-      walk.update(1 / 60, 1600, 900);
-    },
-    hold(codes, until, seconds = 20, each = () => {}) {
-      for (const code of codes) site.win.dispatchEvent(key("keydown", code));
-      let frames = 0;
-      for (; frames < seconds * 60 && !until(); frames++) {
-        walk.update(1 / 60, 1600, 900);
-        each();
-      }
-      for (const code of codes) site.win.dispatchEvent(key("keyup", code));
-      assert.ok(until(), `${codes} for ${seconds} s`);
-      return frames / 60;
-    },
-  };
-}
-
-test("the ladder takes hold only near its access side, never from behind the tower", () => {
-  for (const tier of ["high", "balanced"]) {
-    const tower = towerRoot(tier),
-      frame = towerFrame(tower);
-    for (const front of [false, true]) {
-      const rig = walkRig({ tower }),
-        { walk, site, shot } = rig,
-        start = frame.world(0, 8, front ? 16 : -30),
-        aim = frame.world(0, 8, front ? 0 : -40),
-        local = () => frame.local(walk.state.x, walk.state.y, walk.state.z);
-      shot.position.set(start.x, start.y, start.z);
-      shot.target.set(aim.x, aim.y, aim.z);
-      walkIn(rig);
-      site.canvas.requestPointerLock();
-      const initial = local();
-      site.win.dispatchEvent(key("keydown", "KeyW"));
-      if (front) {
-        for (let i = 0; i < 180 && walk.state.on === "ground"; i++) walk.update(1 / 60, 1600, 900);
-        assert.equal(walk.state.on, "ladder", `${tier}: the ordinary front approach still grabs`);
-        assert.ok(
-          Math.abs(local().v - ladderLine(local().h, WALK.body)) <= WALK.climb.grab,
-          `${tier}: takes hold near the ladder's line`,
-        );
-      } else {
-        let previous = local();
-        for (let i = 0; i < 60; i++) {
-          walk.update(1 / 60, 1600, 900);
-          const at = local();
-          assert.equal(walk.state.on, "ground", `${tier}: no remote grab from behind`);
-          assert.ok(walk.state.grounded, `${tier}: stays on the ground`);
-          assert.ok(
-            Math.hypot(at.u - previous.u, at.v - previous.v) <= WALK.speed.walk / 60 + 1e-9,
-            `${tier}: no snap across the base`,
-          );
-          previous = at;
-        }
-        assert.ok(local().v < initial.v - 4, `${tier}: keeps walking away from the tower`);
-      }
-      walk.dispose();
-    }
-  }
-});
-
-test("layout resizes carry a walker on the ladder, gallery and vault without rebuilding the base hull", () => {
-  const scope = { window: { BabelSite: {} } };
-  vm.runInNewContext(source("src/scene/quality.js"), scope);
-  const composition = scope.window.BabelSite.scene.getSceneCompositionProfile,
-    groundHeight = () => 1.36,
-    environment = createSceneEnvironment({ parent: new Group(), groundHeight }),
-    architecture = createCompleteTowerArchitecture({
-      asset: glbAsset(modelBytes("tower", "high")),
-      groundY: groundHeight(),
-      footingOffset: -0.22,
-    }),
-    tower = architecture.root;
-  environment.root.add(tower);
-  environment.resize({ composition: composition({ width: 1440, height: 900 }) });
-  const rig = walkRig({ tower, ground: () => groundHeight() + environment.root.position.y }),
-    { walk, site, shot, camera } = rig,
-    frame = towerFrame(tower),
-    start = frame.world(0, 8, 16),
-    aim = frame.world(0, 20, 0),
-    local = () => towerFrame(tower).local(walk.state.x, walk.state.y, walk.state.z);
-  shot.position.set(start.x, start.y, start.z);
-  shot.target.set(aim.x, aim.y, aim.z);
-  let traversals = 0;
-  const traverse = tower.traverse;
-  tower.traverse = function (callback) {
-    traversals++;
-    return traverse.call(this, callback);
-  };
-  walkIn(rig);
-  site.canvas.requestPointerLock();
-  const hullTraversals = traversals,
-    hold = (code, until) => {
-      site.win.dispatchEvent(key("keydown", code));
-      for (let i = 0; i < 900 && !until(); i++) walk.update(1 / 60, 1440, 900);
-      site.win.dispatchEvent(key("keyup", code));
-      assert.ok(until(), `reached the next ${code} state`);
-    },
-    resize = (width, height, on) => {
-      const feet = walk.state.y,
-        eye = camera.position.y,
-        h = local().h,
-        y = environment.root.position.y;
-      environment.resize({ composition: composition({ width, height }) });
-      const shift = environment.root.position.y - y;
-      assert.ok(Math.abs(shift) > 0.5, "the actual composition moves the same tower root");
-      walk.update(1 / 60, width, height);
-      assert.equal(walk.state.on, on);
-      close(local().h, h);
-      close(walk.state.y, feet + shift);
-      close(camera.position.y, eye + shift);
-      assert.equal(traversals, hullTraversals, "no geometry traversal for a pure vertical move");
-    };
-  hold("KeyW", () => walk.state.on === "ladder" && local().h > 10);
-  resize(700, 900, "ladder");
-  hold("KeyW", () => walk.state.on === "deck");
-  close(local().h, LOOKOUT.deck.floor);
-  resize(1440, 900, "deck");
-  hold("KeyW", () => local().v <= LOOKOUT.deck.back + WALK.deckBody + 1e-6);
-  hold("Space", () => walk.state.on === "vault");
-  resize(700, 900, "vault");
-  for (let i = 0; i < 60 && walk.state.on !== "drop"; i++) walk.update(1 / 60, 700, 900);
-  assert.equal(walk.state.on, "drop");
-  const fallingY = walk.state.y;
-  environment.resize({ composition: composition({ width: 1440, height: 900 }) });
-  walk.update(1 / 60, 1440, 900);
-  assert.equal(walk.state.on, "drop");
-  assert.ok(Math.abs(walk.state.y - fallingY) < 0.1, "a free drop follows gravity, not the tower");
-  assert.equal(
-    traversals,
-    hullTraversals,
-    "idle frames and repeated vertical moves reuse the hull",
-  );
-  walk.dispose();
-  architecture.dispose();
-  environment.dispose();
-});
-
-test("into the ladder climbs it to the gallery, through the cabin, and away from it comes back down", () => {
-  const rig = lookoutRig(),
-    { walk, site, local, hull } = rig,
-    { deck } = LOOKOUT;
+test("a long drop lands with a dip of the eye that recovers; a jump on level ground lands without one", () => {
+  const rig = walkRig({ ground: shelf, target: new Vector3(80, 30, 0) }),
+    { walk, site, shot, camera } = rig;
+  shot.position.set(40, 36, 0);
   walkIn(rig);
   site.canvas.requestPointerLock();
   walk.update(1 / 60, 1600, 900);
-  assert.equal(walk.high, 0, "no view from up high on the ground");
+  assert.deepEqual([walk.state.x, walk.state.y, walk.state.grounded], [40, 30, true]);
+  // A jump on the shelf: its landing (12 a second) is under the dip's threshold.
+  site.win.dispatchEvent(key("keydown", "Space"));
+  walk.update(1 / 60, 1600, 900);
+  site.win.dispatchEvent(key("keyup", "Space"));
+  assert.equal(walk.state.grounded, false);
+  for (let i = 0; i < 90 && !walk.state.grounded; i++) walk.update(1 / 60, 1600, 900);
+  assert.equal(walk.state.grounded, true);
+  close(camera.position.y, walk.state.y + WALK.eye, 1e-9);
+  // Off the edge: the feet leave the ground and fall to the plain.
   const states = [];
-  const track = () => {
-    const at = local();
-    if (states.at(-1) !== walk.state.on) states.push(walk.state.on);
-    if (walk.state.on === "ladder") {
-      assert.ok(Math.abs(at.u) <= 0.6, `on the ladder's line across, ${at.u}`);
-      assert.ok(at.v >= ladderLine(at.h, WALK.body) - 0.05, `never into the ladder, ${at.v}`);
-    }
-    if (walk.state.on === "ground")
-      assert.ok(outside(hull, walk.state.x, walk.state.z) >= WALK.body - 1e-6);
-    if (walk.state.on === "deck")
-      assert.ok(at.v <= ladderLine(deck.floor, WALK.body) + 1e-6, `past the gap's lane, ${at.v}`);
-  };
-  // Up: on the ground into the ladder, then up it in about six seconds.
-  let climbing = 0;
-  rig.hold(
-    ["KeyW"],
-    () => walk.state.on === "deck",
-    12,
-    () => {
-      track();
-      if (walk.state.on === "ladder") climbing += 1 / 60;
-    },
-  );
-  track();
-  assert.deepEqual(states, ["ground", "ladder", "deck"]);
-  assert.ok(climbing > 5 && climbing < 7.5, `climbed in ${climbing} s`);
-  // Up here the view from high up is whole (it is 0 on the ground).
-  assert.equal(walk.high, 1);
-  close(local().h, deck.floor, 1e-6);
-  // Still into it: through the gap into the open cabin, where Space (no
-  // railing within reach) does nothing, and on to the back railing.
-  rig.hold(["KeyW"], () => local().v <= 0, 6, track);
-  rig.hold(["Space"], () => true);
-  for (let i = 0; i < 30; i++) walk.update(1 / 60, 1600, 900);
-  assert.equal(walk.state.on, "deck");
-  close(local().h, deck.floor, 1e-6);
-  rig.hold(["KeyW"], () => local().v <= deck.back + WALK.deckBody + 1e-6, 6, track);
-  assert.equal(walk.state.on, "deck");
-  assert.ok(Math.abs(local().u) < LOOKOUT.cabin.inner - WALK.deckBody, "through the cabin");
-  close(rig.camera.position.y, walk.state.y + WALK.eye, 1e-6);
-  // Back out the gap and down: S heads away from the ladder.
-  rig.hold(["KeyS"], () => walk.state.on === "ground" && local().v > 11, 14, track);
-  assert.deepEqual(states, ["ground", "ladder", "deck", "ladder", "ground"]);
-  assert.ok(walk.state.grounded);
-  assert.equal(walk.high, 0);
+  let dip = 0;
+  site.win.dispatchEvent(key("keydown", "KeyW"));
+  for (let i = 0; i < 240 && !(states.length > 1 && walk.state.grounded); i++) {
+    walk.update(1 / 60, 1600, 900);
+    if (states.at(-1) !== walk.state.grounded) states.push(walk.state.grounded);
+    if (walk.state.grounded) dip = walk.state.y + WALK.eye - camera.position.y;
+  }
+  site.win.dispatchEvent(key("keyup", "KeyW"));
+  assert.deepEqual(states, [true, false, true]);
+  assert.ok(walk.state.x > 45, `${walk.state.x}`);
+  close(walk.state.y, 0, 1e-9);
+  // From 30 up the impact is past the dip's span: the whole dip, less its first
+  // frame's recovery, and then the eye comes back up.
+  const { dip: most, recover } = WALK.landing;
+  assert.ok(dip > most - recover / 60 - 0.02 && dip <= most, `dip ${dip}`);
+  for (let i = 0; i < 60; i++) walk.update(1 / 60, 1600, 900);
+  close(camera.position.y, walk.state.y + WALK.eye, 1e-9);
   walk.dispose();
 });
 
-test("Space at the railing facing out vaults it, and the drop lands on the ground with a dip", () => {
-  const rig = lookoutRig(),
-    { walk, site, local, hull } = rig,
-    { deck } = LOOKOUT;
+test("leaving mid-fall cuts back to the tour, and the next walk starts on the ground", () => {
+  const rig = walkRig({ ground: shelf, target: new Vector3(80, 30, 0) }),
+    { walk, site, shot } = rig;
+  shot.position.set(40, 36, 0);
   walkIn(rig);
   site.canvas.requestPointerLock();
-  rig.hold(["KeyW"], () => walk.state.on === "deck", 12);
-  // Into the walk past the cabin's front, then along it to the side railing.
-  rig.hold(["KeyW"], () => local().v <= 4.9, 3);
-  for (let i = 0; i < 30; i++) walk.update(1 / 60, 1600, 900);
-  const front = local().v;
-  assert.ok(
-    front > LOOKOUT.cabin.front + WALK.deckBody && front < deck.front - WALK.deckBody,
-    `${front}`,
-  );
-  rig.turn(1, 0);
-  rig.hold(["KeyW"], () => local().u >= deck.x - WALK.deckBody - 1e-6, 3);
-  // Over and down, with no push from the base's hull on the way.
-  const seen = [];
-  let dipped = false;
-  rig.hold(
-    ["Space"],
-    () => walk.state.on === "ground",
-    4,
-    () => {
-      if (seen.at(-1) !== walk.state.on) seen.push(walk.state.on);
-      if (walk.state.on === "drop")
-        assert.ok(local().u >= LOOKOUT.rail.x + WALK.body, `clear of the railing at ${local().u}`);
-      if (rig.camera.position.y < walk.state.y + WALK.eye - 0.2) dipped = true;
-    },
-  );
-  assert.deepEqual(seen, ["vault", "drop", "ground"]);
-  assert.ok(dipped, "the landing dips the eye");
-  assert.ok(outside(hull, walk.state.x, walk.state.z) >= WALK.body + 2, "far off the base");
-  close(walk.state.y, rig.options.ground(walk.state.x, walk.state.z), 1e-6);
-  for (let i = 0; i < 30; i++) walk.update(1 / 60, 1600, 900);
-  close(rig.camera.position.y, walk.state.y + WALK.eye, 1e-6);
-  walk.dispose();
-});
-
-test("Space on the ladder lets go: the walker drops back off it to the ground", () => {
-  const rig = lookoutRig(),
-    { walk, site, local, hull } = rig;
-  walkIn(rig);
-  site.canvas.requestPointerLock();
-  rig.hold(["KeyW"], () => walk.state.on === "ladder" && local().h > 12, 8);
-  rig.hold(
-    ["Space"],
-    () => walk.state.on === "ground",
-    3,
-    () => {
-      if (local().h < WALK.band)
-        assert.ok(outside(hull, walk.state.x, walk.state.z) >= WALK.body - 1e-6);
-    },
-  );
-  assert.ok(local().v > ladderLine(0, WALK.body) + 1, "pushed out from the ladder");
-  walk.dispose();
-});
-
-test("leaving from the gallery cuts back to the tour, and the next walk starts on the ground", () => {
-  const rig = lookoutRig(),
-    { walk, site, local } = rig;
-  walkIn(rig);
-  site.canvas.requestPointerLock();
-  rig.hold(["KeyW"], () => walk.state.on === "deck", 12);
+  site.win.dispatchEvent(key("keydown", "KeyW"));
+  for (let i = 0; i < 120 && walk.state.grounded; i++) walk.update(1 / 60, 1600, 900);
+  walk.update(1 / 60, 1600, 900);
+  site.win.dispatchEvent(key("keyup", "KeyW"));
+  assert.equal(walk.state.grounded, false);
+  assert.ok(walk.state.y < 30 && walk.state.y > 0, `${walk.state.y}`);
   assert.equal(walk.exit({ immediate: true }), true);
   assert.equal(walk.drives, false);
   walkIn(rig);
-  assert.equal(walk.state.on, "ground");
-  assert.ok(local().h < 2);
+  walk.update(1 / 60, 1600, 900);
+  assert.deepEqual([walk.state.x, walk.state.y, walk.state.grounded], [40, 30, true]);
   walk.dispose();
 });

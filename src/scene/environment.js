@@ -1,7 +1,7 @@
 import { Group } from "three";
 import { createEstateGroundDetail, prepareEstateGroundDetail } from "./estate-ground-detail.js";
 
-// The ground's root (the ground, hills, rocks, tower and tree hang under it)
+// The ground's root (the ground, hills, rocks, the watch's marker and the tree hang under it)
 // and the film's ground detail.
 export function createSceneEnvironment({ groundHeight, parent, profile }) {
   const root = new Group();
@@ -29,7 +29,7 @@ export function createSceneEnvironment({ groundHeight, parent, profile }) {
   return {
     lifecycleOrder: 10,
     root,
-    // Called before the tower commits: prepare exact grass geometry during
+    // Called before the watch commits: prepare exact grass geometry during
     // downloads, keeping it detached until the film takes it.
     prepareFilmDetail() {
       if (disposed) return Promise.resolve(null);

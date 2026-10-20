@@ -30,15 +30,15 @@
     // holds them parallel) but is a separate constant: changing it does not
     // move the light.
     SUN_DIRECTION: Object.freeze([32, 28, 14]),
-    // A lateral, cool back-fill keeps the tower readable against the night
-    // sky without flattening the warm key light on its front-facing shell.
+    // A lateral, cool back-fill models the tree and the rocks against the night
+    // sky without flattening the warm key light on their lit faces.
     // mud-ground.js MOON_LIGHTS restates it (ground.test holds them equal).
     FILL_LIGHT_POSITION: Object.freeze([-30, 22, -28]),
 
     // --- The star (the visible warm disc, solar-body.js; not a light) ---
-    // Placed in open sky on the tower side of the field, clear of the tower's
-    // silhouette. The watch frames it; every other tower shot shows it whole
-    // or not at all, never behind geometry (framing.test). The mountain
+    // Placed in open sky over the watch's side of the field. The watch frames
+    // it; every other shot shows it whole or not at all, never behind geometry
+    // (framing.test). The mountain
     // shading reads it too; it never moves per shot.
     SUN_POSITION: Object.freeze([-72.25, 50, -11.9]),
 

@@ -42,21 +42,17 @@ reports and QA renders. The archive is not part of this repository, and nothing
 in it is published. Sizes, formats and budgets of the delivered files are in
 [Assets](ASSETS.md).
 
-## Supplied timber lookout tower
+## The watch's stored outline
 
-The tower in `images/architecture/tower-{high,balanced}.glb` is a timber
-fire-lookout watchtower from the Meshy model
+The watch frames a stored outline (`src/scene/opening-outline.js`): measurements
+of the timber fire-lookout watchtower that stood on the terrace until the owner
+left it out on 2026-10-20, from the Meshy model
 `Meshy_AI_watchtower_0923082652_texture.glb`, supplied by Alex Nava on
 2026-09-23 (29,926,940 bytes, SHA-256
-`5898eab40106aa3c7553b971d0d3caecf4664a65a1fc04358b5ef9e303dc1fc2`).
-
-It was processed locally without recoloring or new generation: scaled to unit
-height, decimated in Blender 4.5 to 23,714 (high) and 9,718 (balanced)
-triangles on the supplied UVs, and its color and normal maps re-baked by Cycles
-from the full-resolution source. The maps ship as embedded WebP (2048 high,
-1024 balanced) with stored tangents and `KHR_mesh_quantization` geometry. Source,
-scripts, reports and QA renders are in `Assets/Architecture/tower-v2`; none are
-published.
+`5898eab40106aa3c7553b971d0d3caecf4664a65a1fc04358b5ef9e303dc1fc2`). Only those
+measurements ship, a convex hull of points per variant; the model is no longer
+published. Its source, scripts, reports, QA renders and last delivered GLBs are
+in `Assets/Architecture/tower-v2`.
 
 ## Supplied tree and lantern
 
@@ -85,9 +81,8 @@ The stand-in lantern, the iron post lantern the scene shows until the
 supplied lantern commits and keeps if it fails, is built in code
 (`src/scene/architecture.js`) and is part of neither model.
 
-The delivered tower and tree also contain local geometry repairs on both
-tiers: added volume at a small tree fork and a recess at one visible gallery
-rail joint. `tools/repair-landmark-geometry.py` reproduces these from the
+The delivered tree also contains a local geometry repair on both tiers: added
+volume at a small tree fork. `tools/repair-landmark-geometry.py` reproduces these from the
 SHA-pinned original GLBs with local NumPy. Topology, UVs, embedded artwork,
 file sizes, AABBs, roots and ground contacts remain exact; positions and their
 affected surface frames change only within the bounded neighborhoods. No new
@@ -200,7 +195,7 @@ source; there is no runtime fetch.
 
 The ring belongs only to the baseline, the scene as it stands before the film
 (both terms are in the [Glossary](GLOSSARY.md)). The film, which starts when
-the tower commits, takes the ring's place at once: it shows an empty stand-in
+the watch commits, takes the ring's place at once: it shows an empty stand-in
 until its own ranges (the lazy `src/scene/mountain-build.js` chunk, with the
 massifs) are built, and keeps the stand-in if that chunk fails. The scene is revealed
-only after the tower loads, so visitors never see the ring.
+only after the watch commits, so visitors never see the ring.

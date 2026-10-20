@@ -87,8 +87,8 @@ export const FLASH_GROUND = Object.freeze({
 // A lightning flash's light on every film material (lightning.js writes it):
 // an additive term after the lights, never a change to the lights themselves,
 // so it eases off behind the text like the rest of the film's guards. Every
-// lit film material takes it through flashHook() (the lookout, the tree and the
-// rocks, materialFor() in architecture.js; both lanterns; the growth, litter
+// lit film material takes it through flashHook() (the tree and the rocks,
+// materialFor() in architecture.js; both lanterns; the growth, litter
 // and rushes, estate-ground-detail.js) and the slate through its own shader
 // (mud-ground.js, at its shares of the fill and the flat light).
 // - babelFlashLight: rgb the light from the flash's side (colour times

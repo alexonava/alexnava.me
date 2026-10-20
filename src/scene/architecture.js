@@ -38,16 +38,6 @@ export const ARCHITECTURE = Object.freeze({
 });
 
 const MATERIAL_PROFILES = Object.freeze({
-  // The supplied timber lookout: a pale weathered-wood atlas with a baked
-  // tangent-space normal map read through its stored tangents at full strength.
-  tower: {
-    color: 0xf2eee6,
-    normalScale: 1,
-    roughness: 0.9,
-    roughnessFloor: 0.9,
-    saturation: 0.94,
-    highlights: 0.18,
-  },
   tree: {
     color: 0xffffff,
     normalScale: 0.75,
@@ -112,7 +102,6 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(${ROOT_MOSS.tone.map(f2).join(", "
 // and is mirrored at its own radiance; the flat lights keep only what it leaves
 // out (the ground's bounce among them).
 export const ENVIRONMENT_ROLES = Object.freeze({
-  tower: Object.freeze([0.4, 1, 1]),
   tree: Object.freeze([0.4, 1, 1]),
   rock: Object.freeze([0.4, 1, 1]),
 });
@@ -188,13 +177,12 @@ if (babelStoneBehind > 0.0) {
 // those highlights come down by the role's share, and the moon, the sky and the
 // lantern light the maps as they are (the camera's balance and night's
 // colour are the tone curve's, film-light.js FILM_TONE).
-export const FILM_GRADES = Object.freeze({ tower: 0.15, tree: 0.15, rock: 0.15 });
+export const FILM_GRADES = Object.freeze({ tree: 0.15, rock: 0.15 });
 export function applyFilmGrade(material, active) {
   const grade = material?.userData?.babelGrade;
   if (!grade) return false;
   const film = active ? FILM_GRADES[grade.role] : undefined;
   const profile = MATERIAL_PROFILES[grade.role] || {};
-  grade.uniforms.babelSaturation.value = film === undefined ? (profile.saturation ?? 1) : 1;
   grade.uniforms.babelHighlights.value = film ?? profile.highlights ?? 0;
   grade.uniforms.babelFilm.value = active ? 1 : 0;
   grade.uniforms.babelEnvironment.value.set(
@@ -202,10 +190,6 @@ export function applyFilmGrade(material, active) {
   );
   return true;
 }
-
-// The supplied tower is fitted to this height and radius cap.
-const COMPLETE_TOWER_HEIGHT = 39;
-const COMPLETE_TOWER_RADIUS_CAP = 20.4;
 
 const TREE_LANTERN_INTENSITY = 4.0;
 // The film lantern, a candle (its colour FILM_LIGHT.candle): its light falls off
@@ -275,15 +259,13 @@ const preparedArchitecture = new WeakMap();
 // geometry work out of the entry payload; an unavailable chunk preserves the
 // established synchronous constructor and the controller's source-resource lease.
 export async function prepareArchitecture(asset, options = {}) {
-  if (!["tower", "tree"].includes(options.role) || options.signal?.aborted) return false;
+  if (options.role !== "tree" || options.signal?.aborted) return false;
   if (preparedArchitecture.has(asset)) return true;
   try {
     const { prepareArchitectureGeometry } = await import("./architecture-prepare.js");
     return await prepareArchitectureGeometry(asset, options, preparedArchitecture, {
       source: sourceMesh(asset),
       treeHeight: ARCHITECTURE.treeHeight,
-      towerHeight: COMPLETE_TOWER_HEIGHT,
-      towerRadiusCap: COMPLETE_TOWER_RADIUS_CAP,
       smoothTreeNormalSteps,
     });
   } catch {
@@ -314,14 +296,12 @@ export function materialFor(asset, anisotropy, role, textGuard = null) {
     material.emissiveIntensity = 0;
     material.emissiveMap = null;
     material.vertexColors = false;
-    // Retain the tree map's variation within a matte range. The complete tower
-    // and the rocks have no roughness map: keep their scalar direct rather than
-    // lifting .9 to .99. Other architecture roles retain their existing per-role
-    // matte treatment. Compress bright baked edge detail in linear color
-    // without repainting maps.
+    // Retain the tree map's variation within a matte range. The rocks have no
+    // roughness map: keep their scalar direct rather than lifting it. Compress
+    // bright baked edge detail in linear color without repainting maps.
     const roughnessFloor = profile.roughnessFloor ?? 0.86;
     const roughnessCeiling = profile.roughnessCeiling ?? 1;
-    const directRoughness = (role === "tower" || role === "rock") && !material.roughnessMap;
+    const directRoughness = role === "rock" && !material.roughnessMap;
     const roughnessFragment =
       "#include <roughnessmap_fragment>" +
       (directRoughness
@@ -334,7 +314,6 @@ roughnessFactor = mix(roughnessFactor, ${ROOT_MOSS.roughness.toFixed(2)}, babelM
     const guarded = role === "tree" && Boolean(textGuard);
     const stoneGuarded = role === "rock" && Boolean(textGuard);
     const uniforms = {
-      babelSaturation: { value: profile.saturation ?? 1 },
       babelHighlights: { value: profile.highlights ?? 0 },
       babelFilm: { value: 0 },
       babelEnvironment: { value: new Vector3(1, 0, 0) },
@@ -357,7 +336,6 @@ roughnessFactor = mix(roughnessFactor, ${ROOT_MOSS.roughness.toFixed(2)}, babelM
         .replace(
           "#include <common>",
           `#include <common>
-          uniform float babelSaturation;
           uniform float babelHighlights;
           uniform float babelFilm;
           uniform vec3 babelEnvironment;
@@ -381,7 +359,6 @@ roughnessFactor = mix(roughnessFactor, ${ROOT_MOSS.roughness.toFixed(2)}, babelM
           "#include <map_fragment>",
           `#include <map_fragment>
           float babelLuma = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
-          diffuseColor.rgb = mix(vec3(babelLuma), diffuseColor.rgb, babelSaturation);
           diffuseColor.rgb *= 1.0 - babelHighlights * smoothstep(0.30, 0.85, babelLuma);
           ${role === "rock" ? "diffuseColor.rgb *= mix(.62, 1., smoothstep(.1, .5, babelLocal.y));" : ""}
           ${
@@ -445,102 +422,11 @@ ${ROOT_MOSS_MAP}`
     }
     // A lightning flash after the lights (film-light.js flashHook(), the sky's
     // share as the role's own), then the
-    // drifting mist after the fog (drifting-mist.js): the tower, the tree and the rocks.
+    // drifting mist after the fog (drifting-mist.js): the tree and the rocks.
     flashHook(material, { sky: "babelEnvironment.x" });
     return mistHook(material);
   } catch (error) {
     material.dispose();
-    throw error;
-  }
-}
-
-// The supplied timber lookout is fitted uniformly; its lattice legs, ladder,
-// gallery, cabin and roof keep their authored proportions instead of becoming
-// curved modules. Its ladder and gallery opening face +Z, the access side.
-export function createCompleteTowerArchitecture({
-  asset,
-  groundY = 0,
-  yaw = Math.PI / 4,
-  footingOffset = 1.64,
-  anisotropy = 4,
-}) {
-  const root = new Group();
-  root.name = "supplied-meshy-tower";
-  let geometry;
-  let material;
-  let disposed = false;
-  const dispose = () => {
-    if (disposed) return false;
-    disposed = true;
-    root.removeFromParent();
-    geometry?.dispose();
-    material?.dispose();
-    return true;
-  };
-  try {
-    if (![groundY, yaw, footingOffset].every(Number.isFinite))
-      throw new Error("Invalid complete tower placement.");
-    const prepared = takePreparedArchitecture(asset, "tower");
-    let dimensions = prepared?.dimensions,
-      radius = prepared?.radius,
-      scale = prepared?.scale;
-    if (prepared) geometry = prepared.geometry;
-    else {
-      const source = sourceMesh(asset);
-      geometry = editableGeometry(source.geometry).applyMatrix4(source.matrixWorld);
-      geometry.computeBoundingBox();
-      const { min, max } = geometry.boundingBox;
-      dimensions = new Vector3().subVectors(max, min);
-      if (
-        ![dimensions.x, dimensions.y, dimensions.z].every(
-          (value) => Number.isFinite(value) && value > 0,
-        )
-      ) {
-        throw new Error("Complete tower asset has empty bounds.");
-      }
-      geometry.translate(-(min.x + max.x) / 2, -min.y, -(min.z + max.z) / 2);
-      const position = geometry.attributes.position;
-      radius = 0;
-      for (let i = 0; i < position.count; i += 1) {
-        const x = position.getX(i),
-          y = position.getY(i),
-          z = position.getZ(i);
-        if (![x, y, z].every(Number.isFinite))
-          throw new Error("Complete tower positions must be finite.");
-        radius = Math.max(radius, Math.hypot(x, z));
-      }
-      scale = Math.min(COMPLETE_TOWER_HEIGHT / dimensions.y, COMPLETE_TOWER_RADIUS_CAP / radius);
-      geometry.scale(scale, scale, scale);
-      geometry.computeBoundingBox();
-      geometry.computeBoundingSphere();
-    }
-    material = materialFor(asset, anisotropy, "tower");
-    const tower = new Mesh(geometry, material);
-    tower.name = "complete-meshy-tower";
-    tower.castShadow = tower.receiveShadow = true;
-    root.add(tower);
-    // The four posts end at y 0 and the ladder foot about 0.21 above them. The
-    // earth footing (-0.22) sets the posts into the terrace and rests the ladder
-    // foot on it; on the retained plinth (top near 1.7) the posts overlap it slightly.
-    root.position.y = groundY + footingOffset;
-    root.rotation.y = yaw;
-    root.userData.architecture = {
-      mode: "complete",
-      sourceRoles: ["tower"],
-      uniformScale: scale,
-      height: dimensions.y * scale,
-      radius: radius * scale,
-      entranceAxis: "+Z",
-    };
-    return {
-      root,
-      dispose,
-      setFilmTreatment(active) {
-        if (!disposed) applyFilmGrade(material, active);
-      },
-    };
-  } catch (error) {
-    dispose();
     throw error;
   }
 }
@@ -605,7 +491,7 @@ export function createTreeArchitecture({
       softenedNormals = prepared?.softenedNormals ?? smoothTreeNormals(geometry).array;
     const lantern = new Group();
     lantern.name = "tree-lantern";
-    const direction = new Vector3(ESTATE.tower.x - treeX, 0, ESTATE.tower.z - treeZ).normalize();
+    const direction = new Vector3(ESTATE.watch.x - treeX, 0, ESTATE.watch.z - treeZ).normalize();
     lantern.position.copy(direction.multiplyScalar(ESTATE.lantern.offset));
     lantern.position.y =
       groundHeight(treeX + lantern.position.x, treeZ + lantern.position.z) - root.position.y;

@@ -255,7 +255,7 @@ const highest = (from, to) => {
   return best;
 };
 
-test("the composed skyline keeps the sun saddle, Close-up and Threshold clear and the tour peaks dramatic", () => {
+test("the composed skyline keeps the sun saddle, the tree shots and Close-up clear and the tour peaks dramatic", () => {
   for (const [from, to, cap] of [
     [171, 183, 3],
     [232, 280, 3],

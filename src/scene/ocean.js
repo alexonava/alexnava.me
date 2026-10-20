@@ -226,10 +226,8 @@ export const SEA = Object.freeze({
 });
 
 // Restated from the entry (ocean.test.mjs holds them equal): depth-layers.js
-// DEPTH_LAYER.ground, and hill-silhouette.js HORIZON_AIR.edge over .ground less
-// 1 (the far plain's air the walk's view from up high lifts the slate's far
-// edge to).
-export const SEA_SHARED = Object.freeze({ layer: "0.6667", edgeLift: 0.0857 });
+// DEPTH_LAYER.ground.
+export const SEA_SHARED = Object.freeze({ layer: "0.6667" });
 
 // The lens-riding disc: a centre and `rings` rings of `segments` points.
 export function seaGeometry(sea = SEA) {
@@ -1767,23 +1765,10 @@ vSlateClip=gl_Position;
   };
 }
 
-// The slate's edit list (terrain-build.js shadeSlateGround(), all or nothing,
-// on its compacted-tolerant anchors): the fault's distance, and the walk's view
-// from up high (hill-silhouette.js HIGH_VIEW, slateHigh: 0 on every shot):
-// seen from the lookout's gallery, the land's far edge fades, lighter or
-// darker, into the far plain's air from fade[0] to fade[1] units out, but only
-// far inland of the fault (the cliffs keep their edge).
-export function slateShoreEdits(fade = [80, 188]) {
-  return [
-    ["fragmentShader", "|#define STANDARD", `uniform float slateHigh;\n${coastGlsl()}\n`],
-    [
-      "fragmentShader",
-      "|gl_FragColor.rgb = mix(gl_FragColor.rgb, earthAir, earthHorizon);",
-      `earthAir *= 1.0+slateHigh*${glsl(SEA_SHARED.edgeLift)};
-earthHorizon = max(earthHorizon, slateHigh*smoothstep(${glsl(fade[0])}, ${glsl(fade[1])}, length(vMudWorld.xz))*smoothstep(30.0, 70.0, seaCoast(vMudWorld.xz)));
-`,
-    ],
-  ];
+// The slate's edit list (terrain-build.js shadeSlateGround(), on its
+// compacted-tolerant anchor): the fault's distance.
+export function slateShoreEdits() {
+  return [["fragmentShader", "|#define STANDARD", `${coastGlsl()}\n`]];
 }
 
 // The fault's own shots (the owner's picks of 2026-10-17, A, B and D of the
@@ -1842,12 +1827,12 @@ export const COAST_SHOTS = Object.freeze([
     move: Object.freeze({ dolly: Object.freeze([1.05, 0.95]), ease: 0.6 }),
   }),
   // Across the bay to the falls on the cliff wall, easing in toward them (from
-  // within the sky's shell: the falls stand about 115 from the lookout, so the
+  // within the sky's shell: the falls stand about 115 from the watch, so the
   // camera looks across the bay's head, never from out at sea).
   Object.freeze({
     ...COAST_LOOK,
     name: "The falls",
-    after: "Threshold",
+    after: "Lantern study",
     frameFalls: true,
     aim: Object.freeze([80.5, -8, 82.3]),
     // Upright screens stand farther back, round toward the land and higher, so

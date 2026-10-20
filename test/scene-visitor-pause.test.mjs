@@ -32,7 +32,7 @@ function createFrameHarness() {
 function createTourCamera(state) {
   return {
     angle: 0,
-    current: "tower",
+    current: "watch",
     get ready() {
       return state.ready;
     },

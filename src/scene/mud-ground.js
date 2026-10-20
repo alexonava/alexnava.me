@@ -3,9 +3,7 @@ import { FLASH_GROUND, FLASH_UNIFORMS } from "./film-light.js";
 import { HORIZON_AIR, RANGE_MIST, TERRAIN_HORIZON } from "./hill-silhouette.js";
 import { ESTATE, estateLantern, estatePoint } from "./estate-layout.js";
 import { MIST_PARS, MIST_UNIFORMS, mistOn } from "./drifting-mist.js";
-// The estate's human scale for props and trees: one doorway height. The
-// timber lookout matches it: its cabin rises about 6.5 from gallery floor
-// (29.9) to eave (36.4) above a railing about 3.9 high.
+// The estate's human scale for props and trees: one doorway height.
 export const DOOR_HEIGHT = 6.6;
 
 // The terrain's dune field, helpers.js dune(): amplitude * wave(frequency *
@@ -35,7 +33,7 @@ const TERRAIN_DUNE_GLSL = TERRAIN_DUNE_TERMS.map(
 
 // The film slate just after rain. Terrain hollows and the map's dark crack
 // texels hold water, and a wide halo about the tree (the root area, the path
-// and the lantern clearing with it) is wet; only the tower footing stays dry.
+// and the lantern clearing with it) is wet; only the watch's raised terrace stays dry.
 // Wet ground is glossy rather than darker (it keeps the ground's brightness):
 // smoother, its direct highlight clamped less, its own sky reflection clamped
 // less (indirect: the soil's share where wet), and a film of water mirrors the
@@ -455,14 +453,14 @@ export function streamLines({ courses, step, bed } = SLATE_STREAMS) {
 }
 // The river through the set (the owner's picks of 2026-10-10, a broad, slow
 // river past the lantern, and 2026-10-11, "much more water", carried through
-// the set across Portrait's foreground and into a lake behind the lookout): it
+// the set across Portrait's foreground and into a lake behind the watch): it
 // pours off the cliffs north-east behind the tree (the owner's open sea of
 // 2026-10-17, terrain-build.js and ocean.js riverFalls()); along it from there
 // it rounds a meander north-west of the lantern, runs 4 units wide about 4.3
 // units in front of the lantern on the lantern shots' side and bends away
 // south toward their lens, as before, clear of the roots, the rocks and the
 // puddles; then it crosses Portrait's foreground, rounds past its lens, passes
-// well south of the lookout (its water 10 units beyond the lookout's grass)
+// well south of the watch's terrace (its water 10 units beyond the terrace's grass)
 // and widens across The watch's plain into a lake 60 units across, where it
 // comes in off the plain from toward the summit. Its course is a smooth
 // centreline through `path` ([dx, dz] offsets from the lantern's foot, from the
@@ -676,7 +674,7 @@ export const MOON_LIGHTS = Object.freeze({
 
 // How the film ground takes the night's light. The moon key rakes it and casts
 // the tree's shadow across it, so it dominates: the unshadowed fill, which
-// models the tower and the bark, keeps only a share here, and the flat ambient
+// models the bark, keeps only a share here, and the flat ambient
 // and hemisphere give way to
 // the night sky's own light from the environment (night-environment.js),
 // brighter toward the lit clouds and the horizon, which the cracks and relief
@@ -702,7 +700,7 @@ export const SLATE_LIGHT = Object.freeze({
 // Water on the ground mirrors the night sky (the environment), with water's
 // Fresnel (f0) on a normal levelled by the water (level: its share of the
 // surface's own, unmapped normal): after the rain a film of water lies on the
-// soil, film[0] of it everywhere but the dry tower footing and film[1] more
+// soil, film[0] of it everywhere but the dry terrace and film[1] more
 // with the wet mask, in broad drained and glossy patches (patch: the noise's
 // cell in units and the share it keeps at least), a little rough
 // (roughness[0]) as it follows the soil; standing water (the knoll's low-spot
@@ -904,7 +902,7 @@ const glslVec = (values) => `vec${values.length}(${values.map(glslNumber).join("
 const glslPoint = ({ x, z }) => glslVec([+x.toFixed(2), +z.toFixed(2)]);
 const TREE_GLSL = glslPoint(ESTATE.tree);
 const PATH_LENGTH = glslNumber(
-  +Math.hypot(ESTATE.tree.x - ESTATE.tower.x, ESTATE.tree.z - ESTATE.tower.z).toFixed(2),
+  +Math.hypot(ESTATE.tree.x - ESTATE.watch.x, ESTATE.tree.z - ESTATE.watch.z).toFixed(2),
 );
 const SECOND = SLATE_TILING.second,
   DETAIL = SLATE_TILING.detail,

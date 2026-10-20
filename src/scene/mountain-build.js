@@ -13,7 +13,7 @@ import { BufferAttribute, BufferGeometry, Sphere, Vector3 } from "three";
 // the camera can never stand inside a range. Five ranges, near to far, all inside the
 // camera's far plane (450). Prime lattice counts keep the crest from repeating around
 // the ring. peaks: [azimuth, apex, half-width, range]; background: [azimuth, cap] knots,
-// the tallest a range's noise may rise, capped low under the sun and roof saddle
+// the tallest a range's noise may rise, capped low under the sun and the clear lane's saddle
 // (171-183), across the tree shots (22-86, so sky stays open above the lantern on every
 // width) and at 234-280.
 export const MOUNTAINS = Object.freeze({
@@ -594,8 +594,8 @@ export const RANGE_LAYERS = Object.freeze([
 ]);
 export const RANGE_BACKDROP = Object.freeze({ ranges: Object.freeze([3, 4]), capScale: 1 });
 // The watch's summit leads (about 6 degrees, set lower so the sky leads,
-// 2026-10-11) with a smaller one right of the
-// tower; Portrait's crown meets open cloud (from 96 to 120 degrees no massif
+// 2026-10-11) with a smaller one to its right;
+// Portrait's crown meets open cloud (from 96 to 120 degrees no massif
 // carries snow: the bare near layer, its neighbours' flanks and the hazed
 // backdrop ring); snowy massifs rise
 // behind the tree shots (up to about 3.3 degrees, an 8% band of open sky above

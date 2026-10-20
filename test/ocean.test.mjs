@@ -50,7 +50,7 @@ import { TOUR_ORDER } from "../src/scene/camera-tour.js";
 import { MIST_PARS, MIST_UNIFORMS, mistOn } from "../src/scene/drifting-mist.js";
 import { FLASH_GROUND } from "../src/scene/film-light.js";
 import { createFilmScene } from "../src/scene/film-scene.js";
-import { HIGH_VIEW, HORIZON_AIR, RANGE_MIST, SEA_SINK } from "../src/scene/hill-silhouette.js";
+import { RANGE_MIST, SEA_SINK } from "../src/scene/hill-silhouette.js";
 import {
   configureGroundShading,
   createSlateContacts,
@@ -84,7 +84,6 @@ const lib = {
   FLASH_GROUND,
   RANGE_MIST,
   SEA_SINK,
-  HIGH_VIEW,
 };
 const rendering = () => ({ homeScene: new Scene(), lights: {}, tier: "high" });
 
@@ -159,7 +158,7 @@ test("the land falls to the seabed past the fault, well clear of the estate, its
   // The seabed lies well under the sea; the shelf covers the drop and a coarse cell's diagonal.
   assert.ok(SHORE.deep < SEA.level - 6);
   assert.ok(SHORE.shelf >= SHORE.drop + 3 * Math.SQRT2);
-  // Nothing of the estate stands near it: the lookout, the tree's root window, the lantern.
+  // Nothing of the estate stands near it: the watch's terrace, the tree's root window, the lantern.
   assert.ok(coastDistance(0, 0) > 100);
   for (const x of [FINE_WINDOW.x[0], FINE_WINDOW.x[1]])
     for (const z of [FINE_WINDOW.z[0], FINE_WINDOW.z[1]])
@@ -195,10 +194,6 @@ test("the sea is one program: the film's environment its only texture, the groun
   // The ground's depth layer, as the entry's (depth-layers.js).
   assert.equal(SEA_SHARED.layer, DEPTH_LAYER.ground);
   assert.ok(fragment.includes(`gl_FragColor=vec4(c,${DEPTH_LAYER.ground});`));
-  assert.ok(
-    Math.abs(SEA_SHARED.edgeLift - (HORIZON_AIR.edge / HORIZON_AIR.ground - 1)) < 5e-5,
-    "the walk's far edge lifts to the far plain's air",
-  );
   // No texture but the environment's (through three's CubeUV chunks) and the moon's
   // shadow map, which it reads itself (it casts none, and takes none from three).
   assert.deepEqual(fragment.match(/uniform sampler\w+ \w+/g), ["uniform sampler2D seaShadowMap"]);
@@ -710,16 +705,10 @@ test("the sea mirrors the cliffs' lit, wet face, the stacks and the falls where 
   sea.dispose();
 });
 
-test("the slate's shore edits: the walk's view from up high fades the land's far edge, but not at the cliffs", () => {
-  const edits = slateShoreEdits(HIGH_VIEW.fade);
-  assert.equal(edits.length, 2);
-  for (const [stage] of edits) assert.equal(stage, "fragmentShader");
-  assert.ok(edits[0][2].includes("uniform float slateHigh;"));
-  assert.ok(edits[0][2].includes(coastGlsl()));
-  assert.ok(edits[1][2].includes("slateHigh*smoothstep(80.0, 188.0, length(vMudWorld.xz))"));
-  assert.ok(edits[1][2].includes("smoothstep(30.0, 70.0, seaCoast(vMudWorld.xz))"));
-  assert.ok(edits[1][2].includes(`earthAir *= 1.0+slateHigh*${SEA_SHARED.edgeLift};`));
-  assert.deepEqual(HIGH_VIEW.fade, [80, 188]);
+test("the slate's shore edit gives its fragments the fault's distance, and nothing more", () => {
+  const edits = slateShoreEdits();
+  assert.deepEqual(edits, [["fragmentShader", "|#define STANDARD", `${coastGlsl()}\n`]]);
+  assert.ok(edits[0][2].startsWith("float seaCoast(vec2 p){"));
 });
 
 test("the sea, the cliffs and the falls land with the film terrain, sink the ranges past the fault, and go with it", async () => {
@@ -809,7 +798,7 @@ test("the fault's shots look over the broken coast from the land, inside the sky
       assert.equal(measured.cameraY, shot.rise - 6.8);
       assert.equal(fitted.distance, shot.reach);
       // Its camera, through its whole move: on the land, back from the cliffs' lip, high
-      // over the plain, and inside the sky's shell (radius 130 about the lookout).
+      // over the plain, and inside the sky's shell (radius 130 about the watch).
       for (const phase of [0, 0.25, 0.5, 0.75, 1]) {
         const pose = shotPose(shot, phase),
           yaw = (shot.azimuth * Math.PI) / 180,

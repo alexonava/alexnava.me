@@ -259,8 +259,8 @@ test("lantern swap refreshes cached camera measurements for desktop and portrait
     });
     cinematic.setSubject("tree", f.tree.root);
     cinematic.setStatus({ kind: "tree", status: "ready" });
-    cinematic.setSubject("tower", f.tree.root);
-    cinematic.setStatus({ kind: "tower", status: "ready" });
+    cinematic.setSubject("watch", f.tree.root);
+    cinematic.setStatus({ kind: "watch", status: "ready" });
     cinematic.apply({ width, height, reducedMotion: true });
     const oldFrame = cinematic.frame;
     const mount = readyMount({

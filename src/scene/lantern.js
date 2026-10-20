@@ -9,7 +9,7 @@ export const LANTERN_ENVIRONMENT = 0.7;
 
 // The asset controller owns the GLB and its maps. This assembly owns only its
 // geometry/material clones; its authored PBR and masked emission receive no
-// tower/tree grade. Normalize in world space so imported node transforms and
+// tree grade. Normalize in world space so imported node transforms and
 // off-centre Meshy origins cannot move the existing ground anchor.
 export function createLanternArchitecture({ asset, anisotropy = 4 }) {
   const root = new Group();

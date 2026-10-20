@@ -217,10 +217,9 @@
     }
   }
 
-  // Once the live scene is chosen, request the startup tier's tower and tree
-  // beside the bundle rather than after the scene's first frame.
-  // architecture-assets.js takes a response whose URL matches once and
-  // releases the rest.
+  // Once the live scene is chosen, request the startup tier's tree beside the
+  // bundle rather than after the scene's first frame. architecture-assets.js
+  // takes a response whose URL matches once and releases the rest.
   let modelPrefetchStarted = false;
   function prefetchArchitectureModels(tier) {
     if (modelPrefetchStarted) return;
@@ -239,20 +238,16 @@
     try {
       const scene = (site.scene = site.scene || {});
       // Unknown limits would make the scene probe again; do not guess its tier.
-      const tierUrls = tier ? urls[tier] : null;
-      if (!tierUrls) return;
-      const prefetched = (scene.prefetched = new Map());
-      for (const url of [tierUrls.tower, tierUrls.tree]) {
-        if (!url) continue;
-        const controller = new AbortController();
-        // The loading line counts the body as it arrives, before the scene
-        // takes it; the scene receives the copy it returns.
-        const response = fetch(url, { priority: "low", signal: controller.signal }).then(
-          (received) => site.sceneLoader?.track?.(url, received) ?? received,
-        );
-        response.catch(() => {});
-        prefetched.set(url, { response, abort: () => controller.abort() });
-      }
+      const url = tier ? urls[tier]?.tree : null;
+      if (!url) return;
+      const controller = new AbortController();
+      // The loading line counts the body as it arrives, before the scene
+      // takes it; the scene receives the copy it returns.
+      const response = fetch(url, { priority: "low", signal: controller.signal }).then(
+        (received) => site.sceneLoader?.track?.(url, received) ?? received,
+      );
+      response.catch(() => {});
+      scene.prefetched = new Map([[url, { response, abort: () => controller.abort() }]]);
     } catch {
       // The scene requests its own models when an early request cannot start.
     }

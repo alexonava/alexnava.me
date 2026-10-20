@@ -51,12 +51,7 @@ function* transformGeometry(geometry, matrix) {
     );
 }
 
-function* prepareGeometrySteps(
-  source,
-  role,
-  record,
-  { towerHeight, towerRadiusCap, treeHeight, smoothTreeNormalSteps },
-) {
+function* prepareGeometrySteps(source, record, { treeHeight, smoothTreeNormalSteps }) {
   // Morph targets need Three's own bounds rules; the shipped static assets
   // contain none. The synchronous constructor remains their fallback.
   if (Object.values(source.geometry.morphAttributes).some((attributes) => attributes.length))
@@ -80,43 +75,15 @@ function* prepareGeometrySteps(
   yield* geometryBounds(geometry, true, false);
   const { min, max } = geometry.boundingBox;
   const dimensions = new Vector3().subVectors(max, min);
-  if (role === "tower") {
-    if (
-      ![dimensions.x, dimensions.y, dimensions.z].every(
-        (value) => Number.isFinite(value) && value > 0,
-      )
-    )
-      throw new Error("Complete tower asset has empty bounds.");
-    yield* transformGeometry(
-      geometry,
-      new Matrix4().makeTranslation(-(min.x + max.x) / 2, -min.y, -(min.z + max.z) / 2),
-    );
-    const position = geometry.attributes.position;
-    let radius = 0;
-    for (let i = 0; i < position.count; i++) {
-      const x = position.getX(i),
-        y = position.getY(i),
-        z = position.getZ(i);
-      if (![x, y, z].every(Number.isFinite))
-        throw new Error("Complete tower positions must be finite.");
-      radius = Math.max(radius, Math.hypot(x, z));
-      if (i % 256 === 255) yield;
-    }
-    const scale = Math.min(towerHeight / dimensions.y, towerRadiusCap / radius);
-    yield* transformGeometry(geometry, new Matrix4().makeScale(scale, scale, scale));
-    yield* geometryBounds(geometry, true, true);
-    Object.assign(record, { dimensions, radius, scale });
-  } else {
-    const height = dimensions.y;
-    if (!Number.isFinite(height) || height <= 0) throw new Error("Tree asset has empty bounds.");
-    const scale = treeHeight / height;
-    yield* transformGeometry(geometry, new Matrix4().makeTranslation(0, -min.y, 0));
-    yield* transformGeometry(geometry, new Matrix4().makeScale(scale, scale, scale));
-    yield* geometryBounds(geometry, false, true);
-    record.originalNormals = geometry.attributes.normal.array.slice();
-    yield;
-    record.softenedNormals = (yield* smoothTreeNormalSteps(geometry)).array;
-  }
+  const height = dimensions.y;
+  if (!Number.isFinite(height) || height <= 0) throw new Error("Tree asset has empty bounds.");
+  const scale = treeHeight / height;
+  yield* transformGeometry(geometry, new Matrix4().makeTranslation(0, -min.y, 0));
+  yield* transformGeometry(geometry, new Matrix4().makeScale(scale, scale, scale));
+  yield* geometryBounds(geometry, false, true);
+  record.originalNormals = geometry.attributes.normal.array.slice();
+  yield;
+  record.softenedNormals = (yield* smoothTreeNormalSteps(geometry)).array;
 }
 
 // Loading retains the parsed source until this settles; cancellation returns
@@ -128,10 +95,10 @@ export function prepareArchitectureGeometry(
   preparedArchitecture,
   configuration,
 ) {
-  if (!["tower", "tree"].includes(role) || signal?.aborted) return Promise.resolve(false);
+  if (role !== "tree" || signal?.aborted) return Promise.resolve(false);
   if (preparedArchitecture.has(asset)) return Promise.resolve(true);
   const record = { role, geometry: null, detach: () => {} };
-  const steps = prepareGeometrySteps(configuration.source, role, record, configuration);
+  const steps = prepareGeometrySteps(configuration.source, record, configuration);
   return new Promise((resolve) => {
     let finished = false;
     const release = () => {

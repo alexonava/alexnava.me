@@ -18,7 +18,7 @@ import {
 } from "../src/scene/terrain-build.js";
 import { MIST_PARS, MIST_UNIFORMS } from "../src/scene/drifting-mist.js";
 import { FLASH_GROUND } from "../src/scene/film-light.js";
-import { HIGH_VIEW, RANGE_MIST, SEA_SINK } from "../src/scene/hill-silhouette.js";
+import { RANGE_MIST, SEA_SINK } from "../src/scene/hill-silhouette.js";
 import { configureGroundShading, SLATE_TEXT_GUARD } from "../src/scene/mud-ground.js";
 
 const EARTH = { width: 384, subdivisions: 8 },
@@ -30,7 +30,6 @@ const EARTH = { width: 384, subdivisions: 8 },
     FLASH_GROUND,
     RANGE_MIST,
     SEA_SINK,
-    HIGH_VIEW,
   };
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 const disposalCount = (resource) => {

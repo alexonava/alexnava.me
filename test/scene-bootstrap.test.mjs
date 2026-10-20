@@ -9,7 +9,7 @@ const index = flat(source("src/scene/index.js"));
 // The text between two anchors of the flattened bootstrap.
 const between = (from, to) => index.slice(index.indexOf(from), to ? index.indexOf(to) : undefined);
 
-test("a missing tower or tree fails to the title card once the camera knows; the lantern is optional", () => {
+test("a watch or tree that cannot commit fails to the title card once the camera knows; the lantern is optional", () => {
   const onStatus = between("onStatus(status) {", "subsystemRegistry.register(architectureAssets);");
   assert.ok(onStatus.indexOf("cinematic.setStatus(status);") < onStatus.indexOf("failToTitle("));
   assert.match(
@@ -163,8 +163,9 @@ test("the reveal waits for the shader warm-up, and nothing draws while one links
     /const sceneShown = !sceneFailed && cinematic\.ready && \(canvasShown \|\| !shaderWarmup\.pending\);/,
   );
   assert.match(index, /warmShaders\("scene"\); frameScheduler\.start\(\);/);
-  // A committed model replaces nothing visible, so it stays hidden until its programs link.
-  assert.match(index, /warmShaders\("tower", replacement\.root\);/);
+  // The watch's commit links the film's programs before the reveal. A committed
+  // tree replaces nothing visible, so it stays hidden until its programs link.
+  assert.match(index, /measureScene\("assembly:watch", assemblyStart\); warmShaders\("watch"\);/);
   assert.match(index, /warmShaders\("tree", replacement\.root\);/);
   // A ground program that changes before the reveal links through compileAsync.
   assert.equal(
@@ -261,7 +262,7 @@ test("the scene entry marks its evaluation first, and the bootstrap reuses the p
     index,
     /caps: scene\.qualityCapsFromProbe\?\.\(site\.shared\?\.getWebGLCapabilities\?\.\(\)\) \?\? null/,
   );
-  for (const name of ["init", "first-frame", "assembly:tower", "assembly:tree"])
+  for (const name of ["init", "first-frame", "assembly:watch", "assembly:tree"])
     assert.ok(index.includes(`measureScene("${name}"`), name);
   assert.match(index, /measureScene\(`shaders:\$\{label\}`, start\);/);
   for (const path of [

@@ -1,12 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { BoxGeometry, Group, Mesh, MeshStandardMaterial } from "three";
-import {
-  createCompleteTowerArchitecture,
-  createTreeArchitecture,
-  prepareArchitecture,
-} from "../src/scene/architecture.js";
-import { glbAsset, modelBytes, parseGlb, readAccessor } from "./support/glb.mjs";
+import { createTreeArchitecture, prepareArchitecture } from "../src/scene/architecture.js";
+import { glbAsset, modelBytes } from "./support/glb.mjs";
 
 await import("../src/scene/architecture-prepare.js");
 
@@ -54,57 +50,54 @@ function assertSameGeometry(actual, expected) {
   assert.deepEqual(actual.boundingSphere, expected.boundingSphere);
 }
 
-for (const role of ["tower", "tree"])
-  for (const tier of ["high", "balanced"]) {
-    test(`cooperative ${role} preparation preserves every ${tier} geometry byte and film normal`, async () => {
-      const model = modelBytes(role, tier);
-      const asset = glbAsset(model);
-      const original = asset.scene.children[0].geometry;
-      // The general framing fixture needs no tangents; actual loaded towers
-      // carry them, including their handedness, through every transform.
-      const glb = parseGlb(model);
-      const tangent = glb.json.meshes[0].primitives[0].attributes.TANGENT;
-      if (tangent !== undefined) original.setAttribute("tangent", readAccessor(glb, tangent));
-      original.computeBoundingBox();
-      original.computeBoundingSphere();
-      const originalPosition = Buffer.from(bytes(original.attributes.position));
-      const originalNormal = Buffer.from(bytes(original.attributes.normal));
-      const construct = role === "tree" ? createTreeArchitecture : createCompleteTowerArchitecture;
-      const expected = construct({ asset, groundHeight: () => 0 });
-      const preparation = await scheduledPreparation(asset, { role });
-      assert.equal(preparation.tasks.length, 1, "derived work starts in another task");
-      assert.equal(await preparation.finish(), true);
-      assert.ok(preparation.slices > 1, "actual delivered geometry yields between bounded slices");
-      const actual = construct({ asset, groundHeight: () => 0 });
-      const name = role === "tree" ? "meshy-tree" : "complete-meshy-tower";
-      const actualMesh = actual.root.getObjectByName(name);
-      const expectedMesh = expected.root.getObjectByName(name);
+for (const tier of ["high", "balanced"]) {
+  test(`cooperative tree preparation preserves every ${tier} geometry byte and film normal`, async () => {
+    const asset = glbAsset(modelBytes("tree", tier));
+    const original = asset.scene.children[0].geometry;
+    original.computeBoundingBox();
+    original.computeBoundingSphere();
+    const originalPosition = Buffer.from(bytes(original.attributes.position));
+    const originalNormal = Buffer.from(bytes(original.attributes.normal));
+    const expected = createTreeArchitecture({ asset, groundHeight: () => 0 });
+    const preparation = await scheduledPreparation(asset, { role: "tree" });
+    assert.equal(preparation.tasks.length, 1, "derived work starts in another task");
+    assert.equal(await preparation.finish(), true);
+    assert.ok(preparation.slices > 1, "actual delivered geometry yields between bounded slices");
+    const actual = createTreeArchitecture({ asset, groundHeight: () => 0 });
+    const actualMesh = actual.root.getObjectByName("meshy-tree");
+    const expectedMesh = expected.root.getObjectByName("meshy-tree");
+    assertSameGeometry(actualMesh.geometry, expectedMesh.geometry);
+    assert.equal(actualMesh.material.color.getHex(), expectedMesh.material.color.getHex());
+    for (const film of [true, false]) {
+      actual.setFilmTreatment(film);
+      expected.setFilmTreatment(film);
       assertSameGeometry(actualMesh.geometry, expectedMesh.geometry);
-      assert.equal(actualMesh.material.color.getHex(), expectedMesh.material.color.getHex());
-      assert.deepEqual(actual.root.userData.architecture, expected.root.userData.architecture);
-      for (const film of [true, false]) {
-        actual.setFilmTreatment(film);
-        expected.setFilmTreatment(film);
-        assertSameGeometry(actualMesh.geometry, expectedMesh.geometry);
-        assert.equal(
-          actualMesh.material.emissiveIntensity,
-          expectedMesh.material.emissiveIntensity,
-        );
-      }
-      assert.deepEqual(
-        bytes(original.attributes.position),
-        originalPosition,
-        "source positions remain compact and unchanged",
-      );
-      assert.deepEqual(
-        bytes(original.attributes.normal),
-        originalNormal,
-        "source normals remain unchanged",
-      );
-      actual.dispose();
-      expected.dispose();
-    });
+      assert.equal(actualMesh.material.emissiveIntensity, expectedMesh.material.emissiveIntensity);
+    }
+    assert.deepEqual(
+      bytes(original.attributes.position),
+      originalPosition,
+      "source positions remain compact and unchanged",
+    );
+    assert.deepEqual(
+      bytes(original.attributes.normal),
+      originalNormal,
+      "source normals remain unchanged",
+    );
+    actual.dispose();
+    expected.dispose();
+  });
+}
+
+test("only the tree is prepared cooperatively; any other role is declined without work", async () => {
+  for (const role of ["lantern", "rock", "tower", undefined]) {
+    const h = watchedAsset();
+    const preparation = await scheduledPreparation(h.asset, { role });
+    assert.equal(await preparation.ready, false, String(role));
+    assert.equal(preparation.tasks.length, 0, "no derived work is scheduled");
+    assert.equal(h.cloned, 0);
   }
+});
 
 function watchedAsset(real = false) {
   const asset = real ? glbAsset(modelBytes("tree", "high")) : { scene: new Group() };

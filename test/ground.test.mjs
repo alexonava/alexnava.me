@@ -37,7 +37,6 @@ import {
 } from "../src/scene/mud-ground.js";
 import {
   createHillSilhouette,
-  HIGH_VIEW,
   HORIZON_AIR,
   HORIZON_HAZE,
   HORIZON_SKIRT,
@@ -79,7 +78,7 @@ test("rock placement is seeded, clear of the estate and every directed shot, and
   assert.ok(pebbles.length >= tall - 1 && pebbles.length <= tall, `${pebbles.length} pebbles`);
   for (const rock of a) {
     // Generated pebbles pass every keep-out; the authored clusters clear the
-    // tower and tree (the lantern stones are placed at the lantern's foot).
+    // watch's terrace and the tree (the lantern stones are placed at the lantern's foot).
     if (rock.pebble) assert.ok(rockClear(ROCK_LIB, rock.x, rock.z, rock.radius), rock.id);
     else if (rock.stream) {
       // In the stream's water, clear of the lantern's footing.
@@ -91,8 +90,8 @@ test("rock placement is seeded, clear of the estate and every directed shot, and
       assert.ok(rock.height < 0.3, `${rock.id} takes a contact slot`);
     } else if (!rock.lanternStone) {
       assert.ok(
-        Math.hypot(rock.x - ESTATE.tower.x, rock.z - ESTATE.tower.z) >
-          ESTATE.tower.clear + rock.radius,
+        Math.hypot(rock.x - ESTATE.watch.x, rock.z - ESTATE.watch.z) >
+          ESTATE.watch.clear + rock.radius,
         rock.id,
       );
       assert.ok(
@@ -605,10 +604,8 @@ test("each ground shading has its own program cache key; the slate's shading nee
   const { fragment, uniforms } = compile(true, { detail, contacts });
   // The slate's far edge darkens toward the far plain's air, the shared slate
   // lifted by HORIZON_AIR.ground, and never lightens: slate already darker
-  // than that air keeps its tone. The walk's view from up high (HIGH_VIEW) is
-  // the lazy terrain's own edit (ocean.js slateShoreEdits(), terrain-build.test.mjs),
-  // never the entry's. Only a shot's look follows it: its clearing and its
-  // mist, each off unless a shot asks for it.
+  // than that air keeps its tone. Only a shot's look follows it: its clearing
+  // and its mist, each off unless a shot asks for it.
   const horizon = TERRAIN_HORIZON.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
     LUMA = "vec3\\(\\.2126,\\.7152,\\.0722\\)";
   assert.match(
@@ -622,9 +619,6 @@ test("each ground shading has its own program cache key; the slate's shading nee
         `${mistOn ? "gl_FragColor\\.rgb = mistGround\\(gl_FragColor\\.rgb, vMudWorld\\);\\s*" : ""}gl_FragColor\\.a = 0\\.6667;`,
     ),
   );
-  assert.equal(uniforms.slateHigh, undefined);
-  assert.doesNotMatch(fragment, /slateHigh/);
-  assert.equal(HIGH_VIEW.value, 0);
   // Delay distance haze so the phone foreground retains texture; the outer
   // 190-unit square boundary still reaches the far plain's air.
   assert.match(
@@ -865,8 +859,8 @@ test("each ground shading has its own program cache key; the slate's shading nee
     fragment.indexOf("slateWet = ") > fragment.indexOf("float worn ="),
     "wetness follows the worn mask",
   );
-  // Only the tower footing stays dry: the root area, the path and the lantern
-  // clearing are wet.
+  // Only the watch's raised terrace stays dry: the root area, the path and the
+  // lantern clearing are wet.
   assert.match(fragment, /float slateDry = footingDry;/);
   assert.match(fragment, /float slateWet = clamp\([^;]*\)\*\(1\.0-slateDry\);/);
   // The puddles fill fuller, Portrait's foreground puddle among them; the
@@ -1151,7 +1145,7 @@ test("the wet hollows restate the terrain dune field exactly", async () => {
   let samples = 0;
   for (let x = -190; x <= 190; x += 7.3)
     for (let z = -190; z <= 190; z += 6.1) {
-      // Outside the tower and tree terraces, the ground height is the dune field.
+      // Outside the watch's and the tree's terraces, the ground height is the dune field.
       if (Math.hypot(x, z) < 20 || Math.hypot(x - 55.1, z - 36.1) < 14) continue;
       assert.ok(Math.abs(groundHeight(x, z) - terrainDune(x, z)) < 1e-12, `${x},${z}`);
       samples++;
@@ -1426,17 +1420,8 @@ test("Portrait takes the whole look on its plain (a moonlit clearing, low mist, 
     ["Portrait"],
   );
   // After the rain every wide shot takes the gloss and a light mist; the close
-  // and the high shots (Gallery detail, Close-up) keep the plain as it is.
-  const rainy = [
-    "The watch",
-    "Threshold",
-    "Masonry study",
-    "Watch and tree",
-    "Against the moon",
-    "Portrait",
-    "Lantern study",
-    "Root and lantern",
-  ];
+  // shot (Close-up) keeps the plain as it is.
+  const rainy = ["The watch", "Portrait", "Lantern study", "Root and lantern"];
   assert.deepEqual(
     names((g) => g.mist),
     rainy,
@@ -1675,7 +1660,7 @@ test("the drifting mist lies below its ceiling on every film material, after its
     assert.equal(shader.uniforms[name], MIST_UNIFORMS[name]);
   assert.match(material.customProgramCacheKey(), /\|mist$/);
   assert.equal(mistHook(material), material, "hooked once");
-  // Every film material that stands in it: the tower, the tree and the rocks
+  // Every film material that stands in it: the tree and the rocks
   // (materialFor), the lantern, the growth and litter, the ground and the ranges.
   const architecture = flatCode(source("src/scene/architecture.js"));
   assert.ok(architecture.includes("return mistHook(material);"));

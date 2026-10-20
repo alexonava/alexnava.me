@@ -50,7 +50,7 @@
       sceneOffsetY: -6.8,
     },
     // Phone rotated to landscape (~844x390). Viewport is very short, so the
-    // camera pulls up and the look-at target lowers to keep the tower in the
+    // camera pulls up and the look-at target lowers to keep the estate in the
     // frame.
     landscapePhone: {
       camera: {

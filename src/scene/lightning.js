@@ -147,11 +147,10 @@ export const LIGHTNING = Object.freeze({
       sky: Object.freeze({ thin: 0 }),
     }),
   }),
-  // The lookout's giants look up at least 15 degrees, so their flickers rise
-  // into their frames (5-16 degrees fell below them).
+  // The watch looks up at least 15 degrees, so its flickers rise into its
+  // frame (5-16 degrees fell below it).
   shots: Object.freeze({
     "The watch": Object.freeze({ altitude: Object.freeze([12, 24]) }),
-    Threshold: Object.freeze({ altitude: Object.freeze([12, 24]) }),
   }),
   forceAt: Object.freeze([]),
 });

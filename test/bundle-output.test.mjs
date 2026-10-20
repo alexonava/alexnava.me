@@ -32,7 +32,6 @@ const scriptsDir = path.join(distDir, "scripts");
 
 // Every model the live scene loads, and the slate maps each tier requests.
 const ROLES = [
-  "tower",
   "tree",
   "lantern",
   "lichen-rock",
@@ -144,7 +143,7 @@ test("scene bundle stays under the deferred-payload budget", async () => {
   const kb = bytes / 1024;
   // 831 kB since the fault's own shots joined the tour (the owner's call of 2026-10-17:
   // their framing rides in the terrain's chunk, the entry keeps their hooks);
-  // 830 kB since the loading line's star lines up with the opening shot's: the tower's
+  // 830 kB since the loading line's star lines up with the opening shot's: The watch's
   // stored outline (opening-outline.js) is about 10 kB of it.
   assert.ok(
     kb < 831,
@@ -468,7 +467,7 @@ test("the pages publish no picture, and the share card's backdrop stays unpublis
   });
 });
 
-test("the UI carries the loading line and its tower and tree byte sizes; the scene only reports to it", async () => {
+test("the UI carries the loading line and its tree byte sizes; the scene only reports to it", async () => {
   const app = await readFile(await findHashedScript("app"), "utf8");
   const scene = await readSceneStatic();
   assert.match(app, /scene-loader__value/);
@@ -476,7 +475,7 @@ test("the UI carries the loading line and its tower and tree byte sizes; the sce
   assert.match(app, /scene-star/);
   assert.match(app, /sceneLoader/);
   for (const tier of ["high", "balanced"]) {
-    for (const role of ["tower", "tree"]) {
+    for (const role of ["tree"]) {
       const { size } = await stat(
         path.join(projectRoot, "images", "architecture", `${role}-${tier}.glb`),
       );
@@ -484,7 +483,7 @@ test("the UI carries the loading line and its tower and tree byte sizes; the sce
       assert.ok(!scene.includes(`${role}:${size}`), `the scene carries no ${role}-${tier} size`);
     }
   }
-  for (const role of ROLES.filter((item) => !["tower", "tree"].includes(item))) {
+  for (const role of ROLES.filter((item) => item !== "tree")) {
     const { size } = await stat(
       path.join(projectRoot, "images", "architecture", `${role}-high.glb`),
     );
@@ -535,9 +534,9 @@ test("the build refuses a shared scene chunk that would carry first-party module
   }
 });
 
-test("changing only a fixture tower model changes only its URL and size in the UI, and a rebuild is stable", async () => {
+test("changing only a fixture tree model changes only its URL and size in the UI, and a rebuild is stable", async () => {
   const fixture = await mkdtemp(path.join(scratchRoot, "model-size-build-"));
-  const sourcePath = path.join(projectRoot, "images", "architecture", "tower-high.glb");
+  const sourcePath = path.join(projectRoot, "images", "architecture", "tree-high.glb");
   const sourceBefore = await readFile(sourcePath);
   const sha8 = (bytes) => createHash("sha256").update(bytes).digest("hex").slice(0, 8);
   try {
@@ -578,33 +577,33 @@ test("changing only a fixture tower model changes only its URL and size in the U
         text: await readFile(path.join(fixture, "dist", "scripts", names[0]), "utf8"),
       };
     }
-    // The UI's model manifest: each tier's tower and tree URLs and sizes.
+    // The UI's model manifest: each tier's tree URL and size.
     const manifest = (text) => ({
       urls: text.match(/\/images\/architecture\/[\w-]+\.[a-f0-9]{8}\.glb/g),
-      sizes: text.match(/\b(?:tower|tree):\d+\b/g),
+      sizes: text.match(/\btree:\d+\b/g),
     });
     const before = await buildApp();
     const was = manifest(before.text);
-    const oldUrl = `/images/architecture/tower-high.${sha8(sourceBefore)}.glb`;
-    const oldSize = `tower:${sourceBefore.length}`;
-    assert.equal(was.urls.length, 4);
-    assert.equal(was.sizes.length, 4);
+    const oldUrl = `/images/architecture/tree-high.${sha8(sourceBefore)}.glb`;
+    const oldSize = `tree:${sourceBefore.length}`;
+    assert.equal(was.urls.length, 2);
+    assert.equal(was.sizes.length, 2);
     assert.equal(
       was.urls.filter((url) => url === oldUrl).length,
       1,
-      "the UI names the tower's URL once",
+      "the UI names the tree's URL once",
     );
     assert.equal(was.sizes.filter((size) => size === oldSize).length, 1, "and its size once");
     const changed = Buffer.concat([sourceBefore, Buffer.from("fixture-only-model-change")]);
-    await writeFile(path.join(fixture, "images", "architecture", "tower-high.glb"), changed);
+    await writeFile(path.join(fixture, "images", "architecture", "tree-high.glb"), changed);
     const after = await buildApp();
     assert.notEqual(after.name, before.name);
     // Minified names may shift with the hash's characters; the manifest
-    // changes in exactly the tower's URL and size.
-    const newUrl = `/images/architecture/tower-high.${sha8(changed)}.glb`;
+    // changes in exactly the tree's URL and size.
+    const newUrl = `/images/architecture/tree-high.${sha8(changed)}.glb`;
     assert.deepEqual(manifest(after.text), {
       urls: was.urls.map((url) => (url === oldUrl ? newUrl : url)),
-      sizes: was.sizes.map((size) => (size === oldSize ? `tower:${changed.length}` : size)),
+      sizes: was.sizes.map((size) => (size === oldSize ? `tree:${changed.length}` : size)),
     });
     // An unchanged rebuild publishes the same UI, and a model the UI does not
     // request early (the lantern) never changes it.
@@ -619,13 +618,13 @@ test("changing only a fixture tower model changes only its URL and size in the U
   }
 });
 
-test("models and slate maps are deferred: the scene entry names their hashed copies, the UI only the early tower and tree", async () => {
+test("models and slate maps are deferred: the scene entry names their hashed copies, the UI only the early tree", async () => {
   const app = await readFile(await findHashedScript("app"), "utf8");
   const scene = await readSceneStatic();
   // The hashed model manifest lives in the entry, so a model revision changes
   // only the entry's URL and never the shared Three.js chunk's.
   const { entry, loaded } = await sceneScripts();
-  assert.match(loaded.get(entry), /\/images\/architecture\/tower-high\.[a-f0-9]{8}\.glb/);
+  assert.match(loaded.get(entry), /\/images\/architecture\/tree-high\.[a-f0-9]{8}\.glb/);
   for (const [name, text] of loaded) {
     if (name !== entry) assert.doesNotMatch(text, /\/images\/architecture\//, name);
   }
@@ -650,7 +649,7 @@ test("models and slate maps are deferred: the scene entry names their hashed cop
       assert.ok(loaded.get(entry).includes(`/images/architecture/${published}`), published);
       assert.equal(
         app.includes(`/images/architecture/${published}`),
-        role === "tower" || role === "tree",
+        role === "tree",
         `the UI names ${published} only to request it early`,
       );
     }
@@ -668,7 +667,7 @@ test("models and slate maps are deferred: the scene entry names their hashed cop
 });
 
 test("the complete scene fits 7.25 MiB on high and 3.5 MiB on balanced, and each model the loader's limit", async () => {
-  // A live scene downloads the tower, tree, lantern, both rocks, the three
+  // A live scene downloads the tree, lantern, both rocks, the three
   // Meshy massifs, the slate's five maps and both optional coastal maps.
   // Photographic materials have an explicit aggregate allowance; deferring
   // their requests never removes them from this full-scene accounting.

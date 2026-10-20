@@ -9,9 +9,11 @@ import { LENS_FX } from "../src/scene/postprocess.js";
 // with controllable observers, frames and timers, and Node's own Response and
 // ReadableStream for the byte counting.
 const source = await readFile(new URL("../src/ui/scene-loader.js", import.meta.url), "utf8");
-const SIZES = { high: { tower: 1000, tree: 3000 }, balanced: { tower: 400, tree: 600 } };
-const TOWER = "/images/architecture/tower-high.0123abcd.glb";
+const SIZES = { high: { tree: 1000 }, balanced: { tree: 400 } };
 const TREE = "/images/architecture/tree-high.0123abcd.glb";
+// The default view opens on the watch, which has no model; ?view=tree also
+// waits for the tree's download.
+const TREE_VIEW = "?view=tree";
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 
 class FakeClassList {
@@ -281,7 +283,7 @@ function createHarness({
 }
 
 // A model body the test feeds chunk by chunk.
-function modelResponse({ status = 200, headers = { "x-model": "tower" } } = {}) {
+function modelResponse({ status = 200, headers = { "x-model": "tree" } } = {}) {
   let controller;
   const record = { cancelled: null };
   const stream = new ReadableStream({
@@ -307,22 +309,17 @@ function modelResponse({ status = 200, headers = { "x-model": "tower" } } = {}) 
   };
 }
 
-// Every stage, a required model's bytes and its three build steps.
-async function completeTower(h, url = TOWER, length = 1000) {
+// Every stage and the watch's two build steps (it has no model to download).
+function completeWatch(h) {
   h.sceneLoader.stage("bundle");
   h.sceneLoader.stage("init");
-  const model = modelResponse();
-  h.sceneLoader.track(url, model.response);
-  model.push(length);
-  model.close();
-  await settle();
-  for (const step of ["glb-parse", "assembly", "shaders"]) h.emit(`babel:${step}:tower`);
+  for (const step of ["assembly", "shaders"]) h.emit(`babel:${step}:watch`);
 }
 
 test("before a run begins the loading line stays hidden and passes every response through", async () => {
-  const h = createHarness();
+  const h = createHarness({ search: TREE_VIEW });
   const model = modelResponse();
-  assert.equal(h.sceneLoader.track(TOWER, model.response), model.response);
+  assert.equal(h.sceneLoader.track(TREE, model.response), model.response);
   h.sceneLoader.stage("bundle");
   h.sceneLoader.end("static");
   assert.equal(h.loader.hidden, true);
@@ -353,9 +350,11 @@ test("begin unhides the line, flushes its style, then fades it in at 0%", () => 
   const state = h.state();
   assert.equal(state.status, "loading");
   assert.equal(state.tier, "high");
-  assert.deepEqual(state.roles, ["tower"]);
-  assert.deepEqual(state.bytes, { tower: { received: 0, expected: 1000, done: false } });
+  assert.deepEqual(state.roles, ["watch"]);
+  // The watch downloads no model, so it reports no bytes.
+  assert.deepEqual(state.bytes, {});
   assert.deepEqual(state.stages, { bundle: false, init: false });
+  assert.deepEqual(state.built, { watch: { assembly: false, shaders: false } });
   // A second begin while loading keeps the run.
   h.sceneLoader.stage("bundle");
   h.sceneLoader.begin({ tier: "balanced" });
@@ -364,119 +363,117 @@ test("begin unhides the line, flushes its style, then fades it in at 0%", () => 
 });
 
 test("a tracked body is counted eagerly, before the scene reads its copy", async () => {
-  const h = createHarness();
+  const h = createHarness({ search: TREE_VIEW });
   h.sceneLoader.begin({ tier: "high" });
+  assert.deepEqual(h.state().bytes.tree, { received: 0, expected: 1000, done: false });
   const model = modelResponse();
-  const copy = h.sceneLoader.track(TOWER, model.response);
+  const copy = h.sceneLoader.track(TREE, model.response);
   assert.notEqual(copy, model.response);
   model.push(300);
   model.push(200);
   await settle();
-  assert.deepEqual(h.state().bytes.tower, { received: 500, expected: 1000, done: false });
+  assert.deepEqual(h.state().bytes.tree, { received: 500, expected: 1000, done: false });
   assert.equal(h.state().progress, 0.35);
   model.push(500);
   model.close();
   await settle();
-  assert.deepEqual(h.state().bytes.tower, { received: 1000, expected: 1000, done: true });
+  assert.deepEqual(h.state().bytes.tree, { received: 1000, expected: 1000, done: true });
   assert.equal(h.state().progress, 0.7);
   // The copy keeps the bytes, status and headers.
   assert.equal(copy.status, 200);
   assert.equal(copy.statusText, "Fixture");
   assert.equal(copy.ok, true);
-  assert.equal(copy.headers.get("x-model"), "tower");
+  assert.equal(copy.headers.get("x-model"), "tree");
   const bytes = new Uint8Array(await copy.arrayBuffer());
   assert.equal(bytes.length, 1000);
   assert.ok(bytes.every((byte) => byte === 7));
 });
 
 test("a failed body rejects the copy the scene reads", async () => {
-  const h = createHarness();
+  const h = createHarness({ search: TREE_VIEW });
   h.sceneLoader.begin({ tier: "high" });
   const model = modelResponse();
-  const copy = h.sceneLoader.track(TOWER, model.response);
+  const copy = h.sceneLoader.track(TREE, model.response);
   model.push(100);
   await settle();
   model.fail(new Error("connection reset"));
   await assert.rejects(copy.arrayBuffer(), /connection reset/);
-  assert.equal(h.state().bytes.tower.done, false);
+  assert.equal(h.state().bytes.tree.done, false);
 });
 
 test("a cancelled copy cancels its source and never counts as complete", async () => {
-  const h = createHarness();
+  const h = createHarness({ search: TREE_VIEW });
   h.sceneLoader.begin({ tier: "high" });
   const model = modelResponse();
-  const copy = h.sceneLoader.track(TOWER, model.response);
+  const copy = h.sceneLoader.track(TREE, model.response);
   model.push(100);
   await settle();
   await copy.body.cancel("stale");
   await settle();
   assert.equal(model.record.cancelled, "stale");
-  assert.deepEqual(h.state().bytes.tower, { received: 100, expected: 1000, done: false });
+  assert.deepEqual(h.state().bytes.tree, { received: 100, expected: 1000, done: false });
   assert.equal(h.state().progress, 0.07);
 });
 
 test("unsuccessful, empty, optional, unrequired and late responses pass through unchanged", async () => {
-  const h = createHarness();
+  const h = createHarness({ search: TREE_VIEW });
   h.sceneLoader.begin({ tier: "high" });
   const unavailable = modelResponse({ status: 503 }).response;
-  assert.equal(h.sceneLoader.track(TOWER, unavailable), unavailable);
+  assert.equal(h.sceneLoader.track(TREE, unavailable), unavailable);
   const empty = new Response(null, { status: 200 });
-  assert.equal(h.sceneLoader.track(TOWER, empty), empty);
+  assert.equal(h.sceneLoader.track(TREE, empty), empty);
   const lantern = modelResponse().response;
   assert.equal(
     h.sceneLoader.track("/images/architecture/lantern-high.0123abcd.glb", lantern),
     lantern,
   );
-  // The default view opens on the tower alone.
-  const tree = modelResponse().response;
-  assert.equal(h.sceneLoader.track(TREE, tree), tree);
   const rock = modelResponse().response;
   assert.equal(
     h.sceneLoader.track("/images/architecture/lichen-rock-high.0123abcd.glb", rock),
     rock,
   );
-  assert.equal(h.sceneLoader.track(TOWER, undefined), undefined);
+  assert.equal(h.sceneLoader.track(TREE, undefined), undefined);
   assert.equal(h.state().progress, 0);
   h.sceneLoader.end("static");
   const late = modelResponse().response;
-  assert.equal(h.sceneLoader.track(TOWER, late), late);
+  assert.equal(h.sceneLoader.track(TREE, late), late);
+  // The default view opens on the watch alone: the tree's download is not its work.
+  const watch = createHarness();
+  watch.sceneLoader.begin({ tier: "high" });
+  const tree = modelResponse().response;
+  assert.equal(watch.sceneLoader.track(TREE, tree), tree);
+  assert.equal(watch.state().progress, 0);
 });
 
-test("every stage, the tower's bytes and its three build steps hold the line at exactly 96%", async () => {
+test("every stage and the watch's two build steps hold the line at exactly 96%", () => {
   const h = createHarness();
   h.sceneLoader.begin({ tier: "high" });
   h.sceneLoader.stage("bundle");
   assert.equal(h.state().progress, 0.1);
   h.sceneLoader.stage("init");
   assert.equal(h.state().progress, 0.14);
-  const model = modelResponse();
-  h.sceneLoader.track(TOWER, model.response);
-  model.push(1000);
-  model.close();
-  await settle();
-  assert.equal(h.state().progress, 0.84);
-  h.emit("babel:glb-parse:tower");
-  assert.equal(h.state().progress, 0.882);
-  h.emit("babel:assembly:tower");
-  assert.equal(h.state().progress, 0.912);
+  // With no model to download, the build takes the bytes' share: 82% over the
+  // watch's commit (0.25) and shader warm-up (0.4).
+  h.emit("babel:assembly:watch");
+  assert.equal(h.state().progress, 0.455385);
   // Other entries and roles are not the opening view's work.
   for (const name of [
     "babel:glb-parse:lantern",
+    "babel:glb-parse:tree",
+    "babel:assembly:tree",
+    "babel:shaders:tree",
     "babel:shaders:ground",
     "babel:shaders:scene",
     "babel:shaders:lantern",
-    "babel:shaders:tree",
     "babel:first-frame",
   ]) {
     h.emit(name);
   }
-  h.emit("babel:shaders:tower", "mark");
-  assert.equal(h.state().progress, 0.912);
-  h.emit("babel:shaders:tower");
+  h.emit("babel:shaders:watch", "mark");
+  assert.equal(h.state().progress, 0.455385);
+  h.emit("babel:shaders:watch");
   assert.equal(h.state().progress, 0.96);
-  assert.deepEqual(h.state().built, {
-    tower: { "glb-parse": true, assembly: true, shaders: true },
-  });
+  assert.deepEqual(h.state().built, { watch: { assembly: true, shaders: true } });
   h.frame();
   assert.equal(h.value.textContent, "96%");
   assert.equal(h.fill.style.transform, "scaleX(0.96)");
@@ -486,23 +483,32 @@ test("every stage, the tower's bytes and its three build steps hold the line at 
 test("?view=tree waits for the tree's bytes and build steps as well", async () => {
   const h = createHarness({ search: "?view=tree&angle=2" });
   h.sceneLoader.begin({ tier: "high" });
-  assert.deepEqual(h.state().roles, ["tower", "tree"]);
-  await completeTower(h);
-  // The tower is a quarter of the bytes and half of the build.
-  assert.equal(h.state().progress, 0.375);
+  assert.deepEqual(h.state().roles, ["watch", "tree"]);
+  assert.deepEqual(h.state().built, {
+    watch: { assembly: false, shaders: false },
+    tree: { "glb-parse": false, assembly: false, shaders: false },
+  });
+  completeWatch(h);
+  // The bytes are all the tree's (70%); the watch's two steps weigh 0.65 of
+  // the 1.65 that share the build's 12%.
+  assert.equal(h.state().progress, 0.187273);
   const tree = modelResponse();
   h.sceneLoader.track(TREE, tree.response);
-  tree.push(3000);
+  tree.push(1000);
   tree.close();
   await settle();
-  for (const step of ["glb-parse", "assembly", "shaders"]) h.emit(`babel:${step}:tree`);
+  assert.equal(h.state().progress, 0.887273);
+  h.emit("babel:glb-parse:tree");
+  assert.equal(h.state().progress, 0.912727);
+  for (const step of ["assembly", "shaders"]) h.emit(`babel:${step}:tree`);
   assert.equal(h.state().progress, 0.96);
+  assert.equal(h.state().status, "loading", "only the reveal completes the line");
 });
 
 test("the reveal completes the line at 100% and retires it with the canvas fade", async () => {
   const h = createHarness();
   h.sceneLoader.begin({ tier: "high" });
-  await completeTower(h);
+  completeWatch(h);
   h.frame();
   assert.ok(h.observerCount > 0 && h.timerCount > 0);
   h.host.classList.add("is-ready");
@@ -595,21 +601,21 @@ test("a run without progress for 15 visible seconds stalls; hidden time is exclu
 });
 
 test("a retried download never lowers or double counts progress", async () => {
-  const h = createHarness();
+  const h = createHarness({ search: TREE_VIEW });
   h.sceneLoader.begin({ tier: "high" });
   const first = modelResponse();
-  h.sceneLoader.track(TOWER, first.response);
+  h.sceneLoader.track(TREE, first.response);
   first.push(600);
   await settle();
   assert.equal(h.state().progress, 0.42);
   first.fail(new Error("aborted"));
   await settle();
   const second = modelResponse();
-  h.sceneLoader.track(TOWER, second.response);
+  h.sceneLoader.track(TREE, second.response);
   second.push(100);
   await settle();
   assert.equal(h.state().progress, 0.42);
-  assert.deepEqual(h.state().bytes.tower, { received: 600, expected: 1000, done: false });
+  assert.deepEqual(h.state().bytes.tree, { received: 600, expected: 1000, done: false });
   second.push(800);
   await settle();
   assert.equal(h.state().progress, 0.63);
@@ -617,25 +623,25 @@ test("a retried download never lowers or double counts progress", async () => {
   second.close();
   await settle();
   assert.equal(h.state().progress, 0.7, "the two requests are not added together");
-  assert.deepEqual(h.state().bytes.tower, { received: 1000, expected: 1000, done: true });
+  assert.deepEqual(h.state().bytes.tree, { received: 1000, expected: 1000, done: true });
 });
 
 test("without a known tier the first model URL names it; an unknown size counts at its end", async () => {
-  const h = createHarness();
+  const h = createHarness({ search: TREE_VIEW });
   h.sceneLoader.begin({ tier: null });
   assert.equal(h.state().tier, null);
   const model = modelResponse();
-  h.sceneLoader.track("/images/architecture/tower-balanced.89abcdef.glb?v=1", model.response);
+  h.sceneLoader.track("/images/architecture/tree-balanced.89abcdef.glb?v=1", model.response);
   assert.equal(h.state().tier, "balanced");
   model.push(200);
   await settle();
-  assert.deepEqual(h.state().bytes.tower, { received: 200, expected: 400, done: false });
+  assert.deepEqual(h.state().bytes.tree, { received: 200, expected: 400, done: false });
   assert.equal(h.state().progress, 0.35);
 
-  const unsized = createHarness({ sizes: null });
+  const unsized = createHarness({ search: TREE_VIEW, sizes: null });
   unsized.sceneLoader.begin({ tier: "high" });
   const body = modelResponse();
-  unsized.sceneLoader.track(TOWER, body.response);
+  unsized.sceneLoader.track(TREE, body.response);
   body.push(5000);
   await settle();
   assert.equal(unsized.state().progress, 0);
@@ -645,12 +651,12 @@ test("without a known tier the first model URL names it; an unknown size counts 
 });
 
 test("many chunks within one frame cost one draw", async () => {
-  const h = createHarness();
+  const h = createHarness({ search: TREE_VIEW });
   h.sceneLoader.begin({ tier: "high" });
   const afterBegin = h.textWrites;
   assert.equal(afterBegin, 1, "begin draws 0% at once");
   const model = modelResponse();
-  h.sceneLoader.track(TOWER, model.response);
+  h.sceneLoader.track(TREE, model.response);
   for (let chunk = 0; chunk < 20; chunk += 1) model.push(10);
   h.sceneLoader.stage("bundle");
   await settle();
@@ -687,21 +693,17 @@ test("the scene's report places the star, which warms from that progress to the 
   assert.equal(Number(disc.style.opacity), 0);
   close(scaleOf(disc.style.transform), 0.4 * 0.4, "the ember's disc");
   assert.deepEqual(h.state().star, STAR);
-  // Halfway from 10% to the reveal: warmth 0.5.
-  const model = modelResponse();
-  h.sceneLoader.track(TOWER, model.response);
-  model.push(643);
-  await settle();
+  // Part of the way from 10% to the reveal: the scene initialized and the watch committed.
+  h.sceneLoader.stage("init");
+  h.emit("babel:assembly:watch");
   h.frame();
-  close(h.state().progress, 0.1 + 0.7 * 0.643, "progress");
+  close(h.state().progress, 0.14 + (0.82 * 0.25) / 0.65, "progress");
   const warm = (h.state().progress - 0.1) / 0.9;
   close(Number(disc.style.opacity), Math.round(Math.sqrt(warm) * 1000) / 1000, "the disc's light");
   close(scaleOf(streak.style.transform), 14.4 * warm, "the streak");
   close(scaleOf(haze.style.transform), 11.52 * warm, "the haze");
   // At the reveal: the scene's own star, two radii of glow, the frame-wide streak.
-  model.push(357);
-  model.close();
-  await settle();
+  h.emit("babel:shaders:watch");
   h.host.classList.add("is-ready");
   await settle();
   close(scaleOf(disc.style.transform), 0.4, "the disc at full size");
@@ -782,12 +784,23 @@ test("an unknown, off-frame or malformed star shows nothing, and a late report c
 test("without PerformanceObserver the build share waits for the reveal", async () => {
   const h = createHarness({ performanceObserver: false });
   h.sceneLoader.begin({ tier: "high" });
-  await completeTower(h);
-  assert.equal(h.state().progress, 0.84);
+  completeWatch(h);
+  assert.equal(h.state().progress, 0.14);
   h.host.classList.add("is-ready");
   await settle();
   assert.equal(h.state().status, "revealed");
   assert.equal(h.value.textContent, "100%");
+  // With ?view=tree the tree's bytes still count; its build waits as well.
+  const tree = createHarness({ search: TREE_VIEW, performanceObserver: false });
+  tree.sceneLoader.begin({ tier: "high" });
+  completeWatch(tree);
+  const model = modelResponse();
+  tree.sceneLoader.track(TREE, model.response);
+  model.push(1000);
+  model.close();
+  await settle();
+  for (const step of ["glb-parse", "assembly", "shaders"]) tree.emit(`babel:${step}:tree`);
+  assert.equal(tree.state().progress, 0.84);
 });
 
 test("the scene still names the measures and the mark the line follows", async () => {
@@ -796,10 +809,10 @@ test("the scene still names the measures and the mark the line follows", async (
   const assets = await text("architecture-assets.js");
   const marks = await text("perf-marks.js");
   assert.match(assets, /measureScene\(`glb-parse:\$\{role\}`, parseStart\);/);
-  assert.match(index, /measureScene\("assembly:tower", assemblyStart\);/);
+  assert.match(index, /measureScene\("assembly:watch", assemblyStart\);/);
   assert.match(index, /measureScene\("assembly:tree", assemblyStart\);/);
   assert.match(index, /measureScene\(`shaders:\$\{label\}`, start\);/);
-  assert.match(index, /warmShaders\("tower", replacement\.root\);/);
+  assert.match(index, /warmShaders\("watch"\);/);
   assert.match(index, /warmShaders\("tree", replacement\.root\);/);
   assert.match(index, /markScene\("reveal"\);/);
   assert.match(index, /container\?\.classList\.toggle\("is-ready", sceneShown\);/);

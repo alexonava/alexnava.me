@@ -442,7 +442,6 @@ test("CSS asset URLs and bytes are portable across checkout line endings", async
     }
     for (const tier of ["high", "balanced"]) {
       for (const role of [
-        "tower",
         "tree",
         "lantern",
         "lichen-rock",

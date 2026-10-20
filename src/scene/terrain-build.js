@@ -229,7 +229,7 @@ function latticeAt(values, x, z) {
     : at(1, 1) + (at(0, 1) - at(1, 1)) * (1 - fx) + (at(1, 0) - at(1, 1)) * (1 - fz);
 }
 
-// The lantern (estateLantern(): 5 units from the tree toward the tower) and
+// The lantern (estateLantern(): 5 units from the tree toward the watch) and
 // the SLATE_PUDDLES zones (mud-ground.js, placed as estatePoint() places
 // them): world centre, radius, stretch along a world angle. Restated so this
 // chunk imports only three; the terrain regression holds them equal.
@@ -2476,17 +2476,11 @@ export function shadeSlateGround(
   },
 ) {
   const puddles = shadeSlatePuddles(shader);
-  // The fault (ocean.js): its distance, and the walk's view from up high.
-  const shore = applyEdits(shader, slateShoreEdits(HIGH_VIEW.fade));
-  if (shore) {
-    shader.uniforms.slateHigh = HIGH_VIEW;
-    shadeCoastBedrock(shader, coastRock);
-  }
+  // The fault (ocean.js): its distance.
+  const shore = applyEdits(shader, slateShoreEdits());
+  if (shore) shadeCoastBedrock(shader, coastRock);
   return { puddles, shore, roots: shadeSlateRoots(shader) };
 }
-// The walk's view from up high (hill-silhouette.js HIGH_VIEW, lent at
-// settleRoots()): 0 until then, and on every shot.
-let HIGH_VIEW = { value: 0, fade: [80, 188] };
 
 // The drips' clock: it advances by each drawn frame's time, at most 0.1 s,
 // only while the scene animates (never under reduced motion or a visitor
@@ -4355,7 +4349,6 @@ export function settleRoots(
   // programs link with the slate's shading (link()) and they land with it
   // (commit(), unseen), the ranges past the fault sinking then
   // (hill-silhouette.js SEA_SINK); all of it goes with the terrain.
-  if (lib?.HIGH_VIEW) HIGH_VIEW = lib.HIGH_VIEW;
   const seaClock = dripClock(SEA_TIME, motionHeld()),
     drop = riverFalls(RIVER_LINE),
     seaside = lib && rendering?.homeScene && ground.parent;
@@ -5572,7 +5565,7 @@ function* earthSteps(groundHeight, EARTH) {
 // up to 12 ms run back to back; before it (the reveal's own work goes first)
 // and after it they take idle time, and less where the idle wait timed out,
 // as nothing else is idle. index.js requests this chunk with the scene, so
-// the build starts as the tower arrives, well before a warm load's reveal.
+// the build starts as the watch commits, well before a warm load's reveal.
 // A cancelled build (the film scene disposed) stops and resolves to nothing.
 function inSlices(steps, early = () => false, cancelled = () => false) {
   const idle =

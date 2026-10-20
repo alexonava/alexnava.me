@@ -150,7 +150,7 @@ test("smoothstep01 is clamped, monotonic, and passes the Hermite fixed points", 
 
 test("groundHeight is deterministic and stays inside its analytic bound", async () => {
   const scene = await loadHelpers();
-  // The tower and tree knolls never overlap (their centers are ~66 units
+  // The watch's and the tree's knolls never overlap (their centers are ~66 units
   // apart against ~15-unit radii), so the worst case anywhere is the dune
   // ceiling plus whichever single knoll amplitude is larger.
   const limit = 1.25 + 0.27 + 0.2025 + 0.135 + 0.0825 + 1.36;
@@ -170,7 +170,7 @@ test("groundHeight is deterministic and stays inside its analytic bound", async 
   assert.notEqual(scene.groundHeight(0, 0), scene.groundHeight(25, 0));
 });
 
-test("groundHeight terraces flat under the tower and tree footprints, then blends back to the dune field", async () => {
+test("groundHeight terraces flat at the watch and under the tree, then blends back to the dune field", async () => {
   const scene = await loadHelpers();
   // The level plain: its height and a faint swell (15% of the old dunes).
   const dune = (x, y) =>
@@ -184,7 +184,7 @@ test("groundHeight terraces flat under the tower and tree footprints, then blend
   // height (the anchor's dune value plus the terrace amplitude), regardless
   // of the dune field's own local slope there. This is what removes the
   // floating-footing problem an additive-only bump left behind.
-  const towerFlat = dune(0, 0) + 1.36;
+  const watchFlat = dune(0, 0) + 1.36;
   for (const [x, y] of [
     [0, 0],
     [6, 0],
@@ -192,8 +192,8 @@ test("groundHeight terraces flat under the tower and tree footprints, then blend
     [5, 5],
   ]) {
     assert.ok(
-      Math.abs(scene.groundHeight(x, y) - towerFlat) < 1e-9,
-      `tower terrace should be perfectly flat at (${x}, ${y})`,
+      Math.abs(scene.groundHeight(x, y) - watchFlat) < 1e-9,
+      `watch terrace should be perfectly flat at (${x}, ${y})`,
     );
   }
   const treeFlat = dune(55.1, 36.1) + 0;
@@ -212,7 +212,7 @@ test("groundHeight terraces flat under the tower and tree footprints, then blend
   // plain dune field again.
   assert.ok(
     Math.abs(scene.groundHeight(30, 0) - dune(30, 0)) < 1e-9,
-    "tower terrace should have fully blended away by (30, 0)",
+    "watch terrace should have fully blended away by (30, 0)",
   );
   assert.ok(
     Math.abs(scene.groundHeight(55.1 + 25, 36.1) - dune(55.1 + 25, 36.1)) < 1e-9,
@@ -234,15 +234,17 @@ test("supportsWebGL detects standard, experimental-only, and missing contexts", 
   assert.equal(throws.supportsWebGL(), false);
 });
 
-test("the film opens on the tower unless the URL asks for the tree", () => {
-  assert.deepEqual(SCENE_VIEWS, ["tower", "tree"]);
+test("the film opens on the watch unless the URL asks for the tree", () => {
+  assert.deepEqual(SCENE_VIEWS, ["watch", "tree"]);
   for (const search of [
     "",
-    "?view=tower&angle=1",
+    "?view=watch&angle=1",
     "?quality=balanced&qaTime=0&tour=0",
     "?view=unknown",
+    // An old link to the tower opens on the watch.
+    "?view=tower",
   ]) {
-    assert.equal(resolveSceneView(search), "tower", search);
+    assert.equal(resolveSceneView(search), "watch", search);
   }
   assert.equal(resolveSceneView("?view=tree"), "tree");
   assert.equal(resolveSceneView("?view=tree&angle=4&sceneDebug=1"), "tree");
@@ -271,7 +273,7 @@ const flat = () => 0;
 
 test("helpers.js restates the estate anchors and terraces from estate-layout.js", async () => {
   const helpers = await readFile(new URL("../src/scene/helpers.js", import.meta.url), "utf8");
-  for (const { x, z, lift, flat: flatRadius, blend } of [ESTATE.tower, ESTATE.tree]) {
+  for (const { x, z, lift, flat: flatRadius, blend } of [ESTATE.watch, ESTATE.tree]) {
     const call = `terrace(xx, yy, height, ${x}, ${z}, ${lift.toFixed(Number.isInteger(lift) ? 1 : 2)}, ${flatRadius}, ${blend});`;
     assert.ok(helpers.includes(call), call);
   }
@@ -279,7 +281,7 @@ test("helpers.js restates the estate anchors and terraces from estate-layout.js"
   vm.runInNewContext(helpers, { window, Math });
   const { groundHeight } = window.BabelSite.scene;
   // Inside each flat radius the terrace is level.
-  for (const { x, z, flat: flatRadius } of [ESTATE.tower, ESTATE.tree])
+  for (const { x, z, flat: flatRadius } of [ESTATE.watch, ESTATE.tree])
     assert.ok(Math.abs(groundHeight(x, z) - groundHeight(x + flatRadius * 0.9, z)) < 1e-9);
   const lantern = estateLantern();
   assert.ok(

@@ -1434,7 +1434,7 @@ test("a shot's light mood merges over the neutral default and never shares it", 
   mood.key = 3;
   assert.equal(SHOT_LIGHT_DEFAULT.key, 1);
   // Every directed mood names only known parts with positive strengths.
-  for (const shot of [...DIRECTED_SHOTS.tower, ...DIRECTED_SHOTS.tree]) {
+  for (const shot of [...DIRECTED_SHOTS.watch, ...DIRECTED_SHOTS.tree]) {
     if (!shot.light) continue;
     for (const [part, value] of Object.entries(shot.light)) {
       assert.ok(part in SHOT_LIGHT_DEFAULT, `${shot.name}: ${part}`);
@@ -1444,15 +1444,15 @@ test("a shot's light mood merges over the neutral default and never shares it", 
   // The lantern shots raise the practical; the rest leave it at 1.
   assert.ok(shotLight(DIRECTED_SHOTS.tree[1]).lantern > 1);
   assert.ok(shotLight(DIRECTED_SHOTS.tree[3]).lantern > 1);
-  assert.equal(shotLight(DIRECTED_SHOTS.tower[0]).lantern, 1);
+  assert.equal(shotLight(DIRECTED_SHOTS.watch[0]).lantern, 1);
   // No painted rim or pale wood is left to set: the moon and the materials light the edges.
-  for (const shot of [...DIRECTED_SHOTS.tower, ...DIRECTED_SHOTS.tree])
+  for (const shot of [...DIRECTED_SHOTS.watch, ...DIRECTED_SHOTS.tree])
     for (const part of ["rim", "pale", "rimText"]) assert.ok(!(part in (shot.light ?? {})));
   // The lantern shots and Close-up keep the bark's glints off their text, wholly:
   // their wet roots' glints stood behind Lantern study's name and Root and
   // lantern's intro (4.67:1 and 4.32:1), a twig's sparkle behind Close-up's
   // intro on the small window (5.25:1).
-  const glint = [...DIRECTED_SHOTS.tower, ...DIRECTED_SHOTS.tree].filter(
+  const glint = [...DIRECTED_SHOTS.watch, ...DIRECTED_SHOTS.tree].filter(
     (shot) => shotLight(shot).glintText > 0,
   );
   assert.deepEqual(
@@ -1462,14 +1462,14 @@ test("a shot's light mood merges over the neutral default and never shares it", 
   for (const shot of glint) assert.equal(shotLight(shot).glintText, 1);
   // Only Lantern study keeps its lantern's pool off Contact (its push-in on a
   // portrait monitor), and wholly.
-  const pool = [...DIRECTED_SHOTS.tower, ...DIRECTED_SHOTS.tree]
+  const pool = [...DIRECTED_SHOTS.watch, ...DIRECTED_SHOTS.tree]
     .filter((shot) => shotLight(shot).poolAbout > 0)
     .map((shot) => [shot.name, shotLight(shot).poolAbout]);
   assert.deepEqual(pool, [["Lantern study", 1]]);
   // Only Lantern study keeps its stones' lamplight off its text, wholly: the
   // lantern lit a stone in the stream at the corner of its name's box
   // (4.76:1 at 1440x900).
-  const stone = [...DIRECTED_SHOTS.tower, ...DIRECTED_SHOTS.tree]
+  const stone = [...DIRECTED_SHOTS.watch, ...DIRECTED_SHOTS.tree]
     .filter((shot) => shotLight(shot).stoneText > 0)
     .map((shot) => [shot.name, shotLight(shot).stoneText]);
   assert.deepEqual(stone, [["Lantern study", 1]]);
@@ -1477,7 +1477,7 @@ test("a shot's light mood merges over the neutral default and never shares it", 
   // blade's tip read past its edge sparkled on Lantern study's name (lit by
   // the lantern, 4.19:1) and under Root and lantern's intro (lit by the moon,
   // 4.21:1).
-  const inside = [...DIRECTED_SHOTS.tower, ...DIRECTED_SHOTS.tree].filter(
+  const inside = [...DIRECTED_SHOTS.watch, ...DIRECTED_SHOTS.tree].filter(
     (shot) => shotLight(shot).grassInside > 0,
   );
   assert.deepEqual(
