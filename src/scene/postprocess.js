@@ -90,6 +90,7 @@ const GRADING_SHADER = {
     uShadowCoolMix: { value: 0.34 },
     uTexelSize: { value: new Vector2(1, 1) },
     uLayerRelief: { value: 0 },
+    uShadowToe: { value: 0 },
     // The film look (FILM_LOOK): the bloom's composite and its halation tint (0: none),
     // the print toe (lift, toe) and its tint, and the ink's brush weight (vary, scale).
     tHalation: { value: null },
@@ -113,6 +114,7 @@ uniform float uHighlightWarmMix;
 uniform float uShadowCoolMix;
 uniform vec2 uTexelSize;
 uniform float uLayerRelief;
+uniform float uShadowToe;
 varying vec2 vUv;
 
 float inkHash(vec2 p) {
@@ -160,15 +162,12 @@ void main() {
   // The star and its glow (depth-layers.js STAR_LAYER over the sky's 0) stay
   // continuous: the cloud banks' steps never ring them.
   float starLayer = uLayerRelief * smoothstep(0.0005, 0.006, texel.a) * (1.0 - smoothstep(0.22, 0.28, texel.a));
-  // In film the step's bands and the ink are the sky's alone (the owner's direction
-  // of 2026-10-09: the clouds are the artistic part, everything else realistic).
-  // Off the sky only its deepest band stays, where it never stepped: below graded
-  // luma .1 it pulls the colour toward black, easing out from .05, so the subjects'
-  // deep shade and the ranges' fogged feet keep their tone. skyLayer eases over a
-  // subject's or a crest's partly covered edge (their codes blend toward 0 there),
-  // so no unbanded fringe rings them against the banded clouds.
+  // Only the sky takes the cel palette. The separate continuous toe retains the
+  // subjects' and ranges' deep shade without tying it to a quantized palette or
+  // its strength. Partly covered edges blend toward the sky's code as before.
   float skyLayer = 1.0 - smoothstep(0.0, 0.3, texel.a);
-  float celWeight = mix(1.0, mix(1.0 - smoothstep(0.05, 0.1, gradedLuma), 1.0, skyLayer), uLayerRelief);
+  color *= 1.0 - uShadowToe * (1.0 - skyLayer) * (1.0 - groundLayer) * (1.0 - starLayer) * (1.0 - smoothstep(0.05, 0.1, gradedLuma));
+  float celWeight = mix(1.0, skyLayer, uLayerRelief);
   color = mix(color, celColor, uCelMix * celWeight * (1.0 - groundLayer) * (1.0 - starLayer));
   color = saturateColor(color, 1.04);
 
@@ -218,9 +217,9 @@ export const LAYER_STAGGER = Object.freeze({ step: 0.2, window: 0.4 });
 // `detail` share at `fine` times it), with a slight `sweep` across the frame, so the
 // incoming shot bleeds in through brush-like strokes rather than evenly; a pixel
 // turns over `edge` of the window, softly. Every turn ends by the window's end, so the
-// subject still settles as the transition ends. `on`: 0 dissolves evenly. The
-// owner's pick of 2026-10-13 ("wash between shots"): every shot of the gallery is
-// painted into the next.
+// sky still settles within its layer's window. Only bare sky in both frames takes
+// these strokes; mountains, ground and subjects dissolve evenly. `on`: 0 dissolves
+// every layer evenly.
 export const DISSOLVE_BRUSH = Object.freeze({
   on: 1,
   angle: -12,
@@ -569,8 +568,8 @@ float layerCode(sampler2D map, vec2 uv) {
 }
 ${
   DISSOLVE_SOFT.on
-    ? `float softCode(sampler2D map, vec2 uv, out float subject) {
-  float aspect = uCodeTexel.y / uCodeTexel.x, own = layerCode(map, uv), sum = own;
+    ? `float softCode(sampler2D map, vec2 uv, float own, out float subject) {
+  float aspect = uCodeTexel.y / uCodeTexel.x, sum = own;
   subject = step(0.9, own);
   for (int i = 1; i <= ${DISSOLVE_SOFT.taps}; i++) {
     float r = sqrt(float(i) / ${lensNumber(DISSOLVE_SOFT.taps)}) * ${lensNumber(DISSOLVE_SOFT.radius)}, a = float(i) * 2.39996;
@@ -631,14 +630,16 @@ void main() {
     if (uLayered > 0.5) {
       // The outgoing frame never holds a place past its own layer: the sky beside a subject
       // turns as sky (no rim of old cloud along it), and the subject leaves from its edges in.
-      float codePrev = ${DISSOLVE_SOFT.on ? "min(softCode(tPrev, prevUv, subPrev), layerCode(tPrev, prevUv))" : "layerCode(tPrev, prevUv)"}, codeNow = ${DISSOLVE_SOFT.on ? "softCode(tDiffuse, vUv, subNow)" : "layerCode(tDiffuse, vUv)"};
+      float nearPrev = layerCode(tPrev, prevUv), nearNow = layerCode(tDiffuse, vUv);
+      float codePrev = ${DISSOLVE_SOFT.on ? "min(softCode(tPrev, prevUv, nearPrev, subPrev), nearPrev)" : "nearPrev"}, codeNow = ${DISSOLVE_SOFT.on ? "softCode(tDiffuse, vUv, nearNow, subNow)" : "nearNow"};
       start = 3.0 * uStagger.x * clamp(max(codePrev, codeNow), 0.0, 1.0);
       span = uStagger.y;${
         DISSOLVE_BRUSH.on
           ? /* glsl */ `
-      // The wash (DISSOLVE_BRUSH): this pixel's own turn within its layer's window.
-      start += span * (1.0 - ${lensNumber(DISSOLVE_BRUSH.edge)}) * brushTurn(vUv);
-      span *= ${lensNumber(DISSOLVE_BRUSH.edge)};`
+      // The sky's wash; a nearer layer in either frame keeps an even dissolve.
+      float brush = 1.0 - smoothstep(0.0, 0.006, max(nearPrev, nearNow));
+      start += span * (1.0 - ${lensNumber(DISSOLVE_BRUSH.edge)}) * brushTurn(vUv) * brush;
+      span *= mix(1.0, ${lensNumber(DISSOLVE_BRUSH.edge)}, brush);`
           : ""
       }
     }
@@ -979,6 +980,7 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
     gradingPass.uniforms.uHighlightWarmMix.value = settings.highlightWarmMix ?? 0.14;
     gradingPass.uniforms.uShadowCoolMix.value = settings.shadowCoolMix ?? 0.25;
     gradingPass.uniforms.uLayerRelief.value = film ? 1 : 0;
+    gradingPass.uniforms.uShadowToe.value = film ? 0.24 : 0;
     // In film the final pass always draws: it staggers the dissolve and writes
     // opaque alpha, so layer codes never reach the transparent canvas.
     vignetteGrainPass.enabled = film || vignetteEnabled || grainEnabled || phase !== IDLE;

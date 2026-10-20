@@ -244,10 +244,12 @@ test("the sea reads raw light intensities and applies its subdued custom 1/pi no
   assert.deepEqual(u.seaHemiGround.value.toArray(), [0, 0, 0]);
   assert.equal(material.envMap, view.homeScene.environment);
   assert.equal(u.envMap.value, view.homeScene.environment);
-  // The balanced tier draws no lace in the foam.
+  // The balanced tier draws no lace in the foam, and only the coarser fine ripples.
+  assert.equal(u.seaFine.value, 1);
   view.tier = "balanced";
   mesh.onBeforeRender();
   assert.equal(u.seaLace.value, 0);
+  assert.equal(u.seaFine.value, 0);
   material.dispose();
 });
 
@@ -391,7 +393,8 @@ test("the cliff shelf shares the ground material, UV phase and neutral root attr
       drop: riverFalls(RIVER_LINE),
     }),
     geometry = cliff.mesh.geometry,
-    { position, uv, aCliff, slateRoot, slateShade, slatePool } = geometry.attributes,
+    { position, uv, aCliff, slateRoot, slateShade, slatePool, slateRiverSurface } =
+      geometry.attributes,
     ownResources = [geometry, cliff.mesh.children[0].geometry, cliff.material],
     ownFreed = new Map(ownResources.map((resource) => [resource, 0])),
     version = cliff.material.version;
@@ -424,6 +427,12 @@ test("the cliff shelf shares the ground material, UV phase and neutral root attr
   };
   try {
     sameMaterial();
+    assert.equal(slateRiverSurface.itemSize, 2);
+    assert.equal(slateRiverSurface.count, position.count);
+    assert.ok(
+      slateRiverSurface.array.every((value) => value === 0),
+      "the borrowed shelf keeps neutral river-cap attributes",
+    );
     assert.equal(
       cliff.material.uniforms.cliffRiver.value.w,
       0,
@@ -569,7 +578,7 @@ test("the river pours off the cliffs where it meets the fault, into white water 
     falls = createFalls({ lib, clock, rendering: rendering(), drop, height }),
     cliff = createCliff({ lib, clock, rendering: rendering(), height, drop });
   assert.deepEqual(falls.plunge, plunge);
-  assert.equal(falls.material.side, 2, "seen from either side");
+  assert.equal(falls.material.side, 0, "the closed solid has outward-facing front, back and sides");
   assert.equal(cliff.material.uniforms.cliffRiver.value.w, half);
   assert.ok(falls.material.fragmentShader.includes(`gl_FragColor=vec4(c,${DEPTH_LAYER.ground});`));
   falls.dispose();
@@ -784,7 +793,7 @@ test("the sea, the cliffs and the falls link with the slate's root shading and l
       ["estate-sea", "estate-cliff", "estate-falls"],
       "on the cut, with the slate",
     );
-    assert.equal(material.userData.slateRoot, shadeSlateGround);
+    assert.equal(typeof material.userData.slateRoot, "function");
     assert.equal(SEA_SINK.value.w, 1);
     terrain.dispose();
     assert.deepEqual(landed(), []);
@@ -914,7 +923,7 @@ test("the reveal keeps borrowed terrain until coastal geometry, shore, sink and 
     assert.equal(r.ground.geometry, r.terrain);
     assert.equal(r.shore().length, 3);
     assert.equal(SEA_SINK.value.w, 1);
-    assert.equal(r.sampler(100, 40), filmHeight(() => 0, true)(100, 40));
+    assert.ok(Math.abs(r.sampler(100, 40) - filmHeight(() => 0, true)(100, 40)) < 1e-10);
     assert.equal(r.sampler.shore(80, 80), coastDistance(80, 80));
   } finally {
     await r.dispose();

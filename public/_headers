@@ -114,3 +114,8 @@
 /images/materials/coast-detail-256.:hash.webp
   ! Cache-Control
   Cache-Control: public, max-age=31536000, immutable
+
+# Optional photographic coast colour, with the same lazy lifetime.
+/images/materials/coast-albedo-512.:hash.webp
+  ! Cache-Control
+  Cache-Control: public, max-age=31536000, immutable

@@ -260,24 +260,23 @@ test("the rock scatter waits for the reveal, film, tree and tier, loads its chun
   assert.equal(root.parent, null);
 });
 
-test("the rock scatter waits for the film terrain and seats the rocks on its root-aware height", async () => {
-  const fake = {
-    setFilmActive() {},
-    take: () => false,
-    dispose() {},
-    footprints: [{ x: 1, z: 2 }],
-  };
+test("rock downloads overlap queued film terrain while placement takes its root-aware height", async () => {
   for (const [terrainHeight, expected] of [
     [(x, z) => x + z, "terrain"],
     [undefined, "analytic"],
   ]) {
-    let seen = null,
+    let downloads = 0,
       release;
+    const parent = new Group();
     const rocks = createRockScatter({
       tier: "high",
-      parent: new Group(),
+      parent,
       groundHeight: flat,
-      load: async () => ({ createRocks: (lib, options) => ((seen = options.groundHeight), fake) }),
+      load: async () => ({ createRocks }),
+      loadAsset: async () => {
+        downloads++;
+        return { scene: fakeAsset() };
+      },
       terrain: () =>
         new Promise((resolve) => {
           release = resolve;
@@ -287,13 +286,27 @@ test("the rock scatter waits for the film terrain and seats the rocks on its roo
     rocks.setTreeStatus("ready");
     rocks.setRevealed();
     for (let i = 0; i < 4; i++) await tick();
-    assert.equal(seen, null, "no rocks before the film terrain settles");
+    assert.equal(downloads, 2, "both assets load while terrain is still queued");
+    const root = parent.getObjectByName("film-rocks");
+    assert.equal(root.children.length, 0, "no layout before terrain settles");
     assert.deepEqual(rocks.footprints, [], "no solids for the walk yet");
     // The earth comparison's film has no root supports: the analytic ground.
     release(terrainHeight);
     for (let i = 0; i < 4; i++) await tick();
-    assert.equal(seen, expected === "terrain" ? terrainHeight : flat, expected);
-    assert.equal(rocks.footprints, fake.footprints, "the placed rocks pass through");
+    const layout = createRockLayout(ROCK_LIB, {
+      groundHeight: expected === "terrain" ? terrainHeight : flat,
+    });
+    assert.equal(root.children.length, 2);
+    for (const mesh of root.children) {
+      const type = mesh.name.slice("film-rocks-".length),
+        placed = layout.filter((rock) => rock.type === type);
+      placed.forEach((rock, i) =>
+        assert.deepEqual(
+          Array.from(mesh.instanceMatrix.array.slice(i * 16, (i + 1) * 16)),
+          Array.from(new Float32Array(rock.matrix.elements)),
+        ),
+      );
+    }
     rocks.dispose();
   }
 });

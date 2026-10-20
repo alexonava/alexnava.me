@@ -85,6 +85,14 @@ The stand-in lantern, the iron post lantern the scene shows until the
 supplied lantern commits and keeps if it fails, is built in code
 (`src/scene/architecture.js`) and is part of neither model.
 
+The delivered tower and tree also contain local geometry repairs on both
+tiers: added volume at a small tree fork and a recess at one visible gallery
+rail joint. `tools/repair-landmark-geometry.py` reproduces these from the
+SHA-pinned original GLBs with local NumPy. Topology, UVs, embedded artwork,
+file sizes, AABBs, roots and ground contacts remain exact; positions and their
+affected surface frames change only within the bounded neighborhoods. No new
+model generation or broad remeshing is involved.
+
 ## Supplied Meshy rocks
 
 The film's scattered stones in `images/architecture/{lichen-rock,weathered-stone}-{high,balanced}.glb`
@@ -116,11 +124,21 @@ summit).
 Each was normalized, culled in Blender to the faces an eye in its viewing
 envelope can see, collapse-decimated to 3,799 triangles with its skyline
 weighted, unwrapped, and its object-space normal, base colour and ambient
-occlusion baked by Cycles from the full source; the supplied emissive and
-metallic-roughness maps were dropped. Each GLB carries an object-space normal
-map and a whiteness and occlusion mask as WebP (512 and 256 high, 256 and 128
-balanced) and `KHR_mesh_quantization` geometry. Scripts, reports and QA
-renders are in `Assets/Architecture/mountains-v1`; none are published.
+occlusion baked by Cycles from the full source. Supplied emissive and
+metallic-roughness maps are not shipped. Geometry, UVs and encoded object-space
+normals remain unchanged across the material packaging. High uses 512px albedo
+and object normals with a 256px lossless AO/snow mask; balanced uses 256px albedo
+and normals with a 128px mask. Albedo occupies the standard base-colour slot,
+and the occlusion slot carries R ambient occlusion and G source snow coverage.
+
+`tools/prepare-mountain-albedo.py` uses the UV-matched cached Cycles colour
+bakes in `Assets/Architecture/mountains-v1`, checking each against the bake
+report's SHA-256. It filters and fills the bake in linear light, encodes sRGB
+WebP, records its measured mean and moves the preserved mask channels into
+their explicit AO/snow layout. Pillow and NumPy are local asset-authoring
+requirements, never site dependencies; no Blender session or new generation
+is involved. Original models, bake scripts, reports and QA renders remain in
+the private archive and are not published.
 
 ## Slate ground
 
@@ -145,19 +163,26 @@ under CC0; it is given here.
 
 ## Coast rock detail
 
-`images/materials/coast-detail-256.webp` is derived from
+`images/materials/coast-albedo-512.webp` and
+`images/materials/coast-detail-256.webp` derive from
 [“Seaside Rock”](https://polyhaven.com/a/seaside_rock) by Dimitrios Savva on
-Poly Haven, released under [CC0](https://polyhaven.com/license). It uses only
-the source's OpenGL normal and roughness maps, keeping the site's procedural
-rock colour. The normal's green channel is not inverted.
+Poly Haven, released under [CC0](https://polyhaven.com/license). The colour
+tile uses the diffuse scan; the data tile uses the OpenGL normal and roughness
+maps. The normal's green channel is not inverted.
 
-The local preparation script downsamples to 256×256, normalizes the normal,
-packs its X/Y into red/green and roughness into blue, quantizes the channels
-independently to 5/5/4 bits, then encodes lossless WebP. The source's 2 m tile
-is 6.56 estate units. The original maps, official API metadata, script and
-provenance are in `Assets/Materials/coast-detail-v1` in the owner's private
-archive; none of those source files is published. Credit is not required under
-CC0; it is given here.
+`tools/bake-coast-albedo.py` requires the unmodified 1024×1024 diffuse PNG
+(MD5 `36cc332a0797aa8164a909737d763203`), checks it before processing,
+downsamples to 512×512 and writes sRGB WebP at quality 88. It reports the
+encoded image's measured linear RGB mean, which normalizes reflectance in the
+coastal shaders. Pillow is an authoring requirement, not a runtime dependency.
+
+The packed-data preparation downsamples to 256×256, normalizes the normal,
+packs X/Y into red/green and roughness into blue, quantizes the channels
+independently to 5/5/4 bits and encodes lossless WebP. Both tiles use the
+source's 2 m scale as 6.56 estate units. Original maps, official API metadata,
+the packed-data script and provenance are in
+`Assets/Materials/coast-detail-v1` in the private archive; those sources are
+not published. Credit is not required under CC0; it is given here.
 
 ## Icons
 

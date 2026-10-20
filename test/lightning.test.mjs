@@ -515,7 +515,7 @@ test("flashHook adds the flash after a material's lights, composed and keyed, gu
   };
   assert.equal(flashHook(material, { rim: true, sky: "babelEnvironment.x" }), material);
   assert.equal(flashHook(material), material, "once");
-  assert.equal(material.customProgramCacheKey(), "tower-v9|flash-rim");
+  assert.equal(material.customProgramCacheKey(), "tower-v9|flash");
   const shader = { uniforms: {}, fragmentShader: FRAGMENT };
   material.onBeforeCompile(shader);
   assert.deepEqual(calls, ["own"], "its own hook first");
@@ -527,14 +527,24 @@ test("flashHook adds the flash after a material's lights, composed and keyed, gu
   assert.ok(glsl.includes("if (babelFlashLight.w > 0.0) {"), "a uniform test between flashes");
   assert.ok(glsl.includes("float babelFK = babelFlashKeep(-vViewPosition);"));
   assert.ok(glsl.includes("*(babelEnvironment.x))*material.diffuseColor;"), "the role's sky share");
-  assert.ok(glsl.includes("reflectedLight.directDiffuse += babelFK*babelFlashRim.rgb*pow("));
+  assert.ok(
+    !glsl.includes("babelFlashRim.rgb*pow"),
+    "even legacy rim:true cannot add a painted outline",
+  );
+  assert.ok(
+    glsl.includes("babelFlashLight.rgb*saturate(dot(normal, babelFL))"),
+    "directional diffuse remains",
+  );
   assert.ok(glsl.indexOf("OWN_RIM;") < glsl.indexOf("babelFK*"), "after the lights' own terms");
   assert.ok(glsl.indexOf("babelFK*") < glsl.indexOf("#include <aomap_fragment>"), "before the sum");
   const plain = { userData: {}, onBeforeCompile() {}, customProgramCacheKey: () => "grass" };
   flashHook(plain);
   const plainShader = { uniforms: {}, fragmentShader: FRAGMENT };
   plain.onBeforeCompile(plainShader);
-  assert.ok(!plainShader.fragmentShader.includes("babelFlashRim.rgb*pow"), "no rim unless asked");
+  assert.ok(
+    !plainShader.fragmentShader.includes("babelFlashRim.rgb*pow"),
+    "no view-dependent diffuse rim",
+  );
   assert.ok(plainShader.fragmentShader.includes("*(1.0))*material.diffuseColor;"));
   assert.equal(plain.customProgramCacheKey(), "grass|flash");
   // The ground's text boxes guard it, lent by the lightning.
@@ -555,7 +565,7 @@ test("every lit film material takes the flash, and none of the scene's lights mo
   const architecture = flat(source("src/scene/architecture.js"));
   assert.ok(
     architecture.includes(
-      'flashHook(material, { rim: rimmed, sky: "babelEnvironment.x" }); return mistHook(material);',
+      'flashHook(material, { sky: "babelEnvironment.x" }); return mistHook(material);',
     ),
     "the lookout, the tree and the rocks",
   );

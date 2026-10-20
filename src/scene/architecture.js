@@ -27,10 +27,7 @@ import {
   GLINT,
   GLINT_MOOD,
   LANTERN_MOOD,
-  PALE,
-  PALE_MOOD,
   RIM,
-  RIM_UNIFORMS,
   STONE_MOOD,
   STONE_TEXT,
   flashHook,
@@ -53,12 +50,10 @@ const MATERIAL_PROFILES = Object.freeze({
   },
   tree: {
     color: 0xffffff,
-    emissive: 0x26351f,
-    emissiveIntensity: 0.22,
-    normalScale: 0.46,
+    normalScale: 0.75,
     roughness: 1,
-    roughnessFloor: 0.84,
-    roughnessCeiling: 0.97,
+    roughnessFloor: 0.82,
+    roughnessCeiling: 1,
     highlights: 0.12,
   },
   // The film's scattered Meshy rocks (rock-scatter.js): baked colour with its
@@ -114,12 +109,11 @@ diffuseColor.rgb = mix(diffuseColor.rgb, vec3(${ROOT_MOSS.tone.map(f2).join(", "
 // How each film material takes the night sky (night-environment.js) once the
 // film sets it as the scene's environment: [the share of the flat ambient and
 // hemisphere it keeps, the sky's diffuse light (times the sky as shown), its
-// reflection]. The tower keeps its look unchanged; the bark and the rocks are
-// lit from above by the sky and darker beneath, and the wet stones and bark
-// mirror it.
+// reflection]. The matte timber takes a restrained sky contribution; the bark
+// stays rough away from its damp base, and wet stones mirror the sky more strongly.
 export const ENVIRONMENT_ROLES = Object.freeze({
-  tower: Object.freeze([1, 0, 0]),
-  tree: Object.freeze([0.7, 1.8, 1.3]),
+  tower: Object.freeze([0.85, 0.55, 0.35]),
+  tree: Object.freeze([0.7, 1.8, 0.85]),
   rock: Object.freeze([0.6, 2, 1.8]),
 });
 
@@ -190,7 +184,8 @@ if (babelStoneBehind > 0.0) {
 #endif
 `;
 
-// The bark's moon rim behind the text, a factor on the rim: the shot's share
+// Legacy exported text expression; no physical material injects a painted rim.
+// The former bark moon rim behind the text, a factor on the rim: the shot's share
 // (babelRimText, its mood's rimText) comes off behind the name and intro and
 // behind Contact, easing out over a fifth of the screen's smaller side
 // (film-light.js RIM.textReach).
@@ -330,16 +325,10 @@ function takePreparedArchitecture(asset, role) {
   return record;
 }
 
-// The pale wood's cool grey under a shot's `pale` (film-light.js PALE), first,
-// on the map's own colour.
-const PALE_GLSL = `
-          float babelPaleLuma = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(babelPaleLuma)*vec3(${PALE.tint.map((v) => v.toFixed(3)).join(", ")}), babelPale*smoothstep(${PALE.luma.map((v) => v.toFixed(3)).join(", ")}, babelPaleLuma));`;
-
 // textGuard: the ground's createSlateContacts() uniforms, for the bark's guards
 // beside Contact (BARK_TEXT_LIGHTS) and, by the shot's shares, its glints behind
-// the name and intro (BARK_TEXT_GLINT) and its moon rim behind all the text
-// (BARK_RIM_TEXT); the tree takes it, the tower and the rocks never.
+// the name and intro (BARK_TEXT_GLINT); the tree takes these, the rocks their
+// own light guard. The exported legacy rim expression is no longer injected.
 export function materialFor(asset, anisotropy, role, textGuard = null) {
   const material = sourceMesh(asset).material.clone();
   const profile = MATERIAL_PROFILES[role] || {};
@@ -348,7 +337,7 @@ export function materialFor(asset, anisotropy, role, textGuard = null) {
     material.metalness = 0;
     material.roughness = profile.roughness ?? 0.94;
     material.emissive.setHex(profile.emissive ?? 0);
-    material.emissiveIntensity = profile.emissiveIntensity ?? 1;
+    material.emissiveIntensity = 0;
     material.emissiveMap = null;
     material.vertexColors = false;
     // Retain the tree map's variation within a matte range. The complete tower
@@ -381,12 +370,9 @@ roughnessFactor = mix(roughnessFactor, ${ROOT_MOSS.roughness.toFixed(2)}, babelM
     };
     material.userData.babelGrade = { role, uniforms };
     material.customProgramCacheKey = () =>
-      `babel-estate-material-v10-${role}-${roughnessFloor}-${roughnessCeiling}-${directRoughness}${guarded || stoneGuarded ? "-text" : ""}`;
-    const rimmed = role === "tower" || role === "tree";
+      `babel-estate-material-v11-${role}-${roughnessFloor}-${roughnessCeiling}-${directRoughness}${guarded || stoneGuarded ? "-text" : ""}`;
     material.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, uniforms);
-      if (rimmed) Object.assign(shader.uniforms, RIM_UNIFORMS);
-      if (role === "tree") shader.uniforms.babelPale = PALE_MOOD;
       shader.vertexShader = shader.vertexShader
         .replace(
           "#include <common>",
@@ -407,16 +393,9 @@ roughnessFactor = mix(roughnessFactor, ${ROOT_MOSS.roughness.toFixed(2)}, babelM
           uniform float babelLift;
           uniform float babelFilm;
           uniform vec3 babelEnvironment;
-          ${rimmed ? "uniform vec4 babelRimLight;\n          uniform vec3 babelKeyView;" : ""}
-          ${guarded ? "uniform float babelRimText;" : ""}
           varying vec3 babelLocal;
           varying vec3 babelLocalN;
-          ${
-            role === "tree"
-              ? `uniform float babelPale;
-${ROOT_MOSS_GLSL}`
-              : ""
-          }`,
+          ${role === "tree" ? ROOT_MOSS_GLSL : ""}`,
         )
         // The role's share of the flat ambient and of the sky's light; without an
         // environment (the film off, or a failed capture) the ambient stays whole.
@@ -432,7 +411,7 @@ ${ROOT_MOSS_GLSL}`
         .replace("#include <roughnessmap_fragment>", roughnessFragment)
         .replace(
           "#include <map_fragment>",
-          `#include <map_fragment>${role === "tree" ? PALE_GLSL : ""}
+          `#include <map_fragment>
           float babelLuma = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
           diffuseColor.rgb = mix(vec3(babelLuma), diffuseColor.rgb, babelSaturation);
           diffuseColor.rgb *= 1.0 - babelHighlights * smoothstep(0.30, 0.85, babelLuma);
@@ -445,17 +424,6 @@ ${ROOT_MOSS_GLSL}`
 ${ROOT_MOSS_MAP}`
               : ""
           }`,
-        );
-      // The moon rim (film-light.js): a cool edge where the surface turns from
-      // the lens, strongest with the moon behind the subject. On the guarded
-      // bark the shot's babelRimText takes it off behind the text's boxes
-      // (BARK_RIM_TEXT); at 0, every shot but Close-up, the rim is whole.
-      if (rimmed)
-        shader.fragmentShader = shader.fragmentShader.replace(
-          "#include <lights_fragment_end>",
-          `#include <lights_fragment_end>
-          float babelRim = pow(1.0-saturate(dot(geometryNormal, geometryViewDir)), 4.0);
-          reflectedLight.directDiffuse += babelRimLight.rgb*babelFilm*babelRim${guarded ? BARK_RIM_TEXT : ""}*mix(babelRimLight.w, 1.0, saturate(dot(-geometryViewDir, babelKeyView)));`,
         );
       // Without the environment, the wet bark's faint grazing sheen.
       if (role === "tree")
@@ -509,10 +477,10 @@ ${ROOT_MOSS_MAP}`
     for (const value of Object.values(material)) {
       if (value?.isTexture) value.anisotropy = anisotropy;
     }
-    // A lightning flash after the lights (film-light.js flashHook(), its cold rim
-    // on the lookout and the tree, the sky's share as the role's own), then the
+    // A lightning flash after the lights (film-light.js flashHook(), the sky's
+    // share as the role's own), then the
     // drifting mist after the fog (drifting-mist.js): the tower, the tree and the rocks.
-    flashHook(material, { rim: rimmed, sky: "babelEnvironment.x" });
+    flashHook(material, { sky: "babelEnvironment.x" });
     return mistHook(material);
   } catch (error) {
     material.dispose();
@@ -818,8 +786,7 @@ gl_FragColor=vec4(vec3(1.,.66,.34)*line*uStrength,1.);
       savedFillDistance = fillLight.distance;
     let lanternBaseIntensity = TREE_LANTERN_INTENSITY,
       lanternFlicker = 1;
-    const originalFillColor = fillLight.color.clone(),
-      originalEmission = material.emissiveIntensity;
+    const originalFillColor = fillLight.color.clone();
     function applyTreeLighting() {
       const intensityScale = currentProfile.lighting?.practicalIntensityScale ?? 1;
       lanternBaseIntensity =
@@ -833,7 +800,6 @@ gl_FragColor=vec4(vec3(1.,.66,.34)*line*uStrength,1.);
       if (film) fillLight.color.setHex(0xc2d2ec);
       glowMaterial.emissiveIntensity = film ? 1.35 : 2;
       glassMaterial.emissiveIntensity = film ? 0.018 : 0.3;
-      material.emissiveIntensity = film ? 0.04 : originalEmission;
       applyFilmGrade(material, film);
       normalAttribute.array.set(film ? softenedNormals : originalNormals);
       normalAttribute.needsUpdate = true;

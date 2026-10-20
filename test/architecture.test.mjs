@@ -20,7 +20,6 @@ import {
   applyFilmGrade,
   BARK_TEXT_GLINT,
   BARK_TEXT_LIGHTS,
-  BARK_RIM_TEXT,
   ENVIRONMENT_ROLES,
   ROCK_TEXT_LIGHTS,
   LANTERN_REACH,
@@ -42,10 +41,9 @@ import {
   GLINT,
   GLINT_MOOD,
   LANTERN_MOOD,
-  PALE,
   PALE_MOOD,
-  RIM,
   RIM_UNIFORMS,
+  setRim,
   STONE_MOOD,
   STONE_TEXT,
 } from "../src/scene/film-light.js";
@@ -65,9 +63,9 @@ test("tree retains its anchor and height with a quality-scaled non-shadow lanter
   tree.geometry.computeBoundingBox();
   assert.ok(Math.abs(tree.geometry.boundingBox.max.y - 22) < 1e-5);
   assert.equal(tree.material.color.getHex(), 0xffffff);
-  assert.equal(tree.material.emissive.getHex(), 0x26351f);
-  assert.equal(tree.material.emissiveIntensity, 0.22);
-  assert.deepEqual(tree.material.normalScale.toArray(), [0.46, 0.46]);
+  assert.equal(tree.material.emissive.getHex(), 0);
+  assert.equal(tree.material.emissiveIntensity, 0);
+  assert.deepEqual(tree.material.normalScale.toArray(), [0.75, 0.75]);
   assert.equal(replacement.light.castShadow, false);
   assert.equal(replacement.light.distance, 23);
   assert.equal(replacement.fillLight.name, "tree-fill-light");
@@ -97,12 +95,12 @@ test("tree retains its anchor and height with a quality-scaled non-shadow lanter
   assert.ok(falloff(6) / falloff(1) < 0.1);
   assert.equal(replacement.fillLight.intensity, 2.4 * 0.95);
   assert.equal(replacement.fillLight.color.getHex(), 0xc2d2ec);
-  assert.equal(tree.material.emissiveIntensity, 0.04);
+  assert.equal(tree.material.emissiveIntensity, 0);
   // The unshadowed crown fill stops short of the lantern clearing in film.
   assert.equal(replacement.fillLight.distance, 24);
   replacement.setFilmTreatment(false);
   assert.equal(replacement.light.distance, 39);
-  assert.equal(tree.material.emissiveIntensity, 0.22);
+  assert.equal(tree.material.emissiveIntensity, 0);
   assert.equal(replacement.fillLight.distance, 37.8);
   replacement.applyQuality({ lighting: { practicalIntensityScale: 0.5 } });
   assert.equal(replacement.light.distance, 39);
@@ -194,29 +192,69 @@ function materialShader(material) {
   return shader;
 }
 
-test("only the tree's pale wood turns moonlit grey, and only under a shot's pale", () => {
+test("non-lantern subjects cannot inherit self-illumination from supplied materials", () => {
+  for (const role of ["tree", "tower", "rock"]) {
+    const source = sourceAsset(true),
+      emission = new Texture();
+    source.resources.push(emission);
+    source.material.emissive.setRGB(0.7, 0.5, 0.2);
+    source.material.emissiveIntensity = 3;
+    source.material.emissiveMap = emission;
+    const material = materialFor(source, 4, role);
+    try {
+      for (const film of [false, true, false]) {
+        applyFilmGrade(material, film);
+        assert.equal(
+          material.emissive.getHex(),
+          0,
+          role + " reflects existing light rather than emitting it",
+        );
+        assert.equal(material.emissiveIntensity, 0);
+        assert.equal(material.emissiveMap, null);
+        assert.equal(material.map, source.material.map);
+        assert.equal(material.normalMap, source.material.normalMap);
+      }
+      assert.deepEqual(source.material.emissive.toArray(), [0.7, 0.5, 0.2]);
+      assert.equal(source.material.emissiveIntensity, 3);
+      assert.equal(source.material.emissiveMap, emission);
+    } finally {
+      material.dispose();
+      assert.equal(source.disposals, 0, "the derived material never frees borrowed textures");
+      source.resources.forEach((resource) => resource.dispose());
+    }
+  }
+});
+
+test("bark albedo and physical shading are independent of legacy pale and rim shot moods", () => {
   const source = sourceAsset(true),
     tree = createTreeArchitecture({ asset: source, groundHeight: () => 0 }),
     treeShader = materialShader(tree.root.getObjectByName("meshy-tree").material),
     tower = createCompleteTowerArchitecture({ asset: boxAsset(), groundY: 0 }),
     towerShader = materialShader(tower.root.getObjectByName("complete-meshy-tower").material);
-  // One mood for the tree's every material, off until a shot asks for it.
-  assert.equal(treeShader.uniforms.babelPale, PALE_MOOD);
-  assert.equal(PALE_MOOD.value, 0);
-  assert.equal("babelPale" in towerShader.uniforms, false);
-  assert.doesNotMatch(towerShader.fragmentShader, /babelPale/);
-  // First on the map's own colour, before the role's grade: the pale share
-  // eases to a cool grey; at 0 the mix leaves the colour exactly as it was.
-  const pale = `#include <map_fragment>
-          float babelPaleLuma = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(babelPaleLuma)*vec3(${PALE.tint.map((v) => v.toFixed(3)).join(", ")}), babelPale*smoothstep(${PALE.luma.map((v) => v.toFixed(3)).join(", ")}, babelPaleLuma));`;
-  assert.ok(treeShader.fragmentShader.includes(pale));
-  assert.ok(
-    treeShader.fragmentShader.indexOf(pale) < treeShader.fragmentShader.indexOf("float babelLuma"),
-  );
-  assert.ok(PALE.tint[2] > 1 && PALE.tint[0] < 1, "cool");
-  assert.ok(PALE.luma[0] < PALE.luma[1] && PALE.luma[1] < 0.5, "the pale wood, not the dark bark");
+  const paleBefore = PALE_MOOD.value,
+    rimBefore = RIM_UNIFORMS.babelRimLight.value.clone(),
+    rimTextBefore = RIM_UNIFORMS.babelRimText.value;
+  try {
+    for (const pale of [0, 0.5, 1]) {
+      PALE_MOOD.value = pale;
+      setRim(2 * pale, pale);
+      const next = materialShader(tree.root.getObjectByName("meshy-tree").material);
+      assert.equal(next.fragmentShader, treeShader.fragmentShader);
+      for (const shader of [next, towerShader]) {
+        assert.doesNotMatch(shader.fragmentShader, /babelPale|babelRim/);
+        assert.equal(shader.uniforms.babelPale, undefined);
+        assert.equal(shader.uniforms.babelRimLight, undefined);
+      }
+    }
+    assert.equal(tree.root.getObjectByName("meshy-tree").material.map, source.material.map);
+    assert.match(treeShader.fragmentShader, /#include <map_fragment>\s*float babelLuma/);
+  } finally {
+    PALE_MOOD.value = paleBefore;
+    RIM_UNIFORMS.babelRimLight.value.copy(rimBefore);
+    RIM_UNIFORMS.babelRimText.value = rimTextBefore;
+  }
   tree.dispose();
+  tower.dispose();
   source.resources.forEach((resource) => resource.dispose());
 });
 
@@ -263,24 +301,33 @@ test("tree preserves mapped roughness variation and texture ownership through qu
   assert.equal(material.roughnessMap, source.material.roughnessMap);
   assert.equal(material.normalMap, source.material.normalMap);
   assert.equal(material.map, source.material.map);
-  assert.deepEqual(material.normalScale.toArray(), [0.46, 0.46]);
+  assert.deepEqual(material.normalScale.toArray(), [0.75, 0.75]);
   const remap = shader.fragmentShader.match(
     /roughnessFactor = mix\(([\d.]+), ([\d.]+), roughnessFactor\);/,
   );
   assert.ok(remap, "the compiled material must bound the map's roughness");
   const floor = Number(remap[1]),
     ceiling = Number(remap[2]);
-  assert.equal(floor, 0.84);
-  assert.equal(ceiling, 0.97);
-  assert.ok(Math.abs((floor + ceiling) / 2 - 0.905) < 1e-12);
+  assert.equal(floor, 0.82);
+  assert.equal(ceiling, 1);
+  assert.ok(Math.abs((floor + ceiling) / 2 - 0.91) < 1e-12);
+  assert.ok(
+    ceiling - floor > 0.97 - 0.84,
+    "retain more local map variation at the same matte mean",
+  );
+  for (const mapValue of [0, 0.1, 0.4, 0.7, 1]) {
+    const response = floor + (ceiling - floor) * mapValue;
+    assert.ok(response >= 0.8 && response <= 1, "dry bark stays matte across its map");
+    if (mapValue > 0) assert.ok(response > floor, "the map is never flattened to one roughness");
+  }
   for (const tier of ["balanced", "low", "high"]) {
     tree.setFilmTreatment(true);
     tree.applyQuality({ tier });
-    assert.equal(material.emissiveIntensity, 0.04, "no added tree glow");
+    assert.equal(material.emissiveIntensity, 0, "no added tree glow");
     assert.equal(material.roughnessMap, source.material.roughnessMap);
     assert.equal(material.roughness, 1);
     tree.setFilmTreatment(false);
-    assert.equal(material.emissiveIntensity, 0.22);
+    assert.equal(material.emissiveIntensity, 0);
     assert.equal(shader.uniforms.babelFilm.value, 0);
   }
   assert.equal(source.material.roughness, 0.85);
@@ -346,7 +393,7 @@ test("timber lookout reads its baked normal map at full strength with one unifor
   for (const resource of [geometry, material, material.map, material.normalMap]) resource.dispose();
 });
 
-test("the film's night sky lights the bark and the rocks from above and leaves the tower as it was", () => {
+test("the night environment preserves material direction with restrained matte timber and bark reflections", () => {
   const source = sourceAsset(true),
     tree = createTreeArchitecture({ asset: source, groundHeight: () => 0 }),
     material = tree.root.getObjectByName("meshy-tree").material;
@@ -368,14 +415,34 @@ test("the film's night sky lights the bark and the rocks from above and leaves t
   assert.deepEqual(environment.toArray(), [...ENVIRONMENT_ROLES.tree]);
   tree.setFilmTreatment(false);
   assert.deepEqual(environment.toArray(), [1, 0, 0]);
-  // The tower keeps its look: all of its ambient, none of the sky.
-  assert.deepEqual([...ENVIRONMENT_ROLES.tower], [1, 0, 0]);
+  // The timber trades a little flat ambient for sky-shaped light, without a broad glossy coat.
+  const [towerAmbient, towerSky, towerReflection] = ENVIRONMENT_ROLES.tower;
+  assert.ok(towerAmbient >= 0.8 && towerAmbient < 1);
+  assert.ok(towerSky > 0 && towerSky < 1);
+  assert.ok(towerReflection > 0 && towerReflection < 0.5);
   for (const role of ["tree", "rock"]) {
     const [ambient, sky, reflection] = ENVIRONMENT_ROLES[role];
     assert.ok(ambient > 0.5 && ambient < 1, role);
     assert.ok(sky > 1 && sky <= 2.5, role);
-    assert.ok(reflection >= 1 && reflection <= 2, role);
+    assert.ok(reflection >= 0.75 && reflection <= 2, role);
   }
+  assert.ok(ENVIRONMENT_ROLES.tree[2] < 1, "avoid amplified sky sheen over the bark");
+  const towerSource = sourceAsset(false),
+    tower = createCompleteTowerArchitecture({ asset: towerSource, groundY: 0 }),
+    towerMaterial = tower.root.getObjectByName("complete-meshy-tower").material,
+    towerShader = materialShader(towerMaterial);
+  for (const active of [true, false, true]) {
+    tower.setFilmTreatment(active);
+    assert.deepEqual(
+      towerShader.uniforms.babelEnvironment.value.toArray(),
+      active ? [...ENVIRONMENT_ROLES.tower] : [1, 0, 0],
+    );
+    assert.equal(towerMaterial.roughness, 0.9);
+    assert.equal(towerMaterial.map, towerSource.material.map);
+  }
+  tower.dispose();
+  assert.equal(towerSource.disposals, 0);
+  towerSource.resources.forEach((resource) => resource.dispose());
   tree.dispose();
   source.resources.forEach((resource) => resource.dispose());
 });
@@ -388,7 +455,7 @@ test("the bare tree takes no procedural film extras and the rocks darken above t
   // its sub-pixel furrow only printed aliased lines.
   assert.doesNotMatch(treeShader.fragmentShader, /leafMask|furrow|fwidth/);
   // After the rain the bark is wet at its base, under film only: smoother
-  // below the band (its 0.84-0.97 remap stays above it), with a faint grazing
+  // below the band (its matte map remap stays above it), with a faint grazing
   // sheen where the lights end.
   const [low, high] = WET_BARK.band.map((v) => v.toFixed(2));
   assert.ok(
@@ -677,24 +744,12 @@ test("beside Contact the bark's highlights from the lantern and the crown's fill
       guardAt("float slateBehindAbout(vec2 v){") >= 0,
   );
   assert.doesNotMatch(BARK_TEXT_LIGHTS, /\bslateText\b|directionalLights|spotLights/);
-  // The moon rim comes off behind the name, the intro and Contact by the shot's
-  // share (Close-up's), easing out over RIM.textReach; at 0 the factor is 1.
-  assert.equal(shader.uniforms.babelRimText, RIM_UNIFORMS.babelRimText);
-  assert.match(shader.fragmentShader, /uniform float babelRimText;/);
-  assert.ok(
-    shader.fragmentShader.includes(
-      `reflectedLight.directDiffuse += babelRimLight.rgb*babelFilm*babelRim${BARK_RIM_TEXT}*mix(babelRimLight.w, 1.0,`,
-    ),
-  );
-  const reach = RIM.textReach.toFixed(2);
-  assert.equal(
-    BARK_RIM_TEXT,
-    `*(1.0-babelRimText*max(slateBehind(slateText, vSlateClip.xy/vSlateClip.w*.5+.5, ${reach}), slateBehind(slateAbout, vSlateClip.xy/vSlateClip.w*.5+.5, ${reach})))`,
-  );
-  // Everything the rim's factor reads is declared before main().
+  // Actual physical lighting retains its text guards, without a painted diffuse rim.
+  assert.equal(shader.uniforms.babelRimText, undefined);
+  assert.doesNotMatch(shader.fragmentShader, /babelRim/);
+  // Everything the specular guard reads is declared before main().
   const main = shader.fragmentShader.indexOf("void main");
   for (const declared of [
-    "uniform float babelRimText;",
     "varying vec4 vSlateClip;",
     "uniform vec4 slateText, slateAbout;",
     "float slateBehind(vec4 r,vec2 v,float d)",
@@ -710,7 +765,7 @@ test("beside Contact the bark's highlights from the lantern and the crown's fill
   assert.doesNotMatch(unguarded.fragmentShader + unguarded.vertexShader, /slateBehind|vSlateClip/);
   assert.equal(unguarded.uniforms.slateText, undefined);
   assert.doesNotMatch(unguarded.fragmentShader, /babelRimText/);
-  assert.match(unguarded.fragmentShader, /babelRimLight\.rgb\*babelFilm\*babelRim\*mix\(/);
+  assert.doesNotMatch(unguarded.fragmentShader, /babelRim/);
   assert.notEqual(material.customProgramCacheKey(), plainMaterial.customProgramCacheKey());
   // The tower and the rocks never take it (the rocks' own guard is
   // ROCK_TEXT_LIGHTS).
@@ -720,11 +775,11 @@ test("beside Contact the bark's highlights from the lantern and the crown's fill
   assert.doesNotMatch(rockShader.fragmentShader, /babelBehind\b|slateBehindAbout\(vSlate|babelRim/);
   assert.ok(!rockShader.fragmentShader.includes(BARK_TEXT_LIGHTS));
   rock.dispose();
-  // The lookout's rim stays whole.
+  // The lookout uses the same physical light response, with no additive rim.
   const tower = materialFor(boxAsset(), 1, "tower", contacts),
     towerShader = physical();
   tower.onBeforeCompile(towerShader);
-  assert.match(towerShader.fragmentShader, /babelRimLight\.rgb\*babelFilm\*babelRim\*mix\(/);
+  assert.doesNotMatch(towerShader.fragmentShader, /babelRim/);
   assert.doesNotMatch(towerShader.fragmentShader, /babelRimText|slateBehind/);
   tower.dispose();
   tree.dispose();

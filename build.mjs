@@ -63,7 +63,7 @@ export function isFingerprintedSource(file) {
   return (
     /^fonts\/[^/]+\.woff2$/.test(path) ||
     /^images\/architecture\/[^/]+\.glb$/.test(path) ||
-    /^images\/materials\/(?:slate-[^/]+|coast-detail-256)\.webp$/.test(path)
+    /^images\/materials\/(?:slate-[^/]+|coast-detail-256|coast-albedo-512)\.webp$/.test(path)
   );
 }
 export const BUILD_INPUT_FILES = [
@@ -185,13 +185,19 @@ async function materialAssetManifest() {
     urls[name] = `/images/materials/${hashedName}`;
     files.push({ hashedName, bytes });
   }
-  // The coast's single optional data map belongs only to its lazy owner, not
+  // The coast's optional maps belong only to their lazy owner, not
   // the entry's slate manifest; revising it never grows that manifest.
-  const name = "coast-detail-256.webp",
-    bytes = await readFile(join(__dirname, "images", "materials", name)),
-    hashedName = name.replace(".webp", `.${sha8(bytes)}.webp`);
-  files.push({ hashedName, bytes });
-  return { urls, files, coastUrl: `/images/materials/${hashedName}` };
+  const coast = {};
+  for (const [key, name] of [
+    ["coastUrl", "coast-detail-256.webp"],
+    ["coastAlbedoUrl", "coast-albedo-512.webp"],
+  ]) {
+    const bytes = await readFile(join(__dirname, "images", "materials", name)),
+      hashedName = name.replace(".webp", `.${sha8(bytes)}.webp`);
+    files.push({ hashedName, bytes });
+    coast[key] = `/images/materials/${hashedName}`;
+  }
+  return { urls, files, ...coast };
 }
 
 // Split output refers to its chunks by esbuild's temporary names. Rename each
@@ -292,6 +298,9 @@ async function buildScriptBundle(
           ),
           __BABEL_COAST_MATERIAL_URL__: JSON.stringify(
             (materials ?? (await materialAssetManifest())).coastUrl,
+          ),
+          __BABEL_COAST_ALBEDO_URL__: JSON.stringify(
+            (materials ?? (await materialAssetManifest())).coastAlbedoUrl,
           ),
         }
       : {
