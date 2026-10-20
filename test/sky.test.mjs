@@ -49,6 +49,7 @@ import {
   cloudFieldGLSL,
   cloudVortexCenter,
   cloudVortexInSeason,
+  cloudVortexLife,
   cloudVortexReach,
   createEstateSkyMaterial,
   FILM_SKY_GLSL,
@@ -917,7 +918,7 @@ test("the cloud vortex turns about the star's eye, never over the reference bank
   const turn = shader.match(/float vxA=([^;]+);/)[1];
   assert.doesNotMatch(turn, /vxW|cloudAz|\bbl\b|vxE|vxD/);
   assert.match(turn, /\(1\.-smoothstep\([\d.]+\*uVortex\.z,uVortex\.z,vxRho\)\)/);
-  assert.match(turn, /^uVortex\.z>0\.\?uCloudReshape\*vxHole\*/);
+  assert.match(turn, /^uVortex\.z>0\.\?vxLife\*uCloudReshape\*vxHole\*/);
   assert.match(
     shader,
     /float vxRho=length\(vxE\),vxHole=mix\(1\.,smoothstep\([\d.]+,[\d.]+,vxRho\),uVortex\.w\);/,
@@ -932,9 +933,27 @@ test("the cloud vortex turns about the star's eye, never over the reference bank
   // the drift clock, a turn in many minutes.
   assert.match(shader, /vxF=vec2\(vxS\.x\*vxE\.x-vxS\.y\*vxE\.y,vxS\.y\*vxE\.x\+vxS\.x\*vxE\.y\)/);
   assert.ok(CLOUD_VORTEX.arms[3] >= 300, "a turn in many minutes");
-  assert.ok(CLOUD_VORTEX_GLSL.includes(`-t*${((2 * Math.PI) / CLOUD_VORTEX.arms[3]).toFixed(6)})`));
-  // Behind the name and intro it takes nothing (the text guard).
-  assert.match(shader, /float vxK=vxW\*\(1\.-cloudText\);/);
+  assert.ok(
+    CLOUD_VORTEX_GLSL.includes(
+      `-t*${((2 * Math.PI) / CLOUD_VORTEX.arms[3] / CLOUD_VORTEX.arms[0]).toFixed(8)};`,
+    ),
+  );
+  // The arms are cloud, not a wave (the owner's pick of 2026-10-20, 2 Warm organic): crests
+  // narrower than their gaps, a wandering phase and wisps unwound along the spiral, so their
+  // breaks turn with them.
+  const { crest, wobble, wisp, warm } = CLOUD_VORTEX;
+  assert.ok(crest > 1 && wobble > 0 && wisp[0] > 0 && wisp[0] < 1);
+  assert.ok(
+    CLOUD_VORTEX_GLSL.includes(
+      `float arm=2.*pow(.5+.5*cos(${CLOUD_VORTEX.arms[0].toFixed(1)}*sv),${crest})-1.;`,
+    ),
+  );
+  assert.ok(CLOUD_VORTEX_GLSL.includes("vxNoise(r*vec2(cos(sv),sin(sv))*"));
+  // The star's warmth on the swirl's lit edges, near the eye, never behind the text.
+  assert.ok(warm[0] > 0 && warm[0] <= 0.6 && warm[1] > 0);
+  assert.match(shader, /float vxGlow=vxW\*vxLife\*\(1\.-cloudText\)\*exp\(-vxRho\//);
+  // Behind the name and intro it takes nothing (the text guard), and only while it lives.
+  assert.match(shader, /float vxK=vxW\*vxLife\*\(1\.-cloudText\);/);
   // The guard shots keep the star's disc and glow as they were (the bloom they feed
   // reaches the reference banks) and lean the density's disc away from them.
   assert.deepEqual([...CLOUD_VORTEX.guardShots], ["The watch"]);
@@ -967,6 +986,38 @@ test("the cloud vortex turns about the star's eye, never over the reference bank
   const { value } = material.uniforms.uVortex;
   assert.equal(value.z, cloudVortexReach(value.x, value.y));
   material.dispose();
+});
+
+test("the maelstrom is a phenomenon: it forms now and then, grows, holds and unwinds, on the drift clock", () => {
+  const [first, cycle, grow, hold, fade] = CLOUD_VORTEX.life;
+  assert.ok(Object.isFrozen(CLOUD_VORTEX.life));
+  assert.ok(grow > 0 && hold > 0 && fade > 0 && grow + hold + fade < cycle / 2, "occasionally");
+  // Calm before the first, and calm between.
+  for (let t = 0; t < first; t += 0.5) assert.equal(cloudVortexLife(t), 0);
+  // Once each cycle, each living grow + hold + fade, never popping in or out.
+  const spans = [];
+  let start = null,
+    previous = 0,
+    jump = 0;
+  for (let t = 0; t < 3600; t += 0.25) {
+    const life = cloudVortexLife(t);
+    assert.ok(life >= 0 && life <= 1);
+    if (life > 0 && previous === 0) start = t;
+    if (life === 0 && previous > 0) spans.push(t - start);
+    jump = Math.max(jump, Math.abs(life - previous));
+    previous = life;
+  }
+  const cycles = (3600 - first) / cycle;
+  assert.ok(spans.length >= Math.floor(cycles) - 1 && spans.length <= Math.ceil(cycles));
+  for (const span of spans)
+    assert.ok(Math.abs(span - (grow + hold + fade)) <= 0.5, `lived ${span} s`);
+  assert.ok(jump < (0.25 / grow) * 1.6, `life jumps ${jump} in a quarter second`);
+  // The shader's own life scales the turn, so the banks unwind as it fades.
+  const shader = skyMaterial().fragmentShader;
+  assert.match(shader, /float vxA=uVortex\.z>0\.\?vxLife\*uCloudReshape\*vxHole\*/);
+  assert.ok(
+    shader.includes(`float vxLife=T<${first.toFixed(1)}?0.:smoothstep(0.,${grow.toFixed(1)},vxX)`),
+  );
 });
 
 test("the vortex's turn never folds the noise and never reaches the reference banks, from any eye", () => {
