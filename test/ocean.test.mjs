@@ -4,6 +4,7 @@ import {
   BoxGeometry,
   Color,
   Group,
+  Matrix4,
   Mesh,
   MeshStandardMaterial,
   RepeatWrapping,
@@ -17,6 +18,7 @@ import {
 import {
   CLIFF,
   COAST,
+  COAST_SHADOW,
   COAST_SHOTS,
   FALLS,
   SEA,
@@ -38,7 +40,9 @@ import {
   riverFalls,
   slateShoreEdits,
   stackGeometry,
+  stacksMirrorGlsl,
   stacksSurfGlsl,
+  stackWaterlineProfile,
 } from "../src/scene/ocean.js";
 import { DEPTH_LAYER } from "../src/scene/depth-layers.js";
 import { DIRECTED_SHOTS, shotPose } from "../src/scene/directed-shots.js";
@@ -50,6 +54,7 @@ import { HIGH_VIEW, HORIZON_AIR, RANGE_MIST, SEA_SINK } from "../src/scene/hill-
 import {
   configureGroundShading,
   createSlateContacts,
+  MOON_LIGHTS,
   SLATE_TEXT_GUARD,
   SLATE_TILING,
 } from "../src/scene/mud-ground.js";
@@ -194,11 +199,14 @@ test("the sea is one program: the film's environment its only texture, the groun
     Math.abs(SEA_SHARED.edgeLift - (HORIZON_AIR.edge / HORIZON_AIR.ground - 1)) < 5e-5,
     "the walk's far edge lifts to the far plain's air",
   );
-  // No texture but the environment's (through three's CubeUV chunks), no shadows.
-  assert.doesNotMatch(fragment, /uniform sampler|texture2D\(/);
+  // No texture but the environment's (through three's CubeUV chunks) and the moon's
+  // shadow map, which it reads itself (it casts none, and takes none from three).
+  assert.deepEqual(fragment.match(/uniform sampler\w+ \w+/g), ["uniform sampler2D seaShadowMap"]);
   assert.ok(fragment.includes("#include <cube_uv_reflection_fragment>"));
   assert.equal(mesh.castShadow, false);
   assert.equal(mesh.receiveShadow, false);
+  // Near the rock the cliffs' and the stacks' shadows lie on it.
+  assert.ok(fragment.includes("if(z<70.)seaSun=seaShadow(P,vec3(0.,1.,0.));"));
   assert.equal(mesh.frustumCulled, false, "it rides on the lens");
   assert.equal(mesh.renderOrder, 0.5);
   // Its light stays under the bloom's threshold (0.85 luma): the mirror's and the glitter's knees.
@@ -592,11 +600,111 @@ test("the river pours off the cliffs where it meets the fault, into white water 
     falls = createFalls({ lib, clock, rendering: rendering(), drop, height }),
     cliff = createCliff({ lib, clock, rendering: rendering(), height, drop });
   assert.deepEqual(falls.plunge, plunge);
+  // Its middle's brink and heading, which the sea's mirror hangs it from.
+  const brink = fallsGeometry(drop, height);
+  assert.deepEqual(falls.sheet, brink.sheet);
+  brink.geometry.dispose();
+  assert.ok(Math.abs(coastDistance(falls.sheet[0], falls.sheet[1])) < 0.2, "on the fault");
+  assert.deepEqual(falls.sheet.slice(2), [...drop.heading]);
+  const mirror = createSea({ lib, clock, rendering: rendering(), plunge, sheet: falls.sheet });
+  assert.deepEqual(Object.values(mirror.material.uniforms.seaSheet.value), falls.sheet);
+  mirror.dispose();
   assert.equal(falls.material.side, 0, "the closed solid has outward-facing front, back and sides");
   assert.equal(cliff.material.uniforms.cliffRiver.value.w, half);
   assert.ok(falls.material.fragmentShader.includes(`gl_FragColor=vec4(c,${DEPTH_LAYER.ground});`));
   falls.dispose();
   cliff.dispose();
+});
+
+test("the moon's shadow on the coast: the rock casts it, and the cliffs, the stacks, the falls and the sea read the key's own map", () => {
+  const view = rendering(),
+    sun = new Group(),
+    texture = new Texture();
+  Object.assign(sun, {
+    color: new Color(0xffffff),
+    intensity: 2,
+    target: new Group(),
+    castShadow: true,
+    shadow: {
+      map: { texture },
+      matrix: new Matrix4().makeTranslation(1, 2, 3),
+      mapSize: new Vector2(2048, 2048),
+    },
+  });
+  sun.position.set(0, 10, 0);
+  sun.updateMatrixWorld();
+  sun.target.updateMatrixWorld();
+  view.lights = { sun };
+  view.renderer = { shadowMap: { enabled: true } };
+  const clock = dripClock({ value: 0 }),
+    drop = riverFalls(RIVER_LINE),
+    height = () => 1.25,
+    sea = createSea({ lib, clock, rendering: view }),
+    cliff = createCliff({ lib, clock, rendering: view, height, drop }),
+    falls = createFalls({ lib, clock, rendering: view, drop, height });
+  // The cliffs and the stacks cast (three's depth pass, back faces); the shelf, the
+  // ground's material, receives as the plain does; the water and the falls cast none.
+  assert.equal(cliff.mesh.castShadow, true);
+  assert.equal(cliff.mesh.receiveShadow, true);
+  assert.equal(cliff.mesh.children[0].castShadow, true);
+  assert.equal(sea.mesh.castShadow, false);
+  assert.equal(falls.mesh.castShadow, false);
+  for (const { mesh, material } of [sea, cliff, falls]) {
+    const u = material.uniforms,
+      fragment = material.fragmentShader;
+    // Lent per draw: the map, its matrix and its size; off with the renderer's shadows.
+    mesh.onBeforeRender();
+    assert.equal(u.seaShadowMap.value, texture);
+    assert.deepEqual(u.seaShadowMatrix.value.elements, sun.shadow.matrix.elements);
+    assert.deepEqual({ ...u.seaShadowSet.value }, { x: 1, y: 2048 });
+    view.renderer.shadowMap.enabled = false;
+    mesh.onBeforeRender();
+    assert.equal(u.seaShadowMap.value, null);
+    assert.equal(u.seaShadowSet.value.x, 0);
+    view.renderer.shadowMap.enabled = true;
+    // The moon's diffuse and its sheen take it; it fades in from the map's edge.
+    assert.ok(fragment.includes("seaKeyColor*max(dot(n,seaKey),0.)*seaSun"));
+    assert.ok(fragment.includes("return seaKeyColor*seaSun*(a2/"));
+    assert.ok(fragment.includes(`smoothstep(0.,${COAST_SHADOW.edge},min(e.x,e.y))`));
+    // The spray is lit in the open, never in the surface's shadow.
+    assert.ok(fragment.includes("seaSun=1.;c=mix(c,"));
+  }
+  assert.ok(cliff.material.fragmentShader.includes("seaSun=seaShadow(vW,n);"));
+  assert.ok(falls.material.fragmentShader.includes("seaSun=seaShadow(vW,n);"));
+  assert.ok(falls.material.fragmentShader.includes("seaKeyColor*seaSun*(.25/SEA_PI+"));
+  sea.dispose();
+  cliff.dispose();
+  falls.dispose();
+});
+
+test("the sea mirrors the cliffs' lit, wet face, the stacks and the falls where its reflected ray meets them", () => {
+  const sea = createSea({
+      lib,
+      clock: dripClock({ value: 0 }),
+      rendering: rendering(),
+      plunge: [80, 82, 8],
+      sheet: [78, 80, 0.5, 0.86],
+    }),
+    fragment = sea.material.fragmentShader;
+  // The face: where the ray first meets it, wet and darker at its foot.
+  assert.ok(fragment.includes("face=max(face,f);if(th>1e3&&f>.5)th=tt;"));
+  // The stacks, each where the ray enters its leaning section, the one it meets most shaded.
+  assert.ok(fragment.includes(stacksMirrorGlsl()));
+  assert.equal(fragment.split("if(sc>bs)").length - 1, STACKS.list.length);
+  // The falls, between their brink and the plunge.
+  assert.ok(fragment.includes("vec2 fo=mix(seaSheet.xy,seaFalls.xy,.5);"));
+  // All of it lit as it faces (its own moonlight, not the water's shadow) and its wet sheen, in one light.
+  assert.ok(
+    fragment.includes(
+      "float ss=seaSun;seaSun=1.;\nsky=mix(sky,ha*seaLight(hn,babelFlash.x*(1.-b))+seaGGX(hn,-Rt,mix(.6,.18,hwet),.04)*mix(.2,1.,hwet),hw);seaSun=ss;",
+    ),
+  );
+  assert.equal(
+    fragment.split("seaLight(").length - 1,
+    5,
+    "no more lights than before (four, and its own)",
+  );
+  sea.dispose();
 });
 
 test("the slate's shore edits: the walk's view from up high fades the land's far edge, but not at the cliffs", () => {
@@ -667,15 +775,30 @@ test("the sea, the cliffs and the falls land with the film terrain, sink the ran
   ground.material.dispose();
 });
 
-test("the fault's shots look over the broken coast from the land, inside the sky's shell, their shadow on the land", () => {
+test("the fault's shots look over the broken coast from the land, inside the sky's shell, their shadow over the coast", () => {
   assert.equal(new Set(COAST_SHOTS.map((shot) => shot.name)).size, COAST_SHOTS.length);
+  // The film's shadow camera (rendering.js focusFilmShadow(): 48 either side, looking
+  // down the moon key), fully in once COAST_SHADOW.edge in from its edge.
+  const key = new Vector3(...MOON_LIGHTS.key).normalize(),
+    across = new Vector3(0, 1, 0).cross(key).normalize(),
+    up = key.clone().cross(across),
+    covered = (shot, x, y, z) => {
+      const d = new Vector3(x - shot.shadow[0], y - 1.25, z - shot.shadow[1]);
+      return (
+        Math.max(Math.abs(d.dot(across)), Math.abs(d.dot(up))) < 48 * (1 - 2 * COAST_SHADOW.edge)
+      );
+    };
   const estate = new Group();
   estate.position.y = -6.8;
   estate.updateMatrixWorld(true);
   for (const base of COAST_SHOTS) {
     assert.ok(Object.isFrozen(base) && TOUR_ORDER.includes(base.after), base.name);
     assert.ok(base.landscape.move === null, "landscape phones hold it still");
-    for (const shot of [base, { ...base, ...base.landscape }]) {
+    for (const shot of [
+      base,
+      { ...base, ...base.landscape },
+      ...(base.portrait ? [{ ...base, ...base.portrait }] : []),
+    ]) {
       const view = coastShot(shot, estate),
         measured = view.measure(null, view),
         fitted = view.fit(measured, view, null);
@@ -695,10 +818,25 @@ test("the fault's shots look over the broken coast from the land, inside the sky
         assert.ok(coastDistance(x, z) > 3, `${label} stands on the land`);
         assert.ok(Math.hypot(x, z) < 122, `${label} inside the sky's shell`);
         assert.ok(shot.rise + pose.crane * measured.height > 1.25 + 4, `${label} over the plain`);
-        // The film's shadow (a box 48 either side) covers the land at its feet.
-        assert.ok(Math.hypot(x - shot.shadow[0], z - shot.shadow[1]) < 40, label);
+        // The film's shadow covers the land at its feet.
+        assert.ok(covered(shot, x, 1.25, z), label);
       }
-      assert.ok(coastDistance(...shot.shadow) > 0, `${shot.name}'s shadow keeps to the land`);
+      // ... and the rock it looks at: every stack within 25 degrees of its aim and 100 units
+      // of its camera (farther, it stands small in the mist), foot and crown.
+      const yaw = (shot.azimuth * Math.PI) / 180,
+        eye = [shot.aim[0] + Math.cos(yaw) * shot.reach, shot.aim[2] + Math.sin(yaw) * shot.reach],
+        aim = Math.atan2(shot.aim[2] - eye[1], shot.aim[0] - eye[0]);
+      STACKS.list.forEach(([, , height], k) => {
+        const [x, z] = stackWaterlineProfile(STACKS, k).center,
+          turn = Math.atan2(z - eye[1], x - eye[0]) - aim;
+        if (
+          Math.abs(Math.atan2(Math.sin(turn), Math.cos(turn))) > (25 * Math.PI) / 180 ||
+          Math.hypot(x - eye[0], z - eye[1]) > 100
+        )
+          return;
+        for (const y of [SEA.level, SEA.level + height])
+          assert.ok(covered(shot, x, y, z), `${shot.name}'s shadow covers stack ${k}`);
+      });
       assert.deepEqual(fitted.shadow.toArray(), [shot.shadow[0], 1.25 - 6.8, shot.shadow[1]]);
     }
   }
