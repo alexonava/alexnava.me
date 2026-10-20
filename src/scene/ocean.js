@@ -1,4 +1,12 @@
-import { Box3, BufferAttribute, BufferGeometry, Mesh, ShaderMaterial, Vector3 } from "three";
+import {
+  Box3,
+  BufferAttribute,
+  BufferGeometry,
+  Matrix4,
+  Mesh,
+  ShaderMaterial,
+  Vector3,
+} from "three";
 import {
   COAST_ALBEDO,
   COAST_DETAIL,
@@ -140,11 +148,17 @@ export const landFactor = (d) => smooth(SHORE.shelf, SHORE.shelf + SHORE.hills, 
 // glitter: the moon's highlight: its gain, roughness floor and knee, and how
 // far it widens where the surface's normal turns within a pixel (aa, at most
 // aaMax of variance), so the ripples glint as fine sparkle, never flat tiles. surf:
-// the white water at the cliffs' foot: how far out it reaches, its swells'
-// spacing and speed shoreward, how much of the foot breaks at once (`cover`,
-// in `cell`-unit patches), its albedo (moonlit white water) and its far
-// mean. rim: past `from` of the radius the rim rises so any eye sees the sea
-// out to `slope` below eye level (the open horizon). mist: how much of a
+// the white water at the cliffs' foot, struck by the swell itself (seaSurge()):
+// how far out it reaches; the swell heights at the rock (`sets`, the first
+// swell's crest with the second's height then: groups of bigger and smaller
+// breakers) over which a crest goes from `low` of a burst to a full one; `lag`,
+// the seconds its white water takes to fall back down the rock after the crest
+// strikes; `burst`, how far out it bursts; the backwash's speed carrying it out
+// (`back`, units a second) and the seconds it takes to thin (`fade`); how much
+// of the foot breaks at once (`cover`, in `cell`-unit patches), its albedo
+// (moonlit white water) and its far mean. rim: past `from` of the radius the
+// rim rises so any eye sees the sea out to `slope` below eye level (the open
+// horizon). mist: how much of a
 // shot's low mist (RANGE_MIST, laid on the plain and the ranges' feet) lies on
 // the open sea far below them; mistPast: how far past the fault's mean line
 // the drifting mist still gathers along a ray (to its headlands' tips; it lies
@@ -186,8 +200,12 @@ export const SEA = Object.freeze({
   glitter: Object.freeze({ gain: 0.75, alpha: 0.1, knee: 0.3, aa: 0.25, aaMax: 0.18 }),
   surf: Object.freeze({
     reach: 9,
-    period: 9,
-    speed: 3.6,
+    sets: Object.freeze([0.12, 0.44]),
+    low: 0.3,
+    lag: 0.45,
+    burst: 0.8,
+    back: 2.2,
+    fade: 1.4,
     cover: 0.55,
     cell: 14,
     albedo: 0.5,
@@ -321,7 +339,32 @@ return 1.-exp(-${glsl(falls.spray[2])}*e*bill*.886*s*(sprayErf((L-t0)/s)+sprayEr
 }`;
 // The spray over c at p (b: behind the text), lit as white water is.
 const sprayOver = (falls, p, y0) =>
-  `c=mix(c,${glsl(falls.spray[3])}*seaLight(vec3(0.,1.,0.),babelFlash.x*(1.-b)),seaSpray(${p},${y0})*(1.-${glsl(SEA.text)}*b));`;
+  `seaSun=1.;c=mix(c,${glsl(falls.spray[3])}*seaLight(vec3(0.,1.,0.),babelFlash.x*(1.-b)),seaSpray(${p},${y0})*(1.-${glsl(SEA.text)}*b));`;
+// The moon's shadow on the coast: its key's own shadow map (rendering.js, lent
+// per draw by lighting()), in which the cliffs and the stacks cast. bias: the
+// depth a lit surface may stand behind its stored depth (a share of the map's
+// depth range); normal: how far along its normal a point is looked up (world
+// units); edge: the share of the map in from its edge over which the shadow
+// fades in, so no line marks where the map ends.
+export const COAST_SHADOW = Object.freeze({ bias: 0.0006, normal: 0.05, edge: 0.06 });
+// seaShadow(w, n): the share of the moon reaching world point w (normal n),
+// filtered over 3x3 texels with bilinear weights (16 taps), so its edges slide
+// smoothly; 1 off the map, before its near plane and where shadows are off.
+// seaSun: the share the key terms take (seaDiffuse(), seaGGX()), 1 unless a
+// shader sets it.
+const shadowGlsl = (shadow = COAST_SHADOW) => `uniform sampler2D seaShadowMap;
+uniform mat4 seaShadowMatrix;
+uniform vec2 seaShadowSet;
+float seaSun=1.;
+float seaShadowTap(vec2 uv,float z){return step(z,dot(texture2D(seaShadowMap,uv),vec4(255./256.)/vec4(16777216.,65536.,256.,1.)));}
+float seaShadowRow(vec2 uv,float z,float f,float d){return (1.-f)*seaShadowTap(uv,z)+seaShadowTap(uv+vec2(d,0.),z)+seaShadowTap(uv+vec2(2.*d,0.),z)+f*seaShadowTap(uv+vec2(3.*d,0.),z);}
+float seaShadow(vec3 w,vec3 n){
+if(seaShadowSet.x<.5)return 1.;
+vec4 c=seaShadowMatrix*vec4(w+n*${glsl(shadow.normal)},1.);c.xyz/=c.w;
+vec2 e=min(c.xy,1.-c.xy);float k=smoothstep(0.,${glsl(shadow.edge)},min(e.x,e.y))*step(c.z,1.)*step(0.,c.z);
+if(k<=0.)return 1.;
+float d=1./seaShadowSet.y,z=c.z-${glsl(shadow.bias)};vec2 t=c.xy*seaShadowSet.y-.5,f=fract(t),b=(floor(t)-.5)*d;
+return mix(1.,((1.-f.y)*seaShadowRow(b,z,f.x,d)+seaShadowRow(b+vec2(0.,d),z,f.x,d)+seaShadowRow(b+vec2(0.,2.*d),z,f.x,d)+f.y*seaShadowRow(b+vec2(0.,3.*d),z,f.x,d))/9.,k);}`;
 const ENV_PARS = `#include <envmap_common_pars_fragment>
 #include <cube_uv_reflection_fragment>
 vec3 seaEnv(vec3 d,float r){
@@ -332,7 +375,8 @@ return mix(vec3(.062,.065,.073),vec3(.07,.085,.13),smoothstep(0.,.5,d.y));
 #endif
 }
 uniform vec3 seaKey,seaKeyColor,seaFill,seaFillColor,seaAmbient,seaHemiSky,seaHemiGround;
-vec3 seaDiffuse(vec3 n){return seaKeyColor*max(dot(n,seaKey),0.)+seaFillColor*max(dot(n,seaFill),0.)+seaAmbient+mix(seaHemiGround,seaHemiSky,.5*n.y+.5);}
+${shadowGlsl()}
+vec3 seaDiffuse(vec3 n){return seaKeyColor*max(dot(n,seaKey),0.)*seaSun+seaFillColor*max(dot(n,seaFill),0.)+seaAmbient+mix(seaHemiGround,seaHemiSky,.5*n.y+.5);}
 // The shore's subdued diffuse response: raw scene light intensities over pi,
 // without the legacy-light pi boost used by the standard materials. The
 // environment remains separate, lifted by a flash.
@@ -340,7 +384,7 @@ vec3 seaLight(vec3 n,float flash){return seaDiffuse(n)/SEA_PI+seaEnv(n,1.)*(1.+f
 // The moon's highlight off a surface of normal N seen from E: a GGX lobe of
 // roughness ag (Smith-masked) with Schlick's Fresnel from f0.
 vec3 seaGGX(vec3 N,vec3 E,float ag,float f0){vec3 H=normalize(seaKey+E);float nh=max(dot(N,H),0.),nl=max(dot(N,seaKey),0.),ne=max(dot(N,E),0.),a2=ag*ag,dn=nh*nh*(a2-1.)+1.;
-return seaKeyColor*(a2/(SEA_PI*dn*dn))*(f0+(1.-f0)*pow(1.-max(dot(E,H),0.),5.))*2.*nl/(nl+sqrt(a2+(1.-a2)*nl*nl)+1e-5)*nl/(2.*(ne+sqrt(a2+(1.-a2)*ne*ne))+1e-5);}
+return seaKeyColor*seaSun*(a2/(SEA_PI*dn*dn))*(f0+(1.-f0)*pow(1.-max(dot(E,H),0.),5.))*2.*nl/(nl+sqrt(a2+(1.-a2)*nl*nl)+1e-5)*nl/(2.*(ne+sqrt(a2+(1.-a2)*ne*ne))+1e-5);}
 // The share of light a cloud of droplets scatters through angle cos c (Henyey-Greenstein, g forward).
 float seaHG(float c,float g){float d=1.+g*g-2.*g*c;return (1.-g*g)/(4.*SEA_PI*d*sqrt(d));}`;
 
@@ -398,7 +442,7 @@ function seaFragment(sea, lib) {
     .join("\n");
   return `#define SEA_PI 3.1415927
 uniform float seaTime, seaLace, seaFine;
-uniform vec4 uMist, babelFlash, seaFalls;
+uniform vec4 uMist, babelFlash, seaFalls, seaSheet;
 uniform mat4 projectionMatrix;
 varying vec3 vSeaW;
 varying vec4 vSlateClip;
@@ -411,6 +455,7 @@ ${NOISE_GLSL}
 ${flowNoiseGlsl("seaFlowD", "seaHash")}
 ${sprayGlsl(FALLS)}
 ${stackOutlineGlsl()}
+${surgeGlsl(sea)}
 void main(){
 vec3 V=vSeaW-cameraPosition;float L=length(V);V/=max(L,1e-4);
 float h=max(cameraPosition.y-vSeaY,.05),t=min(h/max(-V.y,1e-5),1e4);
@@ -423,6 +468,8 @@ float fp=max(mix(L,t,rim)*length(fwidth(V))/max(-V.y,.01),1e-3);
 float d=seaCoast(P.xz);
 if(d>${glsl(sea.margin)})discard;
 float z=-d;
+// The cliffs' and the stacks' shadows on the water near them (they fall landward of the stacks).
+if(z<70.)seaSun=seaShadow(P,vec3(0.,1.,0.));
 vec2 g=vec2(0.);float v=${glsl(sea.rough * sea.rough)};
 // Broad, slow phase variation breaks long ruled crests; its derivative
 // keeps the reflected normal consistent, and unresolved waves still fade.
@@ -456,18 +503,24 @@ vec3 R=reflect(V,N);R.y=${glsl(sea.horizon)}+(1.-${glsl(sea.horizon)})*max(R.y,0
 float ne=max(dot(N,E),0.),F=${glsl(sea.f0)}+${glsl(1 - sea.f0)}*pow(1.-ne,5.);
 float b=slateBehindText();
 vec3 sky=seaEnv(R,clamp(rough*1.8,0.,1.))*${glsl(sea.sky)}*(1.+babelFlash.y*(1.-b));
-// Under the cliffs the water mirrors their dark face, not the sky: the true reflected ray,
+// Under the cliffs the water mirrors their face, not the sky: the true reflected ray,
 // sampled a few times out to 50 units, meets the rock (inside the fault by more than the
 // face's lean) below the plain's height, along the wall and in the falls' slot too.
 // Farther out it clears the cliffs and mirrors the sky. The ray follows the swell's
 // slope, its edges softened by the fine ripples' spread along it (never a patchwork
-// of rock and sky from one ripple to the next). The face, lit as it faces the
-// water, keeps a (tiny) non-constant height: a constant zero would leave the env lookup
-// inside seaLight() an unreachable division by zero, which D3D warns of (X4008).
-if(z>-${glsl(sea.margin)}&&z<60.){vec3 Rt=reflect(V,normalize(vec3(-gw.x,1.,-gw.y)));float face=0.,sr=${glsl(spread)}*sa+s;
-for(int i=0;i<5;i++){float tt=2.+3.*float(i*i),w=${glsl(sea.mirror)}*sr*tt;
-face=max(face,smoothstep(1.-w,3.+w,seaCoast(P.xz+Rt.xz*tt))*(1.-smoothstep(${glsl(1.25 - sea.level - 1.5)}-w,${glsl(1.25 - sea.level + 1)}+w,Rt.y*tt)));}
-sky=mix(sky,${glslVec(...CLIFF.rock[0])}*${glsl(STACKS.wet)}*seaLight(-normalize(vec3(Rt.x+1e-4,Rt.y*1e-4,Rt.z)),babelFlash.x*(1.-b)),face);}
+// of rock and sky from one ripple to the next).
+if(z>-${glsl(sea.margin)}&&z<60.){vec3 Rt=reflect(V,normalize(vec3(-gw.x,1.,-gw.y)));float face=0.,th=1e4,sr=${glsl(spread)}*sa+s;
+for(int i=0;i<5;i++){float tt=2.+3.*float(i*i),w=${glsl(sea.mirror)}*sr*tt,f=smoothstep(1.-w,3.+w,seaCoast(P.xz+Rt.xz*tt))*(1.-smoothstep(${glsl(1.25 - sea.level - 1.5)}-w,${glsl(1.25 - sea.level + 1)}+w,Rt.y*tt));
+face=max(face,f);if(th>1e3&&f>.5)th=tt;}
+// What it meets is lit as it faces, the moon too (its own light, not the water's shadow), wet near the water:
+// the face (its rock dark and wet at its foot, facing back between the ray and the fault's
+// mean normal, leaning out), then the falls hung in front of it and the stacks out at sea.
+float hy=Rt.y*min(th,60.),hwet=1.-smoothstep(0.,${glsl(CLIFF.wet)},hy),hw=face;
+vec3 ha=${glslVec(...CLIFF.rock[0].map((v, i) => (v + CLIFF.rock[1][i]) / 2))}*(1.-.45*hwet),hn=normalize(vec3(${glsl(NX)}-Rt.x,-.3,${glsl(NZ)}-Rt.z));
+${fallsMirrorGlsl(sea)}
+${stacksMirrorGlsl(STACKS, sea)}
+float ss=seaSun;seaSun=1.;
+sky=mix(sky,ha*seaLight(hn,babelFlash.x*(1.-b))+seaGGX(hn,-Rt,mix(.6,.18,hwet),.04)*mix(.2,1.,hwet),hw);seaSun=ss;}
 // The water's mirror, through the river's knee (keeping its hue).
 vec3 refl=sky*F;float rY=dot(refl,vec3(.2126,.7152,.0722));refl*=${glsl(sea.knee)}*(1.-exp(-rY/${glsl(sea.knee)}))/max(rY,1e-5);
 // The moon's glitter: a GGX lobe at the slopes the pixel holds (Smith-masked), through its own knee.
@@ -483,14 +536,16 @@ vec3 c=mix(${glslVec(...sea.body)},${glslVec(...sea.turbid)},(1.-smoothstep(${gl
 float sf=0.;
 ${stacksSurfGlsl()}
 if(z<${glsl(surf.reach)}||sf>0.||(seaFalls.w>0.&&length(P.xz-seaFalls.xy)<.95*seaFalls.z)){
-float u=fract(z/${glsl(surf.period)}+seaTime*${glsl(surf.speed / surf.period)}+.14*sin(P.x*.13+P.z*.09)),n=seaNoise(P.xz/${glsl(surf.cell)}+seaTime*vec2(.03,-.02));
-float burst=smoothstep(${glsl(1 - surf.cover)},${glsl(1 - surf.cover + 0.25)},n)*exp(-u*2.6);
+// The swell at the rock, z inland across the fault (the swell meets it nearly head on, so its
+// mean heading serves in the bays too): the last crest to strike there, and what it left.
+float swash=seaWash(seaSurge(P.xz-${glslVec(NX, NZ)}*max(z,0.)),z),n=seaNoise(P.xz/${glsl(surf.cell)}+seaTime*vec2(.03,-.02));
+float burst=smoothstep(${glsl(1 - surf.cover)},${glsl(1 - surf.cover + 0.25)},n)*swash;
 // How thick the white water lies: a narrow lace against the rock (the fault's distance
 // runs short in its fractures' corners, so never a solid band there); a
 // breaking swell surging in thinner near it, so it breaks into strands, never one
 // flat sheet; about the stacks (breathing with the swell) and in the churning heart
 // of where the falls land; beyond, it thins into lace.
-float k=max(.75*(1.-smoothstep(.3,2.6+fp,z)),.6*burst*(1.-smoothstep(${glsl(surf.reach * 0.15)},${glsl(surf.reach * 0.6)},z))),shore=1.;
+float k=max(.75*(1.-smoothstep(.3,2.6+fp,z)),.7*burst*(1.-smoothstep(${glsl(surf.reach * 0.6)},${glsl(surf.reach)},z))),shore=1.;
 if(seaFalls.w>0.){
 vec2 pool=(P.xz-seaFalls.xy)/seaFalls.z;
 // A persistent turbulent core, with broken expanding fans carried seaward.
@@ -511,7 +566,7 @@ vec2 fq=mat2(.8,.6,-.6,.8)*(P.xz/1.6+seaTime*vec2(.12,-.08));
 fq+=vec2(.4*sin(fq.y*.6+seaTime*.17),.3*sin(fq.x*.4-seaTime*.12));
 float far=clamp(fp*1.2-.6,0.,1.),lace=.65*seaFoam(fq)+.35*seaFoam(fq*2.7+3.1),fw=.18+fp*.6;
 float foam=mix(k,smoothstep(1.-k-fw,1.-k+fw,lace)*smoothstep(0.,.02,k),seaLace*(1.-far));
-foam=mix(foam,max(${glsl(surf.far)}*(1.-smoothstep(0.,${glsl(surf.reach)},z))*shore,.45*sf),far);
+foam=mix(foam,max(${glsl(surf.far)}*(1.-smoothstep(0.,${glsl(surf.reach)},z))*shore*(.6+.8*swash),.45*sf),far);
 foam*=1.-${glsl(sea.text)}*b;
 vec3 lit=seaLight(vec3(0.,1.,0.),babelFlash.x*(1.-b));
 c=mix(c,${glsl(surf.albedo)}*lit,clamp(foam,0.,1.));}
@@ -563,6 +618,16 @@ function lighting(rendering, material, uniforms) {
       tone(uniforms.seaHemiSky.value, hemisphere);
       tone(uniforms.seaHemiGround.value, hemisphere, hemisphere.groundColor);
     }
+    // The key's shadow map and its matrix as its last draw left them (the
+    // shadow pass runs before the scene's draws); off while shadows are.
+    const shadow = sun?.castShadow && rendering?.renderer?.shadowMap?.enabled ? sun.shadow : null,
+      map = shadow?.map?.texture ?? null;
+    uniforms.seaShadowMap.value = map;
+    uniforms.seaShadowSet.value.x = map ? 1 : 0;
+    if (map) {
+      uniforms.seaShadowMatrix.value.copy(shadow.matrix);
+      uniforms.seaShadowSet.value.y = shadow.mapSize.x;
+    }
     uniforms.seaLace.value = rendering?.tier === "balanced" ? 0 : 1;
     if (uniforms.seaFine) uniforms.seaFine.value = rendering?.tier === "balanced" ? 0 : 1;
   };
@@ -594,6 +659,10 @@ function sharedUniforms(lib, clock, plunge = null, falls = FALLS) {
     seaAmbient: { value: new Vector3() },
     seaHemiSky: { value: new Vector3() },
     seaHemiGround: { value: new Vector3() },
+    // The moon's shadow (lighting()): its map, its matrix, and on and the map's size.
+    seaShadowMap: { value: null },
+    seaShadowMatrix: { value: new Matrix4() },
+    seaShadowSet: { value: { x: 0, y: 1 } },
     envMap: { value: null },
     envMapIntensity: { value: 1 },
     flipEnvMap: { value: -1 },
@@ -610,11 +679,15 @@ function sharedUniforms(lib, clock, plunge = null, falls = FALLS) {
 // shared GLSL and uniforms: SLATE_TEXT_GUARD, MIST_PARS and MIST_UNIFORMS (with
 // the text boxes), FLASH_GROUND and RANGE_MIST. clock: a drip clock
 // (terrain-build.js dripClock()) on the sea's own time.
-export function createSea({ lib, clock, rendering, sea = SEA, plunge = null } = {}) {
+export function createSea({ lib, clock, rendering, sea = SEA, plunge = null, sheet = null } = {}) {
   const uniforms = sharedUniforms(lib, clock, plunge);
   // Where the falls land (x, z, radius), if they do.
   uniforms.seaFalls = {
     value: { x: plunge?.[0] ?? 0, y: plunge?.[1] ?? 0, z: plunge?.[2] ?? 1, w: plunge ? 1 : 0 },
+  };
+  // Where they leave the brink and their heading (fallsGeometry() sheet), for its mirror.
+  uniforms.seaSheet = {
+    value: { x: sheet?.[0] ?? 0, y: sheet?.[1] ?? 0, z: sheet?.[2] ?? 1, w: sheet?.[3] ?? 0 },
   };
   const material = new ShaderMaterial({
     name: "EstateSea",
@@ -1343,6 +1416,56 @@ function* stackGeometrySteps(stacks = STACKS, level = SEA.level) {
   }
 }
 
+// The falls in the sea's mirror (seaFragment(), its ray Rt from P): a plane across
+// their heading halfway from the brink to the plunge (seaSheet, seaFalls), as wide
+// as the river and as tall as the cliffs, white water lit from every side.
+const fallsMirrorGlsl = (sea = SEA) =>
+  `if(seaFalls.w>0.){vec2 fo=mix(seaSheet.xy,seaFalls.xy,.5);float den=dot(Rt.xz,seaSheet.zw),t=den<-1e-3?dot(fo-P.xz,seaSheet.zw)/den:-1.;
+if(t>0.){float w=${glsl(sea.mirror)}*sr*t+.3,fc=.85*(1.-smoothstep(seaFalls.z*${glsl(1 / FALLS.plunge)}-w,seaFalls.z*${glsl(1 / FALLS.plunge)}+w,abs(dot(P.xz+Rt.xz*t-fo,vec2(-seaSheet.w,seaSheet.z)))))*(1.-smoothstep(${glsl(1.25 - sea.level)}-w,${glsl(1.25 - sea.level)}+w,Rt.y*t));
+ha=mix(ha,vec3(${glsl(FALLS.albedo)}),fc);hn=normalize(mix(hn,vec3(0.,1.,0.),fc));hwet*=1.-fc;hw=max(hw,fc);}}`;
+// The stacks in the sea's mirror: each one's waterline section (an ellipse of its
+// mean outline), leaning with it, up to its crown, where the reflected ray first
+// enters it; in front of the cliffs' face or behind it (face). The stack it meets
+// most is shaded: the cliffs' rock at STACKS.wet, its weedy band at the foot, wet up
+// to the cliffs' wet band.
+export function stacksMirrorGlsl(stacks = STACKS, sea = SEA) {
+  const rock = CLIFF.rock[0].map((v, i) => ((v + CLIFF.rock[1][i]) / 2) * stacks.wet);
+  const hits = stacks.list.map((stack, k) => {
+    const [, , height, half, stretch, lean] = stack,
+      { h, tilt } = stackFrame(stack),
+      profile = stackWaterlineProfile(stacks, k),
+      A = half * stretch * profile.taper * 0.94,
+      B = half * tilt * profile.taper * 0.94,
+      U = [-h[1], h[0]],
+      slope = Math.tan(lean * RAD),
+      top = height * Math.cos(lean * RAD);
+    return `{vec2 o=P.xz-${glslVec(...profile.center)},dv=Rt.xz-${glslVec(h[0] * slope, h[1] * slope)}*Rt.y,a=vec2(dot(dv,${glslVec(...U)})/${glsl(A)},dot(dv,${glslVec(...h)})/${glsl(B)}),q=vec2(dot(o,${glslVec(...U)})/${glsl(A)},dot(o,${glslVec(...h)})/${glsl(B)});
+float qa=max(dot(a,a),1e-6),qb=dot(a,q),d2=max(dot(q,q)-qb*qb/qa,0.),t=-qb/qa-sqrt(max(1.-d2,0.)/qa);
+if(t>0.){float w=${glsl(sea.mirror)}*sr*t,y=Rt.y*t,sc=(1.-smoothstep(1.-w/${glsl(Math.min(A, B))}-.04,1.+w/${glsl(Math.min(A, B))}+.04,sqrt(d2)))*(1.-smoothstep(${glsl(top - 1.2)}-w,${glsl(top + 0.6)}+w,y))*(t<th?1.:1.-face);
+if(sc>bs){vec2 m=a*t+q;bs=sc;by=y;bn=vec2(m.x*${glsl(U[0] / A)}+m.y*${glsl(h[0] / B)},m.x*${glsl(U[1] / A)}+m.y*${glsl(h[1] / B)});}}}`;
+  });
+  return `float bs=0.,by=0.;vec2 bn=vec2(1.,0.);
+${hits.join("\n")}
+if(bs>0.){ha=mix(ha,${glslVec(...rock)}*mix(${glslVec(...stacks.weedTone)},vec3(1.),smoothstep(${glsl(stacks.weed - 0.5)},${glsl(stacks.weed + 0.5)},by)),bs);
+hn=normalize(mix(hn,normalize(vec3(bn.x,-.05,bn.y)),bs));hwet=mix(hwet,1.-smoothstep(0.,${glsl(CLIFF.wet)},by),bs);hw=max(hw,bs);}`;
+}
+
+// The swell at the rock (sea.swell, as the mesh heaves): seaSurge(S) is, at the
+// rock's point S, the height of the last crest of the first swell to strike it
+// with the second swell's height at that moment (sets: their beat groups bigger
+// breakers and smaller), and the seconds since it struck. seaWash(surge, z) is
+// the white water it leaves z units out: it bursts at the foot as the water
+// falls back down the rock (lag), then the backwash carries it out (back),
+// thinning (fade); a crest under sets[0] leaves `low` of a burst, over sets[1] a full one.
+export function surgeGlsl(sea = SEA) {
+  const [first, second] = waveTerms(sea.swell),
+    { sets, low, lag, burst, back, fade } = sea.surf;
+  return `vec2 seaSurge(vec2 S){float age=fract((1.5707963-dot(${glslVec(...first.d)},S)*${glsl(first.k)}+seaTime*${glsl(first.w)})/6.2831853)*${glsl((2 * Math.PI) / first.w)};
+return vec2(${glsl(first.a)}+${glsl(second.a)}*sin(dot(${glslVec(...second.d)},S)*${glsl(second.k)}-seaTime*${glsl(second.w)}+1.7+${glsl(second.w)}*age),age);}
+float seaWash(vec2 sg,float z){float t=max(sg.y-${glsl(lag)},0.),front=${glsl(burst)}+${glsl(back)}*t;
+return mix(${glsl(low)},1.,smoothstep(${glsl(sets[0])},${glsl(sets[1])},sg.x))*smoothstep(0.,${glsl(lag)},sg.y)*(1.-smoothstep(front*.5,front+1.,z))*(.35+.65*exp(-t/${glsl(fade)}));}`;
+}
+
 // The white water about each stack's waterline (its section there: stretched
 // along the lean's heading), reaching furthest on the side the swell comes
 // from, as GLSL adding to `sf` at the sea's point P.
@@ -1350,18 +1473,21 @@ export function stacksSurfGlsl(stacks = STACKS, sea = SEA) {
   // The swell breaks on each stack's seaward side, white water hugging its
   // waterline all round, and in its lee only thin strands trail away (a third
   // of the thickness, so only the lace's strands show).
+  // Each stack's distance out from its waterline (its outline, `se`, the nearest's):
+  // they stand far enough apart that only the nearest's white water reaches a point,
+  // and the swell strikes it there (seaSurge() at its rock) once.
   const heading = sea.swell[0][2] * RAD,
-    seaward = [-Math.cos(heading), -Math.sin(heading)];
-  return stacks.list
-    .map((stack, k) => {
+    seaward = [-Math.cos(heading), -Math.sin(heading)],
+    near = stacks.list.map((stack, k) => {
       const [, , , half, stretch] = stack,
         { h, tilt } = stackFrame(stack),
         profile = stackWaterlineProfile(stacks, k);
-      return `{vec2 q=P.xz-${glslVec(...profile.center)},p=vec2(dot(q,${glslVec(-h[1], h[0])})/${glsl(half * stretch * profile.taper)},dot(q,${glslVec(...h)})/${glsl(half * tilt * profile.taper)});float angle=atan(p.y,p.x),e=(length(p)-stackOutline(${glsl(k)},angle,${glsl(profile.v)}))*${glsl(half)};
-float facing=.5+.5*dot(normalize(q+1e-4),${glslVec(...seaward)}),breaks=.6+.4*sin(seaTime*1.1-angle*2.+${glsl(k * 1.7)}),body=(1.-smoothstep(.05,.65+.9*facing,e))*(.6+.4*breaks),splash=(1.-smoothstep(0.,${glsl(stacks.surf)}*(.35+.9*facing),e))*facing*(.55+.45*breaks),tail=(1.-smoothstep(.25,${glsl(stacks.surf)}*(.4+1.1*(1.-facing)),e))*smoothstep(.2,.85,breaks)*.32*(1.-facing);
-sf=max(sf,max(body,max(splash,tail)));}`;
-    })
-    .join("\n");
+      return `{vec2 q=P.xz-${glslVec(...profile.center)},p=vec2(dot(q,${glslVec(-h[1], h[0])})/${glsl(half * stretch * profile.taper)},dot(q,${glslVec(...h)})/${glsl(half * tilt * profile.taper)});float e=(length(p)-stackOutline(${glsl(k)},atan(p.y,p.x),${glsl(profile.v)}))*${glsl(half)};if(e<se){se=e;sq=q;}}`;
+    });
+  return `float se=1e4;vec2 sq=vec2(1.,0.);
+${near.join("\n")}
+if(se<${glsl(stacks.surf * 1.75)}){vec2 sd=normalize(sq+1e-4),sg=seaSurge(P.xz-sd*max(se,0.));float e=se,facing=.5+.5*dot(sd,${glslVec(...seaward)}),breaks=seaWash(sg,0.),body=(1.-smoothstep(.05,.65+.9*facing,e))*(.6+.4*breaks),splash=max(.55*(1.-smoothstep(0.,${glsl(stacks.surf)}*(.35+.9*facing),e)),seaWash(sg,max(e,0.)*${glsl(sea.surf.reach / stacks.surf)}/(.35+.9*facing)))*facing,tail=(1.-smoothstep(.25,${glsl(stacks.surf)}*(.4+1.1*(1.-facing)),e))*smoothstep(.2,.85,breaks)*.32*(1.-facing);
+sf=max(body,max(splash,tail));}`;
 }
 
 // The falls' spray, then the low mist and the drifting mist, at a point vW of the
@@ -1405,6 +1531,8 @@ ${coastGlsl()}
 ${coastRockGlsl()}
 void main(){
 vec3 n=normalize(vN);
+// The moon's shadow: the cliffs' ledges, ribs and walls, and the stacks, cast it.
+seaSun=seaShadow(vW,n);
 // The rock: beds of uneven thickness dipping along the fault, each jointed into
 // blocks (their own tone and facet, dark cracks between them, a lip catching the
 // light over a shadowed underside), fractures and grain over all and across the
@@ -1553,9 +1681,11 @@ vSlateClip=gl_Position;
     stacks = new Mesh(prepared?.stacks ?? stackGeometry(settings.stacks), material);
   mesh.name = "estate-cliff";
   stacks.name = "estate-stacks";
-  stacks.castShadow = stacks.receiveShadow = false;
+  // The rock casts the moon's shadow (its own shader reads it back, seaShadow());
+  // the shelf, the ground's material, receives it as the plain does.
+  stacks.castShadow = mesh.castShadow = mesh.receiveShadow = true;
+  stacks.receiveShadow = false;
   mesh.add(stacks);
-  mesh.castShadow = mesh.receiveShadow = false;
   mesh.onBeforeRender = stacks.onBeforeRender = update;
   const detail = createCoastDetail({
     tier: rendering?.assetTier ?? rendering?.tier ?? "high",
@@ -1640,8 +1770,10 @@ earthHorizon = max(earthHorizon, slateHigh*smoothstep(${glsl(fade[0])}, ${glsl(f
 // looks at its aim (x, y, z in the estate's frame: the plain stands at 1.25,
 // the sea at SEA.level) from `reach` units out on bearing `azimuth` (degrees,
 // from the aim, as a directed shot's), `rise` high: its framing is its own,
-// not a subject's fit (coastShot()). The film's shadow keeps to the land about
-// `shadow` (x, z), never out over the sea. The rest is a directed shot's
+// not a subject's fit (coastShot()). The film's shadow centres on `shadow`
+// (x, z), at the cliffs' edge: its square (48 either side, along the moon)
+// holds the land at the camera's feet and the cliffs and stacks in view, so
+// the rock's shadows fall there (seaShadow()). The rest is a directed shot's
 // (directed-shots.js): a slow move each, the tree shots' moonlit mood and a
 // light mist.
 const COAST_LOOK = Object.freeze({
@@ -1684,7 +1816,7 @@ export const COAST_SHOTS = Object.freeze([
     tall: BROKEN_COAST_VIEW,
     squat: BROKEN_COAST_VIEW,
     rise: 8.25,
-    shadow: Object.freeze([80, 62]),
+    shadow: Object.freeze([85, 72]),
     move: Object.freeze({ dolly: Object.freeze([1.05, 0.95]), ease: 0.6 }),
   }),
   // Across the bay to the falls on the cliff wall, easing in toward them (from
@@ -1699,14 +1831,28 @@ export const COAST_SHOTS = Object.freeze([
     // Upright screens stand farther back, round toward the land and higher, so
     // they look over the near rim into the bay, and may open the lens further
     // (their frame is narrow), so the falls never shrink into a thread.
-    portrait: Object.freeze({ azimuth: -55, reach: 44, rise: 24, fovMax: 62 }),
+    // Their shadow centres nearer them, so it still holds the land at their feet.
+    portrait: Object.freeze({
+      azimuth: -55,
+      reach: 44,
+      rise: 24,
+      fovMax: 62,
+      shadow: Object.freeze([62, 70]),
+    }),
     // Short landscape phones hold it still, farther back, higher and a little
     // wider for their short frame.
-    landscape: Object.freeze({ move: null, azimuth: -55, reach: 42, rise: 15, fovMax: 48 }),
+    landscape: Object.freeze({
+      move: null,
+      azimuth: -55,
+      reach: 42,
+      rise: 15,
+      fovMax: 48,
+      shadow: Object.freeze([62, 70]),
+    }),
     azimuth: -44,
     reach: 33,
     rise: 10.25,
-    shadow: Object.freeze([76, 74]),
+    shadow: Object.freeze([83, 90]),
     fov: 34,
     // Its lens opens to fit the falls, their pool and spray, but no further.
     fovMax: 48,
@@ -1735,7 +1881,7 @@ export const COAST_SHOTS = Object.freeze([
     azimuth: -125,
     reach: 45,
     rise: 23.25,
-    shadow: Object.freeze([72, 74]),
+    shadow: Object.freeze([85, 72]),
     fov: 58,
     move: Object.freeze({
       dolly: Object.freeze([1.06, 0.94]),
@@ -2277,6 +2423,8 @@ export function fallsGeometry(drop, height, falls = FALLS, level = SEA.level) {
   return {
     geometry,
     plunge: [middle.brink[0] + hx * out, middle.brink[1] + hz * out, lip[2] * falls.plunge],
+    // Its middle's brink and heading: the sea's mirror hangs it between there and the plunge.
+    sheet: [middle.brink[0], middle.brink[1], hx, hz],
   };
 }
 
@@ -2323,6 +2471,8 @@ float side=4.*vF.z*(1.-vF.z),edge=max(side,1.-smoothstep(.62-fx,1.+fx,a+.3*(r2-.
 // Where it runs over the lip, in the rapids' frame (the shelf's, ocean.js rapidsFrame()).
 ${frame ? "vec2 rpU=fallsRpUQ(vW.xz);float rpA=fallsRpRA(rpU),rpFP=max(length(fwidth(vW.xz)),1e-4);" : ""}
 vec3 E=normalize(cameraPosition-vW),n=normalize(vN);
+// The slot's walls may hide the moon from it.
+seaSun=seaShadow(vW,n);
 // Over the lip it is the river's rapids (RAPIDS: the shelf's own, on the ground's
 // clock, so they meet at its edge): their streaks, standing waves and white
 // water, breaking white at each stream's own brink (raV units up from it), its
@@ -2359,7 +2509,7 @@ vec3 water=seaEnv(normalize(R),.25+.5*rp.w)*(.02+.98*pow(1.-max(dot(rn,E),0.),5.
 float wY=dot(water,vec3(.2126,.7152,.0722));water=vec3(.004,.007,.009)+water*${glsl(SEA.knee)}*(1.-exp(-wY/${glsl(SEA.knee)}))/max(wY,1e-5);
 // Lit through as well as on: falling white water scatters the light from every side, as the surf does.
 // Falling, it is a cloud of droplets: lit through, it glows toward an eye looking into the moon (FALLS.scatter).
-vec3 lit=(mix(seaLight(n,babelFlash.x*(1.-b)),seaLight(vec3(0.,1.,0.),babelFlash.x*(1.-b)),white)+seaKeyColor*(.25/SEA_PI+${glsl(falls.scatter[1])}*seaHG(dot(-seaKey,E),${glsl(falls.scatter[0])})*white))*${glsl(falls.albedo)};
+vec3 lit=(mix(seaLight(n,babelFlash.x*(1.-b)),seaLight(vec3(0.,1.,0.),babelFlash.x*(1.-b)),white)+seaKeyColor*seaSun*(.25/SEA_PI+${glsl(falls.scatter[1])}*seaHG(dot(-seaKey,E),${glsl(falls.scatter[0])})*white))*${glsl(falls.albedo)};
 // Falling, the water between its streams is thinner white water, never a mirror: only the lip is glassy.
 // Over the lip it takes the river's bluer, brighter sheen (the ground's own mirror of the film's sky),
 // and its froth the shelf's soil-lit froth's light, up from the crest (RAPIDS.run).
@@ -2385,7 +2535,7 @@ export function createFalls({
   falls = FALLS,
   flow = null,
 } = {}) {
-  const { geometry, plunge } = fallsGeometry(drop, height, falls),
+  const { geometry, plunge, sheet } = fallsGeometry(drop, height, falls),
     uniforms = sharedUniforms(lib, clock, plunge, falls),
     frame = rapidsFrame(drop),
     // The run over the lip in the river's own units: its half-width, its length
@@ -2429,6 +2579,7 @@ vSlateClip=gl_Position;
     mesh,
     material,
     plunge,
+    sheet,
     dispose() {
       mesh.removeFromParent();
       mesh.geometry.dispose();

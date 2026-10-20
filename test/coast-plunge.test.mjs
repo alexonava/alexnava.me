@@ -22,7 +22,7 @@ function foamGate() {
   });
   try {
     const fragment = flat(sea.material.fragmentShader),
-      gate = fragment.match(/if\((z<[^\{]+)\)\{\s*float u=fract/),
+      gate = fragment.match(/if\((z<[^\{]+)\)\{\s*float swash=seaWash\(/),
       washEnd = Number(fragment.match(/wash=\.45\*\(1\.-smoothstep\(\.25,([\d.]+),pr\)/)?.[1]),
       near = fragment.match(/float foam=mix\(k,([^;]+),seaLace\*\(1\.-far\)\)/)?.[1],
       feather = fragment.match(/fw=([\d.]+)\+fp\*([\d.]+)/),
@@ -89,7 +89,10 @@ test("plunge backwash clears the steady shore blanket while retaining the impact
     coreExpression = fragment.match(/float core=(1\.-smoothstep\([^)]+\)),wash=/)?.[1],
     washExpression = fragment.match(/,wash=([^;]+);/)?.[1],
     coverageExpression = fragment.match(/k=(max\(k\*shore,max\(core,wash\)\));/)?.[1],
-    meanExpression = fragment.match(/foam=mix\(foam,max\(([^;]+),[\d.]+\*sf\),far\);/)?.[1],
+    // The shore's wash at its mean (it pulses with the swell).
+    meanExpression = fragment
+      .match(/foam=mix\(foam,max\(([^;]+),[\d.]+\*sf\),far\);/)?.[1]
+      ?.replace("swash", "0.5"),
     finishExpression = fragment.match(/foam=(mix\(foam,max\([^;]+\),far\));/)?.[1];
   assert.ok(
     clearing &&
@@ -126,7 +129,7 @@ test("plunge backwash clears the steady shore blanket while retaining the impact
       "smoothstep",
       "mix",
       "max",
-      `return ${finishExpression};`,
+      `return ${finishExpression.replace("swash", "0.5")};`,
     ),
     mix = (a, b, u) => a + (b - a) * u,
     sample = (pr, boil, lace, k = 0.75) =>

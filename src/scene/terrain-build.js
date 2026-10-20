@@ -4230,7 +4230,7 @@ export function settleRoots(
       : null;
   const shore = seaside
     ? [
-        createSea({ lib, clock: seaClock, rendering, plunge: falls?.plunge }),
+        createSea({ lib, clock: seaClock, rendering, plunge: falls?.plunge, sheet: falls?.sheet }),
         createCliff({
           lib,
           clock: seaClock,
