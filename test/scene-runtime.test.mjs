@@ -19,10 +19,7 @@ import { createSceneRendering } from "../src/scene/rendering.js";
 import {
   FILM_LIGHT,
   LANTERN_MOOD,
-  RIM,
-  RIM_UNIFORMS,
   SHOT_LIGHT_DEFAULT,
-  setRim,
   shotLight,
 } from "../src/scene/film-light.js";
 import { DIRECTED_SHOTS } from "../src/scene/directed-shots.js";
@@ -1416,9 +1413,6 @@ test("a shot's light mood merges over the neutral default and never shares it", 
     key: 1,
     fill: 1,
     lantern: 1,
-    rim: 1,
-    pale: 0,
-    rimText: 0,
     grassInside: 0,
     glintText: 0,
     stoneText: 0,
@@ -1426,14 +1420,11 @@ test("a shot's light mood merges over the neutral default and never shares it", 
   });
   for (const shot of [null, undefined, {}, { light: null }])
     assert.deepEqual(shotLight(shot), SHOT_LIGHT_DEFAULT);
-  const mood = shotLight({ light: { fill: 0.8, rim: 1.8 } });
+  const mood = shotLight({ light: { fill: 0.8, lantern: 1.3 } });
   assert.deepEqual(mood, {
     key: 1,
     fill: 0.8,
-    lantern: 1,
-    rim: 1.8,
-    pale: 0,
-    rimText: 0,
+    lantern: 1.3,
     grassInside: 0,
     glintText: 0,
     stoneText: 0,
@@ -1454,15 +1445,9 @@ test("a shot's light mood merges over the neutral default and never shares it", 
   assert.ok(shotLight(DIRECTED_SHOTS.tree[1]).lantern > 1);
   assert.ok(shotLight(DIRECTED_SHOTS.tree[3]).lantern > 1);
   assert.equal(shotLight(DIRECTED_SHOTS.tower[0]).lantern, 1);
-  // Only Portrait cools the tree's pale wood (the owner's pick of 2026-10-09).
-  const pale = [...DIRECTED_SHOTS.tower, ...DIRECTED_SHOTS.tree]
-    .filter((shot) => shotLight(shot).pale > 0)
-    .map((shot) => shot.name);
-  assert.deepEqual(pale, ["Portrait"]);
-  assert.ok(shotLight(DIRECTED_SHOTS.tree[0]).pale <= 1);
-  // Close-up alone takes its rim off the text; every other shot keeps it whole.
+  // No painted rim or pale wood is left to set: the moon and the materials light the edges.
   for (const shot of [...DIRECTED_SHOTS.tower, ...DIRECTED_SHOTS.tree])
-    assert.equal(shotLight(shot).rimText, shot.name === "Close-up" ? 1 : 0, shot.name);
+    for (const part of ["rim", "pale", "rimText"]) assert.ok(!(part in (shot.light ?? {})));
   // The lantern shots and Close-up keep the bark's glints off their text, wholly:
   // their wet roots' glints stood behind Lantern study's name and Root and
   // lantern's intro (4.67:1 and 4.32:1), a twig's sparkle behind Close-up's
@@ -1502,39 +1487,12 @@ test("a shot's light mood merges over the neutral default and never shares it", 
   for (const shot of inside) assert.equal(shotLight(shot).grassInside, 1);
 });
 
-test("setRim scales the cool rim colour and keeps the moon-facing floor", () => {
-  assert.ok(Object.isFrozen(RIM) && Object.isFrozen(RIM.color));
-  const light = RIM_UNIFORMS.babelRimLight.value,
-    close = (a, b) => assert.ok(Math.abs(a - b) < 1e-6, `${a} != ${b}`);
-  try {
-    setRim(2);
-    RIM.color.forEach((c, i) => close(light.getComponent(i), c * 2));
-    close(light.w, RIM.floor);
-    // Cool: blue over green over red.
-    assert.ok(light.z > light.y && light.y > light.x);
-    setRim(0.5);
-    RIM.color.forEach((c, i) => close(light.getComponent(i), c * 0.5));
-    assert.equal(RIM_UNIFORMS.babelRimText.value, 0, "the rim stays on the text by default");
-    setRim(2, 1);
-    assert.equal(RIM_UNIFORMS.babelRimText.value, 1);
-    // Off the text over a fifth of the screen's smaller side.
-    assert.equal(RIM.textReach, 0.2);
-    setRim();
-    assert.deepEqual(light.toArray(), [0, 0, 0, RIM.floor], "no strength, no rim");
-    assert.equal(RIM_UNIFORMS.babelRimText.value, 0);
-    assert.equal(RIM_UNIFORMS.babelRimLight.value, light, "the uniform object is shared");
-  } finally {
-    setRim(0);
-  }
-  assert.equal(LANTERN_MOOD.value, 1);
-});
-
 test("each frame applies the shot's light, lens, bars and grain, holding the grain while still", () => {
   const index = flat(source("src/scene/index.js"));
   // The mood follows the shot on screen in film only.
   assert.ok(
     index.includes(
-      "const mood = shotLight(filmActive && cinematicApplied ? cinematic.shot : null); rendering.setShotLight?.(mood); if (LANTERN_MOOD.value !== mood.lantern) { LANTERN_MOOD.value = mood.lantern; treeArchitecture?.refreshLantern?.(); } setRim(filmActive ? mood.rim : 0, filmActive ? mood.rimText : 0); PALE_MOOD.value = filmActive ? mood.pale : 0; GLINT_MOOD.value = filmActive ? mood.glintText : 0; GRASS_MOOD.value = filmActive ? mood.grassInside : 0;",
+      "const mood = shotLight(filmActive && cinematicApplied ? cinematic.shot : null); rendering.setShotLight?.(mood); if (LANTERN_MOOD.value !== mood.lantern) { LANTERN_MOOD.value = mood.lantern; treeArchitecture?.refreshLantern?.(); } GLINT_MOOD.value = filmActive ? mood.glintText : 0; GRASS_MOOD.value = filmActive ? mood.grassInside : 0;",
     ),
   );
   // The ground's pool knee about Contact follows it too, off out of film.
@@ -1553,10 +1511,10 @@ test("each frame applies the shot's light, lens, bars and grain, holding the gra
       "contacts: groundContacts.slateContacts.value, textGuard: groundContacts, onStatus: (status) => { if (qualityDebug) qualityDebug.rocks = status;",
     ),
   );
+  // No painted rim follows the moon any more; the lens reads this frame's camera.
+  assert.ok(!/RIM_UNIFORMS|setRim|PALE_MOOD/.test(index));
   assert.ok(
-    index.includes(
-      "RIM_UNIFORMS.babelKeyView.value .set(...WORLD.SUN_DIRECTION) .transformDirection(camera.matrixWorldInverse);",
-    ),
+    index.indexOf("camera.updateMatrixWorld();", moodAt) < index.indexOf("post.setLens?.("),
   );
   // The lens focuses on the shot's subject, the plain under it taking its depth (postprocess.js setLens()).
   assert.ok(

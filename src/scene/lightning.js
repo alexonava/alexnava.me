@@ -24,8 +24,8 @@ import { FLASH_GROUND, FLASH_UNIFORMS, lendFlashText } from "./film-light.js";
 // FLASH_GLSL), one small mesh the bolt, and every film material adds the
 // flash's light after its own lights (film-light.js FLASH_UNIFORMS and
 // flashHook(); the slate in mud-ground.js): light from the flash's side, a lift
-// of the sky's and the flat light and, on the lookout and the tree, a cold rim,
-// none of it behind the name, the intro or Contact. The ground's sky light and
+// of the sky's and the flat light, none of it behind the name, the intro or
+// Contact. The ground's sky light and
 // water (FLASH_GROUND) and the drifting mist's banks (drifting-mist.js
 // mistFlash) brighten too, away from the text. The scene's lights never change.
 //
@@ -64,8 +64,7 @@ import { FLASH_GROUND, FLASH_UNIFORMS, lendFlashText } from "./film-light.js";
 //   [name and intro, Contact] of the screen's smaller side: `fill`, the intensity
 //   of its light (in `color`) from its side (from the cool fill's, for a flash in
 //   view, behind the subjects), `hemisphere` and `ambient`, shares of those
-//   lights' own in its colour, `rim` times `rimColor` as a cold rim on the
-//   lookout and the tree, `sky` and `water`, shares of the ground's sky light and
+//   lights' own in its colour, `sky` and `water`, shares of the ground's sky light and
 //   water mirror, and `mist`, its light scattered in the drifting mist.
 // - `tiers`: per-tier overrides (balanced draws no bolt and a plain glow), and
 //   `shots`: per-shot ones, by shot name (DIRECTED_SHOTS), over the tier's.
@@ -137,8 +136,6 @@ export const LIGHTNING = Object.freeze({
     fill: 1.8,
     hemisphere: 0.35,
     ambient: 0.2,
-    rim: 1.4,
-    rimColor: Object.freeze([0.5, 0.66, 1]),
     sky: 0.5,
     water: 0.8,
     mist: 0.6,
@@ -726,7 +723,6 @@ export function createLightning({
     FLASH_GROUND.babelFlash.value.y = 0;
     FLASH_UNIFORMS.babelFlashLight.value.set(0, 0, 0, 0);
     FLASH_UNIFORMS.babelFlashSky.value.set(0, 0, 0, 0);
-    FLASH_UNIFORMS.babelFlashRim.value.set(0, 0, 0, FLASH_UNIFORMS.babelFlashRim.value.w);
     Object.assign(MIST_UNIFORMS.mistFlash.value, { x: 0, y: 0, z: 0, w: 0 });
   }
   // A light's film intensity times its colour's mean (rendering.lights).
@@ -855,7 +851,7 @@ export function createLightning({
       // The flash's light on the film's materials (film-light.js FLASH_UNIFORMS):
       // from its side for a flash off the lens's axis, so it lights the subjects'
       // near side from there; one in view, behind them, lights the faces we see
-      // from the cool fill's side and backlights them through the cold rim.
+      // from the cool fill's side.
       camera.getWorldDirection(point);
       const facing =
         (point.x * centre.x + point.z * centre.z) /
@@ -866,12 +862,10 @@ export function createLightning({
         .copy(fillHome)
         .lerp(direction, 1 - smoothstep(0.2, 0.8, facing))
         .normalize();
-      const [fr, fg, fb] = relight.color,
-        [rr, rg, rb] = relight.rimColor;
+      const [fr, fg, fb] = relight.color;
       const U = FLASH_UNIFORMS,
         light = level * relight.fill,
         lift = level * relight.hemisphere * lightOf(lights?.hemisphere, 0.55),
-        rim = level * relight.rim,
         mist = level * relight.mist;
       U.babelFlashLight.value.set(fr * light, fg * light, fb * light, level);
       U.babelFlashKey.value.copy(flashKey);
@@ -881,9 +875,6 @@ export function createLightning({
         fb * lift,
         level * relight.ambient * lightOf(lights?.ambient, 0.09),
       );
-      U.babelFlashRim.value.set(rr * rim, rg * rim, rb * rim, U.babelFlashRim.value.w);
-      camera.updateMatrixWorld();
-      U.babelFlashView.value.copy(direction).transformDirection(camera.matrixWorldInverse);
       U.babelFlashProj.value.copy(camera.projectionMatrix);
       U.babelFlashReach.value.set(...relight.text);
       FLASH_GROUND.babelFlash.value.x = level * relight.sky;

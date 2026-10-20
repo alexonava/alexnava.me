@@ -102,9 +102,9 @@ export const DIRECTED_SHOTS = {
       ...GIANT,
       move: { zoom: [46, 36], dollyZoom: true, tilt: GIANT_MOVE.tilt, ease: 0.6 },
       // One night (the owner's pick of 2026-10-12): the lookout is a dark shape against the
-      // sky (its key and fill dimmed, its moon rim a touch stronger); far fires stay out of
-      // the shot (far-fires.js FAR_FIRES.shots).
-      light: { key: 0.4, fill: 0.45, rim: 1.1 },
+      // sky (its key and fill dimmed); far fires stay out of the shot (far-fires.js
+      // FAR_FIRES.shots).
+      light: { key: 0.4, fill: 0.45 },
       region: [0.5, 1],
       targetHeight: 0.66,
       azimuth: -16,
@@ -144,7 +144,7 @@ export const DIRECTED_SHOTS = {
       ...GIANT,
       move: { ...GIANT_MOVE, pan: [-5, 0] },
       // One night: facing the star, its fill (a backlight here) comes down.
-      light: { fill: 0.65, rim: 1.3 },
+      light: { fill: 0.65 },
       region: [0.5, 1],
       targetHeight: 0.66,
       azimuth: 52,
@@ -224,7 +224,7 @@ export const DIRECTED_SHOTS = {
     {
       name: "Watch and tree",
       tour: false, // Out of the tour (owner, 2026-10-08); its URL is retained.
-      light: { key: 1.15, fill: 0.45, rim: 2.4 },
+      light: { key: 1.15, fill: 0.45 },
       move: { dolly: [1.04, 0.94], ease: 0.5 },
       // The one shot with both landmarks, side by side and apart: the lookout
       // whole left of the area's centre, the tree whole to its right, the star
@@ -275,7 +275,7 @@ export const DIRECTED_SHOTS = {
     {
       name: "Against the moon",
       // The only shot facing the moon (the owner's pick of 2026-10-12): from the far side of the
-      // lookout, low on the plain, its lattice a silhouette with the strongest moon rim, the wet
+      // lookout, low on the plain, its lattice a silhouette edged by the moon behind it, the wet
       // plain shining toward the light, the tree small and apart on the right; the star stands
       // behind the lens. Appended to the lookout's shots, so earlier URLs keep their angles.
       tour: false, // Out of the tour (owner, 2026-10-14); its URL is retained.
@@ -288,9 +288,9 @@ export const DIRECTED_SHOTS = {
       margin: 0.75,
       anchor: [0.4, 0.5],
       move: { truck: [-0.05, 0.05], dolly: [1.02, 0.96], ease: 0.6 },
-      // One night: the moon keys it from ahead, so the key at full strength draws its rim and
-      // the plain's sheen; the fill, from behind the lens, comes down.
-      light: { key: 1, fill: 0.55, rim: 1.6 },
+      // One night: the moon keys it from ahead, so the key at full strength edges the lattice
+      // and draws the plain's sheen; the fill, from behind the lens, comes down.
+      light: { key: 1, fill: 0.55 },
       ground: AFTER_RAIN,
       // Phones turn further round, so the star overhead stays out of their tall frame.
       portrait: {
@@ -312,11 +312,9 @@ export const DIRECTED_SHOTS = {
       tablet: { ...PORTRAIT_WIDE },
       tall: { ...PORTRAIT_WIDE },
       squat: { ...PORTRAIT_UPRIGHT, ...PORTRAIT_WIDE, azimuth: -43, anchor: [0.58, 0.66] },
-      // The crown in moonlight (the owner's pick of 2026-10-09): its pale,
-      // bleached limbs read cool grey, not pink-beige (pale). One night
-      // (2026-10-12): the lantern a little stronger at the trunk's foot,
-      // leading into Lantern study.
-      light: { fill: 0.85, rim: 1.3, pale: 1, lantern: 1.2 },
+      // One night (2026-10-12): the lantern a little stronger at the trunk's
+      // foot, leading into Lantern study.
+      light: { fill: 0.85, lantern: 1.2 },
       move: { truck: [-0.07, 0.07], crane: [0, 0.13], dolly: [1.05, 0.92], ease: 0.6 },
       // Low (0.12), so the plain ahead is foreshortened under the ranges, and
       // calmed: the near slate burned down, its texture and glints quietened
@@ -380,7 +378,6 @@ export const DIRECTED_SHOTS = {
         key: 0.55,
         fill: 0.5,
         lantern: 1.4,
-        rim: 0.8,
         grassInside: 1,
         glintText: 1,
         stoneText: 1,
@@ -412,13 +409,10 @@ export const DIRECTED_SHOTS = {
     },
     {
       name: "Close-up",
-      // Rim-led, its rim off the text: at the start of the move the lit edges
-      // of the limbs reaching left stood behind the name (3.97:1 at 1440x900),
-      // and the trunk's behind Contact on phones and portrait monitors.
-      // One night (2026-10-12): a pure backlight, the rim leading; less frontal fill.
-      // Its twigs' glints off the intro too (glintText): a one-pixel sparkle behind it
-      // set the small window's intro at 5.25:1 (599x499, the re-review of 2026-10-15).
-      light: { fill: 0.6, rim: 2, rimText: 1, glintText: 1 },
+      // One night (2026-10-12): a pure backlight, less frontal fill. Its twigs'
+      // glints off the intro (glintText): a one-pixel sparkle behind it set the
+      // small window's intro at 5.25:1 (599x499, the re-review of 2026-10-15).
+      light: { fill: 0.6, glintText: 1 },
       // No lens blur: the clouds behind the crown read sharp (sky first, below). A tracking
       // pan (the owner's pick of 2026-10-12): the camera slides to its left while the lens
       // turns to hold the crown, so the limbs slide across the clouds behind it.
@@ -470,7 +464,7 @@ export const DIRECTED_SHOTS = {
       // moon, sparkled under the intro (4.21:1 at 1440x900, phase 24.1 of the
       // move).
       // One night (2026-10-12): less of the frontal fill, as in Lantern study.
-      light: { key: 0.6, fill: 0.6, lantern: 1.4, rim: 0.9, grassInside: 1, glintText: 1 },
+      light: { key: 0.6, fill: 0.6, lantern: 1.4, grassInside: 1, glintText: 1 },
       lens: { blur: 8 },
       // Round from the -115° axis, so the trunk stands right of centre and
       // the lantern on the right third, the plain behind the name; the aim

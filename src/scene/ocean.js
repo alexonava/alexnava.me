@@ -1782,7 +1782,7 @@ const COAST_LOOK = Object.freeze({
   hold: 7,
   // Landscape phones hold it still, as every shot: no room about the name for a move.
   landscape: Object.freeze({ move: null }),
-  light: Object.freeze({ key: 1, fill: 0.6, rim: 1.3, lantern: 1.2 }),
+  light: Object.freeze({ key: 1, fill: 0.6, lantern: 1.2 }),
   ground: Object.freeze({
     mist: Object.freeze({ color: Object.freeze([0.27, 0.26, 0.29]), amount: 0.35 }),
     gloss: Object.freeze({ film: 0.32, gain: 1, cool: 0 }),

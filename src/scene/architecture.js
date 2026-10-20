@@ -27,7 +27,6 @@ import {
   GLINT,
   GLINT_MOOD,
   LANTERN_MOOD,
-  RIM,
   STONE_MOOD,
   STONE_TEXT,
   flashHook,
@@ -184,16 +183,6 @@ if (babelStoneBehind > 0.0) {
 }
 #endif
 `;
-
-// Legacy exported text expression; no physical material injects a painted rim.
-// The former bark moon rim behind the text, a factor on the rim: the shot's share
-// (babelRimText, its mood's rimText) comes off behind the name and intro and
-// behind Contact, easing out over a fifth of the screen's smaller side
-// (film-light.js RIM.textReach).
-// Close-up's rim-led crown (rim 2) put its cool lit branch edges behind the
-// name and the trunk's lit edge behind Contact, the brightest pixels of their
-// backdrops; at 0 the factor is exactly 1.
-export const BARK_RIM_TEXT = `*(1.0-babelRimText*max(slateBehind(slateText, vSlateClip.xy/vSlateClip.w*.5+.5, ${RIM.textReach.toFixed(2)}), slateBehind(slateAbout, vSlateClip.xy/vSlateClip.w*.5+.5, ${RIM.textReach.toFixed(2)})))`;
 
 // The supplied maps carry baked daylight in their brightest texels: in film
 // those highlights come down by the role's share, and the moon, the sky and the

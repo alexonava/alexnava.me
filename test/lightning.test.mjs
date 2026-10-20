@@ -21,14 +21,7 @@ import {
   skyDirection,
 } from "../src/scene/lightning.js";
 import { CLOUD_RESHAPE, FLASH_REFERENCE, FLASH_SKY } from "../src/scene/estate-sky.js";
-import {
-  FLASH_GROUND,
-  FLASH_UNIFORMS,
-  RIM_UNIFORMS,
-  flashHook,
-  lendFlashText,
-  setRim,
-} from "../src/scene/film-light.js";
+import { FLASH_GROUND, FLASH_UNIFORMS, flashHook, lendFlashText } from "../src/scene/film-light.js";
 import { MIST_UNIFORMS } from "../src/scene/drifting-mist.js";
 import { flat, source } from "./support/code.mjs";
 
@@ -264,9 +257,6 @@ test("the storm comes only in October, by the visitor's own calendar", () => {
 });
 
 test("a flash lights the banks, the film's materials, the ground and the mist, then nothing", () => {
-  setRim(1, 0);
-  const moonRim = RIM_UNIFORMS.babelRimLight.value.clone(),
-    moonKey = RIM_UNIFORMS.babelKeyView.value.clone();
   const L = FLASH_UNIFORMS.babelFlashLight.value;
   const rig = lightningRig({ forceAt: [{ at: 2, u: 0.7, v: 0.6, bolt: true, strength: 1 }] });
   rig.step(1.9);
@@ -279,7 +269,7 @@ test("a flash lights the banks, the film's materials, the ground and the mist, t
   assert.equal(rig.sky.uFlashGlow.value.y, LIGHTNING.sky.gain);
   assert.equal(rig.sky.uFlashCore.value, LIGHTNING.sky.core);
   // The flash's light on the film's materials: from the cool fill's side for a
-  // flash in view, its sky a share of the hemisphere's, the cold rim, the text guard.
+  // flash in view, its sky a share of the hemisphere's, the text guard; no rim.
   const { relight } = LIGHTNING;
   assert.ok(L.w > 0.99);
   assert.ok(Math.abs(L.z - relight.color[2] * relight.fill * L.w) < 1e-9);
@@ -291,15 +281,11 @@ test("a flash lights the banks, the film's materials, the ground and the mist, t
   const lift = FLASH_UNIFORMS.babelFlashSky.value;
   assert.ok(Math.abs(lift.z - relight.color[2] * relight.hemisphere * 0.5 * L.w) < 1e-9);
   assert.ok(Math.abs(lift.w - relight.ambient * 0.1 * L.w) < 1e-9);
-  assert.ok(
-    Math.abs(FLASH_UNIFORMS.babelFlashRim.value.z - relight.rimColor[2] * relight.rim * L.w) < 1e-9,
-  );
+  assert.equal(FLASH_UNIFORMS.babelFlashRim, undefined);
+  assert.equal(relight.rim, undefined);
   assert.deepEqual(FLASH_UNIFORMS.babelFlashReach.value.toArray(), [...relight.text]);
   assert.ok(FLASH_GROUND.babelFlash.value.x > 0 && FLASH_GROUND.babelFlash.value.y > 0);
   assert.ok(MIST_UNIFORMS.mistFlash.value.z > 0 && MIST_UNIFORMS.mistFlash.value.w > 0.99);
-  // The scene's lights and the moon rim are never touched.
-  assert.ok(RIM_UNIFORMS.babelRimLight.value.equals(moonRim));
-  assert.ok(RIM_UNIFORMS.babelKeyView.value.equals(moonKey));
   assert.equal(rig.lightning.state.event.bolt, true);
   assert.equal(rig.bolt.visible, true);
   assert.ok(rig.bolt.geometry.drawRange.count > 0);
@@ -309,13 +295,11 @@ test("a flash lights the banks, the film's materials, the ground and the mist, t
   assert.equal(L.w, 0);
   assert.deepEqual(L.toArray(), [0, 0, 0, 0]);
   assert.deepEqual(FLASH_UNIFORMS.babelFlashSky.value.toArray(), [0, 0, 0, 0]);
-  assert.equal(FLASH_UNIFORMS.babelFlashRim.value.z, 0);
   assert.equal(FLASH_GROUND.babelFlash.value.x, 0);
   assert.equal(FLASH_GROUND.babelFlash.value.y, 0);
   assert.deepEqual({ ...MIST_UNIFORMS.mistFlash.value }, { x: 0, y: 0, z: 0, w: 0 });
   assert.equal(rig.bolt.visible, false);
   rig.lightning.dispose();
-  setRim(0, 0);
 });
 
 test("a flash beside the frame lights the subjects from its side", () => {
@@ -578,7 +562,9 @@ test("every lit film material takes the flash, and none of the scene's lights mo
   );
   assert.ok(flat(source("src/scene/lantern.js")).includes("material = flashHook(source.clone());"));
   assert.ok(!flat(source("src/scene/rendering.js")).includes("setFlash"));
-  assert.ok(!flat(source("src/scene/lightning.js")).includes("RIM_UNIFORMS"));
+  assert.ok(
+    !/RIM_UNIFORMS|babelFlashRim|babelFlashView/.test(flat(source("src/scene/lightning.js"))),
+  );
 });
 
 test("a flash dims to nothing by a tour cut's capture, so the kept frame never holds one", () => {
