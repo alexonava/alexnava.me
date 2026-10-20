@@ -1223,11 +1223,11 @@ test("the final pass decodes each frame's layer from a 5-tap cross and mixes by 
   // and its heat, fringes and kept rect (LENS_FX).
   assert.match(
     shader,
-    /w = smoothstep\(start, start \+ span, uProgress\);\s*vec4 prevTexel = uLayered > 0\.5 \? lensView\(tPrev, prevUv, prevUv, uBlurPrev, uStarPrev, uFlamePrev, uKeepPrev, guard\) : texture2D\(tPrev, prevUv\);[\s\S]*?texel = mix\(prevTexel, texel, w\);\s*protection = mix\(uTextProtectionFrom, uTextProtection, w\);/,
+    /w = smoothstep\(start, start \+ span, uProgress\);\s*vec4 prevTexel = uLayered > 0\.5 \? lensView\(tPrev, prevUv, prevUv, uBlurPrev, uGroundPrev, uStarPrev, uFlamePrev, uKeepPrev, guard\) : texture2D\(tPrev, prevUv\);[\s\S]*?texel = mix\(prevTexel, texel, w\);\s*protection = mix\(uTextProtectionFrom, uTextProtection, w\);/,
   );
   assert.match(
     shader,
-    /vec4 texel = uLayered > 0\.5 \? lensView\(tDiffuse, vUv, vUv, uBlur, uStar, uFlame, uKeep, guard\) : texture2D\(tDiffuse, vUv\);/,
+    /vec4 texel = uLayered > 0\.5 \? lensView\(tDiffuse, vUv, vUv, uBlur, uGround, uStar, uFlame, uKeep, guard\) : texture2D\(tDiffuse, vUv\);/,
   );
   assert.match(
     shader,
@@ -1438,6 +1438,27 @@ test("the shot's lens blurs only in film, the bars cut the frame and the grain s
   pipeline.setLens(null);
   assert.equal(final.uBlur.value, 0, "no lens is sharp");
 
+  // Its focus on the subject, on the plain: there a thin lens's circle is nil (the
+  // focus's distance over the depth, uGround's dot with (u, v, 1), is 1), and the plain
+  // farther along the ray and nearer the lens falls out of focus by its depth.
+  const camera = new PerspectiveCamera(40, 16 / 9, 0.1, 500),
+    subject = new Vector3(1, 0, 0),
+    depth = (p) => p.clone().sub(camera.position).dot(camera.getWorldDirection(new Vector3())),
+    focus = (p) => {
+      const v = p.clone().project(camera),
+        g = final.uGround.value;
+      return g.x * (v.x * 0.5 + 0.5) + g.y * (v.y * 0.5 + 0.5) + g.z;
+    };
+  camera.position.set(0, 3, 10);
+  camera.lookAt(0, 0.5, 0);
+  camera.setViewOffset(1600, 900, 40, -30, 1600, 900);
+  camera.updateMatrixWorld();
+  pipeline.setLens({ blur: 8 }, camera, subject, 0);
+  for (const p of [subject, new Vector3(-2, 0, -12), new Vector3(0.5, 0, 6)])
+    assert.ok(Math.abs(focus(p) - depth(subject) / depth(p)) < 1e-9);
+  pipeline.setLens({}, camera, subject, 0);
+  assert.deepEqual(final.uGround.value.toArray(), [0, 0, 0], "no blur, no focus");
+
   // No per-shot grade: in film the subjects take no cel step at all.
   assert.equal(pipeline.setGrade, undefined);
   assert.equal(pipeline.passes.grading.uniforms.uSubjectCel, undefined);
@@ -1447,8 +1468,10 @@ test("the shot's lens blurs only in film, the bars cut the frame and the grain s
   pipeline.setLens({ blur: 5 });
   frame();
   assert.equal(final.uBlurPrev.value, 0, "an ordinary frame leaves the kept focus");
+  const kept = final.uGround.value.clone();
   capture();
   assert.equal(final.uBlurPrev.value, 5);
+  assert.deepEqual(final.uGroundPrev.value, kept, "and its focus");
   pipeline.setLens({ blur: 10 });
   pipeline.setTransition({ capture: false, cut: true, progress: 0.4, zoom: 0.01 });
   assert.equal(final.uBlur.value, 10);
@@ -1488,8 +1511,13 @@ test("the shot's lens blurs only in film, the bars cut the frame and the grain s
   // The bars come after the text shade, so nothing draws over them.
   const shade = shader.indexOf("protection * textShade;");
   assert.ok(shade > 0 && shader.indexOf("uBars));") > shade);
-  // The blur skips the ground and the subject (layer codes 0.5 and up) and
-  // takes no tap from a nearer layer.
+  // The blur takes the ground (layer code 2/3) by its depth, at most 1.5 radii,
+  // skips the subject (code 1) and takes no tap from a nearer layer.
+  assert.ok(
+    shader.includes(
+      "if (centre.a > 0.5) radius *= min(abs(1.0 - max(dot(ground, vec3(uv, 1.0)), 0.0)), 1.5) * step(centre.a, 0.8);",
+    ),
+  );
   assert.match(shader, /float w = step\(tap\.a, centre\.a \+ 0\.1\);/);
   // The subject's anti-aliased edge stays sharp: the nearest layer over a 1px
   // cross decides, not the edge pixel's own blended code.
@@ -1497,7 +1525,7 @@ test("the shot's lens blurs only in film, the bars cut the frame and the grain s
     shader,
     /float near = max\(max\(centre\.a, texture2D\(map, uv \+ vec2\(uCssTexel\.x, 0\.0\)\)\.a\)/,
   );
-  assert.match(shader, /mix\(sum \/ weight, centre\.rgb, step\(0\.5, near\)\)/);
+  assert.match(shader, /mix\(sum \/ weight, centre\.rgb, step\(0\.8, near\)\)/);
   pipeline.dispose();
 });
 
