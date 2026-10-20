@@ -1067,14 +1067,16 @@ export const rootBankLift = (x, z) => latticeAt(BANKS, x, z);
 // Baked on the same lattice (tools/bake-root-shade.mjs), 6 bits a vertex in
 // SHADE_ALPHABET, row by row, 0 neutral: sky occlusion from the tree over the
 // banked soil (96 cosine-weighted rays), moon-key occlusion (a 0.02 rad cone
-// about KEY_LIGHT, the trunk and roots only), both averaged over the two
+// about KEY_LIGHT, the trunk and roots only) and the lantern's (`lamp`: 16
+// rays to points across its flame, LANTERN_IMAGE.glow over its foot, through
+// the trunk and roots: their shadows in its light), each averaged over the two
 // variants and smoothed so no lattice edge reads: neighbours differ by at
 // most 0.33 a unit, and toward the pinned clearing and puddles the occlusion
 // ramps down by at most 0.3 a unit, never a straight cliff; and the contact cut, where a
 // ROOT_LINES centreline strays over open soil (more than 0.7 from a real root
 // footprint) or two roots' vectors meet head-on, so no false crease is drawn.
-// The shader reads sky and key as the slateShade attribute; rootShade() takes
-// the cut. None reaches the lantern clearing or the puddles.
+// The shader reads sky, key and lamp as the slateShade attribute; rootShade()
+// takes the cut. None reaches the lantern clearing or the puddles.
 export const SHADE_ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_";
 // prettier-ignore
 export const ROOT_SHADE = Object.freeze({
@@ -1146,6 +1148,40 @@ export const ROOT_SHADE = Object.freeze({
     "000000000000000000000000000000000",
     "000000000000000000000000000000000",
   ].join(""),
+  lamp: [
+    "000000000000000000000000000000000",
+    "00000000000000138elsvwwwwwwwwwww0",
+    "000000000000017ivHTZ___________w0",
+    "00000000000004gvLVZ____________w0",
+    "00000000000006mBR-_____________w0",
+    "00000000000007mCR-_____________w0",
+    "0000000000013aqFV______________w0",
+    "000000000028iqAPY______________w0",
+    "00000000029myGPW-______________w0",
+    "0000000016juHUZ-_______________w0",
+    "0000000000boCP__-ZXZ--_________w0",
+    "00000000007lzNTTPJILRVZ________w0",
+    "00000000006hsyDEAusvBJU-_______w0",
+    "000000000047cjookecgnAPZ_______w0",
+    "0000000000bnkfcdgfcdlBQZ_______w0",
+    "0000000009jvAvrsvvssAMW-_______w0",
+    "000000019jtDOKHILKHIQW-________w0",
+    "00000013csDNXYWXZZXXZ-_________w0",
+    "000000006kwHRZ_________________w0",
+    "000000001alvEPYZZ______________w0",
+    "00000000029itCLLLNRX___________w0",
+    "000000000017gtxxxzEKS__________w0",
+    "0000000000017mjjjmrzIS_________w0",
+    "000000000122595558foyJV________w0",
+    "0000000149ff5000004epCP________w0",
+    "00000015dof500000006jxKY-______w0",
+    "0000002brl8000000001ftHUY-_____w0",
+    "0000005kvh3000000000ftHMSX-____w0",
+    "0000007nvh2000000001ftHILSX-___w0",
+    "0000007mvh3000000004hvJLIMSY-__w0",
+    "0000002aga3000000005bioqnmosuvww0",
+    "000000000000000000000000000000000",
+  ].join(""),
   cut: [
     "000000000000000000000000000000000",
     "0000000000swwwwwwwwwwwwwwwwwwwww0",
@@ -1188,9 +1224,14 @@ const shadeTable = (text) =>
   );
 const SKY = shadeTable(ROOT_SHADE.sky),
   KEY = shadeTable(ROOT_SHADE.key),
+  LAMP = shadeTable(ROOT_SHADE.lamp),
   CUT = shadeTable(ROOT_SHADE.cut);
-// [sky, key] occlusion at a world x/z, as the slateShade attribute holds it.
-export const rootOcclusion = (x, z) => [latticeAt(SKY, x, z), latticeAt(KEY, x, z)];
+// [sky, key, lamp] occlusion at a world x/z, as the slateShade attribute holds it.
+export const rootOcclusion = (x, z) => [
+  latticeAt(SKY, x, z),
+  latticeAt(KEY, x, z),
+  latticeAt(LAMP, x, z),
+];
 
 // Where a root lies within [-0.2, 1.3] of the soil, on a 0.25 grid from the
 // lattice's first vertex (base64 bits, row by row): the tufts there collapse
@@ -1450,10 +1491,11 @@ export function rootShade(dx, dz, lift) {
 //   little drier than the open slate;
 // - crease: each root line's contact falls off as 1/(1 + 6u^2), u in reach
 //   units, broken a little by the cracks;
-// - occlusion: ROOT_SHADE's sky term dims the unshadowed fills, the lantern
-//   (less: it is the main light under the arches), the sky light and the
-//   reflections; its key term dims the moon only where no shadow map does
-//   (slateContactGain 1: shadows off);
+// - occlusion: ROOT_SHADE's sky term dims the unshadowed fills, the sky
+//   light and the reflections; its key term dims the moon only where no
+//   shadow map does (slateContactGain 1: shadows off); its lamp term is the
+//   trunk's and the roots' shadows in the lantern's light, and the creases
+//   keep `lantern` of a root line's contact from it;
 // - damp: soil in the creases and the deepest cavity is darker and wetter.
 export const SLATE_SOIL = Object.freeze({
   albedo: 0.5,
@@ -1548,14 +1590,15 @@ const KEY_VIEW = { value: new Vector3(...KEY_LIGHT) };
 const { settle: SETTLE, grain: GRAIN, occlusion: OCCLUSION, damp: DAMP } = SLATE_SOIL;
 // Each direct light is dimmed by the root occlusion: the moon key by its baked
 // term (found among the directional lights by direction, mud-ground.js
-// slateDirectional), the lantern (the one warm light) and the cool fills (the
-// directional fill and the crown's point fill) by the sky term, before the film
-// ground's own balance of them (mud-ground.js SLATE_LIGHT).
+// slateDirectional), the lantern (the one warm light) by its own baked
+// shadows, and the cool fills (the directional fill and the crown's point
+// fill) by the sky term, before the film ground's own balance of them
+// (mud-ground.js SLATE_LIGHT).
 const ROOT_LIGHTS = `
 float slateGate(vec3 L, vec3 C) {
-  if (slateSky + slateKeyOcc <= 0.0) return 1.0;
+  if (slateSky + slateKeyOcc + slateLampOcc <= 0.0) return 1.0;
   if (slateDirectional && dot(L, slateKeyView) > .9995) return 1.0 - slateKeyOcc;
-  if (C.b < .7*C.r) return 1.0 - ${glsl(OCCLUSION.lantern)}*slateSky;
+  if (C.b < .7*C.r) return 1.0 - slateLampOcc;
   return 1.0 - ${glsl(OCCLUSION.fill)}*slateSky;
 }
 void RE_Direct_Slate(const in IncidentLight directLight, const in vec3 geometryPosition, const in vec3 geometryNormal, const in vec3 geometryViewDir, const in vec3 geometryClearcoatNormal, const in PhysicalMaterial material, inout ReflectedLight reflectedLight) {
@@ -1567,10 +1610,10 @@ void RE_Direct_Slate(const in IncidentLight directLight, const in vec3 geometryP
 #define RE_Direct RE_Direct_Slate
 `;
 const ROOT_FRAGMENT = `varying vec4 vSlateRoot;
-varying vec2 vSlateShade;
+varying vec3 vSlateShade;
 varying float vSlatePool;
 uniform vec3 slateKeyView;
-float slateSky = 0.0, slateKeyOcc = 0.0, slateSettle = 0.0, slateDepth = 0.5, slateKeep = 0.0;
+float slateSky = 0.0, slateKeyOcc = 0.0, slateLampOcc = 0.0, slateSettle = 0.0, slateDepth = 0.5, slateKeep = 0.0;
 float slateKeepAt(vec2 p) { return 1.0 - smoothstep(${glsl(SLATE_SOIL.keep[0])}, ${glsl(SLATE_SOIL.keep[1])}, length(p - ${LANTERN_GLSL})); }
 float slateSettleAt(float w, float depth) { return smoothstep(0.0, .25, (1.0 - w)*${glsl(SETTLE.gain)} - (depth - .5)*${glsl(SETTLE.crack)} - ${glsl(SETTLE.bias)})*smoothstep(0.0, .2, 1.0 - w); }
 `;
@@ -1636,7 +1679,7 @@ export function shadeSlateRoots(shader) {
       "fragmentShader",
       "diffuseColor.rgb *= 1.0 - slateAo*slateContactGain;|",
       `
-if (vSlateShade.x + vSlateShade.y + vSlateRoot.z > 0.0) {
+if (vSlateShade.x + vSlateShade.y + vSlateShade.z + vSlateRoot.z > 0.0) {
   float slateU = length(vSlateRoot.xy), slateGuard = (1.0-slateKeep)*(1.0-slatePuddle);
   diffuseColor.rgb *= 1.0 - ${glsl(SLATE_SOIL.contact)}*vSlateRoot.z*(1.0-smoothstep(.3, 1.0, slateU))*slateContactGain*slateKeep;
   float slateCrease = vSlateRoot.z/(1.0+${glsl(SLATE_SOIL.crease)}*slateU*slateU)*slateGuard;
@@ -1646,6 +1689,7 @@ if (vSlateShade.x + vSlateShade.y + vSlateRoot.z > 0.0) {
   slateSky = smoothstep(${glsl(OCCLUSION.remap[0])}, ${glsl(OCCLUSION.remap[1])}, slateSky);
   slateSkyVis = 1.0-slateSky;
   slateKeyOcc = clamp(max((slateK0+slateBreak*slateK0*(1.0-slateK0)*2.0)*clamp((slateContactGain-.6)*2.5, 0.0, 1.0), ${glsl(OCCLUSION.creaseKey)}*slateCrease), 0.0, 1.0)*slateGuard;
+  slateLampOcc = clamp(max(vSlateShade.z, ${glsl(OCCLUSION.lantern)}*slateCrease), 0.0, 1.0)*slateGuard;
   float slateDamp = clamp(max(smoothstep(${glsl(DAMP.crease[0])}, ${glsl(DAMP.crease[1])}, slateCrease), ${glsl(DAMP.cavity)}*smoothstep(.3, .95, slateSky)), 0.0, 1.0);
   diffuseColor.rgb *= 1.0 - ${glsl(DAMP.albedo)}*slateDamp;
   vec3 slateDampC = diffuseColor.rgb*${glslVec(...POOL.tone)};
@@ -1690,7 +1734,7 @@ sampledDiffuseColor.rgb = mix(sampledDiffuseColor.rgb, slateSoilTone, mix(${glsl
   if (
     !applyEdits(shader, edits, {
       vertexShader:
-        "attribute vec4 slateRoot;\nattribute vec2 slateShade;\nattribute float slatePool;\nvarying vec4 vSlateRoot;\nvarying vec2 vSlateShade;\nvarying float vSlatePool;\n",
+        "attribute vec4 slateRoot;\nattribute vec3 slateShade;\nattribute float slatePool;\nvarying vec4 vSlateRoot;\nvarying vec3 vSlateShade;\nvarying float vSlatePool;\n",
       fragmentShader: ROOT_FRAGMENT,
     })
   )
@@ -5203,8 +5247,8 @@ function* earthSteps(groundHeight, EARTH) {
   // packing moves the grade's cel bands on single pixels of settled soil.
   const shading = new Float32Array(count * 4);
   const shade = (i, values) => shading.set(values, i * 4);
-  // ROOT_SHADE's sky and key occlusion (0 beyond its lattice), also at float precision.
-  const occlusion = new Float32Array(count * 2);
+  // ROOT_SHADE's sky, key and lamp occlusion (0 beyond its lattice), also at float precision.
+  const occlusion = new Float32Array(count * 3);
   const point = (i, x, z, y) => {
     positions[i * 3] = x;
     positions[i * 3 + 1] = -z;
@@ -5241,7 +5285,7 @@ function* earthSteps(groundHeight, EARTH) {
     point(i, x, z, y);
     const near = Math.abs(x - TREE_FOOTING.x - 3) < 15 && Math.abs(z - TREE_FOOTING.z) < 15;
     shade(i, near ? rootShade(dx, dz, raised && rootBermExcess(x, z, sample)) : OPEN_SOIL);
-    if (near) occlusion.set(rootOcclusion(x, z), i * 2);
+    if (near) occlusion.set(rootOcclusion(x, z), i * 3);
     if (i % 8 === 7) yield;
   }
   // The river's added points, raised (lowered) and shaded as the grid's; its
@@ -5281,10 +5325,8 @@ function* earthSteps(groundHeight, EARTH) {
           positions[at * 3 + j] = mix(positions, 3, j);
           normalArray[at * 3 + j] = mix(normalArray, 3, j);
         }
-        for (let j = 0; j < 2; j++) {
-          uvs[at * 2 + j] = mix(uvs, 2, j);
-          occlusion[at * 2 + j] = mix(occlusion, 2, j);
-        }
+        for (let j = 0; j < 2; j++) uvs[at * 2 + j] = mix(uvs, 2, j);
+        for (let j = 0; j < 3; j++) occlusion[at * 3 + j] = mix(occlusion, 3, j);
         for (let j = 0; j < 4; j++) shading[at * 4 + j] = mix(shading, 4, j);
         const l0 = riverLifts[across ? gj * riverCols + from : from * riverCols + gi],
           l1 = riverLifts[across ? gj * riverCols + from + S : (from + S) * riverCols + gi];
@@ -5304,7 +5346,7 @@ function* earthSteps(groundHeight, EARTH) {
       riverSurface[gj * riverCols + gi] = y;
       point(at, x, z, y);
       shade(at, rootShade(dx, dz, raised && rootBermExcess(x, z, sample)));
-      occlusion.set(rootOcclusion(x, z), at * 2);
+      occlusion.set(rootOcclusion(x, z), at * 3);
     }
     yield;
   }
@@ -5446,7 +5488,7 @@ function* earthSteps(groundHeight, EARTH) {
     geometry.setAttribute("normal", new BufferAttribute(normalArray, 3));
     geometry.setAttribute("uv", new BufferAttribute(uvs, 2));
     geometry.setAttribute("slateRoot", new BufferAttribute(shading, 4));
-    geometry.setAttribute("slateShade", new BufferAttribute(occlusion, 2));
+    geometry.setAttribute("slateShade", new BufferAttribute(occlusion, 3));
     geometry.setAttribute("slatePool", new BufferAttribute(pool, 1));
     geometry.setIndex(new BufferAttribute(indices.subarray(0, cursor), 1));
     yield* geometryBounds(geometry, true);
