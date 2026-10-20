@@ -77,6 +77,33 @@ test("the shelf and ground share optional albedo and detail bindings without rec
   material.dispose();
 });
 
+test("the shelf's rock never takes the close soil's crumbs and keeps only its grit", () => {
+  const map = { isTexture: true };
+  const build = (maps) => {
+    const material = new MeshStandardMaterial();
+    configureGroundShading(material, true, maps);
+    const shader = {
+      uniforms: {},
+      vertexShader: ShaderLib.physical.vertexShader,
+      fragmentShader: ShaderLib.physical.fragmentShader,
+    };
+    material.onBeforeCompile(shader);
+    assert.equal(shadeSlateGround(shader).shore, true);
+    material.dispose();
+    return shader.fragmentShader;
+  };
+  const close = build({ detail: map, grit: map, relief: map });
+  const keep = close.indexOf(
+    `slateCG=mix(slateCG,.5+(slateCG-slateCK-.5)*${COAST_BEDROCK.grit.toFixed(1)},slateBedrock);`,
+  );
+  // After the crumbs are counted and the rock's colour laid, before the soil's grit scales the albedo.
+  assert.ok(keep > close.indexOf("float slateCK = slateCrumb*"));
+  assert.ok(keep > close.indexOf("diffuseColor.rgb=mix(diffuseColor.rgb,rockColour,"));
+  assert.ok(keep < close.indexOf("diffuseColor.rgb *= 1.+(slateCG-.5)*"));
+  // Without the close soil there is nothing to keep off the rock.
+  assert.doesNotMatch(build({ detail: map }), /slateCK/);
+});
+
 test("missing bedrock anchors leave every shader field and borrowed binding unchanged", () => {
   const shader = {
       uniforms: { keep: { value: 4 } },

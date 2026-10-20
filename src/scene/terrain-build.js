@@ -2336,6 +2336,9 @@ ${STREAM_FOAM}`,
 // `scale` times as large, turned (a 7-24-25 turn) and offset, blended in by a
 // `blendCell` noise, so the shelf's rock never shows the tile repeat; relief:
 // how far the detail map tilts its normal, as on the cliff's tops (ocean.js).
+// grit: how much of the close soil's grit (mud-ground.js SLATE_CLOSE) the rock
+// keeps up close; it never takes the soil's crumbs, whose cells read as
+// cracked mud on stone.
 export const COAST_BEDROCK = Object.freeze({
   near: 2,
   far: 18,
@@ -2348,6 +2351,7 @@ export const COAST_BEDROCK = Object.freeze({
   }),
   blendCell: 2.6,
   relief: 0.48,
+  grit: 1,
 });
 
 // The eroded shelf is the same rock as the face, with its colour and its
@@ -2367,6 +2371,8 @@ export function coastBedrockWeight(x, z) {
 }
 
 export function shadeCoastBedrock(shader, uniforms) {
+  // The close soil (its grit and crumbs) is there only with the authored maps.
+  const close = /float\s+slateCK/.test(shader.fragmentShader);
   const edits = [
     [
       "fragmentShader",
@@ -2390,7 +2396,7 @@ if(coastAlbedoOn>.5){
 vec3 rockScan=clamp(mix(texture2D(coastAlbedo,rockU).rgb,texture2D(coastAlbedo,rockV).rgb,rockW)/${glslVec(...COAST_ALBEDO.mean)},vec3(.5),vec3(1.8));
 vec3 rockColour=vec3(.17,.1525,.1465)*mix(vec3(1.),rockScan,.6);
 diffuseColor.rgb=mix(diffuseColor.rgb,rockColour,slateBedrock*.9);
-}
+${close ? `slateCG=mix(slateCG,.5+(slateCG-slateCK-.5)*${glsl(COAST_BEDROCK.grit)},slateBedrock);\n` : ""}}
 if(coastDetailOn>.5){
 // The second lookup's slope turned back into world x/z; the relief fades as a texel shrinks, as on the cliff.
 vec2 rockPx=fwidth(vMudWorld.xz);

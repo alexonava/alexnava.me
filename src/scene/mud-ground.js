@@ -956,7 +956,8 @@ const CLOSE_PRE = `
       // The crumbs' own slope, its tangent eased toward SLATE_CLOSE.crumb.steep at most.
       vec2 slateKG = 10.*slateKT*(1.-slateKT)*slateKD*${glslNumber(CLOSE.crumb.height)}*slateKW;
       slateCDH -= slateKG/(1.+length(slateKG)*${glslNumber(CLOSE.relief / CLOSE.crumb.steep)});
-      slateCG += slateCrumb*${glslNumber(CLOSE.crumb.albedo)}*slateKW;
+      float slateCK = slateCrumb*${glslNumber(CLOSE.crumb.albedo)}*slateKW;
+      slateCG += slateCK;
       sampledDiffuseColor.rgb = mix(sampledDiffuseColor.rgb, mix(texture2D(map, vMapUv, ${glslNumber(CLOSE.blur)}).rgb, texture2D(map, slateUvB, ${glslNumber(CLOSE.blur)}).rgb, slateW)*(.93+.14*slateNoise(vMudWorld.xz/${glslNumber(SLATE_TILING.macroCell)})), ${glslNumber(CLOSE.calm)}*slateCN);
       `;
 const CLOSE_MAP = `
