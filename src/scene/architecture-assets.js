@@ -3,7 +3,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { measureScene, sceneNow } from "./perf-marks.js";
 
 // The tower, tree and optional lantern, the film's scattered rocks
-// (rock-scatter.js) and its Meshy massifs (hill-silhouette.js) load through one
+// (rock-scatter.js) and its massifs (hill-silhouette.js) load through one
 // manifest.
 const ROLES = [
   "tower",

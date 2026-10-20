@@ -270,7 +270,7 @@ function summits(table, seed, cells) {
 // summits, varied by the ridged multifractal, notched by a finer summit lattice
 // and toothed in proportion to height. Authored peaks keep their exact apex and
 // get warped, shouldered flanks; the low windows keep their 2.6 degree ceiling.
-// As the backdrop behind the Meshy massifs (RANGE_BACKDROP) a range has no
+// As the backdrop behind the massifs (RANGE_BACKDROP) a range has no
 // authored peaks and its noise rises to capScale of the background caps.
 function* crestSteps(range, backdrop = null) {
   const {
@@ -379,7 +379,7 @@ function* crestSteps(range, backdrop = null) {
 }
 
 // Crest elevation in degrees per range and column, near range first; as the
-// Meshy massifs' backdrop (RANGE_BACKDROP) with `backdrop`.
+// massifs' backdrop (RANGE_BACKDROP) with `backdrop`.
 export function mountainCrests(backdrop = null) {
   return MOUNTAINS.share.map((_, range) => run(crestSteps(range, backdrop)));
 }
@@ -424,7 +424,7 @@ export function mountainRows(crest, smoothed = MOUNTAINS.smooth.map((r) => smoot
   return rows;
 }
 
-// The whole build, in steps. Five ranges (or, as the Meshy massifs' backdrop,
+// The whole build, in steps. Five ranges (or, as the massifs' backdrop,
 // RANGE_BACKDROP's two) x six rows x one ring of columns; columns wrap, so
 // there is no seam column at azimuth 0, and triangles face the centre. Vertex
 // attributes:
@@ -434,7 +434,7 @@ export function mountainRows(crest, smoothed = MOUNTAINS.smooth.map((r) => smoot
 // aForm = (face normal along the ring: minus the slope of the row's smoothed
 //   profile, clamped +-3; lean toward the viewer; fold, convex + and concave -,
 //   clamped +-1; the nearer ranges' skyline in degrees, -90 on the near range).
-// backdrop: build only its ranges, with its crests; nearer: the Meshy massifs'
+// backdrop: build only its ranges, with its crests; nearer: the massifs'
 // skyline per column (degrees), which the backdrop's mist rises from too.
 function* geometrySteps({ backdrop = null, nearer = null } = {}) {
   const { radii, rows: rowRadius, columns, slope: slopeGain, lean, massif, smooth } = MOUNTAINS;
@@ -561,14 +561,15 @@ function run(steps) {
 }
 
 // The whole geometry at once (tests): the five rings, or with { backdrop,
-// nearer } the backdrop behind the Meshy massifs.
+// nearer } the backdrop behind the massifs.
 export function createMountainGeometry(options) {
   return run(geometrySteps(options));
 }
 
-// The Meshy massifs: the owner's three Meshy mountains (images/architecture/
-// mountain-ridge, mountain-spine and mountain-summit, prepared in
-// Assets/Architecture/mountains-v1), set as copies around the camera to form
+// The massifs: three real Alpine massifs from public elevation data (the owner's
+// choice of 2026-10-19; images/architecture/mountain-ridge, the Grandes
+// Jorasses, mountain-spine, the Dents du Midi, and mountain-summit, the
+// Weisshorn, prepared in Assets/Architecture/mountains-v2), set as copies around the camera to form
 // the near ranges, with RANGE_BACKDROP's two farthest rings left behind them as
 // hazy depth. Each GLB is the part of its massif an eye in front of it can see
 // (front +Z; frame: bounding X/Z centred, base y = 0, largest horizontal
@@ -606,10 +607,10 @@ export const RANGE_PLACEMENTS = Object.freeze(
   [
     ["watch", "mountain-summit", 2, 155, 3.8, 0, false, 0.5, 1, 2.4],
     ["east", "mountain-ridge", 1, 196, 4.8, -25, true, 0.4, 0.85, 2.2],
-    ["bridge", "mountain-summit", 2, 127, 5, 25, true, 0.4, 0.9, 2],
+    ["bridge", "mountain-summit", 2, 127, 5, 25, true, 0.4, 0.9, 0],
     ["lantern", "mountain-summit", 2, 62, 6, -10, false, 0.5, 0.8, 2.6],
     ["closeup", "mountain-ridge", 2, 36, 5, 10, false, 0.35, 0.74, 2],
-    ["horn", "mountain-summit", 1, 13, 6, 15, true, 0.25, 1, 2.9],
+    ["horn", "mountain-summit", 1, 16, 6, 15, true, 0.25, 1, 2.9],
     ["threshold", "mountain-ridge", 2, 206, 4, 20, true, 0.35, 0.9, 2],
     ["west", "mountain-summit", 2, 300, 5, -20, false, 0.45, 0.9, 2],
     ["near-a", "mountain-spine", 0, -6, 4, 0, false, 0.25, 0.9, 0],
@@ -772,7 +773,7 @@ export function rangeMassif({ values }) {
   return out;
 }
 
-// The Meshy massifs in steps: each placement placed, its skyline and massif;
+// The massifs in steps: each placement placed, its skyline and massif;
 // then one geometry per model with every copy of it, its triangles ordered
 // sector by sector from the seam (nearest layer first), as the rings'. Vertex
 // attributes:
@@ -910,7 +911,7 @@ function* rangeSteps(models, placements = RANGE_PLACEMENTS) {
   return { geometries, nearer, texture, placed };
 }
 
-// The Meshy massifs and their backdrop at once (tests): models as placeRange()
+// The massifs and their backdrop at once (tests): models as placeRange()
 // takes them, keyed by role.
 export function createRangeGeometry(models, placements = RANGE_PLACEMENTS) {
   return run(rangeSteps(models, placements));
@@ -1088,7 +1089,7 @@ export function buildMountains({
   texels = null,
 } = {}) {
   const steps = models ? composedSteps(models, texels) : geometrySteps();
-  // With models (placeRange()'s, by role) the build is the Meshy massifs and
+  // With models (placeRange()'s, by role) the build is the massifs and
   // their backdrop: each massif's geometry lands on its mesh (massifs, by role)
   // and shows as the rings do; the backdrop is what resolves, carrying the
   // massifs' geometries in userData.massifs.

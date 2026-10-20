@@ -576,7 +576,7 @@ const ORBIT_SPEED = 0.06;
       groundSurface = groundMesh;
       subsystemRegistry.register(groundTextures);
       // The film ranges are a lazy chunk (mountain-build.js), requested once the film is
-      // on at high or balanced with the Meshy massifs' GLBs at the startup tier; they
+      // on at high or balanced with the massifs' GLBs at the startup tier; they
       // build in slices and land only while unseen (before the reveal, under its fade,
       // on a cut).
       const hillSilhouette = createHillSilhouette({
