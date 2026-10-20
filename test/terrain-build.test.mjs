@@ -1086,11 +1086,12 @@ test("the lazy ground shading extends only the slate's program, under its own ke
       fragment.indexOf("if (slateWater > 0.0) {") <
         fragment.indexOf("reflectedLight.indirectDiffuse *= 1.0-0.75*slateSky;"),
     );
-    // The optional photographic rock adds one guarded lookup; the water
-    // continues to read the existing environment cube without another pass.
+    // The optional photographic rock adds four guarded lookups (its albedo and
+    // detail, two turned lookups each); the water continues to read the
+    // existing environment cube without another pass.
     assert.equal(
       count(fragment, "texture2D("),
-      count(before.fragmentShader, "texture2D(") + Number(Boolean(after.uniforms.coastAlbedo)),
+      count(before.fragmentShader, "texture2D(") + 4 * Number(Boolean(after.uniforms.coastAlbedo)),
     );
     assert.equal(count(vertex, "texture2D("), count(before.vertexShader, "texture2D("));
     // The tree in the water: its trunk tapering to the crotch and two limbs leaning
@@ -1332,7 +1333,8 @@ test("the ground shading also finds its anchors in the published, compacted chun
       assert.match(shaded.fragmentShader, /#if NUM_POINT_LIGHTS > 0\n/);
       assert.equal(
         count(shaded.fragmentShader, "texture2D("),
-        count(plain.fragmentShader, "texture2D(") + Number(Boolean(shaded.uniforms.coastAlbedo)),
+        count(plain.fragmentShader, "texture2D(") +
+          4 * Number(Boolean(shaded.uniforms.coastAlbedo)),
       );
       assert.ok(
         shaded.uniforms.slateDrip && shaded.uniforms.slateFlame && shaded.uniforms.slateKeyView,
@@ -3433,7 +3435,7 @@ test("the film's ready resolves to the root-aware ground once the roots settle",
   const height = await r.film.ready;
   assert.equal(typeof height, "function");
   assert.equal(typeof r.ground.material.userData.slateRoot, "function");
-  assert.equal(r.ground.material.userData.coastAlbedoUniforms.coastAlbedoOn.value, 0);
+  assert.equal(r.ground.material.userData.coastRockUniforms.coastAlbedoOn.value, 0);
   assert.equal(r.invalidations(), 1, "the terrain and its shading invalidate one atomic frame");
   // On flat ground the knoll adds only its collar's dome, and the relief, the
   // crook hollows and the lips shape the soil about the tree (at a vertex,

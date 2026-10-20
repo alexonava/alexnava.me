@@ -1692,10 +1692,21 @@ vSlateClip=gl_Position;
     apply(texture) {
       uniforms.coastDetail.value = texture;
       uniforms.coastDetailOn.value = 1;
+      const ground = groundMaterial?.userData.coastRockUniforms;
+      if (ground) {
+        ground.coastDetail.value = texture;
+        ground.coastDetailOn.value = 1;
+      }
     },
     reset() {
+      const texture = uniforms.coastDetail.value;
       uniforms.coastDetailOn.value = 0;
       uniforms.coastDetail.value = null;
+      const ground = groundMaterial?.userData.coastRockUniforms;
+      if (ground && ground.coastDetail.value === texture) {
+        ground.coastDetailOn.value = 0;
+        ground.coastDetail.value = null;
+      }
     },
   });
   const albedo = createCoastAlbedo({
@@ -1703,7 +1714,7 @@ vSlateClip=gl_Position;
     apply(texture) {
       uniforms.coastAlbedo.value = texture;
       uniforms.coastAlbedoOn.value = 1;
-      const ground = groundMaterial?.userData.coastAlbedoUniforms;
+      const ground = groundMaterial?.userData.coastRockUniforms;
       if (ground) {
         ground.coastAlbedo.value = texture;
         ground.coastAlbedoOn.value = 1;
@@ -1713,7 +1724,7 @@ vSlateClip=gl_Position;
       const texture = uniforms.coastAlbedo.value;
       uniforms.coastAlbedoOn.value = 0;
       uniforms.coastAlbedo.value = null;
-      const ground = groundMaterial?.userData.coastAlbedoUniforms;
+      const ground = groundMaterial?.userData.coastRockUniforms;
       if (ground && ground.coastAlbedo.value === texture) {
         ground.coastAlbedoOn.value = 0;
         ground.coastAlbedo.value = null;

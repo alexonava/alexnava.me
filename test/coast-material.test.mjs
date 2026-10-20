@@ -39,8 +39,13 @@ test("the coastal owner binds independent optional colour and data maps on a cut
     };
   };
   const ground = new MeshStandardMaterial(),
-    borrowed = { coastAlbedo: { value: null }, coastAlbedoOn: { value: 0 } };
-  ground.userData.coastAlbedoUniforms = borrowed;
+    borrowed = {
+      coastAlbedo: { value: null },
+      coastAlbedoOn: { value: 0 },
+      coastDetail: { value: null },
+      coastDetailOn: { value: 0 },
+    };
+  ground.userData.coastRockUniforms = borrowed;
   let groundFreed = 0;
   ground.addEventListener("dispose", () => groundFreed++);
   const coast = cliff("high", ground),
@@ -56,6 +61,7 @@ test("the coastal owner binds independent optional colour and data maps on a cut
     assert.equal(uniforms.coastDetailOn.value, 0, "decoded detail waits while a shot is visible");
     assert.equal(uniforms.coastAlbedoOn.value, 0);
     assert.equal(borrowed.coastAlbedo.value, null);
+    assert.equal(borrowed.coastDetail.value, null);
     coast.take({ revealed: true, running: true, cut: true });
     const texture = uniforms.coastDetail.value,
       albedo = uniforms.coastAlbedo.value;
@@ -67,6 +73,8 @@ test("the coastal owner binds independent optional colour and data maps on a cut
     assert.equal(uniforms.coastAlbedoOn.value, 1);
     assert.equal(borrowed.coastAlbedo.value, albedo);
     assert.equal(borrowed.coastAlbedoOn.value, 1);
+    assert.equal(borrowed.coastDetail.value, texture, "the shelf borrows the cliff's detail");
+    assert.equal(borrowed.coastDetailOn.value, 1);
     assert.equal(
       coast.mesh.children[0].material,
       coast.material,
@@ -76,6 +84,8 @@ test("the coastal owner binds independent optional colour and data maps on a cut
       freed++;
       assert.equal(uniforms.coastDetail.value, null);
       assert.equal(uniforms.coastDetailOn.value, 0);
+      assert.equal(borrowed.coastDetail.value, null);
+      assert.equal(borrowed.coastDetailOn.value, 0);
     });
     albedo.addEventListener("dispose", () => {
       freed++;
@@ -87,6 +97,7 @@ test("the coastal owner binds independent optional colour and data maps on a cut
     coast.setActive(false);
     assert.equal(uniforms.coastDetail.value, null);
     assert.equal(borrowed.coastAlbedo.value, null);
+    assert.equal(borrowed.coastDetail.value, null);
     assert.equal(freed, 0, "withdrawal retains the cached optional texture");
     coast.setActive(true);
     coast.take({ revealed: true, running: true, cut: false });
@@ -95,6 +106,7 @@ test("the coastal owner binds independent optional colour and data maps on a cut
     assert.equal(uniforms.coastDetail.value, texture);
     assert.equal(uniforms.coastAlbedo.value, albedo);
     assert.equal(borrowed.coastAlbedo.value, albedo);
+    assert.equal(borrowed.coastDetail.value, texture);
     assert.equal(requests, 2, "reactivation reuses both startup maps");
   } finally {
     coast.dispose();

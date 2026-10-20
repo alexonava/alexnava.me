@@ -43,7 +43,7 @@ test("exposed coastal bedrock has bounded continuous coverage, full at the lip a
   assert.ok(lip > 100 && inland > 1000);
 });
 
-test("the shelf and ground share optional albedo bindings without recompiling when a tile lands", () => {
+test("the shelf and ground share optional albedo and detail bindings without recompiling when a tile lands", () => {
   const material = new MeshStandardMaterial();
   configureGroundShading(material, true, { detail: { isTexture: true } });
   const shader = {
@@ -52,16 +52,28 @@ test("the shelf and ground share optional albedo bindings without recompiling wh
     fragmentShader: ShaderLib.physical.fragmentShader,
   };
   material.onBeforeCompile(shader);
-  const uniforms = { coastAlbedo: { value: null }, coastAlbedoOn: { value: 0 } };
+  const uniforms = {
+    coastAlbedo: { value: null },
+    coastAlbedoOn: { value: 0 },
+    coastDetail: { value: null },
+    coastDetailOn: { value: 0 },
+  };
   assert.equal(shadeSlateGround(shader, uniforms).shore, true);
-  assert.equal(shader.uniforms.coastAlbedo, uniforms.coastAlbedo);
-  assert.equal(shader.uniforms.coastAlbedoOn, uniforms.coastAlbedoOn);
+  for (const name of Object.keys(uniforms)) assert.equal(shader.uniforms[name], uniforms[name]);
   const before = shader.fragmentShader;
-  uniforms.coastAlbedo.value = { isTexture: true };
-  uniforms.coastAlbedoOn.value = 1;
+  uniforms.coastAlbedo.value = uniforms.coastDetail.value = { isTexture: true };
+  uniforms.coastAlbedoOn.value = uniforms.coastDetailOn.value = 1;
   assert.equal(shader.fragmentShader, before);
   assert.match(before, /if\(coastAlbedoOn>\.5\)/);
-  assert.match(before, /normal=normalize\(mix\(normal,nonPerturbedNormal,slateBedrock\*\.8\)\)/);
+  // Two turned lookups of each map, blended by a noise, so the tile never repeats.
+  assert.equal(before.match(/texture2D\(coastAlbedo,rock[UV]\)/g).length, 2);
+  assert.equal(before.match(/texture2D\(coastDetail,rock[UV]\)/g).length, 2);
+  assert.match(before, /rockV=mat2\(0\.28,0\.96,-0\.96,0\.28\)\*rockU\*0\.83\+vec2\(0\.41,0\.17\)/);
+  // The rock's own detail in place of the soil's relief; without the map, the soil's flattened.
+  assert.match(
+    before,
+    /\*rockR,slateBedrock\)\);\n\}else normal=normalize\(mix\(normal,nonPerturbedNormal,slateBedrock\*\.8\)\);/,
+  );
   material.dispose();
 });
 
@@ -73,7 +85,12 @@ test("missing bedrock anchors leave every shader field and borrowed binding unch
     original = shader.fragmentShader,
     originalUniforms = { ...shader.uniforms };
   assert.equal(
-    shadeCoastBedrock(shader, { coastAlbedo: { value: {} }, coastAlbedoOn: { value: 1 } }),
+    shadeCoastBedrock(shader, {
+      coastAlbedo: { value: {} },
+      coastAlbedoOn: { value: 1 },
+      coastDetail: { value: {} },
+      coastDetailOn: { value: 1 },
+    }),
     false,
   );
   assert.equal(shader.fragmentShader, original);

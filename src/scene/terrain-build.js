@@ -2286,10 +2286,30 @@ ${STREAM_FOAM}`,
 // The hook settleRoots() sets as the ground material's userData.slateRoot
 // (mud-ground.js applies it last under the "+root" key): the puddle mirror,
 // then the root shading, each all or nothing on its own.
-export const COAST_BEDROCK = Object.freeze({ near: 2, far: 18, wobble: 4, cell: 11 });
+// The shelf's bedrock: full within `near` of the fault and gone by `far`,
+// its edge moved up to `wobble` by a `cell` noise. second, blendCell: a
+// second lookup of the coast's albedo and detail maps,
+// `scale` times as large, turned (a 7-24-25 turn) and offset, blended in by a
+// `blendCell` noise, so the shelf's rock never shows the tile repeat; relief:
+// how far the detail map tilts its normal, as on the cliff's tops (ocean.js).
+export const COAST_BEDROCK = Object.freeze({
+  near: 2,
+  far: 18,
+  wobble: 4,
+  cell: 11,
+  second: Object.freeze({
+    scale: 0.83,
+    turn: Object.freeze([0.28, 0.96, -0.96, 0.28]),
+    offset: Object.freeze([0.41, 0.17]),
+  }),
+  blendCell: 2.6,
+  relief: 0.48,
+});
 
-// The eroded shelf is the same rock as the face. Soil returns gradually
-// inland along irregular pockets rather than a straight strip at the rim.
+// The eroded shelf is the same rock as the face, with its colour and its
+// pitted, worn stone (the cliff's own maps, lent when they land), never the
+// soil's relief. Soil returns gradually inland along irregular pockets rather
+// than a straight strip at the rim.
 export function coastBedrockWeight(x, z) {
   const d = Math.max(0, coastDistance(x, z));
   return (
@@ -2307,27 +2327,47 @@ export function shadeCoastBedrock(shader, uniforms) {
     [
       "fragmentShader",
       "|#define STANDARD",
-      "uniform sampler2D coastAlbedo;\nuniform float coastAlbedoOn;\n",
+      "uniform sampler2D coastAlbedo, coastDetail;\nuniform float coastAlbedoOn, coastDetailOn;\n",
     ],
     [
       "fragmentShader",
       "diffuseColor *= sampledDiffuseColor;|",
       `
 float slateBedrock = 0.;
-if(coastAlbedoOn>.5){
+vec3 slateRockXY = vec3(0.);
+if(coastAlbedoOn>.5||coastDetailOn>.5){
 float rockEdge=max(0.,seaCoast(vMudWorld.xz))+(slateNoise(vMudWorld.xz/${glsl(COAST_BEDROCK.cell)})-.5)*${glsl(COAST_BEDROCK.wobble)};
 slateBedrock=1.-smoothstep(${glsl(COAST_BEDROCK.near)},${glsl(COAST_BEDROCK.far)},rockEdge);
 if(slateBedrock>0.){
-vec3 rockScan=clamp(texture2D(coastAlbedo,vMudWorld.xz/${glsl(COAST_ALBEDO.tile)}).rgb/${glslVec(...COAST_ALBEDO.mean)},vec3(.5),vec3(1.8));
+// Both lookups (the cliff's tops use the first alone), blended by a noise.
+vec2 rockU=vMudWorld.xz/${glsl(COAST_ALBEDO.tile)},rockV=mat2(${COAST_BEDROCK.second.turn.map(glsl)})*rockU*${glsl(COAST_BEDROCK.second.scale)}+${glslVec(...COAST_BEDROCK.second.offset)};
+float rockW=smoothstep(.3,.7,slateNoise(vMudWorld.xz/${glsl(COAST_BEDROCK.blendCell)}));
+if(coastAlbedoOn>.5){
+vec3 rockScan=clamp(mix(texture2D(coastAlbedo,rockU).rgb,texture2D(coastAlbedo,rockV).rgb,rockW)/${glslVec(...COAST_ALBEDO.mean)},vec3(.5),vec3(1.8));
 vec3 rockColour=vec3(.17,.1525,.1465)*mix(vec3(1.),rockScan,.6);
 diffuseColor.rgb=mix(diffuseColor.rgb,rockColour,slateBedrock*.9);
-}}
+}
+if(coastDetailOn>.5){
+// The second lookup's slope turned back into world x/z; the relief fades as a texel shrinks, as on the cliff.
+vec2 rockPx=fwidth(vMudWorld.xz);
+slateRockXY=vec3(mix(texture2D(coastDetail,rockU).rg*2.-1.,(texture2D(coastDetail,rockV).rg*2.-1.)*mat2(${COAST_BEDROCK.second.turn.map(glsl)}),rockW),
+(1.-smoothstep(.06,.24,max(rockPx.x,rockPx.y)))*${glsl(COAST_BEDROCK.relief)});
+}}}
 `,
     ],
     [
       "fragmentShader",
       "|#include <clearcoat_normal_fragment_begin>",
-      "normal=normalize(mix(normal,nonPerturbedNormal,slateBedrock*.8));\n",
+      // The rock keeps none of the soil's relief; its own detail (world x and z
+      // on the shelf's tangent plane) tilts it as the cliff's tops are tilted.
+      `if(slateBedrock>0.){
+if(coastDetailOn>.5){
+vec3 rockT=mat3(viewMatrix)*vec3(1.,0.,0.);rockT=normalize(rockT-nonPerturbedNormal*dot(nonPerturbedNormal,rockT));
+vec3 rockB=cross(rockT,nonPerturbedNormal);
+float rockR=slateRockXY.z;
+normal=normalize(mix(normal,nonPerturbedNormal*sqrt(max(.15,1.-dot(slateRockXY.xy,slateRockXY.xy)*rockR*rockR))+(rockT*slateRockXY.x+rockB*slateRockXY.y)*rockR,slateBedrock));
+}else normal=normalize(mix(normal,nonPerturbedNormal,slateBedrock*.8));}
+`,
     ],
   ];
   if (!applyEdits(shader, edits)) return false;
@@ -2337,9 +2377,11 @@ diffuseColor.rgb=mix(diffuseColor.rgb,rockColour,slateBedrock*.9);
 
 export function shadeSlateGround(
   shader,
-  coastAlbedo = {
+  coastRock = {
     coastAlbedo: { value: null },
     coastAlbedoOn: { value: 0 },
+    coastDetail: { value: null },
+    coastDetailOn: { value: 0 },
   },
 ) {
   const puddles = shadeSlatePuddles(shader);
@@ -2347,7 +2389,7 @@ export function shadeSlateGround(
   const shore = applyEdits(shader, slateShoreEdits(HIGH_VIEW.fade));
   if (shore) {
     shader.uniforms.slateHigh = HIGH_VIEW;
-    shadeCoastBedrock(shader, coastAlbedo);
+    shadeCoastBedrock(shader, coastRock);
   }
   return { puddles, shore, roots: shadeSlateRoots(shader) };
 }
@@ -3998,10 +4040,16 @@ export function settleRoots(
     landHeight = filmHeight(groundHeight, true),
     originalGeometry = lib?.originalGeometry ?? ground.geometry;
   const coastHeight = terrain.userData.riverCoastHeight ?? landHeight;
-  const previousAlbedo = material.userData.coastAlbedoUniforms,
-    coastAlbedo = { coastAlbedo: { value: null }, coastAlbedoOn: { value: 0 } },
-    shadeGround = (shader) => shadeSlateGround(shader, coastAlbedo);
-  material.userData.coastAlbedoUniforms = coastAlbedo;
+  // The shelf's bindings for the coast's albedo and detail maps (ocean.js lends them).
+  const previousRock = material.userData.coastRockUniforms,
+    coastRock = {
+      coastAlbedo: { value: null },
+      coastAlbedoOn: { value: 0 },
+      coastDetail: { value: null },
+      coastDetailOn: { value: 0 },
+    },
+    shadeGround = (shader) => shadeSlateGround(shader, coastRock);
+  material.userData.coastRockUniforms = coastRock;
   // The walk follows the visible surface and fault. Asynchronous rock builds
   // take the stable film height, even if film withdraws while their GLBs load.
   const film = (x, z) =>
@@ -4299,9 +4347,9 @@ export function settleRoots(
     height.setActive(false);
     resolveReady(false);
     for (const part of shore.splice(0)) part.dispose();
-    if (material.userData.coastAlbedoUniforms === coastAlbedo) {
-      if (previousAlbedo) material.userData.coastAlbedoUniforms = previousAlbedo;
-      else delete material.userData.coastAlbedoUniforms;
+    if (material.userData.coastRockUniforms === coastRock) {
+      if (previousRock) material.userData.coastRockUniforms = previousRock;
+      else delete material.userData.coastRockUniforms;
     }
     if (litter) {
       litter.removeFromParent();
