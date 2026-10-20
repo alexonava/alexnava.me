@@ -50,6 +50,7 @@ import {
   RIVER_LINE,
   RIVER_NEAR,
   RIVER_RIPPLE,
+  LANTERN_GLINT,
   riverAt,
   riverPoint,
   riverBounds,
@@ -3804,5 +3805,38 @@ test("the river runs through the set: today's reach past the lantern, wider out 
     shader.fragmentShader,
     /slateP = mix\(slateP, vMudWorld, smoothstep\(14\.0, 28\.0, length\(vMudWorld\.xz-vec2\(50\.92, ?33\.36\)\)\)\);/,
   );
+  material.dispose();
+});
+
+test("the lantern on moving water is a column of glints off the ripples, its mirrored flame giving way to them", () => {
+  const material = new MeshStandardMaterial();
+  configureGroundShading(material, true, { detail: { isTexture: true } });
+  const shader = PHYSICAL();
+  material.onBeforeCompile(shader);
+  shadeSlateGround(shader);
+  const fragment = shader.fragmentShader;
+  // The glints' own ripples, the current's finest, tumbling with it.
+  assert.ok(fragment.includes("vec3 slateGlR = "));
+  assert.ok(
+    fragment.includes("slateNG = normalize(vec3(-slateG.x-slateGG.x, 1.0, -slateG.y-slateGG.y));"),
+  );
+  // Only on moving water, off the level plane the image takes (slateP), after the knee and before the text's.
+  const glint = fragment.indexOf("if (slateRough > 0.0 && dot(slateLamp, slateLamp) > 0.0) {");
+  assert.ok(glint > 0 && glint < fragment.indexOf("vec3 slateZoneRefl = slateRefl*slateWater;"));
+  assert.ok(fragment.includes("vec3 slateLD = slateLampW-slateP;"));
+  // The flame's mirrored image and its lit cage give way on moving water; the dark cage stays.
+  assert.ok(
+    fragment.includes(`slateFlameW *= slateSharp*(1.0-${LANTERN_GLINT.image}*slateRough);`),
+  );
+  assert.ok(
+    fragment.includes(
+      `vec3 slateCageC = vec3(.012, .013, .026)+slateLamp*(1.0-${LANTERN_GLINT.image}*slateRough)*(`,
+    ),
+  );
+  assert.ok(LANTERN_GLINT.image > 0.5 && LANTERN_GLINT.image < 1);
+  // Ripples about as long as wide, gentle, and a glow the size of the lantern's glass.
+  const [along, across] = LANTERN_GLINT.cells;
+  assert.ok(along / across < 1.6 && LANTERN_GLINT.slope > 0.03 && LANTERN_GLINT.slope < 0.15);
+  assert.ok(LANTERN_GLINT.size > 0.05 && LANTERN_GLINT.size < 0.5);
   material.dispose();
 });
