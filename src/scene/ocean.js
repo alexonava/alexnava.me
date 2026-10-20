@@ -2647,6 +2647,7 @@ vAlpha=${glsl(alpha[0])}*smoothstep(0.,.08,u)*(1.-smoothstep(.75,1.,u))*step(pos
 }else{
 // A mote of mist: rising off the impact, spreading, growing and fading.
 p.xz+=dir*${glsl(rise[2])}*age+side*.4*sin(age*.7+aSeed.z*6.28);p.y+=${glsl(rise[0])}*${glsl(rise[1])}*(1.-exp(-age/${glsl(rise[1])}));
+p1=p;
 sz=mix(${glsl(size[2])},${glsl(size[3])},sqrt(u))*mix(.7,1.3,r2);
 vAlpha=${glsl(alpha[1])}*sin(3.14159*u)*mix(.6,1.,r3);
 }

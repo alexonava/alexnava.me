@@ -283,3 +283,72 @@ test("the waterfall head takes the complete water datum once, independently of i
     geometry.dispose();
   }
 });
+
+test("mist renders at its full rising trajectory while drops retain both shutter endpoints", () => {
+  const falls = createFalls({ lib, clock: { uniform: { value: 0 }, tick: () => 0 }, drop, height });
+  try {
+    const shader = falls.splash.material.vertexShader,
+      branches = shader.match(/if\(mist<\.5\)\{([\s\S]*?)\}else\{([\s\S]*?)\}\s*vMist/),
+      ballistic = shader.match(/vec3 splashDrop\([^)]*\)\{([^}]+)\}/)?.[1],
+      midpoint = shader.match(/gl_Position=mix\(c0,c1,([^;]+)\);/)?.[1];
+    assert.ok(branches && ballistic && midpoint);
+    const shutter = Number(branches[1].match(/age\+([\d.]+)\)/)?.[1]);
+    assert.ok(Math.abs(shutter - FALLS.splash.shutter) < 1e-4, "the delivered film shutter");
+    // Run the delivered shader's vertical trajectory and endpoint assignments.
+    // X/z do not affect this orthographic projection; GLSL vector assignments
+    // copy values, so the tiny scalar evaluator must copy p as well.
+    const scalar = (body) =>
+        body
+          .replace(/p\.xz\+=[^;]+;/g, "")
+          .replace(/\bfloat\b/g, "let")
+          .replace(/\bexp\(/g, "Math.exp(")
+          .replace(/\bp1=p;/g, "p1={...p};"),
+      splashDrop = new Function(
+        "position",
+        "dir",
+        "v0",
+        "h0",
+        "age",
+        `let p={...position};${scalar(ballistic)}`,
+      ),
+      mix = (a, b, t) => a + (b - a) * t,
+      sample = (mist, age) => {
+        const body = branches[mist ? 2 : 1].split(/\bsz=/)[0];
+        return new Function(
+          "position",
+          "dir",
+          "age",
+          "r2",
+          "r3",
+          "splashDrop",
+          "mix",
+          `let p={...position},p1={...p};${scalar(body)}return {p,p1,drawn:mix(p.y,p1.y,${midpoint})};`,
+        )({ y: SEA.level + 0.1 }, null, age, 0.5, 0.5, splashDrop, mix);
+      };
+    for (const age of [0.1, 1, 2]) {
+      const { p, p1, drawn } = sample(true, age),
+        expected =
+          SEA.level +
+          0.1 +
+          FALLS.splash.rise[0] * FALLS.splash.rise[1] * (1 - Math.exp(-age / FALLS.splash.rise[1]));
+      assert.ok(Math.abs(p.y - expected) < 1e-10);
+      assert.equal(p1.y, p.y, "mist has no second shutter position at its old emitter");
+      assert.equal(drawn, p.y, "the visible mote and its lighting use the same world position");
+    }
+    for (const age of [0.1, 0.4, 0.8]) {
+      const { p, p1, drawn } = sample(false, age),
+        v0 = mix(...FALLS.splash.up, 0.25),
+        y = (t) => {
+          const k = FALLS.splash.drag,
+            e = (1 - Math.exp(-k * t)) / k;
+          return SEA.level + 0.1 + v0 * e - (32.2 / k) * (t - e);
+        };
+      assert.ok(Math.abs(p.y - y(age)) < 1e-10);
+      assert.ok(Math.abs(p1.y - y(age + shutter)) < 1e-10);
+      assert.notEqual(p1.y, p.y, "drops still span the film shutter's ballistic travel");
+      assert.equal(drawn, mix(p.y, p1.y, 0.5));
+    }
+  } finally {
+    falls.dispose();
+  }
+});
