@@ -23,13 +23,12 @@ export const FILM_LIGHT = Object.freeze({
 // near white do its channels roll off on their own, as film's do); the painted
 // sky and the star stay as shown (postprocess.js grading). The exposure keeps a
 // display level of `anchor` where it was, the brightest lit ground and subjects
-// behind the text, so the text's guards hold. Review variants (temporary):
-// ?tone=a|b|c, off.
-const TONES = { a: [1.15, 0.63], b: [1.3, 0.49], c: [1.5, 0.35] };
-const tonePick = globalThis.location?.search?.match(/[?&]tone=(\w+)/)?.[1];
+// behind the text, so the text's guards hold. The owner's pick of 2026-10-19:
+// "Deep" (of Open p 1.15, Film p 1.3 and Deep p 1.5), night photography's
+// deep shade under bright moonlit faces.
 export const FILM_TONE = Object.freeze({
-  contrast: (TONES[tonePick] ?? TONES.c)[0],
-  mid: (TONES[tonePick] ?? TONES.c)[1],
+  contrast: 1.5,
+  mid: 0.35,
   anchor: 0.3,
   balance: Object.freeze([0.96, 0.99, 1.04]),
   saturation: 0.85,
@@ -39,9 +38,9 @@ export function filmExposure({ contrast, mid, anchor } = FILM_TONE) {
   const y = ((anchor + 0.055) / 1.055) ** 2.4;
   return ((mid * y) / (1 - y)) ** (1 / contrast) / anchor;
 }
-const toneOn = tonePick !== "off";
+// The grading pass's uTone: exposure, contrast, mid, and 1 (the curve on).
 export const FILM_TONE_UNIFORM = {
-  value: new Vector4(filmExposure(), FILM_TONE.contrast, FILM_TONE.mid, toneOn ? 1 : 0),
+  value: new Vector4(filmExposure(), FILM_TONE.contrast, FILM_TONE.mid, 1),
 };
 const toneVec = (v) => `vec3(${v.map((c) => c.toFixed(4)).join(",")})`;
 export const FILM_TONE_GLSL = `uniform vec4 uTone;
@@ -49,9 +48,7 @@ vec3 filmTone(vec3 x){x=max(x*uTone.x*${toneVec(FILM_TONE.balance)},0.);float l=
 // Its inverse, channel by channel, for colours given as shown that light the lit
 // layers (the night sky as their environment, night-environment.js): the scene
 // light the curve shows as them.
-export const FILM_UNTONE_GLSL = toneOn
-  ? `vec3 filmUntone(vec3 d){vec3 y=min(mix(pow((max(d,0.)+.055)/1.055,vec3(2.4)),d/12.92,step(d,vec3(.04045))),.995),x=pow(${FILM_TONE.mid.toFixed(4)}*y/(1.-y),vec3(${(1 / FILM_TONE.contrast).toFixed(4)}));return max(mix(vec3(dot(x,vec3(.2126,.7152,.0722))),x,${(1 / FILM_TONE.saturation).toFixed(4)}),0.)/${toneVec(FILM_TONE.balance)}/${filmExposure().toFixed(4)};}`
-  : "vec3 filmUntone(vec3 d){return d;}";
+export const FILM_UNTONE_GLSL = `vec3 filmUntone(vec3 d){vec3 y=min(mix(pow((max(d,0.)+.055)/1.055,vec3(2.4)),d/12.92,step(d,vec3(.04045))),.995),x=pow(${FILM_TONE.mid.toFixed(4)}*y/(1.-y),vec3(${(1 / FILM_TONE.contrast).toFixed(4)}));return max(mix(vec3(dot(x,vec3(.2126,.7152,.0722))),x,${(1 / FILM_TONE.saturation).toFixed(4)}),0.)/${toneVec(FILM_TONE.balance)}/${filmExposure().toFixed(4)};}`;
 
 // A shot's `light` mood multiplies the film balance (key, fill) and the lantern.
 // Legacy rim, pale and rimText keys remain accepted without changing materials.

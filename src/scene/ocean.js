@@ -1653,7 +1653,7 @@ const COAST_LOOK = Object.freeze({
   light: Object.freeze({ key: 1, fill: 0.6, rim: 1.3, lantern: 1.2 }),
   ground: Object.freeze({
     mist: Object.freeze({ color: Object.freeze([0.27, 0.26, 0.29]), amount: 0.35 }),
-    gloss: Object.freeze({ film: 0.32, gain: 1.9, cool: 0 }),
+    gloss: Object.freeze({ film: 0.32, gain: 1, cool: 0 }),
   }),
 });
 const BROKEN_COAST_VIEW = Object.freeze({
@@ -1669,11 +1669,6 @@ export const COAST_SHOTS = Object.freeze([
     ...COAST_LOOK,
     name: "The broken coast",
     after: "Portrait",
-    // The near clifftop burned down under the name (its moonlit crests held it under 5:1).
-    ground: Object.freeze({
-      ...COAST_LOOK.ground,
-      burn: Object.freeze({ amount: 0.4, reach: Object.freeze([0.55, 0.85]) }),
-    }),
     ...BROKEN_COAST_VIEW,
     // On upright phones a wider bearing holds the offshore pillar and tilted
     // slab apart across open water, from beyond the tree (farther back it
@@ -1723,11 +1718,6 @@ export const COAST_SHOTS = Object.freeze([
     ...COAST_LOOK,
     name: "Over the fault",
     after: "Root and lantern",
-    // The plain under the name burned down, as The broken coast's.
-    ground: Object.freeze({
-      ...COAST_LOOK.ground,
-      burn: Object.freeze({ amount: 0.5, reach: Object.freeze([1.1, 1.8]) }),
-    }),
     aim: Object.freeze([90, -8.75, 90]),
     azimuth: -125,
     reach: 45,
