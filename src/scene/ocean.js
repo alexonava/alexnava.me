@@ -1718,6 +1718,19 @@ export const COAST_SHOTS = Object.freeze([
     ...COAST_LOOK,
     name: "Over the fault",
     after: "Root and lantern",
+    // The moon through a break in the cloud lights the fault and the falls; the
+    // cloud's shadow lies on the clifftop beyond, under the name (mud-ground.js
+    // SLATE_LOOK: its moonlit crests held the name near 5:1 in full moonlight).
+    ground: Object.freeze({
+      ...COAST_LOOK.ground,
+      clearing: Object.freeze({
+        toward: 0,
+        radius: Object.freeze([14, 30]),
+        light: Object.freeze([1, 1, 1]),
+        rest: 0.6,
+        shade: Object.freeze([0, 22, 70]),
+      }),
+    }),
     aim: Object.freeze([90, -8.75, 90]),
     azimuth: -125,
     reach: 45,
