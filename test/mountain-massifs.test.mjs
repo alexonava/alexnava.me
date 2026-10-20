@@ -719,12 +719,14 @@ test("the massif shader is the ranges' moonlit style on the models' own relief",
     "hw=max(1.5*fwidth(hold)",
   ])
     assert.ok(fragmentShader.indexOf(derived) < branch, `${derived} before the branch`);
-  assert.equal(MASSIFS.air, 1);
+  // Big massifs far off: the next range's albedo, hazing as if MASSIFS.air x as far.
+  assert.ok(MASSIFS.air > 1 && MASSIFS.air < 1.5);
   assert.ok(
     fragmentShader.includes(
-      `float T=mix(mix(mix(mix(${MOUNTAIN_AIR.transmittance[0]},${MOUNTAIN_AIR.transmittance[1]},step(0.5,(vT.y+1.0)))`,
+      `float T=exp(-max(length(vL)*${MASSIFS.air}-${MOUNTAIN_AIR.haze[0]}.0,0.)*${MOUNTAIN_AIR.haze[1]}), alb=mix(mix(mix(mix(${MOUNTAIN_AIR.albedo[0]},${MOUNTAIN_AIR.albedo[1]},step(0.5,(vT.y+1.)))`,
     ),
   );
+  assert.ok(fragmentShader.includes("uniform vec4 uMist, uLight;"));
   // Snow from each copy's own snowline (aTerrain.z), only where it has one.
   assert.ok(
     fragmentShader.includes(

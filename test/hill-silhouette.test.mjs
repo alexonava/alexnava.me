@@ -5,6 +5,7 @@ import vm from "node:vm";
 import { flat } from "./support/code.mjs";
 import {
   BufferGeometry,
+  Color,
   FrontSide,
   Group,
   NoBlending,
@@ -19,6 +20,7 @@ import {
   HILL_PROFILE,
   HORIZON_HAZE,
   MOUNTAIN_AIR,
+  MOUNTAIN_LIGHT,
   mountainBody,
   RANGE_MIST,
   RANGE_MIST_SHAPE,
@@ -452,49 +454,65 @@ test("thin low strips part as layers without echoing their crest", () => {
 });
 
 test("the rock body stays ordered by distance, below the sky and with a readable lit and shadow flank", () => {
-  const { transmittance, albedo, rockMax } = MOUNTAIN_AIR;
-  assert.deepEqual([...transmittance], [0.86, 0.8, 0.62, 0.44, 0.3]);
+  const { haze, albedo, rock, sky, rockMax } = MOUNTAIN_AIR;
   assert.equal(albedo.length, MOUNTAINS.radii.length);
+  // Each ring at its own distance, in the film's moonlight.
+  const mountainAt = (range, lit, options) =>
+    mountainBody(range, lit, { distance: MOUNTAINS.radii[range], ...options });
   for (const lit of [0, 0.5, 1]) {
-    for (let range = 0; range < transmittance.length; range++) {
-      const body = mountainBody(range, lit);
+    for (let range = 0; range < albedo.length; range++) {
+      const body = mountainAt(range, lit);
       assert.ok(
         body > 0.1 && body <= rockMax && rockMax < 1,
         `range ${range} stays visible and below the sky`,
       );
       if (range > 0)
-        assert.ok(
-          body - mountainBody(range - 1, lit) >= 0.025,
-          `range ${range} approaches the sky`,
-        );
+        assert.ok(body - mountainAt(range - 1, lit) >= 0.025, `range ${range} approaches the sky`);
     }
   }
   // Moonlit and shadowed faces differ by at least a fifth of the sky's luma on
   // every range (the former band clamp held them within 1-2/255), and distance
   // flattens form.
-  const contrast = (range) => mountainBody(range, 1) - mountainBody(range, 0);
-  for (let range = 0; range < transmittance.length; range++)
+  const contrast = (range) => mountainAt(range, 1) - mountainAt(range, 0);
+  for (let range = 0; range < albedo.length; range++)
     assert.ok(contrast(range) >= 0.2, `range ${range} flank ${contrast(range)}`);
   assert.ok(contrast(4) < contrast(1));
   // Summits see through thinner air: more of their form.
-  assert.ok(
-    mountainBody(4, 1, { elevation: 6 }) - mountainBody(4, 0, { elevation: 6 }) > contrast(4),
-  );
-  // The shader applies the same air, albedo and moonlight and no longer pins
-  // each range to a narrow luma band.
-  const hill = createHillSilhouette({ groundHeight });
+  assert.ok(mountainAt(4, 1, { elevation: 6 }) - mountainAt(4, 0, { elevation: 6 }) > contrast(4));
+  // The shader applies the same air, albedo and light: the rock in the scene's
+  // moonlight (MOUNTAIN_LIGHT), hazing by its distance, in the scene's light.
+  const sun = { color: new Color(0.5, 0.6, 0.8), intensity: 2 },
+    hill = createHillSilhouette({
+      groundHeight,
+      rendering: { lights: { sun, hemisphere: { intensity: 0.4 }, ambient: { intensity: 0.1 } } },
+    });
   hill.setFilmTreatment(true);
-  const shader = hill.mesh.material.fragmentShader;
-  const g = (v) => (Number.isInteger(v) ? v.toFixed(1) : String(v)),
-    [t0, t1, t2, t3, t4] = transmittance.map(g);
+  const { material } = hill.mesh,
+    shader = material.fragmentShader;
+  const g = (v) => (Number.isInteger(v) ? v.toFixed(1) : String(v));
+  assert.ok(shader.includes(`float T=exp(-max(length(vL)-${g(haze[0])},0.)*${g(haze[1])})`));
   assert.ok(
     shader.includes(
-      `float T=mix(mix(mix(mix(${t0},${t1},step(0.5,vT.y)),${t2},step(1.5,vT.y)),${t3},step(2.5,vT.y)),${t4},step(3.5,vT.y))`,
+      `vec3 c=(uLight.rgb*lit+vec3(.8117,.9991,1.5611)*uLight.w*${g(sky)}*(.6+.4*n.y))*ao*alb*${g(rock)};`,
     ),
   );
-  assert.ok(shader.includes(`*${g(MOUNTAIN_AIR.moon)}*lit+`));
+  assert.ok(shader.includes("s=filmUntone(s);air=filmUntone(air);"));
+  assert.ok(shader.indexOf("s=filmUntone(s)") < shader.indexOf("float sL=max(dot(s,W),1e-4)"));
   assert.ok(shader.includes(`c*=min(1.,${rockMax}*sL/max(dot(c,W),1e-4));`));
-  assert.doesNotMatch(shader, /bodyLuma|tL-/);
+  assert.doesNotMatch(
+    shader,
+    /\*sL\*\(1\.-\.1\*gully|bodyLuma|tL-/,
+    "no light in units of the sky",
+  );
+  // The scene's key (a shot's mood with it) and the sky's light, kept each draw.
+  assert.equal(material.uniforms.uLight, MOUNTAIN_LIGHT);
+  const before = MOUNTAIN_LIGHT.value.clone();
+  try {
+    hill.mesh.onBeforeRender();
+    assert.deepEqual(MOUNTAIN_LIGHT.value.toArray(), [1, 1.2, 1.6, 0.5]);
+  } finally {
+    MOUNTAIN_LIGHT.value.copy(before);
+  }
   hill.dispose();
 });
 
@@ -1055,7 +1073,7 @@ test("the mountain shader rides the camera, hazes toward the film sky and writes
   assert.ok(RANGE_MIST_SHAPE.floor < 0 && RANGE_MIST_SHAPE.top > 0 && RANGE_MIST_SHAPE.top < 0.05);
   assert.match(
     material.fragmentShader,
-    /uniform vec4 uMist;[\s\S]*if\(uMist\.w>0\.\)\{[^}]*\}\s*gl_FragColor=vec4\(c,0\.3333\);\s*}$/,
+    /uniform vec4 uMist, uLight;[\s\S]*if\(uMist\.w>0\.\)\{[^}]*\}\s*gl_FragColor=vec4\(c,0\.3333\);\s*}$/,
   );
   // Lit by the moon key (rendering's sun light, 32,28,14).
   const key = [32, 28, 14].map((value) =>
