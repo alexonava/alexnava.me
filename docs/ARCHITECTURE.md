@@ -69,7 +69,7 @@ _lazy_ marks a chunk loaded on demand.
 | `rendering.js`         | Renderer, lights, shadows, shader compilation                                                                                    |
 | `shader-programs.js`   | Captured-program shader readiness with bounded, cancellable polling                                                              |
 | `night-environment.js` | The film sky captured as the scene's environment                                                                                 |
-| `postprocess.js`       | Composer, grade, bloom, ink contour, dissolve, the lens's heat, aberration and flare (`LENS_FX`)                                 |
+| `postprocess.js`       | Composer, grade, bloom, ink contour, dissolve, the lens's heat and aberration (`LENS_FX`)                                        |
 | `depth-layers.js`      | Depth-layer codes for the dissolve, and the star's mask                                                                          |
 | `film-light.js`        | Film light balance, shot moods, text guards and directional flash illumination                                                   |
 | `perf-marks.js`        | `babel:` marks and measures                                                                                                      |
@@ -112,7 +112,7 @@ _lazy_ marks a chunk loaded on demand.
 | `estate-sky.js`      | Film sky gradient, horizon band, the cloud field (`cloudFieldGLSL`), its reshaping (`CLOUD_RESHAPE`) and vortex (`CLOUD_VORTEX`)                                               |
 | `celestial-field.js` | Shared nebula frame and dust                                                                                                                                                   |
 | `starfield.js`       | Stars (`STAR_COUNTS`), hidden behind the cloud banks                                                                                                                           |
-| `solar-body.js`      | The star, its fire, glow and prominences, and their unrest (`SOLAR_LOOK`, `SOLAR_FIRE`)                                                                                        |
+| `solar-body.js`      | The painted star, its disc and glow, and their unrest (`SOLAR_LOOK`)                                                                                                           |
 | `hill-silhouette.js` | Baseline hill ring, the rings' and the massifs' materials, loading the massifs, ranges stand-in, far plain air (`HORIZON_AIR`), the ranges sinking past the fault (`SEA_SINK`) |
 | `mountain-build.js`  | _lazy_ Film mountain geometry: the massifs' placements (`RANGE_PLACEMENTS`), the backdrop rings, the five-ring fallback                                                        |
 | `lightning.js`       | The storm's lightning (`LIGHTNING`): its seeded schedule, the bolt, and the flash on the sky shell, the film's materials, the ground and the mist                              |
@@ -192,7 +192,7 @@ The scene runs on the high and balanced tiers only; the low tier keeps the title
 | Scene MSAA (WebGL2) | 4 samples | none     |
 | Stars               | 4200      | 2600     |
 
-Touch-primary devices cap the pixel ratio at 1.25 on every tier. The composer's targets follow the canvas in device pixels; the renderer's own antialiasing is off. Star sprites, prominences, bloom and the ink contour are sized in CSS pixels. Models and slate maps keep the startup tier (`assetTier`), so a quality step never re-downloads them. The optional coastal albedo and packed detail tiles are fixed at 512px and 256px respectively on both live tiers and never re-download on an adaptive step.
+Touch-primary devices cap the pixel ratio at 1.25 on every tier. The composer's targets follow the canvas in device pixels; the renderer's own antialiasing is off. Star sprites, bloom and the ink contour are sized in CSS pixels. Models and slate maps keep the startup tier (`assetTier`), so a quality step never re-downloads them. The optional coastal albedo and packed detail tiles are fixed at 512px and 256px respectively on both live tiers and never re-download on an adaptive step.
 
 The governor samples display intervals only after the reveal, and not for 3 s after a resize, resume, context restore, pause release or asset commit; a dissolve's tour capture, cut and first blended frames are skipped. A 60-frame window averaging over 20 ms for 120 consecutive frames steps down one tier. A revealed scene never draws the low profile: its step below balanced, the resolution step, keeps the profile and lowers only the pixel ratio to 1. Recovery needs 300 frames whose window average stays under the larger of 15 ms and 1.1 times its 10th percentile, counted only while that percentile is at most 17.5 ms (a display at 60 Hz or faster that keeps up), and 10 s since the last change; each recovery followed by another downgrade doubles both, and after two such oscillations recovery stops. While the tour runs, a step waits for the next cut; where the browser links programs in parallel, it links them first (`rendering.prepareQuality()`).
 

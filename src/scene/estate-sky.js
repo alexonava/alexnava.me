@@ -94,7 +94,8 @@ export const FLASH_REFERENCE = Object.freeze({
 // Like the reshaping, uCloudReshape scales it (0 in the environment's capture), and
 // behind the name and intro (cloudText) it takes nothing. `on`: 0 emits none of it.
 // Gentler since the owner's quiet cut of 2026-10-13 (twist 5, arm density 0.24 and
-// ring 0.32 before), so it frames the star without shouting.
+// ring 0.32 before), so it frames the star without shouting; its ring nearly gone since
+// 2026-10-20 ("i don't want the ring to be very visible", 0.18 before), the arms kept.
 export const CLOUD_VORTEX = Object.freeze({
   on: 1,
   months: Object.freeze([10]),
@@ -105,7 +106,7 @@ export const CLOUD_VORTEX = Object.freeze({
   twist: 3.2,
   arms: Object.freeze([4, 3.2, 0.14, 480]),
   eye: Object.freeze([0.1, 0.16, 0.45]),
-  ring: Object.freeze([0.18, 0.17, 0.035]),
+  ring: Object.freeze([0.04, 0.17, 0.035]),
   hole: Object.freeze([0.09, 0.12]),
   guardShots: Object.freeze(["The watch"]),
   protect: Object.freeze([176, 179]),

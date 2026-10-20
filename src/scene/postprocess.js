@@ -244,8 +244,7 @@ export const DISSOLVE_BRUSH = Object.freeze({
 // outgoing star (disc and glow) fades whole over `fade` of the progress into that frame's
 // own sky about it (`ring` radii out, along its ray), and the place then dissolves as sky,
 // a little after; nothing of the incoming shot shows early through it. The incoming star
-// turns as one when the outgoing frame's nearest layer over its disc turns. Each lens flare
-// goes with its own star. `on`: 0 keeps the hard mask.
+// turns as one when the outgoing frame's nearest layer over its disc turns. `on`: 0 keeps the hard mask.
 export const DISSOLVE_SOFT = Object.freeze({
   on: 1,
   radius: 0.03,
@@ -259,22 +258,13 @@ export const DISSOLVE_SOFT = Object.freeze({
 // The lens (the owner's pick of the Eye breakdown, 2026-10-09), all of it in the
 // final pass, in film only; each part switches off with its `on`.
 export const LENS_FX = Object.freeze({
-  // Heat shimmer: the frame's UV drifts on flowing noise in a ring about the star
-  // (`ring`: from, full, fading, gone, in star radii) and in a plume above the
+  // Heat shimmer: the frame's UV drifts on flowing noise in a plume above the
   // lantern's flame in the shots that look at it (`flameShots`; `plume` world
-  // units tall, `width` wide at the flame). `amount` is the drift (star radii;
-  // world units at the flame), `scale` the noise's frequency (per radius; per
-  // unit), `rise` its outward or upward flow a second and `boil` its churn;
-  // `octaves` per tier.
+  // units tall, `width` wide at the flame). `amount` is the drift (world units),
+  // `scale` the noise's frequency (per unit), `rise` its upward flow a second and
+  // `boil` its churn; `octaves` per tier. (The painted star has none.)
   heat: Object.freeze({
     on: 1,
-    star: Object.freeze({
-      amount: 0.01,
-      ring: Object.freeze([0.92, 1.2, 1.9, 3]),
-      scale: 2.6,
-      rise: 0.45,
-      boil: 0.5,
-    }),
     flame: Object.freeze({
       amount: 0.012,
       plume: 1.9,
@@ -289,32 +279,9 @@ export const LENS_FX = Object.freeze({
   // Chromatic aberration: red read outward and blue inward, growing with the
   // square of the distance from the frame's centre to `edge` CSS px apart at a
   // 1600x900 frame's corners (scaled with the frame's diagonal), and `star` px
-  // apart across the star's fire edge: a film lens (the owner's ask of
+  // apart across the star's edge: a film lens (the owner's ask of
   // 2026-10-13, "more lens artifacts"), stronger about the star.
   aberration: Object.freeze({ on: 1, edge: 1.2, star: 1 }),
-  // Flare, only while the star is in frame: a faint shine about it (`shine` at
-  // the limb, falling off over `shineReach` radii, `shineDisc` of it over the
-  // disc) in `color`, and any ghosts along the line from the star through the
-  // frame's centre: [t along it (1 at the centre), radius in frame heights,
-  // r, g, b, strength]: a film lens's few soft ghosts (the owner's pick of
-  // 2026-10-13), faint and in the star's own amber as a coated lens tints them
-  // (2026-10-19, photoreal), a cooler one, a small dot past the centre, a large
-  // faint ring and an amber disc, spread far enough along the line that they
-  // never bunch about a star near the centre.
-  flare: Object.freeze({
-    on: 1,
-    shine: 0.045,
-    shineReach: 1.3,
-    shineDisc: 0.25,
-    color: Object.freeze([1, 0.6, 0.3]),
-    ghosts: Object.freeze([
-      Object.freeze([0.35, 0.03, 1, 0.62, 0.3, 0.108]),
-      Object.freeze([0.75, 0.06, 0.73, 0.66, 0.65, 0.054]),
-      Object.freeze([1.35, 0.018, 0.8, 0.81, 0.5, 0.096]),
-      Object.freeze([1.9, 0.1, 0.95, 0.56, 0.65, 0.036]),
-      Object.freeze([2.6, 0.04, 1, 0.69, 0.35, 0.072]),
-    ]),
-  }),
   // None of it reaches the text: it eases out over `text[0]` of the screen's
   // smaller side about the name and intro, and `text[1]` about Contact.
   text: Object.freeze([0.1, 0.05]),
@@ -327,16 +294,13 @@ export const LENS_FX = Object.freeze({
   keep: Object.freeze({ "The watch": Object.freeze([0.08, 0.36, 0.78, 1]) }),
   keepSoft: 0.03,
   // A kept rect ends this many of the star's radii short of it (lensKeepRect()), so the star
-  // beside it keeps its whole heat ring and fringe.
+  // beside it keeps its whole fringe.
   keepStar: 3,
 });
 
 const lensNumber = (value) => (Number.isInteger(value) ? value.toFixed(1) : String(value));
 const lensVec3 = (values) => `vec3(${values.map(lensNumber).join(", ")})`;
-const LENS_HEAT = LENS_FX.heat,
-  LENS_STAR = LENS_HEAT.star,
-  LENS_FLAME = LENS_HEAT.flame,
-  LENS_FLARE = LENS_FX.flare;
+const LENS_FLAME = LENS_FX.heat.flame;
 const LENS_GLSL = `
 uniform vec4 uStar;
 uniform vec4 uStarPrev;
@@ -384,17 +348,9 @@ vec2 lensFlow(vec3 q) {
     o += 0.5 * (vec2(lensNoise(q * 2.3 + 5.1), lensNoise(q * 2.3 + vec3(1.7, 31.4, 8.2))) - 0.5);
   return o * 2.0;
 }
-// The heat's drift at v in UV: a ring about the star flowing outward, a plume
-// above the flame flowing up.
-vec2 lensHeat(vec2 v, vec4 star, vec4 flame) {
+// The heat's drift at v in UV: a plume above the flame flowing up.
+vec2 lensHeat(vec2 v, vec4 flame) {
   vec2 aspect = lensAspect(), o = vec2(0.0);
-  if (star.w > 0.0) {
-    vec2 d = (v - star.xy) * aspect / star.z;
-    float r = length(d);
-    float m = smoothstep(${lensNumber(LENS_STAR.ring[0])}, ${lensNumber(LENS_STAR.ring[1])}, r) * (1.0 - smoothstep(${lensNumber(LENS_STAR.ring[2])}, ${lensNumber(LENS_STAR.ring[3])}, r));
-    if (m > 0.001)
-      o += m * ${lensNumber(LENS_STAR.amount)} * star.z * lensFlow(vec3(d / r * 3.0 + uLensTime * ${lensNumber(LENS_STAR.boil * 0.3)}, (r - uLensTime * ${lensNumber(LENS_STAR.rise)}) * ${lensNumber(LENS_STAR.scale)}));
-  }
   if (flame.w > 0.0) {
     vec2 d = (v - flame.xy) * aspect / flame.z;
     float width = ${lensNumber(LENS_FLAME.width)} + 0.22 * max(d.y, 0.0);
@@ -405,7 +361,7 @@ vec2 lensHeat(vec2 v, vec4 star, vec4 flame) {
   return o / aspect;
 }
 // The aberration's shift at v in UV (red reads it outward, blue inward): half
-// the fringe, from the frame's centre and across the star's fire edge.
+// the fringe, from the frame's centre and across the star's edge.
 vec2 lensFringe(vec2 v, vec4 star) {
   vec2 aspect = lensAspect(), c = (v - 0.5) * aspect;
   float corner = 0.25 * (aspect.x * aspect.x + 1.0);
@@ -425,7 +381,7 @@ vec4 lensView(sampler2D map, vec2 uv, vec2 v, float blur, vec3 ground, vec4 star
   // No early return: the focus's taps stay in uniform control flow.
   float open = (1.0 - guard) * (1.0 - lensKeep(keep, v, 0.0));
   vec2 q = uv;
-  if (uLens.x > 0.0 && open > 0.0) q += lensHeat(v, star, flame) * (uLens.x * open);
+  if (uLens.x > 0.0 && open > 0.0) q += lensHeat(v, flame) * (uLens.x * open);
   vec4 texel = lensBlur(map, q, blur, ground);
   if (uLens.y > 0.0) {
     vec2 s = lensFringe(v, star) * (uLens.y * open);
@@ -436,24 +392,6 @@ vec4 lensView(sampler2D map, vec2 uv, vec2 v, float blur, vec3 ground, vec4 star
     texel.b += (texture2D(map, q - s).b - centre.b) * sharp;
   }
   return texel;
-}
-// The flare at v while the star is in frame: its shine and the ghosts.
-vec3 lensFlare(vec2 v, vec4 star, vec4 keep) {
-  if (star.w <= 0.0) return vec3(0.0);
-  vec2 aspect = lensAspect();
-  float inside = min(min(star.x, 1.0 - star.x) * aspect.x, min(star.y - uBars, 1.0 - uBars - star.y));
-  float shown = star.w * smoothstep(-star.z, 2.0 * star.z, inside);
-  if (shown <= 0.0) return vec3(0.0);
-  float r = length((v - star.xy) * aspect) / star.z;
-  vec3 c = ${lensVec3(LENS_FLARE.color)} * (${lensNumber(LENS_FLARE.shine)} * exp(-max(r - 1.0, 0.0) / ${lensNumber(LENS_FLARE.shineReach)}) * mix(${lensNumber(LENS_FLARE.shineDisc)}, 1.0, smoothstep(0.7, 1.0, r)));
-${LENS_FLARE.ghosts.length ? "  vec2 g;\n  float e;\n" : ""}${LENS_FLARE.ghosts
-  .map(
-    ([t, size, red, green, blue, strength]) => `  g = star.xy + (0.5 - star.xy) * ${lensNumber(t)};
-  e = length((v - g) * aspect) / ${lensNumber(size)};
-  c += ${lensVec3([red, green, blue])} * (${lensNumber(strength)} * (1.0 - smoothstep(0.78, 1.0, e)) * (0.55 + 0.45 * smoothstep(0.45, 0.95, e)) * (1.0 - lensKeep(keep, g, ${lensNumber(size)})));`,
-  )
-  .join("\n")}
-  return c * shown * (1.0 - lensKeep(keep, v, 0.0));
 }
 `;
 
@@ -493,7 +431,7 @@ const VIGNETTE_GRAIN_SHADER = {
     uFlamePrev: { value: new Vector4(0, 0, 0, 0) },
     uKeep: { value: new Vector4(2, 2, -1, -1) },
     uKeepPrev: { value: new Vector4(2, 2, -1, -1) },
-    // Heat, aberration and flare on (1) or off, and the heat's octaves.
+    // Heat and aberration on (1) or off, z unused, and the heat's octaves.
     uLens: { value: new Vector4(0, 0, 0, 1) },
     uLensTime: { value: 0 },
     // The text boxes the lens keeps off (index.js lends the ground's).
@@ -633,7 +571,7 @@ void main() {
   float guard = uLayered > 0.5 ? max(lensBehind(slateText, vUv, ${lensNumber(LENS_FX.text[0])}), lensBehind(slateAbout, vUv, ${lensNumber(LENS_FX.text[1])})) : 0.0;
   vec4 texel = uLayered > 0.5 ? lensView(tDiffuse, vUv, vUv, uBlur, uGround, uStar, uFlame, uKeep, guard) : texture2D(tDiffuse, vUv);
   // The kept frame pushes in about its origin: here it shows its own pixel prevUv,
-  // so its lens (heat, fringes, kept rect and flare) is placed in its own UV and
+  // so its lens (heat, fringes and kept rect) is placed in its own UV and
   // stays on its own star and flame.
   vec2 prevUv = uPrevOrigin + (vUv - uPrevOrigin) * uPrevScale;
   float protection = uTextProtection, w = 1.0, turnPrev = 1.0, turnNow = 1.0;
@@ -692,13 +630,6 @@ void main() {
     protection = mix(uTextProtectionFrom, uTextProtection, w);
   }
   vec3 color = texel.rgb;
-  // The star's flare, dissolving with each frame's own.
-  if (uLayered > 0.5 && uLens.z > 0.0) {
-    vec3 flare = lensFlare(vUv, uStar, uKeep);
-    // Each frame's flare goes with its own star's turn (starTurn).
-    if (uProgress < 1.0) flare = ${DISSOLVE_SOFT.foot ? "lensFlare(prevUv, uStarPrev, uKeepPrev) * (1.0 - turnPrev) + flare * turnNow" : "mix(lensFlare(prevUv, uStarPrev, uKeepPrev), flare, w)"};
-    color += flare * (uLens.z * (1.0 - guard));
-  }
 
   if (uVignetteEnabled == 1) {
     float dist = distance(vUv, vec2(0.5));
@@ -1017,7 +948,7 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
     finalUniforms.uLens.value.set(
       film && LENS_FX.heat.on ? 1 : 0,
       film && LENS_FX.aberration.on ? 1 : 0,
-      film && LENS_FX.flare.on ? 1 : 0,
+      0,
       LENS_FX.heat.octaves[profile.tier] ?? LENS_FX.heat.octaves.high,
     );
   }

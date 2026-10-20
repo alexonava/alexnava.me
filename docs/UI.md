@@ -138,22 +138,17 @@ The first paint on every path and the last on the static path ([Glossary](GLOSSA
 `#scene-star`, in the scene shell before the host: the scene's star as the opening shot will show it ([Style](STYLE.md#homepage-title-card-and-footer)). It stays `hidden` until the scene reports where The watch will show its star ([Architecture](ARCHITECTURE.md#title-card-and-loading-line)), and then warms with the loading line's progress.
 
 - **Box.** `.scene-star` is absolutely placed at the shell's top-left with no size, at `z-index: 0`: above the shell's background and its star field, and under the canvas (1). It takes no pointer events. scene-loader.js translates it to the star's centre.
-- **Parts.** Nine spans, in order: `.scene-star__haze`, `.scene-star__streak`, `.scene-star__glow`, `.scene-star__disc` and five `.scene-star__ghost`. Each is a 100px box centred on the star's centre (`top` and `left` −50px), at opacity 0 until the script writes it, and sized by its transform.
-- **Disc.** A radial gradient of the scene star's colours at the reveal: a pale gold centre, `rgb(190, 180, 122)`, through `rgb(173, 146, 83)` to a warm limb, `rgb(173, 127, 70)`.
-- **Glow.** Reaches two radii (its box), fading out by about 1.6.
-- **Streak and haze.** The streak is a 2px line and the haze a 16px band, both through the centre and brightest there.
-- **Ghosts.** The lens's colours and strengths ([postprocess.js](../src/scene/postprocess.js) `LENS_FX.flare.ghosts`), set through `--ghost` and `--strength` by `:nth-of-type`; each is brightest toward its rim (0.55 of its strength at the centre) and fades out over its last fifth.
+- **Parts.** Two spans, in order: `.scene-star__glow` and `.scene-star__disc`. Each is a 100px box centred on the star's centre (`top` and `left` −50px), at opacity 0 until the script writes it, and sized by its transform.
+- **Disc.** A radial gradient of the painted star's colours at the reveal (solar-body.js `SOLAR_LOOK`): a pale cream centre, `rgb(180, 177, 171)`, through `rgb(175, 166, 131)` to a gold limb, `rgb(172, 149, 90)`.
+- **Glow.** Reaches two radii (its box), carrying on from the limb's gold and fading out by about 1.8.
 
 The star warms from the progress at which its place first became known (`since`) to the reveal: its warmth w is (progress − since) / (1 − since), and 1 at the reveal. For a star centred at (x, y) with radius r in a canvas `width` × `height`, all in CSS px, scene-loader.js writes:
 
-| Part   | `transform`                                                                                                                                                                                                          | `opacity`                       |
-| ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
-| Star   | `translate(x, y)`                                                                                                                                                                                                    |                                 |
-| Disc   | `scale(2r / 100 × (0.4 + 0.6√w))`                                                                                                                                                                                    | √w: an unseen ember at first    |
-| Glow   | `scale(4r / 100 × (0.5 + 0.5w))`                                                                                                                                                                                     | w                               |
-| Streak | `scaleX(width / 100 × w)`: frame-wide at full warmth, longer than the scene's own, whose shorter streak takes over in the crossfade                                                                                  | 0.3 + 0.7w                      |
-| Haze   | `scaleX(0.8 × width / 100 × w)`                                                                                                                                                                                      | w                               |
-| Ghosts | `translate((width / 2 − x) × t, (height / 2 − y) × t) scale(2 × size × height / 100)` for each of the lens's `[t, size]`: t along the line from the star through the frame's centre (1 there), size in frame heights | smoothstep of (w − 0.35) / 0.65 |
+| Part | `transform`                       | `opacity`                    |
+| ---- | --------------------------------- | ---------------------------- |
+| Star | `translate(x, y)`                 |                              |
+| Disc | `scale(2r / 100 × (0.4 + 0.6√w))` | √w: an unseen ember at first |
+| Glow | `scale(4r / 100 × (0.5 + 0.5w))`  | w                            |
 
 - **Reveal.** At the reveal w is 1: the star is the scene's own as the opening shot shows it, in place and size, and the canvas's 480ms fade-in covers it, a crossfade with nothing to time. It hides with the line 600ms after the run ends; a line retired below 100% hides it at once.
 - **Writes.** Only the parts' `transform` and `opacity`, at most once a frame, with the value and the bar's fill. The star has no transition, animation, keyframes or pseudo-element of its own.

@@ -1244,7 +1244,7 @@ test("the final pass decodes each frame's layer from a 5-tap cross and mixes by 
   pipeline.dispose();
 });
 
-test("the lens's heat, fringes and flare live in the final pass, in film, off the text and the kept banks", () => {
+test("the lens's heat and fringes live in the final pass, in film, off the text and the kept banks", () => {
   const { capture, frame, pipeline } = createRecordedPipeline({
     tier: "high",
     postprocessGrading: true,
@@ -1252,10 +1252,12 @@ test("the lens's heat, fringes and flare live in the final pass, in film, off th
   const final = pipeline.passes.vignetteGrain.uniforms;
   // No new pass: the scene, bloom, grading and the final pass.
   assert.equal(pipeline.composer.passes.length, 4);
-  assert.ok(
-    Object.isFrozen(LENS_FX) && Object.isFrozen(LENS_FX.heat) && Object.isFrozen(LENS_FX.flare),
-  );
-  for (const part of ["heat", "aberration", "flare"]) assert.ok("on" in LENS_FX[part], part);
+  assert.ok(Object.isFrozen(LENS_FX) && Object.isFrozen(LENS_FX.heat));
+  for (const part of ["heat", "aberration"]) assert.ok("on" in LENS_FX[part], part);
+  // The painted star (the owner's pick of 2026-10-20) has no lens flare and no heat of
+  // its own; the lantern's flame keeps its plume.
+  assert.equal("flare" in LENS_FX, false);
+  assert.deepEqual(Object.keys(LENS_FX.heat).sort(), ["flame", "flameShots", "octaves", "on"]);
   // Outside film it is off; in film each part follows its switch, and the heat's
   // octaves follow the tier.
   assert.deepEqual(final.uLens.value.toArray().slice(0, 3), [0, 0, 0]);
@@ -1263,7 +1265,7 @@ test("the lens's heat, fringes and flare live in the final pass, in film, off th
   assert.deepEqual(final.uLens.value.toArray(), [
     LENS_FX.heat.on ? 1 : 0,
     LENS_FX.aberration.on ? 1 : 0,
-    LENS_FX.flare.on ? 1 : 0,
+    0,
     LENS_FX.heat.octaves.high,
   ]);
   pipeline.setQualityProfile({ tier: "balanced", postprocessGrading: true });
@@ -1308,32 +1310,21 @@ test("the lens's heat, fringes and flare live in the final pass, in film, off th
     assert.equal(final[name], contacts[name], name);
 
   const shader = pipeline.passes.vignetteGrain.material.fragmentShader;
-  // Behind the text and inside the kept rect the lens is open 0: no drift, no fringe, no flare.
+  // Behind the text and inside the kept rect the lens is open 0: no drift, no fringe.
   assert.match(shader, /float open = \(1\.0 - guard\) \* \(1\.0 - lensKeep\(keep, v, 0\.0\)\);/);
   assert.match(
     shader,
-    /if \(uLens\.x > 0\.0 && open > 0\.0\) q \+= lensHeat\(v, star, flame\) \* \(uLens\.x \* open\);/,
+    /if \(uLens\.x > 0\.0 && open > 0\.0\) q \+= lensHeat\(v, flame\) \* \(uLens\.x \* open\);/,
   );
   assert.match(shader, /vec2 s = lensFringe\(v, star\) \* \(uLens\.y \* open\);/);
-  assert.match(shader, /color \+= flare \* \(uLens\.z \* \(1\.0 - guard\)\);/);
-  assert.match(shader, /return c \* shown \* \(1\.0 - lensKeep\(keep, v, 0\.0\)\);/);
+  // The heat is the flame's alone, and no flare or ghost is drawn.
+  assert.doesNotMatch(shader, /lensFlare|ghost|color \+= flare/);
+  const heat = shader.slice(shader.indexOf("vec2 lensHeat("), shader.indexOf("vec2 lensFringe("));
+  assert.doesNotMatch(heat, /vec4 star|\bstar\.[xyzw]/);
   // The focus's taps never sit behind a per-pixel branch: no early return in lensView.
-  const view = shader.slice(shader.indexOf("vec4 lensView("), shader.indexOf("vec3 lensFlare("));
+  const viewAt = shader.indexOf("vec4 lensView("),
+    view = shader.slice(viewAt, shader.indexOf("\n}\n", viewAt));
   assert.equal((view.match(/return /g) || []).length, 1);
-  // The flare dissolves with each frame's own star, evenly (its turn, never cut by the
-  // other frame's layers), and only while the star is in frame.
-  assert.match(
-    shader,
-    /if \(uProgress < 1\.0\) flare = lensFlare\(prevUv, uStarPrev, uKeepPrev\) \* \(1\.0 - turnPrev\) \+ flare \* turnNow;/,
-  );
-  assert.match(shader, /float shown = star\.w \* smoothstep\(-star\.z, 2\.0 \* star\.z, inside\);/);
-  // One block per ghost, each dropped whole near the kept rect.
-  assert.equal(
-    (shader.match(/\* \(1\.0 - lensKeep\(keep, g, /g) || []).length,
-    LENS_FX.flare.ghosts.length,
-  );
-  // The flare is added before the vignette, the text shade and the bars.
-  assert.ok(shader.indexOf("color += flare") < shader.indexOf("if (uVignetteEnabled == 1)"));
   // The text guard reaches LENS_FX.text of the smaller side.
   assert.ok(shader.includes(`lensBehind(slateText, vUv, ${LENS_FX.text[0]})`));
   pipeline.dispose();
@@ -1356,12 +1347,11 @@ test("the kept frame's lens stays on its own star and flame as the frame pushes 
   pipeline.setLensSources({});
   pipeline.setTransition({ capture: false, cut: true, progress: 0.8, zoom: 0.02 });
   const shader = pipeline.passes.vignetteGrain.material.fragmentShader;
-  // The pixel at vUv shows the kept frame's own pixel prevUv; its heat, fringes,
-  // kept rect and flare are all evaluated there, with the outgoing sources.
+  // The pixel at vUv shows the kept frame's own pixel prevUv; its heat, fringes and
+  // kept rect are all evaluated there, with the outgoing sources.
   assert.match(shader, /vec2 prevUv = uPrevOrigin \+ \(vUv - uPrevOrigin\) \* uPrevScale;/);
   assert.ok(shader.indexOf("vec2 prevUv =") < shader.indexOf("lensView(tPrev, prevUv, prevUv,"));
-  assert.ok(shader.indexOf("vec2 prevUv =") < shader.indexOf("lensFlare(prevUv, uStarPrev,"));
-  assert.doesNotMatch(shader, /lensView\(tPrev, prevUv, vUv,|lensFlare\(vUv, uStarPrev/);
+  assert.doesNotMatch(shader, /lensView\(tPrev, prevUv, vUv,/);
   // So where the kept star shows on screen (pushed out from the origin by
   // 1 / uPrevScale), its lens is centred on it exactly.
   const origin = final.uPrevOrigin.value.toArray(),

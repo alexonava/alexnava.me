@@ -146,8 +146,8 @@ function createHarness({
     hidden: true,
     children: [label, track],
   });
-  // #scene-star: haze, streak, glow, disc and the lens's five ghosts, as index.html has them.
-  const parts = ["haze", "streak", "glow", "disc", ...Array(5).fill("ghost")].map((part, i) =>
+  // #scene-star: the painted star's glow and disc, as index.html has them.
+  const parts = ["glow", "disc"].map((part, i) =>
     element(`${part}${i}`, { classes: [`scene-star__${part}`] }),
   );
   const star = element("star", { classes: ["scene-star"], hidden: true, children: parts });
@@ -686,7 +686,7 @@ test("the scene's report places the star, which warms from that progress to the 
   h.sceneLoader.stage("bundle");
   h.sceneLoader.star({ ...STAR });
   h.frame();
-  const [haze, streak, glow, disc] = h.parts;
+  const [glow, disc] = h.parts;
   assert.equal(h.star.hidden, false);
   assert.deepEqual(translateOf(h.star.style.transform), [500, 300]);
   // Known at 10%: an unseen ember there.
@@ -700,48 +700,38 @@ test("the scene's report places the star, which warms from that progress to the 
   close(h.state().progress, 0.14 + (0.82 * 0.25) / 0.65, "progress");
   const warm = (h.state().progress - 0.1) / 0.9;
   close(Number(disc.style.opacity), Math.round(Math.sqrt(warm) * 1000) / 1000, "the disc's light");
-  close(scaleOf(streak.style.transform), 14.4 * warm, "the streak");
-  close(scaleOf(haze.style.transform), 11.52 * warm, "the haze");
-  // At the reveal: the scene's own star, two radii of glow, the frame-wide streak.
+  close(Number(glow.style.opacity), Math.round(warm * 1000) / 1000, "the glow's light");
+  // At the reveal: the scene's own star and two radii of glow.
   h.emit("babel:shaders:watch");
   h.host.classList.add("is-ready");
   await settle();
   close(scaleOf(disc.style.transform), 0.4, "the disc at full size");
   close(Number(disc.style.opacity), 1, "the disc's full light");
   close(scaleOf(glow.style.transform), 0.8, "the glow");
-  close(scaleOf(streak.style.transform), 14.4, "the full streak");
+  close(Number(glow.style.opacity), 1, "the glow's full light");
   // A revealed star stays under the canvas's fade-in until the line goes.
   assert.equal(h.star.hidden, false);
   h.advance(600);
   assert.equal(h.star.hidden, true);
 });
 
-test("the star's ghosts follow the lens's: place, size, colour and strength", async () => {
+test("the star is the scene's painted one: its disc and glow, and no lens streak, haze or ghosts", async () => {
+  const styles = await readFile(new URL("../styles.css", import.meta.url), "utf8");
+  // The painted star (solar-body.js SOLAR_LOOK) has no lens flare (postprocess.js LENS_FX).
+  assert.equal("flare" in LENS_FX, false);
+  assert.doesNotMatch(styles, /scene-star__(?:streak|haze|ghost)/);
+  // A pale cream centre warming to a gold limb, and a glow that carries on from it.
+  assert.match(cssRule(styles, ".scene-star > .scene-star__disc"), /rgb\(180, 177, 171\) 0%/);
+  assert.match(
+    cssRule(styles, ".scene-star > .scene-star__glow"),
+    /rgba\(200, 150, 90, 0\.85\) 50%/,
+  );
+  // With both parts in place, the reported star shows.
   const h = createHarness();
   h.sceneLoader.begin({ tier: "high" });
   h.sceneLoader.star({ ...STAR });
-  h.sceneLoader.end("revealed");
-  const ghosts = h.parts.slice(4);
-  const styles = await readFile(new URL("../styles.css", import.meta.url), "utf8");
-  assert.equal(ghosts.length, LENS_FX.flare.ghosts.length);
-  LENS_FX.flare.ghosts.forEach(([t, size, red, green, blue, strength], i) => {
-    const [x, y] = translateOf(ghosts[i].style.transform);
-    close(x, (STAR.width / 2 - STAR.x) * t, `ghost ${i} across`);
-    close(y, (STAR.height / 2 - STAR.y) * t, `ghost ${i} down`);
-    close(scaleOf(ghosts[i].style.transform), (2 * size * STAR.height) / 100, `ghost ${i} size`);
-    assert.equal(Number(ghosts[i].style.opacity), 1);
-    const body = cssRule(
-      styles,
-      i === 0 ? ".scene-star > .scene-star__ghost" : `.scene-star__ghost:nth-of-type(${5 + i})`,
-    );
-    const [, rgb, alpha] = body.match(/--ghost:\s*([\d, ]+);\s*--strength:\s*([\d.]+);/);
-    assert.deepEqual(
-      rgb.split(",").map(Number),
-      [red, green, blue].map((channel) => Math.round(channel * 255)),
-      `ghost ${i} colour`,
-    );
-    assert.equal(Number(alpha), strength, `ghost ${i} strength`);
-  });
+  h.frame();
+  assert.equal(h.star.hidden, false);
 });
 
 test("an unknown, off-frame or malformed star shows nothing, and a late report changes nothing", () => {
