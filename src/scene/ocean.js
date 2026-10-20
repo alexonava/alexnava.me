@@ -1124,7 +1124,7 @@ function* cliffGeometrySteps(height, cliff = CLIFF, half = 190, notch = null) {
     geometry.setAttribute("slateRoot", new BufferAttribute(join(roots, extraRoots), 4));
     geometry.setAttribute(
       "slateShade",
-      new BufferAttribute(new Float32Array(cols * rows * 2 + (extra.length / 3) * 2), 2),
+      new BufferAttribute(new Float32Array(cols * rows * 3 + extra.length), 3),
     );
     geometry.setAttribute(
       "slatePool",

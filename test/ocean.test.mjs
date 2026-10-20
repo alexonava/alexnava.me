@@ -486,7 +486,7 @@ test("the cliff shelf shares the ground material, UV phase and neutral root attr
     }
     assert.equal(uv.itemSize, 2);
     assert.equal(slateRoot.itemSize, 4);
-    assert.equal(slateShade.itemSize, 2);
+    assert.equal(slateShade.itemSize, 3);
     assert.equal(slatePool.itemSize, 1);
     for (const attribute of [uv, slateRoot, slateShade, slatePool])
       assert.equal(attribute.count, position.count);
@@ -497,7 +497,10 @@ test("the cliff shelf shares the ground material, UV phase and neutral root attr
         [slateRoot.getX(i), slateRoot.getY(i), slateRoot.getZ(i), slateRoot.getW(i)],
         [0, 0, 0, 1],
       );
-      assert.deepEqual([slateShade.getX(i), slateShade.getY(i), slatePool.getX(i)], [0, 0, 0]);
+      assert.deepEqual(
+        [slateShade.getX(i), slateShade.getY(i), slateShade.getZ(i), slatePool.getX(i)],
+        [0, 0, 0, 0],
+      );
     }
     const initial = compileShelf();
     assert.equal(initial.uniforms.slateGrit.value, grit);

@@ -2,7 +2,7 @@
 // authored tree variants (images/architecture/tree-{high,balanced}.glb), set
 // TREE_SINK into the soil as prop-scale.js seats them:
 //   ROOT_RESTS  entry lips where the sunk roots leave the soil,
-//   ROOT_SHADE  sky and moon-key occlusion and the contact cut on the 0.75
+//   ROOT_SHADE  sky, moon-key and lantern occlusion and the contact cut on the 0.75
 //               fine lattice (6-bit, 0 neutral),
 //   ROOT_COVER  where a root covers the soil (0.25 grid), for the tufts and
 //               the litter.
@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import {
   KEY_LIGHT,
   LANTERN_FOOT,
+  LANTERN_IMAGE,
   RIVER_BED,
   riverRadius,
   PUDDLE_ZONES,
@@ -359,6 +360,10 @@ export const BAKE = Object.freeze({
   // The key's sharp cone needs a third pass: its penumbra then spans two or
   // more lattice cells, so balanced (no shadow map) draws no polygonal edge.
   key: Object.freeze({ rays: 12, reach: 8, cone: 0.02, jitter: 0.05, smooth: 3 }),
+  // The lantern's flame (LANTERN_IMAGE.glow over its foot), seen from the soil
+  // through the roots and the trunk: `rays` to points across the flame
+  // (`size`: its half-width and half-height), smoothed as the key.
+  lamp: Object.freeze({ rays: 16, size: Object.freeze([0.05, 0.12]), smooth: 2 }),
   cover: Object.freeze({ gap: 0.3, lift: 0.15 }),
   // Occlusion rises from the pinned ground at most `ramp` per unit (0.23
   // across a lattice step): a soft fade toward the lantern clearing and the
@@ -563,6 +568,21 @@ export function bakeRootShade({ tiers = ["high", "balanced"], base = groundBase(
   const up = [0, 1, 0],
     ku = normalize(cross(up, key)),
     kv = normalize(cross(key, ku));
+  const L = BAKE.lamp,
+    flame = [
+      LANTERN_FOOT.x - T.x,
+      ground.at(LANTERN_FOOT.x, LANTERN_FOOT.z) + LANTERN_IMAGE.glow - floor,
+      LANTERN_FOOT.z - T.z,
+    ],
+    lampPoints = Array.from({ length: L.rays }, (_, k) => {
+      const r = Math.sqrt((k + 0.5) / L.rays),
+        phi = 2.399963 * k;
+      return [
+        flame[0] + L.size[0] * r * Math.cos(phi),
+        flame[1] + L.size[1] * (2 * radical(k) - 1),
+        flame[2] + L.size[0] * r * Math.sin(phi),
+      ];
+    });
   const skyRays = Array.from({ length: S.rays }, (_, k) => {
     const u = (k + 0.5) / S.rays,
       r = Math.sqrt(u),
@@ -580,7 +600,8 @@ export function bakeRootShade({ tiers = ["high", "balanced"], base = groundBase(
     const hit = treeVoxels(mesh),
       random = LCG(S.seed),
       sky = new Float64Array(cols * rows),
-      keyOcc = new Float64Array(cols * rows);
+      keyOcc = new Float64Array(cols * rows),
+      lamp = new Float64Array(cols * rows);
     for (const v of vertices) {
       const ox = v.x - T.x,
         oz = v.z - T.z,
@@ -610,6 +631,12 @@ export function bakeRootShade({ tiers = ["high", "balanced"], base = groundBase(
         Math.max(0, (blocked / S.rays - S.floor) / (1 - S.floor)),
       );
       keyOcc[v.row * cols + v.col] = shaded / K.rays;
+      let dark = 0;
+      for (const [x, y, z] of lampPoints) {
+        const d = Math.hypot(x - ox, y - oy, z - oz);
+        if (hit(ox, oy, oz, (x - ox) / d, (y - oy) / d, (z - oz) / d, d - 0.06)) dark++;
+      }
+      lamp[v.row * cols + v.col] = dark / L.rays;
     }
     // Soil a root covers is never seen; its raw value (about 1) would only
     // bleed into the cells beside the root as straight lattice ramps. It takes
@@ -618,6 +645,7 @@ export function bakeRootShade({ tiers = ["high", "balanced"], base = groundBase(
     for (const [field, passes] of [
       [sky, S.smooth],
       [keyOcc, K.smooth],
+      [lamp, L.smooth],
     ]) {
       const next = covered.map((v) => {
         let sum = 0,
@@ -685,7 +713,7 @@ export function bakeRootShade({ tiers = ["high", "balanced"], base = groundBase(
         field[v.row * cols + v.col] =
           Math.min(field[v.row * cols + v.col], BAKE.ramp * Math.max(0, v.shadeClear)) * v.edge;
     }
-    return { sky, key: keyOcc };
+    return { sky, key: keyOcc, lamp };
   });
 
   // The contact cut: ROOT_LINES that stray from the real roots draw no crease
@@ -780,17 +808,23 @@ export function bakeRootShade({ tiers = ["high", "balanced"], base = groundBase(
       if (bank[row * cols + col]) rests2.push([col, row, bank[row * cols + col]]);
   return {
     rests: rests2,
-    shade: { sky: quantize(mean("sky")), key: quantize(mean("key")), cut: quantize(cut) },
+    shade: {
+      sky: quantize(mean("sky")),
+      key: quantize(mean("key")),
+      lamp: quantize(mean("lamp")),
+      cut: quantize(cut),
+    },
     cover: {
       cols: coverCols,
       rows: coverRows,
       bits: Buffer.from(cover).toString("base64"),
       count: covers,
     },
-    tiers: channels.map(({ sky, key }, i) => ({
+    tiers: channels.map(({ sky, key, lamp }, i) => ({
       tier: tiers[i],
       sky: quantize(sky),
       key: quantize(key),
+      lamp: quantize(lamp),
     })),
     stats: { rests: rests.length, arches: arches.length, foot: foot.length, banked: rests2.length },
     rect: { x: rx, z: rz },
@@ -820,7 +854,7 @@ export function formatRootTables(baked) {
   return [
     `export const ROOT_RESTS = Object.freeze([\n${restLines.join("\n")}\n]);`,
     `export const ROOT_SHADE = Object.freeze({\n` +
-      ["sky", "key", "cut"]
+      ["sky", "key", "lamp", "cut"]
         .map((name) => `  ${name}: [\n${rows(baked.shade[name], cols)}\n  ].join(""),`)
         .join("\n") +
       `\n});`,

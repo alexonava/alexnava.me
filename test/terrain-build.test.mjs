@@ -930,7 +930,7 @@ test("the lazy ground shading extends only the slate's program, under its own ke
     // baked occlusion, and the soil's cavity (POOL_FIELD).
     assert.match(
       vertex,
-      /^attribute vec4 slateRoot;\nattribute vec2 slateShade;\nattribute float slatePool;\nvarying vec4 vSlateRoot;\nvarying vec2 vSlateShade;\nvarying float vSlatePool;\n/,
+      /^attribute vec4 slateRoot;\nattribute vec3 slateShade;\nattribute float slatePool;\nvarying vec4 vSlateRoot;\nvarying vec3 vSlateShade;\nvarying float vSlatePool;\n/,
     );
     assert.match(
       vertex,
@@ -938,7 +938,7 @@ test("the lazy ground shading extends only the slate's program, under its own ke
     );
     assert.match(
       fragment,
-      /^varying vec4 vSlateRoot;\nvarying vec2 vSlateShade;\nvarying float vSlatePool;\nuniform vec3 slateKeyView;\n/,
+      /^varying vec4 vSlateRoot;\nvarying vec3 vSlateShade;\nvarying float vSlatePool;\nuniform vec3 slateKeyView;\n/,
     );
     // Rain in the soil's low spots: standing water (a puddle, before the lantern
     // puddle is taken), wet mud about it and drier crests, clear of the clearing;
@@ -986,7 +986,7 @@ test("the lazy ground shading extends only the slate's program, under its own ke
     // One branch around the root block, after the contacts; a crease along each root line.
     assert.match(
       fragment,
-      /diffuseColor\.rgb \*= 1\.0 - slateAo\*slateContactGain;\nif \(vSlateShade\.x \+ vSlateShade\.y \+ vSlateRoot\.z > 0\.0\) \{/,
+      /diffuseColor\.rgb \*= 1\.0 - slateAo\*slateContactGain;\nif \(vSlateShade\.x \+ vSlateShade\.y \+ vSlateShade\.z \+ vSlateRoot\.z > 0\.0\) \{/,
     );
     assert.match(
       fragment,
@@ -996,13 +996,16 @@ test("the lazy ground shading extends only the slate's program, under its own ke
     assert.match(fragment, /\*clamp\(\(slateContactGain-\.6\)\*2\.5, 0\.0, 1\.0\)/);
     // Each direct light is dimmed by the occlusion (the key by direction among the
     // directional lights, so the crown's point light never takes the key's term;
-    // the lantern by colour).
+    // the lantern by colour, by its own baked shadows and a share of the creases).
     assert.match(
       fragment,
       /if \(slateDirectional && dot\(L, slateKeyView\) > \.9995\) return 1\.0 - slateKeyOcc;/,
     );
     assert.ok(
-      fragment.includes(`if (C.b < .7*C.r) return 1.0 - ${SLATE_SOIL.occlusion.lantern}*slateSky;`),
+      fragment.includes("if (C.b < .7*C.r) return 1.0 - slateLampOcc;") &&
+        fragment.includes(
+          `slateLampOcc = clamp(max(vSlateShade.z, ${SLATE_SOIL.occlusion.lantern}*slateCrease), 0.0, 1.0)*slateGuard;`,
+        ),
     );
     assert.match(fragment, /#undef RE_Direct\n#define RE_Direct RE_Direct_Slate/);
     assert.ok(
@@ -1041,9 +1044,9 @@ test("the lazy ground shading extends only the slate's program, under its own ke
       fragment.includes("slateDepth = slateH;\nslateKeep = slateKeepAt(vMudWorld.xz);"),
       !authored,
     );
-    // Every root term reads the attributes; where they are neutral (x, y, 0, 1 and 0, 0) nothing changes.
+    // Every root term reads the attributes; where they are neutral (x, y, 0, 1 and 0, 0, 0) nothing changes.
     assert.equal(count(fragment, "vSlateRoot"), authored ? 9 : 7);
-    assert.equal(count(fragment, "vSlateShade"), 5);
+    assert.equal(count(fragment, "vSlateShade"), 7);
     // The puddle mirror: its own list, independent of the roots.
     assert.match(fragment, /^uniform vec4 slateDrip, slateFlame;\n[\s\S]*\n#define STANDARD/m);
     assert.match(
@@ -1219,8 +1222,8 @@ test("the lazy ground shading extends only the slate's program, under its own ke
   }
   assert.deepEqual([SLATE_SOIL.albedo, SLATE_SOIL.flatten, SLATE_SOIL.contact], [0.5, 0.5, 0.35]);
   assert.deepEqual(SLATE_SOIL.keep, [1.9, 2.4]);
-  // The cavity stays lit by the lantern more than by the fills (the lantern-lit
-  // close-ups would otherwise sink below 0.30 of open ground).
+  // The lantern keeps most of its light in a root's crease: its own baked
+  // shadows are what darken the soil behind the roots.
   assert.ok(
     SLATE_SOIL.occlusion.lantern < SLATE_SOIL.occlusion.fill && SLATE_SOIL.occlusion.lantern <= 0.6,
   );
@@ -1327,7 +1330,7 @@ test("the ground shading also finds its anchors in the published, compacted chun
       );
       assert.match(shaded.vertexShader, /vSlateRoot = slateRoot;\nvSlateShade = slateShade;/);
       assert.equal(count(shaded.fragmentShader, "vSlateRoot"), roots);
-      assert.equal(count(shaded.fragmentShader, "vSlateShade"), 5);
+      assert.equal(count(shaded.fragmentShader, "vSlateShade"), 7);
       assert.match(shaded.fragmentShader, /slateLevel=/);
       assert.match(shaded.fragmentShader, /#define RE_Direct RE_Direct_Slate/);
       assert.match(shaded.fragmentShader, /#if NUM_POINT_LIGHTS > 0\n/);
@@ -2094,7 +2097,7 @@ test("the film terrain builds in idle slices and arrives only where it cannot sh
     digest.update("index").update(new Uint8Array(index.buffer, index.byteOffset, index.byteLength));
     assert.equal(
       digest.digest("hex"),
-      "0e0a68de9643b13bb6856514a1ddb26e9d035b8bdb27fbd78c19535d846270b4",
+      "49ddd50fa046a704589cd64977ffb5cb3a3080e32d490091dfb056e6fb90f855",
     );
     for (const name of Object.keys(direct.attributes))
       assert.deepEqual(arrived.attributes[name].array, direct.attributes[name].array, name);
@@ -2278,9 +2281,9 @@ test("the root shading keeps full float precision beside a 16-bit index", () => 
   // Bytes or shorts move the grade's cel bands on single pixels of settled
   // soil (matched captures: up to 13 levels with bytes, 8 with shorts).
   assert.ok(shade.array instanceof Float32Array && !shade.normalized);
-  // The baked occlusion too: a Float32 vec2, exactly as ROOT_SHADE holds it.
+  // The baked occlusion too: a Float32 vec3, exactly as ROOT_SHADE holds it.
   assert.ok(
-    occlusion.array instanceof Float32Array && !occlusion.normalized && occlusion.itemSize === 2,
+    occlusion.array instanceof Float32Array && !occlusion.normalized && occlusion.itemSize === 3,
   );
   assert.equal(occlusion.count, geometry.attributes.position.count);
   assert.ok(geometry.index.array instanceof Uint16Array, "the index stays 16-bit");
@@ -2293,8 +2296,8 @@ test("the root shading keeps full float precision beside a 16-bit index", () => 
   for (let i = 0; i < p.count; i++) {
     if (surfaceKind.getX(i)) {
       assert.deepEqual(
-        [occlusion.getX(i), occlusion.getY(i)],
-        [0, 0],
+        [occlusion.getX(i), occlusion.getY(i), occlusion.getZ(i)],
+        [0, 0, 0],
         "the water cap has no baked root occlusion",
       );
       continue;
@@ -2307,11 +2310,12 @@ test("the root shading keeps full float precision beside a 16-bit index", () => 
       const lattice = rootOcclusion(p.getX(i), -p.getY(i));
       assert.ok(Math.abs(occlusion.getX(i) - lattice[0]) < 1e-6, `river ${x},${z}`);
       assert.ok(Math.abs(occlusion.getY(i) - lattice[1]) < 1e-6, `river ${x},${z}`);
+      assert.ok(Math.abs(occlusion.getZ(i) - lattice[2]) < 1e-6, `river ${x},${z}`);
       continue;
     }
     // Grid vertices near the roots (stitching fan centres stay open soil).
     if (Math.abs(x - 3) >= 15 || Math.abs(z) >= 15 || p.getX(i) % 0.75 || p.getY(i) % 0.75) {
-      assert.deepEqual([occlusion.getX(i), occlusion.getY(i)], [0, 0]);
+      assert.deepEqual([occlusion.getX(i), occlusion.getY(i), occlusion.getZ(i)], [0, 0, 0]);
       continue;
     }
     // The vector and contact exactly as rootShade() gives them.
@@ -2322,7 +2326,7 @@ test("the root shading keeps full float precision beside a 16-bit index", () => 
       `${x},${z}`,
     );
     assert.deepEqual(
-      [occlusion.getX(i), occlusion.getY(i)],
+      [occlusion.getX(i), occlusion.getY(i), occlusion.getZ(i)],
       rootOcclusion(p.getX(i), -p.getY(i)).map(Math.fround),
       `${x},${z}`,
     );
@@ -2352,7 +2356,7 @@ test("the baked root tables match a fresh bake of both tree variants", () => {
   // The two variants agree closely: one table serves both.
   const [high, balanced] = baked.tiers,
     digits = (text) => Array.from(text, (ch) => SHADE_ALPHABET.indexOf(ch));
-  for (const channel of ["sky", "key"]) {
+  for (const channel of ["sky", "key", "lamp"]) {
     const a = digits(high[channel]),
       b = digits(balanced[channel]);
     assert.ok(Math.max(...a.map((value, i) => Math.abs(value - b[i]))) <= 8, channel);
@@ -2364,8 +2368,9 @@ test("the root tables are neutral beyond the tree and leave the lantern clearing
     digits = (text) => Array.from(text, (ch) => SHADE_ALPHABET.indexOf(ch));
   const sky = digits(ROOT_SHADE.sky),
     key = digits(ROOT_SHADE.key),
+    lamp = digits(ROOT_SHADE.lamp),
     cut = digits(ROOT_SHADE.cut);
-  for (const table of [sky, key, cut]) {
+  for (const table of [sky, key, lamp, cut]) {
     assert.equal(table.length, cols * rows);
     assert.ok(table.every((value) => value >= 0 && value <= 63));
   }
@@ -2378,8 +2383,8 @@ test("the root tables are neutral beyond the tree and leave the lantern clearing
       // 0 at the lattice's edge, so its values meet the untouched ground seamlessly.
       if (!row || !col || row === rows - 1 || col === cols - 1)
         assert.deepEqual(
-          [sky[i], key[i], cut[i], banks.get(i) ?? 0],
-          [0, 0, 0, 0],
+          [sky[i], key[i], lamp[i], cut[i], banks.get(i) ?? 0],
+          [0, 0, 0, 0, 0],
           `${col},${row}`,
         );
       // Nothing of the banks and the contact cut reaches the pinned clearing
@@ -2388,7 +2393,8 @@ test("the root tables are neutral beyond the tree and leave the lantern clearing
       // pins: the shader keeps root occlusion off the water, slateGuard).
       if (latticeGuard(x, z) === 0)
         assert.deepEqual([cut[i], banks.get(i) ?? 0], [0, 0], `${col},${row}`);
-      if (!shadeGuard(x, z)) assert.deepEqual([sky[i], key[i]], [0, 0], `${col},${row}`);
+      if (!shadeGuard(x, z))
+        assert.deepEqual([sky[i], key[i], lamp[i]], [0, 0, 0], `${col},${row}`);
     }
   // Beyond the lattice: no occlusion, no bank, no cover.
   for (const [x, z] of [
@@ -2397,13 +2403,32 @@ test("the root tables are neutral beyond the tree and leave the lantern clearing
     [LX + 5, LZ + rows * pitch + 1],
     [TREE_FOOTING.x + 30, TREE_FOOTING.z],
   ]) {
-    assert.deepEqual(rootOcclusion(x, z), [0, 0]);
+    assert.deepEqual(rootOcclusion(x, z), [0, 0, 0]);
     assert.equal(rootBankLift(x, z), 0);
     assert.equal(rootCovered(x, z), false);
   }
   // The trunk's cavity is deeply occluded, the open plate beyond the crown barely.
   assert.ok(rootOcclusion(TREE_FOOTING.x + TRUNK[0] + 1.5, TREE_FOOTING.z + TRUNK[1])[0] > 0.6);
   assert.ok(rootOcclusion(TREE_FOOTING.x + 14, TREE_FOOTING.z - 10)[0] < 0.05);
+  // The trunk's shadow in the lantern's light: behind it, seen from the
+  // lantern, the soil is dark; before the roots, toward the lantern, lit.
+  const trunk = [TREE_FOOTING.x + TRUNK[0], TREE_FOOTING.z + TRUNK[1]],
+    away = [trunk[0] - LANTERN_FOOT.x, trunk[1] - LANTERN_FOOT.z].map(
+      (v, _, all) => v / Math.hypot(...all),
+    );
+  for (const reach of [3, 5, 7])
+    assert.ok(
+      rootOcclusion(trunk[0] + away[0] * reach, trunk[1] + away[1] * reach)[2] > 0.9,
+      `behind the trunk ${reach}`,
+    );
+  assert.equal(
+    rootOcclusion(
+      LANTERN_FOOT.x + (trunk[0] - LANTERN_FOOT.x) / 4,
+      LANTERN_FOOT.z + (trunk[1] - LANTERN_FOOT.z) / 4,
+    )[2],
+    0,
+    "before the roots",
+  );
   // The entry lips stay under the roots: none in the lantern clearing or
   // within a puddle's pinned margin; a few small ones where a sunk root leaves
   // the soil.
