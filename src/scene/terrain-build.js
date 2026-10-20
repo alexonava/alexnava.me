@@ -1923,8 +1923,12 @@ export function dripAt(t, aim = () => null) {
 }
 const zoneGlsl = (zone) => glslVec(+zone.x.toFixed(2), +zone.z.toFixed(2));
 // The river's current on the water (MIRROR): two octaves of ripples, each
-// [along, across] cycles per unit (drawn out along the flow), and the tilt of
-// each. Where `fade` is set, the coarse octave fades as the fine one does,
+// [along, across] cycles per unit (about as long as wide: drawn out further, a
+// mirror rules them into brushed streaks), and the tilt of each. They are the
+// rapids' smooth flow noise where the river has its falls, turning as they
+// drift (`flow`: its slope's share against the value noise's), in broad boils
+// and slicks drifting with it (`boils`: their cells per unit, the calm and the
+// rough share). Where `fade` is set, the coarse octave fades as the fine one does,
 // where its ripples would fall under fade[0] to fade[1] pixels of ground, so
 // far water keeps the sky still instead of shimmering. The lantern's image
 // takes none of the currents' tilt up or down: each ripple would shift the
@@ -1947,8 +1951,10 @@ const zoneGlsl = (zone) => glslVec(+zone.x.toFixed(2), +zone.z.toFixed(2));
 // between `mouth` [0] and [1] river radii, keeping [2] of them, so the plume's
 // steep ripples never contour the river's mirror.
 export const RIVER_RIPPLE = Object.freeze({
-  coarse: Object.freeze([0.6, 1.6]),
-  fine: Object.freeze([1.8, 4]),
+  coarse: Object.freeze([0.85, 1.25]),
+  fine: Object.freeze([2.4, 3.2]),
+  boils: Object.freeze([0.14, 0.45, 1.35]),
+  flow: 0.55,
   tilt: Object.freeze([0.018, 0.007]),
   fade: Object.freeze([1.5, 3]),
   sway: 3,
@@ -1957,6 +1963,10 @@ export const RIVER_RIPPLE = Object.freeze({
   roughTilt: 0.3,
   mouth: Object.freeze([0.5, 1, 0.2]),
 });
+// The river's current noise: the rapids' smooth flow noise where the river has
+// its falls (turning on the drips' clock), else the slate's value noise.
+const RIVER_NOISE = RAPIDS_AT ? "slateRpF" : "slateNoiseD",
+  RIVER_TURN = (rate) => (RAPIDS_AT ? `, slateFlow*${glsl(rate)}` : "");
 // The streams' current (STREAMS.current), on the same octaves' terms.
 const SC = STREAMS.current;
 // The puddles that lie on dune slopes keep the ground's height in the mirror:
@@ -2021,7 +2031,11 @@ if (slateWater > 0.0) {
     if (slateRiverR < 1.1) {
       vec2 slateFU = vec2(slateRiverQ.y+slateFlow*${glsl(RIVER_CHANNEL.speed)}, slateRiverQ.z);
       float slateFP = slatePx*slateView/max(abs(dot(normal, normalize(vViewPosition))), .3);
-      vec3 slateF1 = slateNoiseD(slateFU*${glslVec(...RIVER_RIPPLE.coarse)}), slateF2 = slateNoiseD(slateFU*${glslVec(...RIVER_RIPPLE.fine)}+13.0);
+      // Smooth flow noise (no lattice lines for the mirror to rule into streaks), turning as it
+      // drifts, about as long as wide; in broad boils and slicks the current calms or roughens.
+      vec3 slateF1 = ${RIVER_NOISE}(slateFU*${glslVec(...RIVER_RIPPLE.coarse)}${RIVER_TURN(0.25)}), slateF2 = ${RIVER_NOISE}(slateFU*${glslVec(...RIVER_RIPPLE.fine)}+13.0${RIVER_TURN(0.4)});
+      float slateBoil = ${glsl(RIVER_RIPPLE.boils[1])}+${glsl(RIVER_RIPPLE.boils[2] - RIVER_RIPPLE.boils[1])}*smoothstep(.3, .75, .5+.5*${RIVER_NOISE}(slateFU*${glsl(RIVER_RIPPLE.boils[0])}+31.0${RIVER_TURN(0.08)}).x);
+      slateF1.yz *= ${glsl(RIVER_RIPPLE.flow)}*slateBoil; slateF2.yz *= ${glsl(RIVER_RIPPLE.flow)}*slateBoil;
       float slateFF = ${RIVER_RIPPLE.fade ? `smoothstep(${glsl(RIVER_RIPPLE.fade[0])}, ${glsl(RIVER_RIPPLE.fade[1])}, ${glsl(+(1 / RIVER_RIPPLE.coarse[1]).toFixed(4))}/slateFP)` : "1.0"};
       vec2 slateFC = slateF1.yz*${glslVec(...RIVER_RIPPLE.coarse)}*${glsl(RIVER_RIPPLE.tilt[0])}*slateFF, slateFG = slateFC+slateF2.yz*${glslVec(...RIVER_RIPPLE.fine)}*${glsl(RIVER_RIPPLE.tilt[1])}*smoothstep(1.5, 3.0, ${glsl(1 / RIVER_RIPPLE.fine[1])}/slateFP);
       vec2 slateFX = vec2(-slateRiverDir.y, slateRiverDir.x);

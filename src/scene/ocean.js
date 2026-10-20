@@ -2,10 +2,17 @@ import {
   Box3,
   BufferAttribute,
   BufferGeometry,
+  CustomBlending,
   Matrix4,
   Mesh,
+  OneFactor,
+  OneMinusSrcAlphaFactor,
+  Points,
   ShaderMaterial,
+  SrcAlphaFactor,
+  Vector2,
   Vector3,
+  ZeroFactor,
 } from "three";
 import {
   COAST_ALBEDO,
@@ -553,6 +560,10 @@ vec2 pool=(P.xz-seaFalls.xy)/seaFalls.z;
 // they grow as they go), foam gathering along their borders (FALLS.boil).
 float pr=length(pool),angle=atan(pool.y,pool.x),cell=seaCells(vec2(log(pr+.08)*${glsl(FALLS.boil[1])}-seaTime*${glsl(FALLS.boil[2])}+.35*seaNoise(pool*3.1-seaTime*.04),angle*${glsl(FALLS.boil[0] / (2 * Math.PI))}+.4*seaNoise(pool*2.+seaTime*.05)),${glsl(FALLS.boil[0])}),bw=.25+.35*seaFoam(pool*4.+seaTime*.1);
 float core=1.-smoothstep(.06,.3,pr),wash=.45*(1.-smoothstep(.25,.95,pr))*mix(.35,1.,(1.-smoothstep(0.,bw,cell))*smoothstep(.15,.6,seaFoam(pool*7.-seaTime*.07)))*(.65+.35*seaFoam(pool*3.+seaTime*.08));
+// Where the whole curtain lands, along the cliff its width (seaSheet: its heading),
+// the water churns white end to end, never dark beside a round pool.
+vec2 hd=seaSheet.zw;float la=dot(pool,vec2(-hd.y,hd.x)),lo=dot(pool,hd);
+core=max(core,(1.-smoothstep(${glsl(0.85 / FALLS.plunge)},${glsl(1.35 / FALLS.plunge)},abs(la)))*(1.-smoothstep(.1,.3,abs(lo+.05)))*(.8+.2*seaFoam(pool*6.+seaTime*vec2(.2,-.1))));
 // The falling current clears the shore's steady blanket. Its broken fans,
 // rather than a uniform contact band, carry foam across the exposed water.
 shore=1.-.8*(1.-smoothstep(.25,.95,pr));
@@ -2020,7 +2031,19 @@ export function coastShot(shot, frame, falls = null) {
 // a share of its width. spray: the cloud it raises there: its centre's height
 // over the sea, its size (a share of the plunge's radius), its density and
 // its albedo. boil: the boils where it lands: how many round, their size
-// outward (in the log of the radius) and how fast they spread. scatter: falling
+// outward (in the log of the radius) and how fast they spread. packets: the
+// dense white water falling through the streams ([its noise's band, its cells
+// across the sheet, along its travel time, the thin water's share between]).
+// splash: the water thrown into the air where it lands (createFallsSplash()):
+// drops [high, balanced] thrown up at `up` and out at `out` units a second
+// (spread radians about the outflow), slowed by `drag` (linear, a second) and
+// falling back under gravity; mist [high, balanced] motes rising at rise[0]
+// (easing over rise[1] seconds) and spreading at rise[2]; life: the drops' and
+// the motes' lifetimes [min, max] in seconds; size: their sizes in units;
+// alpha: their peak opacities; shutter: a drop streaks along its path over a
+// film shutter's time; scatter: their light's forward lean (g) and
+// how much of the moon they carry toward an eye looking into it.
+// scatter: falling
 // white water lit through, as a cloud of droplets is: its forward lean (g) and
 // how much of the moon it carries toward an eye looking into the light.
 export const FALLS = Object.freeze({
@@ -2034,8 +2057,23 @@ export const FALLS = Object.freeze({
   spread: 0,
   albedo: 0.7,
   plunge: 2.2,
-  spray: Object.freeze([2.6, 0.7, 0.16, 0.42]),
+  spray: Object.freeze([3.4, 0.7, 0.24, 0.42]),
   boil: Object.freeze([9, 2, 0.25]),
+  packets: Object.freeze([0.3, 0.75, 3.5, 2.2, 0.3]),
+  splash: Object.freeze({
+    drops: Object.freeze([3200, 1100]),
+    mist: Object.freeze([260, 100]),
+    up: Object.freeze([4, 15]),
+    out: Object.freeze([1, 6]),
+    spread: 1.2,
+    drag: 0.9,
+    life: Object.freeze([0.8, 1.8, 3, 6]),
+    size: Object.freeze([0.04, 0.1, 1, 4]),
+    rise: Object.freeze([2.5, 2, 1.5]),
+    alpha: Object.freeze([0.45, 0.08]),
+    shutter: 1 / 48,
+    scatter: Object.freeze([0.6, 1.6]),
+  }),
   scatter: Object.freeze([0.55, 1.4]),
 });
 
@@ -2105,13 +2143,16 @@ export function alongToFault(x, z, [hx, hz], d) {
 // the brink; albedo: its froth, lit like the soil (as the stream's); run: the
 // falls' run's froth light, so it meets the shelf's; brink: how far above each
 // stream's brink it breaks white and how white; tongue: how much later its
-// smooth middle breaks; text: how much of it thins behind the text.
+// smooth middle breaks; chop: the surface tumbling with the current [its
+// coarse and fine cells per unit, their slope], so its mirror breaks into small
+// pieces and its white water into patches; text: how much of it thins behind
+// the text.
 export const RAPIDS = Object.freeze({
   reach: 14,
   from: 3.2,
   to: 6.4,
   ease: Object.freeze([0.3, 1]),
-  streak: Object.freeze([1.2, 0.5, 0.05, 0.09]),
+  streak: Object.freeze([1.2, 1.8, 0.05, 0.09]),
   waves: Object.freeze([1.7, 0.06, 1.5, 3.5, 7, 10]),
   lace: Object.freeze([3.5, 0.35]),
   white: Object.freeze([0.04, 0.75]),
@@ -2122,6 +2163,7 @@ export const RAPIDS = Object.freeze({
   run: 0.62,
   brink: Object.freeze([1.2, 0.9]),
   tongue: 0.5,
+  chop: Object.freeze([0.8, 2.2, 0.12]),
   text: 0.9,
 });
 // The rapids' speed's length scale (its speed grows by e over it).
@@ -2190,6 +2232,7 @@ export function rapidsGlsl(p, frame, rapids = RAPIDS) {
     [SP, WT, W2, W3, W4, W5] = rapids.waves,
     K = (2 * Math.PI) / SP,
     [LA, LT] = rapids.lace,
+    [CA, CB, CS] = rapids.chop,
     [b0, b1, b2] = frame.brink;
   return `float ${p}H(vec2 q){vec3 r=fract(q.xyx*.1031);r+=dot(r,r.yzx+33.33);return fract((r.x+r.y)*r.z);}
 ${flowNoiseGlsl(`${p}F`, `${p}H`)}
@@ -2202,6 +2245,11 @@ float T=${glsl(L / rapids.to)}*(exp(e/${glsl(L)})-1.)+max(ra-${glsl(R)},0.)/${gl
 // Streaks drawn out along the flow, evolving as they go.
 vec3 s=${p}F(vec2(q*${glsl(SA)},T*${glsl(ST)}),t*.5);
 vec2 g=vec2(s.z*min(${glsl(ST)}/sp,2.)*${glsl(TA)},s.y*${glsl(SA * TQ)})*${glsl(1 / FLOW_RMS)}*smoothstep(1.5,3.,min(${glsl(1 / SA)},sp/${glsl(ST)})/fp);
+// Chop: the surface tumbling with the current, about as long as it is wide (its
+// along-flow coordinate the distance it has run), so the mirror breaks into small
+// bright pieces rather than long brushed streaks; rougher toward the brink.
+float along=T*sp;vec3 ch1=${p}F(vec2(q*${glsl(CA)},along*${glsl(CA)}),t*1.1),ch2=${p}F(vec2(q*${glsl(CB)}+5.,along*${glsl(CB)}),t*1.7);
+g+=(vec2(ch1.z,ch1.y)*smoothstep(1.5,3.,${glsl(1 / CA)}/fp)+.6*vec2(ch2.z,ch2.y)*smoothstep(1.5,3.,${glsl(1 / CB)}/fp))*${glsl(CS / FLOW_RMS)}*(.4+.6*k);
 // Standing waves held in place where it quickens, and a crossing pair off the banks (a diamond).
 vec3 waveBend=${p}F(vec2(q*.3,7.1+ra*.11),0.);
 vec2 phaseGrad=vec2(${glsl(K)}+1.4*.11*waveBend.z,1.4*.3*waveBend.y);
@@ -2221,7 +2269,7 @@ for(int j=-1;j<=1;j++)for(int i=-1;i<=1;i++){vec2 c=vec2(float(i),float(j)),o=c+
 float cell=min(${glsl(1 / LA)},sp/${glsl(LT)})/fp,lace=(1.-smoothstep(0.,mix(.08,.3,clamp(churn,0.,1.))+1./max(cell,.5),sqrt(f2)-sqrt(f1)))*smoothstep(.15,.6,churn+.3*${p}F(lc*.4+41.,0.).x);
 // White streaks drawn out along the flow where it churns, whiter toward the brink.
 float streakFoam=mix(.22,smoothstep(.05,.7,s.x),smoothstep(1.5,3.,min(${glsl(1 / SA)},sp/${glsl(ST)})/fp));
-float foam=max(mix(lace,.3*churn,clamp(1.5-cell*.25,0.,1.)),streakFoam*smoothstep(.15,.6,churn)*mix(.55,1.,k));
+float foam=max(mix(lace,.3*churn,clamp(1.5-cell*.25,0.,1.)),streakFoam*smoothstep(.15,.6,churn)*mix(.55,1.,k)*mix(.25,1.15,smoothstep(.3,.75,.5+.5*ch1.x)));
 return vec4(g*w,clamp(foam*w,0.,1.),w*(k*${glsl(rapids.rough)}+min(length(g)*4.,.3)));}`;
 }
 
@@ -2474,7 +2522,7 @@ float a1=1.-smoothstep(.3,1.05,max(fx*6.,ft*4.5)),a2=1.-smoothstep(.3,1.05,max(f
 // coordinates follow travel time, so neither the lip nor the falling sheet
 // slides at a constant world speed or resets its clock at a cut.
 vec3 bend=fallsSheet(vec2(q*2.3+.7,tau*.5-seaTime*.3),seaTime*.13);
-float r1=mix(.5,.5+.5*fallsSheet(vec2(q*6.+bend.x*.9,4.5*(tau-.6*seaTime)),seaTime*.35).x,a1),r2=mix(.5,.5+.5*fallsSheet(vec2(q*16.+bend.x*1.7+3.,5.*(tau-.6*seaTime)),seaTime*.53).x,a2),r3=mix(.5,.5+.5*fallsSheet(vec2(q*40.+bend.x*2.4+7.,10.*(tau-.6*seaTime)),seaTime*.71).x,a3);
+float r1=mix(.5,.5+.5*fallsSheet(vec2(q*6.+bend.x*.9,4.5*(tau-seaTime)),seaTime*.35).x,a1),r2=mix(.5,.5+.5*fallsSheet(vec2(q*16.+bend.x*1.7+3.,5.*(tau-seaTime)),seaTime*.53).x,a2),r3=mix(.5,.5+.5*fallsSheet(vec2(q*40.+bend.x*2.4+7.,10.*(tau-seaTime)),seaTime*.71).x,a3);
 float streak=r1*.45+r2*.35+r3*.2,d=smoothstep(.22,.78,.5+(streak-.5)*1.4/max(.3,sqrt(.2025*a1*a1+.1225*a2*a2+.04*a3*a3)));
 // The closed skin defines the silhouette. The same current turns around its
 // real lateral faces; froth may thin, but never discards a wall of the body.
@@ -2502,17 +2550,21 @@ float runFoam=max(rp.z,${glsl(rapids.brink[1])}*crest*(.7+.3*rp.z));
 // Adjacent streams aerate at slightly different depths, keeping the head
 // joined while white water gathers gradually into broader current clusters.
 white=smoothstep(.92+.045*bend.x-.04*smoothstep(.2,.5,a),1.26+.065*bend.x,v);
-float foam=mix(max(smoothstep(.5,.9,streak)*.4*smoothstep(.835,.87,v),runFoam),mix(.08,.98,d),white)*mix(1.,smoothstep(.02,.45,edge),fall);
+float foam=mix(max(smoothstep(.5,.9,streak)*.4*smoothstep(.835,.87,v),runFoam),mix(.03,1.,d),white)*mix(1.,smoothstep(.02,.45,edge),fall);
 // Near the plunge, broken pockets of aerated water interrupt long ribbons
 // without widening the sheet or adding another particle/effect pass.
 // Packets of denser white water fall through the streams, each at its own pace.
-foam*=mix(1.,.7+.6*smoothstep(.25,.75,.5+.5*fallsSheet(vec2(q*2.6+5.,1.3*(tau-.75*seaTime)),seaTime*.2).x),white*a1);
+// Packets of dense white water fall with the water (in its travel time, so
+// they stretch as it speeds up), the thinner water between them darker:
+// the sheet reads as water falling, never a curtain hanging still.
+float pk=smoothstep(${glsl(falls.packets[0])},${glsl(falls.packets[1])},.5+.5*fallsSheet(vec2(q*${glsl(falls.packets[2])}+5.,${glsl(falls.packets[3])}*(tau-seaTime)),seaTime*.3).x);
+foam*=mix(1.,mix(${glsl(falls.packets[4])},1.15,pk),white*a1);
 float impact=smoothstep(1.5,2.,v)*(.5+.5*bend.x);
 foam=mix(foam,max(foam,.4+.5*r2),impact*.45);
 // Fine streams thin unevenly into the existing impact cloud. Lower coverage
 // changes optical thickness, not geometry or an opaque grey overlay.
 float toe=1.-smoothstep(vSeaY+.15,vSeaY+1.8,vW.y);
-foam*=1.-toe*.45*(1.-smoothstep(.2,.7,r2));
+foam=mix(foam,max(foam,.75+.25*r2),toe*.8);
 float b=slateBehindText();
 vec3 R=reflect(-E,rn);R.y=max(R.y,.08);
 // Its mirror at the river's gain, through its knee, blurred where the rapids are steep.
@@ -2533,6 +2585,139 @@ vec3 c=mix(water,lit,foam*(1.-${glsl(SEA.text)}*b));
 ${landMist(lib)}
 gl_FragColor=vec4(c,${SEA_SHARED.layer});
 }`;
+}
+
+// The water thrown into the air where the falls land (FALLS.splash): drops in
+// ballistic arcs under gravity and linear drag, falling back to the sea, and
+// mist motes rising from the impact, spreading and fading; one points draw,
+// lit as the spray is (the moon's light scattered forward toward an eye that
+// looks into it), thinning behind the text. Its emitters lie on the impact's
+// ellipse about the plunge, along the cliff and out along the outflow.
+const GRAVITY = 32.2;
+function createFallsSplash({ lib, plunge, sheet, uniforms, falls = FALLS }) {
+  const { drops, mist, up, out, spread, drag, life, size, rise, alpha, scatter, shutter } =
+      falls.splash,
+    count = drops[0] + mist[0],
+    position = new Float32Array(count * 3),
+    seed = new Float32Array(count * 4),
+    [px, pz, radius] = plunge,
+    [hx, hz] = [sheet[2], sheet[3]];
+  let state = 0x9e3779b9;
+  const random = () => {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    return state / 4294967296;
+  };
+  for (let i = 0; i < count; i++) {
+    // The balanced share of each first (drops, then motes), then the rest of each.
+    const isMist = (i >= drops[1] && i < drops[1] + mist[1]) || i >= drops[0] + mist[1] ? 1 : 0,
+      along = (random() * 2 - 1) * radius * (isMist ? 1.2 : 0.9),
+      outward = (random() * 2 - 1) * radius * (isMist ? 0.8 : 0.5);
+    position[i * 3] = px + hx * outward - hz * along;
+    position[i * 3 + 1] = SEA.level + 0.1;
+    position[i * 3 + 2] = pz + hz * outward + hx * along;
+    seed.set([random(), random(), random(), isMist], i * 4);
+  }
+  const geometry = new BufferGeometry();
+  geometry.setAttribute("position", new BufferAttribute(position, 3));
+  geometry.setAttribute("aSeed", new BufferAttribute(seed, 4));
+  const splashUniforms = {
+    ...uniforms,
+    splashScale: { value: 450 },
+    splashView: { value: new Vector2(1600, 900) },
+    splashHead: { value: { x: hx, y: hz } },
+  };
+  const material = new ShaderMaterial({
+    name: "EstateFallsSplash",
+    uniforms: splashUniforms,
+    transparent: true,
+    depthWrite: false,
+    blending: CustomBlending,
+    blendSrc: SrcAlphaFactor,
+    blendDst: OneMinusSrcAlphaFactor,
+    blendSrcAlpha: ZeroFactor,
+    blendDstAlpha: OneFactor,
+    vertexShader: `attribute vec4 aSeed;
+uniform float seaTime,splashScale;
+uniform vec2 splashHead,splashView;
+varying float vAlpha,vMist;
+varying vec4 vStreak;
+// A drop's place at an age: thrown up and out, slowed by the air (linear drag), falling back under gravity.
+vec3 splashDrop(vec3 p,vec2 dir,float v0,float h0,float age){float k=${glsl(drag)},e=(1.-exp(-k*age))/k;p.xz+=dir*h0*e;p.y+=v0*e-${glsl(GRAVITY)}/k*(age-e);return p;}
+varying vec3 vW;
+varying vec4 vSlateClip;
+void main(){
+float mist=aSeed.w,r2=fract(aSeed.x*7.13+aSeed.z*3.7),r3=fract(aSeed.y*5.31+aSeed.x*2.9);
+float life=mix(mix(${glsl(life[0])},${glsl(life[1])},aSeed.x),mix(${glsl(life[2])},${glsl(life[3])},aSeed.x),mist);
+float age=mod(seaTime+aSeed.y*life*7.31,life),u=age/life;
+float turn=(aSeed.z-.5)*2.*${glsl(spread)};
+vec2 side=vec2(-splashHead.y,splashHead.x),dir=splashHead*cos(turn)+side*sin(turn);
+vec3 p=position;float sz;
+vec3 p1=p;vStreak=vec4(1.,0.,0.,1.);
+if(mist<.5){
+// A drop, and where it is a film shutter later (its streak).
+float v0=mix(${glsl(up[0])},${glsl(up[1])},r2*r2),h0=mix(${glsl(out[0])},${glsl(out[1])},r3);
+p=splashDrop(position,dir,v0,h0,age);p1=splashDrop(position,dir,v0,h0,age+${glsl(shutter)});
+sz=mix(${glsl(size[0])},${glsl(size[1])},r3);
+vAlpha=${glsl(alpha[0])}*smoothstep(0.,.08,u)*(1.-smoothstep(.75,1.,u))*step(position.y-.05,p.y);
+}else{
+// A mote of mist: rising off the impact, spreading, growing and fading.
+p.xz+=dir*${glsl(rise[2])}*age+side*.4*sin(age*.7+aSeed.z*6.28);p.y+=${glsl(rise[0])}*${glsl(rise[1])}*(1.-exp(-age/${glsl(rise[1])}));
+sz=mix(${glsl(size[2])},${glsl(size[3])},sqrt(u))*mix(.7,1.3,r2);
+vAlpha=${glsl(alpha[1])}*sin(3.14159*u)*mix(.6,1.,r3);
+}
+vMist=mist;
+vec4 w=modelMatrix*vec4(p,1.),c0=projectionMatrix*viewMatrix*w,c1=projectionMatrix*viewMatrix*modelMatrix*vec4(p1,1.);vW=w.xyz;
+gl_Position=mix(c0,c1,.5);vSlateClip=gl_Position;
+// Its size on screen; finer than a pixel and a half, it fades rather than shrinks. A drop
+// streaks along its screen path over the shutter, its light spread along the streak.
+float px=sz*splashScale*projectionMatrix[1][1]/max(gl_Position.w,1e-3);
+vAlpha*=min(1.,px*px/2.25);px=max(px,1.);
+vec2 sd=(c1.xy/max(c1.w,1e-3)-c0.xy/max(c0.w,1e-3))*splashView*.5;float sl=length(sd)*(1.-mist),ps=clamp(px+sl,1.5,128.);
+vStreak=vec4(sl>.01?vec2(sd.x,-sd.y)/max(length(sd),1e-4):vec2(1.,0.),sl/ps,px/ps);vAlpha*=px/(px+sl);
+gl_PointSize=ps;
+}`,
+    fragmentShader: `#define SEA_PI 3.1415927
+uniform float seaTime;
+uniform vec4 babelFlash;
+varying float vAlpha,vMist;
+varying vec4 vStreak;
+varying vec3 vW;
+varying vec4 vSlateClip;
+${lib.SLATE_TEXT_GUARD}
+${ENV_PARS}
+void main(){
+vec2 c=gl_PointCoord*2.-1.;if(vAlpha<=0.)discard;
+float d=dot(c,c),along=dot(c,vStreak.xy),dd=length(vec2(max(abs(along)-vStreak.z,0.),dot(c,vec2(-vStreak.y,vStreak.x))));
+float shape=vMist>.5?exp(-3.*d)*step(d,1.):1.-smoothstep(.5*vStreak.w,vStreak.w,dd);
+if(shape<=0.)discard;
+vec3 E=normalize(cameraPosition-vW);float b=slateBehindText();
+// White water's light from every side, and the moon carried forward through it.
+vec3 lit=${glsl(falls.albedo)}*seaLight(vec3(0.,1.,0.),babelFlash.x*(1.-b))+seaKeyColor*${glsl(scatter[1])}*seaHG(dot(-seaKey,E),${glsl(scatter[0])});
+gl_FragColor=vec4(lit,shape*vAlpha*(1.-${glsl(SEA.text)}*b));
+}`,
+  });
+  const points = new Points(geometry, material);
+  points.name = "estate-falls-splash";
+  points.frustumCulled = false;
+  points.renderOrder = 0.7;
+  return {
+    points,
+    material,
+    uniforms: splashUniforms,
+    // Each draw: the frame's height for the points' sizes, and the tier's share.
+    update(renderer, tier) {
+      renderer.getDrawingBufferSize(splashUniforms.splashView.value);
+      splashUniforms.splashScale.value = splashUniforms.splashView.value.y / 2;
+      const balanced = tier === "balanced";
+      geometry.setDrawRange(0, balanced ? drops[1] + mist[1] : count);
+      return balanced;
+    },
+    dispose() {
+      points.removeFromParent();
+      geometry.dispose();
+      material.dispose();
+    },
+  };
 }
 
 // The falls for a scene (drop: riverFalls()), lit as the sea is, and dispose().
@@ -2586,12 +2771,22 @@ vSlateClip=gl_Position;
   mesh.castShadow = mesh.receiveShadow = false;
   mesh.renderOrder = 0.6;
   mesh.onBeforeRender = update;
+  // The water thrown into the air where it lands, on the falls' own light and clock.
+  const splash = createFallsSplash({ lib, plunge, sheet, uniforms, falls }),
+    updateSplash = lighting(rendering, splash.material, splash.uniforms);
+  splash.points.onBeforeRender = (renderer) => {
+    updateSplash();
+    splash.update(renderer, rendering?.tier);
+  };
+  mesh.add(splash.points);
   return {
     mesh,
     material,
     plunge,
     sheet,
+    splash: splash.points,
     dispose() {
+      splash.dispose();
       mesh.removeFromParent();
       mesh.geometry.dispose();
       material.dispose();

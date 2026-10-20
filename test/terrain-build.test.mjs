@@ -3790,7 +3790,16 @@ test("the river runs through the set: today's reach past the lantern, wider out 
   const shader = PHYSICAL();
   material.onBeforeCompile(shader);
   shadeSlateGround(shader);
-  assert.ok(shader.fragmentShader.includes("float slateFF = smoothstep(1.5, 3.0, 0.625/slateFP);"));
+  assert.ok(
+    shader.fragmentShader.includes(
+      `float slateFF = smoothstep(1.5, 3.0, ${+(1 / RIVER_RIPPLE.coarse[1]).toFixed(4)}/slateFP);`,
+    ),
+  );
+  // About as long as wide, so the mirror never rules the ripples into brushed streaks.
+  assert.ok(
+    RIVER_RIPPLE.coarse[1] / RIVER_RIPPLE.coarse[0] < 1.6 &&
+      RIVER_RIPPLE.fine[1] / RIVER_RIPPLE.fine[0] < 1.6,
+  );
   assert.match(
     shader.fragmentShader,
     /slateP = mix\(slateP, vMudWorld, smoothstep\(14\.0, 28\.0, length\(vMudWorld\.xz-vec2\(50\.92, ?33\.36\)\)\)\);/,

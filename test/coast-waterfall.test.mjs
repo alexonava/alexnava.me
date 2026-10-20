@@ -135,7 +135,11 @@ test("the waterfall is one watertight outward-facing solid, with irregular physi
     assert.equal(falls.material.transparent, false, "the depth stamp is not visual alpha blending");
     assert.equal(falls.material.depthWrite, true, "near skin occludes the back in the same draw");
     assert.equal(falls.material.depthTest, true);
-    assert.equal(falls.mesh.children.length, 0);
+    assert.deepEqual(
+      falls.mesh.children,
+      [falls.splash],
+      "its splash its only child: one points draw",
+    );
     assert.equal(geometry.groups.length, 0, "one mesh and material remain one draw");
     assert.ok(geometry.index.count / 3 <= 1700);
     assert.deepEqual(p.array, other.mesh.geometry.attributes.position.array);
