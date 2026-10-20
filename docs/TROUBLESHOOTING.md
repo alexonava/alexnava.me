@@ -160,15 +160,15 @@ The same file refuses any `X-Robots-Tag` in `public/_headers` (`static Pages hea
 
 `cloudflare-audit.yml` checks the live site weekly ([Operations](OPERATIONS.md#cloudflare-audit)). Each `edge-settings` failure names its check:
 
-| Check                            | Usual cause and fix                                                                                                                                                                                                                             |
-| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Browser request`                | A challenge or block (Security → WAF, Bots) answers browser-like requests from GitHub's runners.                                                                                                                                                |
-| `Contact email link`             | Email Address Obfuscation rewrites the `mailto:` link: turn it off (checklist item 2).                                                                                                                                                          |
-| `Same-origin scripts only`       | Web Analytics or RUM injection adds a third-party script: turn it off (item 3).                                                                                                                                                                 |
-| `HTML Cache-Control`             | A rule appends `no-store` to the page (item 1).                                                                                                                                                                                                 |
-| `Immutable fingerprinted assets` | A rule appends `no-store` or changes the hashed assets' caching (item 1).                                                                                                                                                                       |
-| `GLB compression`                | No Compression Rule for `model/gltf-binary` and `application/octet-stream` (item 4), or the audit could not find the `tower-high` GLB URL (the lookout's model is no longer published, so the audit's discovery pattern needs a model that is). |
-| `Fingerprinted asset discovery`  | The audit's patterns no longer match the build's names ([Contracts](CONTRACTS.md#published-names-other-tools-read)); updating `.github/scripts/` is a CI change that needs the owner's approval.                                                |
+| Check                            | Usual cause and fix                                                                                                                                                                              |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Browser request`                | A challenge or block (Security → WAF, Bots) answers browser-like requests from GitHub's runners.                                                                                                 |
+| `Contact email link`             | Email Address Obfuscation rewrites the `mailto:` link: turn it off (checklist item 2).                                                                                                           |
+| `Same-origin scripts only`       | Web Analytics or RUM injection adds a third-party script: turn it off (item 3).                                                                                                                  |
+| `HTML Cache-Control`             | A rule appends `no-store` to the page (item 1).                                                                                                                                                  |
+| `Immutable fingerprinted assets` | A rule appends `no-store` or changes the hashed assets' caching (item 1).                                                                                                                        |
+| `GLB compression`                | No Compression Rule for `model/gltf-binary` and `application/octet-stream` (item 4), or the audit could not find the `tree-high` GLB URL in the scene entry or app script.                       |
+| `Fingerprinted asset discovery`  | The audit's patterns no longer match the build's names ([Contracts](CONTRACTS.md#published-names-other-tools-read)); updating `.github/scripts/` is a CI change that needs the owner's approval. |
 
 After changing a dashboard setting, rerun the audit with `gh workflow run cloudflare-audit.yml --ref main`.
 

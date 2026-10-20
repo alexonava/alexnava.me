@@ -78,7 +78,7 @@ The apex is a native custom domain on `alexnava-me`. An exact-host Bulk Redirect
 `cloudflare-audit.yml` runs every Monday at 15:17 UTC and on demand, from scripts in `.github/scripts/`:
 
 - `pages-project` (in the `production` environment) runs `cloudflare-audit.sh project`, which reads the Pages project with the two secrets and keeps only its name, branch and domains, and `cloudflare-audit.sh headers`, which checks the live apex (`200`, effective host exactly `alexnava.me`, security headers), `pages.dev` (`200` with noindex, or `301`/`308` to the apex keeping path and query) and `www` (`301` to the apex). Redirects are inspected, never followed. Sanitized reports are kept 14 days.
-- `edge-settings` runs `cloudflare-edge-settings.sh` with no credentials and checks what dashboard settings can change after `_headers`: no email obfuscation, same-origin scripts only, no `no-store`, immutable fingerprinted assets and a compressed `tower-high` GLB.
+- `edge-settings` runs `cloudflare-edge-settings.sh` with no credentials and checks what dashboard settings can change after `_headers`: no email obfuscation, same-origin scripts only, no `no-store`, immutable fingerprinted assets and a compressed `tree-high` GLB.
 
 Both share `headers.sh`. None of this is on the deploy or rollback path: a rollback cannot fix a dashboard setting.
 
