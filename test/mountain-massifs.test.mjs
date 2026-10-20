@@ -13,7 +13,6 @@ import {
   HORIZON_HAZE,
   MASSIF_SNOW,
   MASSIFS,
-  MASSIF_STRATA,
   MOUNTAIN_AIR,
   RANGE_MIST,
   snowReach,
@@ -95,24 +94,26 @@ test("the Meshy massifs ship as compact, quantized, object-space GLBs within the
   }
 });
 
-test("photographic packaging preserves every original mountain geometry byte", () => {
+test("the real massifs ship the recorded mountains-v2 geometry and maps, one geometry for both tiers", () => {
+  // Assets/Architecture/mountains-v2 (reports/delivery.json): the Grandes Jorasses, the Dents du Midi
+  // and the Weisshorn from public elevation data; the geometry bytes precede the maps in the buffer.
   const geometry = {
-    "mountain-ridge": "5c6c74e7f07f707e9ed14e16358db397da4f2725e6a6e2dd5980a3c86a2379b8",
-    "mountain-spine": "ffbc690f85b8e92d6a913d09b07dd6ab5b220f7e2e685c91f72f620cb27fda6b",
-    "mountain-summit": "558f9c1f1594106c0cc91d659b03b6e7b571008037bd9f0e9548fd7cfba62d07",
+    "mountain-ridge": "6fe629fe79cb2afc0e4c9de4466a560c1c2454cb0a04f09bb963053b13f6f5b4",
+    "mountain-spine": "b9976d91c1329776d3b60c3e2ce0268bb06127d8174b0e8891d0e0a7d478143b",
+    "mountain-summit": "a1b2d9b4f966d27dbd36b91cd834de58c3abb8fc02e612ddc9416f4e5d870993",
   };
   const normal = {
     "mountain-ridge": [
-      "5226d70878db2307432588d6b57fc49c49e34d62baf532cbb9996a4d375f7753",
-      "a3e3439352d02a49b934a6cdf5660c4a889ed07270e2a1f8e9499532787b611e",
+      "15522a3410e22b0884e6fe5fbc36039ac39d8d87b215b37f4bf00ac001a4ec0c",
+      "22d7bc4599d332efdbc4a665dba59930c72a43cbae20188e8eb4c1c526e829a6",
     ],
     "mountain-spine": [
-      "5eba27522ed67bf98551c0aa755fc09f8925a673ef0f1c3a6149340bf2413415",
-      "3c602339790f762f51539eb6af17a738317b7a2c75aac9ddcc77b9cde1e98156",
+      "b8a90a31614b1fb9d5d716e9d7d935b5e4d39b774d94fe61044e7ffa222de206",
+      "3056ef0ddc780f8f62de8400c0ab875a241144c8e28c65291d645b26fbde3e54",
     ],
     "mountain-summit": [
-      "218d99f4cb8fa30dde009bc1ffa781d3230aff4ed609dde67de93c2016883119",
-      "9c9b6df802c2704672abe244ab133ce317ec0411f6a8505fd2d6920981cfada4",
+      "f3c5154d5dbc9117228d40cfcfdbcae0b0cb77f7300bae6430f2808979b50e49",
+      "4939196bb249b98837a63f12c6ac769c70bddc8ee6a65a001eda58e20ca1814c",
     ],
   };
   const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -140,7 +141,15 @@ test("photographic packaging preserves every original mountain geometry byte", (
         "VP8L",
         "AO/snow channel exchange is lossless",
       );
-      assert.equal(json.accessors[json.meshes[0].primitives[0].indices].count / 3, 3799);
+      const triangles = json.accessors[json.meshes[0].primitives[0].indices].count / 3;
+      assert.ok(triangles >= 3790 && triangles <= 3800, `${role} ${triangles} triangles`);
+      // Real terrain, credited: where it came from and how far it was scaled up or down.
+      const { terrain } = json.nodes[0].extras.mountain;
+      assert.match(terrain.source, /Terrain Tiles/);
+      assert.ok(
+        terrain.verticalScale > 0.8 && terrain.verticalScale < 1.7,
+        `${role} ${terrain.verticalScale}`,
+      );
     }
 });
 
@@ -216,12 +225,12 @@ test("a placement keeps what its eye sees: the azimuth it names, its faces towar
     assert.ok(reach > 0.9 * sky.values.length, `${q.id} skyline is continuous`);
   }
   // The culled shells face the camera from inside their envelopes, and a mirror (which
-  // rewinds each triangle) faces it just as much.
+  // rewinds each triangle) faces it exactly as the plain model does from the other side.
   for (const q of RANGE_PLACEMENTS) {
     const plain = facing(placeRange(models[q.role], { ...q, mirror: false })),
       mirrored = facing(placeRange(models[q.role], { ...q, mirror: true }));
-    assert.ok(plain > 0.5, `${q.id} faces the camera (${plain.toFixed(2)})`);
-    near(mirrored, plain, 0.05);
+    assert.ok(plain > 0.5 && mirrored > 0.5, `${q.id} faces the camera (${plain.toFixed(2)})`);
+    near(mirrored, facing(placeRange(models[q.role], { ...q, mirror: false, yaw: -q.yaw })), 1e-9);
   }
 });
 
@@ -246,7 +255,7 @@ const highest = (from, to) => {
   return best;
 };
 
-test("the composed skyline keeps the sun saddle, Close-up and Threshold clear and the tour peaks dramatic", () => {
+test("the composed skyline keeps the sun saddle, the tree shots and Close-up clear and the tour peaks dramatic", () => {
   for (const [from, to, cap] of [
     [171, 183, 3],
     [232, 280, 3],
@@ -654,32 +663,13 @@ test("the massif shader is the ranges' moonlit style on the models' own relief",
   // The relief read sharper than its footprint (MASSIFS.sharpen), so the moonlit faces keep their form.
   assert.ok(MASSIFS.sharpen < 0 && MASSIFS.sharpen >= -1);
   assert.ok(fragmentShader.includes(`vec3 n=relief(${MASSIFS.sharpen});`));
-  // Natural strata on the bare rock: irregular warped layers, faint, on steep rock only and
-  // in broken patches along the ring, each a moonlit ledge over a dark seam, anti-aliased by
-  // the layer's own gradient, before the snow.
-  const strataAt = fragmentShader.indexOf("{float azw=mod(az,360.),w1=vnw(");
-  assert.ok(strataAt > fragmentShader.indexOf("ao=mix(1.,mk.y,.6);"));
-  assert.ok(strataAt < fragmentShader.indexOf("float cap=clamp("));
-  assert.ok(fragmentShader.includes(`float sk=el*${MASSIF_STRATA.spacing}+`));
-  assert.ok(fragmentShader.includes("sw=max(fwidth(sk),1e-3),f=fract(sk),id=floor(sk)"));
-  assert.ok(MASSIF_STRATA.spacing > 1 && MASSIF_STRATA.spacing < 4, "layers broad, never a mesh");
-  assert.ok(MASSIF_STRATA.amount[0] + MASSIF_STRATA.amount[1] <= 1);
-  assert.ok(MASSIF_STRATA.light <= 0.2 && MASSIF_STRATA.seam[1] <= 0.2, "faint, not contour lines");
-  assert.ok(fragmentShader.includes("float st=1.-smoothstep("), "steep rock only");
-  assert.ok(fragmentShader.includes("float p0=smoothstep("), "broken along the ring");
-  // Their noises wrap whole about the ring (no seam at +-180 degrees), their seam ramps in
-  // on both sides of a layer's edge with the same patches, and their light never steps.
-  for (const [azimuth] of [...MASSIF_STRATA.warp, [MASSIF_STRATA.broken[0]]])
-    assert.ok(Math.abs(azimuth * 360 - Math.round(azimuth * 360)) < 1e-9, `${azimuth}`);
-  assert.ok(fragmentShader.includes("float vnw(vec2 p,float w){"));
-  assert.ok(fragmentShader.includes("smoothstep(1.-sw,1.,f)"));
-  assert.match(fragmentShader, /ao\*=1\.-[\d.]+\*st\*p0\*seam;/);
-  assert.match(fragmentShader, /lit\*=1\.\+[\d.]+\*\(amp\*p1\*st\*ledge-[\d.]+\);/);
+  // No drawn strata: the photographic albedo carries the bedding.
+  assert.doesNotMatch(fragmentShader, /vnw\(|float sk=el\*/);
   // The rings' sky, far plain and orb glow, verbatim; the rock one air farther out.
   for (const shared of [
     "float b=dot(o,d), t=-b+sqrt(max(b*b-dot(o,o)+uSky.x,0.)), a=(o.y+d.y*t)*inversesqrt(uSky.x);",
     "{float skE=vL.y/r,skA=atan(vL.z,vL.x),skN=.5+",
-    "c*=1.+vec3(.06,.02,-.04)*pow(max(dot(v,toSun),0.),10.);",
+    "air*=1.+vec3(.1,.03,-.05)*pow(max(dot(v,toSun),0.),10.);",
   ]) {
     assert.ok(ranges.includes(shared), `the rings keep: ${shared}`);
     assert.ok(fragmentShader.includes(shared), `the massifs share: ${shared}`);
@@ -739,12 +729,14 @@ test("the massif shader is the ranges' moonlit style on the models' own relief",
     "hw=max(1.5*fwidth(hold)",
   ])
     assert.ok(fragmentShader.indexOf(derived) < branch, `${derived} before the branch`);
-  assert.equal(MASSIFS.air, 1);
+  // Big massifs far off: the next range's albedo, hazing as if MASSIFS.air x as far.
+  assert.ok(MASSIFS.air > 1 && MASSIFS.air < 1.5);
   assert.ok(
     fragmentShader.includes(
-      `float T=mix(mix(mix(mix(${MOUNTAIN_AIR.transmittance[0]},${MOUNTAIN_AIR.transmittance[1]},step(0.5,(vT.y+1.0)))`,
+      `float T=exp(-max(length(vL)*${MASSIFS.air}-${MOUNTAIN_AIR.haze[0]}.0,0.)*${MOUNTAIN_AIR.haze[1]}), alb=mix(mix(mix(mix(${MOUNTAIN_AIR.albedo[0]},${MOUNTAIN_AIR.albedo[1]},step(0.5,(vT.y+1.)))`,
     ),
   );
+  assert.ok(fragmentShader.includes("uniform vec4 uMist, uLight;"));
   // Snow from each copy's own snowline (aTerrain.z), only where it has one.
   assert.ok(
     fragmentShader.includes(

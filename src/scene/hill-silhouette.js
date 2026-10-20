@@ -17,6 +17,7 @@ import {
   UniformsUtils,
   Vector2,
   Vector3,
+  Vector4,
 } from "three";
 import {
   ARCHITECTURE_ASSET_URLS,
@@ -25,6 +26,7 @@ import {
 } from "./architecture-assets.js";
 import { DEPTH_LAYER } from "./depth-layers.js";
 import { FILM_SKY_GLSL } from "./estate-sky.js";
+import { FILM_LIGHT, FILM_TONE, FILM_UNTONE_GLSL, filmExposure } from "./film-light.js";
 import { MIST_PARS, MIST_RANGES, MIST_UNIFORMS, mistOn } from "./drifting-mist.js";
 
 // South Downs elevation traverse, 48 samples (SRTM-derived public-domain
@@ -49,8 +51,8 @@ export const HILL = Object.freeze({
 // height) above `line` degrees carries a cap `depth` x (massif - line) deep, at
 // most `max`, whose level snowline is jittered by noise (a share of the cap,
 // at least `jitterMin` degrees) and drops a further `tongue` x cap down the
-// gullies. Lit snow is `lit` x the sky's luma and shadowed snow `shade` x, both
-// seen through the range's air.
+// gullies. It reflects `albedo` of the moon and the night sky's light
+// (MOUNTAIN_LIGHT), as the rock does, seen through the range's air.
 export const SNOW = Object.freeze({
   line: 2.9,
   depth: 0.6,
@@ -58,14 +60,11 @@ export const SNOW = Object.freeze({
   jitter: 0.3,
   jitterMin: 0.25,
   tongue: 0.5,
-  lit: 3.8,
-  shade: 1.25,
+  albedo: 0.8,
 });
-// The Meshy massifs' snow (MASSIFS): the rings' rule, deeper, with each copy's
+// The massifs' snow (MASSIFS): the rings' rule, deeper, with each copy's
 // own snowline `line` (mountain-build.js RANGE_PLACEMENTS snow), so the
-// massifs carry real caps, the lower ones too; lit and shade are lower, as the
-// massifs' air is thinner than the far rings', so lit snow still reads about
-// 2.2 times the sky behind it. Snow lies smoother than the rock under it: it
+// massifs carry real caps, the lower ones too. Snow lies smoother than the rock under it: it
 // holds on the relief `hold` mip levels down, takes its soft light from
 // `soft` levels down and its crisp terminator from `edge` levels down, so the
 // source's small bumps never punch round holes in it and its flutes never
@@ -85,8 +84,6 @@ export const MASSIF_SNOW = Object.freeze({
   ...SNOW,
   depth: 0.7,
   max: 3.4,
-  lit: 2.7,
-  shade: 1,
   hold: 2,
   soft: 3,
   edge: 5,
@@ -109,30 +106,31 @@ export function snowReach(elevation, massif, snow = SNOW) {
     ? 1
     : 0;
 }
-// The ranges' air and rock, near to far: each range's aerial transmittance
-// (summits see through thinner air: it rises toward its square root from 0.5
-// to 6 degrees by `thin`), rock albedo, and the path light it hazes toward,
-// the clear film sky plus `lift` of the clouds' average lift. The rock is lit
-// by the moon key (`moon` on a face turned full to it) plus a blue sky
-// ambient (`ambient` on an upward face), in units of the sky's luma, and
-// never exceeds `rockMax` x the sky behind it. The feet fade to the shared
-// slate over the lowest `footHazeHeight` units above the ground. Moonlit (the
-// owner's pick of 2026-10-09): a stronger key, and the nearer massifs' layers
-// less hazed, so their lit faces stand out from their shadowed ones instead of
-// reading as one dark cut-out; the farthest range's albedo rises with them, so
-// each farther range still reads lighter than the one before it.
+// The ranges' air and rock (photoreal, 2026-10-19): the rock reflects `rock`
+// x its range's `albedo` (near to far) of the scene's own moonlight and the
+// night sky's light (MOUNTAIN_LIGHT: the key the ground and the subjects take,
+// a shot's mood with it, and `sky` x the hemisphere's and the ambient's light,
+// the sky's radiance in the shade), as the ground does, in the scene's light.
+// Seen through the air it hazes by its distance (`haze`: clear to [0] units,
+// then thinning by [1] a unit, Beer-Lambert; summits see through thinner air:
+// it rises toward its square root from 0.5 to 6 degrees by `thin`) toward the
+// path light, the clear film sky plus `lift` of the clouds' average lift, in
+// the scene's light too (filmUntone()), so the far air meets the sky as shown.
+// It never exceeds `rockMax` x the sky behind it, and each farther range reads
+// lighter than the one before it. The feet fade to the shared slate over the
+// lowest `footHazeHeight` units above the ground.
 export const MOUNTAIN_AIR = Object.freeze({
-  transmittance: Object.freeze([0.86, 0.8, 0.62, 0.44, 0.3]),
+  haze: Object.freeze([202, 0.0066]),
   albedo: Object.freeze([0.55, 0.8, 0.9, 1, 1.18]),
   thin: 0.5,
   lift: 0.3,
-  moon: 1,
-  ambient: 0.05,
-  // The key wraps softly round the faces (the owner's direction of 2026-10-09:
-  // realistic mountains): light reaches `wrap` past the terminator, as rough rock
-  // under a bright sky takes it, never a crisp, faceted edge.
-  wrap: 0.25,
-  rockMax: 0.95,
+  rock: 0.095,
+  sky: 0.31,
+  // The moon lights the faces as it lights the ground (Lambert: no wrap past the
+  // terminator, the owner's 2026-10-19 "everything else is photoreal"); the sky's
+  // own light fills the shade.
+  wrap: 0,
+  rockMax: 0.97,
   footHazeHeight: 3,
   renderOrder: -0.5,
 });
@@ -140,17 +138,41 @@ const smooth01 = (a, b, x) => {
   const u = Math.min(1, Math.max(0, (x - a) / (b - a)));
   return u * u * (3 - 2 * u);
 };
-// JS mirror of the shader's bare rock body (tests): its luma as a share of the
-// sky's behind it, before snow and mist. lit: the face's moonlight,
-// 0 (shadow) to 1 (turned full to the moon); up: the normal's y; clear: the
-// share of the sky's luma that is clear sky rather than cloud lift.
-export function mountainBody(range, lit, { up = 0.6, elevation = 1, clear = 0.75 } = {}) {
-  const { transmittance, albedo, thin, lift, moon, ambient, rockMax } = MOUNTAIN_AIR,
-    t = transmittance[range],
+// The scene's moonlight on the ranges, kept from its own lights each draw
+// (createHillSilhouette()): rgb the key's colour times its intensity, w the
+// hemisphere's and the ambient's intensities; the film's balance until then.
+export const MOUNTAIN_LIGHT = {
+  value: new Vector4(
+    ...FILM_LIGHT.moon.map((c) => c * FILM_LIGHT.key),
+    FILM_LIGHT.hemisphere + FILM_LIGHT.ambient,
+  ),
+};
+// JS mirror of the shader's bare rock body (tests), at `distance` units in the
+// film's own light: its luma as a share of the sky's behind it (a horizon sky
+// shown at `sky`, as the scene's light sees it), before snow and mist. lit: the
+// face's moonlight, 0 (shadow) to 1 (turned full to the moon); up: the
+// normal's y; clear: the share of the sky's luma that is clear sky rather than
+// cloud lift.
+export function mountainBody(
+  range,
+  lit,
+  { distance, up = 0.6, elevation = 1, clear = 0.75, sky = 0.2 } = {},
+) {
+  const { haze, albedo, thin, lift, rock, sky: skyShare, rockMax } = MOUNTAIN_AIR,
+    { contrast, mid } = FILM_TONE,
+    luma = (c) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2],
+    shown = ((sky + 0.055) / 1.055) ** 2.4,
+    behind = ((mid * shown) / (1 - shown)) ** (1 / contrast) / filmExposure(),
+    light = MOUNTAIN_LIGHT.value,
+    t = Math.exp(-Math.max(distance - haze[0], 0) * haze[1]),
     seen = t + (Math.sqrt(t) - t) * thin * smooth01(0.5, 6, elevation),
     air = clear + lift * (1 - clear),
-    rock = (moon * lit + ambient * (0.6 + 0.4 * up)) * albedo[range];
-  return Math.min(rockMax, air + (rock - air) * seen);
+    body =
+      (rock *
+        albedo[range] *
+        (luma([light.x, light.y, light.z]) * lit + skyShare * light.w * (0.6 + 0.4 * up))) /
+      behind;
+  return Math.min(rockMax, air + (body - air) * seen);
 }
 // The mountain feet reach the far plain's air (HORIZON_AIR) over this distance.
 // Ground uses a later distance fade and an independent fade before its edge.
@@ -178,13 +200,6 @@ export const HORIZON_AIR = Object.freeze({ horizon: 1.65, edge: 1.9, ground: 1.7
 // The film terrain's half-width (filmic-earth.js EARTH, 384 units wide about the
 // world origin); a test holds them equal.
 export const TERRAIN_EDGE = 192;
-// The walk's view from up high (walk.js WALK.high): 0 on every shot, rising to 1
-// as the walker's eye climbs the lookout. From its gallery the terrain's square
-// edge lies 8 to 11 degrees below eye level, past it the flat band of the far
-// plain's air, so up there the slate fades into that air (at HORIZON_AIR.edge,
-// as the band starts) from `fade` units out to its edge (mud-ground.js), and
-// the plain runs on into the band with no square edge.
-export const HIGH_VIEW = { value: 0, fade: Object.freeze([80, 188]) };
 // The ranges past the fault (ocean.js, the owner's open sea of 2026-10-17):
 // where a range's point stands out over the sea, beyond uSea's plane (its
 // direction x, y and offset z), it sinks under the sea's horizon over 60 units,
@@ -259,30 +274,32 @@ const perRange = (values, at = "vT.y") =>
     );
 
 // GLSL both film mountain materials share, the procedural ranges (EstateMountains) and the
-// Meshy massifs (EstateMeshyRanges); each reads vL (the camera-relative position), vT.y (the
+// massifs (EstateMeshyRanges); each reads vL (the camera-relative position), vT.y (the
 // range) and, from the first, the names it declares. The sky behind the pixel: the view ray
 // cast onto the real sky shell (uSky: radius squared, shell opacity) gives the film sky there
 // (s0), with the cloud banks' average lift (s) and the path light the rock hazes toward (air).
 const SKY_BEHIND_GLSL = `vec3 d=normalize(vL), o=cameraPosition, W=vec3(.2126,.7152,.0722), K=vec3(.715,.625,.313);
 float b=dot(o,d), t=-b+sqrt(max(b*b-dot(o,o)+uSky.x,0.)), a=(o.y+d.y*t)*inversesqrt(uSky.x);
-vec3 s0=(filmSky(a)+filmBand(a))*uSky.y, lift=vec3(.24,.24,.3)*smoothstep(-.03,.17,a)*uSky.y, s=s0+lift, air=s0+${glslFloat(MOUNTAIN_AIR.lift)}*lift;`;
-// The rock body from the face's moonlight (lit), its upward share (n.y) and occlusion (ao), seen
-// through the air of range `at` (MOUNTAIN_AIR) and never lighter than the sky behind it.
-const rockBodyGLSL = (at, surface = "") => {
-  const { transmittance, albedo, thin, moon, ambient, rockMax } = MOUNTAIN_AIR;
-  return `float T=${perRange(transmittance, at)}, alb=${perRange(albedo, at)};
-// Lit neutral grey to blue shadow, in units of the sky's luma.
-vec3 c=(vec3(.9705,.9999,1.0881)*${glslFloat(moon)}*lit+vec3(.8117,.9991,1.5611)*${glslFloat(ambient)}*(.6+.4*n.y))*ao*alb*sL;
+vec3 s0=(filmSky(a)+filmBand(a))*uSky.y, lift=vec3(.24,.24,.3)*smoothstep(-.03,.17,a)*uSky.y, s=s0+lift, air=s0+${glslFloat(MOUNTAIN_AIR.lift)}*lift;
+// The air glows warm toward the orb, as haze does toward a bright light (forward scattering).
+vec2 v=d.xz/max(length(d.xz),1e-4), toSun=normalize(uSun.xz-o.xz);
+air*=1.+vec3(.1,.03,-.05)*pow(max(dot(v,toSun),0.),10.);
+// In the scene's light: the light the tone curve shows as that sky.
+s=filmUntone(s);air=filmUntone(air);`;
+// The rock body from the face's moonlight (lit), its upward share (n.y) and occlusion (ao)
+// in the scene's light (MOUNTAIN_LIGHT, uLight), of range `at`'s albedo, seen through
+// the air over `far` units (MOUNTAIN_AIR) and never lighter than the sky behind it.
+const rockBodyGLSL = (at, far, surface = "") => {
+  const { haze, albedo, thin, rock, sky, rockMax } = MOUNTAIN_AIR;
+  return `float T=exp(-max(${far}-${glslFloat(haze[0])},0.)*${glslFloat(haze[1])}), alb=${perRange(albedo, at)};
+// The moon's light and the night sky's blue light in the shade.
+vec3 c=(uLight.rgb*lit+vec3(.8117,.9991,1.5611)*uLight.w*${glslFloat(sky)}*(.6+.4*n.y))*ao*alb*${glslFloat(rock)};
 ${surface}
 float Th=mix(T,sqrt(T),${glslFloat(thin)}*smoothstep(.5,6.,el));
 c=mix(air,c,Th);
 c*=min(1.,${glslFloat(rockMax)}*sL/max(dot(c,W),1e-4));`;
 };
-// The orb's faint warm glow on the ranges (no drawn rim about the crests).
-const GLOW_GLSL = `// A faint warm glow toward the orb.
-vec2 v=d.xz/max(length(d.xz),1e-4), toSun=normalize(uSun.xz-o.xz);
-c*=1.+vec3(.06,.02,-.04)*pow(max(dot(v,toSun),0.),10.);`;
-// The key's soft wrap (MOUNTAIN_AIR.wrap) on a face's normal n.
+// The key's light on a face's normal n (MOUNTAIN_AIR.wrap: none, Lambert).
 const WRAP_GLSL = `float nl=dot(n,K), lit=clamp((nl+${glslFloat(MOUNTAIN_AIR.wrap)})/${glslFloat(1 + MOUNTAIN_AIR.wrap)},0.,1.)`;
 // The ranges' feet below eye level break into a rocky skirt (the owner's pick of
 // 2026-10-09) instead of meeting the far plain's air at one level line: along
@@ -340,8 +357,8 @@ c=mix(c,uMist.rgb,uMist.w*(1.-smoothstep(${glslFloat(RANGE_MIST_SHAPE.floor)},${
 // face's turn along the ring, its lean to the viewer, convex/concave fold, and the
 // nearer ranges' skyline in degrees).
 // Each pixel is lit by the moon key: faces turn toward or away from it (wrapped
-// softly past the terminator, MOUNTAIN_AIR.wrap, lit neutral grey to blue shadow),
-// broken by spurs, gullies and strata from polar noise whose cells stay at least
+// as the ground's are, MOUNTAIN_AIR.wrap, lit neutral grey to blue shadow),
+// broken by spurs, gullies and fine bands from polar noise whose cells stay at least
 // 6 px wide; gullies and spurs slant down each flank along its fall line. The rock
 // is seen through the range's air (MOUNTAIN_AIR) toward the path light and never
 // lighter than the sky behind it, found by casting the ray onto the real sky shell
@@ -351,8 +368,8 @@ c=mix(c,uMist.rgb,uMist.w*(1.-smoothstep(${glslFloat(RANGE_MIST_SHAPE.floor)},${
 // rather than echoing stripes. Snow (SNOW) is set against the sky: a
 // level, noisy snowline per massif with tongues down the gullies, bare ribs and
 // steep faces, and blue in shadow; its edge is anti-aliased across its own screen
-// gradient, so steep tongue sides stay smooth. A faint warm glow leans toward the
-// orb. No rim or ink is drawn about the crests, and the grade takes no cel step
+// gradient, so steep tongue sides stay smooth. The air glows faintly warm toward
+// the orb. No rim or ink is drawn about the crests, and the grade takes no cel step
 // or ink on this layer (postprocess.js uLayerRelief): the ranges read as real rock
 // under the moon. Below eye level the body eases into the far
 // plain's air (HORIZON_AIR, the lifted TERRAIN_HORIZON slate), and feet near the
@@ -394,7 +411,7 @@ gl_Position=projectionMatrix*m;
 gl_Position.z=mix(gl_Position.z,gl_Position.w,.8);
 }`,
     fragmentShader: `
-uniform vec4 uMist;
+uniform vec4 uMist, uLight;
 ${MOUNTAIN_MIST_PARS}
 uniform vec2 uSky;
 uniform vec3 uSun, fogColor;
@@ -403,6 +420,7 @@ varying vec4 vT, vF;
 varying vec3 vL;
 varying float vD, vH;
 ${FILM_SKY_GLSL}
+${FILM_UNTONE_GLSL}
 float mh(vec2 p){vec3 q=fract(p.xyx*.1031);q+=dot(q,q.yzx+33.33);return fract((q.x+q.y)*q.z);}
 // Value noise periodic in x over P cells around the ring; .y is its x slope.
 vec2 pn(vec2 p,float P){vec2 i=floor(p),f=fract(p),u=f*f*(3.-2.*f);float i0=mod(i.x,P),i1=mod(i.x+1.,P);
@@ -449,12 +467,12 @@ if(st>0.)st*=pn(vec2(az*.3,el*2.2+.8*g1.x),108.).x-.5;
 // or fold contour runs parallel to the crest below it.
 float lean=mix(vF.y,1.3-.33*k,slim), fold=vF.z*(1.-.7*slim);
 vec3 n=normalize(X*(vF.x+gd)+I*lean*(1.+.25*fold)+vec3(0.,1.,0.));
-// Moonlight wrapped softly round the faces (MOUNTAIN_AIR.wrap); te, the terminator's
+// Moonlight on the faces (MOUNTAIN_AIR.wrap); te, the terminator's
 // width on screen, keeps the snow's own light crisp where it turns (below).
 ${WRAP_GLSL};
 float te=max(.05,1.5*fwidth(nl));
 float ao=(1.-.18*max(-fold,0.))*(1.-.24*gully*gully*det*gw)*(1.+.18*st);
-${rockBodyGLSL("vT.y")}
+${rockBodyGLSL("vT.y", "length(vL)")}
 // Valley mist rising from each nearer crest (aForm.w): at most .9 degrees and never
 // more than 60% of what shows above it. On a thin strip it fades smoothly over its
 // lower two thirds instead, dark under its crest to misted at its foot, so the
@@ -477,10 +495,9 @@ if(cap>0.){float snow=step(.001,cap)*smoothstep(0.,1.6*sw,se)*(1.-.85*smoothstep
 // Snow lies smoother than the rock under it: planar faces (big form and spurs, no gully relief).
 float ns=dot(normalize(X*(vF.x+.35*sS)+I*lean*(1.+.25*fold)+vec3(0.,1.,0.)),K);
 float sk=mix(smoothstep(-.3,1.,ns),smoothstep(.3-te,.3+te,ns),.5);
-vec3 sn=mix(vec3(.8485,1.0027,1.4193)*${glslFloat(SNOW.shade)},vec3(.9691,1.0014,1.0768)*${glslFloat(SNOW.lit)},sk)*sL*(1.-.1*gully*det)*(1.+.12*(2.*st+.6*(g2.x-.5)*f2));
+vec3 sn=(uLight.rgb*sk+vec3(.8117,.9991,1.5611)*uLight.w*${glslFloat(MOUNTAIN_AIR.sky)})*${glslFloat(SNOW.albedo)}*(1.-.1*gully*det)*(1.+.12*(2.*st+.6*(g2.x-.5)*f2));
 sn=mix(air,sn,mix(1.,T,.55));
 c=mix(c,sn,snow*(1.-mist));}
-${GLOW_GLSL}
 ${FAR_PLAIN_GLSL}
 ${MOUNTAIN_MIST}${RANGE_MIST_GLSL}
 gl_FragColor=vec4(c,${DEPTH_LAYER.mountains});
@@ -488,13 +505,14 @@ gl_FragColor=vec4(c,${DEPTH_LAYER.mountains});
   });
   // Set after the merge, so every mountain material shares the ground's one object.
   material.uniforms.uMist = RANGE_MIST;
+  material.uniforms.uLight = MOUNTAIN_LIGHT;
   material.uniforms.uSea = SEA_SINK;
   if (mistOn) Object.assign(material.uniforms, MIST_UNIFORMS);
   return material;
 }
 
-// The Meshy massifs (mountain-build.js RANGE_PLACEMENTS): the owner's three
-// models, one mesh each with every copy of it, drawn before the backdrop rings
+// The massifs (mountain-build.js RANGE_PLACEMENTS): three real Alpine massifs,
+// one mesh each with every copy of it, drawn before the backdrop rings
 // (renderOrder) in front of them. Their GLBs load at the startup tier when the
 // ranges are requested; their nearer layers' skyline texture follows
 // mountain-build.js RANGE_SKY (a test holds them equal).
@@ -504,58 +522,21 @@ export const MASSIFS = Object.freeze({
   // Milliseconds the ranges wait for the massifs' GLBs before the five rings land instead.
   deadline: 12000,
   sky: Object.freeze({ texture: 4096, floor: -10, span: 40 }),
-  // Layer n sees through range n + air's air (MOUNTAIN_AIR): big massifs far off,
-  // hazier than the procedural rings at their layer's distance.
-  air: 1,
+  // Big massifs far off: their albedo is the next range's (MOUNTAIN_AIR), and they
+  // haze as if `air` x as far as their shells stand.
+  air: 1.15,
   // The relief's mip bias: the normal map read this many levels sharper than the
   // screen's footprint, so the moonlit faces keep their ridges and gullies.
   sharpen: -0.75,
 });
 
-// Rock strata on the massifs' bare rock (the owner's picks of 2026-10-09: strata,
-// then natural ones): irregular layers `spacing` to a degree of elevation,
-// warped along the ring by two noises (`warp`: [frequency per degree of azimuth,
-// of elevation, depth] each; the azimuth's wraps whole about the ring, so there
-// is no seam at +-180 degrees). They show only on steep rock (`steep`: the
-// relief's upward share where they fade in and out, read `steepBlur` mip levels
-// down, so the mask never shimmers with the relief's fine detail) and in broken patches along
-// the ring (`broken`: a noise's band where they come and go, its frequencies as
-// the warp's), each layer of its own strength (`amount`: base and spread). A
-// layer is a faint moonlit ledge at its base (`ledge`: rise, then fading from
-// [0] to [1] of the layer) lifting the face's light by up to `light` (less
-// `mean` everywhere, so it never steps between layers), over a dark seam
-// (`seam`: width and depth, of the occlusion, ramping in on both sides of the
-// layer's edge, its patches the same for both layers). Both are anti-aliased by
-// the layer's own gradient, before the snow, so the snow lies over them.
-export const MASSIF_STRATA = Object.freeze({
-  spacing: 2.1,
-  warp: Object.freeze([Object.freeze([0.35, 0.5, 1.6]), Object.freeze([1.1, 1.7, 0.6])]),
-  steep: Object.freeze([0.45, 0.8]),
-  steepBlur: 1.5,
-  broken: Object.freeze([0.9, 0.8, 0.35, 0.65]),
-  amount: Object.freeze([0.5, 0.5]),
-  ledge: Object.freeze([0.15, 0.3, 1]),
-  light: 0.16,
-  mean: 0.1,
-  seam: Object.freeze([0.07, 0.14]),
-});
-const STRATA_GLSL = (() => {
-  const { spacing, warp, steep, steepBlur, broken, amount, ledge, light, mean, seam } =
-      MASSIF_STRATA,
-    [[a1, e1, d1], [a2, e2, d2]] = warp,
-    [ba, be, b0, b1] = broken,
-    g = glslFloat,
-    wrap = (a) => g(Math.round(a * 360));
-  return `{float azw=mod(az,360.),w1=vnw(vec2(azw*${g(a1)},el*${g(e1)}),${wrap(a1)}),w2=vnw(vec2(azw*${g(a2)},el*${g(e2)}),${wrap(a2)});float sk=el*${g(spacing)}+${g(d1)}*w1+${g(d2)}*w2,sw=max(fwidth(sk),1e-3),f=fract(sk),id=floor(sk);float amp=${g(amount[0])}+${g(amount[1])}*fract(sin(id*12.9898)*43758.5453);float st=1.-smoothstep(${g(steep[0])},${g(steep[1])},relief(${g(steepBlur)}).y);float p0=smoothstep(${g(b0)},${g(b1)},vnw(vec2(azw*${g(ba)},el*${g(be)}),${wrap(ba)}));float p1=smoothstep(${g(b0)},${g(b1)},vnw(vec2(azw*${g(ba)}+id*7.,el*${g(be)}),${wrap(ba)}));float ledge=smoothstep(0.,${g(ledge[0])}+sw,f)*(1.-smoothstep(${g(ledge[1])},${g(ledge[2])},f));float seam=max(1.-smoothstep(0.,${g(seam[0])}+sw,f),smoothstep(1.-sw,1.,f));ao*=1.-${g(seam[1])}*st*p0*seam;lit*=1.+${g(light)}*(amp*p1*st*ledge-${g(mean)});}`;
-})();
-
-// The Meshy massifs' shading: the ranges' moonlit style on the models' own
+// The massifs' shading: the ranges' moonlit style on the models' own
 // relief. The object-space normal map (the GLB's normalTexture) is turned into
 // the world by each copy's placement (aInst: the turn's cos and sin, mirror,
 // squash); photographic albedo follows the same UVs. The mask (occlusionTexture:
 // R ambient occlusion, G the source's whiteness) shades crevices and lays snow.
-// The rock, its air, the orb's
-// glow and the far plain are the ranges' own (the shared GLSL above), with
+// The rock, its air (glowing toward the
+// orb) and the far plain are the ranges' own (the shared GLSL above), with
 // aTerrain = (degrees below the copy's own crest, layer, snowline: 0 on a bare
 // copy, massif height).
 // Valley mist rises from the nearer layers' skyline (uNearer: layer 0's and
@@ -609,7 +590,7 @@ gl_Position=projectionMatrix*m;
 gl_Position.z=mix(gl_Position.z,gl_Position.w,.8);
 }`,
     fragmentShader: `
-uniform vec4 uMist;
+uniform vec4 uMist, uLight;
 ${MOUNTAIN_MIST_PARS}
 uniform vec2 uSky;
 uniform vec3 uSun, fogColor;
@@ -621,13 +602,10 @@ varying vec3 vL;
 varying vec2 vU;
 varying float vD, vH;
 ${FILM_SKY_GLSL}
+${FILM_UNTONE_GLSL}
 // Smooth value noise, 0..1 (the snowline's jitter).
 float vn(vec2 p){vec2 i=floor(p),f=fract(p),u=f*f*(3.-2.*f);
 vec4 h=fract(sin(vec4(dot(i,vec2(127.1,311.7)),dot(i+vec2(1,0),vec2(127.1,311.7)),dot(i+vec2(0,1),vec2(127.1,311.7)),dot(i+1.,vec2(127.1,311.7))))*43758.5453);
-return mix(mix(h.x,h.y,u.x),mix(h.z,h.w,u.x),u.y);}
-// The same noise wrapped every w cells along x (the ring's azimuth), seamless at +-180 degrees.
-float vnw(vec2 p,float w){vec2 i=floor(p),f=fract(p),u=f*f*(3.-2.*f);float i0=mod(i.x,w),i1=mod(i.x+1.,w);
-vec4 h=fract(sin(vec4(dot(vec2(i0,i.y),vec2(127.1,311.7)),dot(vec2(i1,i.y),vec2(127.1,311.7)),dot(vec2(i0,i.y+1.),vec2(127.1,311.7)),dot(vec2(i1,i.y+1.),vec2(127.1,311.7))))*43758.5453);
 return mix(mix(h.x,h.y,u.x),mix(h.z,h.w,u.x),u.y);}
 // The relief b mip levels down, turned by the copy's placement: mirror x, undo
 // the squash, turn about the vertical.
@@ -644,10 +622,9 @@ float sL=max(dot(s,W),1e-4), far=step(.5,vT.y), k=vT.y*.25, px=vT.x/max(fwidth(v
 float el=degrees(atan(vL.y,r)), az=degrees(atan(vL.z,vL.x)), ppd=1./max(fwidth(el),1e-4);
 vec3 n=relief(${glslFloat(MASSIFS.sharpen)});
 vec2 mk=texture2D(uMask,vU).gr;
-// Moonlight wrapped softly round the faces, as the ranges' (MOUNTAIN_AIR.wrap).
+// Moonlight on the faces, as the ranges' (MOUNTAIN_AIR.wrap).
 ${WRAP_GLSL}, ao=mix(1.,mk.y,.6);
-${STRATA_GLSL}
-${rockBodyGLSL(`(vT.y+${glslFloat(MASSIFS.air)})`, "c*=clamp(texture2D(uAlbedo,vU).rgb/max(uAlbedoMean,.03),vec3(.15),vec3(2.));")}
+${rockBodyGLSL("(vT.y+1.)", `length(vL)*${glslFloat(MASSIFS.air)}`, "c*=clamp(texture2D(uAlbedo,vU).rgb/max(uAlbedoMean,.03),vec3(.15),vec3(2.));")}
 // Valley mist rising from the nearer layers' skyline: at most .9 degrees, 70% at its foot.
 vec2 nr=nearer(az);
 float under=mix(nr.x,nr.y,step(1.5,vT.y)), rise=el+vT.x-under;
@@ -671,10 +648,9 @@ float rib=(mk.x-texture2D(uMask,vU,3.).g)*smoothstep(${glslFloat(MASSIF_SNOW.rib
 float bare=nh.y+${glslFloat(MASSIF_SNOW.white)}*(wv-.5), hold=bare+${glslFloat(MASSIF_SNOW.rib)}*rib, hw=max(1.5*fwidth(hold),.04);
 if(vT.z>.5&&cap>0.){float snow=smoothstep(0.,1.6*sw,se)*mix(clamp((bare+.04)/hw+.5,0.,1.),clamp((hold+.04)/hw+.5,0.,1.),${glslFloat(MASSIF_SNOW.ribShare)});
 float sk=clamp((dot(normalize(mix(ns,ne,.15)),K)+.15)/1.15,0.,1.)*(1.+${glslFloat(MASSIF_SNOW.tone)}*clamp(dot(nh,K)-dot(ns,K),-${glslFloat(MASSIF_SNOW.toneCap)},${glslFloat(MASSIF_SNOW.toneCap)}));
-vec3 sn=mix(vec3(.8485,1.0027,1.4193)*${glslFloat(MASSIF_SNOW.shade)},vec3(.9691,1.0014,1.0768)*${glslFloat(MASSIF_SNOW.lit)},sk)*sL;
+vec3 sn=(uLight.rgb*sk+vec3(.8117,.9991,1.5611)*uLight.w*${glslFloat(MOUNTAIN_AIR.sky)})*${glslFloat(MASSIF_SNOW.albedo)};
 sn=mix(air,sn,mix(1.,T,.55));
 c=mix(c,sn,snow*(1.-mist)*(${glslFloat(1 - MASSIF_SNOW.thin)}+${glslFloat(MASSIF_SNOW.thin)}*wv));}
-${GLOW_GLSL}
 ${FAR_PLAIN_GLSL}
 ${MOUNTAIN_MIST}${RANGE_MIST_GLSL}
 gl_FragColor=vec4(c,${DEPTH_LAYER.mountains});
@@ -688,6 +664,7 @@ gl_FragColor=vec4(c,${DEPTH_LAYER.mountains});
     uAlbedoMean: { value: albedoMean },
     uNearer: { value: nearerMap },
     uMist: RANGE_MIST,
+    uLight: MOUNTAIN_LIGHT,
     uSea: SEA_SINK,
     ...(mistOn ? MIST_UNIFORMS : {}),
   });
@@ -715,7 +692,7 @@ function emptyRanges() {
 // under the canvas's fade-in, 1.8 s mid-shot; mountain-build.js entrance()). Until
 // then, or if the chunk fails, the film shows the empty stand-in.
 // At a model tier (tier: high or balanced, the startup tier) the request also loads
-// the Meshy massifs' GLBs (MASSIFS.roles, at low fetch priority, beside the chunk),
+// the massifs' GLBs (MASSIFS.roles, at low fetch priority, beside the chunk),
 // and the build is the massifs with RANGE_BACKDROP's two rings behind them; if a GLB
 // fails, the five rings land instead and the status reads "fallback".
 // ready: the request's promise (null until requested), settled once the ranges
@@ -742,6 +719,18 @@ export function createHillSilhouette({
   mesh.castShadow = mesh.receiveShadow = false;
   mesh.matrixAutoUpdate = false;
   mesh.updateMatrix();
+  // The ranges' moonlight from the scene's own lights (MOUNTAIN_LIGHT), before each draw.
+  const lightRanges = () => {
+    const { sun, hemisphere, ambient } = rendering?.lights ?? {};
+    if (sun)
+      MOUNTAIN_LIGHT.value.set(
+        sun.color.r * sun.intensity,
+        sun.color.g * sun.intensity,
+        sun.color.b * sun.intensity,
+        (hemisphere?.intensity ?? 0) + (ambient?.intensity ?? 0),
+      );
+  };
+  mesh.onBeforeRender = lightRanges;
   // The massifs ride under the ranges' mesh, so the low tier hides them with it.
   const massifRoot = new Group();
   massifRoot.name = "film-massifs";
@@ -859,6 +848,8 @@ export function createHillSilhouette({
         massif.frustumCulled = false;
         massif.renderOrder = MASSIFS.renderOrder;
         massif.castShadow = massif.receiveShadow = false;
+        // The massifs draw first (renderOrder), so they keep the light too.
+        massif.onBeforeRender = lightRanges;
         massifRoot.add(massif);
         meshes[role] = massif;
         models[role] = {

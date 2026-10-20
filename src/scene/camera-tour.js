@@ -6,20 +6,18 @@ export const TOUR_PER_SHOT = "shot";
 export const DEFAULT_TOUR_INTERVAL = TOUR_PER_SHOT;
 const TOUR_INTERVALS = [3, 5, 20];
 export const TOUR_HOLD_FALLBACK = 7;
-// The tour opens on The watch and alternates the lookout and the tree while
-// it can: two lookout shots and four of the tree leave two pairs of tree shots
-// together, Portrait then Lantern study and Close-up then Root and lantern,
-// each a change of height and bearing (Lantern study and Root and lantern
-// nearly share both, so they are kept apart). Against the moon left the tour
-// (the owner's call of 2026-10-14) and stays at its URL. The fault's three
-// shots (ocean.js COAST_SHOTS) join once the sea has landed, one after each
-// lookout-and-tree run: wide down the coast after Portrait, the falls after
-// Threshold, and the bay from above to close the loop.
+// The tour opens on The watch, the sky, then the tree's four shots in two
+// pairs, Portrait then Lantern study and Close-up then Root and lantern, each
+// a change of height and bearing (Lantern study and Root and lantern nearly
+// share both, so they are kept apart); one sky shot, the owner's call of
+// 2026-10-20. The fault's three shots (ocean.js COAST_SHOTS) join once the sea has landed,
+// one between each pair and after the last: wide down the coast after
+// Portrait, the falls after Lantern study, and the bay from above to close
+// the loop.
 export const TOUR_ORDER = Object.freeze([
   "The watch",
   "Portrait",
   "Lantern study",
-  "Threshold",
   "Close-up",
   "Root and lantern",
 ]);

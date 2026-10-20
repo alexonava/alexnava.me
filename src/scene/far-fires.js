@@ -23,7 +23,7 @@ import { MIST_KEEP, MIST_PARS, MIST_UNIFORMS, mistOn } from "./drifting-mist.js"
 // out there. Each is a hot point a device pixel or two across with a small
 // soft halo, 2000-2500 K, breathing on the scene clock and now and then
 // guttering, dimmed and reddened by the air with distance, and hidden by the
-// terrain, the rocks, the tower and the tree: one depth-tested Points draw in
+// terrain, the rocks and the tree: one depth-tested Points draw in
 // the scene, added light that keeps the film's depth layer, no light and no
 // texture (STYLE.md: no new lights).
 //
@@ -64,8 +64,8 @@ import { MIST_KEEP, MIST_PARS, MIST_UNIFORMS, mistOn } from "./drifting-mist.js"
 // depth range, never cover it; its air is reckoned on its true distance).
 // guard: the fires go out behind the name and intro (`text`) and Contact
 // (`about`), over shares of the screen's smaller side as the ground's text
-// guard measures them, and about the subjects (`subject`: pad and feather,
-// the tower's and tree's silhouettes taken as `bands` boxes up their height).
+// guard measures them, and about the subject (`subject`: pad and feather,
+// the tree's silhouette taken as `bands` boxes up its height).
 // balanced: the share of fires kept (each cluster's first ones), the pool's
 // gain and the halo's scale.
 // shots: per shot, a canvas UV rect (x0, y0, x1, y1, y up) the fires keep out
@@ -77,14 +77,14 @@ export const FAR_FIRES = Object.freeze({
   lift: 0.5,
   gap: 0.005,
   clusters: Object.freeze([
-    // Far out west of the lookout (The watch keeps them out of its frame; other views see them).
+    // Far out west of the watch (The watch keeps them out of its frame; other views see them).
     Object.freeze([156, 560, 16, 4, 0.9]),
     Object.freeze([162, 1500, 40, 6, 1]),
     Object.freeze([152, 980, 22, 2, 0.75]),
     Object.freeze([184, 900, 26, 5, 0.95]),
     Object.freeze([189, 360, 9, 2, 0.8]),
     Object.freeze([157, 300, 8, 2, 0.8]),
-    // Watch and tree: on the far foothills' crests, either side of the lookout.
+    // On the far foothills' crests, beyond the watch from the tree.
     Object.freeze([232, 151, 6, 3, 0.8]),
     Object.freeze([266, 153, 5, 2, 0.75]),
   ]),
@@ -226,8 +226,8 @@ export function farFireLayout(config = FAR_FIRES) {
 
 const glsl = (value) => (Number.isInteger(value) ? value.toFixed(1) : String(value));
 const vec3 = (values) => `vec3(${values.map(glsl).join(",")})`;
-// Subject guard rects: the bands of the tower's and the tree's silhouettes.
-const SUBJECT_RECTS = 2 * FAR_FIRES.guard.bands;
+// Subject guard rects: the bands of the subject's silhouette (the tree's).
+const SUBJECT_RECTS = FAR_FIRES.guard.bands;
 
 function farFireMaterial(config, uniforms) {
   const { size, colour, haze } = config,
@@ -408,7 +408,7 @@ function subjectBands(root, bands) {
 
 // The film's distant firelights (FAR_FIRES), a subsystem under the ground's
 // root, shown with the film. camera: the scene camera; subjects: () => the
-// tower's and the tree's roots (or null); shot: () => the current directed
+// subjects' roots (the tree's, or null); shot: () => the current directed
 // shot; textGuard: the slate's contacts (index.js createSlateContacts()),
 // whose text boxes and aspect the fires borrow and never free.
 export function createFarFires({

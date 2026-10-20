@@ -8,26 +8,22 @@
 // would split the shared Three.js chunk in two. Every table, helper and Three
 // class arrives in `lib` (rock-scatter.js ROCK_LIB).
 
-// Reach of each directed shot's view wedge from its subject; other tower shots 45.
-// Against the moon (added 2026-10-12) takes none: a wedge of its own would reseed
-// the pebbles in every other shot; its view keeps cluster G's rock as a foreground
-// silhouette below the lookout.
+// Reach of each directed shot's view wedge from its subject; any other 45.
 const SHOT_REACH = {
   "The watch": 160,
   Portrait: 95,
   "Root and lantern": 40,
   "Close-up": 30,
   "Lantern study": 15,
-  "Against the moon": 0,
 };
 
-// Clear of the tower, tree, lantern and path, and outside every directed
+// Clear of the watch's terrace, the tree, lantern and path, and outside every directed
 // shot's wedge between its camera and its subject: azimuth +-(arc/2 + 10).
 export function rockClear(lib, x, z, radius, { lanternStone = false } = {}) {
   const { ESTATE, DIRECTED_SHOTS } = lib,
     lantern = lib.estateLantern(),
-    { tower, tree } = ESTATE;
-  if (Math.hypot(x - tower.x, z - tower.z) <= tower.clear + radius) return false;
+    { watch, tree } = ESTATE;
+  if (Math.hypot(x - watch.x, z - watch.z) <= watch.clear + radius) return false;
   if (
     Math.hypot(x - tree.x, z - tree.z) <=
     (lanternStone ? ESTATE.lantern.offset : tree.clear + radius)

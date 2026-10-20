@@ -573,12 +573,12 @@ test("shader warm-ups compile in their own task, hide waiting subjects and alway
   const tasks = [];
   const compiles = [];
   const settled = [];
-  const tower = { name: "tower", visible: true };
+  const mountains = { name: "mountains", visible: true };
   const tree = { name: "tree", visible: true };
   const warmup = createShaderWarmup({
     schedule: (task) => tasks.push(task),
     compile() {
-      const call = { shown: [tower.visible, tree.visible] };
+      const call = { shown: [mountains.visible, tree.visible] };
       call.promise = new Promise((resolve, reject) => Object.assign(call, { resolve, reject }));
       compiles.push(call);
       return call.promise;
@@ -586,9 +586,9 @@ test("shader warm-ups compile in their own task, hide waiting subjects and alway
   });
 
   warmup.warm(null, (ready) => settled.push(["scene", ready]));
-  warmup.warm(tower, (ready) => settled.push(["tower", ready]));
+  warmup.warm(mountains, (ready) => settled.push(["mountains", ready]));
   assert.equal(warmup.pending, 2);
-  assert.equal(tower.visible, false, "a subject with nothing visible to replace waits hidden");
+  assert.equal(mountains.visible, false, "a subject with nothing visible to replace waits hidden");
   assert.equal(compiles.length, 0, "compiling waits for its own task");
 
   tasks.shift()();
@@ -604,16 +604,20 @@ test("shader warm-ups compile in their own task, hide waiting subjects and alway
     ],
     "every waiting subject is shown for the compile, so its lights count",
   );
-  assert.deepEqual([tower.visible, tree.visible], [false, false], "and hidden again before a draw");
+  assert.deepEqual(
+    [mountains.visible, tree.visible],
+    [false, false],
+    "and hidden again before a draw",
+  );
 
   compiles[1].resolve(true);
   compiles[0].reject(new Error("context lost"));
   await flush();
   assert.deepEqual(settled, [
-    ["tower", true],
+    ["mountains", true],
     ["scene", false],
   ]);
-  assert.equal(tower.visible, true, "a ready subject is shown");
+  assert.equal(mountains.visible, true, "a ready subject is shown");
   assert.equal(tree.visible, false);
   assert.equal(warmup.pending, 1);
   compiles[2].resolve(false);

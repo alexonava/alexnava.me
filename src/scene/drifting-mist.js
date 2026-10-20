@@ -1,8 +1,8 @@
 // Drifting ground mist (storm-fx, reference E): low banks of mist that drift slowly over
 // the plain and between the subjects, thicker toward the ranges' feet and in the
-// hollows, thinning toward the lens, so the tower's and the tree's feet and the far
+// hollows, thinning toward the lens, so the tree's feet and the far
 // plain stand in moving air. No pass, mesh or texture: every film material that stands
-// in it (the ground, the tower, the tree, the rocks, the growth and litter, the lantern,
+// in it (the ground, the tree, the rocks, the growth and litter, the lantern,
 // the ranges) takes the same term after its fog, an optical depth gathered along its
 // own view ray below the mist's ceiling in a few steps through two octaves of drifting
 // 3D value noise (a sine-free hash, so every GPU draws the same banks).
@@ -15,7 +15,7 @@
 //   [from, to] units from the estate's middle (`centre`); the density also grows
 //   `far`-fold toward the ranges. `veil`: the most the mist ever covers, so the ranges'
 //   feet and the far plain always show through it. It falls off as the square of the height below the
-//   ceiling, so the hollows (the tree's knoll, the plain below the tower's base) hold
+//   ceiling, so the hollows (the tree's knoll, the plain below the terrace) hold
 //   more of it. Every camera stands above the far ceiling in the wide shots, so
 //   nothing above eye level, the sky and the reference banks included, ever takes it;
 // - `cells`: [the banks' size in units along the wind, across it and in height]: long

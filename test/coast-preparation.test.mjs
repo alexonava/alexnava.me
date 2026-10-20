@@ -22,15 +22,16 @@ vm.runInNewContext(
 const height = filmHeight(context.window.BabelSite.scene.groundHeight, true),
   drop = riverFalls(RIVER_LINE),
   // Captured from the synchronous constructors (re-taken 2026-10-19 for
-  // variable-thickness bedding; the stack buffers are unchanged).
+  // variable-thickness bedding, then for the shelf's three-channel slateShade;
+  // the stack buffers are unchanged).
   // Include every attribute's bytes, in order, and the complete index buffer.
   baseline = {
     high: [
-      "37e49edfc9e8a2309c1468fa0a54d3a2e8e5c6060d1b4224984587341f321180",
+      "7e05f745e3d950dbb05b759a416e9eef91dc3011223f88cefd694bf9ab082d22",
       "50cc3e86adeb69d114106c98a5717601d5c65d2a524d1cb842fdd3d5c02326d6",
     ],
     balanced: [
-      "77d2161f109afc57a42420ba04599d03b37343d812958c4a5034a6c343529d7b",
+      "2222a3e33eb1ae2eeb26ee679faba8d5b53084df7648006d8dec8985cd233636",
       "5409d1d0c1b9992b400f49ceb9ea26873494b31eee5e37f16b053ea79385ea69",
     ],
   };

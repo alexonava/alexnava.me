@@ -45,14 +45,14 @@ for (const tier of ["high", "balanced"])
   for (const shifted of [false, true])
     test(`${tier} complete falls and spray fit the live cinematic safe area${shifted ? " in a transformed estate" : ""}`, () => {
       const estate = new Group(),
-        tower = new Mesh(new BoxGeometry(10, 30, 10), new MeshBasicMaterial()),
-        tree = new Mesh(new BoxGeometry(10, 20, 10), tower.material);
+        watch = new Mesh(new BoxGeometry(10, 30, 10), new MeshBasicMaterial()),
+        tree = new Mesh(new BoxGeometry(10, 20, 10), watch.material);
       estate.position.set(shifted ? 13 : 0, -6.8, shifted ? -9 : 0);
       if (shifted) {
         estate.rotation.y = 0.17;
         estate.scale.setScalar(1.06);
       }
-      estate.add(tower, tree);
+      estate.add(watch, tree);
       const falls = createFalls({
           lib: {
             MIST_UNIFORMS,
@@ -78,7 +78,7 @@ for (const tier of ["high", "balanced"])
         getSafeArea: () => area,
       });
       for (const [kind, root] of [
-        ["tower", tower],
+        ["watch", watch],
         ["tree", tree],
       ]) {
         controller.setSubject(kind, root);
@@ -184,9 +184,9 @@ for (const tier of ["high", "balanced"])
           DIRECTED_SHOTS.tree.splice(DIRECTED_SHOTS.tree.indexOf(bound), 1);
         controller.dispose();
         falls.dispose();
-        tower.geometry.dispose();
+        watch.geometry.dispose();
         tree.geometry.dispose();
-        tower.material.dispose();
+        watch.material.dispose();
       }
     });
 
@@ -203,7 +203,7 @@ for (const tier of ["high", "balanced"])
         material,
       ),
       stacks = new Mesh(stackGeometry(settings.stacks), material),
-      tower = new Mesh(new BoxGeometry(10, 30, 10), material),
+      watch = new Mesh(new BoxGeometry(10, 30, 10), material),
       tree = new Mesh(new BoxGeometry(10, 20, 10), material),
       base = COAST_SHOTS[0],
       shot = coastShot(base, estate),
@@ -212,10 +212,10 @@ for (const tier of ["high", "balanced"])
       area = cinematicSafeArea(390, 844, layouts[0][2], layouts[0][3]),
       controller = createCinematicCamera({ camera, selected: "tree", getSafeArea: () => area });
     estate.position.y = -6.8;
-    estate.add(cliff, stacks, tower, tree);
+    estate.add(cliff, stacks, watch, tree);
     DIRECTED_SHOTS.tree.push(shot);
     for (const [kind, root] of [
-      ["tower", tower],
+      ["watch", watch],
       ["tree", tree],
     ]) {
       controller.setSubject(kind, root);
@@ -343,7 +343,7 @@ for (const tier of ["high", "balanced"])
     } finally {
       DIRECTED_SHOTS.tree.splice(DIRECTED_SHOTS.tree.indexOf(shot), 1);
       controller.dispose();
-      for (const mesh of [cliff, stacks, tower, tree]) mesh.geometry.dispose();
+      for (const mesh of [cliff, stacks, watch, tree]) mesh.geometry.dispose();
       material.dispose();
     }
   });
@@ -357,7 +357,7 @@ for (const tier of ["high", "balanced"])
     );
     const estate = new Group(),
       material = new MeshBasicMaterial({ side: 2 }),
-      tower = new Mesh(new BoxGeometry(10, 30, 10), material),
+      watch = new Mesh(new BoxGeometry(10, 30, 10), material),
       tree = new Mesh(new BoxGeometry(10, 20, 10), material),
       height = riverChannel(filmHeight(context.window.BabelSite.scene.groundHeight, true)).bed,
       drop = riverFalls(RIVER_LINE),
@@ -391,7 +391,7 @@ for (const tier of ["high", "balanced"])
       course = falls.mesh.geometry.attributes.aFall,
       targets = [];
     estate.position.y = -6.8;
-    estate.add(tower, tree, cliff, falls.mesh);
+    estate.add(watch, tree, cliff, falls.mesh);
     // Sample both actual skins and their rounded sides, not just the old
     // zero-thickness central curtain or the fit proxy. A point can project
     // inside the safe area while the near shelf still hides it.
@@ -409,7 +409,7 @@ for (const tier of ["high", "balanced"])
     targets.push(new Vector3(x, SEA.level + 0.05, z));
     DIRECTED_SHOTS.tree.push(shot);
     for (const [kind, root] of [
-      ["tower", tower],
+      ["watch", watch],
       ["tree", tree],
     ]) {
       controller.setSubject(kind, root);
@@ -451,7 +451,7 @@ for (const tier of ["high", "balanced"])
       DIRECTED_SHOTS.tree.splice(DIRECTED_SHOTS.tree.indexOf(shot), 1);
       controller.dispose();
       falls.dispose();
-      for (const mesh of [cliff, tower, tree]) mesh.geometry.dispose();
+      for (const mesh of [cliff, watch, tree]) mesh.geometry.dispose();
       material.dispose();
     }
   });

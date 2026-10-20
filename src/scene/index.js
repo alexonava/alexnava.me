@@ -1,7 +1,8 @@
 import "./quality.js";
 import { createSolarBody, SOLAR_RADIUS } from "./solar-body.js";
 import { LENS_FX, lensKeepRect, lensSource } from "./postprocess.js";
-import { openingStar } from "./opening-star.js";
+import { openingStar, watchMeasure } from "./opening-star.js";
+import { measureShot } from "./directed-shots.js";
 import { createStarfield } from "./starfield.js";
 import { readTourInterval, createCameraTour, TOUR_IDLE, TOUR_TRANSITION } from "./camera-tour.js";
 import { createFilmScene } from "./film-scene.js";
@@ -14,16 +15,7 @@ import {
   isStackedLayout,
   layoutRect,
 } from "./cinematic.js";
-import {
-  GLINT_MOOD,
-  GRASS_MOOD,
-  LANTERN_MOOD,
-  PALE_MOOD,
-  RIM_UNIFORMS,
-  STONE_MOOD,
-  setRim,
-  shotLight,
-} from "./film-light.js";
+import { GLINT_MOOD, GRASS_MOOD, LANTERN_MOOD, STONE_MOOD, shotLight } from "./film-light.js";
 import {
   configureGroundShading,
   createSlateContacts,
@@ -33,7 +25,7 @@ import {
 import { ESTATE, estateLantern } from "./estate-layout.js";
 import { isWalkKey, walkAllowed } from "./walk-key.js";
 import { createRockScatter, estateContacts } from "./rock-scatter.js";
-import { HIGH_VIEW, createHillSilhouette } from "./hill-silhouette.js";
+import { createHillSilhouette } from "./hill-silhouette.js";
 import { createLightning } from "./lightning.js";
 import { createFarFires } from "./far-fires.js";
 import { markScene, measureScene, sceneNow } from "./perf-marks.js";
@@ -46,17 +38,14 @@ import {
   Mesh,
   MeshStandardMaterial,
   MirroredRepeatWrapping,
+  Object3D,
   SphereGeometry,
   SRGBColorSpace,
   Vector3,
 } from "three";
 import { createArchitectureAssetController, loadArchitectureAsset } from "./architecture-assets.js";
 import { createLanternMount } from "./lantern.js";
-import {
-  createCompleteTowerArchitecture,
-  createTreeArchitecture,
-  prepareArchitecture,
-} from "./architecture.js";
+import { createTreeArchitecture, prepareArchitecture } from "./architecture.js";
 import { createSceneAtmosphere } from "./atmosphere.js";
 import { createSceneEnvironment } from "./environment.js";
 import {
@@ -278,6 +267,10 @@ const ORBIT_SPEED = 0.06;
           layoutRect(document.getElementById("hero-minimal")),
           document.querySelector(".bottom-bar")?.getBoundingClientRect(),
         );
+      // The watch's marker (below) is measured by the lookout's stored outline for the
+      // startup tier (opening-star.js watchMeasure()); the tree as it stands.
+      const measureWatch = watchMeasure(assetTier);
+      let watchRoot = null;
       const cinematic = createCinematicCamera({
         camera,
         fog: homeScene.fog,
@@ -285,6 +278,8 @@ const ORBIT_SPEED = 0.06;
         angle: scene.cinematicAngle,
         getSafeArea: (width, height) => cinematicArea || measureCinematicArea(width, height),
         getGroundY: (x, z) => cinematicGroundY(x, z),
+        measure: (root, shot) =>
+          root === watchRoot ? measureWatch(root, shot) : measureShot(root, shot),
       });
       subsystemRegistry.register(cinematic);
       const tourInterval = readTourInterval(window.location.search);
@@ -585,7 +580,7 @@ const ORBIT_SPEED = 0.06;
       groundSurface = groundMesh;
       subsystemRegistry.register(groundTextures);
       // The film ranges are a lazy chunk (mountain-build.js), requested once the film is
-      // on at high or balanced with the Meshy massifs' GLBs at the startup tier; they
+      // on at high or balanced with the massifs' GLBs at the startup tier; they
       // build in slices and land only while unseen (before the reveal, under its fade,
       // on a cut).
       const hillSilhouette = createHillSilhouette({
@@ -624,17 +619,20 @@ const ORBIT_SPEED = 0.06;
         },
       });
       subsystemRegistry.register(rockScatter);
-      // The authored tower hangs under its own group in the environment.
-      const towerRoot = new Group();
-      environmentRoot.add(towerRoot);
-      const towerGroundY = groundHeight(0, 0);
-      // The earth footing sets the lookout's posts into the terrace.
-      const TOWER_FOOTING = -0.22;
+      // The watch's marker: nothing is drawn on the terrace; The watch frames the outline
+      // measured from the feet of the lookout's posts, which stood 0.22 into it.
+      watchRoot = new Object3D();
+      watchRoot.position.set(
+        ESTATE.watch.x,
+        groundHeight(ESTATE.watch.x, ESTATE.watch.z) - 0.22,
+        ESTATE.watch.z,
+      );
+      environmentRoot.add(watchRoot);
       // Authored casters and the sun hold still within a shot, so the shadow map
       // redraws only on reported changes.
       rendering.setStaticShadows(true);
       let treeArchitecture = null;
-      // The authored tower's grounded lighting, on while the tower is shown.
+      // The film's grounded lighting, on while the watch is committed.
       let groundedLighting = false;
       function setGroundedLighting(active) {
         if (groundedLighting === active) return;
@@ -644,13 +642,12 @@ const ORBIT_SPEED = 0.06;
       subsystemRegistry.register({ dispose: () => setGroundedLighting(false) });
       const propScale = createPropScale({ groundRoot: environmentRoot, groundHeight });
       subsystemRegistry.register(propScale);
-      let completeTower = null;
       // The film's distant firelights on the far plain (far-fires.js): out
-      // behind the text and about the tower's and the tree's silhouettes.
+      // behind the text and about the tree's silhouette.
       const farFires = createFarFires({
         parent: environmentRoot,
         camera,
-        subjects: () => [completeTower?.root, treeArchitecture?.root],
+        subjects: () => [treeArchitecture?.root],
         shot: shotOnScreen,
         textGuard: groundContacts,
         profile: state.profile,
@@ -670,7 +667,6 @@ const ORBIT_SPEED = 0.06;
           environmentSystem.setFilmTreatment(active);
           hillSilhouette.setFilmTreatment(active);
           filmActive = active;
-          completeTower?.setFilmTreatment(active);
           groundTextures.setFilmActive(active);
           rockScatter.setFilmActive(active);
           farFires.setFilmActive(active);
@@ -693,9 +689,9 @@ const ORBIT_SPEED = 0.06;
         if (qualityDebug)
           qualityDebug.failure = { stage, message: String(error?.message || error) };
       }
-      // An authored tower or tree that cannot load shows the title card: the
-      // scene stops at once and its runtime is disposed on a later tick, outside
-      // the asset controller's callback.
+      // A watch whose stage fails or a tree that cannot load shows the title card:
+      // the scene stops at once and its runtime is disposed on a later tick,
+      // outside the asset controller's callback.
       function failToTitle(stage, error) {
         if (sceneFailed) return;
         stopFailedScene(stage, error);
@@ -746,51 +742,32 @@ const ORBIT_SPEED = 0.06;
       const architectureAssets = createArchitectureAssetController({
         async loadAsset(url, options) {
           const asset = await loadArchitectureAsset(url, options);
-          if (options.role === "tower" || options.role === "tree")
-            await prepareArchitecture(asset, options);
-          // The environment's own sky and filter programs link while models
-          // download. The synchronous commit then borrows a finished capture,
-          // rather than blocking to introspect shaders in fromScene().
-          if (options.role === "tower")
-            await Promise.all([rendering.environment.ready, filmDetailReady]);
+          if (options.role === "tree") await prepareArchitecture(asset, options);
           // Finish preparation in its own task before the atomic model commit.
           await new Promise((resolve) => window.setTimeout(resolve, 0));
           return asset;
         },
         includeLantern: true,
         onLanternReady: (asset) => lanternMount.stage(asset),
-        onTowerReady(assets) {
+        // The watch waits on the sky's own programs and capture and the film's detail
+        // (they link and build while the tree downloads), so its synchronous commit
+        // borrows a finished capture rather than blocking to introspect shaders in
+        // fromScene(). Its commit switches the film on and gives the camera the watch.
+        stage: () => Promise.all([rendering.environment.ready, filmDetailReady]),
+        onWatchReady() {
           const assemblyStart = sceneNow();
-          const replacement = createCompleteTowerArchitecture({
-            asset: assets.tower,
-            groundY: towerGroundY,
-            footingOffset: TOWER_FOOTING,
-            anisotropy: chooseAnisotropy(6),
-          });
-          try {
-            setGroundedLighting(true);
-            propScale.setActive(true);
-            filmScene.setActive(true);
-            treeArchitecture?.setFilmTreatment(filmActive);
-            replacement.setFilmTreatment?.(filmActive);
-          } catch (error) {
-            replacement.dispose();
-            throw error;
-          }
-          completeTower = replacement;
-          towerRoot.add(replacement.root);
-          cinematic.setSubject("tower", replacement.root);
+          setGroundedLighting(true);
+          propScale.setActive(true);
+          filmScene.setActive(true);
+          treeArchitecture?.setFilmTreatment(filmActive);
+          cinematic.setSubject("watch", watchRoot);
           rendering.invalidateShadows();
           invalidateContent();
-          measureScene("assembly:tower", assemblyStart);
-          warmShaders("tower", replacement.root);
-          return () => {
-            if (completeTower === replacement) completeTower = null;
-            replacement.dispose();
-          };
+          measureScene("assembly:watch", assemblyStart);
+          warmShaders("watch");
         },
-        onRestoreTower() {
-          cinematic.setSubject("tower", null);
+        onRestoreWatch() {
+          cinematic.setSubject("watch", null);
           filmScene.setActive(false);
           treeArchitecture?.setFilmTreatment(false);
           propScale.setActive(false);
@@ -845,7 +822,7 @@ const ORBIT_SPEED = 0.06;
             qualityDebug.architecture ||= {};
             qualityDebug.architecture[status.kind] = status;
           }
-          // Without its authored tower or tree the scene has nothing to show:
+          // Without the watch or its authored tree the scene has nothing to show:
           // the static title card stays. A missing lantern keeps the scene.
           if (
             !runtimeDisposed &&
@@ -889,12 +866,12 @@ const ORBIT_SPEED = 0.06;
       }
       // The loading line's star (ui/scene-loader.js) waits where the opening shot will show
       // this one, in CSS px from the canvas's top-left: first where the opening fit to the
-      // tower's stored outline puts it (opening-star.js), from the scene's start and again on
+      // watch's stored outline puts it (opening-star.js), from the scene's start and again on
       // a resize or once the fonts load; then, once the scene's camera has fitted that shot
       // itself, where it does.
       let openingCameraStar = false;
       const openingSun = new Vector3(),
-        openingTower = new Vector3(),
+        openingWatch = new Vector3(),
         openingSource = [0, 0, 0, 0];
       function reportLoaderStar(star) {
         const rect = renderer.domElement?.getBoundingClientRect?.();
@@ -912,10 +889,9 @@ const ORBIT_SPEED = 0.06;
       }
       function predictLoaderStar() {
         if (openingCameraStar || canvasShown || !site.sceneLoader?.star) return;
-        // Where the tower's root will stand: its terrace and footing, under the scene's
-        // composition height (environmentRoot), which only lifts or lowers it.
-        towerRoot.updateWorldMatrix(true, false);
-        towerRoot.localToWorld(openingTower.set(0, towerGroundY + TOWER_FOOTING, 0));
+        // The watch's marker under the scene's composition height (environmentRoot),
+        // which only lifts or lowers it.
+        watchRoot.getWorldPosition(openingWatch);
         reportLoaderStar(
           openingStar({
             width: viewport.width,
@@ -923,7 +899,7 @@ const ORBIT_SPEED = 0.06;
             getSafeArea: (width, height) => cinematicArea || measureCinematicArea(width, height),
             getGroundY: cinematicGroundY,
             sun: solarBody.root.getWorldPosition(openingSun),
-            towerY: openingTower.y,
+            watchY: openingWatch.y,
             tier: assetTier,
             tourPhase: cameraTour ? 0 : null,
             selected: scene.cinematicSelection,
@@ -1137,8 +1113,6 @@ const ORBIT_SPEED = 0.06;
           );
           camera.lookAt(0, lookAtHeight, 0);
         }
-        // The view from up high (hill-silhouette.js HIGH_VIEW) only while the walk drives.
-        HIGH_VIEW.value = walking ? walk.high : 0;
         if (cinematicApplied) lookTarget.copy(cinematic.target);
         else if (walking) lookTarget.copy(walk.focus);
         else lookTarget.set(0, lookAtHeight, 0);
@@ -1161,7 +1135,7 @@ const ORBIT_SPEED = 0.06;
             ? 1
             : 0;
         }
-        // The shot's light mood, and the rim's moon direction from this lens.
+        // The shot's light mood.
         {
           const mood = shotLight(filmActive && cinematicApplied ? cinematic.shot : null);
           rendering.setShotLight?.(mood);
@@ -1169,21 +1143,22 @@ const ORBIT_SPEED = 0.06;
             LANTERN_MOOD.value = mood.lantern;
             treeArchitecture?.refreshLantern?.();
           }
-          setRim(filmActive ? mood.rim : 0, filmActive ? mood.rimText : 0);
-          PALE_MOOD.value = filmActive ? mood.pale : 0;
           GLINT_MOOD.value = filmActive ? mood.glintText : 0;
           GRASS_MOOD.value = filmActive ? mood.grassInside : 0;
           STONE_MOOD.value = filmActive ? mood.stoneText : 0;
           groundContacts.slatePoolAbout.value = filmActive ? mood.poolAbout : 0;
-          camera.updateMatrixWorld();
-          RIM_UNIFORMS.babelKeyView.value
-            .set(...WORLD.SUN_DIRECTION)
-            .transformDirection(camera.matrixWorldInverse);
         }
+        // The lens below reads this frame's camera.
+        camera.updateMatrixWorld();
         // The shot's lens and the film's bars and grain follow the shot on screen;
         // the bars ease out under the dissolve into the walk and back in after it.
         const post = rendering.postprocessPipeline;
-        post.setLens?.(cinematicApplied ? cinematic.shot?.lens : null);
+        post.setLens?.(
+          cinematicApplied ? cinematic.shot?.lens : null,
+          camera,
+          lookTarget,
+          cinematicGroundY(lookTarget.x, lookTarget.z),
+        );
         post.setBars?.(
           filmActive && (cinematicApplied || walking)
             ? letterboxShare(viewport.width, viewport.height) * (walk?.bars ?? 1)
@@ -1391,7 +1366,6 @@ const ORBIT_SPEED = 0.06;
           doc: document,
           ground: (x, z) => walkGround(x, z) + environmentRoot.position.y,
           shore: (x, z) => walkGround.shore?.(x, z),
-          tower: () => completeTower?.root ?? null,
           anchors: {
             trunk: {
               x: ESTATE.tree.x + ESTATE.tree.trunk[0],

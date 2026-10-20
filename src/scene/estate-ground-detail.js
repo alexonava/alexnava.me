@@ -18,7 +18,7 @@ import { rockKeepouts } from "./rock-scatter.js";
 import { SLATE_PUDDLES, SLATE_STREAMS, riverAt, streamLines } from "./mud-ground.js";
 
 // The same winding approach stays clear in every camera and quality tier.
-// Its centerline joins the tower's entrance side to the tree's lantern clearing.
+// Its centerline joins the watch's terrace to the tree's lantern clearing.
 export { estatePathDistance };
 
 // The estate's grass: sparse clumps of curved, tapering blades. Each blade is
@@ -93,6 +93,18 @@ const GRASS_INSIDE_COLOR = `vec3 grassBase = diffuseColor.rgb;
 #if __VERSION__ >= 300
 if (grassInside > 0.0) diffuseColor.rgb = grassBase*mix(vColor, vGrassColor, grassInside);
 #endif`;
+// Light through the blades: a thin leaf passes `through` of the light that
+// falls on its far side, leaning forward (`forward` of it only toward an eye
+// looking into the light), so a blade backlit by the lantern or the moon glows
+// rather than standing as a dark card. Only the blades (their sky lean, aGrass.y,
+// is never 0); the litter and the stones stay opaque.
+export const GRASS_THROUGH = Object.freeze({ through: 0.3, forward: 0.6 });
+const GRASS_LIGHT = `void RE_Direct_Grass(const in IncidentLight directLight, const in vec3 geometryPosition, const in vec3 geometryNormal, const in vec3 geometryViewDir, const in vec3 geometryClearcoatNormal, const in LambertMaterial material, inout ReflectedLight reflectedLight) {
+  RE_Direct_Lambert(directLight, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight);
+  reflectedLight.directDiffuse += step(1e-4, vGrassUp)*saturate(dot(-geometryNormal, directLight.direction))*directLight.color*BRDF_Lambert(material.diffuseColor)*${GRASS_THROUGH.through.toFixed(2)}*(1.-${GRASS_THROUGH.forward.toFixed(2)}*saturate(dot(geometryViewDir, directLight.direction)));
+}
+#undef RE_Direct
+#define RE_Direct RE_Direct_Grass`;
 export function grassMaterial() {
   const time = { value: 0 };
   const material = new MeshLambertMaterial({ vertexColors: true, side: DoubleSide });
@@ -115,11 +127,15 @@ export function grassMaterial() {
       )
       .replace("#include <color_fragment>", GRASS_INSIDE_COLOR)
       .replace(
+        "#include <lights_lambert_pars_fragment>",
+        `#include <lights_lambert_pars_fragment>\n${GRASS_LIGHT}`,
+      )
+      .replace(
         "#include <normal_fragment_begin>",
         "#include <normal_fragment_begin>\nnormal = normalize(mix(normal, (viewMatrix*vec4(0., 1., 0., 0.)).xyz, vGrassUp));",
       );
   };
-  material.customProgramCacheKey = () => "estate-grass-v1";
+  material.customProgramCacheKey = () => "estate-grass-v2";
   material.userData.grassTime = time;
   // A lightning flash after the lights (film-light.js flashHook()) and the drifting
   // mist after the fog (drifting-mist.js): the growth, litter and rushes.
@@ -297,7 +313,7 @@ function* groundDetailSteps(groundHeight) {
     if (attempt % 8 === 0) yield;
     const tree = attempt % 2,
       angle = random() * Math.PI * 2,
-      anchor = tree ? ESTATE.tree : ESTATE.tower;
+      anchor = tree ? ESTATE.tree : ESTATE.watch;
     const radius = (tree ? 5.9 : 10.5) + Math.pow(random(), 1.7) * (tree ? 10 : 17);
     const x = anchor.x + Math.cos(angle) * radius;
     const z = anchor.z + Math.sin(angle) * radius;

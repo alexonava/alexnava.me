@@ -689,7 +689,7 @@ test("film clouds keep defined low-sky silhouettes while low quality retains its
   material.dispose();
 });
 
-test("the clouds' reshaping never reaches the reference banks or the roof's lane, and fills the open sky", () => {
+test("the clouds' reshaping never reaches the reference banks or the clear lane, and fills the open sky", () => {
   const material = skyMaterial(),
     shader = material.fragmentShader;
   const smoothstep = (a, b, x) => {
@@ -705,7 +705,7 @@ test("the clouds' reshaping never reaches the reference banks or the roof's lane
   const lane = shader.match(
     /vec2 gapUV=\(b-vec2\(([-\d.]+),([-\d.]+)\)\)\/vec2\(([-\d.]+),([-\d.]+)\);/,
   );
-  assert.ok(lane, "the roof's lane is the authored gaussian");
+  assert.ok(lane, "the clear lane is the authored gaussian");
   assert.match(shader, /float gapG=exp\(-dot\(gapUV,gapUV\)\);/);
   const [cx, cy, rx, ry] = lane.slice(1).map(Number);
   const open = (x, y) => {
@@ -731,10 +731,10 @@ test("the clouds' reshaping never reaches the reference banks or the roof's lane
     [-0.9, 0.8],
   ])
     assert.equal(open(x, y), 0, `reference banks at ${x},${y}`);
-  // The clear lane where the roof meets the sky.
-  assert.equal(open(cx, cy), 0, "the roof's lane");
+  // The clear lane (gapG).
+  assert.equal(open(cx, cy), 0, "the clear lane");
   assert.ok(open(-1.39, -0.17) < 0.1, "the lane keeps the sun clear");
-  // The open sky: Portrait, Lantern study, Close-up, Threshold, Gallery detail, the zenith.
+  // The open sky: Portrait, Lantern study, Close-up, two more stretches of it and the zenith.
   for (const [x, y] of [
     [1.5, 2],
     [3.5, 3],
@@ -744,7 +744,7 @@ test("the clouds' reshaping never reaches the reference banks or the roof's lane
     [0, 0],
   ])
     assert.ok(open(x, y) > 0.95, `open sky at ${x},${y}`);
-  // Below the sun, right of the tower, it reshapes too.
+  // Below the sun it reshapes too.
   assert.ok(open(-1.8, -1.2) > 0.8);
   // Bounded and finite across the plane, the zenith and the wedge's seams included.
   for (let x = -5; x <= 5; x += 0.05)
@@ -775,7 +775,7 @@ test("the clouds' reshaping never reaches the reference banks or the roof's lane
   assert.match(shader, /\*\(1\.-gapG\);\s*open\*=uCloudReshape;/);
   assert.equal(material.uniforms.uCloudReshape.value, 1);
   // The coordinates' weight, bend: 0 over the reference too, but easing in over wider
-  // azimuths and radius, and never held off by the roof's lane (bending coordinates
+  // azimuths and radius, and never held off by the clear lane (bending coordinates
   // fast would shear the noise; the lane keeps its own clearing in the density).
   const bendOf = new Function(
     "cloudAz",

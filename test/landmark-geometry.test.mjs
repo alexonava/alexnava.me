@@ -1,4 +1,4 @@
-// Actual delivered geometry, with the original reconstructed from 587 recorded
+// Actual delivered geometry, with the original reconstructed from 252 recorded
 // byte differences. The source-hash check makes the fixture self-contained in
 // CI without a private asset archive or a Python/NumPy test dependency.
 import assert from "node:assert/strict";
@@ -69,9 +69,11 @@ function basis({ e1, e2, normal: n }) {
   return new Matrix3().set(e1.x, e2.x, n.x, e1.y, e2.y, n.y, e1.z, e2.z, n.z);
 }
 
-for (const [name, reference] of Object.entries(baseline)) {
-  const [role, tier] = name.split("-"),
-    bytes = modelBytes(role, tier),
+// The repaired landmark: the tree's two tiers (tools/repair-landmark-geometry.py).
+for (const tier of ["high", "balanced"]) {
+  const name = `tree-${tier}`,
+    reference = baseline[name],
+    bytes = modelBytes("tree", tier),
     after = mesh(bytes),
     before = original(bytes, reference);
   const { moved, affected, faces } = differences(before, after);
@@ -112,32 +114,20 @@ for (const [name, reference] of Object.entries(baseline)) {
         bounds[0][k] = Math.min(bounds[0][k], value);
         bounds[1][k] = Math.max(bounds[1][k], value);
       }
-      if (role === "tree" ? q.y < 0.5 : q.y < 0.81 || q.y > 0.847) {
-        assert.ok(p.equals(q), `${i}: root/deck/ladder/cap moved`);
+      if (q.y < 0.5) {
+        assert.ok(p.equals(q), `${i}: root moved`);
         protectedRows.push(raw(after.attributes.POSITION).subarray(i * 6, i * 6 + 6));
       }
       if (moved.has(i)) {
         assert.ok(p.distanceTo(q) <= reference.deltaCap, `${i}: excessive displacement`);
-        if (role === "tree") {
-          const v = q.clone().sub(new Vector3(-0.13884071, 0.55025373, 0.21587493));
-          const thin = v.dot(new Vector3(-0.33909859, -0.92057248, -0.19380002));
-          const across = v.dot(new Vector3(0.71307868, -0.38589061, 0.58532661));
-          const along = v.dot(new Vector3(-0.61362118, 0.06028876, 0.78729557));
-          assert.ok(
-            Math.abs(thin) < 0.012 && (across / 0.025) ** 2 + (along / 0.038) ** 2 < 1,
-            `${i}: outside fork`,
-          );
-        } else {
-          for (const [value, centre, radius] of [
-            [q.x, 0.128, 0.012],
-            [q.y, 0.829, 0.018],
-            [q.z, -0.166, 0.018],
-          ])
-            assert.ok(Math.abs(value - centre) < radius, `${i}: outside gallery joint`);
-          assert.equal(p.x, q.x);
-          assert.equal(p.y, q.y);
-          assert.ok(p.z > q.z, "recess goes into the timber");
-        }
+        const v = q.clone().sub(new Vector3(-0.13884071, 0.55025373, 0.21587493));
+        const thin = v.dot(new Vector3(-0.33909859, -0.92057248, -0.19380002));
+        const across = v.dot(new Vector3(0.71307868, -0.38589061, 0.58532661));
+        const along = v.dot(new Vector3(-0.61362118, 0.06028876, 0.78729557));
+        assert.ok(
+          Math.abs(thin) < 0.012 && (across / 0.025) ** 2 + (along / 0.038) ** 2 < 1,
+          `${i}: outside fork`,
+        );
       }
     }
     assert.deepEqual(bounds, reference.bounds);

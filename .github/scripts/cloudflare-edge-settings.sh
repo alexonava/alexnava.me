@@ -205,10 +205,10 @@ fi
 
 glb_path="$(
   cat "$work/entry.body" "$work/app.body" |
-    grep -oE '/images/architecture/tower-high\.[a-f0-9]{8}\.glb' | head -n 1 || true
+    grep -oE '/images/architecture/tree-high\.[a-f0-9]{8}\.glb' | head -n 1 || true
 )"
 if [ -z "$glb_path" ]; then
-  fail "GLB compression" "Could not find a fingerprinted tower-high GLB in the scene entry or app script; update this audit's discovery pattern to match build.mjs." ""
+  fail "GLB compression" "Could not find a fingerprinted tree-high GLB in the scene entry or app script; update this audit's discovery pattern to match build.mjs." ""
 else
   glb_status="$(fetch glb "$glb_path" --header 'Accept-Encoding: br, gzip')"
   rm -f "$work/glb.body"

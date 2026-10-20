@@ -11,6 +11,7 @@ import {
   createCliff,
   createFalls,
   createSea,
+  FLOW_RMS,
   landFactor,
   riverFalls,
   RAPIDS,
@@ -228,7 +229,7 @@ function latticeAt(values, x, z) {
     : at(1, 1) + (at(0, 1) - at(1, 1)) * (1 - fx) + (at(1, 0) - at(1, 1)) * (1 - fz);
 }
 
-// The lantern (estateLantern(): 5 units from the tree toward the tower) and
+// The lantern (estateLantern(): 5 units from the tree toward the watch) and
 // the SLATE_PUDDLES zones (mud-ground.js, placed as estatePoint() places
 // them): world centre, radius, stretch along a world angle. Restated so this
 // chunk imports only three; the terrain regression holds them equal.
@@ -902,8 +903,12 @@ export function riverBedAt(r) {
 }
 // The original shallow profile remains the pinned ground's baseline. The
 // main course has a metre of water, shoaling as the same discharge accelerates
-// toward the falls. Both the cap and the falls use this upper datum.
+// toward the falls. Both the cap and the falls use this upper datum. Its water
+// takes up light by depth, red first, as water does (`absorb`, per unit of
+// depth, red, green, blue): the bed shows through the shallows cooled, and the
+// deep water keeps the colour it scatters back.
 export const RIVER_CHANNEL = Object.freeze({
+  absorb: Object.freeze([1.1, 0.75, 0.65]),
   depth: 3.28,
   speed: 3.2,
   freeboard: 0.65,
@@ -1063,14 +1068,16 @@ export const rootBankLift = (x, z) => latticeAt(BANKS, x, z);
 // Baked on the same lattice (tools/bake-root-shade.mjs), 6 bits a vertex in
 // SHADE_ALPHABET, row by row, 0 neutral: sky occlusion from the tree over the
 // banked soil (96 cosine-weighted rays), moon-key occlusion (a 0.02 rad cone
-// about KEY_LIGHT, the trunk and roots only), both averaged over the two
+// about KEY_LIGHT, the trunk and roots only) and the lantern's (`lamp`: 16
+// rays to points across its flame, LANTERN_IMAGE.glow over its foot, through
+// the trunk and roots: their shadows in its light), each averaged over the two
 // variants and smoothed so no lattice edge reads: neighbours differ by at
 // most 0.33 a unit, and toward the pinned clearing and puddles the occlusion
 // ramps down by at most 0.3 a unit, never a straight cliff; and the contact cut, where a
 // ROOT_LINES centreline strays over open soil (more than 0.7 from a real root
 // footprint) or two roots' vectors meet head-on, so no false crease is drawn.
-// The shader reads sky and key as the slateShade attribute; rootShade() takes
-// the cut. None reaches the lantern clearing or the puddles.
+// The shader reads sky, key and lamp as the slateShade attribute; rootShade()
+// takes the cut. None reaches the lantern clearing or the puddles.
 export const SHADE_ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_";
 // prettier-ignore
 export const ROOT_SHADE = Object.freeze({
@@ -1142,6 +1149,40 @@ export const ROOT_SHADE = Object.freeze({
     "000000000000000000000000000000000",
     "000000000000000000000000000000000",
   ].join(""),
+  lamp: [
+    "000000000000000000000000000000000",
+    "00000000000000138elsvwwwwwwwwwww0",
+    "000000000000017ivHTZ___________w0",
+    "00000000000004gvLVZ____________w0",
+    "00000000000006mBR-_____________w0",
+    "00000000000007mCR-_____________w0",
+    "0000000000013aqFV______________w0",
+    "000000000028iqAPY______________w0",
+    "00000000029myGPW-______________w0",
+    "0000000016juHUZ-_______________w0",
+    "0000000000boCP__-ZXZ--_________w0",
+    "00000000007lzNTTPJILRVZ________w0",
+    "00000000006hsyDEAusvBJU-_______w0",
+    "000000000047cjookecgnAPZ_______w0",
+    "0000000000bnkfcdgfcdlBQZ_______w0",
+    "0000000009jvAvrsvvssAMW-_______w0",
+    "000000019jtDOKHILKHIQW-________w0",
+    "00000013csDNXYWXZZXXZ-_________w0",
+    "000000006kwHRZ_________________w0",
+    "000000001alvEPYZZ______________w0",
+    "00000000029itCLLLNRX___________w0",
+    "000000000017gtxxxzEKS__________w0",
+    "0000000000017mjjjmrzIS_________w0",
+    "000000000122595558foyJV________w0",
+    "0000000149ff5000004epCP________w0",
+    "00000015dof500000006jxKY-______w0",
+    "0000002brl8000000001ftHUY-_____w0",
+    "0000005kvh3000000000ftHMSX-____w0",
+    "0000007nvh2000000001ftHILSX-___w0",
+    "0000007mvh3000000004hvJLIMSY-__w0",
+    "0000002aga3000000005bioqnmosuvww0",
+    "000000000000000000000000000000000",
+  ].join(""),
   cut: [
     "000000000000000000000000000000000",
     "0000000000swwwwwwwwwwwwwwwwwwwww0",
@@ -1184,9 +1225,14 @@ const shadeTable = (text) =>
   );
 const SKY = shadeTable(ROOT_SHADE.sky),
   KEY = shadeTable(ROOT_SHADE.key),
+  LAMP = shadeTable(ROOT_SHADE.lamp),
   CUT = shadeTable(ROOT_SHADE.cut);
-// [sky, key] occlusion at a world x/z, as the slateShade attribute holds it.
-export const rootOcclusion = (x, z) => [latticeAt(SKY, x, z), latticeAt(KEY, x, z)];
+// [sky, key, lamp] occlusion at a world x/z, as the slateShade attribute holds it.
+export const rootOcclusion = (x, z) => [
+  latticeAt(SKY, x, z),
+  latticeAt(KEY, x, z),
+  latticeAt(LAMP, x, z),
+];
 
 // Where a root lies within [-0.2, 1.3] of the soil, on a 0.25 grid from the
 // lattice's first vertex (base64 bits, row by row): the tufts there collapse
@@ -1446,10 +1492,11 @@ export function rootShade(dx, dz, lift) {
 //   little drier than the open slate;
 // - crease: each root line's contact falls off as 1/(1 + 6u^2), u in reach
 //   units, broken a little by the cracks;
-// - occlusion: ROOT_SHADE's sky term dims the unshadowed fills, the lantern
-//   (less: it is the main light under the arches), the sky light and the
-//   reflections; its key term dims the moon only where no shadow map does
-//   (slateContactGain 1: shadows off);
+// - occlusion: ROOT_SHADE's sky term dims the unshadowed fills, the sky
+//   light and the reflections; its key term dims the moon only where no
+//   shadow map does (slateContactGain 1: shadows off); its lamp term is the
+//   trunk's and the roots' shadows in the lantern's light, and the creases
+//   keep `lantern` of a root line's contact from it;
 // - damp: soil in the creases and the deepest cavity is darker and wetter.
 export const SLATE_SOIL = Object.freeze({
   albedo: 0.5,
@@ -1544,14 +1591,15 @@ const KEY_VIEW = { value: new Vector3(...KEY_LIGHT) };
 const { settle: SETTLE, grain: GRAIN, occlusion: OCCLUSION, damp: DAMP } = SLATE_SOIL;
 // Each direct light is dimmed by the root occlusion: the moon key by its baked
 // term (found among the directional lights by direction, mud-ground.js
-// slateDirectional), the lantern (the one warm light) and the cool fills (the
-// directional fill and the crown's point fill) by the sky term, before the film
-// ground's own balance of them (mud-ground.js SLATE_LIGHT).
+// slateDirectional), the lantern (the one warm light) by its own baked
+// shadows, and the cool fills (the directional fill and the crown's point
+// fill) by the sky term, before the film ground's own balance of them
+// (mud-ground.js SLATE_LIGHT).
 const ROOT_LIGHTS = `
 float slateGate(vec3 L, vec3 C) {
-  if (slateSky + slateKeyOcc <= 0.0) return 1.0;
+  if (slateSky + slateKeyOcc + slateLampOcc <= 0.0) return 1.0;
   if (slateDirectional && dot(L, slateKeyView) > .9995) return 1.0 - slateKeyOcc;
-  if (C.b < .7*C.r) return 1.0 - ${glsl(OCCLUSION.lantern)}*slateSky;
+  if (C.b < .7*C.r) return 1.0 - slateLampOcc;
   return 1.0 - ${glsl(OCCLUSION.fill)}*slateSky;
 }
 void RE_Direct_Slate(const in IncidentLight directLight, const in vec3 geometryPosition, const in vec3 geometryNormal, const in vec3 geometryViewDir, const in vec3 geometryClearcoatNormal, const in PhysicalMaterial material, inout ReflectedLight reflectedLight) {
@@ -1563,10 +1611,10 @@ void RE_Direct_Slate(const in IncidentLight directLight, const in vec3 geometryP
 #define RE_Direct RE_Direct_Slate
 `;
 const ROOT_FRAGMENT = `varying vec4 vSlateRoot;
-varying vec2 vSlateShade;
+varying vec3 vSlateShade;
 varying float vSlatePool;
 uniform vec3 slateKeyView;
-float slateSky = 0.0, slateKeyOcc = 0.0, slateSettle = 0.0, slateDepth = 0.5, slateKeep = 0.0;
+float slateSky = 0.0, slateKeyOcc = 0.0, slateLampOcc = 0.0, slateSettle = 0.0, slateDepth = 0.5, slateKeep = 0.0;
 float slateKeepAt(vec2 p) { return 1.0 - smoothstep(${glsl(SLATE_SOIL.keep[0])}, ${glsl(SLATE_SOIL.keep[1])}, length(p - ${LANTERN_GLSL})); }
 float slateSettleAt(float w, float depth) { return smoothstep(0.0, .25, (1.0 - w)*${glsl(SETTLE.gain)} - (depth - .5)*${glsl(SETTLE.crack)} - ${glsl(SETTLE.bias)})*smoothstep(0.0, .2, 1.0 - w); }
 `;
@@ -1632,7 +1680,7 @@ export function shadeSlateRoots(shader) {
       "fragmentShader",
       "diffuseColor.rgb *= 1.0 - slateAo*slateContactGain;|",
       `
-if (vSlateShade.x + vSlateShade.y + vSlateRoot.z > 0.0) {
+if (vSlateShade.x + vSlateShade.y + vSlateShade.z + vSlateRoot.z > 0.0) {
   float slateU = length(vSlateRoot.xy), slateGuard = (1.0-slateKeep)*(1.0-slatePuddle);
   diffuseColor.rgb *= 1.0 - ${glsl(SLATE_SOIL.contact)}*vSlateRoot.z*(1.0-smoothstep(.3, 1.0, slateU))*slateContactGain*slateKeep;
   float slateCrease = vSlateRoot.z/(1.0+${glsl(SLATE_SOIL.crease)}*slateU*slateU)*slateGuard;
@@ -1642,6 +1690,7 @@ if (vSlateShade.x + vSlateShade.y + vSlateRoot.z > 0.0) {
   slateSky = smoothstep(${glsl(OCCLUSION.remap[0])}, ${glsl(OCCLUSION.remap[1])}, slateSky);
   slateSkyVis = 1.0-slateSky;
   slateKeyOcc = clamp(max((slateK0+slateBreak*slateK0*(1.0-slateK0)*2.0)*clamp((slateContactGain-.6)*2.5, 0.0, 1.0), ${glsl(OCCLUSION.creaseKey)}*slateCrease), 0.0, 1.0)*slateGuard;
+  slateLampOcc = clamp(max(vSlateShade.z, ${glsl(OCCLUSION.lantern)}*slateCrease), 0.0, 1.0)*slateGuard;
   float slateDamp = clamp(max(smoothstep(${glsl(DAMP.crease[0])}, ${glsl(DAMP.crease[1])}, slateCrease), ${glsl(DAMP.cavity)}*smoothstep(.3, .95, slateSky)), 0.0, 1.0);
   diffuseColor.rgb *= 1.0 - ${glsl(DAMP.albedo)}*slateDamp;
   vec3 slateDampC = diffuseColor.rgb*${glslVec(...POOL.tone)};
@@ -1686,7 +1735,7 @@ sampledDiffuseColor.rgb = mix(sampledDiffuseColor.rgb, slateSoilTone, mix(${glsl
   if (
     !applyEdits(shader, edits, {
       vertexShader:
-        "attribute vec4 slateRoot;\nattribute vec2 slateShade;\nattribute float slatePool;\nvarying vec4 vSlateRoot;\nvarying vec2 vSlateShade;\nvarying float vSlatePool;\n",
+        "attribute vec4 slateRoot;\nattribute vec3 slateShade;\nattribute float slatePool;\nvarying vec4 vSlateRoot;\nvarying vec3 vSlateShade;\nvarying float vSlatePool;\n",
       fragmentShader: ROOT_FRAGMENT,
     })
   )
@@ -1707,9 +1756,8 @@ sampledDiffuseColor.rgb = mix(sampledDiffuseColor.rgb, slateSoilTone, mix(${glsl
 // (RIVER_RIPPLE) ripples it as it flows, and rare drips ruffle it. The
 // drip-line puddles keep SLATE_PUDDLES' roughness .12 and specular gain 4.
 export const PUDDLE_MIRROR = Object.freeze({
-  // The sky in the water, times the sky as shown: the night's dim sky and its
-  // moonlit clouds read in it at a glance.
-  sky: 2.4,
+  // The sky in the water, times its own radiance: the water's Fresnel alone dims it.
+  sky: 1,
   undulation: 0.006,
   undulationFade: Object.freeze([12, 34]),
   imageSoft: 0.45,
@@ -1775,6 +1823,22 @@ function treeVeil(d, h, aa) {
 // over `round` (lantern units), so its eave never stands out as a rectangular
 // tab, and the flame-lit underside of its roof keeps `roof` of its light, so
 // the image's lower crossbar never closes it into a lit frame.
+// The flame's glints on the moving water (the owner's pick of 2026-10-20: "a column
+// of glints off the moving ripples, like real lamplight on moving water"): the
+// current's finest ripples (`cells` [along, across] per unit, `slope` their
+// steepness) tumble with it, and each face turned to throw the flame's light
+// toward the eye glints, as bright as the flame's reflection (`gain` of the
+// lamp's light) and as small as the flame and its glass look from there (`size`
+// units); ripples finer than the pixel spread their glints wider and dimmer, so
+// they never flicker. On moving water the flame's mirrored image gives way to
+// them (`image` of it goes), the lantern's dark cage still standing in it.
+export const LANTERN_GLINT = Object.freeze({
+  cells: Object.freeze([4.5, 3.5]),
+  slope: 0.08,
+  size: 0.25,
+  gain: 0.5,
+  image: 0.85,
+});
 export const LANTERN_IMAGE = Object.freeze({
   scale: 1.98 / 2.48,
   glow: 0.7146,
@@ -1876,8 +1940,12 @@ export function dripAt(t, aim = () => null) {
 }
 const zoneGlsl = (zone) => glslVec(+zone.x.toFixed(2), +zone.z.toFixed(2));
 // The river's current on the water (MIRROR): two octaves of ripples, each
-// [along, across] cycles per unit (drawn out along the flow), and the tilt of
-// each. Where `fade` is set, the coarse octave fades as the fine one does,
+// [along, across] cycles per unit (about as long as wide: drawn out further, a
+// mirror rules them into brushed streaks), and the tilt of each. They are the
+// rapids' smooth flow noise where the river has its falls, turning as they
+// drift (`flow`: its slope's share against the value noise's), in broad boils
+// and slicks drifting with it (`boils`: their cells per unit, the calm and the
+// rough share). Where `fade` is set, the coarse octave fades as the fine one does,
 // where its ripples would fall under fade[0] to fade[1] pixels of ground, so
 // far water keeps the sky still instead of shimmering. The lantern's image
 // takes none of the currents' tilt up or down: each ripple would shift the
@@ -1900,8 +1968,10 @@ const zoneGlsl = (zone) => glslVec(+zone.x.toFixed(2), +zone.z.toFixed(2));
 // between `mouth` [0] and [1] river radii, keeping [2] of them, so the plume's
 // steep ripples never contour the river's mirror.
 export const RIVER_RIPPLE = Object.freeze({
-  coarse: Object.freeze([0.6, 1.6]),
-  fine: Object.freeze([1.8, 4]),
+  coarse: Object.freeze([0.85, 1.25]),
+  fine: Object.freeze([2.4, 3.2]),
+  boils: Object.freeze([0.14, 0.45, 1.35]),
+  flow: 0.55,
   tilt: Object.freeze([0.018, 0.007]),
   fade: Object.freeze([1.5, 3]),
   sway: 3,
@@ -1910,6 +1980,10 @@ export const RIVER_RIPPLE = Object.freeze({
   roughTilt: 0.3,
   mouth: Object.freeze([0.5, 1, 0.2]),
 });
+// The river's current noise: the rapids' smooth flow noise where the river has
+// its falls (turning on the drips' clock), else the slate's value noise.
+const RIVER_NOISE = RAPIDS_AT ? "slateRpF" : "slateNoiseD",
+  RIVER_TURN = (rate) => (RAPIDS_AT ? `, slateFlow*${glsl(rate)}` : "");
 // The streams' current (STREAMS.current), on the same octaves' terms.
 const SC = STREAMS.current;
 // The puddles that lie on dune slopes keep the ground's height in the mirror:
@@ -1957,7 +2031,9 @@ if (slateWater > 0.0) {
   // The water's own normal, for the mirror and its Fresnel only (the bottom keeps the soil's): level as it deepens, a still micro-undulation near the lens, and the drips.
   float slateDeep = smoothstep(-.01, .05, slateLevel)*(1.0-slateDry)*slateZoneW;
   vec3 slateN = normalize(normal*mat3(viewMatrix)), slateNI = slateN, slateV = normalize(cameraPosition-vMudWorld);
-  float slateView = length(vViewPosition), slateRough = 0.0, slateRoughT = 0.0, slateSWG = 1.0;
+  float slateView = length(vViewPosition), slateRough = 0.0, slateRoughT = 0.0, slateSWG = 1.0, slateGR = 0.0;
+  vec2 slateGG = vec2(0.0);
+  vec3 slateNG = vec3(0.0, 1.0, 0.0);
   if (slateDeep > 0.0) {
     vec2 slateG = vec2(0.0);
     // The undulation's noise only where it has not faded; the rings only while a drip lives.
@@ -1974,10 +2050,18 @@ if (slateWater > 0.0) {
     if (slateRiverR < 1.1) {
       vec2 slateFU = vec2(slateRiverQ.y+slateFlow*${glsl(RIVER_CHANNEL.speed)}, slateRiverQ.z);
       float slateFP = slatePx*slateView/max(abs(dot(normal, normalize(vViewPosition))), .3);
-      vec3 slateF1 = slateNoiseD(slateFU*${glslVec(...RIVER_RIPPLE.coarse)}), slateF2 = slateNoiseD(slateFU*${glslVec(...RIVER_RIPPLE.fine)}+13.0);
+      // Smooth flow noise (no lattice lines for the mirror to rule into streaks), turning as it
+      // drifts, about as long as wide; in broad boils and slicks the current calms or roughens.
+      vec3 slateF1 = ${RIVER_NOISE}(slateFU*${glslVec(...RIVER_RIPPLE.coarse)}${RIVER_TURN(0.25)}), slateF2 = ${RIVER_NOISE}(slateFU*${glslVec(...RIVER_RIPPLE.fine)}+13.0${RIVER_TURN(0.4)});
+      float slateBoil = ${glsl(RIVER_RIPPLE.boils[1])}+${glsl(RIVER_RIPPLE.boils[2] - RIVER_RIPPLE.boils[1])}*smoothstep(.3, .75, .5+.5*${RIVER_NOISE}(slateFU*${glsl(RIVER_RIPPLE.boils[0])}+31.0${RIVER_TURN(0.08)}).x);
+      slateF1.yz *= ${glsl(RIVER_RIPPLE.flow)}*slateBoil; slateF2.yz *= ${glsl(RIVER_RIPPLE.flow)}*slateBoil;
       float slateFF = ${RIVER_RIPPLE.fade ? `smoothstep(${glsl(RIVER_RIPPLE.fade[0])}, ${glsl(RIVER_RIPPLE.fade[1])}, ${glsl(+(1 / RIVER_RIPPLE.coarse[1]).toFixed(4))}/slateFP)` : "1.0"};
       vec2 slateFC = slateF1.yz*${glslVec(...RIVER_RIPPLE.coarse)}*${glsl(RIVER_RIPPLE.tilt[0])}*slateFF, slateFG = slateFC+slateF2.yz*${glslVec(...RIVER_RIPPLE.fine)}*${glsl(RIVER_RIPPLE.tilt[1])}*smoothstep(1.5, 3.0, ${glsl(1 / RIVER_RIPPLE.fine[1])}/slateFP);
       vec2 slateFX = vec2(-slateRiverDir.y, slateRiverDir.x);
+      // The glints' ripples (LANTERN_GLINT): the current's finest, tumbling with it; resolved where they span a few pixels.
+      vec3 slateGlR = ${RIVER_NOISE}(slateFU*${glslVec(...LANTERN_GLINT.cells)}+41.0${RIVER_TURN(0.9)});
+      slateGR = smoothstep(1.5, 3.0, ${glsl(+(1 / LANTERN_GLINT.cells[0]).toFixed(4))}/slateFP);
+      slateGG = (slateRiverDir*slateGlR.y+slateFX*slateGlR.z)*${glsl(+(LANTERN_GLINT.slope / FLOW_RMS).toFixed(5))}*(1.0-smoothstep(.8, 1.1, slateRiverR));
       float slateFS = 1.0-smoothstep(.8, 1.1, slateRiverR);
       slateGC = (slateRiverDir*slateFG.x+slateFX*slateFG.y)*slateFS*mix(1.,3.,vSlateRiverSurface.x);
       slateGS = (slateRiverDir*slateFC.x+slateFX*slateFC.y)*slateFS;
@@ -2013,6 +2097,7 @@ ${
     slateNI = normalize(mix(slateN, normalize(vec3(-slateGI.x, 1.0, -slateGI.y)), slateDeep));
     slateG += slateGC+slateGT;
     slateN = normalize(mix(slateN, normalize(vec3(-slateG.x, 1.0, -slateG.y)), slateDeep));
+    slateNG = normalize(vec3(-slateG.x-slateGG.x, 1.0, -slateG.y-slateGG.y));
   }
   vec3 slateR = reflect(-slateV, slateN), slateRI = reflect(-slateV, slateNI);
   float slateF = ${glsl(M.f0)}+${glsl(1 - M.f0)}*pow(1.0-saturate(dot(slateN, slateV)), 5.0), slateRA = max(dot(slateR.xz, slateR.xz), 1e-4), slateRAI = max(dot(slateRI.xz, slateRI.xz), 1e-4);
@@ -2069,7 +2154,7 @@ ${
     float slateLampY = dot(slateLamp, vec3(.2126, .7152, .0722)), slateGlobe = length(vec2(slateAX/.2, (ly-.74)/.34));
     // Through the clear globe the sky and, without the flame module, a faint glow (with it, the flame's image carries the glass's light); the dark cage with the flame-lit inner faces of its posts and the roof's underside.
     vec3 slateGlassC = slateSkyW*.8+slateLamp*(.03*(1.0-smoothstep(.5, 1.0, slateGlobe))+.02*exp(-3.0*slateGlobe*slateGlobe))*(1.0-step(.01, slateFlame.x));
-    vec3 slateCageC = vec3(.012, .013, .026)+slateLamp*(.25*exp(-pow2((slateAX-.37)/(.018+slateAA.x))-pow2((ly-.8)/.55))*step(.3, ly)*step(ly, 1.52)+${glsl(0.12 * LANTERN_IMAGE.roof)}/slateSWG*exp(-pow2((ly-1.49)/(.02+slateAA.y))))*(1.0-smoothstep(.44-slateAA.x, .44+slateAA.x, slateAX));
+    vec3 slateCageC = vec3(.012, .013, .026)+slateLamp*(1.0-${glsl(LANTERN_GLINT.image)}*slateRough)*(.25*exp(-pow2((slateAX-.37)/(.018+slateAA.x))-pow2((ly-.8)/.55))*step(.3, ly)*step(ly, 1.52)+${glsl(0.12 * LANTERN_IMAGE.roof)}/slateSWG*exp(-pow2((ly-1.49)/(.02+slateAA.y))))*(1.0-smoothstep(.44-slateAA.x, .44+slateAA.x, slateAX));
     // The v3 flame (lantern-flame.js lanternFire): blue cup, dark vapour cone, yellow-white core, yellow body, orange-red tip, at
     // the flame's own draught (slateFlame): its height, and its lean, which grows up the flame. Its ends sit MIRROR_FLAME.inset
     // pixel footprints (fp) inside the flame's.
@@ -2091,7 +2176,7 @@ ${
     // Still water mirrors alike at any depth: only the shore and dry islands cut the image.
     float slateSharp = smoothstep(0.0, .04, slateLevel)*slateDeep;
     slateMirror = mix(slateSkyW, mix(slateCageC, slateGlassC, slateGlassM), slateCageM*slateSharp);
-    slateFlameW *= slateSharp;
+    slateFlameW *= slateSharp*(1.0-${glsl(LANTERN_GLINT.image)}*slateRough);
     slateFlamePk = ${glsl(FLAME_PEAK)}*slateLampY;
     }
   }
@@ -2101,6 +2186,15 @@ ${
   float slateY = dot(slateRefl, vec3(.2126, .7152, .0722)), slateKnee = ${glsl(M.knee)}*(1.0-exp(-slateY/${glsl(M.knee)}));
   slateRefl *= slateKnee/max(slateY, 1e-5);
   slateRefl += slateFlameW*(${glsl(M.knee)}*(1.0-exp(-(slateY+slateFlamePk*slateF)/${glsl(M.knee)}))-slateKnee);
+  // The flame's glints: each ripple face turned to throw its light toward the eye (LANTERN_GLINT), a column of
+  // broken glints below the lantern on the moving water (off the level plane the image takes, slateP); finer than
+  // the pixel, wider and dimmer.
+  if (slateRough > 0.0 && dot(slateLamp, slateLamp) > 0.0) {
+    vec3 slateLD = slateLampW-slateP;
+    float slateLL = max(length(slateLD), .01), slateA0 = ${glsl(LANTERN_GLINT.size)}/slateLL, slateA2 = slateA0*slateA0+${glsl(+(2 * LANTERN_GLINT.slope * LANTERN_GLINT.slope).toFixed(5))}*(1.0-slateGR);
+    float slateGC = dot(reflect(-slateV, slateNG), slateLD/slateLL), slateGF = ${glsl(M.f0)}+${glsl(1 - M.f0)}*pow(1.0-saturate(dot(slateNG, slateV)), 5.0);
+    slateRefl += slateLamp*${glsl(LANTERN_GLINT.gain)}*slateGF*sqrt(slateA0*slateA0/slateA2)*exp(-(1.0-slateGC)/slateA2)*slateRough*slateDeep;
+  }
   reflectedLight.directDiffuse *= 1.0-slateF*slateWater;
   reflectedLight.indirectDiffuse *= 1.0-slateF*slateWater;
   reflectedLight.directSpecular *= mix(1.0, ${glsl(M.ggxKeep)}, slateLanternPuddle);
@@ -2248,7 +2342,7 @@ if(vSlateRiverSurface.x>.5){slateDry=0.;slatePuddle=1.;slateLevel=max(.06,vSlate
 slateLanternPuddle = slateBodyL;
 diffuseColor.rgb *= 1.0-${glsl(M.marginAlbedo)}*slateMargin;
 if(vSlateRiverSurface.x>.5){
-float riverDepth=max(0.,vSlateRiverSurface.y),riverClear=exp(-riverDepth*.8);
+float riverDepth=max(0.,vSlateRiverSurface.y);vec3 riverClear=exp(-riverDepth*${glslVec(...RIVER_CHANNEL.absorb)});
 vec2 riverUV=vec2(slateRiverQ.y+slateFlow*${glsl(RIVER_CHANNEL.speed)},slateRiverQ.z);
 float riverCurrent=slateNoise(riverUV*vec2(.8,2.7))*.65+slateNoise(riverUV*vec2(1.9,5.1)+19.)*.35;
 float riverFP=max(.001,length(fwidth(vMudWorld.xz))),riverAA=1.-smoothstep(.18,.6,riverFP);
@@ -2283,10 +2377,30 @@ ${STREAM_FOAM}`,
 // The hook settleRoots() sets as the ground material's userData.slateRoot
 // (mud-ground.js applies it last under the "+root" key): the puddle mirror,
 // then the root shading, each all or nothing on its own.
-export const COAST_BEDROCK = Object.freeze({ near: 2, far: 18, wobble: 4, cell: 11 });
+// The shelf's bedrock: full within `near` of the fault and gone by `far`,
+// its edge moved up to `wobble` by a `cell` noise. second, blendCell: a
+// second lookup of the coast's albedo and detail maps,
+// `scale` times as large, turned (a 7-24-25 turn) and offset, blended in by a
+// `blendCell` noise, so the shelf's rock never shows the tile repeat; relief:
+// how far the detail map tilts its normal, as on the cliff's tops (ocean.js).
+export const COAST_BEDROCK = Object.freeze({
+  near: 2,
+  far: 18,
+  wobble: 4,
+  cell: 11,
+  second: Object.freeze({
+    scale: 0.83,
+    turn: Object.freeze([0.28, 0.96, -0.96, 0.28]),
+    offset: Object.freeze([0.41, 0.17]),
+  }),
+  blendCell: 2.6,
+  relief: 0.48,
+});
 
-// The eroded shelf is the same rock as the face. Soil returns gradually
-// inland along irregular pockets rather than a straight strip at the rim.
+// The eroded shelf is the same rock as the face, with its colour and its
+// pitted, worn stone (the cliff's own maps, lent when they land), never the
+// soil's relief. Soil returns gradually inland along irregular pockets rather
+// than a straight strip at the rim.
 export function coastBedrockWeight(x, z) {
   const d = Math.max(0, coastDistance(x, z));
   return (
@@ -2304,27 +2418,47 @@ export function shadeCoastBedrock(shader, uniforms) {
     [
       "fragmentShader",
       "|#define STANDARD",
-      "uniform sampler2D coastAlbedo;\nuniform float coastAlbedoOn;\n",
+      "uniform sampler2D coastAlbedo, coastDetail;\nuniform float coastAlbedoOn, coastDetailOn;\n",
     ],
     [
       "fragmentShader",
       "diffuseColor *= sampledDiffuseColor;|",
       `
 float slateBedrock = 0.;
-if(coastAlbedoOn>.5){
+vec3 slateRockXY = vec3(0.);
+if(coastAlbedoOn>.5||coastDetailOn>.5){
 float rockEdge=max(0.,seaCoast(vMudWorld.xz))+(slateNoise(vMudWorld.xz/${glsl(COAST_BEDROCK.cell)})-.5)*${glsl(COAST_BEDROCK.wobble)};
 slateBedrock=1.-smoothstep(${glsl(COAST_BEDROCK.near)},${glsl(COAST_BEDROCK.far)},rockEdge);
 if(slateBedrock>0.){
-vec3 rockScan=clamp(texture2D(coastAlbedo,vMudWorld.xz/${glsl(COAST_ALBEDO.tile)}).rgb/${glslVec(...COAST_ALBEDO.mean)},vec3(.5),vec3(1.8));
+// Both lookups (the cliff's tops use the first alone), blended by a noise.
+vec2 rockU=vMudWorld.xz/${glsl(COAST_ALBEDO.tile)},rockV=mat2(${COAST_BEDROCK.second.turn.map(glsl)})*rockU*${glsl(COAST_BEDROCK.second.scale)}+${glslVec(...COAST_BEDROCK.second.offset)};
+float rockW=smoothstep(.3,.7,slateNoise(vMudWorld.xz/${glsl(COAST_BEDROCK.blendCell)}));
+if(coastAlbedoOn>.5){
+vec3 rockScan=clamp(mix(texture2D(coastAlbedo,rockU).rgb,texture2D(coastAlbedo,rockV).rgb,rockW)/${glslVec(...COAST_ALBEDO.mean)},vec3(.5),vec3(1.8));
 vec3 rockColour=vec3(.17,.1525,.1465)*mix(vec3(1.),rockScan,.6);
 diffuseColor.rgb=mix(diffuseColor.rgb,rockColour,slateBedrock*.9);
-}}
+}
+if(coastDetailOn>.5){
+// The second lookup's slope turned back into world x/z; the relief fades as a texel shrinks, as on the cliff.
+vec2 rockPx=fwidth(vMudWorld.xz);
+slateRockXY=vec3(mix(texture2D(coastDetail,rockU).rg*2.-1.,(texture2D(coastDetail,rockV).rg*2.-1.)*mat2(${COAST_BEDROCK.second.turn.map(glsl)}),rockW),
+(1.-smoothstep(.06,.24,max(rockPx.x,rockPx.y)))*${glsl(COAST_BEDROCK.relief)});
+}}}
 `,
     ],
     [
       "fragmentShader",
       "|#include <clearcoat_normal_fragment_begin>",
-      "normal=normalize(mix(normal,nonPerturbedNormal,slateBedrock*.8));\n",
+      // The rock keeps none of the soil's relief; its own detail (world x and z
+      // on the shelf's tangent plane) tilts it as the cliff's tops are tilted.
+      `if(slateBedrock>0.){
+if(coastDetailOn>.5){
+vec3 rockT=mat3(viewMatrix)*vec3(1.,0.,0.);rockT=normalize(rockT-nonPerturbedNormal*dot(nonPerturbedNormal,rockT));
+vec3 rockB=cross(rockT,nonPerturbedNormal);
+float rockR=slateRockXY.z;
+normal=normalize(mix(normal,nonPerturbedNormal*sqrt(max(.15,1.-dot(slateRockXY.xy,slateRockXY.xy)*rockR*rockR))+(rockT*slateRockXY.x+rockB*slateRockXY.y)*rockR,slateBedrock));
+}else normal=normalize(mix(normal,nonPerturbedNormal,slateBedrock*.8));}
+`,
     ],
   ];
   if (!applyEdits(shader, edits)) return false;
@@ -2334,23 +2468,19 @@ diffuseColor.rgb=mix(diffuseColor.rgb,rockColour,slateBedrock*.9);
 
 export function shadeSlateGround(
   shader,
-  coastAlbedo = {
+  coastRock = {
     coastAlbedo: { value: null },
     coastAlbedoOn: { value: 0 },
+    coastDetail: { value: null },
+    coastDetailOn: { value: 0 },
   },
 ) {
   const puddles = shadeSlatePuddles(shader);
-  // The fault (ocean.js): its distance, and the walk's view from up high.
-  const shore = applyEdits(shader, slateShoreEdits(HIGH_VIEW.fade));
-  if (shore) {
-    shader.uniforms.slateHigh = HIGH_VIEW;
-    shadeCoastBedrock(shader, coastAlbedo);
-  }
+  // The fault (ocean.js): its distance.
+  const shore = applyEdits(shader, slateShoreEdits());
+  if (shore) shadeCoastBedrock(shader, coastRock);
   return { puddles, shore, roots: shadeSlateRoots(shader) };
 }
-// The walk's view from up high (hill-silhouette.js HIGH_VIEW, lent at
-// settleRoots()): 0 until then, and on every shot.
-let HIGH_VIEW = { value: 0, fade: [80, 188] };
 
 // The drips' clock: it advances by each drawn frame's time, at most 0.1 s,
 // only while the scene animates (never under reduced motion or a visitor
@@ -3995,10 +4125,16 @@ export function settleRoots(
     landHeight = filmHeight(groundHeight, true),
     originalGeometry = lib?.originalGeometry ?? ground.geometry;
   const coastHeight = terrain.userData.riverCoastHeight ?? landHeight;
-  const previousAlbedo = material.userData.coastAlbedoUniforms,
-    coastAlbedo = { coastAlbedo: { value: null }, coastAlbedoOn: { value: 0 } },
-    shadeGround = (shader) => shadeSlateGround(shader, coastAlbedo);
-  material.userData.coastAlbedoUniforms = coastAlbedo;
+  // The shelf's bindings for the coast's albedo and detail maps (ocean.js lends them).
+  const previousRock = material.userData.coastRockUniforms,
+    coastRock = {
+      coastAlbedo: { value: null },
+      coastAlbedoOn: { value: 0 },
+      coastDetail: { value: null },
+      coastDetailOn: { value: 0 },
+    },
+    shadeGround = (shader) => shadeSlateGround(shader, coastRock);
+  material.userData.coastRockUniforms = coastRock;
   // The walk follows the visible surface and fault. Asynchronous rock builds
   // take the stable film height, even if film withdraws while their GLBs load.
   const film = (x, z) =>
@@ -4213,7 +4349,6 @@ export function settleRoots(
   // programs link with the slate's shading (link()) and they land with it
   // (commit(), unseen), the ranges past the fault sinking then
   // (hill-silhouette.js SEA_SINK); all of it goes with the terrain.
-  if (lib?.HIGH_VIEW) HIGH_VIEW = lib.HIGH_VIEW;
   const seaClock = dripClock(SEA_TIME, motionHeld()),
     drop = riverFalls(RIVER_LINE),
     seaside = lib && rendering?.homeScene && ground.parent;
@@ -4231,7 +4366,7 @@ export function settleRoots(
       : null;
   const shore = seaside
     ? [
-        createSea({ lib, clock: seaClock, rendering, plunge: falls?.plunge }),
+        createSea({ lib, clock: seaClock, rendering, plunge: falls?.plunge, sheet: falls?.sheet }),
         createCliff({
           lib,
           clock: seaClock,
@@ -4296,9 +4431,9 @@ export function settleRoots(
     height.setActive(false);
     resolveReady(false);
     for (const part of shore.splice(0)) part.dispose();
-    if (material.userData.coastAlbedoUniforms === coastAlbedo) {
-      if (previousAlbedo) material.userData.coastAlbedoUniforms = previousAlbedo;
-      else delete material.userData.coastAlbedoUniforms;
+    if (material.userData.coastRockUniforms === coastRock) {
+      if (previousRock) material.userData.coastRockUniforms = previousRock;
+      else delete material.userData.coastRockUniforms;
     }
     if (litter) {
       litter.removeFromParent();
@@ -5152,8 +5287,8 @@ function* earthSteps(groundHeight, EARTH) {
   // packing moves the grade's cel bands on single pixels of settled soil.
   const shading = new Float32Array(count * 4);
   const shade = (i, values) => shading.set(values, i * 4);
-  // ROOT_SHADE's sky and key occlusion (0 beyond its lattice), also at float precision.
-  const occlusion = new Float32Array(count * 2);
+  // ROOT_SHADE's sky, key and lamp occlusion (0 beyond its lattice), also at float precision.
+  const occlusion = new Float32Array(count * 3);
   const point = (i, x, z, y) => {
     positions[i * 3] = x;
     positions[i * 3 + 1] = -z;
@@ -5190,7 +5325,7 @@ function* earthSteps(groundHeight, EARTH) {
     point(i, x, z, y);
     const near = Math.abs(x - TREE_FOOTING.x - 3) < 15 && Math.abs(z - TREE_FOOTING.z) < 15;
     shade(i, near ? rootShade(dx, dz, raised && rootBermExcess(x, z, sample)) : OPEN_SOIL);
-    if (near) occlusion.set(rootOcclusion(x, z), i * 2);
+    if (near) occlusion.set(rootOcclusion(x, z), i * 3);
     if (i % 8 === 7) yield;
   }
   // The river's added points, raised (lowered) and shaded as the grid's; its
@@ -5230,10 +5365,8 @@ function* earthSteps(groundHeight, EARTH) {
           positions[at * 3 + j] = mix(positions, 3, j);
           normalArray[at * 3 + j] = mix(normalArray, 3, j);
         }
-        for (let j = 0; j < 2; j++) {
-          uvs[at * 2 + j] = mix(uvs, 2, j);
-          occlusion[at * 2 + j] = mix(occlusion, 2, j);
-        }
+        for (let j = 0; j < 2; j++) uvs[at * 2 + j] = mix(uvs, 2, j);
+        for (let j = 0; j < 3; j++) occlusion[at * 3 + j] = mix(occlusion, 3, j);
         for (let j = 0; j < 4; j++) shading[at * 4 + j] = mix(shading, 4, j);
         const l0 = riverLifts[across ? gj * riverCols + from : from * riverCols + gi],
           l1 = riverLifts[across ? gj * riverCols + from + S : (from + S) * riverCols + gi];
@@ -5253,7 +5386,7 @@ function* earthSteps(groundHeight, EARTH) {
       riverSurface[gj * riverCols + gi] = y;
       point(at, x, z, y);
       shade(at, rootShade(dx, dz, raised && rootBermExcess(x, z, sample)));
-      occlusion.set(rootOcclusion(x, z), at * 2);
+      occlusion.set(rootOcclusion(x, z), at * 3);
     }
     yield;
   }
@@ -5395,7 +5528,7 @@ function* earthSteps(groundHeight, EARTH) {
     geometry.setAttribute("normal", new BufferAttribute(normalArray, 3));
     geometry.setAttribute("uv", new BufferAttribute(uvs, 2));
     geometry.setAttribute("slateRoot", new BufferAttribute(shading, 4));
-    geometry.setAttribute("slateShade", new BufferAttribute(occlusion, 2));
+    geometry.setAttribute("slateShade", new BufferAttribute(occlusion, 3));
     geometry.setAttribute("slatePool", new BufferAttribute(pool, 1));
     geometry.setIndex(new BufferAttribute(indices.subarray(0, cursor), 1));
     yield* geometryBounds(geometry, true);
@@ -5432,7 +5565,7 @@ function* earthSteps(groundHeight, EARTH) {
 // up to 12 ms run back to back; before it (the reveal's own work goes first)
 // and after it they take idle time, and less where the idle wait timed out,
 // as nothing else is idle. index.js requests this chunk with the scene, so
-// the build starts as the tower arrives, well before a warm load's reveal.
+// the build starts as the watch commits, well before a warm load's reveal.
 // A cancelled build (the film scene disposed) stops and resolves to nothing.
 function inSlices(steps, early = () => false, cancelled = () => false) {
   const idle =

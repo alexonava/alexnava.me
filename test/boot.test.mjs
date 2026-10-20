@@ -18,13 +18,11 @@ const qualitySourcePath = path.join(projectRoot, "src", "scene", "quality.js");
 
 const webglProbePath = path.join(projectRoot, "src", "shared", "webgl-probe.js");
 
-// The UI bundle names only each tier's tower and tree (build.mjs).
+// The UI bundle names only each tier's tree (build.mjs).
 const ARCHITECTURE_URLS = Object.fromEntries(
   ["high", "balanced"].map((tier) => [
     tier,
-    Object.fromEntries(
-      ["tower", "tree"].map((role) => [role, `/images/architecture/${role}-${tier}.0123abcd.glb`]),
-    ),
+    { tree: `/images/architecture/tree-${tier}.0123abcd.glb` },
   ]),
 );
 
@@ -400,7 +398,7 @@ test("concurrent cold startup shares one worker and its capability result withou
   assert.equal(await second, true);
   assert.equal(harness.workers[0].terminated, true);
   assert.equal(harness.scripts.length, 1);
-  assert.equal(harness.fetches.length, 2);
+  assert.equal(harness.fetches.length, 1);
   assert.equal(harness.getSceneInitCount(), 1);
   assert.equal(harness.getWebglProbeCount(), 0);
 });
@@ -436,7 +434,7 @@ test("forced colors changing during worker startup blocks requests and recovers 
     assert.equal(harness.workers.length, 1, "recovery reuses the frozen worker result");
     assert.equal(harness.getWebglProbeCount(), 0);
     assert.equal(harness.getSceneInitCount(), 1);
-    assert.equal(harness.fetches.length, 2);
+    assert.equal(harness.fetches.length, 1);
   }
 });
 
@@ -490,7 +488,7 @@ test("forced colors enabled before delayed startup can recover after it clears",
   assert.equal(harness.host.hidden, false);
   assert.equal(harness.getScriptAppendCount(), 1);
   assert.equal(harness.getSceneInitCount(), 1);
-  assert.equal(harness.fetches.length, 2);
+  assert.equal(harness.fetches.length, 1);
 });
 
 test("clearing forced colors shares one pending startup with scheduled boot and concurrent callers", async () => {
@@ -520,7 +518,7 @@ test("clearing forced colors shares one pending startup with scheduled boot and 
 
   assert.equal(harness.getScriptAppendCount(), 1);
   assert.equal(harness.links.length, 1);
-  assert.equal(harness.fetches.length, 2);
+  assert.equal(harness.fetches.length, 1);
   assert.equal(harness.loaderCalls.filter(({ method }) => method === "begin").length, 1);
   assert.equal(harness.getSceneInitCount(), 0, "initialization waits for the scene bundle");
 
@@ -543,7 +541,7 @@ test("clearing forced colors shares one pending startup with scheduled boot and 
     "later preference changes never reload the scene",
   );
   assert.equal(harness.getSceneInitCount(), 1);
-  assert.equal(harness.fetches.length, 2);
+  assert.equal(harness.fetches.length, 1);
 });
 
 test("queued boot preserves a recovered scene when forced colors turns on again before idle", async () => {
@@ -565,7 +563,7 @@ test("queued boot preserves a recovered scene when forced colors turns on again 
   assert.equal(harness.host.hidden, false, "clearing forced colors can show the initialized scene");
   assert.equal(harness.getScriptAppendCount(), 1);
   assert.equal(harness.getSceneInitCount(), 1);
-  assert.equal(harness.fetches.length, 2);
+  assert.equal(harness.fetches.length, 1);
   assert.equal(harness.loaderCalls.filter(({ method }) => method === "begin").length, 1);
 });
 
@@ -786,7 +784,7 @@ test("preferences interrupting a pending bundle rearm recovery and initialize th
       assert.equal(harness.getSceneInitCount(), 1);
       assert.equal(harness.getScriptAppendCount(), 1);
       assert.equal(harness.links.length, 1);
-      assert.equal(harness.fetches.length, 2, "recovery makes no duplicate model requests");
+      assert.equal(harness.fetches.length, 1, "recovery makes no duplicate model requests");
       for (const request of harness.fetches) assert.equal(request.options.signal.aborted, false);
     }
 });
@@ -846,7 +844,7 @@ test("a cached scene's preference-driven low-tier decline can rearm another elig
   assert.deepEqual(tiers, ["low", "high"]);
   assert.equal(harness.host.hidden, false);
   assert.equal(harness.getScriptAppendCount(), 1);
-  assert.equal(harness.fetches.length, 2);
+  assert.equal(harness.fetches.length, 1);
   assert.ok(harness.fetches.every(({ options }) => !options.signal.aborted));
 });
 
@@ -904,7 +902,7 @@ test("eligible cached-entry recovery restarts the retired loading line through i
   assert.equal(harness.loaderCalls.filter(({ method }) => method === "begin").length, 2);
   assert.equal(harness.getSceneInitCount(), 1);
   assert.equal(harness.getScriptAppendCount(), 1);
-  assert.equal(harness.fetches.length, 2);
+  assert.equal(harness.fetches.length, 1);
 });
 
 test("bundle-time preference checks preserve explicit quality and debug controls", async () => {
@@ -1150,7 +1148,7 @@ test("invalid quality override does not bypass the data-saver gate", async () =>
   assert.equal(getWebglProbeCount(), 0, "malformed override must not bypass data-saver");
 });
 
-test("the live scene requests its startup tier's tower and tree at low priority after its bundle", async () => {
+test("the live scene requests its startup tier's tree at low priority after its bundle", async () => {
   for (const [options, tier] of [
     [{}, "high"],
     [{ hardwareConcurrency: 4 }, "balanced"],
@@ -1162,7 +1160,7 @@ test("the live scene requests its startup tier's tower and tree at low priority 
 
     assert.equal(await harness.context.window.BabelSite.ensureSceneReady(), true);
 
-    const urls = [ARCHITECTURE_URLS[tier].tower, ARCHITECTURE_URLS[tier].tree];
+    const urls = [ARCHITECTURE_URLS[tier].tree];
     assert.deepEqual(harness.events, ["script", ...urls.map((url) => `fetch:${url}`)]);
     for (const { options: init } of harness.fetches) {
       assert.equal(init.priority, "low");
@@ -1174,7 +1172,7 @@ test("the live scene requests its startup tier's tower and tree at low priority 
     assert.equal(typeof prefetched.get(urls[0]).response.then, "function");
 
     assert.equal(await harness.context.window.BabelSite.ensureSceneReady(), true);
-    assert.equal(harness.fetches.length, 2, "an initialized scene requests nothing again");
+    assert.equal(harness.fetches.length, 1, "an initialized scene requests nothing again");
   }
 });
 
@@ -1232,7 +1230,7 @@ test("static title card paths and the low tier make no early model request", asy
   }
 });
 
-test("a failed scene bundle or initialization releases the early model requests", async () => {
+test("a failed scene bundle or initialization releases the early tree request", async () => {
   for (const options of [
     { logger: { warn() {} }, scriptOutcomes: ["error", "load"] },
     { initResult: false },
@@ -1243,7 +1241,7 @@ test("a failed scene bundle or initialization releases the early model requests"
     assert.equal(await harness.context.window.BabelSite.ensureSceneReady(), false);
 
     assert.equal(harness.host.hidden, true);
-    assert.equal(harness.fetches.length, 2);
+    assert.equal(harness.fetches.length, 1);
     assert.ok(harness.fetches.every(({ options: init }) => init.signal.aborted));
     assert.equal(harness.context.window.BabelSite.scene.prefetched.size, 0);
   }
@@ -1256,11 +1254,11 @@ test("a failed scene bundle or initialization releases the early model requests"
   await loadMainWithQuality(retry.context);
   await retry.context.window.BabelSite.ensureSceneReady();
   assert.equal(await retry.context.window.BabelSite.ensureSceneReady(), true);
-  assert.equal(retry.fetches.length, 2, "a retried bundle leaves model requests to the scene");
+  assert.equal(retry.fetches.length, 1, "a retried bundle leaves model requests to the scene");
 });
 
 test("a hidden page requests models only if it is shown while the bundle still loads", async () => {
-  const urls = [ARCHITECTURE_URLS.high.tower, ARCHITECTURE_URLS.high.tree];
+  const urls = [ARCHITECTURE_URLS.high.tree];
   const shown = createContext({ ...CAPABLE, hidden: true, scriptOutcomes: ["pending"] });
   await loadMainWithQuality(shown.context);
   const ready = shown.context.window.BabelSite.ensureSceneReady();
@@ -1271,7 +1269,7 @@ test("a hidden page requests models only if it is shown while the bundle still l
   assert.deepEqual(
     shown.fetches.map(({ url }) => url),
     urls,
-    "shown before the scene initializes, the page requests the startup tier's models",
+    "shown before the scene initializes, the page requests the startup tier's tree",
   );
   assert.equal(shown.visibilityListenerCount, 0);
   shown.loadPendingScripts();
@@ -1330,11 +1328,11 @@ test("the live path begins the loading line before the bundle and reports the bu
     assert.equal(harness.loaderCalls[0].tier, tier, JSON.stringify(options));
     assert.equal(harness.host.hidden, false);
   }
-  // The early model requests start after the bundle request, inside the run.
+  // The early tree request starts after the bundle request, inside the run.
   const prefetching = createContext({ ...CAPABLE, sceneLoader: true });
   await loadMainWithQuality(prefetching.context);
   await prefetching.context.window.BabelSite.ensureSceneReady();
-  const urls = [ARCHITECTURE_URLS.high.tower, ARCHITECTURE_URLS.high.tree];
+  const urls = [ARCHITECTURE_URLS.high.tree];
   assert.deepEqual(prefetching.events, [
     "loader:begin",
     "script",
@@ -1370,23 +1368,21 @@ test("an early model response resolves to the loading line's counted copy", asyn
   await loadMainWithQuality(harness.context);
   assert.equal(await harness.context.window.BabelSite.ensureSceneReady(), true);
   const prefetched = harness.context.window.BabelSite.scene.prefetched;
-  for (const url of [ARCHITECTURE_URLS.high.tower, ARCHITECTURE_URLS.high.tree]) {
-    const response = await prefetched.get(url).response;
-    assert.equal(response, harness.tracked.get(url), "the scene takes what track() returned");
-    assert.equal(response.copyOf.url, url);
-  }
+  const url = ARCHITECTURE_URLS.high.tree;
+  assert.deepEqual([...prefetched.keys()], [url]);
+  const counted = await prefetched.get(url).response;
+  assert.equal(counted, harness.tracked.get(url), "the scene takes what track() returned");
+  assert.equal(counted.copyOf.url, url);
   assert.deepEqual(
-    harness.loaderCalls.filter(({ method }) => method === "track").map(({ url }) => url),
-    [ARCHITECTURE_URLS.high.tower, ARCHITECTURE_URLS.high.tree],
+    harness.loaderCalls.filter(({ method }) => method === "track").map((call) => call.url),
+    [url],
   );
   // Without the line the early response is the network's own.
   const plain = createContext({ ...CAPABLE, prefetch: true, respond: true });
   await loadMainWithQuality(plain.context);
   await plain.context.window.BabelSite.ensureSceneReady();
-  const response = await plain.context.window.BabelSite.scene.prefetched.get(
-    ARCHITECTURE_URLS.high.tower,
-  ).response;
-  assert.equal(response.url, ARCHITECTURE_URLS.high.tower);
+  const response = await plain.context.window.BabelSite.scene.prefetched.get(url).response;
+  assert.equal(response.url, url);
   assert.equal(response.ok, true);
 });
 

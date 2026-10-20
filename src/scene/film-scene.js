@@ -2,7 +2,7 @@ import { DIRECTED_SHOTS } from "./directed-shots.js";
 import { EARTH } from "./filmic-earth.js";
 import { MIST_PARS, MIST_UNIFORMS } from "./drifting-mist.js";
 import { FLASH_GROUND } from "./film-light.js";
-import { HIGH_VIEW, RANGE_MIST, SEA_SINK } from "./hill-silhouette.js";
+import { RANGE_MIST, SEA_SINK } from "./hill-silhouette.js";
 import { SLATE_TEXT_GUARD } from "./mud-ground.js";
 
 // Borrow existing resources; restore originals before freeing the derived terrain.
@@ -65,7 +65,6 @@ export function createFilmScene({
               FLASH_GROUND,
               RANGE_MIST,
               SEA_SINK,
-              HIGH_VIEW,
               DIRECTED_SHOTS,
               originalGeometry,
               active,

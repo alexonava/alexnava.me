@@ -42,21 +42,17 @@ reports and QA renders. The archive is not part of this repository, and nothing
 in it is published. Sizes, formats and budgets of the delivered files are in
 [Assets](ASSETS.md).
 
-## Supplied timber lookout tower
+## The watch's stored outline
 
-The tower in `images/architecture/tower-{high,balanced}.glb` is a timber
-fire-lookout watchtower from the Meshy model
+The watch frames a stored outline (`src/scene/opening-outline.js`): measurements
+of the timber fire-lookout watchtower that stood on the terrace until the owner
+left it out on 2026-10-20, from the Meshy model
 `Meshy_AI_watchtower_0923082652_texture.glb`, supplied by Alex Nava on
 2026-09-23 (29,926,940 bytes, SHA-256
-`5898eab40106aa3c7553b971d0d3caecf4664a65a1fc04358b5ef9e303dc1fc2`).
-
-It was processed locally without recoloring or new generation: scaled to unit
-height, decimated in Blender 4.5 to 23,714 (high) and 9,718 (balanced)
-triangles on the supplied UVs, and its color and normal maps re-baked by Cycles
-from the full-resolution source. The maps ship as embedded WebP (2048 high,
-1024 balanced) with stored tangents and `KHR_mesh_quantization` geometry. Source,
-scripts, reports and QA renders are in `Assets/Architecture/tower-v2`; none are
-published.
+`5898eab40106aa3c7553b971d0d3caecf4664a65a1fc04358b5ef9e303dc1fc2`). Only those
+measurements ship, a convex hull of points per variant; the model is no longer
+published. Its source, scripts, reports, QA renders and last delivered GLBs are
+in `Assets/Architecture/tower-v2`.
 
 ## Supplied tree and lantern
 
@@ -85,9 +81,8 @@ The stand-in lantern, the iron post lantern the scene shows until the
 supplied lantern commits and keeps if it fails, is built in code
 (`src/scene/architecture.js`) and is part of neither model.
 
-The delivered tower and tree also contain local geometry repairs on both
-tiers: added volume at a small tree fork and a recess at one visible gallery
-rail joint. `tools/repair-landmark-geometry.py` reproduces these from the
+The delivered tree also contains a local geometry repair on both tiers: added
+volume at a small tree fork. `tools/repair-landmark-geometry.py` reproduces these from the
 SHA-pinned original GLBs with local NumPy. Topology, UVs, embedded artwork,
 file sizes, AABBs, roots and ground contacts remain exact; positions and their
 affected surface frames change only within the bounded neighborhoods. No new
@@ -109,36 +104,31 @@ high, 512 balanced), stored tangents and `KHR_mesh_quantization` geometry; none
 has a separate occlusion map. Scripts, reports and QA renders are in
 `Assets/Architecture/rocks-v1`; none are published.
 
-## Supplied Meshy mountains
+## Real mountains (elevation data)
 
 The film's mountains in `images/architecture/{mountain-ridge,mountain-spine,mountain-summit}-{high,balanced}.glb`
-come from three Meshy models supplied by Alex Nava on 2026-10-03:
-`Meshy_AI_Snow_Mountain_Ridge_0925082630_texture.glb` (SHA-256
-`c4b99498a91cb8977ecd7ed0780a0a1c16aeffe94eb9747802f6f184c46948a5`, the
-ridge), `Meshy_AI_Snow_Mountain_Ridge_0925082622_texture.glb` (SHA-256
-`e5cca117aca1abe7ae01df606407ddd9800b266982e40e00922702ffc08402b4`, the
-spine) and `Meshy_AI_Snow_Mountain_Summit_0925031332_texture.glb` (SHA-256
-`a3773a9fc831ebc0f2129bffb17fe7094e559943bb36aca630f132fb49319dc8`, the
-summit).
+are three real Alpine massifs, the owner's choice of 2026-10-19 ("real terrain")
+to replace the supplied Meshy models: the Grandes Jorasses' north face (the
+ridge), the Dents du Midi from the north (the spine) and the Weisshorn's east
+face (the summit). Their heights come from Terrain Tiles on the AWS Open Data
+Registry (Mapzen/Tilezen, terrarium encoding, zoom 13), which composite open
+elevation models. Here those are **EU-DEM**, produced using Copernicus data and
+information funded by the European Union (EU-DEM layers), and **SRTM**, data
+available from the U.S. Geological Survey. The full attribution list is
+https://github.com/tilezen/joerd/blob/master/docs/attribution.md.
 
-Each was normalized, culled in Blender to the faces an eye in its viewing
-envelope can see, collapse-decimated to 3,799 triangles with its skyline
-weighted, unwrapped, and its object-space normal, base colour and ambient
-occlusion baked by Cycles from the full source. Supplied emissive and
-metallic-roughness maps are not shipped. Geometry, UVs and encoded object-space
-normals remain unchanged across the material packaging. High uses 512px albedo
-and object normals with a 256px lossless AO/snow mask; balanced uses 256px albedo
-and normals with a 128px mask. Albedo occupies the standard base-colour slot,
-and the occlusion slot carries R ambient occlusion and G source snow coverage.
-
-`tools/prepare-mountain-albedo.py` uses the UV-matched cached Cycles colour
-bakes in `Assets/Architecture/mountains-v1`, checking each against the bake
-report's SHA-256. It filters and fills the bake in linear light, encodes sRGB
-WebP, records its measured mean and moves the preserved mask channels into
-their explicit AO/snow layout. Pillow and NumPy are local asset-authoring
-requirements, never site dependencies; no Blender session or new generation
-is involved. Original models, bake scripts, reports and QA renders remain in
-the private archive and are not published.
+Each window was resampled in the eye's frame and set on its plain, given ribs
+and couloirs down its fall line below the data's resolution, and given relative
+rock tones and snow by slope, altitude and curvature. Each was scaled
+vertically to its role's height for its width (between 0.91 and 1.3; recorded
+in the GLB's `extras.mountain.terrain`). Then, as before, each was culled in
+Blender to the faces an eye in its viewing envelope can see, collapse-decimated
+to about 3,800 triangles with its skyline weighted, and unwrapped. Its
+object-space normal, albedo, ambient occlusion and snow were baked by Cycles.
+High uses 512px albedo and object normals with a 256px lossless AO/snow mask;
+balanced uses 256px albedo and normals with a 128px mask. The 22 source tiles,
+the scripts, reports and QA renders are in the private
+`Assets/Architecture/mountains-v2` and are not published.
 
 ## Slate ground
 
@@ -205,7 +195,7 @@ source; there is no runtime fetch.
 
 The ring belongs only to the baseline, the scene as it stands before the film
 (both terms are in the [Glossary](GLOSSARY.md)). The film, which starts when
-the tower commits, takes the ring's place at once: it shows an empty stand-in
+the watch commits, takes the ring's place at once: it shows an empty stand-in
 until its own ranges (the lazy `src/scene/mountain-build.js` chunk, with the
-Meshy mountains) are built, and keeps the stand-in if that chunk fails. The scene is revealed
-only after the tower loads, so visitors never see the ring.
+massifs) are built, and keeps the stand-in if that chunk fails. The scene is revealed
+only after the watch commits, so visitors never see the ring.

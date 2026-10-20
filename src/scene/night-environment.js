@@ -12,6 +12,7 @@ import {
   Vector4,
   WebGLRenderTarget,
 } from "three";
+import { FILM_UNTONE_GLSL } from "./film-light.js";
 
 // The film's night sky as an environment map: the sky shell's own film sky and
 // cloud banks, drawn once into a prefiltered cube (PMREM) when the film starts
@@ -54,6 +55,7 @@ float envAz=atan(direction.z,direction.x);
 float envCrest=${glsl(ranges.crest[0])}+${glsl(ranges.crest[1])}*(noise(vec2(envAz*5.0,1.7))*.62+noise(vec2(envAz*17.0,4.3))*.38-.5);
 col=mix(col,${vec3(ranges.tone)}/${glsl(shell)},1.0-smoothstep(envCrest-.006,envCrest+.006,direction.y));
 col=mix(col,${vec3(ground)}/${glsl(shell)},smoothstep(-.004,-.06,direction.y));
+col=filmUntone(col*${glsl(shell)})/${glsl(shell)};
 }
 `;
 };
@@ -175,7 +177,7 @@ export function createNightEnvironment(
     }
     material.fragmentShader = fragment.replace(
       "void main()",
-      "uniform float envCapture;\nuniform vec3 envKeyDirection;\nvoid main()",
+      `uniform float envCapture;\nuniform vec3 envKeyDirection;\n${FILM_UNTONE_GLSL}\nvoid main()`,
     );
     // The cube's faces have no name or intro behind them: the clouds' text guard
     // reads an empty box, not the live one the clone shares. The capture keeps

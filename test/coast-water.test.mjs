@@ -16,10 +16,11 @@ import {
   rapidsWeight,
   rippleOctaves,
   riverFalls,
+  surgeGlsl,
 } from "../src/scene/ocean.js";
 import { MIST_PARS, MIST_UNIFORMS } from "../src/scene/drifting-mist.js";
 import { FLASH_GROUND } from "../src/scene/film-light.js";
-import { HIGH_VIEW, RANGE_MIST, SEA_SINK } from "../src/scene/hill-silhouette.js";
+import { RANGE_MIST, SEA_SINK } from "../src/scene/hill-silhouette.js";
 import { SLATE_TEXT_GUARD } from "../src/scene/mud-ground.js";
 import {
   dripClock,
@@ -38,7 +39,6 @@ const lib = {
   FLASH_GROUND,
   RANGE_MIST,
   SEA_SINK,
-  HIGH_VIEW,
 };
 const rendering = () => ({ homeScene: new Scene(), lights: {}, tier: "high" });
 
@@ -91,6 +91,90 @@ const points = (n, size, seed = 7) => {
   return [...Array(n)].map(() => [next() * size, next() * size]);
 };
 
+test("the surf breaks on the swell's own crests at the rock, the backwash carrying it out, in sets", () => {
+  const sea = createSea({ lib, clock: dripClock({ value: 0 }), rendering: rendering() }),
+    fragment = sea.material.fragmentShader;
+  assert.ok(fragment.includes(surgeGlsl()));
+  sea.dispose();
+  // seaSurge() and seaWash() read back as JavaScript.
+  const js = (code) =>
+    code
+      .replace(/vec2 (\w+)\(/g, "function $1(")
+      .replace(/float (\w+)\(/g, "function $1(")
+      .replace(/\((vec2|float) (\w+),(vec2|float) (\w+)\)/g, "($2,$4)")
+      .replace(/\(vec2 (\w+)\)/g, "($1)")
+      .replace(/float /g, "let ")
+      .replace(/(\d)\.(?!\d)/g, "$1.0");
+  const smooth = (a, b, x) => {
+      const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+      return t * t * (3 - 2 * t);
+    },
+    at = (time) =>
+      new Function(
+        "seaTime",
+        "dot",
+        "fract",
+        "sin",
+        "exp",
+        "max",
+        "mix",
+        "smoothstep",
+        "vec2",
+        `${js(surgeGlsl())}; return { surge: seaSurge, wash: seaWash };`,
+      )(
+        time,
+        (a, b) => a[0] * b[0] + a[1] * b[1],
+        (x) => x - Math.floor(x),
+        Math.sin,
+        Math.exp,
+        Math.max,
+        (a, b, u) => a + (b - a) * u,
+        smooth,
+        (x, y) => ({ 0: x, 1: y, x, y }),
+      );
+  // At a point on the rock: the first swell's height there, as the mesh heaves.
+  const S = [100, 70],
+    [first] = SEA.swell,
+    k = (2 * Math.PI) / first[0],
+    w = Math.sqrt((32.2 * 2 * Math.PI) / first[0]),
+    d = [Math.cos((first[2] * Math.PI) / 180), Math.sin((first[2] * Math.PI) / 180)],
+    phase = (t) => (S[0] * d[0] + S[1] * d[1]) * k - t * w;
+  let previous = null,
+    crests = 0;
+  const strengths = [];
+  for (let t = 0; t < 60; t += 0.02) {
+    const { x: height, y: age } = at(t).surge(S);
+    // Its age counts the seconds since the first swell's last crest struck there.
+    assert.ok(
+      Math.abs(Math.sin(phase(t - age)) - 1) < 1e-6,
+      `a crest ${age.toFixed(3)} s ago at ${t}`,
+    );
+    assert.ok(age >= 0 && age < (2 * Math.PI) / w + 1e-9);
+    if (previous !== null && age < previous) {
+      crests++;
+      strengths.push(height);
+    }
+    previous = age;
+  }
+  assert.ok(crests > 14, "every crest of the swell strikes");
+  // Sets: the second swell makes some crests strike much harder than others.
+  assert.ok(Math.max(...strengths) - Math.min(...strengths) > 0.2);
+  assert.ok(Math.max(...strengths) <= SEA.swell[0][1] + SEA.swell[1][1] + 1e-9);
+  // The white water: none before the crest's water falls back (lag), at the foot first, then
+  // carried out by the backwash and thinning; a weak crest still leaves some, a strong one more.
+  const { lag, back, burst, sets, low } = SEA.surf,
+    strong = sets[1] + 0.01,
+    weak = sets[0] - 0.01,
+    W = at(0).wash,
+    pair = (x, y) => ({ x, y });
+  assert.equal(W(pair(strong, 0), 0), 0);
+  assert.ok(W(pair(strong, lag), 0) > 0.9);
+  assert.ok(W(pair(strong, lag), burst + 2) < 0.01, "not yet out");
+  assert.ok(W(pair(strong, lag + 2), burst + back * 2 - 0.5) > 0.15, "carried out");
+  assert.ok(W(pair(strong, lag + 2), 0) < W(pair(strong, lag), 0), "thinning");
+  assert.ok(Math.abs(W(pair(weak, lag), 0) / W(pair(strong, lag), 0) - low) < 1e-9);
+});
+
 test("the sea's fine ripples: smooth flow noise, a slope that never steepens toward fine, the far water's roughness kept", () => {
   const octaves = rippleOctaves();
   assert.equal(octaves.length, SEA.ripple.octaves);
@@ -115,7 +199,9 @@ test("the sea's fine ripples: smooth flow noise, a slope that never steepens tow
     fragment.split("if(seaFine>.5)").length - 1,
     SEA.ripple.octaves - SEA.ripple.balanced,
   );
-  assert.ok(!fragment.includes("texture2D("), "procedural: no texture");
+  // Procedural: its one texture is the moon's shadow map.
+  assert.equal(fragment.split("texture2D(").length - 1, 1, "procedural");
+  assert.ok(fragment.includes("texture2D(seaShadowMap,uv)"));
   // Where the normal turns within a pixel the mirror and the moon's lobe widen.
   assert.ok(fragment.includes("vec3 dN=fwidth(N);"));
   assert.ok(SEA.glitter.alpha >= 0.1 && SEA.knee + SEA.glitter.knee < 0.85);

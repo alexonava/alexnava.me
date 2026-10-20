@@ -3,9 +3,7 @@ import { FLASH_GROUND, FLASH_UNIFORMS } from "./film-light.js";
 import { HORIZON_AIR, RANGE_MIST, TERRAIN_HORIZON } from "./hill-silhouette.js";
 import { ESTATE, estateLantern, estatePoint } from "./estate-layout.js";
 import { MIST_PARS, MIST_UNIFORMS, mistOn } from "./drifting-mist.js";
-// The estate's human scale for props and trees: one doorway height. The
-// timber lookout matches it: its cabin rises about 6.5 from gallery floor
-// (29.9) to eave (36.4) above a railing about 3.9 high.
+// The estate's human scale for props and trees: one doorway height.
 export const DOOR_HEIGHT = 6.6;
 
 // The terrain's dune field, helpers.js dune(): amplitude * wave(frequency *
@@ -35,7 +33,7 @@ const TERRAIN_DUNE_GLSL = TERRAIN_DUNE_TERMS.map(
 
 // The film slate just after rain. Terrain hollows and the map's dark crack
 // texels hold water, and a wide halo about the tree (the root area, the path
-// and the lantern clearing with it) is wet; only the tower footing stays dry.
+// and the lantern clearing with it) is wet; only the watch's raised terrace stays dry.
 // Wet ground is glossy rather than darker (it keeps the ground's brightness):
 // smoother, its direct highlight clamped less, its own sky reflection clamped
 // less (indirect: the soil's share where wet), and a film of water mirrors the
@@ -455,14 +453,14 @@ export function streamLines({ courses, step, bed } = SLATE_STREAMS) {
 }
 // The river through the set (the owner's picks of 2026-10-10, a broad, slow
 // river past the lantern, and 2026-10-11, "much more water", carried through
-// the set across Portrait's foreground and into a lake behind the lookout): it
+// the set across Portrait's foreground and into a lake behind the watch): it
 // pours off the cliffs north-east behind the tree (the owner's open sea of
 // 2026-10-17, terrain-build.js and ocean.js riverFalls()); along it from there
 // it rounds a meander north-west of the lantern, runs 4 units wide about 4.3
 // units in front of the lantern on the lantern shots' side and bends away
 // south toward their lens, as before, clear of the roots, the rocks and the
 // puddles; then it crosses Portrait's foreground, rounds past its lens, passes
-// well south of the lookout (its water 10 units beyond the lookout's grass)
+// well south of the watch's terrace (its water 10 units beyond the terrace's grass)
 // and widens across The watch's plain into a lake 60 units across, where it
 // comes in off the plain from toward the summit. Its course is a smooth
 // centreline through `path` ([dx, dz] offsets from the lantern's foot, from the
@@ -675,9 +673,9 @@ export const MOON_LIGHTS = Object.freeze({
 });
 
 // How the film ground takes the night's light. The moon key rakes it and casts
-// the tree's shadow across it, so it dominates: the unshadowed fills, which
-// model the tower and the bark, keep only a share here (the crown's point fill
-// stands where no light is), and the flat ambient and hemisphere give way to
+// the tree's shadow across it, so it dominates: the unshadowed fill, which
+// models the bark, keeps only a share here, and the flat ambient
+// and hemisphere give way to
 // the night sky's own light from the environment (night-environment.js),
 // brighter toward the lit clouds and the horizon, which the cracks and relief
 // catch. The lantern's light also comes back off its own pool and the near
@@ -693,9 +691,8 @@ export const MOON_LIGHTS = Object.freeze({
 export const SLATE_LIGHT = Object.freeze({
   key: 1.35,
   fill: 0.35,
-  crown: 0.15,
   ambient: 0.3,
-  sky: 3.4, // the environment's diffuse light, times (its colours are the sky as shown)
+  sky: 1.5, // the environment's diffuse light, times (the open plain sees all of the sky)
   bounce: 0.18,
   poolKnee: 0.08,
 });
@@ -703,15 +700,14 @@ export const SLATE_LIGHT = Object.freeze({
 // Water on the ground mirrors the night sky (the environment), with water's
 // Fresnel (f0) on a normal levelled by the water (level: its share of the
 // surface's own, unmapped normal): after the rain a film of water lies on the
-// soil, film[0] of it everywhere but the dry tower footing and film[1] more
+// soil, film[0] of it everywhere but the dry terrace and film[1] more
 // with the wet mask, in broad drained and glossy patches (patch: the noise's
 // cell in units and the share it keeps at least), a little rough
 // (roughness[0]) as it follows the soil; standing water (the knoll's low-spot
 // pools) is whole and sharp (roughness[1]). The authored puddles take none of
 // this: terrain-build.js's zone mirror draws their sky, at the sky as shown.
-// The sky the water mirrors is the sky as shown times gain ([film, standing
-// water]: above 1 the stylised night's dimmed sky lights its own reflection
-// more), and in standing water the tree's trunk darkens it where
+// The sky the water mirrors is the sky at its own radiance times gain ([film,
+// standing water]), and in standing water the tree's trunk darkens it where
 // it stands in the way (terrain-build.js sets slateWaterVeil; the rough film
 // would only smear it). It fades with view distance
 // (far), so the far plain behind the intro text stays calm.
@@ -740,7 +736,7 @@ export const SLATE_WATER = Object.freeze({
   film: Object.freeze([0.12, 0.18]),
   patch: Object.freeze([9, 0.55]),
   roughness: Object.freeze([0.3, 0.02]),
-  gain: Object.freeze([1.5, 1.8]),
+  gain: Object.freeze([1, 1]),
   far: Object.freeze([70.0, 130.0]),
   moon: Object.freeze({ roughness: 0.25, gain: 1, knee: 0.06 }),
   lamp: Object.freeze({ roughness: 0.18, gain: 1.6, knee: 0.35 }),
@@ -792,8 +788,7 @@ export function createSlateContacts(values = new Float32Array(SLATE_CONTACTS * 4
     slateAspect: { value: 1 },
     // The shot's `poolAbout` (SLATE_LIGHT.poolKnee): off until a shot asks.
     slatePoolAbout: { value: 0 },
-    // The shot's calm (slateCalmFor()): off until a shot asks for it.
-    slateCalm: { value: { x: 0, y: 1, z: 2, w: 0 } },
+    // The shot's subject on the plain (slateCalmFor()): its moon shadow's fade centres there.
     slateCalmAt: { value: { x: 0, y: 0, z: 0, w: 1 } },
     // The shot's look (slateCalmFor(), SLATE_LOOK), each off until a shot asks
     // for it: the clearing (its centre x, z and radii; its light and the rest
@@ -810,45 +805,21 @@ export function createSlateContacts(values = new Float32Array(SLATE_CONTACTS * 4
   };
 }
 
-// A calmed slate's glints and sky reflection ease by this share of its flatten
-// (slateCalmFor()): 0.7 x 0.5 = 35% in Portrait, 0.7 x 0.6 = about 40% in
-// Watch and tree.
-export const SLATE_CALM_GLINT = 0.7;
-
-// A shot's `ground` calm: the plain about the subject quietens so the subject,
-// the ranges and the sky carry the frame. Within burn.reach (fractions of the
-// camera's distance to the subject: full at [0], gone by [1]) the slate,
-// its water included, is darkened by up to burn.amount; beyond keep (world
-// units from the subject: kept within [0], calm by [1]) its tone and relief
-// are pulled `flatten` of the way to the tile's mean (lifting its darkest
-// cracks a little, so fewer hold water), and its glints and sky reflection
-// ease with it (SLATE_CALM_GLINT). The burn never lightens. Uniforms, written in
-// place every frame, so a cut never recompiles; so is the shot's look
-// (SLATE_LOOK), which this writes too.
+// A shot's `ground` about its subject: its look (SLATE_LOOK) centred on the
+// subject at `at`, written in place every frame, so a cut never recompiles;
+// off without a frame. The plain itself is never burned or flattened about the
+// subject (photoreal, 2026-10-19): it is lit as it is.
 export function slateCalmFor(contacts, shot, distance, at) {
-  const calm = shot?.ground,
-    v = contacts.slateCalm.value,
+  const ground = shot?.ground,
     a = contacts.slateCalmAt.value;
-  if (!calm || !(distance > 0) || !at) {
-    v.x = 0;
-    v.y = 1;
-    v.z = 2;
-    v.w = 0;
+  if (!ground || !(distance > 0) || !at) {
     slateLookFor(contacts, null);
-    return v;
+    return a;
   }
-  const reach = calm.burn?.reach ?? [0, 1],
-    keep = calm.keep ?? [0, 1];
-  v.x = calm.burn?.amount ?? 0;
-  v.y = reach[0] * distance;
-  v.z = Math.max(reach[1], reach[0] + 0.01) * distance;
-  v.w = calm.flatten ?? 0;
   a.x = at.x;
   a.y = at.z;
-  a.z = keep[0];
-  a.w = Math.max(keep[1], keep[0] + 0.01);
-  slateLookFor(contacts, calm, shot.azimuth ?? 0, at);
-  return v;
+  slateLookFor(contacts, ground, shot.azimuth ?? 0, at);
+  return a;
 }
 
 // A shot's look on the plain about its subject (the owner's pick of
@@ -887,7 +858,7 @@ export const SLATE_LOOK = Object.freeze({
   gloss: Object.freeze({
     far: Object.freeze([400, 1100]),
     tint: Object.freeze([0.72, 0.88, 1.18]),
-    warm: Object.freeze([1, 0.97, 0.94]),
+    warm: Object.freeze([1, 1, 1]),
     text: Object.freeze([0.45, 0.25]),
     patch: Object.freeze([31, 0.35]),
   }),
@@ -931,7 +902,7 @@ const glslVec = (values) => `vec${values.length}(${values.map(glslNumber).join("
 const glslPoint = ({ x, z }) => glslVec([+x.toFixed(2), +z.toFixed(2)]);
 const TREE_GLSL = glslPoint(ESTATE.tree);
 const PATH_LENGTH = glslNumber(
-  +Math.hypot(ESTATE.tree.x - ESTATE.tower.x, ESTATE.tree.z - ESTATE.tower.z).toFixed(2),
+  +Math.hypot(ESTATE.tree.x - ESTATE.watch.x, ESTATE.tree.z - ESTATE.watch.z).toFixed(2),
 );
 const SECOND = SLATE_TILING.second,
   DETAIL = SLATE_TILING.detail,
@@ -1215,10 +1186,10 @@ const WATER = SLATE_WATER,
   LIGHT = SLATE_LIGHT;
 // The film ground's own direct light (SLATE_LIGHT): it finds the key and the
 // fill among the directional lights by their fixed directions and the lantern
-// by its warm colour; any other light is the crown's cool point fill. Three's light loops fetch each light through get*LightInfo(), so
-// wrapping those marks a directional one (slateDirectional): where the crown's
-// point light lines up with the key or the fill from some spot on the ground,
-// it stays the crown's.
+// by its warm colour. Three's light loops fetch each light through
+// get*LightInfo(), so wrapping those marks a directional one (slateDirectional):
+// where the lantern lines up with the key from some spot on the ground, it
+// stays the lantern's.
 // Where the soil is wet (slateWetLamp, set before the lights) the moon and the
 // lantern also light the water film over it (SLATE_WATER.moon, .lamp), on the
 // water's normal (slateWaterN), into slateMoonSpec and slateLampSpec.
@@ -1268,7 +1239,7 @@ void RE_Direct_Moonlit(const in IncidentLight directLight, const in vec3 geometr
   bool slateWarm = directLight.color.b < .7*directLight.color.r;
   bool slateKey = slateDirectional && !slateWarm && dot(directLight.direction, normalize(mat3(viewMatrix)*${unitGlsl(MOON_LIGHTS.key)})) > .9999;
   #ifdef USE_ENVMAP
-  if (!slateWarm) slateL.color *= slateKey ? ${glslNumber(LIGHT.key)} : slateDirectional && dot(directLight.direction, normalize(mat3(viewMatrix)*${unitGlsl(MOON_LIGHTS.fill)})) > .9999 ? ${glslNumber(LIGHT.fill)} : ${glslNumber(LIGHT.crown)};
+  if (!slateWarm) slateL.color *= slateKey ? ${glslNumber(LIGHT.key)} : ${glslNumber(LIGHT.fill)};
   #endif
   RE_Direct_Physical(slateL, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight);
   #ifdef USE_ENVMAP
@@ -1375,8 +1346,7 @@ export function configureGroundShading(
       wetVarying +
       (useWet
         ? `uniform vec4 slateContacts[${SLATE_CONTACTS}];
-uniform vec4 slateCalm, slateCalmAt;
-float slateFlatAt(vec2 p){return slateCalm.w*smoothstep(slateCalmAt.z,slateCalmAt.w,length(p-slateCalmAt.xy));}
+uniform vec4 slateCalmAt;
 uniform float slateRockContact, slateContactGain, slateAspect;
 uniform vec3 babelFlashKey;
 uniform vec4 babelFlash, babelFlashLight, babelFlashSky;
@@ -1399,7 +1369,7 @@ ${SLATE_TEXT_GLSL}${LOOK_GLSL}${mistOn ? `uniform mat4 projectionMatrix;\n${MIST
       float slateH = texture2D(slateDetail, slateUvD).r, slateNear = 1.-smoothstep(${DETAIL.near.map(glslNumber)},length(vViewPosition));
       vec3 slateMean = ${glslVec(SLATE_TILING.mean)};
       vec4 sampledDiffuseColor = vec4(max(slateMean+(mix(slateA.rgb,slateB.rgb,slateW)-slateMean)/length(vec2(slateW,1.-slateW)),0.)*(1.+(slateH-.5)*${glslNumber(DETAIL.albedo)}*slateNear)*(.93+.14*slateNoise(vMudWorld.xz/${glslNumber(SLATE_TILING.macroCell)})),1.);
-      ${close ? CLOSE_PRE : ""}sampledDiffuseColor.rgb = mix(sampledDiffuseColor.rgb, slateMean, slateFlatAt(vMudWorld.xz));${FAR_MAP}
+      ${close ? CLOSE_PRE : ""}${FAR_MAP}
       diffuseColor *= sampledDiffuseColor;${close ? CLOSE_MAP : ""}
       #endif`,
       );
@@ -1479,7 +1449,7 @@ ${SLATE_TEXT_GLSL}${LOOK_GLSL}${mistOn ? `uniform mat4 projectionMatrix;\n${MIST
         `#ifdef USE_NORMALMAP_TANGENTSPACE
       vec3 slateNA = texture2D(normalMap, vNormalMapUv).xyz*2.-1., slateNB = texture2D(normalMap, slateUvB).xyz*2.-1.;
       vec2 slateHx = vec2(texture2D(slateDetail, slateUvD+vec2(1./512.,0.)).r, texture2D(slateDetail, slateUvD+vec2(0.,1./512.)).r);
-      vec3 mapN = vec3((mix(slateNA.xy, slateNB.xy*slateTurnB, slateW)/length(vec2(slateW,1.-slateW))*normalScale+(slateH-slateHx)*slateTurnD*(${glslNumber(DETAIL.strength)}*slateNear))${close ? `*(1.-${glslNumber(CLOSE.calm)}*slateCN)` : ""}*(1.-slateFlatAt(vMudWorld.xz))*(1.-${glslNumber(SLATE_BANKS.silt.calm)}*slateSilt)*(1.-${glslNumber(SLATE_PUDDLES.flatten)}*slatePuddle), mix(slateNA.z, slateNB.z, slateW));
+      vec3 mapN = vec3((mix(slateNA.xy, slateNB.xy*slateTurnB, slateW)/length(vec2(slateW,1.-slateW))*normalScale+(slateH-slateHx)*slateTurnD*(${glslNumber(DETAIL.strength)}*slateNear))${close ? `*(1.-${glslNumber(CLOSE.calm)}*slateCN)` : ""}*(1.-${glslNumber(SLATE_BANKS.silt.calm)}*slateSilt)*(1.-${glslNumber(SLATE_PUDDLES.flatten)}*slatePuddle), mix(slateNA.z, slateNB.z, slateW));
       normal = normalize(tbn*mapN);${close ? CLOSE_NORMAL : ""}
       #endif`,
       );
@@ -1513,9 +1483,6 @@ ${SLATE_TEXT_GLSL}${LOOK_GLSL}${mistOn ? `uniform mat4 projectionMatrix;\n${MIST
       if (babelFlashLight.w > 0.0)
         reflectedLight.directDiffuse += (1.0-slateBehind)*(1.0-slateBehind)*(babelFlashLight.rgb*saturate(dot(normal, (viewMatrix*vec4(babelFlashKey, 0.0)).xyz))*${glslNumber(LIGHT.fill)}+(babelFlashSky.rgb*(.5+.5*dot(normal, viewMatrix[1].xyz))+babelFlashSky.w)*${glslNumber(LIGHT.ambient)})*material.diffuseColor;
       reflectedLight.indirectSpecular *= mix(1.0, ${glslNumber(+(SLATE_WET.indirect[1] / SLATE_WET.indirect[0]).toFixed(4))}, slateWet*slateShow)*mix(1.0, ${glslNumber(SLATE_WET.close.sky)}, slateMatte);${WATER_AFTER_LIGHTS}
-      float slateQuiet = 1.0-${glslNumber(SLATE_CALM_GLINT)}*slateFlatAt(vMudWorld.xz)*(1.0-slatePuddle);
-      reflectedLight.directSpecular *= slateQuiet;
-      reflectedLight.indirectSpecular *= slateQuiet;
       reflectedLight.directSpecular = slateTextKnee(reflectedLight.directSpecular, slateBehind);
       reflectedLight.indirectSpecular = slateTextKnee(reflectedLight.indirectSpecular, slateBehind);
       `
@@ -1531,7 +1498,6 @@ ${SLATE_TEXT_GLSL}${LOOK_GLSL}${mistOn ? `uniform mat4 projectionMatrix;\n${MIST
         .replace(
           "#include <fog_fragment>",
           `
-      gl_FragColor.rgb *= 1.0-slateCalm.x*(1.0-smoothstep(slateCalm.y, slateCalm.z, length(vViewPosition)));
       // Near the lens the soil's brightest channel eases past SLATE_CLOSE.ceiling, the colour scaled whole, so a lit crest keeps
       // its warmth rather than clipping channel by channel into a chalky grey.
       { float slateCM = max(gl_FragColor.r, max(gl_FragColor.g, gl_FragColor.b)), slateCE = max(slateCM-${glslNumber(CLOSE.ceiling)}, 0.); gl_FragColor.rgb *= mix(1., (slateCM-slateCE+slateCE/(1.+slateCE/${glslNumber(CLOSE.ceiling)}))/max(slateCM, 1e-5), 1.-smoothstep(${CLOSE.near.map(glslNumber)}, length(vViewPosition))); }

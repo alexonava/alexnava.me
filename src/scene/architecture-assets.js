@@ -2,11 +2,11 @@ import { LoadingManager } from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { measureScene, sceneNow } from "./perf-marks.js";
 
-// The tower, tree and optional lantern, the film's scattered rocks
-// (rock-scatter.js) and its Meshy massifs (hill-silhouette.js) load through one
-// manifest.
+// The tree and optional lantern, the film's scattered rocks (rock-scatter.js)
+// and its massifs (hill-silhouette.js) load through one manifest. The watch,
+// the sky over the terrace, loads no model: its channel waits on the scene's
+// stage (`stage`) and commits as a model's does.
 const ROLES = [
-  "tower",
   "tree",
   "lantern",
   "lichen-rock",
@@ -199,10 +199,12 @@ export function createArchitectureAssetController({
   includeLantern = false,
   loadAsset = loadArchitectureAsset,
   urls = ARCHITECTURE_ASSET_URLS,
-  onTowerReady = () => {},
+  // What the watch waits on before it commits (a promise; a rejection falls back).
+  stage = () => Promise.resolve(),
+  onWatchReady = () => {},
   onTreeReady = () => {},
   onLanternReady = () => {},
-  onRestoreTower = () => {},
+  onRestoreWatch = () => {},
   onRestoreTree = () => {},
   onRestoreLantern = () => {},
   onStatus = () => {},
@@ -216,7 +218,7 @@ export function createArchitectureAssetController({
   const resourceReferences = new Map();
   const freedResources = new WeakSet();
   const channels = [
-    { kind: "tower", roles: ["tower"], ready: onTowerReady, restore: onRestoreTower },
+    { kind: "watch", roles: [], wait: stage, ready: onWatchReady, restore: onRestoreWatch },
     { kind: "tree", roles: ["tree"], ready: onTreeReady, restore: onRestoreTree },
     ...(includeLantern
       ? [{ kind: "lantern", roles: ["lantern"], ready: onLanternReady, restore: onRestoreLantern }]
@@ -265,7 +267,7 @@ export function createArchitectureAssetController({
         if (record.count > 0) return;
         assetReferences.delete(asset);
         // Texture disposal precedes ImageBitmap.close, including images shared
-        // by several maps or by the independently loaded tower and tree.
+        // by several maps or by independently loaded models.
         Object.entries(record.resources).forEach(([kind, resources]) => {
           resources.forEach((resource) => {
             const remaining = resourceReferences.get(resource) - 1;
@@ -304,8 +306,9 @@ export function createArchitectureAssetController({
     const isCurrent = () => !disposed && channel.run === run;
     publish(channel, "loading");
     if (!isCurrent()) return;
-    Promise.all(
-      channel.roles.map(async (role) => {
+    Promise.all([
+      channel.wait?.(),
+      ...channel.roles.map(async (role) => {
         const url = urls[tier]?.[role];
         if (!url) throw new Error("Missing architecture asset URL");
         const asset = await loadAsset(url, { signal: run.abort.signal, tier, role });
@@ -320,7 +323,7 @@ export function createArchitectureAssetController({
         }
         run.leases.set(role, lease);
       }),
-    )
+    ])
       .then(() => {
         if (!isCurrent()) return;
         const assets = Object.fromEntries(
@@ -333,9 +336,7 @@ export function createArchitectureAssetController({
         // stage them. Returned cleanup restores any attachment and owns only
         // derived geometry/material clones; staged assets retain their lease.
         // A throwing callback must roll back its own partial allocations.
-        const cleanup = channel.ready(channel.kind === "tower" ? assets : assets[channel.kind], {
-          tier,
-        });
+        const cleanup = channel.ready(assets[channel.kind], { tier });
         if (cleanup !== undefined && typeof cleanup !== "function") {
           throw new Error(
             "Architecture ready callback must return a cleanup function or undefined",

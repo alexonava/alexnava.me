@@ -15,6 +15,7 @@ import {
   WebGLRenderTarget,
   ZeroFactor,
 } from "three";
+import { FILM_TONE, FILM_TONE_GLSL, FILM_TONE_UNIFORM, filmExposure } from "./film-light.js";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { FullScreenQuad } from "three/examples/jsm/postprocessing/Pass.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
@@ -52,7 +53,7 @@ void main() {
 export const FILM_LOOK = Object.freeze({
   halation: Object.freeze({
     on: 1,
-    strength: 1.2,
+    strength: 0.8,
     color: Object.freeze([1, 0.32, 0.12]),
     warm: Object.freeze([0.1, 0.35]),
   }),
@@ -90,7 +91,6 @@ const GRADING_SHADER = {
     uShadowCoolMix: { value: 0.34 },
     uTexelSize: { value: new Vector2(1, 1) },
     uLayerRelief: { value: 0 },
-    uShadowToe: { value: 0 },
     // The film look (FILM_LOOK): the bloom's composite and its halation tint (0: none),
     // the print toe (lift, toe) and its tint, and the ink's brush weight (vary, scale).
     tHalation: { value: null },
@@ -114,8 +114,8 @@ uniform float uHighlightWarmMix;
 uniform float uShadowCoolMix;
 uniform vec2 uTexelSize;
 uniform float uLayerRelief;
-uniform float uShadowToe;
 varying vec2 vUv;
+${FILM_TONE_GLSL}
 
 float inkHash(vec2 p) {
   vec3 q = fract(vec3(p.xyx) * 0.1031);
@@ -135,7 +135,10 @@ vec3 saturateColor(vec3 color, float amount) {
 
 void main() {
   vec4 texel = texture2D(tDiffuse, vUv);
-  vec3 color = texel.rgb;
+  // The lit layers' scene-linear light through the film's tone curve (film-light.js
+  // FILM_TONE); the painted sky and the star (codes under .2) as shown.
+  float scene = uLayerRelief * uTone.w * smoothstep(0.17, 0.25, texel.a);
+  vec3 color = mix(texel.rgb, filmTone(texel.rgb), scene);
   float luma = dot(color, vec3(0.299, 0.587, 0.114));
 
   color = (color - 0.5) * uContrast + 0.5;
@@ -149,7 +152,7 @@ void main() {
   float midMix = smoothstep(0.22, 0.46, luma) * (1.0 - smoothstep(0.62, 0.82, luma));
   float highlightMix = smoothstep(0.72, 0.97, luma);
 
-  color = mix(color, max(coolShadow, shadowLift), uShadowCoolMix * shadowMix);
+  color = mix(color, max(coolShadow, shadowLift * (1.0 - scene)), uShadowCoolMix * shadowMix);
   color = mix(color, warmMidtone, 0.3 * midMix);
   color = mix(color, parchmentHighlight, uHighlightWarmMix * highlightMix);
 
@@ -162,11 +165,9 @@ void main() {
   // The star and its glow (depth-layers.js STAR_LAYER over the sky's 0) stay
   // continuous: the cloud banks' steps never ring them.
   float starLayer = uLayerRelief * smoothstep(0.0005, 0.006, texel.a) * (1.0 - smoothstep(0.22, 0.28, texel.a));
-  // Only the sky takes the cel palette. The separate continuous toe retains the
-  // subjects' and ranges' deep shade without tying it to a quantized palette or
-  // its strength. Partly covered edges blend toward the sky's code as before.
+  // Only the sky takes the cel palette; the lit layers' deep shade is the tone
+  // curve's toe. Partly covered edges blend toward the sky's code as before.
   float skyLayer = 1.0 - smoothstep(0.0, 0.3, texel.a);
-  color *= 1.0 - uShadowToe * (1.0 - skyLayer) * (1.0 - groundLayer) * (1.0 - starLayer) * (1.0 - smoothstep(0.05, 0.1, gradedLuma));
   float celWeight = mix(1.0, skyLayer, uLayerRelief);
   color = mix(color, celColor, uCelMix * celWeight * (1.0 - groundLayer) * (1.0 - starLayer));
   color = saturateColor(color, 1.04);
@@ -192,9 +193,10 @@ void main() {
   color += halo * uHalation * smoothstep(${FILM_LOOK.halation.warm[0].toFixed(3)}, ${FILM_LOOK.halation.warm[1].toFixed(3)}, (halo.r - halo.b) / max(halo.r, 1e-4));
   // A print film's toe: the blacks lift toward a cool, milky tint.
   color += uPrintTint * uPrint.x * (1.0 - smoothstep(0.0, uPrint.y, dot(color, vec3(0.299, 0.587, 0.114))));
-  // A soft shoulder: highlights past the knee roll off toward white, not clip.
+  // A soft shoulder for the sky (the lit layers have the tone curve's): highlights
+  // past the knee roll off toward white, not clip.
   vec3 over = max(color - 0.75, 0.0);
-  color = mix(color, min(color, 0.75) + 0.25 * (1.0 - exp(-over / 0.25)), uLayerRelief);
+  color = mix(color, min(color, 0.75) + 0.25 * (1.0 - exp(-over / 0.25)), uLayerRelief * (1.0 - scene));
 
   gl_FragColor = vec4(clamp(color, 0.0, 1.0), texel.a);
 }
@@ -295,8 +297,9 @@ export const LENS_FX = Object.freeze({
   // disc) in `color`, and any ghosts along the line from the star through the
   // frame's centre: [t along it (1 at the centre), radius in frame heights,
   // r, g, b, strength]: a film lens's few soft ghosts (the owner's pick of
-  // 2026-10-13), amber, blue, a small green dot past the centre, a large faint
-  // violet ring and an amber disc, spread far enough along the line that they
+  // 2026-10-13), faint and in the star's own amber as a coated lens tints them
+  // (2026-10-19, photoreal), a cooler one, a small dot past the centre, a large
+  // faint ring and an amber disc, spread far enough along the line that they
   // never bunch about a star near the centre.
   flare: Object.freeze({
     on: 1,
@@ -305,11 +308,11 @@ export const LENS_FX = Object.freeze({
     shineDisc: 0.25,
     color: Object.freeze([1, 0.6, 0.3]),
     ghosts: Object.freeze([
-      Object.freeze([0.35, 0.03, 1, 0.62, 0.3, 0.18]),
-      Object.freeze([0.75, 0.06, 0.45, 0.7, 1, 0.09]),
-      Object.freeze([1.35, 0.018, 0.6, 1, 0.7, 0.16]),
-      Object.freeze([1.9, 0.1, 0.9, 0.5, 1, 0.06]),
-      Object.freeze([2.6, 0.04, 1, 0.75, 0.4, 0.12]),
+      Object.freeze([0.35, 0.03, 1, 0.62, 0.3, 0.108]),
+      Object.freeze([0.75, 0.06, 0.73, 0.66, 0.65, 0.054]),
+      Object.freeze([1.35, 0.018, 0.8, 0.81, 0.5, 0.096]),
+      Object.freeze([1.9, 0.1, 0.95, 0.56, 0.65, 0.036]),
+      Object.freeze([2.6, 0.04, 1, 0.69, 0.35, 0.072]),
     ]),
   }),
   // None of it reaches the text: it eases out over `text[0]` of the screen's
@@ -319,7 +322,7 @@ export const LENS_FX = Object.freeze({
   // frame's share [x0, y0, x1, y1] from its top-left corner, kept whole, with
   // the lens easing in over `keepSoft` frame heights beyond it. Looking up toward the star
   // from the east, The watch sees them across the lower middle of the frame, behind the name
-  // and under the lookout (0.09-0.76 of the width, from 0.37 of the height down, at 1440x800
+  // (0.09-0.76 of the width, from 0.37 of the height down, at 1440x800
   // to 2560x1080); the star stands to their right.
   keep: Object.freeze({ "The watch": Object.freeze([0.08, 0.36, 0.78, 1]) }),
   keepSoft: 0.03,
@@ -418,12 +421,12 @@ vec2 lensFringe(vec2 v, vec4 star) {
 // The scene through the lens at uv (screen position v): the heat's drift, the
 // shot's focus, then the aberration's fringes, all eased off behind the text
 // and the kept banks.
-vec4 lensView(sampler2D map, vec2 uv, vec2 v, float blur, vec4 star, vec4 flame, vec4 keep, float guard) {
+vec4 lensView(sampler2D map, vec2 uv, vec2 v, float blur, vec3 ground, vec4 star, vec4 flame, vec4 keep, float guard) {
   // No early return: the focus's taps stay in uniform control flow.
   float open = (1.0 - guard) * (1.0 - lensKeep(keep, v, 0.0));
   vec2 q = uv;
   if (uLens.x > 0.0 && open > 0.0) q += lensHeat(v, star, flame) * (uLens.x * open);
-  vec4 texel = lensBlur(map, q, blur);
+  vec4 texel = lensBlur(map, q, blur, ground);
   if (uLens.y > 0.0) {
     vec2 s = lensFringe(v, star) * (uLens.y * open);
     vec4 centre = blur > 0.0 ? texture2D(map, q) : texel;
@@ -475,6 +478,9 @@ const VIGNETTE_GRAIN_SHADER = {
     uCssTexel: { value: new Vector2(1, 1) },
     uBlur: { value: 0 },
     uBlurPrev: { value: 0 },
+    // The focus over the plain's depth, affine in UV (setLens()), live and kept.
+    uGround: { value: new Vector3() },
+    uGroundPrev: { value: new Vector3() },
     uBars: { value: 0 },
     uGrainTime: { value: 0 },
     // The gate weave (FILM_LOOK.weave): the frame's offset in UV.
@@ -515,16 +521,22 @@ uniform vec2 uPrevOrigin;
 uniform vec2 uCssTexel;
 uniform float uBlur;
 uniform float uBlurPrev;
+uniform vec3 uGround;
+uniform vec3 uGroundPrev;
 uniform float uBars;
 uniform float uGrainTime;
 varying vec2 vUv;
 
 // The lens's shallow focus: the sky and the ranges (film depth layers below
-// the ground's) soften over a disc of radius CSS px. Only taps from the same
-// layer or a farther one count, so the subject never bleeds into the sky.
-vec4 lensBlur(sampler2D map, vec2 uv, float radius) {
+// the ground's) soften over a disc of radius CSS px; the ground as a thin lens
+// sees it, by how far it lies from the focus along this pixel's ray (ground:
+// the focus's distance over the plain's depth there, affine in uv), at most
+// 1.5 radii nearer the lens; the subject never. Only taps from the same layer
+// or a farther one count, so the subject never bleeds into the sky.
+vec4 lensBlur(sampler2D map, vec2 uv, float radius, vec3 ground) {
   vec4 centre = texture2D(map, uv);
   if (radius <= 0.0) return centre;
+  if (centre.a > 0.5) radius *= min(abs(1.0 - max(dot(ground, vec3(uv, 1.0)), 0.0)), 1.5) * step(centre.a, 0.8);
   vec3 sum = centre.rgb;
   float weight = 1.0;
   for (int i = 1; i < 13; i++) {
@@ -534,10 +546,10 @@ vec4 lensBlur(sampler2D map, vec2 uv, float radius) {
     sum += tap.rgb * w;
     weight += w;
   }
-  // The ground and the subject stay sharp, their anti-aliased edges too: the
-  // nearest layer over a 1px cross decides.
+  // The subject stays sharp, its anti-aliased edges too: the nearest layer
+  // over a 1px cross decides.
   float near = max(max(centre.a, texture2D(map, uv + vec2(uCssTexel.x, 0.0)).a), max(texture2D(map, uv - vec2(uCssTexel.x, 0.0)).a, max(texture2D(map, uv + vec2(0.0, uCssTexel.y)).a, texture2D(map, uv - vec2(0.0, uCssTexel.y)).a)));
-  return vec4(mix(sum / weight, centre.rgb, step(0.5, near)), centre.a);
+  return vec4(mix(sum / weight, centre.rgb, step(0.8, near)), centre.a);
 }
 
 float hash(vec2 p) {
@@ -619,7 +631,7 @@ vec3 starSky(vec2 uv, vec2 c, float r, vec2 aspect, vec3 own) {
   }
 void main() {
   float guard = uLayered > 0.5 ? max(lensBehind(slateText, vUv, ${lensNumber(LENS_FX.text[0])}), lensBehind(slateAbout, vUv, ${lensNumber(LENS_FX.text[1])})) : 0.0;
-  vec4 texel = uLayered > 0.5 ? lensView(tDiffuse, vUv, vUv, uBlur, uStar, uFlame, uKeep, guard) : texture2D(tDiffuse, vUv);
+  vec4 texel = uLayered > 0.5 ? lensView(tDiffuse, vUv, vUv, uBlur, uGround, uStar, uFlame, uKeep, guard) : texture2D(tDiffuse, vUv);
   // The kept frame pushes in about its origin: here it shows its own pixel prevUv,
   // so its lens (heat, fringes, kept rect and flare) is placed in its own UV and
   // stays on its own star and flame.
@@ -644,7 +656,7 @@ void main() {
       }
     }
     w = smoothstep(start, start + span, uProgress);
-    vec4 prevTexel = uLayered > 0.5 ? lensView(tPrev, prevUv, prevUv, uBlurPrev, uStarPrev, uFlamePrev, uKeepPrev, guard) : texture2D(tPrev, prevUv);${
+    vec4 prevTexel = uLayered > 0.5 ? lensView(tPrev, prevUv, prevUv, uBlurPrev, uGroundPrev, uStarPrev, uFlamePrev, uKeepPrev, guard) : texture2D(tPrev, prevUv);${
       DISSOLVE_SOFT.on
         ? /* glsl */ `
     // The incoming subject washes in on one long weight, its gaps with it (DISSOLVE_SOFT.wash).
@@ -819,12 +831,26 @@ class SceneRenderPass extends RenderPass {
   }
 }
 
+// The scene light the tone curve shows at .9 (EOTF .787), over .9.
+const BLOOM_LIT =
+  ((FILM_TONE.mid * 0.787) / 0.213) ** (1 / FILM_TONE.contrast) / filmExposure() / 0.9;
+
 export function createPostprocessPipeline(renderer, scene, camera, qualityProfile, options = {}) {
   const composer = new EffectComposer(renderer);
   const renderPass = new SceneRenderPass(scene, camera);
   const size = getSize(renderer);
   const bloomPass = new UnrealBloomPass(size, 0.18, 0.45, 0.9);
+  // Bloom finds the bright lights: the lit layers' (codes from .2) scene light
+  // against its threshold as the tone curve shows it (BLOOM_LIT: the scene light
+  // shown at .9, over .9), so moonlit ground never glows; the painted sky's as shown.
+  bloomPass.materialHighPassFilter.fragmentShader =
+    bloomPass.materialHighPassFilter.fragmentShader.replace(
+      "float v = dot( texel.xyz, luma );",
+      `float v = dot( texel.xyz, luma ) / mix( 1.0, ${BLOOM_LIT.toFixed(3)}, smoothstep( 0.17, 0.25, texel.a ) );`,
+    );
   const gradingPass = new ShaderPass(GRADING_SHADER);
+  // ShaderPass clones its uniforms: the tone curve's is the shared one.
+  gradingPass.uniforms.uTone = FILM_TONE_UNIFORM;
   const vignetteGrainPass = new ShaderPass(VIGNETTE_GRAIN_SHADER);
   // Bloom adds light, not depth: in film its composite keeps the layer codes.
   Object.assign(bloomPass.blendMaterial, {
@@ -980,7 +1006,6 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
     gradingPass.uniforms.uHighlightWarmMix.value = settings.highlightWarmMix ?? 0.14;
     gradingPass.uniforms.uShadowCoolMix.value = settings.shadowCoolMix ?? 0.25;
     gradingPass.uniforms.uLayerRelief.value = film ? 1 : 0;
-    gradingPass.uniforms.uShadowToe.value = film ? 0.24 : 0;
     // In film the final pass always draws: it staggers the dissolve and writes
     // opaque alpha, so layer codes never reach the transparent canvas.
     vignetteGrainPass.enabled = film || vignetteEnabled || grainEnabled || phase !== IDLE;
@@ -1142,6 +1167,7 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
         if (phase !== BLENDING) {
           phase = ARMED;
           finalUniforms.uBlurPrev.value = finalUniforms.uBlur.value;
+          finalUniforms.uGroundPrev.value.copy(finalUniforms.uGround.value);
         }
       } else if (progress >= 1 || phase === ARMED) {
         phase = IDLE;
@@ -1153,10 +1179,24 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
       syncProtection();
       if (wasIdle !== (phase === IDLE)) applyProfile(currentProfile);
     },
-    // The shot's lens: background blur in CSS px, set with the shot (on a cut).
-    setLens(lens = null) {
-      const blur = lens?.blur ?? 0;
-      finalUniforms.uBlur.value = film ? blur : 0;
+    // The shot's lens: background blur in CSS px, set with the shot (on a cut), and
+    // its focus on the camera's subject at `focus`: the plain (a level plane at
+    // `ground`) lies out of focus by its depth along each ray, whose inverse is
+    // affine in the frame's UV (uGround: that times the focus's distance).
+    setLens(lens = null, camera = null, focus = null, ground = 0) {
+      const blur = film ? (lens?.blur ?? 0) : 0,
+        g = finalUniforms.uGround.value.set(0, 0, 0);
+      finalUniforms.uBlur.value = blur;
+      if (blur && camera && focus) {
+        const m = camera.matrixWorld.elements,
+          p = camera.projectionMatrix.elements,
+          f =
+            ((focus.x - m[12]) * m[8] + (focus.y - m[13]) * m[9] + (focus.z - m[14]) * m[10]) /
+            (m[13] - ground),
+          a = m[1] / p[0],
+          b = m[5] / p[5];
+        g.set(2 * a * f, 2 * b * f, ((p[8] - 1) * a + (p[9] - 1) * b - m[9]) * f);
+      }
     },
     // Widescreen bars as a share of the height at each edge.
     setBars(share = 0) {

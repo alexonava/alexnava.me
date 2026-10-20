@@ -373,13 +373,13 @@ test("broader current clusters keep matched variance through partial footprints 
       "the actual broader current uses its own footprint",
     );
     assert.ok(
-      sampleFrequency < 4,
-      "primary mass consists of broader clusters, with fine wisps independent",
+      sampleFrequency < 8,
+      "the primary streams are a few across, with fine wisps independent",
     );
     assert.equal(sample([0.1, 0.9, 0.3], [0, 0, 0]), 0.5);
     const normalizedVariance = (a) => {
       const value = squared.reduce((sum, weight, i) => sum + weight * a[i] ** 2, 0);
-      return value / Math.max(0.5, Math.sqrt(value)) ** 2;
+      return value / Math.max(0.3, Math.sqrt(value)) ** 2;
     };
     assert.ok(
       Math.abs(normalizedVariance([1, 0, 0]) - normalizedVariance([1, 1, 1])) < 1e-12,
@@ -402,7 +402,7 @@ test("broader current clusters keep matched variance through partial footprints 
   }
 });
 
-test("falling water keeps dark continuous thickness under white current and thins smoothly into its spray", () => {
+test("falling water keeps dark continuous thickness under white current and whitens into the impact at its foot", () => {
   const falls = createFalls({
     lib,
     clock: clock(),
@@ -415,16 +415,17 @@ test("falling water keeps dark continuous thickness under white current and thin
       travel = shader.match(/float tau=([^;]+);/)?.[1],
       froth = shader.match(/,mix\(([\d.]+),([\d.]+),d\),white\)/),
       body = shader.match(/water=mix\(water,lit\*([\d.]+),white\);/),
-      thinning = shader.match(/foam\*=([^;]+);/)?.[1],
+      whiten = shader.match(/foam=(mix\(foam,max\(foam,[^;]+\),toe\*[\d.]+\));/)?.[1],
       coarse = shader.match(/a1=1\.-smoothstep\([\d.]+,[\d.]+,max\(fx\*([\d.]+),ft\*([\d.]+)\)\)/);
-    assert.ok(toe && travel && coarse && froth && body && thinning);
+    assert.ok(toe && travel && coarse && froth && body && whiten);
     const aeration = new Function(
         "vSeaY",
         "y",
         "smoothstep",
         `return ${toe.replace("vW.y", "y")};`,
       ),
-      thin = new Function("toe", "r2", "smoothstep", `return ${thinning};`),
+      foot = new Function("foam", "toe", "r2", "mix", "max", `return ${whiten};`),
+      mix = (a, b, t) => a + (b - a) * t,
       tau = new Function("v", "min", "max", "log", "clamp", `return ${travel};`),
       clamp = (x, a, b) => Math.max(a, Math.min(b, x));
     const discard = [...shader.matchAll(/if\(([^;]+)\)discard;/g)];
@@ -436,18 +437,27 @@ test("falling water keeps dark continuous thickness under white current and thin
       intensity(1) / intensity(0) > 3.5,
       "aerated clusters retain depth rather than a flat grey floor",
     );
-    for (let density = 0; density <= 1; density += 0.05) {
-      assert.equal(thin(0, density, smoothstep), 1, "head and main current are not faded");
-      assert.ok(thin(1, density, smoothstep) >= 0.5 && thin(1, density, smoothstep) <= 1);
-    }
+    // Above the impact the streams are as they are; at the foot they churn white.
+    for (let foam = 0; foam <= 1; foam += 0.1)
+      for (let r2 = 0; r2 <= 1; r2 += 0.25) {
+        assert.equal(
+          foot(foam, 0, r2, mix, Math.max),
+          foam,
+          "head and main current are not changed",
+        );
+        const atFoot = foot(foam, 1, r2, mix, Math.max);
+        assert.ok(atFoot >= foam - 1e-9 && atFoot >= 0.6 && atFoot <= 1, "white where it lands");
+      }
     assert.equal(aeration(SEA.level, SEA.level + 3, smoothstep), 0);
     assert.equal(aeration(SEA.level, SEA.level, smoothstep), 1);
     assert.ok(aeration(SEA.level, SEA.level + 1, smoothstep) > 0.4);
     const lowerTravel =
       tau(1.9, Math.min, Math.max, Math.log, clamp) - tau(1.1, Math.min, Math.max, Math.log, clamp);
+    assert.ok(shader.includes("4.5*(tau-seaTime)"), "the streams move with the water itself");
+    assert.ok(shader.includes("*(tau-seaTime)),seaTime*.3).x);"), "packets fall with the water");
     assert.ok(
-      lowerTravel * +coarse[2] > 1.5 && lowerTravel * +coarse[2] < 3.5,
-      "clusters turn over down the drop while keeping their vertical flow direction",
+      lowerTravel * +coarse[2] > 0.7 && lowerTravel * +coarse[2] < 3.5,
+      "long streams turn over down the drop (never a frozen curtain), keeping their vertical flow",
     );
   } finally {
     falls.dispose();

@@ -8,7 +8,7 @@ Every place the site's words live, the checks that hold them in step, and how to
 | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | `<title>`, `og:title`, `twitter:title`, `apple-mobile-web-app-title` | Alex Nava                                                                                                                                       |
 | `description`, `og:description`, `twitter:description`               | Alex Nava’s personal website                                                                                                                    |
-| `og:image:alt`, `twitter:image:alt`                                  | Alex Nava — a timber lookout tower under a moonlit sky                                                                                          |
+| `og:image:alt`, `twitter:image:alt`                                  | Alex Nava — a warm star in a painted night sky                                                                                                  |
 | `.skip-link`                                                         | Skip to main content                                                                                                                            |
 | `.hero h1` (two `.hero-word` spans)                                  | Alex, Nava                                                                                                                                      |
 | `.hero-intro`                                                        | A little about me and what I’m working on.                                                                                                      |
@@ -46,7 +46,7 @@ From `test/markup-accessibility.test.mjs` unless named:
 - The JSON-LD `dateModified` equals `public/index.md`'s `dateModified` (two tests).
 - The JSON-LD is a `ProfilePage` whose `description` is the site description; its `Person` has exactly `@type`, `name` and `url`.
 - "Alex Nava’s personal website" appears at least three times in index.html, and the title is `<title>Alex Nava</title>`.
-- Both image alt texts read Alex Nava — a timber lookout tower under a moonlit sky.
+- Both image alt texts read Alex Nava — a warm star in a painted night sky.
 - index.html has exactly one `mailto:` link, Contact's, wrapped in `<!--email_off-->`, and no address outside the markers.
 - The footer holds Contact and its two links; the 404's `main` is verbatim: the eyebrow 404, the heading That page isn't here., the text The way back is just below. and Home.
 - The 404's meta description equals index.html's.

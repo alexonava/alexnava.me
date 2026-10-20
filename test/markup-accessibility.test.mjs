@@ -700,7 +700,7 @@ test("landmarks and heading levels describe the page structure", async () => {
 
 test("social previews describe the share image", async () => {
   const html = flatHtml(await readIndexHtml());
-  const alt = "Alex Nava — a timber lookout tower under a moonlit sky";
+  const alt = "Alex Nava — a warm star in a painted night sky";
   assert.ok(html.includes(`<meta property="og:image:alt" content="${alt}" />`));
   assert.ok(html.includes(`<meta name="twitter:image:alt" content="${alt}" />`));
 });

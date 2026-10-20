@@ -23,18 +23,18 @@ export const ROCK_TYPES = Object.freeze({
 });
 
 // [id, anchor, world angle atan2(z, x) in degrees, distance, type, height].
-// A: by the tower base (below the lookout's frames, which look up). G: a distant silhouette
+// A: by the watch's terrace (below The watch's frame, which looks up). G: a distant silhouette
 // in the fog. C: behind Root and lantern and Portrait. D: behind the lantern, to the right,
 // in Lantern study on landscape phones (desktops look past it, from -125). F: the right side of Portrait. E: at the lantern's foot.
 // N: beyond the tree's north root, right of the trunk in Portrait, behind the
 // lantern.
 export const ROCK_CLUSTERS = Object.freeze(
   [
-    ["A1", "tower", -145.6, 21.2, "lichen", 3.4],
-    ["A2", "tower", -162.8, 22.0, "weathered", 1.6],
-    ["A3", "tower", -133.9, 21.9, "weathered", 0.55],
-    ["A4", "tower", -153.4, 21.9, "lichen", 0.4],
-    ["G1", "tower", -163.8, 64.6, "weathered", 5.0],
+    ["A1", "watch", -145.6, 21.2, "lichen", 3.4],
+    ["A2", "watch", -162.8, 22.0, "weathered", 1.6],
+    ["A3", "watch", -133.9, 21.9, "weathered", 0.55],
+    ["A4", "watch", -153.4, 21.9, "lichen", 0.4],
+    ["G1", "watch", -163.8, 64.6, "weathered", 5.0],
     ["C1", "tree", 15, 13.0, "weathered", 3.8],
     ["C2", "tree", 5, 14.5, "lichen", 0.7],
     ["C3", "tree", 25, 11.8, "weathered", 0.45],

@@ -116,16 +116,16 @@ export function createCinematicCamera({
   getSafeArea,
   getGroundY,
   // How a subject is measured for a shot: the model itself (measureShot), or a
-  // stored measurement that stands in for it before it loads. A shot with its
-  // own measure and fit (ocean.js coastShot()) frames itself.
+  // stored measurement (the watch's, opening-star.js watchMeasure()). A shot
+  // with its own measure and fit (ocean.js coastShot()) frames itself.
   measure = measureShot,
 }) {
-  let tower = null,
+  let watch = null,
     tree = null,
     disposed = false,
     started = null,
     applied = false;
-  let status = { tower: "pending", tree: "pending" };
+  let status = { watch: "pending", tree: "pending" };
   const target = new Vector3(),
     aim = new Vector3();
   // The fit in use: { shot, measured, fitted, width, height, area, areaKey }.
@@ -237,11 +237,11 @@ export function createCinematicCamera({
     return fitted;
   }
   function resolved() {
-    if (status.tower === "fallback" || status.tower === "procedural") return "orbit";
-    if (!tower || status.tower !== "ready") return null;
-    if (selected === "tower") return "tower";
+    if (status.watch === "fallback" || status.watch === "procedural") return "orbit";
+    if (!watch || status.watch !== "ready") return null;
+    if (selected === "watch") return "watch";
     if (tree && status.tree === "ready") return "tree";
-    return ["fallback", "procedural"].includes(status.tree) ? "tower" : null;
+    return ["fallback", "procedural"].includes(status.tree) ? "watch" : null;
   }
   return {
     get selected() {
@@ -253,9 +253,9 @@ export function createCinematicCamera({
     isAvailable(kind) {
       return (
         !disposed &&
-        Boolean(tower) &&
-        status.tower === "ready" &&
-        (kind === "tower" || (kind === "tree" && Boolean(tree) && status.tree === "ready"))
+        Boolean(watch) &&
+        status.watch === "ready" &&
+        (kind === "watch" || (kind === "tree" && Boolean(tree) && status.tree === "ready"))
       );
     },
     setPreviewShot(kind, nextAngle) {
@@ -277,7 +277,7 @@ export function createCinematicCamera({
     prepare(kind, nextAngle, width, height) {
       const base = DIRECTED_SHOTS[kind]?.[nextAngle];
       if (!base || !this.isAvailable(kind)) return "unavailable";
-      const root = kind === "tree" ? tree : tower,
+      const root = kind === "tree" ? tree : watch,
         shot = resolveDirectedShot(base, width, height);
       root.updateWorldMatrix(true, false);
       const measured = cachedMeasurement(root, shot);
@@ -313,7 +313,7 @@ export function createCinematicCamera({
       lock = null;
       measurements.clear();
       fits.clear();
-      if (kind === "tower") tower = root;
+      if (kind === "watch") watch = root;
       else tree = root;
     },
     setStatus(record) {
@@ -339,7 +339,7 @@ export function createCinematicCamera({
         return false;
       }
       started ??= elapsedSeconds;
-      const root = view === "tree" ? tree : tower;
+      const root = view === "tree" ? tree : watch;
       root.updateWorldMatrix(true, true);
       const shot = resolveDirectedShot(
         DIRECTED_SHOTS[view][angle] || DIRECTED_SHOTS[view][0],
@@ -465,7 +465,7 @@ export function createCinematicCamera({
     dispose() {
       if (disposed) return false;
       disposed = true;
-      tower = tree = null;
+      watch = tree = null;
       lock = currentShot = null;
       measurements.clear();
       fits.clear();

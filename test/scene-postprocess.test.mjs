@@ -11,6 +11,7 @@ import {
   ZeroFactor,
 } from "three";
 import { DEPTH_LAYER, STAR_LAYER } from "../src/scene/depth-layers.js";
+import { FILM_TONE, FILM_TONE_UNIFORM, filmExposure } from "../src/scene/film-light.js";
 import {
   createPostprocessPipeline,
   DISSOLVE_BRUSH,
@@ -508,16 +509,23 @@ test("in film the grade's cel step and ink are the sky's alone; everything else 
     shader,
     /color = mix\(color, celColor, uCelMix \* celWeight \* \(1\.0 - groundLayer\) \* \(1\.0 - starLayer\)\);/,
   );
-  assert.equal(g.uShadowToe.value, 0.24);
-  assert.match(shader, /color \*= 1\.0 - uShadowToe \* \(1\.0 - skyLayer\)/);
+  // The lit layers (codes from .2: the ranges, the ground, the subjects) pass the
+  // film's tone curve in scene light (film-light.js FILM_TONE); the sky and the
+  // star stay as shown, and the curve's toe is their deep shade.
+  assert.match(
+    shader,
+    /float scene = uLayerRelief \* uTone\.w \* smoothstep\(0\.17, 0\.25, texel\.a\);\s*vec3 color = mix\(texel\.rgb, filmTone\(texel\.rgb\), scene\);/,
+  );
+  assert.equal(g.uTone, FILM_TONE_UNIFORM, "the shared tone uniform");
+  assert.doesNotMatch(shader, /uShadowToe/);
   assert.doesNotMatch(shader, /uSubjectCel|float relief|skySide/);
   // The star's mask, STAR_LAYER from each of its four parts, stays inside the
   // exemption's plateau.
   assert.ok(4 * STAR_LAYER <= 0.22);
-  // A soft highlight shoulder from 0.75 rolls off toward white before the clamp.
+  // The sky's soft highlight shoulder from 0.75 rolls off toward white before the clamp.
   assert.match(
     shader,
-    /vec3 over = max\(color - 0\.75, 0\.0\);\s*color = mix\(color, min\(color, 0\.75\) \+ 0\.25 \* \(1\.0 - exp\(-over \/ 0\.25\)\), uLayerRelief\);\s*gl_FragColor = vec4\(clamp\(color, 0\.0, 1\.0\), texel\.a\);/,
+    /vec3 over = max\(color - 0\.75, 0\.0\);\s*color = mix\(color, min\(color, 0\.75\) \+ 0\.25 \* \(1\.0 - exp\(-over \/ 0\.25\)\), uLayerRelief \* \(1\.0 - scene\)\);\s*gl_FragColor = vec4\(clamp\(color, 0\.0, 1\.0\), texel\.a\);/,
   );
   // The post ink, in film, only where the pixel and its four neighbours are all
   // sky (the clouds' own edges): no outline on the subjects, mountains or ground.
@@ -531,11 +539,10 @@ test("in film the grade's cel step and ink are the sky's alone; everything else 
   pipeline.dispose();
 });
 
-test("the generated film grade has no non-sky cel response and preserves a continuous independent toe", () => {
+test("the generated film grade has no non-sky cel response; the lit layers' tone curve is monotone and anchored", () => {
   const pipeline = createPipeline({ postprocessGrading: true });
   pipeline.setFilmTreatment(true);
   const shader = pipeline.passes.grading.material.fragmentShader,
-    uniform = pipeline.passes.grading.uniforms,
     smoothstep = (a, b, x) => {
       const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
       return t * t * (3 - 2 * t);
@@ -548,17 +555,7 @@ test("the generated film grade has no non-sky cel response and preserves a conti
     ground = layer("groundLayer"),
     star = layer("starLayer"),
     cel = new Function("skyLayer", "uLayerRelief", "mix", `return ${expression("celWeight")};`),
-    toeExpression = shader.match(/color \*= ([^;]*uShadowToe[^;]*);/)[1],
-    toe = new Function(
-      "uShadowToe",
-      "skyLayer",
-      "groundLayer",
-      "starLayer",
-      "gradedLuma",
-      "smoothstep",
-      `return ${toeExpression};`,
-    );
-  assert.doesNotMatch(toeExpression, /uCelMix|tonalBand|celColor/);
+    lit = (code) => smoothstep(0.17, 0.25, code);
   for (const code of [
     0,
     STAR_LAYER,
@@ -572,30 +569,35 @@ test("the generated film grade has no non-sky cel response and preserves a conti
       t = star(texel, 1, smoothstep, Math.abs),
       weight = cel(s, 1, mix) * (1 - g) * (1 - t);
     assert.equal(weight, code === 0 ? 1 : 0, `cel coverage for depth ${code}`);
-    let last = 0;
-    for (let i = 1; i <= 1000; i++) {
-      const luma = i / 1000,
-        factor = toe(uniform.uShadowToe.value, s, g, t, luma, smoothstep),
-        output = luma * factor;
-      assert.ok(output > last && output - last < 0.002, "continuous monotone environment shading");
-      if (code === 0 || code === STAR_LAYER || code === Number(DEPTH_LAYER.ground))
-        assert.equal(factor, 1, "sky, glow and ground keep their existing tones");
-      if (
-        code >= Number(DEPTH_LAYER.mountains) &&
-        code !== Number(DEPTH_LAYER.ground) &&
-        luma <= 0.05
-      )
-        assert.equal(
-          factor,
-          0.76,
-          "preserve the former deepest shadow exposure without a cel band",
-        );
-      last = output;
-    }
+    assert.equal(lit(code), code < 0.17 ? 0 : 1, `tone coverage for depth ${code}`);
     assert.equal(cel(s, 0, mix), 1, "the debug baseline retains its previous palette");
   }
-  pipeline.setFilmTreatment(false);
-  assert.equal(uniform.uShadowToe.value, 0);
+  // The curve on luminance: exposure, x^p/(x^p+k), the display's encode. The
+  // exposure shows FILM_TONE.anchor where it was; below it the toe keeps the
+  // shade near as it was, above it the shoulder rolls highlights off, and it
+  // rises continuously everywhere.
+  const [exposure, p, k, on] = FILM_TONE_UNIFORM.value.toArray(),
+    oetf = (v) => (v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055),
+    curve = (v) => {
+      const t = (v * exposure) ** p;
+      return oetf(t / (t + k));
+    };
+  assert.equal(on, 1);
+  assert.deepEqual([exposure, p, k], [filmExposure(), FILM_TONE.contrast, FILM_TONE.mid]);
+  assert.ok(Math.abs(curve(FILM_TONE.anchor) - FILM_TONE.anchor) < 1e-9);
+  assert.ok(Math.abs(curve(0.05) - 0.05) < 0.04, "the shade near as it was");
+  assert.ok(curve(1) < 0.75 && curve(16) < 1, "highlights roll off, never clip");
+  let last = 0;
+  for (let i = 1; i <= 4000; i++) {
+    const out = curve(i / 1000);
+    assert.ok(out > last && out - last < 0.01, "continuous and monotone");
+    last = out;
+  }
+  // The night's colour: a camera balanced a little warm of the moon, and dimmed colour.
+  const [r, g, b] = FILM_TONE.balance;
+  assert.ok(b > g && g > r && r > 0.9 && b < 1.1);
+  assert.ok(FILM_TONE.saturation > 0.7 && FILM_TONE.saturation < 1);
+  assert.match(shader, /uniform vec4 uTone;\nvec3 filmTone\(vec3 x\)\{/);
   pipeline.dispose();
 });
 
@@ -1221,11 +1223,11 @@ test("the final pass decodes each frame's layer from a 5-tap cross and mixes by 
   // and its heat, fringes and kept rect (LENS_FX).
   assert.match(
     shader,
-    /w = smoothstep\(start, start \+ span, uProgress\);\s*vec4 prevTexel = uLayered > 0\.5 \? lensView\(tPrev, prevUv, prevUv, uBlurPrev, uStarPrev, uFlamePrev, uKeepPrev, guard\) : texture2D\(tPrev, prevUv\);[\s\S]*?texel = mix\(prevTexel, texel, w\);\s*protection = mix\(uTextProtectionFrom, uTextProtection, w\);/,
+    /w = smoothstep\(start, start \+ span, uProgress\);\s*vec4 prevTexel = uLayered > 0\.5 \? lensView\(tPrev, prevUv, prevUv, uBlurPrev, uGroundPrev, uStarPrev, uFlamePrev, uKeepPrev, guard\) : texture2D\(tPrev, prevUv\);[\s\S]*?texel = mix\(prevTexel, texel, w\);\s*protection = mix\(uTextProtectionFrom, uTextProtection, w\);/,
   );
   assert.match(
     shader,
-    /vec4 texel = uLayered > 0\.5 \? lensView\(tDiffuse, vUv, vUv, uBlur, uStar, uFlame, uKeep, guard\) : texture2D\(tDiffuse, vUv\);/,
+    /vec4 texel = uLayered > 0\.5 \? lensView\(tDiffuse, vUv, vUv, uBlur, uGround, uStar, uFlame, uKeep, guard\) : texture2D\(tDiffuse, vUv\);/,
   );
   assert.match(
     shader,
@@ -1436,6 +1438,27 @@ test("the shot's lens blurs only in film, the bars cut the frame and the grain s
   pipeline.setLens(null);
   assert.equal(final.uBlur.value, 0, "no lens is sharp");
 
+  // Its focus on the subject, on the plain: there a thin lens's circle is nil (the
+  // focus's distance over the depth, uGround's dot with (u, v, 1), is 1), and the plain
+  // farther along the ray and nearer the lens falls out of focus by its depth.
+  const camera = new PerspectiveCamera(40, 16 / 9, 0.1, 500),
+    subject = new Vector3(1, 0, 0),
+    depth = (p) => p.clone().sub(camera.position).dot(camera.getWorldDirection(new Vector3())),
+    focus = (p) => {
+      const v = p.clone().project(camera),
+        g = final.uGround.value;
+      return g.x * (v.x * 0.5 + 0.5) + g.y * (v.y * 0.5 + 0.5) + g.z;
+    };
+  camera.position.set(0, 3, 10);
+  camera.lookAt(0, 0.5, 0);
+  camera.setViewOffset(1600, 900, 40, -30, 1600, 900);
+  camera.updateMatrixWorld();
+  pipeline.setLens({ blur: 8 }, camera, subject, 0);
+  for (const p of [subject, new Vector3(-2, 0, -12), new Vector3(0.5, 0, 6)])
+    assert.ok(Math.abs(focus(p) - depth(subject) / depth(p)) < 1e-9);
+  pipeline.setLens({}, camera, subject, 0);
+  assert.deepEqual(final.uGround.value.toArray(), [0, 0, 0], "no blur, no focus");
+
   // No per-shot grade: in film the subjects take no cel step at all.
   assert.equal(pipeline.setGrade, undefined);
   assert.equal(pipeline.passes.grading.uniforms.uSubjectCel, undefined);
@@ -1445,8 +1468,10 @@ test("the shot's lens blurs only in film, the bars cut the frame and the grain s
   pipeline.setLens({ blur: 5 });
   frame();
   assert.equal(final.uBlurPrev.value, 0, "an ordinary frame leaves the kept focus");
+  const kept = final.uGround.value.clone();
   capture();
   assert.equal(final.uBlurPrev.value, 5);
+  assert.deepEqual(final.uGroundPrev.value, kept, "and its focus");
   pipeline.setLens({ blur: 10 });
   pipeline.setTransition({ capture: false, cut: true, progress: 0.4, zoom: 0.01 });
   assert.equal(final.uBlur.value, 10);
@@ -1486,8 +1511,13 @@ test("the shot's lens blurs only in film, the bars cut the frame and the grain s
   // The bars come after the text shade, so nothing draws over them.
   const shade = shader.indexOf("protection * textShade;");
   assert.ok(shade > 0 && shader.indexOf("uBars));") > shade);
-  // The blur skips the ground and the subject (layer codes 0.5 and up) and
-  // takes no tap from a nearer layer.
+  // The blur takes the ground (layer code 2/3) by its depth, at most 1.5 radii,
+  // skips the subject (code 1) and takes no tap from a nearer layer.
+  assert.ok(
+    shader.includes(
+      "if (centre.a > 0.5) radius *= min(abs(1.0 - max(dot(ground, vec3(uv, 1.0)), 0.0)), 1.5) * step(centre.a, 0.8);",
+    ),
+  );
   assert.match(shader, /float w = step\(tap\.a, centre\.a \+ 0\.1\);/);
   // The subject's anti-aliased edge stays sharp: the nearest layer over a 1px
   // cross decides, not the edge pixel's own blended code.
@@ -1495,7 +1525,7 @@ test("the shot's lens blurs only in film, the bars cut the frame and the grain s
     shader,
     /float near = max\(max\(centre\.a, texture2D\(map, uv \+ vec2\(uCssTexel\.x, 0\.0\)\)\.a\)/,
   );
-  assert.match(shader, /mix\(sum \/ weight, centre\.rgb, step\(0\.5, near\)\)/);
+  assert.match(shader, /mix\(sum \/ weight, centre\.rgb, step\(0\.8, near\)\)/);
   pipeline.dispose();
 });
 

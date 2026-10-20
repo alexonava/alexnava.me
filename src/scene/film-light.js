@@ -1,13 +1,57 @@
 import { Matrix4, Vector2, Vector3, Vector4 } from "three";
 
-// The film's moonlight balance over the base rig (rendering.js): a strong cool
-// key over a dimmer fill, sky and ambient, so lit faces read about four times
-// their shadow side.
-export const FILM_LIGHT = Object.freeze({ key: 1.12, fill: 1.15, hemisphere: 0.88, ambient: 0.72 });
+// The film's moonlight over the base rig (rendering.js): the moon, a cool white
+// in the camera's balance (moon), is the key, many times the night sky's
+// light, so its shadows fall deep; the fill (the sky opposite the moon), the
+// hemisphere and the ambient are what the sky leaves in them. A candle in the
+// lantern (candle: its colour, architecture.js) is the one warm light.
+export const FILM_LIGHT = Object.freeze({
+  key: 2.4,
+  fill: 0.3,
+  hemisphere: 0.4,
+  ambient: 0.15,
+  moon: Object.freeze([0.62, 0.74, 1]),
+  candle: Object.freeze([1, 0.58, 0.24]),
+});
+
+// The film's tone curve (the owner's 2026-10-19 "the sky is the only artistic
+// element. everything else is photoreal"): the lit layers' scene-linear light,
+// exposed, white-balanced as a camera balanced warmer than the moon sees it
+// (`balance`), as dim as night vision's colour (`saturation`), rolls through a
+// toe and a shoulder (x^p/(x^p+k): contrast p, mid k) and is encoded for the
+// display (sRGB), on its luminance so warm and cool light keep their hue (only
+// near white do its channels roll off on their own, as film's do); the painted
+// sky and the star stay as shown (postprocess.js grading). The exposure keeps a
+// display level of `anchor` where it was, the brightest lit ground and subjects
+// behind the text, so the text's guards hold. The owner's pick of 2026-10-19:
+// "Deep" (of Open p 1.15, Film p 1.3 and Deep p 1.5), night photography's
+// deep shade under bright moonlit faces.
+export const FILM_TONE = Object.freeze({
+  contrast: 1.5,
+  mid: 0.35,
+  anchor: 0.3,
+  balance: Object.freeze([0.96, 0.99, 1.04]),
+  saturation: 0.85,
+});
+// The exposure that shows a display level of FILM_TONE.anchor unchanged.
+export function filmExposure({ contrast, mid, anchor } = FILM_TONE) {
+  const y = ((anchor + 0.055) / 1.055) ** 2.4;
+  return ((mid * y) / (1 - y)) ** (1 / contrast) / anchor;
+}
+// The grading pass's uTone: exposure, contrast, mid, and 1 (the curve on).
+export const FILM_TONE_UNIFORM = {
+  value: new Vector4(filmExposure(), FILM_TONE.contrast, FILM_TONE.mid, 1),
+};
+const toneVec = (v) => `vec3(${v.map((c) => c.toFixed(4)).join(",")})`;
+export const FILM_TONE_GLSL = `uniform vec4 uTone;
+vec3 filmTone(vec3 x){x=max(x*uTone.x*${toneVec(FILM_TONE.balance)},0.);float l=max(dot(x,vec3(.2126,.7152,.0722)),1e-6),t=pow(l,uTone.y);x=mix(vec3(l),x,${FILM_TONE.saturation.toFixed(4)});t/=t+uTone.z;vec3 h=x*(t/l),q=pow(x,vec3(uTone.y));q/=q+uTone.z;return sRGBTransferOETF(vec4(mix(h,q,smoothstep(.6,1.,max(h.r,max(h.g,h.b)))),1.)).rgb;}`;
+// Its inverse, channel by channel, for colours given as shown that light the lit
+// layers (the night sky as their environment, night-environment.js): the scene
+// light the curve shows as them.
+export const FILM_UNTONE_GLSL = `vec3 filmUntone(vec3 d){vec3 y=min(mix(pow((max(d,0.)+.055)/1.055,vec3(2.4)),d/12.92,step(d,vec3(.04045))),.995),x=pow(${FILM_TONE.mid.toFixed(4)}*y/(1.-y),vec3(${(1 / FILM_TONE.contrast).toFixed(4)}));return max(mix(vec3(dot(x,vec3(.2126,.7152,.0722))),x,${(1 / FILM_TONE.saturation).toFixed(4)}),0.)/${toneVec(FILM_TONE.balance)}/${filmExposure().toFixed(4)};}`;
 
 // A shot's `light` mood multiplies the film balance (key, fill) and the lantern.
-// Legacy rim, pale and rimText keys remain accepted without changing materials.
-// Active guards set the share of the
+// Its guards set the share of the
 // grass's colour read inside its blades (grassInside), the share of the bark's
 // glints kept off the name and intro (glintText), the share of the stones'
 // lamplight that passes its knee behind the name and intro (stoneText,
@@ -18,9 +62,6 @@ export const SHOT_LIGHT_DEFAULT = Object.freeze({
   key: 1,
   fill: 1,
   lantern: 1,
-  rim: 1,
-  pale: 0,
-  rimText: 0,
   grassInside: 0,
   glintText: 0,
   stoneText: 0,
@@ -28,30 +69,6 @@ export const SHOT_LIGHT_DEFAULT = Object.freeze({
 });
 export function shotLight(shot) {
   return { ...SHOT_LIGHT_DEFAULT, ...(shot?.light ?? {}) };
-}
-
-// Legacy shot-mood state retained for callers. Materials no longer add a
-// Fresnel diffuse outline: the moon key and their PBR response light their edges.
-// light: rgb strength and, in w, the share it keeps facing the moon; key: the
-// moon's direction in view space, kept current per frame; textReach: how far
-// past the name, the intro and Contact (a share of the screen's smaller side)
-// the tree's rim eases back in where a shot takes it off the text (its mood's
-// rimText, the uniform babelRimText; only the bark has the text's boxes, so
-// the lookout's rim is whole).
-export const RIM = Object.freeze({
-  color: Object.freeze([0.19, 0.24, 0.36]),
-  floor: 0.2,
-  textReach: 0.2,
-});
-export const RIM_UNIFORMS = Object.freeze({
-  babelRimLight: { value: new Vector4(0, 0, 0, RIM.floor) },
-  babelKeyView: { value: new Vector3(0, 0, 1) },
-  babelRimText: { value: 0 },
-});
-export function setRim(strength = 0, text = 0) {
-  const v = RIM_UNIFORMS.babelRimLight.value;
-  v.set(RIM.color[0] * strength, RIM.color[1] * strength, RIM.color[2] * strength, RIM.floor);
-  RIM_UNIFORMS.babelRimText.value = text;
 }
 
 // A mutable lantern share the tree's practical multiplies (architecture.js).
@@ -70,8 +87,8 @@ export const FLASH_GROUND = Object.freeze({
 // A lightning flash's light on every film material (lightning.js writes it):
 // an additive term after the lights, never a change to the lights themselves,
 // so it eases off behind the text like the rest of the film's guards. Every
-// lit film material takes it through flashHook() (the lookout, the tree and the
-// rocks, materialFor() in architecture.js; both lanterns; the growth, litter
+// lit film material takes it through flashHook() (the tree and the rocks,
+// materialFor() in architecture.js; both lanterns; the growth, litter
 // and rushes, estate-ground-detail.js) and the slate through its own shader
 // (mud-ground.js, at its shares of the fill and the flat light).
 // - babelFlashLight: rgb the light from the flash's side (colour times
@@ -80,8 +97,6 @@ export const FLASH_GROUND = Object.freeze({
 // - babelFlashKey: that light's world direction, toward it;
 // - babelFlashSky: rgb the sky's added light on faces turned up (as the
 //   hemisphere lends it), w the flat ambient's;
-// - babelFlashRim and babelFlashView: legacy shared state, no longer read by
-//   the physical material's flash shader;
 // - babelFlashProj: the camera's projection, babelFlashReach: how far the
 //   flash eases back in past the name and intro [x] and Contact [y] (a share of
 //   the screen's smaller side), and babelFlashText, babelFlashAbout,
@@ -91,8 +106,6 @@ export const FLASH_UNIFORMS = {
   babelFlashLight: { value: new Vector4(0, 0, 0, 0) },
   babelFlashKey: { value: new Vector3(0, 1, 0) },
   babelFlashSky: { value: new Vector4(0, 0, 0, 0) },
-  babelFlashRim: { value: new Vector4(0, 0, 0, RIM.floor) },
-  babelFlashView: { value: new Vector3(0, 0, 1) },
   babelFlashProj: { value: new Matrix4() },
   babelFlashReach: { value: new Vector2(0.25, 0.15) },
   babelFlashText: { value: { x: 2, y: 2, z: -1, w: -1 } },
@@ -106,8 +119,8 @@ export function lendFlashText(contacts) {
   FLASH_UNIFORMS.babelFlashAbout = contacts.slateAbout;
   FLASH_UNIFORMS.babelFlashAspect = contacts.slateAspect;
 }
-const FLASH_PARS = `uniform vec4 babelFlashLight, babelFlashSky, babelFlashRim, babelFlashText, babelFlashAbout;
-uniform vec3 babelFlashKey, babelFlashView;
+const FLASH_PARS = `uniform vec4 babelFlashLight, babelFlashSky, babelFlashText, babelFlashAbout;
+uniform vec3 babelFlashKey;
 uniform vec2 babelFlashReach;
 uniform float babelFlashAspect;
 uniform mat4 babelFlashProj;
@@ -116,7 +129,6 @@ float babelFlashKeep(vec3 viewPosition){vec4 c=babelFlashProj*vec4(viewPosition,
 float b=max(babelFlashBox(babelFlashText,v,babelFlashReach.x),babelFlashBox(babelFlashAbout,v,babelFlashReach.y));return (1.-b)*(1.-b);}`;
 // The flash's light after the lights, before the ambient occlusion and the
 // sum: `sky` scales its sky and flat light (a material's own share of them).
-// No view-dependent diffuse rim is added to physical materials.
 const flashTerm = (sky) => `if (babelFlashLight.w > 0.0) {
   float babelFK = babelFlashKeep(-vViewPosition);
   vec3 babelFL = (viewMatrix*vec4(babelFlashKey, 0.0)).xyz, babelFU = (viewMatrix*vec4(0.0, 1.0, 0.0, 0.0)).xyz;
@@ -125,7 +137,7 @@ const flashTerm = (sky) => `if (babelFlashLight.w > 0.0) {
 // A lit film material (standard, Lambert) takes the flash: the shared uniforms,
 // the text test and the term after its lights, composed with its own
 // onBeforeCompile and cache key. `sky` is a GLSL expression for its share of
-// the sky's and the flat light. The former `rim` option is harmlessly ignored.
+// the sky's and the flat light.
 export function flashHook(material, { sky = "1.0" } = {}) {
   if (material.userData.flash) return material;
   material.userData.flash = true;
@@ -151,14 +163,6 @@ ${FLASH_PARS}`,
   };
   return material;
 }
-
-// Legacy shot-mood exports retained for callers; physical bark keeps one
-// albedo across shots instead of consuming PALE_MOOD in its material shader.
-export const PALE = Object.freeze({
-  luma: Object.freeze([0.04, 0.22]),
-  tint: Object.freeze([0.88, 0.96, 1.12]),
-});
-export const PALE_MOOD = { value: 0 };
 
 // The bark's glints behind the name and intro under a shot's `glintText`
 // (architecture.js BARK_TEXT_GLINT): all its direct highlights there (the

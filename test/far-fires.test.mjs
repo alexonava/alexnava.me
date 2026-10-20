@@ -338,32 +338,42 @@ test("the fires borrow the slate's text boxes, and The watch keeps its reference
   assert.deepEqual(guarded.uniforms.uClear.value.toArray(), [2, 2, -1, -1]);
 });
 
-test("the subjects' silhouettes keep the fires off them, band by band", () => {
+test("the subject's silhouette keeps the fires off it, band by band", () => {
   const camera = new PerspectiveCamera(30, 16 / 9, 0.1, 450);
   camera.position.set(0, 5, 60);
   camera.lookAt(0, 5, 0);
   camera.updateMatrixWorld();
   const subject = new Group(),
-    tower = new Mesh(new BoxGeometry(6, 24, 6), new MeshBasicMaterial());
-  tower.position.y = 12;
-  subject.add(tower);
+    trunk = new Mesh(new BoxGeometry(6, 24, 6), new MeshBasicMaterial());
+  trunk.position.y = 12;
+  subject.add(trunk);
   const behind = new Group();
   behind.add(new Mesh(new BoxGeometry(4, 4, 4), new MeshBasicMaterial()));
   behind.position.set(0, 2, 120);
-  const fires = createFarFires({ parent: new Group(), camera, subjects: () => [subject, behind] });
+  // The one subject is the tree: null until it loads.
+  let roots = [null];
+  const fires = createFarFires({ parent: new Group(), camera, subjects: () => roots });
   fires.setFilmActive(true);
   fires.update({});
   const rects = fires.uniforms.uSubjects.value,
     bands = FAR_FIRES.guard.bands;
-  assert.equal(rects.length, 2 * bands);
-  // The tower's bands stack up the canvas about its centre line.
+  assert.equal(rects.length, bands);
+  assert.ok(
+    rects.every((r) => r.x > r.z),
+    "no subject yet covers nothing",
+  );
+  // A subject wholly behind the lens covers nothing.
+  roots = [behind];
+  fires.update({});
+  assert.ok(rects.every((r) => r.x > r.z));
+  roots = [subject];
+  fires.update({});
+  // Its bands stack up the canvas about its centre line.
   for (let i = 0; i < bands; i++) {
     const r = rects[i];
-    assert.ok(r.x < 0.5 && r.z > 0.5 && r.x > 0.4, `band ${i} spans the tower's width`);
+    assert.ok(r.x < 0.5 && r.z > 0.5 && r.x > 0.4, `band ${i} spans the trunk's width`);
     if (i) assert.ok(r.w > rects[i - 1].w, "each band higher than the one below");
   }
-  // A subject wholly behind the lens covers nothing.
-  for (let i = bands; i < 2 * bands; i++) assert.ok(rects[i].x > rects[i].z);
   // The bands follow the subject when its root moves (a new scene offset).
   const before = rects[0].y;
   subject.position.y = -2;
@@ -380,7 +390,7 @@ test("the subjects' silhouettes keep the fires off them, band by band", () => {
   assert.ok(rects[0].z - rects[0].x > widthBefore + 0.01, "the committed part widens its band");
   assert.match(
     fires.root.material.vertexShader,
-    /for\(int i=0;i<16;i\+\+\)keep\*=1\.-near\(uSubjects\[i\],v,0\.012,0\.02\);/,
+    /for\(int i=0;i<8;i\+\+\)keep\*=1\.-near\(uSubjects\[i\],v,0\.012,0\.02\);/,
   );
 });
 
@@ -388,7 +398,7 @@ test("the bootstrap adds the fires under the ground's root and shows them with t
   const index = flat(source("src/scene/index.js"));
   assert.match(
     index,
-    /const farFires = createFarFires\(\{ parent: environmentRoot, camera, subjects: \(\) => \[completeTower\?\.root, treeArchitecture\?\.root\], shot: shotOnScreen, textGuard: groundContacts, profile: state\.profile \}\); subsystemRegistry\.register\(farFires\);/,
+    /const farFires = createFarFires\(\{ parent: environmentRoot, camera, subjects: \(\) => \[treeArchitecture\?\.root\], shot: shotOnScreen, textGuard: groundContacts, profile: state\.profile \}\); subsystemRegistry\.register\(farFires\);/,
   );
   assert.match(index, /rockScatter\.setFilmActive\(active\); farFires\.setFilmActive\(active\);/);
 });

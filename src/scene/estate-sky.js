@@ -18,7 +18,7 @@ vec3 filmBand(float a) { return vec3(.03,.036,.048)*exp(-pow((a-.03)*6.0,2.0)); 
 // `wedge` (degrees) protects azimuths fully between its middle two values, easing out to
 // its first and last; `radius` eases that protection in from the zenith. Beyond them the
 // sky takes the reshaping, which never reaches the crop, through two weights, both 0 over
-// it: `open`, for the density, also leaves the clear lane over the roof (gapG) alone;
+// it: `open`, for the density, also leaves the clear lane over the terrace (gapG) alone;
 // `bend`, for the noise's coordinates, eases in over its own azimuths and radius, at least
 // as wide, so the coordinates never bend fast enough to shear or fold the noise.
 // - `horizon`: past radius [0] the noise's radius grows by only [1] per unit, so banks
@@ -56,7 +56,7 @@ export const CLOUD_RESHAPE = Object.freeze({
 // itself, azimuths 122-174 from radius 1.13 out, where a flash's glow is exactly 0,
 // easing back in by `wedge`'s outer values and, toward the zenith, over `radius`.
 // Tighter than the reshaping's wedge, so The watch's sky right of the crop (the
-// star's side, behind the lookout) can flash; its crop keeps every pixel.
+// star's side) can flash; its crop keeps every pixel.
 export const FLASH_REFERENCE = Object.freeze({
   wedge: Object.freeze([116, 122, 174, 184]),
   radius: Object.freeze([0.85, 1.13]),
@@ -421,8 +421,8 @@ export function cloudVortexReach(x, y) {
 // shell (no cards, passes or images). Cloud value noise uses an inline sine-free hash so
 // every GPU draws the same sky; the shared sin() hash drew different layouts on NVIDIA and
 // AMD. Noise evaluations per pixel, nebula included: high 12, balanced 9, low 4. Fixed
-// weather terms place a bank beside the intro, one beside the sun, a clear lane where the
-// roof meets the sky and an open zenith, and the open sky beyond the first takes the same
+// weather terms place a bank beside the intro, one beside the sun, a clear lane over the
+// watch's terrace and an open zenith, and the open sky beyond the first takes the same
 // broad, swirling banks (CLOUD_RESHAPE); a soft-knee cap keeps the intro backdrop at or
 // under 0.093 luminance (>= 5.4:1) even with fully lit cover. Drift is 0.4-1.3 CSS px/s
 // along a bounded circle so lattice coordinates stay small in long sessions. The opaque

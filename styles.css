@@ -785,7 +785,7 @@ body.scene-walk-hidden > :not(.scene-shell) {
    centre), fading out over their last fifth, as the final pass draws them. */
 .scene-star > .scene-star__ghost {
   --ghost: 255, 158, 77;
-  --strength: 0.18;
+  --strength: 0.108;
   border-radius: 50%;
   background: radial-gradient(
     circle closest-side,
@@ -797,23 +797,23 @@ body.scene-walk-hidden > :not(.scene-shell) {
 }
 
 .scene-star__ghost:nth-of-type(6) {
-  --ghost: 115, 179, 255;
-  --strength: 0.09;
+  --ghost: 186, 168, 166;
+  --strength: 0.054;
 }
 
 .scene-star__ghost:nth-of-type(7) {
-  --ghost: 153, 255, 179;
-  --strength: 0.16;
+  --ghost: 204, 207, 128;
+  --strength: 0.096;
 }
 
 .scene-star__ghost:nth-of-type(8) {
-  --ghost: 230, 128, 255;
-  --strength: 0.06;
+  --ghost: 242, 143, 166;
+  --strength: 0.036;
 }
 
 .scene-star__ghost:nth-of-type(9) {
-  --ghost: 255, 191, 102;
-  --strength: 0.12;
+  --ghost: 255, 176, 89;
+  --strength: 0.072;
 }
 
 @media (forced-colors: active), (prefers-contrast: more) {
@@ -1041,8 +1041,8 @@ body.scene-walk-hidden > :not(.scene-shell) {
   }
 
   /* The intro runs on one line here, its end past the reach of the hero's
-     scrim and over the subject in the close shots (Masonry study's lit post,
-     Close-up's pale branches), so it keeps its own text scrim, as Contact does: a
+     scrim and over the subject in the close shots (Close-up's pale
+     branches), so it keeps its own text scrim, as Contact does: a
      soft oval centred on the line that reaches transparent before every edge of
      its box (the hero's (1 - t²)² falloff), 0.6 at its centre. It guards the
      line over the live scene only: hero.js marks the hero is-over-scene while

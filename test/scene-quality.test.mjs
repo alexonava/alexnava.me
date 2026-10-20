@@ -551,11 +551,11 @@ test("landscapePhone and tabletPortrait profiles carry touch-friendly framing", 
   assert.equal(tablet.name, "tabletPortrait");
   assert.ok(
     landscape.camera.heightBase > 21,
-    "short landscape framing raises the camera enough to keep the tower composed",
+    "short landscape framing raises the camera enough to keep the estate composed",
   );
   assert.ok(
     landscape.camera.orbitBase < 65,
-    "short landscape framing moves closer instead of shrinking the tower",
+    "short landscape framing moves closer instead of shrinking the estate",
   );
 });
 
@@ -726,9 +726,9 @@ test("adaptive quality steps change cost settings without refetching models or t
   const architecture = registry.register(
     createArchitectureAssetController({
       loadAsset: load("model"),
-      onTowerReady: () => () => {},
+      onWatchReady: () => {},
       onTreeReady: () => () => {},
-      onRestoreTower: () => restores.push("tower"),
+      onRestoreWatch: () => restores.push("watch"),
       onRestoreTree: () => restores.push("tree"),
     }),
   );
@@ -770,8 +770,9 @@ test("adaptive quality steps change cost settings without refetching models or t
   await flush();
   await flush();
   const settled = requests.length;
-  // Models (tower, tree) and the slate (color, normal, detail, grit, relief).
-  assert.equal(settled, 2 + 5);
+  // The tree's model (the watch has none) and the slate (color, normal, detail,
+  // grit, relief).
+  assert.equal(settled, 1 + 5);
   restores.length = 0;
 
   // Mirrors updateSceneFrame after the reveal.
@@ -921,7 +922,7 @@ test("quality overrides and governor transitions are deterministic", async () =>
   assert.equal(governor.getTier(), "high");
 });
 
-test("composition profiles reframe portrait phones toward the tower", async () => {
+test("composition profiles reframe portrait phones toward the estate", async () => {
   const context = createSceneContext();
   const scene = await loadSceneScript(qualitySourcePath, context);
 

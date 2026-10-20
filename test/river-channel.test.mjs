@@ -264,7 +264,11 @@ test("authored, procedural and compacted ground shaders use the actual surface d
       assert.deepEqual(shadeSlateGround(shader), { puddles: true, shore: true, roots: true });
       assert.match(shader.vertexShader, /vSlateRiverSurface\s*=\s*slateRiverSurface/);
       assert.match(shader.fragmentShader, /slateRiverQ\.y\s*\+\s*slateFlow\s*\*\s*3\.2/);
-      assert.match(shader.fragmentShader, /exp\(-riverDepth\s*\*\s*\.8\)/);
+      // Per channel, red first, as water takes up light by depth.
+      assert.match(
+        shader.fragmentShader,
+        /vec3 riverClear\s*=\s*exp\(-riverDepth\s*\*\s*vec3\(1\.1,\s*0?\.75,\s*0?\.65\)\)/,
+      );
       assert.match(shader.fragmentShader, /riverCrest/);
       assert.match(shader.fragmentShader, /riverBank/);
       assert.match(
