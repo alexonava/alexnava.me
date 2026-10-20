@@ -62,7 +62,7 @@ export const SNOW = Object.freeze({
   tongue: 0.5,
   albedo: 0.8,
 });
-// The Meshy massifs' snow (MASSIFS): the rings' rule, deeper, with each copy's
+// The massifs' snow (MASSIFS): the rings' rule, deeper, with each copy's
 // own snowline `line` (mountain-build.js RANGE_PLACEMENTS snow), so the
 // massifs carry real caps, the lower ones too. Snow lies smoother than the rock under it: it
 // holds on the relief `hold` mip levels down, takes its soft light from
@@ -281,7 +281,7 @@ const perRange = (values, at = "vT.y") =>
     );
 
 // GLSL both film mountain materials share, the procedural ranges (EstateMountains) and the
-// Meshy massifs (EstateMeshyRanges); each reads vL (the camera-relative position), vT.y (the
+// massifs (EstateMeshyRanges); each reads vL (the camera-relative position), vT.y (the
 // range) and, from the first, the names it declares. The sky behind the pixel: the view ray
 // cast onto the real sky shell (uSky: radius squared, shell opacity) gives the film sky there
 // (s0), with the cloud banks' average lift (s) and the path light the rock hazes toward (air).
@@ -518,8 +518,8 @@ gl_FragColor=vec4(c,${DEPTH_LAYER.mountains});
   return material;
 }
 
-// The Meshy massifs (mountain-build.js RANGE_PLACEMENTS): the owner's three
-// models, one mesh each with every copy of it, drawn before the backdrop rings
+// The massifs (mountain-build.js RANGE_PLACEMENTS): three real Alpine massifs,
+// one mesh each with every copy of it, drawn before the backdrop rings
 // (renderOrder) in front of them. Their GLBs load at the startup tier when the
 // ranges are requested; their nearer layers' skyline texture follows
 // mountain-build.js RANGE_SKY (a test holds them equal).
@@ -537,7 +537,7 @@ export const MASSIFS = Object.freeze({
   sharpen: -0.75,
 });
 
-// The Meshy massifs' shading: the ranges' moonlit style on the models' own
+// The massifs' shading: the ranges' moonlit style on the models' own
 // relief. The object-space normal map (the GLB's normalTexture) is turned into
 // the world by each copy's placement (aInst: the turn's cos and sin, mirror,
 // squash); photographic albedo follows the same UVs. The mask (occlusionTexture:
@@ -699,7 +699,7 @@ function emptyRanges() {
 // under the canvas's fade-in, 1.8 s mid-shot; mountain-build.js entrance()). Until
 // then, or if the chunk fails, the film shows the empty stand-in.
 // At a model tier (tier: high or balanced, the startup tier) the request also loads
-// the Meshy massifs' GLBs (MASSIFS.roles, at low fetch priority, beside the chunk),
+// the massifs' GLBs (MASSIFS.roles, at low fetch priority, beside the chunk),
 // and the build is the massifs with RANGE_BACKDROP's two rings behind them; if a GLB
 // fails, the five rings land instead and the status reads "fallback".
 // ready: the request's promise (null until requested), settled once the ranges

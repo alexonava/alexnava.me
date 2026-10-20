@@ -94,24 +94,26 @@ test("the Meshy massifs ship as compact, quantized, object-space GLBs within the
   }
 });
 
-test("photographic packaging preserves every original mountain geometry byte", () => {
+test("the real massifs ship the recorded mountains-v2 geometry and maps, one geometry for both tiers", () => {
+  // Assets/Architecture/mountains-v2 (reports/delivery.json): the Grandes Jorasses, the Dents du Midi
+  // and the Weisshorn from public elevation data; the geometry bytes precede the maps in the buffer.
   const geometry = {
-    "mountain-ridge": "5c6c74e7f07f707e9ed14e16358db397da4f2725e6a6e2dd5980a3c86a2379b8",
-    "mountain-spine": "ffbc690f85b8e92d6a913d09b07dd6ab5b220f7e2e685c91f72f620cb27fda6b",
-    "mountain-summit": "558f9c1f1594106c0cc91d659b03b6e7b571008037bd9f0e9548fd7cfba62d07",
+    "mountain-ridge": "6fe629fe79cb2afc0e4c9de4466a560c1c2454cb0a04f09bb963053b13f6f5b4",
+    "mountain-spine": "b9976d91c1329776d3b60c3e2ce0268bb06127d8174b0e8891d0e0a7d478143b",
+    "mountain-summit": "a1b2d9b4f966d27dbd36b91cd834de58c3abb8fc02e612ddc9416f4e5d870993",
   };
   const normal = {
     "mountain-ridge": [
-      "5226d70878db2307432588d6b57fc49c49e34d62baf532cbb9996a4d375f7753",
-      "a3e3439352d02a49b934a6cdf5660c4a889ed07270e2a1f8e9499532787b611e",
+      "15522a3410e22b0884e6fe5fbc36039ac39d8d87b215b37f4bf00ac001a4ec0c",
+      "22d7bc4599d332efdbc4a665dba59930c72a43cbae20188e8eb4c1c526e829a6",
     ],
     "mountain-spine": [
-      "5eba27522ed67bf98551c0aa755fc09f8925a673ef0f1c3a6149340bf2413415",
-      "3c602339790f762f51539eb6af17a738317b7a2c75aac9ddcc77b9cde1e98156",
+      "b8a90a31614b1fb9d5d716e9d7d935b5e4d39b774d94fe61044e7ffa222de206",
+      "3056ef0ddc780f8f62de8400c0ab875a241144c8e28c65291d645b26fbde3e54",
     ],
     "mountain-summit": [
-      "218d99f4cb8fa30dde009bc1ffa781d3230aff4ed609dde67de93c2016883119",
-      "9c9b6df802c2704672abe244ab133ce317ec0411f6a8505fd2d6920981cfada4",
+      "f3c5154d5dbc9117228d40cfcfdbcae0b0cb77f7300bae6430f2808979b50e49",
+      "4939196bb249b98837a63f12c6ac769c70bddc8ee6a65a001eda58e20ca1814c",
     ],
   };
   const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -139,7 +141,15 @@ test("photographic packaging preserves every original mountain geometry byte", (
         "VP8L",
         "AO/snow channel exchange is lossless",
       );
-      assert.equal(json.accessors[json.meshes[0].primitives[0].indices].count / 3, 3799);
+      const triangles = json.accessors[json.meshes[0].primitives[0].indices].count / 3;
+      assert.ok(triangles >= 3790 && triangles <= 3800, `${role} ${triangles} triangles`);
+      // Real terrain, credited: where it came from and how far it was scaled up or down.
+      const { terrain } = json.nodes[0].extras.mountain;
+      assert.match(terrain.source, /Terrain Tiles/);
+      assert.ok(
+        terrain.verticalScale > 0.8 && terrain.verticalScale < 1.7,
+        `${role} ${terrain.verticalScale}`,
+      );
     }
 });
 
@@ -215,12 +225,12 @@ test("a placement keeps what its eye sees: the azimuth it names, its faces towar
     assert.ok(reach > 0.9 * sky.values.length, `${q.id} skyline is continuous`);
   }
   // The culled shells face the camera from inside their envelopes, and a mirror (which
-  // rewinds each triangle) faces it just as much.
+  // rewinds each triangle) faces it exactly as the plain model does from the other side.
   for (const q of RANGE_PLACEMENTS) {
     const plain = facing(placeRange(models[q.role], { ...q, mirror: false })),
       mirrored = facing(placeRange(models[q.role], { ...q, mirror: true }));
-    assert.ok(plain > 0.5, `${q.id} faces the camera (${plain.toFixed(2)})`);
-    near(mirrored, plain, 0.05);
+    assert.ok(plain > 0.5 && mirrored > 0.5, `${q.id} faces the camera (${plain.toFixed(2)})`);
+    near(mirrored, facing(placeRange(models[q.role], { ...q, mirror: false, yaw: -q.yaw })), 1e-9);
   }
 });
 
