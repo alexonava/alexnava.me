@@ -36,7 +36,7 @@ const GIANT = Object.freeze({
 // meets them softly (mud-ground.js SLATE_LOOK).
 const AFTER_RAIN = Object.freeze({
   mist: Object.freeze({ color: Object.freeze([0.27, 0.26, 0.29]), amount: 0.45 }),
-  gloss: Object.freeze({ film: 0.32, gain: 1.9, cool: 0 }),
+  gloss: Object.freeze({ film: 0.32, gain: 1, cool: 0 }),
 });
 // Portrait on upright and squat screens: the tree on the lower third, open sky above it, at
 // its own size (no tilt) and pushed in without the sideways truck. The tall frame reaches
@@ -270,12 +270,7 @@ export const DIRECTED_SHOTS = {
         tilt: [-5, 0],
         move: { dolly: [1.08, 0.94], ease: 0.5 },
       },
-      ground: {
-        burn: { amount: 0.45, reach: [0.3, 0.9] },
-        flatten: 0.6,
-        keep: [9, 20],
-        ...AFTER_RAIN,
-      },
+      ground: AFTER_RAIN,
     },
     {
       name: "Against the moon",
@@ -346,19 +341,19 @@ export const DIRECTED_SHOTS = {
       margin: 0.82,
       anchor: [0.5, 0.42],
       tilt: [-1, 4],
+      // The moon through a break in the cloud lights the plain about the tree;
+      // beyond it the cloud's shadow takes the moon and leaves the sky's light
+      // (photoreal, 2026-10-19: no staged light, burn or flattening).
       ground: {
-        burn: { amount: 0.45, reach: [0.4, 0.95] },
-        flatten: 0.5,
-        keep: [18, 34],
         clearing: {
           toward: 5,
           radius: [7, 34],
-          light: [1.64, 1.72, 1.89],
-          rest: 0.85,
-          shade: [0.55, 22, 70],
+          light: [1, 1, 1],
+          rest: 0.55,
+          shade: [0, 22, 70],
         },
         mist: { color: [0.23, 0.26, 0.335], amount: 0.8 },
-        gloss: { film: 0.32, gain: 1.9 },
+        gloss: { film: 0.32, gain: 1, cool: 0 },
         shadow: [12, 30],
       },
       // Landscape phones keep the drift: no room about the name for a move.

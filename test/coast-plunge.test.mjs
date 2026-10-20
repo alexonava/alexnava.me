@@ -101,13 +101,19 @@ test("plunge backwash clears the steady shore blanket while retaining the impact
   );
   const clear = new Function("pr", "smoothstep", `return ${clearing};`),
     core = new Function("pr", "smoothstep", `return ${coreExpression};`),
+    // boil: the boils' foam share (their borders, broken), 0 to 1.
     wash = new Function(
       "pr",
-      "fan",
+      "boil",
       "lace",
       "smoothstep",
       "mix",
-      `return ${washExpression.replace("seaFoam(pool*3.+seaTime*.08)", "lace")};`,
+      `return ${washExpression
+        .replace("seaFoam(pool*3.+seaTime*.08)", "lace")
+        .replace(
+          "(1.-smoothstep(0.,bw,cell))*smoothstep(.15,.6,seaFoam(pool*7.-seaTime*.07))",
+          "boil",
+        )};`,
     ),
     coverage = new Function("k", "shore", "core", "wash", "max", `return ${coverageExpression};`),
     mean = new Function("z", "shore", "smoothstep", `return ${meanExpression};`),
@@ -123,12 +129,12 @@ test("plunge backwash clears the steady shore blanket while retaining the impact
       `return ${finishExpression};`,
     ),
     mix = (a, b, u) => a + (b - a) * u,
-    sample = (pr, fan, lace, k = 0.75) =>
+    sample = (pr, boil, lace, k = 0.75) =>
       coverage(
         k,
         clear(pr, smoothstep),
         core(pr, smoothstep),
-        wash(pr, fan, lace, smoothstep, mix),
+        wash(pr, boil, lace, smoothstep, mix),
         Math.max,
       );
   assert.ok(
@@ -141,19 +147,21 @@ test("plunge backwash clears the steady shore blanket while retaining the impact
     fragment.indexOf("k=max(k,sf*(") > fragment.indexOf("k=max(k*shore,"),
     "stack surf is restored independently of the plunge's clearing",
   );
+  assert.doesNotMatch(fragment, /fan=sin\(/, "no rings of foam about the impact");
+  assert.ok(fragment.includes("cell=seaCells(vec2(log(pr+.08)*"), "boils spreading outward");
   for (const pr of [0, 0.03, 0.06])
-    assert.equal(sample(pr, -1, 0), 1, "impact contact remains connected");
-  const movingFans = [];
-  for (let fan = -1; fan <= 1; fan += 0.1) movingFans.push(sample(0.3, fan, 0.5));
+    assert.equal(sample(pr, 0, 0), 1, "impact contact remains connected");
+  const boils = [];
+  for (let boil = 0; boil <= 1; boil += 0.05) boils.push(sample(0.3, boil, 0.5));
   assert.ok(
-    Math.max(...movingFans) - Math.min(...movingFans) > 0.15,
-    "the moving fan can break the uniform near-shore blanket",
+    Math.max(...boils) - Math.min(...boils) > 0.15,
+    "the boils break the uniform near-shore blanket",
   );
-  assert.ok(Math.max(...movingFans) < 0.5, "no flat .75-coverage plate between impacts");
+  assert.ok(Math.max(...boils) < 0.5, "no flat .75-coverage plate between impacts");
   assert.ok(mean(0, clear(0.3, smoothstep), smoothstep) < mean(0, 1, smoothstep) * 0.25);
   for (const pr of [0.95, 1, 2]) {
     assert.equal(clear(pr, smoothstep), 1);
-    assert.equal(sample(pr, -1, 0), 0.75, "outside the existing pool the coast is unchanged");
+    assert.equal(sample(pr, 0, 0), 0.75, "outside the existing pool the coast is unchanged");
     assert.equal(mean(0, clear(pr, smoothstep), smoothstep), mean(0, 1, smoothstep));
   }
   const shaded = (k, shore, sf, fp, tier) => {
@@ -164,17 +172,17 @@ test("plunge backwash clears the steady shore blanket while retaining the impact
   for (const tier of [0, 1])
     for (const fp of [0.01, 0.6, 1.2, 3]) {
       assert.ok(
-        shaded(sample(0.3, -1, 0.5), clear(0.3, smoothstep), 0, fp, tier) <
+        shaded(sample(0.3, 0, 0.5), clear(0.3, smoothstep), 0, fp, tier) <
           shaded(0.75, 1, 0, fp, tier),
         "both tiers and near/far footprints clear the generic blanket",
       );
       assert.equal(
-        shaded(Math.max(sample(0.3, -1, 0.5), 1), clear(0.3, smoothstep), 1, fp, tier),
+        shaded(Math.max(sample(0.3, 0, 0.5), 1), clear(0.3, smoothstep), 1, fp, tier),
         shaded(1, 1, 1, fp, tier),
         "a stronger stack contribution retains both resolved foam and its far mean",
       );
       assert.equal(
-        shaded(sample(0.95, -1, 0.5), clear(0.95, smoothstep), 0, fp, tier),
+        shaded(sample(0.95, 0, 0.5), clear(0.95, smoothstep), 0, fp, tier),
         shaded(0.75, 1, 0, fp, tier),
         "the exact existing pool boundary retains its coast coverage",
       );

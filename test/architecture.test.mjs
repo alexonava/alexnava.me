@@ -93,11 +93,11 @@ test("tree retains its anchor and height with a quality-scaled non-shadow lanter
   const a = LANTERN_REACH.anchor;
   assert.ok(
     ShaderChunk.lights_pars_begin.includes(
-      `if ( decayExponent == 2.0 ) return ${(a * a).toFixed(2)} / max( lightDistance * lightDistance, ${((a * a) / 4).toFixed(2)} ) * pow2( saturate( 1.0 - pow4( lightDistance / cutoffDistance ) ) );`,
+      `if ( decayExponent == 2.0 ) return ${(a * a).toFixed(2)} / max( lightDistance * lightDistance, ${(LANTERN_REACH.hold ** 2).toFixed(2)} ) * pow2( saturate( 1.0 - pow4( lightDistance / cutoffDistance ) ) );`,
     ),
   );
   const falloff = (d) =>
-    ((a * a) / Math.max(d * d, (a * a) / 4)) *
+    ((a * a) / Math.max(d * d, LANTERN_REACH.hold ** 2)) *
     Math.max(0, 1 - (d / LANTERN_REACH.distance) ** 4) ** 2;
   assert.equal(falloff(a), (1 - (a / LANTERN_REACH.distance) ** 4) ** 2);
   assert.ok(Math.abs(falloff(6) / falloff(3) - 0.25) < 0.04, "inverse square in the pool");

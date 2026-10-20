@@ -373,13 +373,13 @@ test("broader current clusters keep matched variance through partial footprints 
       "the actual broader current uses its own footprint",
     );
     assert.ok(
-      sampleFrequency < 4,
-      "primary mass consists of broader clusters, with fine wisps independent",
+      sampleFrequency < 8,
+      "the primary streams are a few across, with fine wisps independent",
     );
     assert.equal(sample([0.1, 0.9, 0.3], [0, 0, 0]), 0.5);
     const normalizedVariance = (a) => {
       const value = squared.reduce((sum, weight, i) => sum + weight * a[i] ** 2, 0);
-      return value / Math.max(0.5, Math.sqrt(value)) ** 2;
+      return value / Math.max(0.3, Math.sqrt(value)) ** 2;
     };
     assert.ok(
       Math.abs(normalizedVariance([1, 0, 0]) - normalizedVariance([1, 1, 1])) < 1e-12,
@@ -415,7 +415,7 @@ test("falling water keeps dark continuous thickness under white current and thin
       travel = shader.match(/float tau=([^;]+);/)?.[1],
       froth = shader.match(/,mix\(([\d.]+),([\d.]+),d\),white\)/),
       body = shader.match(/water=mix\(water,lit\*([\d.]+),white\);/),
-      thinning = shader.match(/foam\*=([^;]+);/)?.[1],
+      thinning = shader.match(/foam\*=(1\.-toe[^;]+);/)?.[1],
       coarse = shader.match(/a1=1\.-smoothstep\([\d.]+,[\d.]+,max\(fx\*([\d.]+),ft\*([\d.]+)\)\)/);
     assert.ok(toe && travel && coarse && froth && body && thinning);
     const aeration = new Function(
@@ -446,8 +446,8 @@ test("falling water keeps dark continuous thickness under white current and thin
     const lowerTravel =
       tau(1.9, Math.min, Math.max, Math.log, clamp) - tau(1.1, Math.min, Math.max, Math.log, clamp);
     assert.ok(
-      lowerTravel * +coarse[2] > 1.5 && lowerTravel * +coarse[2] < 3.5,
-      "clusters turn over down the drop while keeping their vertical flow direction",
+      lowerTravel * +coarse[2] > 0.7 && lowerTravel * +coarse[2] < 3.5,
+      "long streams turn over down the drop (never a frozen curtain), keeping their vertical flow",
     );
   } finally {
     falls.dispose();

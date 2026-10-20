@@ -790,8 +790,7 @@ export function createSlateContacts(values = new Float32Array(SLATE_CONTACTS * 4
     slateAspect: { value: 1 },
     // The shot's `poolAbout` (SLATE_LIGHT.poolKnee): off until a shot asks.
     slatePoolAbout: { value: 0 },
-    // The shot's calm (slateCalmFor()): off until a shot asks for it.
-    slateCalm: { value: { x: 0, y: 1, z: 2, w: 0 } },
+    // The shot's subject on the plain (slateCalmFor()): its moon shadow's fade centres there.
     slateCalmAt: { value: { x: 0, y: 0, z: 0, w: 1 } },
     // The shot's look (slateCalmFor(), SLATE_LOOK), each off until a shot asks
     // for it: the clearing (its centre x, z and radii; its light and the rest
@@ -808,45 +807,21 @@ export function createSlateContacts(values = new Float32Array(SLATE_CONTACTS * 4
   };
 }
 
-// A calmed slate's glints and sky reflection ease by this share of its flatten
-// (slateCalmFor()): 0.7 x 0.5 = 35% in Portrait, 0.7 x 0.6 = about 40% in
-// Watch and tree.
-export const SLATE_CALM_GLINT = 0.7;
-
-// A shot's `ground` calm: the plain about the subject quietens so the subject,
-// the ranges and the sky carry the frame. Within burn.reach (fractions of the
-// camera's distance to the subject: full at [0], gone by [1]) the slate,
-// its water included, is darkened by up to burn.amount; beyond keep (world
-// units from the subject: kept within [0], calm by [1]) its tone and relief
-// are pulled `flatten` of the way to the tile's mean (lifting its darkest
-// cracks a little, so fewer hold water), and its glints and sky reflection
-// ease with it (SLATE_CALM_GLINT). The burn never lightens. Uniforms, written in
-// place every frame, so a cut never recompiles; so is the shot's look
-// (SLATE_LOOK), which this writes too.
+// A shot's `ground` about its subject: its look (SLATE_LOOK) centred on the
+// subject at `at`, written in place every frame, so a cut never recompiles;
+// off without a frame. The plain itself is never burned or flattened about the
+// subject (photoreal, 2026-10-19): it is lit as it is.
 export function slateCalmFor(contacts, shot, distance, at) {
-  const calm = shot?.ground,
-    v = contacts.slateCalm.value,
+  const ground = shot?.ground,
     a = contacts.slateCalmAt.value;
-  if (!calm || !(distance > 0) || !at) {
-    v.x = 0;
-    v.y = 1;
-    v.z = 2;
-    v.w = 0;
+  if (!ground || !(distance > 0) || !at) {
     slateLookFor(contacts, null);
-    return v;
+    return a;
   }
-  const reach = calm.burn?.reach ?? [0, 1],
-    keep = calm.keep ?? [0, 1];
-  v.x = calm.burn?.amount ?? 0;
-  v.y = reach[0] * distance;
-  v.z = Math.max(reach[1], reach[0] + 0.01) * distance;
-  v.w = calm.flatten ?? 0;
   a.x = at.x;
   a.y = at.z;
-  a.z = keep[0];
-  a.w = Math.max(keep[1], keep[0] + 0.01);
-  slateLookFor(contacts, calm, shot.azimuth ?? 0, at);
-  return v;
+  slateLookFor(contacts, ground, shot.azimuth ?? 0, at);
+  return a;
 }
 
 // A shot's look on the plain about its subject (the owner's pick of
@@ -885,7 +860,7 @@ export const SLATE_LOOK = Object.freeze({
   gloss: Object.freeze({
     far: Object.freeze([400, 1100]),
     tint: Object.freeze([0.72, 0.88, 1.18]),
-    warm: Object.freeze([1, 0.97, 0.94]),
+    warm: Object.freeze([1, 1, 1]),
     text: Object.freeze([0.45, 0.25]),
     patch: Object.freeze([31, 0.35]),
   }),
@@ -1373,8 +1348,7 @@ export function configureGroundShading(
       wetVarying +
       (useWet
         ? `uniform vec4 slateContacts[${SLATE_CONTACTS}];
-uniform vec4 slateCalm, slateCalmAt;
-float slateFlatAt(vec2 p){return slateCalm.w*smoothstep(slateCalmAt.z,slateCalmAt.w,length(p-slateCalmAt.xy));}
+uniform vec4 slateCalmAt;
 uniform float slateRockContact, slateContactGain, slateAspect;
 uniform vec3 babelFlashKey;
 uniform vec4 babelFlash, babelFlashLight, babelFlashSky;
@@ -1397,7 +1371,7 @@ ${SLATE_TEXT_GLSL}${LOOK_GLSL}${mistOn ? `uniform mat4 projectionMatrix;\n${MIST
       float slateH = texture2D(slateDetail, slateUvD).r, slateNear = 1.-smoothstep(${DETAIL.near.map(glslNumber)},length(vViewPosition));
       vec3 slateMean = ${glslVec(SLATE_TILING.mean)};
       vec4 sampledDiffuseColor = vec4(max(slateMean+(mix(slateA.rgb,slateB.rgb,slateW)-slateMean)/length(vec2(slateW,1.-slateW)),0.)*(1.+(slateH-.5)*${glslNumber(DETAIL.albedo)}*slateNear)*(.93+.14*slateNoise(vMudWorld.xz/${glslNumber(SLATE_TILING.macroCell)})),1.);
-      ${close ? CLOSE_PRE : ""}sampledDiffuseColor.rgb = mix(sampledDiffuseColor.rgb, slateMean, slateFlatAt(vMudWorld.xz));${FAR_MAP}
+      ${close ? CLOSE_PRE : ""}${FAR_MAP}
       diffuseColor *= sampledDiffuseColor;${close ? CLOSE_MAP : ""}
       #endif`,
       );
@@ -1477,7 +1451,7 @@ ${SLATE_TEXT_GLSL}${LOOK_GLSL}${mistOn ? `uniform mat4 projectionMatrix;\n${MIST
         `#ifdef USE_NORMALMAP_TANGENTSPACE
       vec3 slateNA = texture2D(normalMap, vNormalMapUv).xyz*2.-1., slateNB = texture2D(normalMap, slateUvB).xyz*2.-1.;
       vec2 slateHx = vec2(texture2D(slateDetail, slateUvD+vec2(1./512.,0.)).r, texture2D(slateDetail, slateUvD+vec2(0.,1./512.)).r);
-      vec3 mapN = vec3((mix(slateNA.xy, slateNB.xy*slateTurnB, slateW)/length(vec2(slateW,1.-slateW))*normalScale+(slateH-slateHx)*slateTurnD*(${glslNumber(DETAIL.strength)}*slateNear))${close ? `*(1.-${glslNumber(CLOSE.calm)}*slateCN)` : ""}*(1.-slateFlatAt(vMudWorld.xz))*(1.-${glslNumber(SLATE_BANKS.silt.calm)}*slateSilt)*(1.-${glslNumber(SLATE_PUDDLES.flatten)}*slatePuddle), mix(slateNA.z, slateNB.z, slateW));
+      vec3 mapN = vec3((mix(slateNA.xy, slateNB.xy*slateTurnB, slateW)/length(vec2(slateW,1.-slateW))*normalScale+(slateH-slateHx)*slateTurnD*(${glslNumber(DETAIL.strength)}*slateNear))${close ? `*(1.-${glslNumber(CLOSE.calm)}*slateCN)` : ""}*(1.-${glslNumber(SLATE_BANKS.silt.calm)}*slateSilt)*(1.-${glslNumber(SLATE_PUDDLES.flatten)}*slatePuddle), mix(slateNA.z, slateNB.z, slateW));
       normal = normalize(tbn*mapN);${close ? CLOSE_NORMAL : ""}
       #endif`,
       );
@@ -1511,9 +1485,6 @@ ${SLATE_TEXT_GLSL}${LOOK_GLSL}${mistOn ? `uniform mat4 projectionMatrix;\n${MIST
       if (babelFlashLight.w > 0.0)
         reflectedLight.directDiffuse += (1.0-slateBehind)*(1.0-slateBehind)*(babelFlashLight.rgb*saturate(dot(normal, (viewMatrix*vec4(babelFlashKey, 0.0)).xyz))*${glslNumber(LIGHT.fill)}+(babelFlashSky.rgb*(.5+.5*dot(normal, viewMatrix[1].xyz))+babelFlashSky.w)*${glslNumber(LIGHT.ambient)})*material.diffuseColor;
       reflectedLight.indirectSpecular *= mix(1.0, ${glslNumber(+(SLATE_WET.indirect[1] / SLATE_WET.indirect[0]).toFixed(4))}, slateWet*slateShow)*mix(1.0, ${glslNumber(SLATE_WET.close.sky)}, slateMatte);${WATER_AFTER_LIGHTS}
-      float slateQuiet = 1.0-${glslNumber(SLATE_CALM_GLINT)}*slateFlatAt(vMudWorld.xz)*(1.0-slatePuddle);
-      reflectedLight.directSpecular *= slateQuiet;
-      reflectedLight.indirectSpecular *= slateQuiet;
       reflectedLight.directSpecular = slateTextKnee(reflectedLight.directSpecular, slateBehind);
       reflectedLight.indirectSpecular = slateTextKnee(reflectedLight.indirectSpecular, slateBehind);
       `
@@ -1529,7 +1500,6 @@ ${SLATE_TEXT_GLSL}${LOOK_GLSL}${mistOn ? `uniform mat4 projectionMatrix;\n${MIST
         .replace(
           "#include <fog_fragment>",
           `
-      gl_FragColor.rgb *= 1.0-slateCalm.x*(1.0-smoothstep(slateCalm.y, slateCalm.z, length(vViewPosition)));
       // Near the lens the soil's brightest channel eases past SLATE_CLOSE.ceiling, the colour scaled whole, so a lit crest keeps
       // its warmth rather than clipping channel by channel into a chalky grey.
       { float slateCM = max(gl_FragColor.r, max(gl_FragColor.g, gl_FragColor.b)), slateCE = max(slateCM-${glslNumber(CLOSE.ceiling)}, 0.); gl_FragColor.rgb *= mix(1., (slateCM-slateCE+slateCE/(1.+slateCE/${glslNumber(CLOSE.ceiling)}))/max(slateCM, 1e-5), 1.-smoothstep(${CLOSE.near.map(glslNumber)}, length(vViewPosition))); }

@@ -203,7 +203,8 @@ test("the sea is one program: the film's environment its only texture, the groun
   assert.equal(mesh.renderOrder, 0.5);
   // Its light stays under the bloom's threshold (0.85 luma): the mirror's and the glitter's knees.
   assert.ok(SEA.knee + SEA.glitter.knee < 0.85);
-  assert.ok(SEA.surf.albedo <= 0.5 && FALLS.albedo <= 0.5);
+  // White water reflects at most foam's own share of the light it takes.
+  assert.ok(SEA.surf.albedo <= 0.8 && FALLS.albedo <= 0.8);
   // The white water about the stacks and where the falls land.
   assert.ok(fragment.includes(stacksSurfGlsl()));
   assert.equal(material.uniforms.seaFalls.value.w, 0);
@@ -354,7 +355,20 @@ test("the cliffs cover the terrain's drop with their shelf, fall below the sea, 
     [child] = cliff.mesh.children;
   assert.equal(child.name, "estate-stacks");
   assert.equal(child.material, cliff.material);
-  assert.ok(cliff.material.fragmentShader.includes(`alb*=mix(1.,${STACKS.wet},step(1.5,vC.y));`));
+  // The stacks: their own rock darker than the cliffs', a weedy band about their foot.
+  assert.ok(cliff.material.fragmentShader.includes(`float stack=step(1.5,vC.y),hs=vW.y-vSeaY+`));
+  assert.ok(
+    cliff.material.fragmentShader.includes(
+      `alb*=mix(1.,${STACKS.wet},stack)*mix(vec3(1.),mix(vec3(`,
+    ),
+  );
+  assert.ok(STACKS.weed > 1 && STACKS.weedTone.every((v) => v > 0.3 && v < 1));
+  // A moon sheen: broad on dry rock, tighter where it is wet, held back behind the text.
+  assert.ok(
+    cliff.material.fragmentShader.includes(
+      "c+=seaGGX(n,E,mix(.6,.18,wet),.04)*mix(.2,1.,wet)*(1.-.8*b);",
+    ),
+  );
   assert.equal(cliff.material.uniforms.cliffRiver.value.w, 0, "no falls without a drop");
   let freed = 0;
   cliff.mesh.geometry.addEventListener("dispose", () => freed++);
