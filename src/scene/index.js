@@ -14,16 +14,7 @@ import {
   isStackedLayout,
   layoutRect,
 } from "./cinematic.js";
-import {
-  GLINT_MOOD,
-  GRASS_MOOD,
-  LANTERN_MOOD,
-  PALE_MOOD,
-  RIM_UNIFORMS,
-  STONE_MOOD,
-  setRim,
-  shotLight,
-} from "./film-light.js";
+import { GLINT_MOOD, GRASS_MOOD, LANTERN_MOOD, STONE_MOOD, shotLight } from "./film-light.js";
 import {
   configureGroundShading,
   createSlateContacts,
@@ -1161,7 +1152,7 @@ const ORBIT_SPEED = 0.06;
             ? 1
             : 0;
         }
-        // The shot's light mood, and the rim's moon direction from this lens.
+        // The shot's light mood.
         {
           const mood = shotLight(filmActive && cinematicApplied ? cinematic.shot : null);
           rendering.setShotLight?.(mood);
@@ -1169,17 +1160,13 @@ const ORBIT_SPEED = 0.06;
             LANTERN_MOOD.value = mood.lantern;
             treeArchitecture?.refreshLantern?.();
           }
-          setRim(filmActive ? mood.rim : 0, filmActive ? mood.rimText : 0);
-          PALE_MOOD.value = filmActive ? mood.pale : 0;
           GLINT_MOOD.value = filmActive ? mood.glintText : 0;
           GRASS_MOOD.value = filmActive ? mood.grassInside : 0;
           STONE_MOOD.value = filmActive ? mood.stoneText : 0;
           groundContacts.slatePoolAbout.value = filmActive ? mood.poolAbout : 0;
-          camera.updateMatrixWorld();
-          RIM_UNIFORMS.babelKeyView.value
-            .set(...WORLD.SUN_DIRECTION)
-            .transformDirection(camera.matrixWorldInverse);
         }
+        // The lens below reads this frame's camera.
+        camera.updateMatrixWorld();
         // The shot's lens and the film's bars and grain follow the shot on screen;
         // the bars ease out under the dissolve into the walk and back in after it.
         const post = rendering.postprocessPipeline;

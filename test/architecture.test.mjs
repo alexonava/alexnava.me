@@ -43,9 +43,6 @@ import {
   GLINT,
   GLINT_MOOD,
   LANTERN_MOOD,
-  PALE_MOOD,
-  RIM_UNIFORMS,
-  setRim,
   STONE_MOOD,
   STONE_TEXT,
 } from "../src/scene/film-light.js";
@@ -234,34 +231,19 @@ test("non-lantern subjects cannot inherit self-illumination from supplied materi
   }
 });
 
-test("bark albedo and physical shading are independent of legacy pale and rim shot moods", () => {
+test("bark albedo and physical shading take no painted pale or rim", () => {
   const source = sourceAsset(true),
     tree = createTreeArchitecture({ asset: source, groundHeight: () => 0 }),
     treeShader = materialShader(tree.root.getObjectByName("meshy-tree").material),
     tower = createCompleteTowerArchitecture({ asset: boxAsset(), groundY: 0 }),
     towerShader = materialShader(tower.root.getObjectByName("complete-meshy-tower").material);
-  const paleBefore = PALE_MOOD.value,
-    rimBefore = RIM_UNIFORMS.babelRimLight.value.clone(),
-    rimTextBefore = RIM_UNIFORMS.babelRimText.value;
-  try {
-    for (const pale of [0, 0.5, 1]) {
-      PALE_MOOD.value = pale;
-      setRim(2 * pale, pale);
-      const next = materialShader(tree.root.getObjectByName("meshy-tree").material);
-      assert.equal(next.fragmentShader, treeShader.fragmentShader);
-      for (const shader of [next, towerShader]) {
-        assert.doesNotMatch(shader.fragmentShader, /babelPale|babelRim/);
-        assert.equal(shader.uniforms.babelPale, undefined);
-        assert.equal(shader.uniforms.babelRimLight, undefined);
-      }
-    }
-    assert.equal(tree.root.getObjectByName("meshy-tree").material.map, source.material.map);
-    assert.match(treeShader.fragmentShader, /#include <map_fragment>\s*float babelLuma/);
-  } finally {
-    PALE_MOOD.value = paleBefore;
-    RIM_UNIFORMS.babelRimLight.value.copy(rimBefore);
-    RIM_UNIFORMS.babelRimText.value = rimTextBefore;
+  for (const shader of [treeShader, towerShader]) {
+    assert.doesNotMatch(shader.fragmentShader, /babelPale|babelRim/);
+    assert.equal(shader.uniforms.babelPale, undefined);
+    assert.equal(shader.uniforms.babelRimLight, undefined);
   }
+  assert.equal(tree.root.getObjectByName("meshy-tree").material.map, source.material.map);
+  assert.match(treeShader.fragmentShader, /#include <map_fragment>\s*float babelLuma/);
   tree.dispose();
   tower.dispose();
   source.resources.forEach((resource) => resource.dispose());
