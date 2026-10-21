@@ -98,7 +98,7 @@ test("the scene is the landing content, and nothing covers or dims it", async ()
 
 const LOADER_MARKUP =
   '<div class="scene-loader" id="scene-loader" aria-hidden="true" hidden><p class="scene-loader__label">Loading &middot; <span class="scene-loader__value">0%</span></p><div class="scene-loader__track"><div class="scene-loader__fill"></div></div></div>';
-const STAR_MARKUP = `<div class="scene-star" id="scene-star" hidden><span class="scene-star__haze"></span><span class="scene-star__streak"></span><span class="scene-star__glow"></span><span class="scene-star__disc"></span>${'<span class="scene-star__ghost"></span>'.repeat(5)}</div>`;
+const STAR_MARKUP = `<div class="scene-star" id="scene-star" hidden><span class="scene-star__glow"></span><span class="scene-star__disc"></span></div>`;
 
 test("the title card paints no picture, and its hidden loading line sits between the bottom bar and footer", async () => {
   const html = flatHtml(await readIndexHtml());

@@ -60,6 +60,7 @@ import {
   CLOUD_VORTEX,
   cloudVortexCenter,
   cloudVortexInSeason,
+  cloudVortexPresent,
   createEstateSkyMaterial,
 } from "./estate-sky.js";
 import { createSceneRendering } from "./rendering.js";
@@ -379,8 +380,9 @@ const ORBIT_SPEED = 0.06;
       );
       skyShell.renderOrder = -1;
       skyShell.material.depthWrite = false;
-      // Out of season the maelstrom's reach stays below 0: none of it (estate-sky.js).
-      if (!vortexSeason) skyShell.material.uniforms.uVortex.value.z = -1;
+      // Until a shot takes it, and always out of season, the maelstrom's reach stays
+      // below 0: none of it (estate-sky.js).
+      skyShell.material.uniforms.uVortex.value.z = -1;
       atmosphereSystem.root.add(skyShell);
       atmosphereSystem.setSkyMaterial(skyShell.material);
       // The film's environment is captured from this shell's film sky.
@@ -978,7 +980,8 @@ const ORBIT_SPEED = 0.06;
       window.addEventListener("scroll", onWindowScroll, { passive: true });
       resizeController.update({ force: true });
       let vortexShot = null,
-        vortexFit = null;
+        vortexFit = null,
+        vortexHere = false;
       const vortexEye = new Vector3();
       let debugRenderFrameCount = 0,
         groundTextFrames = 0,
@@ -1119,6 +1122,10 @@ const ORBIT_SPEED = 0.06;
         // The cloud vortex's eye sits where this lens sees the star, set on each cut and
         // each refit (a resize; estate-sky.js CLOUD_VORTEX), so it stays about the star.
         if (cinematicApplied && (cinematic.shot !== vortexShot || cinematic.frame !== vortexFit)) {
+          // Each shot takes the maelstrom whole or not at all as it opens, by the sky's drift
+          // clock (estate-sky.js CLOUD_VORTEX.life): it is never seen forming; a refit keeps it.
+          if (cinematic.shot !== vortexShot)
+            vortexHere = vortexSeason && cloudVortexPresent(skyShell.material.uniforms.uTime.value);
           vortexShot = cinematic.shot;
           vortexFit = cinematic.frame;
           camera.updateMatrixWorld();
@@ -1128,7 +1135,7 @@ const ORBIT_SPEED = 0.06;
             WORLD.SKY_DOME_RADIUS,
             skyShell.material.uniforms.uVortex.value,
           );
-          if (!vortexSeason) skyShell.material.uniforms.uVortex.value.z = -1;
+          if (!vortexHere) skyShell.material.uniforms.uVortex.value.z = -1;
           skyShell.material.uniforms.uVortex.value.w = CLOUD_VORTEX.guardShots.includes(
             vortexShot?.name,
           )

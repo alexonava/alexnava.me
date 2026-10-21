@@ -83,18 +83,34 @@ export const FLASH_REFERENCE = Object.freeze({
 // - `eye`: [clear within, eased out by (local units), density taken off]: a calmer,
 //   clearer eye about the star;
 // - `ring`: [density, radius, width]: a ring of cloud about the eye (0: none);
+// - `crest`, `wobble`, `wisp`: the arms as cloud, not a wave (the owner's pick of
+//   2026-10-20, "even nicer", 2 Warm organic): their crests narrower than the gaps
+//   between them (the wave's light half raised to `crest`), their phase wandering by
+//   up to `wobble` radians, so their spacing and width vary, and broken into wisps
+//   ([amount, frequency]) by a noise unwound along the spiral, so the breaks run with
+//   the arms and turn with them;
+// - `warm`: [amount, reach (local units)]: the star's warm light on the swirl's lit
+//   edges, strongest by the eye and gone a few reaches out;
 // - `hole`: [within, eased out by]: in the guard shots the star's disc and its bright
 //   glow keep the sky behind them as it was, so the bloom they feed (postprocess.js) is
 //   unchanged and spills nothing new into the reference banks; the eye clears about them;
 // - `protect`: the density's protection (the reference banks' CLOUD_RESHAPE.wedge,
 //   radius) eases out over these azimuths, so it is exactly 0 over The watch's crop.
+// - `life`: [first, cycle, span] seconds on the drift clock: a phenomenon that comes now
+//   and then about the star (the owner's asks of 2026-10-20, "make it look like a phenomenon
+//   that forms occasionally around the star" and, of seeing it form, "for each shot its
+//   either there or not"): once each `cycle` from `first`, at a seeded moment in it, it
+//   stands for `span`; each shot takes it whole or not at all as it opens
+//   (cloudVortexPresent(), which index.js reads on each cut, setting uVortex.z below 0 for a
+//   shot without it), so it is never seen forming, and between, the banks lie calm;
 // - `months`: the calendar months (1-12) it comes in, with the lightning: the maelstrom
 //   is spooky October's (the owner's call of 2026-10-13); out of season the scene sets
 //   uVortex.z below 0 (cloudVortexInSeason()) and the banks lie calm about the star.
 // Like the reshaping, uCloudReshape scales it (0 in the environment's capture), and
 // behind the name and intro (cloudText) it takes nothing. `on`: 0 emits none of it.
 // Gentler since the owner's quiet cut of 2026-10-13 (twist 5, arm density 0.24 and
-// ring 0.32 before), so it frames the star without shouting.
+// ring 0.32 before), so it frames the star without shouting; its ring nearly gone since
+// 2026-10-20 ("i don't want the ring to be very visible", 0.18 before), the arms kept.
 export const CLOUD_VORTEX = Object.freeze({
   on: 1,
   months: Object.freeze([10]),
@@ -105,7 +121,12 @@ export const CLOUD_VORTEX = Object.freeze({
   twist: 3.2,
   arms: Object.freeze([4, 3.2, 0.14, 480]),
   eye: Object.freeze([0.1, 0.16, 0.45]),
-  ring: Object.freeze([0.18, 0.17, 0.035]),
+  ring: Object.freeze([0.04, 0.17, 0.035]),
+  crest: 1.8,
+  wobble: 0.35,
+  wisp: Object.freeze([0.5, 5]),
+  warm: Object.freeze([0.6, 0.25]),
+  life: Object.freeze([20, 180, 70]),
   hole: Object.freeze([0.09, 0.12]),
   guardShots: Object.freeze(["The watch"]),
   protect: Object.freeze([176, 179]),
@@ -168,22 +189,50 @@ const vortexOn = Boolean(VX.on);
 export function cloudVortexInSeason(date = new Date()) {
   return !VX.months || VX.months.includes(date.getMonth() + 1);
 }
+// The shader's sine-free hash (vxHash), which seeds the maelstrom's moments.
+function vortexHash(x, y) {
+  const fract = (v) => v - Math.floor(v);
+  let a = fract(x * 0.1031),
+    b = fract(y * 0.1031),
+    c = a;
+  const d = a * (b + 33.33) + b * (c + 33.33) + c * (a + 33.33);
+  a += d;
+  b += d;
+  c += d;
+  return fract((a + b) * c);
+}
+// Whether the maelstrom stands at drift time `t` (seconds; CLOUD_VORTEX.life): a shot
+// opening then takes it whole, else none of it.
+export function cloudVortexPresent(t, life = VX.life) {
+  const [first, cycle, span] = life;
+  if (!(t >= first)) return false;
+  const k = Math.floor((t - first) / cycle),
+    x = t - first - k * cycle - vortexHash(k, 3.7) * (cycle - span);
+  return x >= 0 && x < span;
+}
 // The plane point and radius the reshaping's coordinates start from: the vortex's
 // turned ones (bv, blv) when it is on.
 const B = vortexOn ? "bv" : "b",
   R = vortexOn ? "blv" : "bl";
 
-// The vortex's density at local coordinates e (CLOUD_VORTEX): its arms and ring, less
-// its eye. Declared once beside each shader that runs cloudFieldGLSL (the shell, the
+// The vortex's density at local coordinates e (CLOUD_VORTEX): its arms (crested,
+// wobbling and wisped about the spiral phase sv, on the drift clock) and ring, less its eye. Declared once beside each shader that runs cloudFieldGLSL (the shell, the
 // stars), with uVortex: xy the eye on the cloud plane, z the turn's reach (below 0: out
-// of season, none of it), w its guard.
+// of season, or not standing in this shot: none of it), w its guard.
 export const CLOUD_VORTEX_GLSL = vortexOn
   ? `uniform vec4 uVortex;
+float vxHash(vec2 p){vec3 q=fract(vec3(p.xyx)*.1031);q+=dot(q,q.yzx+33.33);return fract((q.x+q.y)*q.z);}
+float vxNoise(vec2 x){vec2 i=floor(x),f=fract(x);f=f*f*(3.-2.*f);return mix(mix(vxHash(i),vxHash(i+vec2(1.,0.)),f.x),mix(vxHash(i+vec2(0.,1.)),vxHash(i+vec2(1.,1.)),f.x),f.y);}
 float cloudVortex(vec2 e,float t){float r=length(e),a=atan(e.y,e.x+1e-6);
-float arm=cos(${glslFloat(VX.arms[0])}*(a+${glslFloat(VX.arms[1])}*log(max(r,.001)/${glslFloat(VX.radius)}))-t*${(
+float sv=a+${glslFloat(VX.arms[1])}*log(max(r,.001)/${glslFloat(VX.radius)})-t*${(
       (2 * Math.PI) /
-      VX.arms[3]
-    ).toFixed(6)})*smoothstep(${glslFloat(VX.eye[0])},${glslFloat(VX.eye[1])},r);
+      VX.arms[3] /
+      VX.arms[0]
+    ).toFixed(8)};
+sv+=${glslFloat(VX.wobble)}*(vxNoise(r*vec2(cos(sv),sin(sv))*3.+vec2(7.1,2.3))-.5);
+float arm=2.*pow(.5+.5*cos(${glslFloat(VX.arms[0])}*sv),${glslFloat(VX.crest)})-1.;
+arm*=mix(1.,.2+1.6*vxNoise(r*vec2(cos(sv),sin(sv))*${glslFloat(VX.wisp[1])}),${glslFloat(VX.wisp[0])});
+arm*=smoothstep(${glslFloat(VX.eye[0])},${glslFloat(VX.eye[1])},r);
 float ring=(r-${glslFloat(VX.ring[1])})/${glslFloat(VX.ring[2])};
 return ${glslFloat(VX.arms[2])}*arm+${glslFloat(VX.ring[0])}*exp(-ring*ring)-${glslFloat(VX.eye[2])}*(1.-smoothstep(${glslFloat(VX.eye[0])},${glslFloat(VX.eye[1])},r));}
 `
@@ -527,7 +576,14 @@ ${
     ? `if(uNebulaLayers>2.5){${brushNoise(brushFrame(CLOUD_BRUSH.streak), "bs")}cloudCol*=1.+${glslFloat(CLOUD_BRUSH.streak[0])}*(bs-.5)*2.*uCloudReshape;}
 `
     : ""
-}vec3 kn=vec3(.64,.62,.66), cap=vec3(.88,.86,.91);
+}${
+      vortexOn
+        ? `// The star's warmth on the swirl's lit edges (CLOUD_VORTEX.warm), never behind the text.
+if(vxW>0.&&uVortex.z>=0.){float vxGlow=vxW*(1.-cloudText)*exp(-vxRho/${glslFloat(VX.warm[1])})*smoothstep(.45,1.,lit);
+cloudCol=mix(cloudCol,cloudCol*vec3(1.22,.98,.74)+vec3(.05,.03,0.),vxGlow*${glslFloat(VX.warm[0])});}
+`
+        : ""
+    }vec3 kn=vec3(.64,.62,.66), cap=vec3(.88,.86,.91);
 cloudCol=min(cloudCol,kn)+(cap-kn)*(1.-exp(-max(cloudCol-kn,0.)/(cap-kn)));
 ${FLASH_GLSL}
 col+=vec3(.027,.03,.036)*smoothstep(.36,.54,d)*horizonFade*uClouds;

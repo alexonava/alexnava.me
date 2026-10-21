@@ -34,24 +34,9 @@
   const EXIT_MS = 600;
   const WATCH_MS = 2000;
   const STALL_MS = 15000;
-  // The star's parts at full warmth: its glow out to `glow` radii (as the scene's
-  // star shows at the reveal), its lens streak and haze `streak` and `haze` of the
-  // frame's width long (the warming star's own; the scene's shorter streak takes
-  // over in the crossfade), and the lens's ghosts (postprocess.js
-  // LENS_FX.flare.ghosts): [t along the line from the star through the frame's
-  // centre (1 at the centre), radius in frame heights].
-  const STAR = Object.freeze({
-    glow: 2,
-    streak: 1,
-    haze: 0.8,
-    ghosts: Object.freeze([
-      [0.35, 0.03],
-      [0.75, 0.06],
-      [1.35, 0.018],
-      [1.9, 0.1],
-      [2.6, 0.04],
-    ]),
-  });
+  // The star's parts at full warmth: its painted disc and its glow out to `glow` radii, as
+  // the scene's star shows at the reveal (solar-body.js SOLAR_LOOK).
+  const STAR = Object.freeze({ glow: 2 });
   // Each tier's tree size in bytes (build.mjs), as decoded bodies.
   const SIZES =
     typeof __BABEL_ARCHITECTURE_PREFETCH_BYTES__ !== "undefined"
@@ -145,24 +130,10 @@
       el.style.transform = transform;
       el.style.opacity = String(Math.round(opacity * 1000) / 1000);
     };
-    const [haze, streak, glow, disc, ...ghosts] = r.starParts;
+    const [glow, disc] = r.starParts;
     r.starEl.style.transform = `translate(${s.x}px, ${s.y}px)`;
     set(disc, `scale(${size(2 * s.radius) * (0.4 + 0.6 * glowing)})`, glowing);
     set(glow, `scale(${size(2 * STAR.glow * s.radius) * (0.5 + 0.5 * warm)})`, warm);
-    set(streak, `scaleX(${size(STAR.streak * s.width) * warm})`, 0.3 + 0.7 * warm);
-    set(haze, `scaleX(${size(STAR.haze * s.width) * warm})`, warm);
-    // The ghosts come in over the last two thirds of the warmth.
-    const ghostIn = Math.max(0, (warm - 0.35) / 0.65);
-    ghosts.forEach((ghost, i) => {
-      const [t, radius] = STAR.ghosts[i] || [0, 0];
-      const x = (s.width / 2 - s.x) * t,
-        y = (s.height / 2 - s.y) * t;
-      set(
-        ghost,
-        `translate(${x}px, ${y}px) scale(${size(2 * radius * s.height)})`,
-        ghostIn * ghostIn * (3 - 2 * ghostIn),
-      );
-    });
     r.starEl.hidden = false;
   }
 
@@ -230,7 +201,7 @@
       el,
       fill,
       value,
-      starEl: starParts.length === 4 + STAR.ghosts.length ? starEl : null,
+      starEl: starParts.length === 2 ? starEl : null,
       starParts,
       star: null,
       since: 0,
