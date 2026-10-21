@@ -49,7 +49,7 @@ import {
   cloudFieldGLSL,
   cloudVortexCenter,
   cloudVortexInSeason,
-  cloudVortexLife,
+  cloudVortexPresent,
   cloudVortexReach,
   createEstateSkyMaterial,
   FILM_SKY_GLSL,
@@ -918,7 +918,7 @@ test("the cloud vortex turns about the star's eye, never over the reference bank
   const turn = shader.match(/float vxA=([^;]+);/)[1];
   assert.doesNotMatch(turn, /vxW|cloudAz|\bbl\b|vxE|vxD/);
   assert.match(turn, /\(1\.-smoothstep\([\d.]+\*uVortex\.z,uVortex\.z,vxRho\)\)/);
-  assert.match(turn, /^uVortex\.z>0\.\?vxLife\*uCloudReshape\*vxHole\*/);
+  assert.match(turn, /^uVortex\.z>0\.\?uCloudReshape\*vxHole\*/);
   assert.match(
     shader,
     /float vxRho=length\(vxE\),vxHole=mix\(1\.,smoothstep\([\d.]+,[\d.]+,vxRho\),uVortex\.w\);/,
@@ -951,9 +951,9 @@ test("the cloud vortex turns about the star's eye, never over the reference bank
   assert.ok(CLOUD_VORTEX_GLSL.includes("vxNoise(r*vec2(cos(sv),sin(sv))*"));
   // The star's warmth on the swirl's lit edges, near the eye, never behind the text.
   assert.ok(warm[0] > 0 && warm[0] <= 0.6 && warm[1] > 0);
-  assert.match(shader, /float vxGlow=vxW\*vxLife\*\(1\.-cloudText\)\*exp\(-vxRho\//);
-  // Behind the name and intro it takes nothing (the text guard), and only while it lives.
-  assert.match(shader, /float vxK=vxW\*vxLife\*\(1\.-cloudText\);/);
+  assert.match(shader, /float vxGlow=vxW\*\(1\.-cloudText\)\*exp\(-vxRho\//);
+  // Behind the name and intro it takes nothing (the text guard).
+  assert.match(shader, /float vxK=vxW\*\(1\.-cloudText\);/);
   // The guard shots keep the star's disc and glow as they were (the bloom they feed
   // reaches the reference banks) and lean the density's disc away from them.
   assert.deepEqual([...CLOUD_VORTEX.guardShots], ["The watch"]);
@@ -988,35 +988,38 @@ test("the cloud vortex turns about the star's eye, never over the reference bank
   material.dispose();
 });
 
-test("the maelstrom is a phenomenon: it forms now and then, grows, holds and unwinds, on the drift clock", () => {
-  const [first, cycle, grow, hold, fade] = CLOUD_VORTEX.life;
+test("the maelstrom comes now and then, and each shot has it whole or not at all", () => {
+  const [first, cycle, span] = CLOUD_VORTEX.life;
   assert.ok(Object.isFrozen(CLOUD_VORTEX.life));
-  assert.ok(grow > 0 && hold > 0 && fade > 0 && grow + hold + fade < cycle / 2, "occasionally");
-  // Calm before the first, and calm between.
-  for (let t = 0; t < first; t += 0.5) assert.equal(cloudVortexLife(t), 0);
-  // Once each cycle, each living grow + hold + fade, never popping in or out.
+  assert.ok(span > 0 && span < cycle / 2, "occasionally");
+  // Calm before the first.
+  for (let t = 0; t < first; t += 0.5) assert.equal(cloudVortexPresent(t), false);
+  // Once each cycle, at a seeded moment, it stands for `span`.
   const spans = [];
   let start = null,
-    previous = 0,
-    jump = 0;
+    previous = false;
   for (let t = 0; t < 3600; t += 0.25) {
-    const life = cloudVortexLife(t);
-    assert.ok(life >= 0 && life <= 1);
-    if (life > 0 && previous === 0) start = t;
-    if (life === 0 && previous > 0) spans.push(t - start);
-    jump = Math.max(jump, Math.abs(life - previous));
-    previous = life;
+    const here = cloudVortexPresent(t);
+    assert.equal(typeof here, "boolean");
+    if (here && !previous) start = t;
+    if (!here && previous) spans.push(t - start);
+    previous = here;
   }
   const cycles = (3600 - first) / cycle;
   assert.ok(spans.length >= Math.floor(cycles) - 1 && spans.length <= Math.ceil(cycles));
-  for (const span of spans)
-    assert.ok(Math.abs(span - (grow + hold + fade)) <= 0.5, `lived ${span} s`);
-  assert.ok(jump < (0.25 / grow) * 1.6, `life jumps ${jump} in a quarter second`);
-  // The shader's own life scales the turn, so the banks unwind as it fades.
+  for (const stood of spans) assert.ok(Math.abs(stood - span) <= 0.25, `stood ${stood} s`);
+  // The shader has no life of its own, so it is never seen forming: the reach (uVortex.z)
+  // gives all of it or none, decided as each shot opens and kept through its refits.
   const shader = skyMaterial().fragmentShader;
-  assert.match(shader, /float vxA=uVortex\.z>0\.\?vxLife\*uCloudReshape\*vxHole\*/);
-  assert.ok(
-    shader.includes(`float vxLife=T<${first.toFixed(1)}?0.:smoothstep(0.,${grow.toFixed(1)},vxX)`),
+  assert.doesNotMatch(shader, /vxLife/);
+  const index = flat(source("src/scene/index.js"));
+  assert.match(
+    index,
+    /if \(cinematic\.shot !== vortexShot\) vortexHere = vortexSeason && cloudVortexPresent\(skyShell\.material\.uniforms\.uTime\.value\); vortexShot = cinematic\.shot;/,
+  );
+  assert.match(
+    index,
+    /skyShell\.material\.uniforms\.uVortex\.value\); if \(!vortexHere\) skyShell\.material\.uniforms\.uVortex\.value\.z = -1;/,
   );
 });
 
@@ -1252,16 +1255,13 @@ test("the maelstrom is spooky October's, with the lightning, by one date the sce
     /const sceneDate = new Date\(\); const vortexSeason = cloudVortexInSeason\(sceneDate\);/,
   );
   assert.equal(index.match(/new Date\(/g).length, 1, "one date for the whole storm");
-  // Out of season the reach stays below 0, at the start and on every cut and refit.
-  assert.equal(
-    index.match(/if \(!vortexSeason\) skyShell\.material\.uniforms\.uVortex\.value\.z = -1;/g)
-      .length,
-    2,
-  );
+  // The reach starts below 0, and out of season no shot takes it.
   assert.match(
     index,
-    /cloudVortexCenter\(camera\.getWorldPosition\(vortexEye\), WORLD\.SUN_POSITION, WORLD\.SKY_DOME_RADIUS, skyShell\.material\.uniforms\.uVortex\.value\); if \(!vortexSeason\)/,
+    /skyShell\.material\.depthWrite = false; skyShell\.material\.uniforms\.uVortex\.value\.z = -1;/,
   );
+  assert.match(index, /vortexHere = vortexSeason && cloudVortexPresent\(/);
+  assert.equal(index.match(/vortexHere = (?!false;)/g).length, 1, "no other shot takes it");
   assert.match(index, /createLightning\(\{[^}]*date: sceneDate,? \}\)/);
 });
 

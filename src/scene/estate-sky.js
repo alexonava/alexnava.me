@@ -96,12 +96,13 @@ export const FLASH_REFERENCE = Object.freeze({
 //   unchanged and spills nothing new into the reference banks; the eye clears about them;
 // - `protect`: the density's protection (the reference banks' CLOUD_RESHAPE.wedge,
 //   radius) eases out over these azimuths, so it is exactly 0 over The watch's crop.
-// - `life`: [first, cycle, grow, hold, fade] seconds on the drift clock: a phenomenon that
-//   forms now and then about the star (the owner's ask of 2026-10-20, "make it look like a
-//   phenomenon that forms occasionally around the star"): once each `cycle` from `first`, at
-//   a seeded moment in it, the arms gather and the banks wind about the eye over `grow`,
-//   hold for `hold` and unwind and thin away over `fade`; between, the banks lie calm about
-//   the star (cloudVortexLife() mirrors it);
+// - `life`: [first, cycle, span] seconds on the drift clock: a phenomenon that comes now
+//   and then about the star (the owner's asks of 2026-10-20, "make it look like a phenomenon
+//   that forms occasionally around the star" and, of seeing it form, "for each shot its
+//   either there or not"): once each `cycle` from `first`, at a seeded moment in it, it
+//   stands for `span`; each shot takes it whole or not at all as it opens
+//   (cloudVortexPresent(), which index.js reads on each cut, setting uVortex.z below 0 for a
+//   shot without it), so it is never seen forming, and between, the banks lie calm;
 // - `months`: the calendar months (1-12) it comes in, with the lightning: the maelstrom
 //   is spooky October's (the owner's call of 2026-10-13); out of season the scene sets
 //   uVortex.z below 0 (cloudVortexInSeason()) and the banks lie calm about the star.
@@ -125,7 +126,7 @@ export const CLOUD_VORTEX = Object.freeze({
   wobble: 0.35,
   wisp: Object.freeze([0.5, 5]),
   warm: Object.freeze([0.6, 0.25]),
-  life: Object.freeze([20, 180, 18, 30, 22]),
+  life: Object.freeze([20, 180, 70]),
   hole: Object.freeze([0.09, 0.12]),
   guardShots: Object.freeze(["The watch"]),
   protect: Object.freeze([176, 179]),
@@ -188,7 +189,7 @@ const vortexOn = Boolean(VX.on);
 export function cloudVortexInSeason(date = new Date()) {
   return !VX.months || VX.months.includes(date.getMonth() + 1);
 }
-// The shader's sine-free hash (vxHash), for the mirror below.
+// The shader's sine-free hash (vxHash), which seeds the maelstrom's moments.
 function vortexHash(x, y) {
   const fract = (v) => v - Math.floor(v);
   let a = fract(x * 0.1031),
@@ -200,18 +201,14 @@ function vortexHash(x, y) {
   c += d;
   return fract((a + b) * c);
 }
-// How formed the maelstrom is at drift time `t` (seconds), 0 to 1: the shader's vxLife
-// (CLOUD_VORTEX.life).
-export function cloudVortexLife(t, life = VX.life) {
-  const [first, cycle, grow, hold, fade] = life;
-  if (!(t >= first)) return 0;
+// Whether the maelstrom stands at drift time `t` (seconds; CLOUD_VORTEX.life): a shot
+// opening then takes it whole, else none of it.
+export function cloudVortexPresent(t, life = VX.life) {
+  const [first, cycle, span] = life;
+  if (!(t >= first)) return false;
   const k = Math.floor((t - first) / cycle),
-    x = t - first - k * cycle - vortexHash(k, 3.7) * (cycle - grow - hold - fade);
-  const smooth = (e0, e1, v) => {
-    const u = Math.min(1, Math.max(0, (v - e0) / (e1 - e0)));
-    return u * u * (3 - 2 * u);
-  };
-  return smooth(0, grow, x) * (1 - smooth(grow + hold, grow + hold + fade, x));
+    x = t - first - k * cycle - vortexHash(k, 3.7) * (cycle - span);
+  return x >= 0 && x < span;
 }
 // The plane point and radius the reshaping's coordinates start from: the vortex's
 // turned ones (bv, blv) when it is on.
@@ -221,7 +218,7 @@ const B = vortexOn ? "bv" : "b",
 // The vortex's density at local coordinates e (CLOUD_VORTEX): its arms (crested,
 // wobbling and wisped about the spiral phase sv, on the drift clock) and ring, less its eye. Declared once beside each shader that runs cloudFieldGLSL (the shell, the
 // stars), with uVortex: xy the eye on the cloud plane, z the turn's reach (below 0: out
-// of season, none of it), w its guard.
+// of season, or not standing in this shot: none of it), w its guard.
 export const CLOUD_VORTEX_GLSL = vortexOn
   ? `uniform vec4 uVortex;
 float vxHash(vec2 p){vec3 q=fract(vec3(p.xyx)*.1031);q+=dot(q,q.yzx+33.33);return fract((q.x+q.y)*q.z);}
@@ -250,9 +247,7 @@ vec2 vxE=vec2(dot(vxD,vxT),dot(vxD,vxR)*${glslFloat(VX.squash)});
 float vxRho=length(vxE),vxHole=mix(1.,smoothstep(${glslFloat(VX.hole[0])},${glslFloat(VX.hole[1])},vxRho),uVortex.w);
 float vxW=(1.-smoothstep(${glslFloat(wedge[0])},${glslFloat(wedge[1])},cloudAz)*(1.-smoothstep(${glslFloat(VX.protect[0])},${glslFloat(VX.protect[1])},cloudAz))*smoothstep(${glslFloat(radius[0])},${glslFloat(radius[1])},bl))*uCloudReshape;
 vxW*=(1.-smoothstep(${glslFloat(+(VX.fade * VX.radius).toFixed(6))},${glslFloat(VX.radius)},length(vxE-vec2(${glslFloat(+(VX.shift[0] * VX.radius).toFixed(6))},${glslFloat(+(VX.shift[1] * VX.radius).toFixed(6))})*uVortex.w)))*vxHole;
-float vxK0=floor(max(T-${glslFloat(VX.life[0])},0.)/${glslFloat(VX.life[1])}),vxX=T-${glslFloat(VX.life[0])}-vxK0*${glslFloat(VX.life[1])}-vxHash(vec2(vxK0,3.7))*${glslFloat(VX.life[1] - VX.life[2] - VX.life[3] - VX.life[4])};
-float vxLife=T<${glslFloat(VX.life[0])}?0.:smoothstep(0.,${glslFloat(VX.life[2])},vxX)*(1.-smoothstep(${glslFloat(VX.life[2] + VX.life[3])},${glslFloat(VX.life[2] + VX.life[3] + VX.life[4])},vxX));
-float vxA=uVortex.z>0.?vxLife*uCloudReshape*vxHole*${glslFloat(VX.twist)}/(1.+vxRho*vxRho/${glslFloat(+(VX.eye[1] ** 2).toFixed(6))})*(1.-smoothstep(${glslFloat(VX.fade)}*uVortex.z,uVortex.z,vxRho)):0.;
+float vxA=uVortex.z>0.?uCloudReshape*vxHole*${glslFloat(VX.twist)}/(1.+vxRho*vxRho/${glslFloat(+(VX.eye[1] ** 2).toFixed(6))})*(1.-smoothstep(${glslFloat(VX.fade)}*uVortex.z,uVortex.z,vxRho)):0.;
 vec2 bv=b;
 if(vxA>0.){vec2 vxS=vec2(cos(vxA),sin(vxA)),vxF=vec2(vxS.x*vxE.x-vxS.y*vxE.y,vxS.y*vxE.x+vxS.x*vxE.y);
 bv=uVortex.xy+vxF.x*vxT+vxF.y/${glslFloat(VX.squash)}*vxR;}
@@ -263,7 +258,7 @@ float blv=max(length(bv),.001);
 const VORTEX_DENSITY = vortexOn
   ? `
 if(vxW>0.&&uVortex.z>=0.){vec2 vxL=L*clamp(bl*.1,.1,.2);
-float vxK=vxW*vxLife*(1.-cloudText);
+float vxK=vxW*(1.-cloudText);
 d+=vxK*cloudVortex(vxE,T); da+=vxK*cloudVortex(vxE+vec2(dot(vxL,vxT),dot(vxL,vxR)*${glslFloat(VX.squash)}),T);}`
   : "";
 
@@ -584,7 +579,7 @@ ${
 }${
       vortexOn
         ? `// The star's warmth on the swirl's lit edges (CLOUD_VORTEX.warm), never behind the text.
-if(vxW>0.&&uVortex.z>=0.){float vxGlow=vxW*vxLife*(1.-cloudText)*exp(-vxRho/${glslFloat(VX.warm[1])})*smoothstep(.45,1.,lit);
+if(vxW>0.&&uVortex.z>=0.){float vxGlow=vxW*(1.-cloudText)*exp(-vxRho/${glslFloat(VX.warm[1])})*smoothstep(.45,1.,lit);
 cloudCol=mix(cloudCol,cloudCol*vec3(1.22,.98,.74)+vec3(.05,.03,0.),vxGlow*${glslFloat(VX.warm[0])});}
 `
         : ""
