@@ -35,5 +35,8 @@
     "prettier": "3.9.10",
     "three": "0.160.1",
     "wrangler": "^4.145.0"
+  },
+  "overrides": {
+    "undici": "^7.30.1"
   }
 }
