@@ -21,17 +21,18 @@ vm.runInNewContext(
 );
 const height = filmHeight(context.window.BabelSite.scene.groundHeight, true),
   drop = riverFalls(RIVER_LINE),
-  // Captured from the synchronous constructors (re-taken 2026-10-19 for
-  // variable-thickness bedding, then for the shelf's three-channel slateShade;
-  // the stack buffers are unchanged).
+  // Captured from the synchronous constructors on 2026-10-24 for the selected
+  // faulted crown. coast-geometry separately locks the original inner shelf,
+  // complete waterfall collar, deep face and formations against independent
+  // earlier-source evidence. Stack buffers stay fixed.
   // Include every attribute's bytes, in order, and the complete index buffer.
   baseline = {
     high: [
-      "7e05f745e3d950dbb05b759a416e9eef91dc3011223f88cefd694bf9ab082d22",
+      "29f03a0ed08378025778250897689d5c0ac2fd99450a3775d27b00c356ac5bb0",
       "50cc3e86adeb69d114106c98a5717601d5c65d2a524d1cb842fdd3d5c02326d6",
     ],
     balanced: [
-      "2222a3e33eb1ae2eeb26ee679faba8d5b53084df7648006d8dec8985cd233636",
+      "3f563ab716cbd38c6da033baa65babe541222380ad80a91a534107e374028b8d",
       "5409d1d0c1b9992b400f49ceb9ea26873494b31eee5e37f16b053ea79385ea69",
     ],
   };

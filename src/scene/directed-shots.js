@@ -175,6 +175,9 @@ export const DIRECTED_SHOTS = {
         mist: { color: [0.23, 0.26, 0.335], amount: 0.8 },
         gloss: { film: 0.32, gain: 1, cool: 0 },
         shadow: [12, 30],
+        // After the rain water stands on the plain in its low spots (the owner's ask of
+        // 2026-10-23, "more reflection on the dirt", B Rain pools; mud-ground.js SLATE_LOOK.pools).
+        pools: 0.85,
       },
       // Landscape phones keep the drift: no room about the name for a move.
       landscape: { move: null },
@@ -205,7 +208,10 @@ export const DIRECTED_SHOTS = {
         stoneText: 1,
         poolAbout: 1,
       },
-      lens: { blur: 8 },
+      // The water nearer the lens than the lantern softens only a quarter as much, so the
+      // river's ripples, the stream's froth and the lantern's glints read moving at the start
+      // of the push-in (the owner's pick of 2026-10-23: "in the third shot it isnt flowing").
+      lens: { blur: 8, near: 0.35 },
       // From the water up to the flame: the push-in lifts from the river (its image of the
       // lantern) to the flame (the owner's pick of 2026-10-12).
       move: { dolly: [1.2, 0.85], tilt: [-1.5, 0], ease: 0.6 },
