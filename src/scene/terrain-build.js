@@ -280,28 +280,29 @@ export const STREAMS = Object.freeze({
   step: 0.45,
   meander: 0.28,
   wobble: 1.6,
-  flow: 1.4,
+  flow: -1.4,
+  confluence: Object.freeze([0.9, 1.4]),
   current: Object.freeze({
     coarse: Object.freeze([1.1, 2.4]),
     fine: Object.freeze([3, 6.5]),
-    tilt: Object.freeze([0.035, 0.016]),
+    tilt: Object.freeze([0.05, 0.024]),
   }),
   foam: Object.freeze({
     cell: Object.freeze([9, 30]),
     patch: Object.freeze([1.2, 2]),
-    amount: 0.08,
+    amount: 0.5,
     join: 0.65,
-    mouth: 0.12,
+    mouth: 1,
     reach: Object.freeze([1, 1.9]),
-    cover: 0.7,
-    far: 0.3,
-    plume: 0.55,
-    albedo: 0.18,
+    cover: 0.85,
+    far: 0.5,
+    plume: 0.2,
+    albedo: 0.34,
     text: 0.9,
     lace: Object.freeze([6, 9]),
     warp: 0.35,
-    edge: Object.freeze([0.06, 0.24]),
-    clump: Object.freeze([0.45, 0.9]),
+    edge: Object.freeze([0.1, 0.32]),
+    clump: Object.freeze([0.3, 0.7]),
     broken: 0.8,
     drift: 0.5,
   }),
@@ -309,7 +310,8 @@ export const STREAMS = Object.freeze({
     depth: 0.2,
     full: 1.6,
     rise: 0.1,
-    level: -0.03,
+    level: -0.04,
+    drop: 0.1,
     shore: 3,
     texel: 0.05,
     reach: Object.freeze([1.3, 1.7]),
@@ -327,10 +329,11 @@ export const STREAMS = Object.freeze({
   stones: Object.freeze({
     tone: 0.5,
     sink: 0.22,
-    radius: 0.42,
-    ring: 0.035,
-    wake: 0.9,
-    spread: 0.25,
+    show: 0.5,
+    radius: 0.6,
+    ring: 0.07,
+    wake: 1.6,
+    spread: 0.45,
     list: Object.freeze(
       [
         [3.34, 0.26, 0.22, "weathered", 20],
@@ -491,6 +494,7 @@ const STREAM_COURSES = STREAM_LINES.map(({ points, width: [w0, w1], length, bend
     xs = points.map(([x]) => x),
     zs = points.map(([, z]) => z);
   return {
+    length,
     box: [
       Math.min(...xs) - pad,
       Math.max(...xs) + pad,
@@ -534,7 +538,7 @@ export function streamRadius(x, z) {
   let best = 1e9;
   streamWidth = 1;
   streamSide = 0;
-  for (const { box, segments } of STREAM_COURSES) {
+  for (const { length, box, segments } of STREAM_COURSES) {
     if (!(px > box[0] && px < box[1] && pz > box[2] && pz < box[3])) continue;
     for (const [ax, az, ex, ez, d0, dd, b0, db, s0, ds] of segments) {
       const qx = px - ax,
@@ -546,6 +550,7 @@ export function streamRadius(x, z) {
         best = w;
         streamWidth = d;
         streamAlongAt = s0 + h * ds;
+        streamLength = length;
         // Which bank, through the bend: positive toward the outside of the turn.
         streamSide =
           Math.max(-1, Math.min(1, (2 * (qx * ez - qz * ex)) / Math.hypot(ex, ez) / d)) *
@@ -559,8 +564,14 @@ export function streamRadius(x, z) {
 // side through its bend (positive toward the outside bank).
 let streamWidth = 1,
   streamSide = 0,
-  streamAlongAt = 0;
+  streamAlongAt = 0,
+  streamLength = 1;
 export const streamPlace = () => ({ width: streamWidth, side: streamSide });
+// Its water's level below the lantern's foot at `s` units along a course
+// `length` long (STREAMS.bed): the river's where it leaves the river, at its
+// mouth, falling `drop` toward the roots, down which it runs.
+export const streamLevel = (s, length) =>
+  STREAMS.bed.level - STREAMS.bed.drop * (1 - Math.min(1, Math.max(0, s / length)));
 // The channel's height above its water at normalised radius r (mud-ground.js slateStreamBed()).
 // A course narrower than `full` is shallower in proportion; through a bend
 // (side, positive toward the outside) it leans: deeper and steep under the cut
@@ -576,9 +587,10 @@ export function streamBedAt(r, width = Infinity, side = 0) {
 // (riverCarve()); clear of the lantern's footing.
 export function streamCarve(x, z, base, foot) {
   const r = streamRadius(x, z),
-    { reach, level, blend: k } = STREAMS.bed;
+    { reach, blend: k } = STREAMS.bed;
   if (r >= reach[1]) return 0;
-  const shape = foot + level + streamBedAt(r, streamWidth, streamSide),
+  const shape =
+      foot + streamLevel(streamAlongAt, streamLength) + streamBedAt(r, streamWidth, streamSide),
     h = Math.max(k - Math.abs(base - shape), 0) / k;
   return (
     (Math.min(base, shape) - (h * h * k) / 4 - base) *
@@ -592,7 +604,7 @@ export function streamCarve(x, z, base, foot) {
 // The lantern's footing stays level: no channel within [0] of its foot, the
 // whole of it beyond [1].
 const STREAM_FOOTING = [1.3, 1.8];
-// The river's and the stream's channels together: where the stream pours in
+// The river's and the stream's channels together: where the stream leaves it
 // its bed runs smoothly down into the river's (a smooth minimum, `blend` units),
 // and inside the river (normalised radii [0] to [1]) the river's shape rules.
 const STREAM_MOUTH = [0.7, 1.15];
@@ -606,7 +618,7 @@ export function channelCarve(x, z, base, foot) {
 }
 // Nor under a root: none within [0] of a root line's edge, all of it beyond [1].
 const STREAM_ROOTS = [0, 0.35];
-// Its head seeps out from under the root arch: no channel within [0] units
+// Its head sinks away under the root arch: no channel within [0] units
 // along of it (about the tree's footing), the whole of it from [1].
 const STREAM_HEAD = [1.6, 3];
 // How far x/z lies outside the nearest root line's half-width (ROOT_LINES).
@@ -1318,7 +1330,7 @@ export function pinKeep(x, z, feather = PIN_KEEP.feather) {
     keep *= ease(margin, margin + feather, zoneDistance(zone, x, z));
   }
   // The stream keeps its carved channel clear too, but under the roots, where
-  // it seeps out beneath them and they rest on the soil as baked.
+  // it sinks away beneath them and they rest on the soil as baked.
   if (keep > 0) {
     const d = streamPinDistance(x, z);
     if (d < feather)
@@ -1941,7 +1953,9 @@ export function dripAt(t, aim = () => null) {
 const zoneGlsl = (zone) => glslVec(+zone.x.toFixed(2), +zone.z.toFixed(2));
 // The river's current on the water (MIRROR): two octaves of ripples, each
 // [along, across] cycles per unit (about as long as wide: drawn out further, a
-// mirror rules them into brushed streaks), and the tilt of each. They are the
+// mirror rules them into brushed streaks), and the tilt of each (livelier, the
+// owner's pick of 2026-10-23, so the near river in Lantern study visibly runs as
+// the stream does). They are the
 // rapids' smooth flow noise where the river has its falls, turning as they
 // drift (`flow`: its slope's share against the value noise's), in broad boils
 // and slicks drifting with it (`boils`: their cells per unit, the calm and the
@@ -1961,10 +1975,10 @@ const zoneGlsl = (zone) => glslVec(+zone.x.toFixed(2), +zone.z.toFixed(2));
 // dims by as much. The
 // moving water (the river's and the streams') mirrors the sky at `rough`
 // roughness (the environment's own prefiltered blur), and the stream up to
-// `roughTilt` more where its ripples are steepest (where it pours in): sharp,
+// `roughTilt` more where its ripples are steepest (where it leaves the river): sharp,
 // its ripples swept the sky's fine strokes into closed contour rings; still
 // puddles stay sharp.
-// Where the stream pours in, its steeper ripples ease into the river's own
+// Where the stream leaves the river, its steeper ripples ease into the river's own
 // between `mouth` [0] and [1] river radii, keeping [2] of them, so the plume's
 // steep ripples never contour the river's mirror.
 export const RIVER_RIPPLE = Object.freeze({
@@ -1972,7 +1986,7 @@ export const RIVER_RIPPLE = Object.freeze({
   fine: Object.freeze([2.4, 3.2]),
   boils: Object.freeze([0.14, 0.45, 1.35]),
   flow: 0.55,
-  tilt: Object.freeze([0.018, 0.007]),
+  tilt: Object.freeze([0.04, 0.02]),
   fade: Object.freeze([1.5, 3]),
   sway: 3,
   swayLow: Object.freeze([0.5, 5]),
@@ -2068,7 +2082,7 @@ if (slateWater > 0.0) {
       slateRough = slateFS;
     }
     // The streams' current: steeper, finer ripples drawn out along each course drift down it at STREAMS.flow, each
-    // octave fading where it would fall under three pixels of ground, and easing into the river's own where it pours in
+    // octave fading where it would fall under three pixels of ground, and easing into the river's own where it leaves it
     // (RIVER_RIPPLE.mouth).
     if (slateStreamQ.x > 0.0) {
       vec2 slateSU = vec2(slateStreamQ.y-slateFlow*${glsl(STREAMS.flow)}, slateStreamQ.z*slateStreamQ.w);
@@ -2206,16 +2220,16 @@ ${
 `;
 // The stream's water body and white water. As it deepens its water hides the
 // cracks under silt and darkens (STREAMS.body), easing into the river's own
-// water where it pours in. Its white water (STREAMS.foam) is a lace of bubble
+// water where it leaves it. Its white water (STREAMS.foam) is a lace of bubble
 // rafts drifting down it with the current, in clumps where it churns: most
-// about its stones, a little where it pours into the river. It is rough, pale
+// about its stones and where it leaves the river. It is rough, pale
 // froth lit like the soil, not water: the mirror and the water's gloss give
 // way to it.
 const SF = STREAMS.foam;
 const SB = STREAMS.body;
 // The white water about the stream's stones: a ring hugging each at the
-// waterline and a wake trailing downstream, widening as it goes, that raises
-// the churn of the lace (STREAMS.stones).
+// waterline and a wake trailing downstream (toward its head: it flows that
+// way, STREAMS.flow), widening as it goes, that raises the churn of the lace (STREAMS.stones).
 const ST = STREAMS.stones;
 const STONE_FOAM = ST.list
   .map(([dx, dz, height]) => {
@@ -2223,7 +2237,7 @@ const STONE_FOAM = ST.list
       c = glslVec(+(LANTERN_FOOT.x + dx).toFixed(3), +(LANTERN_FOOT.z + dz).toFixed(3));
     return `slateSO = vMudWorld.xz-${c};slateSD = length(slateSO)-${glsl(r)};
 if (slateSD < ${glsl(ST.wake)}) {
-  float slateSA = dot(slateSO, slateStreamDir), slateSX = abs(slateSO.x*slateStreamDir.y-slateSO.y*slateStreamDir.x);
+  float slateSA = ${STREAMS.flow < 0 ? "-" : ""}dot(slateSO, slateStreamDir), slateSX = abs(slateSO.x*slateStreamDir.y-slateSO.y*slateStreamDir.x);
   slateRing = max(slateRing, 1.0-smoothstep(0.0, ${glsl(ST.ring)}, slateSD));
   slateStone = max(slateStone, step(0.0, slateSA)*(1.0-smoothstep(0.0, ${glsl(ST.wake)}, slateSA))*(1.0-smoothstep(${glsl(+(r * 0.5).toFixed(3))}+slateSA*${glsl(ST.spread)}, ${glsl(r)}+slateSA*${glsl(ST.spread)}, slateSX)));
 }`;
@@ -2238,7 +2252,7 @@ if (slateStreamQ.x > 0.0) {
   vec2 slateSO;
   float slateSD, slateRing = 0.0, slateStone = 0.0;
   ${STONE_FOAM}
-  float slateChurn = max(${glsl(SF.amount)}, max(${glsl(SF.join)}*smoothstep(.2, .8, slateStreamJoin), ${glsl(SF.mouth)}*(1.0-smoothstep(${glsl(SF.reach[0])}, ${glsl(SF.reach[1])}, slateRiverR))))*(.2+1.6*slateNoise(slateSU*${glslVec(...SF.patch)}+23.0));
+  float slateChurn = max(${glsl(SF.amount)}, max(${glsl(SF.join)}*smoothstep(.2, .8, slateStreamJoin), ${glsl(SF.mouth)}*smoothstep(${glsl(SF.reach[0] - 0.3)}, ${glsl(SF.reach[0])}, slateRiverR)*(1.0-smoothstep(${glsl(SF.reach[0])}, ${glsl(SF.reach[1])}, slateRiverR))))*(.2+1.6*slateNoise(slateSU*${glslVec(...SF.patch)}+23.0));
   slateChurn = max(slateChurn, slateStone*(.5+.5*slateNoise(slateSU*${glslVec(...SF.patch)}*2.0+5.0)));
   // The lace: the borders of cells drifting with the current, thicker and closer where it churns. Where its cells fall
   // under about two pixels it gives way to a faint share of its churn, so it never aliases nor washes a far stream
@@ -2282,6 +2296,8 @@ slateFoam = max(slateFoam, slateRapid);
 }roughnessFactor = mix(roughnessFactor, .85, slateFoam);
 slatePuddle *= 1.0-slateFoam;
 slateLanternPuddle *= 1.0-slateFoam;
+// The moving water softens the moon's shadow on it (mud-ground.js slateShadow()).
+slateShadowWater = slateLanternPuddle;
 `;
 // The mirror's own drip clock (settleRoots() advances it), the live drip and
 // the flame's draught (settleRoots() sets both per draw of the ground).
@@ -2308,14 +2324,18 @@ export function shadeSlatePuddles(shader) {
     // Only inside the puddle zones (slateZoneW: the level's zone term is
     // positive; beyond them nothing changes): a soft shore at least a couple
     // of pixels wide, a damp margin that follows the cracks, and the thin
-    // film's coat.
+    // film's coat. The water's sheet is all water; down the stream's channel
+    // (slateCapStream: away from the river, easing in across STREAMS.confluence)
+    // it keeps the stream's own level and shading, as the stream's painted
+    // water beside it, so no edge shows where the sheet ends.
     [
       "fragmentShader",
       "|float slateLanternPuddle =",
       `float slateShore = fwidth(slateLevel), slatePx = length(fwidth(normalize(vViewPosition))), slateZoneW = smoothstep(0.0, .04, slateLevel+slateH);
 slatePuddle = mix(slatePuddle, smoothstep(${glsl(M.shore[0])}-slateShore, ${glsl(M.shore[1])}+slateShore, slateLevel)*(1.0-slateDry), slateZoneW);
 float slateMargin = smoothstep(${glsl(M.margin[0])}-slateShore, ${glsl(M.margin[1])}, slateLevel)*(1.0-slateDry)*(1.0-slatePuddle)*slateZoneW, slateCoat = mix(1.0, smoothstep(0.0, ${glsl(M.coat)}, slateLevel), slateZoneW);
-if(vSlateRiverSurface.x>.5){slateDry=0.;slatePuddle=1.;slateLevel=max(.06,vSlateRiverSurface.y);slateZoneW=1.;slateCoat=1.;slateMargin=0.;}
+float slateCapStream=0.;
+if(vSlateRiverSurface.x>.5){slateCapStream=smoothstep(${STREAMS.confluence.map(glsl).join(",")},slateRiverR)*(1.-smoothstep(${STREAMS.bed.reach.map(glsl).join(",")},slateStreamR));slateDry=0.;slatePuddle=1.;slateLevel=mix(max(.06,vSlateRiverSurface.y),max(.06,slateLevel),slateCapStream);slateZoneW=1.;slateCoat=1.;slateMargin=0.;}
 `,
     ],
     [
@@ -2342,6 +2362,7 @@ if(vSlateRiverSurface.x>.5){slateDry=0.;slatePuddle=1.;slateLevel=max(.06,vSlate
 slateLanternPuddle = slateBodyL;
 diffuseColor.rgb *= 1.0-${glsl(M.marginAlbedo)}*slateMargin;
 if(vSlateRiverSurface.x>.5){
+vec3 slateStreamC=diffuseColor.rgb;float slateStreamRF=roughnessFactor;
 float riverDepth=max(0.,vSlateRiverSurface.y);vec3 riverClear=exp(-riverDepth*${glslVec(...RIVER_CHANNEL.absorb)});
 vec2 riverUV=vec2(slateRiverQ.y+slateFlow*${glsl(RIVER_CHANNEL.speed)},slateRiverQ.z);
 float riverCurrent=slateNoise(riverUV*vec2(.8,2.7))*.65+slateNoise(riverUV*vec2(1.9,5.1)+19.)*.35;
@@ -2351,6 +2372,7 @@ float riverBank=smoothstep(.7,1.,slateRiverR)*smoothstep(.36,.74,riverCurrent)*.
 diffuseColor.rgb=mix(vec3(.016,.035,.037),diffuseColor.rgb*.32,riverClear)*(1.+.48*(riverCurrent-.5));
 diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.19,.23,.23),max(riverBank,riverCrest*.2));
 roughnessFactor=.13+.045*riverCurrent;
+diffuseColor.rgb=mix(diffuseColor.rgb,slateStreamC,slateCapStream);roughnessFactor=mix(roughnessFactor,slateStreamRF,slateCapStream);
 }
 ${STREAM_FOAM}`,
     ],
@@ -3686,7 +3708,7 @@ export function plantReeds(surface) {
 }
 
 // The water's banks (the owner's picks of 2026-10-10): gravel bars on the
-// inside of the stream's bends, a fan of gravel where it pours into the river
+// inside of the stream's bends, a fan of gravel where it leaves the river
 // and a gravel shore along the river where the lantern shots see it, with
 // leaves and twigs caught at the waterline and in the eddies behind the
 // stream's stones. On their own seed, as the fine litter's domes and leaves
@@ -3703,7 +3725,7 @@ export function plantReeds(surface) {
 // - debris: `count` leaves and twigs at the stream's waterline (radii
 //   `waterline`) and `eddy` of them in the slack water just behind each stone;
 //   as the gravel, one inside `shore` river radii is left out, its draws still
-//   taken, so none lies on the river where the stream pours in.
+//   taken, so none lies on the river where the stream leaves it.
 export const WATER_BANKS = Object.freeze({
   seed: 47713,
   gravel: Object.freeze({
@@ -3730,8 +3752,8 @@ export const WATER_BANKS = Object.freeze({
     twig: Object.freeze([0.18, 0.42]),
   }),
   // A few leaves drifting down the stream: `count` of LITTER.fine's leaves,
-  // `size` long, carried at `speed` of its flow from where it leaves the roots
-  // to its mouth, wandering `wander` of its half-width across and turning
+  // `size` long, carried at `speed` of its flow from its mouth on the river up
+  // to where it sinks under the roots, wandering `wander` of its half-width across and turning
   // slowly, shrinking in and out over the first and last `fade` units.
   drift: Object.freeze({
     count: 8,
@@ -3871,7 +3893,7 @@ function* bankSteps(surface, groundColor) {
     if (++placed % 64 === 0) yield;
   }
   // Leaves and twigs at the waterline, and in the eddy behind each stone.
-  const level = groundAt(LANTERN_FOOT.x, LANTERN_FOOT.z, 0) + STREAMS.bed.level + 0.004;
+  const foot = groundAt(LANTERN_FOOT.x, LANTERN_FOOT.z, 0);
   const debris = [];
   let floating = 0;
   for (const [dx, dz] of STREAMS.stones.list) {
@@ -3900,15 +3922,18 @@ function* bankSteps(surface, groundColor) {
     if (eddy) {
       // Just downstream of the stone, in its slack water.
       const [, , fx, fz] = streamPoint(streamAlong(sx, sz)),
-        back = between([0.12, 0.35]),
+        back = Math.sign(STREAMS.flow) * between([0.12, 0.35]),
         across = between([-0.12, 0.12]);
       x += fx * back - fz * across;
       z += fz * back + fx * across;
     }
     const ground = surface(x, z);
     if (!Number.isFinite(ground)) continue;
-    // Afloat where the water stands over the bed, else on the bank.
-    const y = Math.max(ground, streamRadius(x, z) < 1 ? level : ground),
+    // Afloat where the water stands over the bed (at its level there), else on the bank.
+    const y = Math.max(
+        ground,
+        streamRadius(x, z) < 1 ? foot + streamLevel(streamAlongAt, streamLength) + 0.004 : ground,
+      ),
       yaw = random() * Math.PI * 2,
       cy = Math.cos(yaw),
       sy = Math.sin(yaw),
@@ -3961,9 +3986,10 @@ function* bankSteps(surface, groundColor) {
 }
 // The drifting leaves (WATER_BANKS.drift): one small mesh whose leaves
 // update(time) moves down the stream on the drips' clock (settleRoots()), so
-// they hold still with the drips (reduced motion, a visitor pause). `level`
-// is the water's height.
-export function driftLeaves(level) {
+// they hold still with the drips (reduced motion, a visitor pause). `foot`
+// is the lantern's foot's height: they ride the water at its level there
+// (streamLevel()).
+export function driftLeaves(foot) {
   const D = WATER_BANKS.drift,
     F = LITTER.fine,
     line = STREAM_LINES[0],
@@ -4044,7 +4070,7 @@ export function driftLeaves(level) {
     if (time === last) return;
     last = time;
     leaves.forEach(({ corners, phase, yaw, spin, sway }, i) => {
-      const along = from + ((phase * run + time * STREAMS.flow * D.speed) % run),
+      const along = from + ((((phase * run + time * STREAMS.flow * D.speed) % run) + run) % run),
         [px, pz, fx, fz, half] = streamPoint(along),
         scale = ease(0, D.fade, along - from) * ease(0, D.fade, from + run - along),
         across = D.wander * half * Math.sin(time * 0.3 + sway),
@@ -4057,7 +4083,7 @@ export function driftLeaves(level) {
         positions.set(
           [
             x + (u * c - w * si) * scale,
-            level + 0.006 + lift * scale,
+            foot + streamLevel(along, line.length) + 0.006 + lift * scale,
             z + (u * si + w * c) * scale,
           ],
           (i * 24 + v) * 3,
@@ -4070,7 +4096,7 @@ export function driftLeaves(level) {
   geometry.computeBoundingSphere();
   // Its bounds hold the whole run of the stream, wherever the leaves are.
   const [x0, x1, z0, z1] = STREAMS_BOX;
-  geometry.boundingSphere.center.set((x0 + x1) / 2, level, (z0 + z1) / 2);
+  geometry.boundingSphere.center.set((x0 + x1) / 2, foot + STREAMS.bed.level, (z0 + z1) / 2);
   geometry.boundingSphere.radius = Math.hypot(x1 - x0, z1 - z0) / 2 + 0.5;
   geometry.userData.update = update;
   return geometry;
@@ -4229,10 +4255,7 @@ export function settleRoots(
           return [
             [reeds, "estate-stream-reeds"],
             [banks, "estate-water-banks"],
-            [
-              driftLeaves(surface(LANTERN_FOOT.x, LANTERN_FOOT.z) + STREAMS.bed.level),
-              "estate-drift-leaves",
-            ],
+            [driftLeaves(surface(LANTERN_FOOT.x, LANTERN_FOOT.z)), "estate-drift-leaves"],
           ].map(([geometry, name]) => Object.assign(new Mesh(geometry, growth.material), { name }));
         })(),
         () => false,
@@ -5029,12 +5052,22 @@ function* riverSurfaceSteps(geometry, sample, landHeight, EARTH) {
     return NaN;
   };
   const solidBed = (x, z) => (coastDistance(x, z) < SHORE.shelf ? channel.bed(x, z) : bed(x, z));
+  // The water's surface: the river's, and down the stream's channel the
+  // stream's own (streamLevel()), which is the river's where it leaves the
+  // river, so one sheet of water turns from the river into the stream.
+  const foot = landHeight(LANTERN_FOOT.x, LANTERN_FOOT.z),
+    water = (x, z) => {
+      const river = channel.water(x, z);
+      if (streamRadius(x, z) >= STREAMS.bed.reach[1]) return river;
+      const stream = foot + streamLevel(streamAlongAt, streamLength);
+      return stream + (river - stream) * (1 - ease(...STREAM_MOUTH, riverRadius(x, z)));
+    };
   const bedCount = indices.length,
     cap = new Array(count * 2).fill(0),
     across = RIVER_CHANNEL.across;
   const capPoint = (px, pz) => {
     const at = p.length / 3,
-      top = channel.water(px, pz),
+      top = water(px, pz),
       bottom = solidBed(px, pz);
     for (const [name, { size, data }] of Object.entries(arrays)) {
       if (name === "position") data.push(px, -pz, top);
@@ -5082,7 +5115,7 @@ function* riverSurfaceSteps(geometry, sample, landHeight, EARTH) {
   };
   const wet = (x, z) => {
     const bottom = solidBed(x, z);
-    return Number.isFinite(bottom) ? channel.water(x, z) - bottom - 0.003 : -1;
+    return Number.isFinite(bottom) ? water(x, z) - bottom - 0.003 : -1;
   };
   const emit = (polygon) => {
     for (let k = 1; k < polygon.length - 1; k++) {
@@ -5156,6 +5189,10 @@ function* riverSurfaceSteps(geometry, sample, landHeight, EARTH) {
     return upper.get(i);
   };
   for (let i = 0; i < bedCount; i += 3) {
+    // Yields on the scan, before the skips, every 64 triangles: where the
+    // water is dense each one is clipped, and a run of them must never make a
+    // long task.
+    if (i % 192 === 0) yield;
     const tri = indices.slice(i, i + 3),
       xs = tri.map((v) => p[v * 3]),
       zs = tri.map((v) => -p[v * 3 + 1]);
@@ -5166,11 +5203,17 @@ function* riverSurfaceSteps(geometry, sample, landHeight, EARTH) {
       Math.min(...zs) > box[3]
     )
       continue;
-    if (!tri.some((v) => riverWithin(p[v * 3], -p[v * 3 + 1], 1.3))) continue;
+    if (
+      !tri.some(
+        (v) =>
+          riverWithin(p[v * 3], -p[v * 3 + 1], 1.3) ||
+          streamRadius(p[v * 3], -p[v * 3 + 1]) < STREAMS.bed.reach[0],
+      )
+    )
+      continue;
     let polygon = tri.map(capVertex);
     for (const side of sides) polygon = clip(polygon, side);
     emit(clip(polygon, wet, true));
-    if (i % 768 === 0) yield;
   }
   for (const [name, { size, data }] of Object.entries(arrays)) {
     geometry.setAttribute(name, new BufferAttribute(new Float32Array(data), size));

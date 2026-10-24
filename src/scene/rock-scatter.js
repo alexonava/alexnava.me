@@ -8,7 +8,7 @@ import { applyFilmGrade, materialFor, sourceMesh } from "./architecture.js";
 import { DEPTH_LAYER, stampDepthLayer } from "./depth-layers.js";
 import { DIRECTED_SHOTS } from "./directed-shots.js";
 import { ESTATE, estateLantern, estatePathDistance, estatePoint } from "./estate-layout.js";
-import { SLATE_CONTACTS, SLATE_STREAMS } from "./mud-ground.js";
+import { SLATE_CONTACTS, SLATE_STREAMS, streamWater } from "./mud-ground.js";
 import { createDeferredQualityStep } from "./runtime.js";
 
 // The film's scattered rocks: the two authored Meshy stones, placed from a table
@@ -103,6 +103,7 @@ export const ROCK_LIB = Object.freeze({
   ROCK_CLUSTERS,
   PEBBLE_UNDER,
   STREAM_STONES: SLATE_STREAMS.stones,
+  streamWater,
   ESTATE,
   DIRECTED_SHOTS,
   DEPTH_LAYER,

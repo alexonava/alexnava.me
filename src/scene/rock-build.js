@@ -115,6 +115,7 @@ export function rockFootprints(lib, seed = 91357) {
       lift: 1,
       tone: stones.tone,
       sink: stones.sink,
+      show: stones.show,
       radius: 0.5 * Math.hypot(fx, fz) * height,
       half: 0.25 * (fx + fz) * height,
     });
@@ -159,8 +160,19 @@ export function createRockLayout(lib, { groundHeight, seed = 91357 }) {
     if (rock.pebble)
       normal.add(point.set(Math.sin(rock.yaw * 3), 0, Math.cos(rock.yaw * 5)).multiplyScalar(0.07));
     tilt.setFromUnitVectors(up, normal.normalize()).multiply(spin);
-    const scale = new Vector3(rock.stretch, rock.lift, 1).multiplyScalar(rock.height),
-      y = low - rock.sink * scale.y;
+    const scale = new Vector3(rock.stretch, rock.lift, 1).multiplyScalar(rock.height);
+    let y = low - rock.sink * scale.y;
+    // A stream's stone stands `show` of its height out of the water, its foot
+    // hidden under the water where the channel is deeper.
+    if (rock.stream && lib.streamWater) {
+      const lantern = lib.estateLantern();
+      y = Math.max(
+        y,
+        groundHeight(lantern.x, lantern.z) +
+          lib.streamWater(rock.x, rock.z) -
+          (1 - rock.show) * scale.y,
+      );
+    }
     return {
       ...rock,
       y,
