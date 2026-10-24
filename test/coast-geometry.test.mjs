@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import test, { after } from "node:test";
 import {
   COAST_BUTTRESSES,
@@ -7,14 +9,19 @@ import {
   coastDistance,
   coastFracture,
   coastGeometrySettings,
+  coastPlane,
   coastRockGlsl,
   cliffGeometry,
+  fallsNotch,
   faultAlong,
+  riverFalls,
   stackGeometry,
   stackOutline,
   stackOutlineGlsl,
   stackWaterlineProfile,
 } from "../src/scene/ocean.js";
+import { RIVER_LINE } from "../src/scene/terrain-build.js";
+import { WALK } from "../src/scene/walk.js";
 
 const height = () => 1.25;
 const built = new Map();
@@ -51,6 +58,257 @@ const stackPoint = (geometry, settings, k, r, j) =>
       (Math.min(r, settings.rings - 1) * settings.sides + j) * 6 +
       (r === settings.rings ? 2 : 0),
   );
+
+// Captured independently from the immutable modest-edge source (identity0be43f3c),
+// never from the selected slabs implementation. Row6 may move down/seaward;
+// row5's incident normals may respond. Its positions/UVs and rows0–4 normals,
+// the complete river collar, deep face, formations and topology stay protected.
+const modestBaseline = JSON.parse(
+  readFileSync(new URL("./support/coast-modest-baseline.json", import.meta.url), "utf8"),
+);
+assert.equal(
+  modestBaseline.sourceSha256,
+  "55fe2a0e02547f3e9ad0f8c14b7a16e1dea134fc3f174192b9cd89fbf5033269",
+);
+function originalTop(reference) {
+  const bytes = Buffer.from(reference.topRowsBase64, "base64");
+  assert.equal(createHash("sha256").update(bytes).digest("hex"), reference.topRowsSha256);
+  return (column, row) =>
+    [0, 1, 2].map((axis) => bytes.readFloatLE((column * 6 + (row - 5) * 3 + axis) * 4));
+}
+function protectedFingerprint(geometry, cliff, notch) {
+  const hash = createHash("sha256"),
+    info = geometry.userData.coastGeometry;
+  for (const [name, attribute] of Object.entries(geometry.attributes)) {
+    hash.update(name);
+    for (let i = 0; i < attribute.count; i++) {
+      const row = i % info.rows,
+        grid = i < info.baseVertices,
+        inSlot =
+          notch && Math.abs(geometry.attributes.aCliff.getX(i) - notch[0]) <= notch[1] + 3 + 1.2,
+        depth = (row - cliff.shelfRows - 1) / cliff.rows,
+        keep =
+          name === "normal"
+            ? !grid || inSlot || row < cliff.shelfRows - 1 || depth >= 0.2
+            : !["position", "uv", "aCliff"].includes(name) ||
+              !grid ||
+              inSlot ||
+              row < cliff.shelfRows ||
+              depth >= 0.12,
+        bytes = Buffer.from(
+          attribute.array.buffer,
+          attribute.array.byteOffset + i * attribute.itemSize * 4,
+          attribute.itemSize * 4,
+        );
+      if (keep) hash.update(bytes);
+      else if (name === "position" && row > cliff.shelfRows + 1) hash.update(bytes.subarray(4, 8));
+      else if (name === "aCliff") hash.update(bytes.subarray(0, 8));
+    }
+  }
+  return hash
+    .update(Buffer.from(geometry.index.array.buffer))
+    .update(JSON.stringify(geometry.groups))
+    .update(JSON.stringify(info))
+    .digest("hex");
+}
+
+function originalCoreFingerprint(geometry, notch) {
+  const hash = createHash("sha256"),
+    info = geometry.userData.coastGeometry;
+  for (const [name, attribute] of Object.entries(geometry.attributes)) {
+    hash.update(name);
+    for (let i = 0; i < info.baseVertices; i++)
+      if (Math.abs(geometry.attributes.aCliff.getX(i) - notch[0]) <= notch[1] + 3)
+        hash.update(
+          Buffer.from(
+            attribute.array.buffer,
+            attribute.array.byteOffset + i * attribute.itemSize * 4,
+            attribute.itemSize * 4,
+          ),
+        );
+  }
+  return hash.digest("hex");
+}
+
+test("faulted slabs preserve the inner shelf, complete original collar, deep face, formations and topology", () => {
+  const notch = fallsNotch(riverFalls(RIVER_LINE));
+  assert.deepEqual(notch, modestBaseline.notch);
+  for (const tier of ["high", "balanced"])
+    for (const [i, slot] of [null, notch].entries()) {
+      const settings = coastGeometrySettings(tier),
+        geometry = cliffGeometry(height, settings.cliff, 190, slot),
+        reference = modestBaseline.tiers[tier][slot ? "notched" : "unnotched"];
+      try {
+        assert.equal(
+          protectedFingerprint(geometry, settings.cliff, slot),
+          reference.protectedFingerprint,
+          `${tier}: ${i}`,
+        );
+        assert.equal(geometry.attributes.position.count, reference.vertices);
+        assert.equal(geometry.index.count / 3, reference.triangles);
+        assert.equal(
+          createHash("sha256").update(Buffer.from(geometry.index.array.buffer)).digest("hex"),
+          reference.indexSha256,
+        );
+        assert.deepEqual(geometry.groups, reference.groups);
+        if (slot)
+          assert.equal(originalCoreFingerprint(geometry, slot), reference.headCoreFingerprint);
+      } finally {
+        geometry.dispose();
+      }
+    }
+});
+
+test("faulted crest blocks move only down and seaward while upper triangles stay ordered and outward", () => {
+  const notch = fallsNotch(riverFalls(RIVER_LINE));
+  for (const tier of ["high", "balanced"]) {
+    const settings = coastGeometrySettings(tier),
+      geometry = cliffGeometry(height, settings.cliff, 190, notch),
+      p = geometry.attributes.position,
+      normal = geometry.attributes.normal,
+      { columns, rows } = geometry.userData.coastGeometry,
+      original = originalTop(modestBaseline.tiers[tier].notched),
+      [nx, nz] = coastPlane();
+    try {
+      let changed = 0,
+        leastPush = Infinity,
+        greatestPush = -Infinity;
+      for (let c = 0; c < columns; c++) {
+        const crest = c * rows + settings.cliff.shelfRows,
+          bevel = crest + 1,
+          first = bevel + 1,
+          along = geometry.attributes.aCliff.getX(crest),
+          before = original(c, 6),
+          after = point(geometry, crest),
+          dx = after[0] - before[0],
+          dz = after[2] - before[2],
+          push = dx * nx + dz * nz;
+        assert.ok(push >= -3e-5, "the crest never moves inland");
+        assert.ok(after[1] <= before[1] + 3e-6, "no crest point is raised");
+        assert.ok(Math.abs(-nz * dx + nx * dz) < 3e-5, "N motion retains alongshore order");
+        if (Math.hypot(dx, dz) > 3e-5) changed++;
+        if (Math.abs(along - notch[0]) > 20) {
+          leastPush = Math.min(leastPush, push);
+          greatestPush = Math.max(greatestPush, push);
+        }
+        const drop = p.getY(crest) - p.getY(bevel),
+          oldD = coastDistance(before[0], before[2]),
+          d = coastDistance(after[0], after[2]);
+        assert.ok(d <= oldD + 3e-5, "the shared shoreline equation sees only seaward motion");
+        assert.ok(drop >= 0.12 && p.getY(bevel) - p.getY(first) >= 0.12);
+        for (let row = settings.cliff.shelfRows + 1; row < rows; row++) {
+          if (
+            row > settings.cliff.shelfRows + 1 &&
+            (row - settings.cliff.shelfRows - 1) / settings.cliff.rows >= 0.12
+          )
+            break;
+          const i = c * rows + row,
+            d = coastDistance(p.getX(i), p.getZ(i));
+          assert.ok(d <= 0.28, `${tier}: altered rock at ${d} intrudes inland`);
+          assert.ok(d + WALK.body < WALK.bound.shore[1]);
+          assert.ok(Math.abs(geometry.attributes.uv.getX(i) - (p.getX(i) / 384 + 0.5)) < 1e-6);
+          assert.ok(Math.abs(geometry.attributes.uv.getY(i) - (0.5 - p.getZ(i) / 384)) < 1e-6);
+        }
+      }
+      assert.ok(changed > 0, "the actual crest changes, not only the bevel below it");
+      assert.ok(
+        greatestPush - leastPush > 0.5,
+        "coherent slabs do not become a uniformly shifted rim",
+      );
+      for (let i = 0; i < normal.count; i++) {
+        const length = Math.hypot(normal.getX(i), normal.getY(i), normal.getZ(i));
+        assert.ok(Number.isFinite(length) && Math.abs(length - 1) < 1e-5);
+      }
+      // Ordered heights alone do not detect a crossed strip at a fault cusp.
+      // Its actual triangles must also have area and face the local sea.
+      const upperEnd = settings.cliff.shelfRows + 1 + Math.ceil(0.2 * settings.cliff.rows);
+      for (let q = 0; q < geometry.index.count; q += 3) {
+        const ids = [0, 1, 2].map((k) => geometry.index.array[q + k]);
+        if (
+          ids.some(
+            (i) =>
+              i >= geometry.userData.coastGeometry.baseVertices ||
+              i % rows < settings.cliff.shelfRows - 1 ||
+              i % rows > upperEnd,
+          )
+        )
+          continue;
+        const pts = ids.map((i) => point(geometry, i)),
+          u = pts[1].map((v, k) => v - pts[0][k]),
+          v = pts[2].map((v, k) => v - pts[0][k]),
+          n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]],
+          x = pts.reduce((sum, p) => sum + p[0], 0) / 3,
+          z = pts.reduce((sum, p) => sum + p[2], 0) / 3,
+          dx = coastDistance(x - 0.001, z) - coastDistance(x + 0.001, z),
+          dz = coastDistance(x, z - 0.001) - coastDistance(x, z + 0.001);
+        assert.ok(Math.hypot(...n) > 1e-8, "every upper strip triangle has finite positive area");
+        if (ids.some((i) => i % rows === settings.cliff.shelfRows - 1))
+          assert.ok(n[1] > 0, "the walk-side top strip never turns downward");
+        else
+          assert.ok(
+            n[0] * dx + n[2] * dz > 0,
+            "upper strips keep their outward winding through cusps",
+          );
+      }
+    } finally {
+      geometry.dispose();
+    }
+  }
+});
+
+test("the actual walk-side top triangles never rise above the original top-plane envelope", () => {
+  const plane = (a, b, c) => {
+      const u = b.map((value, axis) => value - a[axis]),
+        v = c.map((value, axis) => value - a[axis]),
+        n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+      assert.ok(Math.abs(n[1]) > 1e-8, "the original walk-side triangle defines a height plane");
+      return [-n[0] / n[1], -n[2] / n[1], (n[0] * a[0] + n[1] * a[1] + n[2] * a[2]) / n[1]];
+    },
+    sample = (plane, point) => plane[0] * point[0] + plane[1] * point[2] + plane[2];
+  for (const tier of ["high", "balanced"])
+    for (const slot of [null, modestBaseline.notch]) {
+      const reference = modestBaseline.tiers[tier][slot ? "notched" : "unnotched"],
+        original = originalTop(reference),
+        geometry = cliffGeometry(height, coastGeometrySettings(tier).cliff, 190, slot),
+        { rows, columns } = geometry.userData.coastGeometry;
+      try {
+        for (let c = 0; c < columns - 1; c++) {
+          const planes = [
+            plane(original(c, 5), original(c + 1, 5), original(c, 6)),
+            plane(original(c, 6), original(c + 1, 5), original(c + 1, 6)),
+          ];
+          for (const ids of [
+            [c * rows + 5, (c + 1) * rows + 5, c * rows + 6],
+            [c * rows + 6, (c + 1) * rows + 5, (c + 1) * rows + 6],
+          ]) {
+            const points = ids.map((i) => point(geometry, i)),
+              candidates = [...points],
+              side = points.map((p) => sample(planes[0], p) - sample(planes[1], p));
+            // New height minus max(old planes) is piecewise affine. Its maximum
+            // is at a triangle corner or where the old planes' intersection
+            // crosses an edge. This checks the entire delivered triangle,
+            // including the walking body's d>=.5 envelope, without pixel sampling.
+            for (let edge = 0; edge < 3; edge++) {
+              const next = (edge + 1) % 3;
+              if (side[edge] * side[next] < 0) {
+                const t = side[edge] / (side[edge] - side[next]);
+                candidates.push(
+                  points[edge].map((value, axis) => value + (points[next][axis] - value) * t),
+                );
+              }
+            }
+            for (const p of candidates)
+              assert.ok(
+                p[1] <= Math.max(...planes.map((plane) => sample(plane, p))) + 3e-5,
+                `${tier}: crown adds a raised walk-side plane at column ${c}`,
+              );
+          }
+        }
+      } finally {
+        geometry.dispose();
+      }
+    }
+});
 
 test("both coastal tiers contain finite rock geometry within their unchanged triangle caps", () => {
   for (const tier of ["high", "balanced"]) {

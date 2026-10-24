@@ -794,6 +794,67 @@ const fbm = (x, y) =>
   0.3 * noise2(x * 2.07 + 5.1, y * 2.07 + 1.3) +
   0.15 * noise2(x * 4.3 + 9.7, y * 4.3 + 3.9);
 
+// Retain the established modest lip through the waterfall's protected collar.
+function modestLipProfile(s) {
+  const knot = (j) => j * 8 + (hash(j, 5.7) - 0.5) * 2,
+    ramp = (j) => 1.2 + 0.8 * hash(j, 8.3),
+    block = (j) =>
+      hash(j, 18.2) < 0.24
+        ? [0.65 + 0.55 * hash(j, 3.7), 0.25 + 0.2 * hash(j, 6.1)]
+        : [-0.2 + 0.13 * hash(j, 7.6), 0.65 + 0.15 * hash(j, 9.4)];
+  let j = Math.floor(s / 8);
+  if (s < knot(j)) j--;
+  else if (s >= knot(j + 1)) j++;
+  let a = block(j),
+    b = a,
+    t = 0;
+  if (s - knot(j) < ramp(j) / 2) {
+    a = block(j - 1);
+    b = block(j);
+    t = 0.5 + (s - knot(j)) / ramp(j);
+  } else if (knot(j + 1) - s < ramp(j + 1) / 2) {
+    b = block(j + 1);
+    t = 0.5 - (knot(j + 1) - s) / ramp(j + 1);
+  }
+  return a.map((v, i) => v + (b[i] - v) * t);
+}
+
+// Faulted slabs: reach, crown loss, face width and face-depth fraction.
+// Quiet 6–10-unit blocks meet over short angular ramps, independent of LOD.
+function lipProfile(s) {
+  const knot = (j) => j * 8 + (hash(j, 5.7) - 0.5) * 2,
+    ramp = (j) => 1.2 + 0.8 * hash(j, 8.3),
+    block = (j) =>
+      hash(j, 18.2) < 0.28
+        ? [
+            1.7 + 0.7 * hash(j, 3.7),
+            0.26 + 0.18 * hash(j, 6.1),
+            0.55 + 0.45 * hash(j, 7.6),
+            0.42 + 0.12 * hash(j, 9.4),
+          ]
+        : [
+            0.7 + 0.45 * hash(j, 3.7),
+            0.05 + 0.12 * hash(j, 6.1),
+            0.12 + 0.22 * hash(j, 7.6),
+            0.68 + 0.13 * hash(j, 9.4),
+          ];
+  let j = Math.floor(s / 8);
+  if (s < knot(j)) j--;
+  else if (s >= knot(j + 1)) j++;
+  let a = block(j),
+    b = a,
+    t = 0;
+  if (s - knot(j) < ramp(j) / 2) {
+    a = block(j - 1);
+    b = block(j);
+    t = 0.5 + (s - knot(j)) / ramp(j);
+  } else if (knot(j + 1) - s < ramp(j + 1) / 2) {
+    b = block(j + 1);
+    t = 0.5 - (knot(j + 1) - s) / ramp(j + 1);
+  }
+  return a.map((v, i) => v + (b[i] - v) * t);
+}
+
 // A point on the fault at along-shore s.
 function faultPoint(s) {
   const [w] = wobble(s);
@@ -933,6 +994,106 @@ function* cliffGeometrySteps(height, cliff = CLIFF, half = 190, notch = null) {
         shelfRows + lipRows + r,
         v,
       );
+    }
+    // Construct the established lip first, retaining its exact outer-neighbour
+    // geometry about the waterfall before blending in stronger fractures.
+    const modestDry = notch ? Math.abs(s - notch[0]) - notch[1] - 3 - 1.2 : Infinity;
+    if (modestDry > 0) {
+      const [off, fraction] = modestLipProfile(s),
+        strength = Math.min(1, modestDry / 2),
+        crest = positions[(i * rows + shelfRows) * 3 + 1],
+        face = top - 0.6 + (cliff.foot - top + 0.6) * (1 / CLIFF.rows) ** 0.9,
+        y = crest + (face - crest) * fraction,
+        move = (row, offset, level, v) => {
+          at(offset, level, row, v);
+          const k = (i * rows + row) * 3,
+            x = positions[k],
+            z = positions[k + 2],
+            [, slope] = wobble(faultAlong(x, z)),
+            push = Math.max(0, coastDistance(x, z) - 0.2799) * Math.sqrt(1 + slope * slope);
+          positions[k] = x + NX * push;
+          positions[k + 2] = z + NZ * push;
+          attrs[k + 2] = offset + push * (NX * ox + NZ * oz);
+          uvs.set([positions[k] / 384 + 0.5, 0.5 - positions[k + 2] / 384], (i * rows + row) * 2);
+        },
+        bevelY = positions[(i * rows + shelfRows + 1) * 3 + 1];
+      move(shelfRows + 1, bevel + (off - bevel) * strength, bevelY + (y - bevelY) * strength, 0.02);
+      for (let r = 0; (r + 1) / cliff.rows < 0.12; r++) {
+        const v = (r + 1) / cliff.rows,
+          row = shelfRows + lipRows + r,
+          k = (i * rows + row) * 3;
+        move(row, attrs[k + 2] + (off - bevel) * strength * (1 - v / 0.12), positions[k + 1], v);
+      }
+    }
+    // Leave the inner shelf and the river's entire feather intact.
+    // An extra coarsest column keeps the full 1.2-unit collar's incident
+    // normals stable too. The same world-space band is used on both tiers.
+    const dry = notch ? Math.abs(s - notch[0]) - notch[1] - 3 - 1.2 - 1.2001 : Infinity;
+    if (dry > 0) {
+      const [reach, cut, width, fraction] = lipProfile(s),
+        strength = Math.min(1, dry / 2),
+        crown = (i * rows + shelfRows) * 3,
+        innerCrown = crown - 3,
+        faceCrown = crown + 3,
+        crest = positions[crown + 1],
+        // A fixed point on the continuous face, not the current LOD's first
+        // row, gives both tiers the same slab height and keeps row7 above row8.
+        face = top - 0.6 + (cliff.foot - top + 0.6) * (1 / CLIFF.rows) ** 0.9,
+        oldD = coastDistance(positions[crown], positions[crown + 2]),
+        innerD = coastDistance(positions[innerCrown], positions[innerCrown + 2]),
+        slope = (crest - positions[innerCrown + 1]) / (innerD - oldD),
+        // A crown already lower than its inner neighbour must lose enough
+        // height that extending it cannot lift the old walk-side top plane.
+        loss = Math.max(cut, Math.max(0, -slope) * reach),
+        scale = Math.min(1, Math.max(0, crest - face - 0.36) / loss),
+        out = reach * scale,
+        targetCrest = crest - loss * scale,
+        targetX = positions[crown] + NX * out,
+        targetZ = positions[crown + 2] + NZ * out,
+        targetFace = Math.max(
+          face + 0.12,
+          Math.min(targetCrest - 0.12, targetCrest + (face - targetCrest) * fraction),
+        ),
+        dx = targetX + NX * width - positions[faceCrown],
+        dz = targetZ + NZ * width - positions[faceCrown + 2],
+        move = (row, x, level, z, project) => {
+          const k = (i * rows + row) * 3,
+            [, slope] = wobble(faultAlong(x, z)),
+            // Keep even a collapsed ledge outside the walk's body. A tiny
+            // margin retains d <= .28 after storing world positions as floats.
+            push = project
+              ? Math.max(0, coastDistance(x, z) - 0.2799) * Math.sqrt(1 + slope * slope)
+              : 0;
+          positions[k] = x + NX * push;
+          positions[k + 1] = level;
+          positions[k + 2] = z + NZ * push;
+          attrs[k + 2] = (positions[k] - px) * ox + (positions[k + 2] - pz) * oz;
+          uvs.set([positions[k] / 384 + 0.5, 0.5 - positions[k + 2] / 384], (i * rows + row) * 2);
+        },
+        bevelY = positions[(i * rows + shelfRows + 1) * 3 + 1];
+      // N preserves faultAlong and decreases coastDistance exactly. Never
+      // project this fading crown: its original D is above the face limit.
+      move(
+        shelfRows,
+        positions[crown] + NX * out * strength,
+        crest + (targetCrest - crest) * strength,
+        positions[crown + 2] + NZ * out * strength,
+        false,
+      );
+      move(
+        shelfRows + 1,
+        positions[faceCrown] + dx * strength,
+        bevelY + (targetFace - bevelY) * strength,
+        positions[faceCrown + 2] + dz * strength,
+        true,
+      );
+      for (let r = 0; (r + 1) / cliff.rows < 0.12; r++) {
+        const v = (r + 1) / cliff.rows,
+          row = shelfRows + lipRows + r,
+          k = (i * rows + row) * 3;
+        const blend = strength * (1 - v / 0.12);
+        move(row, positions[k] + dx * blend, positions[k + 1], positions[k + 2] + dz * blend, true);
+      }
     }
     if (i % 8 === 7) yield;
   }

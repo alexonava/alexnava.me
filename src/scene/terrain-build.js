@@ -2402,7 +2402,8 @@ ${STREAM_FOAM}`,
 // second lookup of the coast's albedo and detail maps,
 // `scale` times as large, turned (a 7-24-25 turn) and offset, blended in by a
 // `blendCell` noise, so the shelf's rock never shows the tile repeat; relief:
-// how far the detail map tilts its normal, as on the cliff's tops (ocean.js).
+// how far the detail map tilts its normal. The worn shelf keeps a shallower
+// relief than the freshly exposed cliff so its pits never read as raised rims.
 export const COAST_BEDROCK = Object.freeze({
   near: 2,
   far: 18,
@@ -2414,7 +2415,7 @@ export const COAST_BEDROCK = Object.freeze({
     offset: Object.freeze([0.41, 0.17]),
   }),
   blendCell: 2.6,
-  relief: 0.48,
+  relief: 0.26,
 });
 
 // The eroded shelf is the same rock as the face, with its colour and its
