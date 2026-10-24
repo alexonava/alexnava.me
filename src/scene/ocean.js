@@ -2328,7 +2328,8 @@ export function fallsGeometry(drop, height, falls = FALLS, level = SEA.level) {
     middle = streams[(across - 1) / 2],
     rows = falls.rows + 1,
     positions = new Float32Array(rows * across * 3),
-    attrs = new Float32Array(rows * across * 2);
+    attrs = new Float32Array(rows * across * 2),
+    times = new Float32Array(rows * across);
   for (let r = 0; r < rows; r++)
     streams.forEach(({ w, start, brink, top, edge, fall }, c) => {
       const i = r * across + c;
@@ -2344,6 +2345,7 @@ export function fallsGeometry(drop, height, falls = FALLS, level = SEA.level) {
           i * 3,
         );
         attrs.set([w, 0.8 + 0.05 * a], i * 2);
+        times[i] = -rapidsTravel(Math.hypot(brink[0] - start[0], brink[1] - start[1]) * (1 - a));
         return;
       }
       const k = (r - falls.run) / falling,
@@ -2356,23 +2358,20 @@ export function fallsGeometry(drop, height, falls = FALLS, level = SEA.level) {
         // and has body from any side.
         out =
           falls.push * t * (1 - falls.drag * w * w) +
+          // Only broad folds belong in the silhouette. Fine corrugation at
+          // this width sampling aliases into a rigid zigzag down the fall;
+          // smaller streams remain the fragment shader's filtered detail.
           hw *
-            (0.045 *
-              (Math.sin(w * 11 + 0.7) * (1 - folding) +
-                (Math.sin(w * 11 + 0.9 * Math.sin(w * 4) + k * 3.2) - Math.sin(k * 3.2)) *
-                  folding) *
-              smooth(0.85, 1.2, v) +
-              0.025 *
-                (Math.sin(w * 23 + 2.1) * (1 - folding) +
-                  (Math.sin(w * 23 + 1.1 * Math.sin(w * 5 + k * 4.7)) -
-                    Math.sin(1.1 * Math.sin(k * 4.7))) *
-                    folding) *
-                smooth(0.9, 1.5, v)),
+            0.055 *
+            (Math.sin(w * 7 + 0.7) * (1 - folding) +
+              (Math.sin(w * 7 + 0.9 * Math.sin(w * 4) + k * 3.2) - Math.sin(k * 3.2)) * folding) *
+            smooth(0.85, 1.2, v),
         // Along the cliff it spreads from its middle's brink.
         x = middle.brink[0] + (brink[0] - middle.brink[0]) * (1 + falls.spread * k),
         z = middle.brink[1] + (brink[1] - middle.brink[1]) * (1 + falls.spread * k);
       positions.set([x + hx * out, edge - 16.1 * t * t, z + hz * out], i * 3);
       attrs.set([w, v], i * 2);
+      times[i] = t;
     });
   // Around each course station: the outer face, the rounded right side,
   // the inner face in reverse, and the rounded left side. The lip's surface
@@ -2382,6 +2381,7 @@ export function fallsGeometry(drop, height, falls = FALLS, level = SEA.level) {
     count = rows * ring,
     body = new Float32Array((count + ring) * 3),
     course = new Float32Array((count + ring) * 3),
+    travel = new Float32Array(count + ring),
     depths = new Float32Array(across),
     sides = [0, 1 / 3, 2 / 3, 1];
   for (let r = 0; r < rows; r++) {
@@ -2416,6 +2416,7 @@ export function fallsGeometry(drop, height, falls = FALLS, level = SEA.level) {
         i * 3,
       );
       course.set([w, v, depth], i * 3);
+      travel[i] = times[source];
     };
     for (let c = 0; c < across; c++) put(c, c, sides[0]);
     put(across, across - 1, sides[1]);
@@ -2439,6 +2440,7 @@ export function fallsGeometry(drop, height, falls = FALLS, level = SEA.level) {
   // water's first row would tilt the upper surface into a false raised bar.
   body.set(body.subarray(0, ring * 3), count * 3);
   course.set(course.subarray(0, ring * 3), count * 3);
+  travel.set(travel.subarray(0, ring), count);
   for (const r of [0, rows - 1]) {
     // Paired front/back strips follow the concave folded profile. A fan from
     // its centroid would cross folds and reverse some submerged toe faces.
@@ -2460,6 +2462,7 @@ export function fallsGeometry(drop, height, falls = FALLS, level = SEA.level) {
   const geometry = new BufferGeometry();
   geometry.setAttribute("position", new BufferAttribute(body, 3));
   geometry.setAttribute("aFall", new BufferAttribute(course, 3));
+  geometry.setAttribute("aTravel", new BufferAttribute(travel, 1));
   geometry.setIndex(new BufferAttribute(indices, 1));
   geometry.userData.falls = { across, ring, rows };
   geometry.computeVertexNormals();
@@ -2481,7 +2484,7 @@ uniform mat4 projectionMatrix;
 varying vec3 vW, vN;
 varying vec4 vSlateClip;
 varying vec3 vF;
-varying float vSeaY;
+varying float vSeaY, vTravel;
 ${lib.SLATE_TEXT_GUARD}
 ${lib.MIST_PARS}
 ${ENV_PARS}
@@ -2500,7 +2503,9 @@ float a=abs(vF.x),v=vF.y,fall=smoothstep(.86,1.1,v),white=smoothstep(.9,1.25,v),
 // runs on. Their density d keeps the same contrast whichever of them the pixel
 // resolves, so from afar the falls still read as streams of white water, never
 // one smooth band.
-float tau=min(v,.86)/.8+.0706*log(1.+4.25*clamp((v-.86)/.24,0.,1.))+max(v-1.1,0.)/4.2;
+// The guide's own seconds from the brink: negative on the river, then the
+// ballistic flight time. Remapping v again made foam outrun the falling water.
+float tau=vTravel;
 float fx=fwidth(q),ft=fwidth(tau);
 float a1=1.-smoothstep(.3,1.05,max(fx*6.,ft*4.5)),a2=1.-smoothstep(.3,1.05,max(fx*16.,ft*5.)),a3=1.-smoothstep(.32,1.06,max(fx*40.,ft*10.));
 // Broad channels wander and merge; finer aerated folds ride them. Their
@@ -2738,13 +2743,14 @@ export function createFalls({
     uniforms,
     side: 0,
     vertexShader: `attribute vec3 aFall;
+attribute float aTravel;
 varying vec3 vW, vN;
 varying vec4 vSlateClip;
 varying vec3 vF;
-varying float vSeaY;
+varying float vSeaY, vTravel;
 void main(){
 vec4 w=modelMatrix*vec4(position,1.);
-vW=w.xyz;vN=normalize(mat3(modelMatrix)*normal);vF=aFall;vSeaY=modelMatrix[3].y+${glsl(SEA.level)};
+vW=w.xyz;vN=normalize(mat3(modelMatrix)*normal);vF=aFall;vTravel=aTravel;vSeaY=modelMatrix[3].y+${glsl(SEA.level)};
 gl_Position=projectionMatrix*viewMatrix*w;
 vSlateClip=gl_Position;
 }`,

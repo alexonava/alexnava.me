@@ -276,20 +276,32 @@ test("falling sheets keep their ballistic middle and vary folds through the lowe
     assert.ok(Math.abs(position.getX(final) - plunge[0]) < 1e-5);
     assert.ok(Math.abs(position.getZ(final) - plunge[1]) < 1e-5);
     assert.ok(Math.abs(position.getY(final) - (SEA.level - 1)) < 1e-5);
-    const [hx, hz] = drop.heading,
-      displacements = [];
-    // Compare a side stream to the ballistic middle along the direction of
-    // flow. Equal-pitch, constant extruded ribbons would settle to a constant
-    // residual across these lower rows; the delivered sheet continues folding.
-    for (let row = FALLS.rows - 5; row <= FALLS.rows; row++) {
-      const i = row * ring + back(middle),
-        j = row * ring + back(middle + 3);
-      displacements.push(
-        (position.getX(j) - position.getX(i)) * hx + (position.getZ(j) - position.getZ(i)) * hz,
-      );
+    const [hx, hz] = drop.heading;
+    let changingStreams = 0;
+    // Remove each stream's own ballistic bow before comparing its lower
+    // course. Most interior streams must vary physically; a constant
+    // extrusion cannot pass by merely changing acceleration or one column.
+    for (let column = 1; column < across - 1; column++) {
+      const brink = FALLS.run * ring + column,
+        centre = FALLS.run * ring + middle,
+        w = (column / (across - 1)) * 2 - 1,
+        fall = Math.sqrt((2 * (position.getY(brink) - SEA.level + 1)) / 32.2),
+        residuals = [];
+      for (let row = FALLS.rows - 5; row <= FALLS.rows; row++) {
+        const k = (row - FALLS.run) / (FALLS.rows - FALLS.run),
+          i = row * ring + back(column),
+          scale = 1 + FALLS.spread * k,
+          x = position.getX(centre) + (position.getX(brink) - position.getX(centre)) * scale,
+          z = position.getZ(centre) + (position.getZ(brink) - position.getZ(centre)) * scale;
+        residuals.push(
+          (position.getX(i) - x) * hx +
+            (position.getZ(i) - z) * hz -
+            FALLS.push * k * fall * (1 - FALLS.drag * w * w),
+        );
+      }
+      if (Math.max(...residuals) - Math.min(...residuals) > drop.lip[2] * 0.01) changingStreams++;
     }
-    const differences = displacements.slice(1).map((v, i) => v - displacements[i]);
-    assert.ok(Math.max(...differences) - Math.min(...differences) > 0.01);
+    assert.ok(changingStreams > (across - 2) / 2, "broad folds evolve over most interior streams");
     for (const attribute of Object.values(geometry.attributes))
       assert.ok([...attribute.array].every(Number.isFinite));
   } finally {
@@ -426,7 +438,7 @@ test("falling water keeps dark continuous thickness under white current and whit
       ),
       foot = new Function("foam", "toe", "r2", "mix", "max", `return ${whiten};`),
       mix = (a, b, t) => a + (b - a) * t,
-      tau = new Function("v", "min", "max", "log", "clamp", `return ${travel};`),
+      tau = new Function("vTravel", `return ${travel};`),
       clamp = (x, a, b) => Math.max(a, Math.min(b, x));
     const discard = [...shader.matchAll(/if\(([^;]+)\)discard;/g)];
     assert.equal(discard.length, 0, "closed physical walls define the silhouette and stay visible");
@@ -451,13 +463,25 @@ test("falling water keeps dark continuous thickness under white current and whit
     assert.equal(aeration(SEA.level, SEA.level + 3, smoothstep), 0);
     assert.equal(aeration(SEA.level, SEA.level, smoothstep), 1);
     assert.ok(aeration(SEA.level, SEA.level + 1, smoothstep) > 0.4);
-    const lowerTravel =
-      tau(1.9, Math.min, Math.max, Math.log, clamp) - tau(1.1, Math.min, Math.max, Math.log, clamp);
+    const geometry = falls.mesh.geometry,
+      { across, ring, rows } = geometry.userData.falls,
+      middle = (across - 1) / 2,
+      brink = FALLS.run * ring + middle,
+      toeIndex = (rows - 1) * ring + across + 2 + across - 1 - middle,
+      lowerTravel =
+        tau(geometry.attributes.aTravel.getX(toeIndex)) -
+        tau(geometry.attributes.aTravel.getX(brink)),
+      ballisticTime = Math.sqrt(
+        (2 *
+          (geometry.attributes.position.getY(brink) -
+            geometry.attributes.position.getY(toeIndex))) /
+          32.2,
+      );
     assert.ok(shader.includes("4.5*(tau-seaTime)"), "the streams move with the water itself");
     assert.ok(shader.includes("*(tau-seaTime)),seaTime*.3).x);"), "packets fall with the water");
     assert.ok(
-      lowerTravel * +coarse[2] > 0.7 && lowerTravel * +coarse[2] < 3.5,
-      "long streams turn over down the drop (never a frozen curtain), keeping their vertical flow",
+      Math.abs(lowerTravel - ballisticTime) < 2e-6 && lowerTravel * +coarse[2] > 0.7,
+      "the current turns over during the actual ballistic fall rather than an arbitrary normalized course",
     );
   } finally {
     falls.dispose();

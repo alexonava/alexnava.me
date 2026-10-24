@@ -12,10 +12,12 @@ import {
   createFalls,
   fallsGeometry,
   fallsNotch,
+  rapidsTravel,
   riverFalls,
   riverRunStart,
 } from "../src/scene/ocean.js";
 import { filmHeight, riverChannel, RIVER_LINE } from "../src/scene/terrain-build.js";
+import { flat } from "./support/code.mjs";
 
 // Use the live dune sampler and the actual river/fault intersection, rather
 // than a flat substitute: the water must start under the delivered notch's
@@ -231,6 +233,102 @@ test("the waterfall is one watertight outward-facing solid, with irregular physi
   }
 });
 
+test("the delivered width sampling resolves its physical folds instead of aliasing fine corrugations", (t) => {
+  const { geometry } = fallsGeometry(drop, height),
+    p = geometry.attributes.position,
+    { across, ring, rows } = geometry.userData.falls,
+    middle = (across - 1) / 2,
+    back = (column) => across + 2 + across - 1 - column,
+    [hx, hz] = drop.heading,
+    expression = flat(fallsGeometry.toString()).match(
+      /\bout\s*=\s*([\s\S]*?),\s*x\s*=\s*middle\.brink/,
+    )?.[1];
+  assert.ok(expression, "evaluate the delivered physical guide, not a copied fold formula");
+  const out = new Function(
+      "falls",
+      "w",
+      "t",
+      "hw",
+      "folding",
+      "k",
+      "v",
+      "smooth",
+      `return ${expression};`,
+    ),
+    smooth = (a, b, x) => {
+      const u = Math.max(0, Math.min(1, (x - a) / (b - a)));
+      return u * u * (3 - 2 * u);
+    },
+    subdivisions = (across - 1) * 100,
+    flightTimes = Array.from({ length: subdivisions + 1 }, (_, sample) => {
+      const w = (sample / subdivisions) * 2 - 1,
+        [x, z] = riverRunStart(drop, w);
+      return Math.sqrt((2 * (height.water(x, z) - FALLS.draw - SEA.level + 1)) / 32.2);
+    });
+  let worstError = 0,
+    worstRelativeError = 0,
+    worstRelativeRms = 0;
+  try {
+    for (let row = FALLS.run + 1; row < rows; row++) {
+      const k = (row - FALLS.run) / (FALLS.rows - FALLS.run),
+        v = 0.85 + 1.15 * k,
+        hw = drop.lip[2] * (1 + FALLS.spread * k),
+        folding = smooth(1.2, 1.65, v),
+        delivered = Array.from({ length: across }, (_, column) => {
+          const w = (column / (across - 1)) * 2 - 1,
+            time = k * flightTimes[column * 100],
+            i = row * ring + back(column),
+            brink = FALLS.run * ring + column,
+            centre = FALLS.run * ring + middle,
+            scale = 1 + FALLS.spread * k,
+            x = p.getX(centre) + (p.getX(brink) - p.getX(centre)) * scale,
+            z = p.getZ(centre) + (p.getZ(brink) - p.getZ(centre)) * scale,
+            offset = (p.getX(i) - x) * hx + (p.getZ(i) - z) * hz;
+          assert.ok(
+            Math.abs(offset - out(FALLS, w, time, hw, folding, k, v, smooth)) < 2e-5,
+            "dense evaluator matches actual inner-skin columns",
+          );
+          return offset - FALLS.push * time * (1 - FALLS.drag * w * w);
+        });
+      let lo = Infinity,
+        hi = -Infinity,
+        error = 0,
+        squaredError = 0;
+      for (let sample = 0; sample <= subdivisions; sample++) {
+        const u = sample / 100,
+          column = Math.min(across - 2, Math.floor(u)),
+          fraction = u - column,
+          w = (u / (across - 1)) * 2 - 1,
+          time = k * flightTimes[sample],
+          physical =
+            out(FALLS, w, time, hw, folding, k, v, smooth) -
+            FALLS.push * time * (1 - FALLS.drag * w * w),
+          interpolated = delivered[column] + (delivered[column + 1] - delivered[column]) * fraction,
+          difference = Math.abs(physical - interpolated);
+        lo = Math.min(lo, physical);
+        hi = Math.max(hi, physical);
+        error = Math.max(error, difference);
+        squaredError += difference * difference;
+      }
+      assert.ok(
+        error <= 0.02 * hw,
+        `row ${row}: physical fold error ${error} exceeds 2% of half-width ${hw}`,
+      );
+      if (row >= FALLS.rows - 5)
+        assert.ok(hi - lo > hw * 0.05, "the lower skin retains real broad folds");
+      worstError = Math.max(worstError, error);
+      worstRelativeError = Math.max(worstRelativeError, error / (hi - lo));
+      worstRelativeRms = Math.max(
+        worstRelativeRms,
+        Math.sqrt(squaredError / (subdivisions + 1)) / (hi - lo),
+      );
+    }
+    t.diagnostic(JSON.stringify({ worstError, worstRelativeError, worstRelativeRms }));
+  } finally {
+    geometry.dispose();
+  }
+});
+
 test("the closed lateral skin retains continuous filtered flow and cannot disappear through silhouette discard", () => {
   const falls = createFalls({ lib, clock: { uniform: { value: 0 }, tick: () => 0 }, drop, height });
   try {
@@ -249,6 +347,102 @@ test("the closed lateral skin retains continuous filtered flow and cannot disapp
       const q = -1 + Number(phase[1]) * depth;
       assert.ok(q >= previous && q - previous < 0.01);
       previous = q;
+    }
+  } finally {
+    falls.dispose();
+  }
+});
+
+test("density packets follow the body's measured ballistic travel in seconds, continuously from its river run", () => {
+  const falls = createFalls({ lib, clock: { uniform: { value: 0 }, tick: () => 0 }, drop, height }),
+    geometry = falls.mesh.geometry,
+    p = geometry.attributes.position,
+    course = geometry.attributes.aFall,
+    travel = geometry.attributes.aTravel,
+    { across, ring, rows } = geometry.userData.falls,
+    back = (column) => across + 2 + across - 1 - column;
+  try {
+    assert.ok(travel && travel.itemSize === 1 && travel.count === p.count);
+    const vertex = flat(falls.material.vertexShader),
+      shader = flat(falls.material.fragmentShader),
+      tauExpression = shader.match(/float tau=([^;]+);/)?.[1],
+      phaseExpressions = [
+        ...shader.matchAll(/fallsSheet\(vec2\([^,]+,([^,]+)\),seaTime\*[\d.]+\)\.x/g),
+      ].map((match) => match[1]);
+    assert.ok(
+      vertex.includes("vTravel=aTravel"),
+      "the delivered attribute reaches the fragment shader",
+    );
+    assert.ok(
+      tauExpression && phaseExpressions.length >= 2,
+      "probe actual current and packet coordinates",
+    );
+    const tau = new Function(
+        "vTravel",
+        "v",
+        "min",
+        "max",
+        "log",
+        "clamp",
+        `return ${tauExpression};`,
+      ),
+      clamp = (x, a, b) => Math.max(a, Math.min(b, x)),
+      at = (index) =>
+        tau(travel.getX(index), course.getY(index), Math.min, Math.max, Math.log, clamp),
+      phases = phaseExpressions.map(
+        (expression) => new Function("tau", "seaTime", `return ${expression};`),
+      ),
+      sameCourse = new Map();
+    for (let i = 0; i < p.count; i++) {
+      const key = `${course.getX(i)}:${course.getY(i)}`;
+      if (sameCourse.has(key))
+        assert.equal(
+          travel.getX(i),
+          sameCourse.get(key),
+          "front, back, lateral skin and cap use one material clock",
+        );
+      else sameCourse.set(key, travel.getX(i));
+      assert.ok(Number.isFinite(at(i)));
+    }
+    for (let column = 0; column < across; column++) {
+      const brink = FALLS.run * ring + column,
+        edge = p.getY(brink);
+      assert.ok(at(brink) === 0, "material travel is continuous through each stream's brink");
+      for (let row = 0; row <= FALLS.run; row++) {
+        const i = row * ring + column,
+          remaining = Math.hypot(p.getX(brink) - p.getX(i), p.getZ(brink) - p.getZ(i));
+        assert.ok(
+          Math.abs(at(i) + rapidsTravel(remaining)) < 2e-6,
+          "the upper run uses its actual distance and river speed law",
+        );
+      }
+      let previous;
+      for (let row = FALLS.run + 4; row < rows; row++) {
+        const i = row * ring + back(column),
+          physicalTime = Math.sqrt((2 * (edge - p.getY(i))) / 32.2);
+        assert.ok(
+          Math.abs(at(i) - physicalTime) < 2e-6,
+          "density uses the same physical time as the falling water body",
+        );
+        if (previous) {
+          const dt = physicalTime - previous.time;
+          assert.ok(dt > 0);
+          for (const phase of phases) {
+            const initial = phase(at(previous.index), 2.7),
+              advected = phase(at(i), 2.7 + dt),
+              stationary = phase(at(previous.index), 2.7 + dt);
+            assert.ok(
+              Math.abs(initial - advected) < 2e-5,
+              "a material packet stays with accelerating water rather than sliding through its volume",
+            );
+            assert.ok(
+              stationary < initial,
+              "the same field still moves downstream at a fixed position",
+            );
+          }
+        }
+        previous = { index: i, time: physicalTime };
+      }
     }
   } finally {
     falls.dispose();
