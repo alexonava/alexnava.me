@@ -255,6 +255,10 @@ export const DISSOLVE_SOFT = Object.freeze({
   fade: 0.15,
 });
 
+// The shallow focus softens ground nearer the lens than its focus by at most
+// this many radii of its blur, unless the shot's lens sets its own (`near`).
+export const LENS_NEAR = 1.5;
+
 // The lens (the owner's pick of the Eye breakdown, 2026-10-09), all of it in the
 // final pass, in film only; each part switches off with its `on`.
 export const LENS_FX = Object.freeze({
@@ -377,12 +381,12 @@ vec2 lensFringe(vec2 v, vec4 star) {
 // The scene through the lens at uv (screen position v): the heat's drift, the
 // shot's focus, then the aberration's fringes, all eased off behind the text
 // and the kept banks.
-vec4 lensView(sampler2D map, vec2 uv, vec2 v, float blur, vec3 ground, vec4 star, vec4 flame, vec4 keep, float guard) {
+vec4 lensView(sampler2D map, vec2 uv, vec2 v, float blur, float nearCap, vec3 ground, vec4 star, vec4 flame, vec4 keep, float guard) {
   // No early return: the focus's taps stay in uniform control flow.
   float open = (1.0 - guard) * (1.0 - lensKeep(keep, v, 0.0));
   vec2 q = uv;
   if (uLens.x > 0.0 && open > 0.0) q += lensHeat(v, flame) * (uLens.x * open);
-  vec4 texel = lensBlur(map, q, blur, ground);
+  vec4 texel = lensBlur(map, q, blur, nearCap, ground);
   if (uLens.y > 0.0) {
     vec2 s = lensFringe(v, star) * (uLens.y * open);
     vec4 centre = blur > 0.0 ? texture2D(map, q) : texel;
@@ -416,6 +420,10 @@ const VIGNETTE_GRAIN_SHADER = {
     uCssTexel: { value: new Vector2(1, 1) },
     uBlur: { value: 0 },
     uBlurPrev: { value: 0 },
+    // How far the ground nearer the lens than the focus softens, at most, in
+    // radii (the shot's lens.near, LENS_NEAR without one), live and kept.
+    uBlurNear: { value: LENS_NEAR },
+    uBlurNearPrev: { value: LENS_NEAR },
     // The focus over the plain's depth, affine in UV (setLens()), live and kept.
     uGround: { value: new Vector3() },
     uGroundPrev: { value: new Vector3() },
@@ -459,6 +467,8 @@ uniform vec2 uPrevOrigin;
 uniform vec2 uCssTexel;
 uniform float uBlur;
 uniform float uBlurPrev;
+uniform float uBlurNear;
+uniform float uBlurNearPrev;
 uniform vec3 uGround;
 uniform vec3 uGroundPrev;
 uniform float uBars;
@@ -469,12 +479,15 @@ varying vec2 vUv;
 // the ground's) soften over a disc of radius CSS px; the ground as a thin lens
 // sees it, by how far it lies from the focus along this pixel's ray (ground:
 // the focus's distance over the plain's depth there, affine in uv), at most
-// 1.5 radii nearer the lens; the subject never. Only taps from the same layer
+// nearCap radii nearer the lens (the shot's lens.near); the subject never. Only taps from the same layer
 // or a farther one count, so the subject never bleeds into the sky.
-vec4 lensBlur(sampler2D map, vec2 uv, float radius, vec3 ground) {
+vec4 lensBlur(sampler2D map, vec2 uv, float radius, float nearCap, vec3 ground) {
   vec4 centre = texture2D(map, uv);
   if (radius <= 0.0) return centre;
-  if (centre.a > 0.5) radius *= min(abs(1.0 - max(dot(ground, vec3(uv, 1.0)), 0.0)), 1.5) * step(centre.a, 0.8);
+  if (centre.a > 0.5) {
+    float depth = max(dot(ground, vec3(uv, 1.0)), 0.0);
+    radius *= (depth > 1.0 ? min(depth - 1.0, nearCap) : 1.0 - depth) * step(centre.a, 0.8);
+  }
   vec3 sum = centre.rgb;
   float weight = 1.0;
   for (int i = 1; i < 13; i++) {
@@ -569,7 +582,7 @@ vec3 starSky(vec2 uv, vec2 c, float r, vec2 aspect, vec3 own) {
   }
 void main() {
   float guard = uLayered > 0.5 ? max(lensBehind(slateText, vUv, ${lensNumber(LENS_FX.text[0])}), lensBehind(slateAbout, vUv, ${lensNumber(LENS_FX.text[1])})) : 0.0;
-  vec4 texel = uLayered > 0.5 ? lensView(tDiffuse, vUv, vUv, uBlur, uGround, uStar, uFlame, uKeep, guard) : texture2D(tDiffuse, vUv);
+  vec4 texel = uLayered > 0.5 ? lensView(tDiffuse, vUv, vUv, uBlur, uBlurNear, uGround, uStar, uFlame, uKeep, guard) : texture2D(tDiffuse, vUv);
   // The kept frame pushes in about its origin: here it shows its own pixel prevUv,
   // so its lens (heat, fringes and kept rect) is placed in its own UV and
   // stays on its own star and flame.
@@ -594,7 +607,7 @@ void main() {
       }
     }
     w = smoothstep(start, start + span, uProgress);
-    vec4 prevTexel = uLayered > 0.5 ? lensView(tPrev, prevUv, prevUv, uBlurPrev, uGroundPrev, uStarPrev, uFlamePrev, uKeepPrev, guard) : texture2D(tPrev, prevUv);${
+    vec4 prevTexel = uLayered > 0.5 ? lensView(tPrev, prevUv, prevUv, uBlurPrev, uBlurNearPrev, uGroundPrev, uStarPrev, uFlamePrev, uKeepPrev, guard) : texture2D(tPrev, prevUv);${
       DISSOLVE_SOFT.on
         ? /* glsl */ `
     // The incoming subject washes in on one long weight, its gaps with it (DISSOLVE_SOFT.wash).
@@ -1098,6 +1111,7 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
         if (phase !== BLENDING) {
           phase = ARMED;
           finalUniforms.uBlurPrev.value = finalUniforms.uBlur.value;
+          finalUniforms.uBlurNearPrev.value = finalUniforms.uBlurNear.value;
           finalUniforms.uGroundPrev.value.copy(finalUniforms.uGround.value);
         }
       } else if (progress >= 1 || phase === ARMED) {
@@ -1118,6 +1132,7 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
       const blur = film ? (lens?.blur ?? 0) : 0,
         g = finalUniforms.uGround.value.set(0, 0, 0);
       finalUniforms.uBlur.value = blur;
+      finalUniforms.uBlurNear.value = lens?.near ?? LENS_NEAR;
       if (blur && camera && focus) {
         const m = camera.matrixWorld.elements,
           p = camera.projectionMatrix.elements,

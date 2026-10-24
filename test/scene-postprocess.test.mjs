@@ -20,6 +20,7 @@ import {
   LAYER_STAGGER,
   SKY_INK,
   LENS_FX,
+  LENS_NEAR,
   lensSource,
   lensKeepRect,
 } from "../src/scene/postprocess.js";
@@ -1223,11 +1224,11 @@ test("the final pass decodes each frame's layer from a 5-tap cross and mixes by 
   // and its heat, fringes and kept rect (LENS_FX).
   assert.match(
     shader,
-    /w = smoothstep\(start, start \+ span, uProgress\);\s*vec4 prevTexel = uLayered > 0\.5 \? lensView\(tPrev, prevUv, prevUv, uBlurPrev, uGroundPrev, uStarPrev, uFlamePrev, uKeepPrev, guard\) : texture2D\(tPrev, prevUv\);[\s\S]*?texel = mix\(prevTexel, texel, w\);\s*protection = mix\(uTextProtectionFrom, uTextProtection, w\);/,
+    /w = smoothstep\(start, start \+ span, uProgress\);\s*vec4 prevTexel = uLayered > 0\.5 \? lensView\(tPrev, prevUv, prevUv, uBlurPrev, uBlurNearPrev, uGroundPrev, uStarPrev, uFlamePrev, uKeepPrev, guard\) : texture2D\(tPrev, prevUv\);[\s\S]*?texel = mix\(prevTexel, texel, w\);\s*protection = mix\(uTextProtectionFrom, uTextProtection, w\);/,
   );
   assert.match(
     shader,
-    /vec4 texel = uLayered > 0\.5 \? lensView\(tDiffuse, vUv, vUv, uBlur, uGround, uStar, uFlame, uKeep, guard\) : texture2D\(tDiffuse, vUv\);/,
+    /vec4 texel = uLayered > 0\.5 \? lensView\(tDiffuse, vUv, vUv, uBlur, uBlurNear, uGround, uStar, uFlame, uKeep, guard\) : texture2D\(tDiffuse, vUv\);/,
   );
   assert.match(
     shader,
@@ -1427,6 +1428,13 @@ test("the shot's lens blurs only in film, the bars cut the frame and the grain s
   pipeline.setLens({ blur: 10 });
   pipeline.setLens(null);
   assert.equal(final.uBlur.value, 0, "no lens is sharp");
+  // The ground nearer the lens than the focus softens by at most LENS_NEAR radii, or the
+  // shot's own lens.near.
+  assert.equal(final.uBlurNear.value, LENS_NEAR);
+  pipeline.setLens({ blur: 8, near: 0.35 });
+  assert.equal(final.uBlurNear.value, 0.35);
+  pipeline.setLens({ blur: 8 });
+  assert.equal(final.uBlurNear.value, LENS_NEAR);
 
   // Its focus on the subject, on the plain: there a thin lens's circle is nil (the
   // focus's distance over the depth, uGround's dot with (u, v, 1), is 1), and the plain
@@ -1459,8 +1467,10 @@ test("the shot's lens blurs only in film, the bars cut the frame and the grain s
   frame();
   assert.equal(final.uBlurPrev.value, 0, "an ordinary frame leaves the kept focus");
   const kept = final.uGround.value.clone();
+  pipeline.setLens({ blur: 5, near: 0.5 });
   capture();
   assert.equal(final.uBlurPrev.value, 5);
+  assert.equal(final.uBlurNearPrev.value, 0.5, "and its near softening");
   assert.deepEqual(final.uGroundPrev.value, kept, "and its focus");
   pipeline.setLens({ blur: 10 });
   pipeline.setTransition({ capture: false, cut: true, progress: 0.4, zoom: 0.01 });
@@ -1501,11 +1511,12 @@ test("the shot's lens blurs only in film, the bars cut the frame and the grain s
   // The bars come after the text shade, so nothing draws over them.
   const shade = shader.indexOf("protection * textShade;");
   assert.ok(shade > 0 && shader.indexOf("uBars));") > shade);
-  // The blur takes the ground (layer code 2/3) by its depth, at most 1.5 radii,
-  // skips the subject (code 1) and takes no tap from a nearer layer.
+  // The blur takes the ground (layer code 2/3) by its depth, at most 1 radius beyond the
+  // focus and nearCap radii (the shot's lens.near) nearer the lens, skips the subject
+  // (code 1) and takes no tap from a nearer layer.
   assert.ok(
     shader.includes(
-      "if (centre.a > 0.5) radius *= min(abs(1.0 - max(dot(ground, vec3(uv, 1.0)), 0.0)), 1.5) * step(centre.a, 0.8);",
+      "float depth = max(dot(ground, vec3(uv, 1.0)), 0.0);\n    radius *= (depth > 1.0 ? min(depth - 1.0, nearCap) : 1.0 - depth) * step(centre.a, 0.8);",
     ),
   );
   assert.match(shader, /float w = step\(tap\.a, centre\.a \+ 0\.1\);/);
