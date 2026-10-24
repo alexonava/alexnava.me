@@ -5187,6 +5187,10 @@ function* riverSurfaceSteps(geometry, sample, landHeight, EARTH) {
     return upper.get(i);
   };
   for (let i = 0; i < bedCount; i += 3) {
+    // Yields on the scan, before the skips, every 64 triangles: where the
+    // water is dense each one is clipped, and a run of them must never make a
+    // long task.
+    if (i % 192 === 0) yield;
     const tri = indices.slice(i, i + 3),
       xs = tri.map((v) => p[v * 3]),
       zs = tri.map((v) => -p[v * 3 + 1]);
@@ -5208,7 +5212,6 @@ function* riverSurfaceSteps(geometry, sample, landHeight, EARTH) {
     let polygon = tri.map(capVertex);
     for (const side of sides) polygon = clip(polygon, side);
     emit(clip(polygon, wet, true));
-    if (i % 768 === 0) yield;
   }
   for (const [name, { size, data }] of Object.entries(arrays)) {
     geometry.setAttribute(name, new BufferAttribute(new Float32Array(data), size));
