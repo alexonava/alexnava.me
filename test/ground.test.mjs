@@ -33,6 +33,7 @@ import {
   createSlateContacts,
   SLATE_CONTACTS,
   slateCalmFor,
+  SLATE_WATER,
   streamLines,
 } from "../src/scene/mud-ground.js";
 import {
@@ -1506,10 +1507,20 @@ test("the look's shading changes nothing until a shot asks for it", () => {
   ])
     assert.equal(shader.uniforms[name], contacts[name], name);
   assert.equal(shader.uniforms.slateMist, RANGE_MIST);
-  // The moon's shadow fades from the subject only under a look (slateShadowFade.y > 0).
+  // The moon's shadow fades from the subject only under a look (slateShadowFade.y > 0). On the
+  // moving water (slateShadowWater, which terrain-build.js sets) its edge softens over
+  // SLATE_WATER.shadow's texels: single taps in a disc about the filtered one.
+  const { texels, taps } = SLATE_WATER.shadow;
+  assert.ok(texels >= 6 && texels <= 24 && taps >= 8 && taps <= 16);
   assert.ok(
     fragment.includes(
-      "#ifdef USE_SHADOWMAP float slateShadow(sampler2D map,vec2 size,float bias,float radius,vec4 coord){float s=getShadow(map,size,bias,radius,coord);return slateShadowFade.y>0.?",
+      "float slateShadowWater = 0.0; #ifdef USE_SHADOWMAP float slateShadow(sampler2D map,vec2 size,float bias,float radius,vec4 coord){float s=getShadow(map,size,bias,radius,coord);if(slateShadowWater>0.){vec3 c=coord.xyz/coord.w;c.z+=bias;if(c.z<=1.){",
+    ),
+  );
+  assert.ok(fragment.includes(`for(int i=0;i<${taps};i++){`));
+  assert.ok(
+    fragment.includes(
+      `*${texels.toFixed(1)}/size,0.,1.),c.z);}s=mix(s,(s+b)/${(taps + 1).toFixed(1)},slateShadowWater);}}return slateShadowFade.y>0.?`,
     ),
   );
   assert.match(fragment, /:s;} #define getShadow slateShadow #endif/);

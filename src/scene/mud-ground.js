@@ -227,19 +227,24 @@ export const SLATE_RIVER_BED = Object.freeze({
 });
 // The stream (the owner's asks of 2026-10-10: "a flowing stream of rushing
 // water", then "a proper stream / small river", added to Lantern study's
-// shot; the owner's picks: the rushing stream, as a small river): it comes
-// out from under the root arch, runs past the lantern's left and pours into
-// the river in front of it. Its course is [dx, dz] offsets from the lantern's
-// foot, head first, drawn as a smooth curve sampled every `step` units,
-// `width` units wide at its head and at its mouth; its banks meander by a
-// noise (`meander` units at `wobble` cycles per unit). Its water runs
-// downstream at `flow` units a second: the current ripples it (`current`, as
-// the river's RIVER_RIPPLE: [along, across] cycles per unit and their tilt),
-// and white water (`foam`) breaks on it, over `amount` of the water, `join`
-// where courses meet and `mouth` where it pours into the river (within
-// reach[0] to reach[1] of the river's radius), in drifting patches (`patch`
-// cycles per unit), covering at most `cover` of the water's colour, at albedo
-// `albedo`. It is a lace of bubble rafts, the borders of cells `lace` per unit
+// shot; the owner's picks: the rushing stream, as a small river; and of
+// 2026-10-23, "should flow in the opposite direction. (from the river to the
+// tree instead)", C Rushing): it leaves the river in front of the lantern,
+// runs past the lantern's left and sinks away under the root arch. Its course
+// is [dx, dz] offsets from the lantern's foot, its head (under the arch)
+// first and its mouth (on the river) last, drawn as a smooth curve sampled
+// every `step` units, `width` units wide at its head and at its mouth; its
+// banks meander by a noise (`meander` units at `wobble` cycles per unit). Its
+// water runs at `flow` units a second along its course (negative: from its
+// mouth up toward its head): the current ripples it (`current`, as the
+// river's RIVER_RIPPLE: [along, across] cycles per unit and their tilt), and
+// across the confluence (river radii `confluence`) the river's water eases
+// into the stream's. White water (`foam`) breaks on it, over `amount` of the
+// water, `join` where courses meet and `mouth` in a band where it leaves the
+// river (rising from reach[0] - 0.3 to reach[0] of the river's radius, gone
+// by reach[1]), in drifting patches (`patch` cycles per unit), covering at
+// most `cover` of the water's colour, at albedo `albedo`. It is a lace of
+// bubble rafts, the borders of cells `lace` per unit
 // ([along, across]) drifting at `drift` of the current (as the leaves on it
 // do; at its whole speed its thin strands moved over a quarter of a cell a
 // frame and seemed to re-form every frame), warped by `warp` of a cell,
@@ -276,33 +281,36 @@ export const SLATE_STREAMS = Object.freeze({
   step: 0.45,
   meander: 0.28,
   wobble: 1.6,
-  flow: 1.4,
+  flow: -1.4,
+  confluence: Object.freeze([0.9, 1.4]),
   current: Object.freeze({
     coarse: Object.freeze([1.1, 2.4]),
     fine: Object.freeze([3, 6.5]),
-    tilt: Object.freeze([0.035, 0.016]),
+    tilt: Object.freeze([0.05, 0.024]),
   }),
   foam: Object.freeze({
     cell: Object.freeze([9, 30]),
     patch: Object.freeze([1.2, 2]),
-    amount: 0.08,
+    amount: 0.5,
     join: 0.65,
-    mouth: 0.12,
+    mouth: 1,
     reach: Object.freeze([1, 1.9]),
-    cover: 0.7,
-    far: 0.3,
-    plume: 0.55,
-    albedo: 0.18,
+    cover: 0.85,
+    far: 0.5,
+    plume: 0.2,
+    albedo: 0.34,
     text: 0.9,
     lace: Object.freeze([6, 9]),
     warp: 0.35,
-    edge: Object.freeze([0.06, 0.24]),
-    clump: Object.freeze([0.45, 0.9]),
+    edge: Object.freeze([0.1, 0.32]),
+    clump: Object.freeze([0.3, 0.7]),
     broken: 0.8,
     drift: 0.5,
   }),
   // The channel (as SLATE_RIVER_BED, across the course: r is 1 on its banks,
-  // half its width out): its water lies `level` below the lantern's foot, its
+  // half its width out): its water lies `level` below the lantern's foot where
+  // it leaves the river (the river's own level), falling `drop` more toward its
+  // head, down which it runs (terrain-build.js streamLevel()); its
   // bed falls to `depth` below the water down its middle (a course narrower
   // than `full` units in proportion) and its banks rise toward `rise`, until
   // they meet the ground. Through a bend the channel leans (`skew` of the bend,
@@ -311,14 +319,17 @@ export const SLATE_STREAMS = Object.freeze({
   // bank), and shallowing to the inside bank, which slopes gently out of the
   // water (the point bar). terrain-build.js carves it within reach[1], the
   // smooth minimum (`blend` units) of the ground and that shape, clear of the
-  // lantern's footing and the roots; the shader's water fills it to its banks
+  // lantern's footing and the roots; the river's water sheet (terrain-build.js
+  // riverSurfaceSteps()) fills it at that level, joined to the river's, and the
+  // shader's water fills it to its banks
   // (`shore` level units a unit of depth, the detail map's texels moving the
   // waterline by `texel`) and is no water beyond reach[0] to reach[1].
   bed: Object.freeze({
     depth: 0.2,
     full: 1.6,
     rise: 0.1,
-    level: -0.03,
+    level: -0.04,
+    drop: 0.1,
     shore: 3,
     texel: 0.05,
     reach: Object.freeze([1.3, 1.7]),
@@ -329,7 +340,7 @@ export const SLATE_STREAMS = Object.freeze({
   }),
   // The water's body in the channel: as it deepens to `deep` (level units) it
   // hides the cracks under silt (`calm` of the way to `silt`) and darkens by
-  // `darken`, easing into the river's own water where the stream pours in.
+  // `darken`, easing into the river's own water where the stream leaves it.
   body: Object.freeze({
     deep: 0.5,
     calm: 0.55,
@@ -337,18 +348,21 @@ export const SLATE_STREAMS = Object.freeze({
     darken: 0.55,
   }),
   // Stones in the stream's bed: [dx, dz] from the lantern's foot, height, type
-  // and yaw (degrees). rock-build.js seats them darker (`tone`, wet) and `sink`
-  // of their height into the bed. The white water wraps each at the waterline
-  // (`radius` of its height about its centre, a ring `ring` units wide) and
-  // trails off downstream in a wake `wake` units long, widening by `spread` a
-  // unit (terrain-build.js STREAM_FOAM).
+  // and yaw (degrees). rock-build.js seats them darker (`tone`, wet), `sink` of
+  // their height into the bed, and where the channel is deeper raises them so
+  // `show` of their height stands out of the water (streamWater()), their feet
+  // under it. The white water wraps each at the waterline (`radius` of its
+  // height about its centre, a ring `ring` units wide) and trails off
+  // downstream, toward the roots, in a wake `wake` units long, widening by
+  // `spread` a unit (terrain-build.js STREAM_FOAM).
   stones: Object.freeze({
     tone: 0.5,
     sink: 0.22,
-    radius: 0.42,
-    ring: 0.035,
-    wake: 0.9,
-    spread: 0.25,
+    show: 0.5,
+    radius: 0.6,
+    ring: 0.07,
+    wake: 1.6,
+    spread: 0.45,
     list: Object.freeze(
       [
         [3.34, 0.26, 0.22, "weathered", 20],
@@ -729,6 +743,7 @@ export const SLATE_LIGHT = Object.freeze({
 // screen's smaller side, the clouds' reach (estate-sky.js CLOUD_RESHAPE.text),
 // lets the glare fade out along the plain; the small Contact label keeps a fifth,
 // so on phones the river's image of the lantern above it stays bright.
+// On the moving water the moon's shadow edge softens (`shadow`, LOOK_SHADOW).
 export const SLATE_WATER = Object.freeze({
   f0: 0.02,
   text: Object.freeze([0.3, 0.035, 0.5, 0.2]),
@@ -740,6 +755,7 @@ export const SLATE_WATER = Object.freeze({
   far: Object.freeze([70.0, 130.0]),
   moon: Object.freeze({ roughness: 0.25, gain: 1, knee: 0.06 }),
   lamp: Object.freeze({ roughness: 0.18, gain: 1.6, knee: 0.35 }),
+  shadow: Object.freeze({ texels: 12, taps: 12 }),
 });
 
 // The text guard's screen test, shared by the ground and the bark
@@ -989,11 +1005,32 @@ const PUDDLE_ZONES_GLSL = SLATE_PUDDLES.zones.map(
 const PUDDLE_GLSL = PUDDLE_ZONES_GLSL.reduce((all, zone) => `max(${all},${zone})`);
 // slateStreamAt(p, dir, join): the streams at a world point (SLATE_STREAMS):
 // (weight, 1 within a course's middle easing to 0 at its edge; distance
-// downstream along it; place across it, -.5 to .5 on its banks; its width),
+// along it from its head; place across it, -.5 to .5 on its banks; its width),
 // the flow's direction in dir, and in join the weight of the next course there
 // (where courses meet). Each course is tried only within its box grown by its
 // widest half-width.
 const STREAM_LINES = streamLines();
+// The stream's water at a world x/z (rock-build.js seats its stones by it): its
+// level below the lantern's foot where its course passes nearest, the river's
+// where it leaves the river, falling `bed.drop` toward its head.
+export function streamWater(x, z, lines = STREAM_LINES, { bed } = SLATE_STREAMS) {
+  let best = Infinity,
+    level = bed.level;
+  for (const { points, length } of lines)
+    for (let k = 1; k < points.length; k++) {
+      const [ax, az, s0] = points[k - 1],
+        [bx, bz, s1] = points[k],
+        ex = bx - ax,
+        ez = bz - az,
+        h = Math.min(1, Math.max(0, ((x - ax) * ex + (z - az) * ez) / (ex * ex + ez * ez))),
+        d = Math.hypot(x - ax - ex * h, z - az - ez * h);
+      if (d < best) {
+        best = d;
+        level = bed.level - bed.drop * (1 - (s0 + (s1 - s0) * h) / length);
+      }
+    }
+  return level;
+}
 const STREAM_GLSL = (() => {
   const { meander, wobble, bed } = SLATE_STREAMS;
   const n = (v) => glslNumber(+v.toFixed(4));
@@ -1164,10 +1201,19 @@ float slateWaterFar(float d){return smoothstep(mix(${glslNumber(SLATE_WATER.far[
 void slateGlossSet(){if(slateGloss.z>0.){vec2 v=vSlateClip.xy/vSlateClip.w*.5+.5;slateGlossT=smoothstep(0.,${glslNumber(LOOK.gloss.text[0])},slateTextGap(slateText,v))*smoothstep(0.,${glslNumber(LOOK.gloss.text[1])},slateTextGap(slateAbout,v));slateGlossW=slateGlossT*mix(${glslNumber(LOOK.gloss.patch[1])},1.,smoothstep(.35,.7,slateNoise(vMudWorld.xz/${glslNumber(LOOK.gloss.patch[0])})));}}
 `;
 // After the shadow maps' functions: the moon's shadow fades with distance from
-// the subject under a shot's look (slateShadowFade: near, far; whole at 0).
+// the subject under a shot's look (slateShadowFade: near, far; whole at 0). On
+// the moving water (slateShadowWater, the river's and the stream's share there,
+// which terrain-build.js sets) its edge softens over SLATE_WATER.shadow's
+// `texels` of the map: `taps` single taps in a disc (a Vogel spiral) about the
+// filtered one, so the trunk's shadow across the rippled water has no ruled line.
+const SHADOW_SOFT = SLATE_WATER.shadow;
+const SHADOW_WATER = SHADOW_SOFT.texels
+  ? `if(slateShadowWater>0.){vec3 c=coord.xyz/coord.w;c.z+=bias;if(c.z<=1.){float b=0.;for(int i=0;i<${SHADOW_SOFT.taps};i++){float t=float(i)+.5;b+=texture2DCompare(map,clamp(c.xy+vec2(cos(t*2.39996),sin(t*2.39996))*sqrt(t/${glslNumber(SHADOW_SOFT.taps)})*${glslNumber(SHADOW_SOFT.texels)}/size,0.,1.),c.z);}s=mix(s,(s+b)/${glslNumber(SHADOW_SOFT.taps + 1)},slateShadowWater);}}`
+  : "";
 const LOOK_SHADOW = `#include <shadowmap_pars_fragment>
+float slateShadowWater = 0.0;
 #ifdef USE_SHADOWMAP
-float slateShadow(sampler2D map,vec2 size,float bias,float radius,vec4 coord){float s=getShadow(map,size,bias,radius,coord);return slateShadowFade.y>0.?mix(1.,s,1.-smoothstep(slateShadowFade.x,slateShadowFade.y,length(vMudWorld.xz-slateCalmAt.xy))):s;}
+float slateShadow(sampler2D map,vec2 size,float bias,float radius,vec4 coord){float s=getShadow(map,size,bias,radius,coord);${SHADOW_WATER}return slateShadowFade.y>0.?mix(1.,s,1.-smoothstep(slateShadowFade.x,slateShadowFade.y,length(vMudWorld.xz-slateCalmAt.xy))):s;}
 #define getShadow slateShadow
 #endif`;
 // Last: the clearing (its light, and its shade near the lens) and the mist,

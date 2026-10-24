@@ -63,6 +63,7 @@ import {
   STREAM_REEDS,
   streamBedAt,
   streamCarve,
+  streamLevel,
   streamRadius,
   WATER_BANKS,
   riverRadius,
@@ -426,11 +427,12 @@ test("the river lowers only its channel and banks: the lantern's footing and the
       const r = riverRadius(x, z),
         before = a.at(x, z),
         after = b.at(x, z);
-      // The pinned ground a sub-grid cell (0.25, up to 0.35 radii) beyond the river's and the stream's reach,
-      // all the triangles about it pinned too.
+      // The pinned ground a sub-grid cell (0.25, up to 0.35 radii) beyond the river's reach and a fine
+      // cell (0.75, up to 0.7 radii) beyond the stream's, whose banks fall with its water toward the
+      // roots and so lower to the edge of its reach, all the triangles about it pinned too.
       const pinned =
         r > RIVER_BED.reach[1] + 0.35 &&
-        streamRadius(x, z) > STREAMS.bed.reach[1] + 0.35 &&
+        streamRadius(x, z) > STREAMS.bed.reach[1] + 0.7 &&
         [-0.8, 0, 0.8].every((u) => [-0.8, 0, 0.8].every((v) => pinKeep(x + u, z + v) === 0));
       if (Math.hypot(x - lamp.x, z - lamp.z) < 0.6 || pinned) {
         // The lantern's footing, and the pinned ground beyond the river.
@@ -1159,6 +1161,28 @@ test("the lazy ground shading extends only the slate's program, under its own ke
         `vec2 slateSU = vec2(slateStreamQ.y-slateFlow*${STREAMS.flow}, slateStreamQ.z*slateStreamQ.w);`,
       ),
     );
+    // It runs toward its head, so the stones' wakes trail that way (against the course).
+    assert.equal(fragment.match(/float slateSA = -dot\(slateSO, slateStreamDir\)/g).length, 4);
+    // Its white water breaks in a band where it leaves the river, not out in the river.
+    assert.ok(
+      fragment.includes(
+        `${STREAMS.foam.mouth.toFixed(1)}*smoothstep(0.7, 1.0, slateRiverR)*(1.0-smoothstep(1.0, 1.9, slateRiverR))`,
+      ),
+    );
+    // One sheet of water: down the stream's channel it keeps the stream's own level and
+    // shading, the river's easing into it across the confluence.
+    assert.ok(
+      fragment.includes(
+        `slateCapStream=smoothstep(${STREAMS.confluence.join(",")},slateRiverR)*(1.-smoothstep(${STREAMS.bed.reach.join(",")},slateStreamR));`,
+      ),
+    );
+    assert.ok(
+      fragment.includes(
+        "diffuseColor.rgb=mix(diffuseColor.rgb,slateStreamC,slateCapStream);roughnessFactor=mix(roughnessFactor,slateStreamRF,slateCapStream);",
+      ),
+    );
+    // The moving water softens the moon's shadow on it (mud-ground.js slateShadow()).
+    assert.ok(fragment.includes("slateShadowWater = slateLanternPuddle;"));
     const sway = fragment.indexOf(
       `vec2 slateGI = slateG+${RIVER_RIPPLE.sway.toFixed(1)}*slateSWG*dot(slateGS, slateSide)*slateSide;\n    slateNI = normalize(mix(slateN, normalize(vec3(-slateGI.x, 1.0, -slateGI.y)), slateDeep));`,
     );
@@ -2085,7 +2109,7 @@ test("the film terrain builds in idle slices and arrives only where it cannot sh
     // Exactly the terrain built at once.
     const direct = createEarthGeometry(base);
     // These complete terrain buffers (including pools, shading and the full
-    // river's bed/cap), indices and exact bounds, with the fault's drop and
+    // river's and the stream's bed/cap), indices and exact bounds, with the fault's drop and
     // the sea's cut (ocean.js), have this hash.
     const digest = createHash("sha256").update(
       JSON.stringify({ sphere: direct.boundingSphere, box: direct.boundingBox }),
@@ -2098,7 +2122,7 @@ test("the film terrain builds in idle slices and arrives only where it cannot sh
     digest.update("index").update(new Uint8Array(index.buffer, index.byteOffset, index.byteLength));
     assert.equal(
       digest.digest("hex"),
-      "49ddd50fa046a704589cd64977ffb5cb3a3080e32d490091dfb056e6fb90f855",
+      "4cccb65bc6d254668c9e91ab5acaa096aafaa5c0d5c298cd8f85580790f24598",
     );
     for (const name of Object.keys(direct.attributes))
       assert.deepEqual(arrived.attributes[name].array, direct.attributes[name].array, name);
@@ -2843,7 +2867,7 @@ test("the fine litter (leaves, clods, grit) lies on the foreground soil, never u
   terrain.dispose();
 });
 
-test("the stream restates the ground shader's: it comes out from under the roots and pours into the river", () => {
+test("the stream restates the ground shader's: it leaves the river and runs to the roots", () => {
   assert.deepEqual(STREAMS, SLATE_STREAMS);
   assert.deepEqual(STREAM_LINES, streamLines(), "sampled alike");
   const creek = STREAMS.courses.filter(({ path }) => {
@@ -2858,13 +2882,55 @@ test("the stream restates the ground shader's: it comes out from under the roots
       riverRadius(LANTERN_FOOT.x + hx, LANTERN_FOOT.z + hz) > 1.5,
       "its head is up by the roots",
     );
-    assert.ok(width[1] > width[0], "it widens downstream");
+    assert.ok(width[1] > width[0], "widest where it leaves the river");
     if (path === creek[0].path) continue;
     // A rill's mouth lies on the creek's head.
     assert.deepEqual([mx, mz], creek[0].path[0], "a rill feeds the creek");
     assert.ok(width[1] < creek[0].width[0], "narrower than the creek it feeds");
   }
   assert.ok(streamDistance(LANTERN_FOOT.x, LANTERN_FOOT.z) > 0.3, "clear of the lantern's foot");
+  // Its water runs from its mouth up toward its head (the owner's ask of 2026-10-23), leaving the
+  // river at the river's level and falling toward the roots, down which it runs.
+  assert.ok(STREAMS.flow < 0, "it runs from the river to the roots");
+  assert.equal(STREAMS.bed.level, RIVER_BED.level);
+  assert.ok(STREAMS.bed.drop > 0 && STREAMS.bed.drop <= STREAMS.bed.depth);
+  const { length } = STREAM_LINES[0];
+  assert.equal(streamLevel(length, length), RIVER_BED.level);
+  for (let s = 0; s < length; s += 0.5)
+    assert.ok(
+      streamLevel(s, length) < streamLevel(s + 0.5, length),
+      `it rises toward the river at ${s}`,
+    );
+});
+
+test("the river's water sheet runs on down the stream's channel, at the stream's level, with no step where it leaves the river", () => {
+  const base = groundBase(),
+    geometry = createEarthGeometry(base),
+    p = geometry.attributes.position,
+    kind = geometry.attributes.slateRiverSurface,
+    foot = filmHeight(base, true)(LANTERN_FOOT.x, LANTERN_FOOT.z),
+    { level, drop } = STREAMS.bed;
+  let inStream = 0,
+    confluence = 0;
+  // The vertices the cap's triangles draw (after the bed's index range).
+  const drawn = new Set(geometry.index.array.slice(geometry.userData.riverBedIndexCount));
+  for (const i of drawn) {
+    assert.equal(kind.getX(i), 1, "the cap draws only its own vertices");
+    const x = p.getX(i),
+      z = -p.getY(i),
+      y = p.getZ(i) - foot;
+    if (streamRadius(x, z) >= 1) continue;
+    const r = riverRadius(x, z);
+    // Its water lies between the river's level and the level it falls to by the roots,
+    // over its bed.
+    assert.ok(y <= level + 1e-4 && y >= level - drop - 1e-4, `the stream's water at ${x},${z}`);
+    assert.ok(kind.getY(i) > 0, `the stream's water under its bed at ${x},${z}`);
+    if (r > STREAMS.confluence[1]) inStream++;
+    else if (r > STREAMS.confluence[0]) confluence++;
+  }
+  assert.ok(inStream > 200, `${inStream} points of the sheet down the stream`);
+  assert.ok(confluence > 10, `${confluence} points across the confluence`);
+  geometry.dispose();
 });
 
 test("the river's rushes stand in clumps on its banks near the lantern, clear of its image, and sway from their feet", () => {
@@ -3641,9 +3707,14 @@ test("the drifting leaves ride the stream on the drips' clock and hold when it h
   assert.deepEqual(Float32Array.from(p.array), at3, "a held clock holds them still");
   update(4);
   assert.notDeepEqual(Float32Array.from(p.array), at3, "a running clock carries them");
-  // On the water's height, within the stream's banks.
+  // On the water's height (the river's where it leaves the river, falling toward the roots: the
+  // lantern's foot is at 0 here), within the stream's banks.
+  const { level, drop } = STREAMS.bed;
   for (let i = 0; i < p.count; i += 24) {
-    assert.ok(Math.abs(p.getY(i) - 0.006) < 0.05);
+    assert.ok(
+      p.getY(i) > level - drop - 0.03 && p.getY(i) < level + 0.04,
+      `a leaf off the water at ${i}`,
+    );
     assert.ok(streamRadius(p.getX(i), p.getZ(i)) < 1.3, `a leaf off the stream at ${i}`);
   }
   leaves.dispose();
