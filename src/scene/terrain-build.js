@@ -1953,7 +1953,9 @@ export function dripAt(t, aim = () => null) {
 const zoneGlsl = (zone) => glslVec(+zone.x.toFixed(2), +zone.z.toFixed(2));
 // The river's current on the water (MIRROR): two octaves of ripples, each
 // [along, across] cycles per unit (about as long as wide: drawn out further, a
-// mirror rules them into brushed streaks), and the tilt of each. They are the
+// mirror rules them into brushed streaks), and the tilt of each (livelier, the
+// owner's pick of 2026-10-23, so the near river in Lantern study visibly runs as
+// the stream does). They are the
 // rapids' smooth flow noise where the river has its falls, turning as they
 // drift (`flow`: its slope's share against the value noise's), in broad boils
 // and slicks drifting with it (`boils`: their cells per unit, the calm and the
@@ -1984,7 +1986,7 @@ export const RIVER_RIPPLE = Object.freeze({
   fine: Object.freeze([2.4, 3.2]),
   boils: Object.freeze([0.14, 0.45, 1.35]),
   flow: 0.55,
-  tilt: Object.freeze([0.018, 0.007]),
+  tilt: Object.freeze([0.04, 0.02]),
   fade: Object.freeze([1.5, 3]),
   sway: 3,
   swayLow: Object.freeze([0.5, 5]),

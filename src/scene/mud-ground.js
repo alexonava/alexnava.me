@@ -817,6 +817,8 @@ export function createSlateContacts(values = new Float32Array(SLATE_CONTACTS * 4
     slateClearShade: { value: { x: 0, y: 0, z: 1, w: 0 } },
     slateMist: RANGE_MIST,
     slateGloss: { value: { x: 0, y: 0, z: 0, w: 0 } },
+    // The rain pools' fill on the plain (SLATE_LOOK.pools), 0 for none.
+    slatePools: { value: 0 },
     slateShadowFade: { value: { x: 0, y: 0 } },
   };
 }
@@ -864,6 +866,12 @@ export function slateCalmFor(contacts, shot, distance, at) {
 // - shadow: [near, far]: the moon's shadow (the crown's, far out on the plain,
 //   where a real shadow would be wide and soft) fades from near to far units
 //   of the subject.
+// - pools: after the rain water stands on the plain, filling the slate's low
+//   texels to `pools` (the puddles' level units, as SLATE_PUDDLES.fill) in
+//   broad wet patches (pools.cells: two noises' cells in units, weighted
+//   pools.weights; standing where they pass pools.patch[0] to [1]), out to
+//   pools.far units of view distance, so the puddles' mirror shows the sky in
+//   them.
 export const SLATE_LOOK = Object.freeze({
   clearing: Object.freeze({ wobble: 0.45, cell: 11 }),
   mist: Object.freeze({
@@ -878,6 +886,12 @@ export const SLATE_LOOK = Object.freeze({
     text: Object.freeze([0.45, 0.25]),
     patch: Object.freeze([31, 0.35]),
   }),
+  pools: Object.freeze({
+    cells: Object.freeze([9, 2.7]),
+    weights: Object.freeze([0.65, 0.35]),
+    patch: Object.freeze([0.42, 0.6]),
+    far: Object.freeze([90, 160]),
+  }),
 });
 function slateLookFor(contacts, look, azimuth = 0, at = null) {
   const clear = contacts.slateClear.value,
@@ -885,6 +899,7 @@ function slateLookFor(contacts, look, azimuth = 0, at = null) {
     shade = contacts.slateClearShade.value,
     mist = contacts.slateMist.value,
     gloss = contacts.slateGloss.value,
+    pools = contacts.slatePools,
     shadow = contacts.slateShadowFade.value;
   const clearing = look?.clearing,
     yaw = (azimuth * Math.PI) / 180;
@@ -909,6 +924,7 @@ function slateLookFor(contacts, look, azimuth = 0, at = null) {
     gloss.z = 1;
     gloss.w = look.gloss.cool ?? 1;
   } else gloss.z = 0;
+  pools.value = look?.pools ?? 0;
   const fade = look?.shadow;
   shadow.x = fade ? fade[0] : 0;
   shadow.y = fade ? Math.max(fade[1], fade[0] + 0.01) : 0;
@@ -1193,8 +1209,11 @@ const FAR_MAP = `
 // under a gloss. slateTextGap(): how far a point lies outside a text box, as
 // slateBehind() measures it.
 const LOOK = SLATE_LOOK;
+const POOLS = LOOK.pools;
 const LOOK_GLSL = `uniform vec4 slateClear, slateClearLight, slateClearShade, slateMist, slateGloss;
 uniform vec2 slateShadowFade;
+uniform float slatePools;
+float slatePoolsAt(float h,float d){if(slatePools<=0.)return -1.;float n=${POOLS.cells.map((cell, i) => `${glslNumber(POOLS.weights[i])}*slateNoise(vMudWorld.xz/${glslNumber(cell)}${i ? "+" + glslNumber(5.1) : ""})`).join("+")};return mix(slatePools*smoothstep(${POOLS.patch.map(glslNumber).join(",")},n)-h,-1.,smoothstep(${POOLS.far.map(glslNumber).join(",")},d));}
 float slateGlossT = 0.0, slateGlossW = 0.0;
 float slateTextGap(vec4 r,vec2 v){return length(max(max(r.xy-v,v-r.zw),0.)*vec2(slateAspect,1.)/min(slateAspect,1.));}
 float slateWaterFar(float d){return smoothstep(mix(${glslNumber(SLATE_WATER.far[0])},${glslNumber(LOOK.gloss.far[0])},slateGlossT),mix(${glslNumber(SLATE_WATER.far[1])},${glslNumber(LOOK.gloss.far[1])},slateGlossT),d);}
@@ -1461,7 +1480,7 @@ ${SLATE_TEXT_GLSL}${LOOK_GLSL}${mistOn ? `uniform mat4 projectionMatrix;\n${MIST
       vec2 slateStreamDir;
       float slateStreamJoin, slateStreamR, slateStreamBend;
       vec4 slateStreamQ = slateStreamAt(vMudWorld.xz, slateStreamDir, slateStreamJoin, slateStreamR, slateStreamBend);
-      float slatePuddle = smoothstep(-.04, .04, max(max(${PUDDLE_GLSL}*(${glslNumber(SLATE_PUDDLES.fill)}+.4*slateNoise(vMudWorld.xz*.9))-slateH, ${STREAM_LEVEL}), ${RIVER_LEVEL}))*(1.0-slateDry);
+      float slatePuddle = smoothstep(-.04, .04, max(max(max(${PUDDLE_GLSL}*(${glslNumber(SLATE_PUDDLES.fill)}+.4*slateNoise(vMudWorld.xz*.9))-slateH, slatePoolsAt(slateH, length(vViewPosition))), ${STREAM_LEVEL}), ${RIVER_LEVEL}))*(1.0-slateDry);
       float slateLanternPuddle = slatePuddle*max(1.0-smoothstep(1.0, 1.4, slateRiverR), 1.0-smoothstep(1.0, 1.4, slateStreamR));
       slateWet = max(slateWet, slatePuddle);
       // The banks (SLATE_BANKS): the wet band beyond the waterline, and through the stream's bends its cut bank (outside) and silt bar (inside).

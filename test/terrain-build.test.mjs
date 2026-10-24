@@ -1232,14 +1232,19 @@ test("the lazy ground shading extends only the slate's program, under its own ke
       "the image reads only its own ray",
     );
     assert.equal(after.uniforms.slateFlow, dripClock().uniform, "the drips' own clock");
-    // Gentle: slow, the ripples drawn out along the flow, their tilt below the drips'.
+    // Slow, the ripples drawn out along the flow; livelier than the drips' rings (the owner's
+    // pick of 2026-10-23, so the near river visibly runs), but gentler than the stream's.
     // (Negative: the river runs back along its line, from the plain to the fault, ocean.js riverFalls().)
     assert.ok(RIVER.flow < 0 && RIVER.flow >= -0.4);
     assert.ok(
       RIVER_RIPPLE.coarse[0] < RIVER_RIPPLE.coarse[1] &&
         RIVER_RIPPLE.fine[0] < RIVER_RIPPLE.fine[1],
     );
-    assert.ok(RIVER_RIPPLE.tilt[0] + RIVER_RIPPLE.tilt[1] <= 0.03);
+    assert.ok(RIVER_RIPPLE.tilt[0] + RIVER_RIPPLE.tilt[1] <= 0.06);
+    assert.ok(
+      RIVER_RIPPLE.tilt[0] <= STREAMS.current.tilt[0] &&
+        RIVER_RIPPLE.tilt[1] <= STREAMS.current.tilt[1],
+    );
     // The lazy chunk's own uniforms.
     assert.equal(after.uniforms.slateDrip.value.length, 4);
     assert.equal(after.uniforms.slateFlame.value.length, 4);

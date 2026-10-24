@@ -33,6 +33,7 @@ import {
   createSlateContacts,
   SLATE_CONTACTS,
   slateCalmFor,
+  SLATE_LOOK,
   SLATE_WATER,
   streamLines,
 } from "../src/scene/mud-ground.js";
@@ -864,12 +865,12 @@ test("each ground shading has its own program cache key; the slate's shading nee
   // lantern clearing are wet.
   assert.match(fragment, /float slateDry = footingDry;/);
   assert.match(fragment, /float slateWet = clamp\([^;]*\)\*\(1\.0-slateDry\);/);
-  // The puddles fill fuller, Portrait's foreground puddle among them; the
-  // stream and the river take their own levels from their shapes beside theirs.
+  // The puddles fill fuller, Portrait's foreground puddle among them; a look's rain
+  // pools, the stream and the river take their own levels beside theirs.
   assert.equal(SLATE_PUDDLES.zones.length, 3);
   assert.match(
     fragment,
-    /\*\(0\.62\+\.4\*slateNoise\(vMudWorld\.xz\*\.9\)\)-slateH, mix\(-slateStreamBed\(slateStreamR,slateStreamQ\.w,clamp\(2\.\*slateStreamQ\.z,-1\.,1\.\)\*slateStreamBend\)\*3\.0[^;]*\), mix\(-slateRiverBed\(slateRiverR\)\*3\.0/,
+    /\*\(0\.62\+\.4\*slateNoise\(vMudWorld\.xz\*\.9\)\)-slateH, slatePoolsAt\(slateH, length\(vViewPosition\)\)\), mix\(-slateStreamBed\(slateStreamR,slateStreamQ\.w,clamp\(2\.\*slateStreamQ\.z,-1\.,1\.\)\*slateStreamBend\)\*3\.0[^;]*\), mix\(-slateRiverBed\(slateRiverR\)\*3\.0/,
   );
   assert.match(fragment, /length\(\(vMudWorld\.xz-vec2\(52\.32,20\.34\)\)\)\/1\.5\)/);
   // Puddles fill the detail map's low texels, glassy and darker, and mirror
@@ -1412,12 +1413,18 @@ test("Portrait takes the whole look on its plain (a moonlit clearing, low mist, 
     assert.equal(mist.w, 0, "no mist");
     assert.equal(gloss.z, 0, "no gloss");
     assert.deepEqual({ ...shadow }, { x: 0, y: 0 }, "the moon's shadow whole");
+    assert.equal(contacts.slatePools.value, 0, "no rain pools");
   };
   off();
   const shots = Object.values(DIRECTED_SHOTS).flat(),
     names = (test) => shots.filter(({ ground }) => test(ground ?? {})).map(({ name }) => name);
   assert.deepEqual(
     names((g) => g.clearing || g.shadow),
+    ["Portrait"],
+  );
+  // Only Portrait's plain stands water after the rain (the owner's pick of 2026-10-23).
+  assert.deepEqual(
+    names((g) => g.pools),
     ["Portrait"],
   );
   // After the rain every wide shot takes the gloss and a light mist; the close
@@ -1439,6 +1446,7 @@ test("Portrait takes the whole look on its plain (a moonlit clearing, low mist, 
     if (shot === portrait) continue;
     assert.equal(shade.w, 0, shot.name + ": no clearing");
     assert.deepEqual({ ...shadow }, { x: 0, y: 0 }, shot.name + ": the moon's shadow whole");
+    assert.equal(contacts.slatePools.value, 0, shot.name + ": no rain pools");
     const rain = shot.ground;
     if (!rain) {
       off();
@@ -1479,6 +1487,11 @@ test("Portrait takes the whole look on its plain (a moonlit clearing, low mist, 
   // Portrait's gloss mirrors the sky as it is: no gain, no tint.
   assert.deepEqual([gloss.x, gloss.y, gloss.z, gloss.w], [look.gloss.film, 1, 1, 0]);
   assert.deepEqual([shadow.x, shadow.y], look.shadow);
+  // Its rain pools fill the slate's low texels (its level about the detail map's 0.5 mean,
+  // never a sheet over all of it), far enough out to reach the plain behind the tree.
+  assert.equal(contacts.slatePools.value, look.pools);
+  assert.ok(look.pools > 0.5 && look.pools < 1);
+  assert.ok(SLATE_LOOK.pools.far[0] >= 60 && SLATE_LOOK.pools.far[1] > SLATE_LOOK.pools.far[0]);
   // Without a frame the look goes with the calm.
   slateCalmFor(contacts, portrait, 0, target);
   off();
@@ -1503,9 +1516,15 @@ test("the look's shading changes nothing until a shot asks for it", () => {
     "slateClearLight",
     "slateClearShade",
     "slateGloss",
+    "slatePools",
     "slateShadowFade",
   ])
     assert.equal(shader.uniforms[name], contacts[name], name);
+  // Rain pools stand on the plain only under a look (slatePools > 0): the slate's low texels
+  // fill to its level in broad wet patches, out to SLATE_LOOK.pools.far, as the puddles' do.
+  assert.equal(contacts.slatePools.value, 0);
+  assert.ok(fragment.includes("float slatePoolsAt(float h,float d){if(slatePools<=0.)return -1.;"));
+  assert.match(fragment, /slatePoolsAt\(slateH, length\(vViewPosition\)\)\), mix\(-slateStreamBed/);
   assert.equal(shader.uniforms.slateMist, RANGE_MIST);
   // The moon's shadow fades from the subject only under a look (slateShadowFade.y > 0). On the
   // moving water (slateShadowWater, which terrain-build.js sets) its edge softens over
