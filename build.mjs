@@ -173,6 +173,7 @@ const SLATE_MAPS = [
   "grit-512",
   "relief-512",
   "detail-512",
+  "soil-roughness-512",
 ];
 async function materialAssetManifest() {
   const urls = {};

@@ -120,12 +120,13 @@ export const SLATE_CLOSE = Object.freeze({
     offset: Object.freeze([0.41, 0.17]),
   }),
   blendCell: 2.6,
-  albedo: 1.5,
-  relief: 0.16,
+  albedo: 0.65,
+  relief: 0.045,
   blur: 5,
   calm: 0.9,
-  near: Object.freeze([7, 24]),
+  near: Object.freeze([6, 32]),
   footprint: Object.freeze([0.8, 2]),
+  featureTexels: 8,
   texels: 1024,
   // Crumbs: a cellular noise of `cell`-unit grains on the close soil's relief
   // (`height`, in relief-map units) and albedo (`albedo`), so it reads as
@@ -136,12 +137,12 @@ export const SLATE_CLOSE = Object.freeze({
   // tangent): near-vertical, the wall facing the lantern at each valley lit
   // into a continuous 1-2 px pale rim about the cobble.
   crumb: Object.freeze({
-    cell: 0.075,
-    height: 1,
-    albedo: 0.6,
-    fade: Object.freeze([1.6, 4]),
+    cell: 0.025,
+    height: 0.18,
+    albedo: 0.12,
+    fade: Object.freeze([1.8, 4]),
     round: 12,
-    steep: 1,
+    steep: 0.35,
   }),
   ceiling: 0.8,
 });
@@ -238,7 +239,7 @@ export const SLATE_RIVER_BED = Object.freeze({
 // water runs at `flow` units a second along its course (negative: from its
 // mouth up toward its head): the current ripples it (`current`, as the
 // river's RIVER_RIPPLE: [along, across] cycles per unit and their tilt), and
-// across the confluence (river radii `confluence`) the river's water eases
+// across the confluence (water depths `confluence`) the river's water eases
 // into the stream's. White water (`foam`) breaks on it, over `amount` of the
 // water, `join` where courses meet and `mouth` in a band where it leaves the
 // river (rising from reach[0] - 0.3 to reach[0] of the river's radius, gone
@@ -265,16 +266,27 @@ export const SLATE_STREAMS = Object.freeze({
           [3.7, 1.5],
           [2.9, 0.3],
           [2.4, -1.36],
-          [1.34, -2.6],
-          [0.1, -3.25],
-          [-0.5, -3.8],
+          [1.5, -2.5],
+          [2.31, -4.1],
+          [3.2, -5.6],
+          [2.3, -7.4],
+          [0.7, -9],
+          [-1.4, -9.9],
+          [-3.6, -10.2],
+          [-5.7, -10.9],
+          [-6.9, -11.4],
         ],
-        width: [0.9, 2.6],
+        width: [0.9, 1.3],
+        flare: [1.3, 3.6, 1.2],
+        // Fixed treeward station, original course length, lower branch width.
+        profile: [5.556, 9.415, 1.2],
       },
-    ].map(({ path, width }) =>
+    ].map(({ path, width, flare, profile }) =>
       Object.freeze({
         path: Object.freeze(path.map((p) => Object.freeze(p))),
         width: Object.freeze(width),
+        ...(flare && { flare: Object.freeze(flare) }),
+        ...(profile && { profile: Object.freeze(profile) }),
       }),
     ),
   ),
@@ -282,7 +294,8 @@ export const SLATE_STREAMS = Object.freeze({
   meander: 0.28,
   wobble: 1.6,
   flow: -1.4,
-  confluence: Object.freeze([0.9, 1.4]),
+  calm: Object.freeze({ from: 5.556, span: 2, foam: 0.25, ripple: 0.5 }),
+  confluence: Object.freeze([0.3, 1]),
   current: Object.freeze({
     coarse: Object.freeze([1.1, 2.4]),
     fine: Object.freeze([3, 6.5]),
@@ -297,7 +310,7 @@ export const SLATE_STREAMS = Object.freeze({
     reach: Object.freeze([1, 1.9]),
     cover: 0.85,
     far: 0.5,
-    plume: 0.2,
+    plume: 0,
     albedo: 0.34,
     text: 0.9,
     lace: Object.freeze([6, 9]),
@@ -330,6 +343,13 @@ export const SLATE_STREAMS = Object.freeze({
     rise: 0.1,
     level: -0.04,
     drop: 0.1,
+    sill: Object.freeze({
+      depth: Object.freeze([0.3, 1]),
+      along: 3,
+      back: 1,
+      across: 1.4,
+      reach: 1.6,
+    }),
     shore: 3,
     texel: 0.05,
     reach: Object.freeze([1.3, 1.7]),
@@ -367,8 +387,8 @@ export const SLATE_STREAMS = Object.freeze({
       [
         [3.34, 0.26, 0.22, "weathered", 20],
         [2.2, -0.63, 0.28, "lichen", 110],
-        [2.52, -2.06, 0.2, "weathered", 250],
-        [1.04, -2.11, 0.28, "weathered", 75],
+        [2.4, -2.06, 0.2, "weathered", 250],
+        [1.2, -2.42, 0.28, "weathered", 75],
       ].map((stone) => Object.freeze(stone)),
     ),
   }),
@@ -448,20 +468,43 @@ function courseBends(points, turn) {
     return +Math.max(-1, Math.min(1, angle / turn)).toFixed(4);
   });
 }
+// The width at a fixed course station: preserve the treeward profile, then
+// narrow the lower branch and flare only where it reaches the river.
+function courseWidth({ width: [w0, w1], flare, profile }, s, length) {
+  const t = flare ? Math.min(1, Math.max(0, (s - length + flare[1]) / (flare[1] - flare[2]))) : 0;
+  const base = profile
+    ? w0 +
+      ((w1 - w0) * Math.min(s, profile[0])) / profile[1] +
+      (profile[2] - w0 - ((w1 - w0) * profile[0]) / profile[1]) *
+        Math.max(0, (s - profile[0]) / (length - profile[0]))
+    : w0 + ((w1 - w0) * s) / length;
+  return base + (flare ? flare[0] * t * t * (3 - 2 * t) : 0);
+}
+function courseLevel({ profile }, s, length, bed) {
+  const t = profile
+    ? Math.min(s, profile[0]) / profile[1] +
+      (1 - profile[0] / profile[1]) * Math.max(0, (s - profile[0]) / (length - profile[0]))
+    : s / length;
+  return bed.level - bed.drop * (1 - t);
+}
 // The streams' courses, sampled: world [x, z, distance along] points, the
-// width at head and mouth, each course's length and each sample's bend.
+// width at head and mouth, each course's length, each sample's bend and its
+// width there (courseWidth()).
 export function streamLines({ courses, step, bed } = SLATE_STREAMS) {
   const { x: lx, z: lz } = estateLantern();
-  return courses.map(({ path, width }) => {
+  return courses.map((course) => {
     const points = smoothCourse(
-      path.map(([dx, dz]) => [lx + dx, lz + dz]),
-      step,
-    );
+        course.path.map(([dx, dz]) => [lx + dx, lz + dz]),
+        step,
+      ),
+      length = points.at(-1)[2];
     return Object.freeze({
       points: Object.freeze(points),
-      width,
-      length: points.at(-1)[2],
+      width: course.width,
+      length,
       bends: Object.freeze(courseBends(points, bed.turn)),
+      widths: Object.freeze(points.map(([, , s]) => +courseWidth(course, s, length).toFixed(4))),
+      levels: Object.freeze(points.map(([, , s]) => courseLevel(course, s, length, bed))),
     });
   });
 }
@@ -470,10 +513,10 @@ export function streamLines({ courses, step, bed } = SLATE_STREAMS) {
 // the set across Portrait's foreground and into a lake behind the watch): it
 // pours off the cliffs north-east behind the tree (the owner's open sea of
 // 2026-10-17, terrain-build.js and ocean.js riverFalls()); along it from there
-// it rounds a meander north-west of the lantern, runs 4 units wide about 4.3
-// units in front of the lantern on the lantern shots' side and bends away
-// south toward their lens, as before, clear of the roots, the rocks and the
-// puddles; then it crosses Portrait's foreground, rounds past its lens, passes
+// it rounds a meander north-west of the lantern, then its broad bend stands
+// farther west, its water more than 6 units clear of the lantern. The narrow
+// tree stream crosses the restored ground to meet it. Clear of the roots,
+// rocks and puddles, it crosses Portrait's foreground, rounds past its lens, passes
 // well south of the watch's terrace (its water 10 units beyond the terrace's grass)
 // and widens across The watch's plain into a lake 60 units across, where it
 // comes in off the plain from toward the summit. Its course is a smooth
@@ -503,14 +546,14 @@ export const SLATE_RIVER = Object.freeze({
       [-21, 0.4, 2, 0.9],
       [-13, -0.9],
       [-8.6, -3.1],
-      [-4.4, -3.8],
-      [-1.9, -3.9],
-      [-0.6, -5.4],
-      [-1.5, -7.8],
-      [-3.5, -10.2],
-      [-5.1, -12.4],
-      [-6.7, -15.8],
-      [-7.1, -21, 2, 3],
+      [-7.1, -5.2],
+      [-6.4, -7.5],
+      [-6.5, -9.7],
+      [-7.3, -11.6],
+      [-8.7, -13.5],
+      [-9.9, -15.7],
+      [-9.9, -19],
+      [-8.4, -22.5, 2, 3],
       [-6.9, -26.9, 2.4, 2],
       [-3.4, -30.8, 2.7, 3],
       [4.1, -31.4, 3.2, 3],
@@ -796,6 +839,8 @@ export function createSlateContacts(values = new Float32Array(SLATE_CONTACTS * 4
     slateDetail: { value: null },
     slateGrit: { value: null },
     slateRelief: { value: null },
+    slateSoilRoughness: { value: null },
+    slateSoilRoughnessOn: { value: 0 },
     // The name and intro, and Contact, on the canvas (x0, y0, x1, y1 in its UV,
     // y up; empty beyond it) and the canvas's aspect, for the water to ease off
     // behind them.
@@ -955,14 +1000,41 @@ const FAR = SLATE_FAR,
 // broad tone (the tile blend `blur` mip levels down, `calm` of it), and the close
 // soil's two lookups, blended by a noise, carry the detail: its grit on the
 // albedo after the map and the settled soil.
+const SOIL_SAMPLE = `
+#if __VERSION__ >= 300 || defined(GL_EXT_shader_texture_lod)
+#define SLATE_SOIL_GRAD
+vec4 slateSoilSample(sampler2D t, vec2 uv, vec2 dx, vec2 dy) { return texture2DGradEXT(t,uv,dx,dy); }
+#else
+vec4 slateSoilSample(sampler2D t, vec2 uv, vec2 dx, vec2 dy) { return texture2D(t,uv); }
+#endif
+`;
 const CLOSE_PRE = `
       vec2 slateCU = vMudWorld.xz/${glslNumber(CLOSE.tile)}, slateCV = mat2(${CLOSE.second.turn.map(glslNumber)})*slateCU*${glslNumber(CLOSE.second.scale)}+${glslVec(CLOSE.second.offset)};
       float slateCW = smoothstep(.3, .7, slateNoise(vMudWorld.xz/${glslNumber(CLOSE.blendCell)})), slateCN = 1.-smoothstep(${CLOSE.near.map(glslNumber)}, length(vViewPosition));
-      float slateCHU = texture2D(slateRelief, slateCU).r, slateCHV = texture2D(slateRelief, slateCV).r;
-      float slateCG = mix(texture2D(slateGrit, slateCU).r, texture2D(slateGrit, slateCV).r, slateCW), slateCH = mix(slateCHU, slateCHV, slateCW);
+      // Derivatives belong outside the distance branch. Explicit gradients retain
+      // mip filtering at its boundary; WebGL1 without the extension samples whole.
+      vec2 slateCUX=dFdx(slateCU), slateCUY=dFdy(slateCU), slateCVX=dFdx(slateCV), slateCVY=dFdy(slateCV), slateBlendD=vec2(dFdx(slateCW),dFdy(slateCW)), slateMapX=dFdx(vMapUv), slateMapY=dFdy(vMapUv), slateMapBX=dFdx(slateUvB), slateMapBY=dFdy(slateUvB);
+      float slateCHU=.5, slateCHV=.5, slateCG=.5, slateCH=.5, slateSoilMask=1., slateSoilRough=.0;
+      vec2 slateCDH=vec2(0.);
+      #ifdef SLATE_SOIL_GRAD
+      if(slateCN>0.) {
+      #endif
+      slateCHU = slateSoilSample(slateRelief, slateCU, slateCUX, slateCUY).r;
+      slateCHV = slateSoilSample(slateRelief, slateCV, slateCVX, slateCVY).r;
+      slateCG = mix(slateSoilSample(slateGrit, slateCU, slateCUX, slateCUY).r, slateSoilSample(slateGrit, slateCV, slateCVX, slateCVY).r, slateCW);
+      slateCH = mix(slateCHU, slateCHV, slateCW);
+      // A smaller, differently turned photographic grain breaks up the broad
+      // compacted soil. Its frequency is filtered with its own gradients.
+      vec2 slateFine=mat2(.8,.6,-.6,.8)*slateCU*2.6+vec2(.19,.73);
+      slateCG += (slateSoilSample(slateGrit,slateFine,mat2(.8,.6,-.6,.8)*slateCUX*2.6,mat2(.8,.6,-.6,.8)*slateCUY*2.6).r-.5)*.35;
       // The relief's slope per world unit, from each lookup's next texels (the second's turned and scaled back).
-      vec2 slateCDH = mix(vec2(texture2D(slateRelief, slateCU+vec2(${CLOSE_TEXEL}, 0.)).r, texture2D(slateRelief, slateCU+vec2(0., ${CLOSE_TEXEL})).r)-slateCHU,
-        (vec2(texture2D(slateRelief, slateCV+vec2(${CLOSE_TEXEL}, 0.)).r, texture2D(slateRelief, slateCV+vec2(0., ${CLOSE_TEXEL})).r)-slateCHV)*mat2(${CLOSE.second.turn.map(glslNumber)})*${glslNumber(CLOSE.second.scale)}, slateCW)*${glslNumber(CLOSE.texels / CLOSE.tile)};
+      slateCDH = mix(vec2(slateSoilSample(slateRelief, slateCU+vec2(${CLOSE_TEXEL}, 0.),slateCUX,slateCUY).r, slateSoilSample(slateRelief, slateCU+vec2(0., ${CLOSE_TEXEL}),slateCUX,slateCUY).r)-slateCHU,
+        (vec2(slateSoilSample(slateRelief, slateCV+vec2(${CLOSE_TEXEL}, 0.),slateCVX,slateCVY).r, slateSoilSample(slateRelief, slateCV+vec2(0., ${CLOSE_TEXEL}),slateCVX,slateCVY).r)-slateCHV)*mat2(${CLOSE.second.turn.map(glslNumber)})*${glslNumber(CLOSE.second.scale)}, slateCW)*${glslNumber(CLOSE.texels / CLOSE.tile)};
+      if(slateSoilRoughnessOn>.5) slateSoilRough=mix(slateSoilSample(slateSoilRoughness,slateCU,slateCUX,slateCUY).r,slateSoilSample(slateSoilRoughness,slateCV,slateCVX,slateCVY).r,slateCW)-.9450162551;
+      sampledDiffuseColor.rgb = mix(sampledDiffuseColor.rgb, mix(slateSoilSample(map,vMapUv,slateMapX*${glslNumber(2 ** CLOSE.blur)},slateMapY*${glslNumber(2 ** CLOSE.blur)}).rgb, slateSoilSample(map,slateUvB,slateMapBX*${glslNumber(2 ** CLOSE.blur)},slateMapBY*${glslNumber(2 ** CLOSE.blur)}).rgb, slateW)*(.93+.14*slateNoise(vMudWorld.xz/${glslNumber(SLATE_TILING.macroCell)})), ${glslNumber(CLOSE.calm)}*slateCN);
+      #ifdef SLATE_SOIL_GRAD
+      }
+      #endif
       vec2 slateKP = vMudWorld.xz/${glslNumber(CLOSE.crumb.cell)}, slateKI = floor(slateKP), slateKF = fract(slateKP), slateKD = vec2(0.);
       float slateKW = slateCN*smoothstep(${CLOSE.crumb.fade.map(glslNumber)}, 1./max(length(fwidth(slateKP)), 1e-4)), slateK1 = 1.;
       // Only where the crumbs show (near the lens, a cell over a few pixels): the
@@ -987,18 +1059,17 @@ const CLOSE_PRE = `
       vec2 slateKG = 10.*slateKT*(1.-slateKT)*slateKD*${glslNumber(CLOSE.crumb.height)}*slateKW;
       slateCDH -= slateKG/(1.+length(slateKG)*${glslNumber(CLOSE.relief / CLOSE.crumb.steep)});
       slateCG += slateCrumb*${glslNumber(CLOSE.crumb.albedo)}*slateKW;
-      sampledDiffuseColor.rgb = mix(sampledDiffuseColor.rgb, mix(texture2D(map, vMapUv, ${glslNumber(CLOSE.blur)}).rgb, texture2D(map, slateUvB, ${glslNumber(CLOSE.blur)}).rgb, slateW)*(.93+.14*slateNoise(vMudWorld.xz/${glslNumber(SLATE_TILING.macroCell)})), ${glslNumber(CLOSE.calm)}*slateCN);
       `;
 const CLOSE_MAP = `
-      diffuseColor.rgb *= 1.+(slateCG-.5)*${glslNumber(CLOSE.albedo)}*slateCN;`;
+      diffuseColor.rgb *= 1.+(slateCG-.5)*${glslNumber(CLOSE.albedo)}*slateCN*(1.-slatePuddle)*slateSoilMask;`;
 // Its relief on the normal (as three's perturbNormalArb()), the height's change
 // across a pixel taken from its slope at that pixel (and the lookups' slowly
 // varying blend), faded where a texel shrinks below a pixel and under water.
 const CLOSE_NORMAL = `
-      float slateCF = slateCN*smoothstep(${CLOSE.footprint.map(glslNumber)}, 1./max(length(fwidth(slateCU))*${glslNumber(CLOSE.texels)}, 1e-4))*(1.-slatePuddle);
+      float slateCF = slateCN*smoothstep(${CLOSE.footprint.map(glslNumber)}, ${glslNumber(CLOSE.featureTexels)}/max(length(fwidth(slateCU))*${glslNumber(CLOSE.texels)}, 1e-4))*(1.-slatePuddle);
       vec3 slateSX = dFdx(-vViewPosition), slateSY = dFdy(-vViewPosition), slateR1 = cross(slateSY, normal), slateR2 = cross(normal, slateSX);
       float slateDet = dot(slateSX, slateR1);
-      vec2 slateDH = (vec2(dot(slateCDH, dFdx(vMudWorld.xz)), dot(slateCDH, dFdy(vMudWorld.xz)))+vec2(dFdx(slateCW), dFdy(slateCW))*(slateCHV-slateCHU))*${glslNumber(CLOSE.relief)}*slateCF;
+      vec2 slateDH = (vec2(dot(slateCDH, dFdx(vMudWorld.xz)), dot(slateCDH, dFdy(vMudWorld.xz)))+slateBlendD*(slateCHV-slateCHU))*${glslNumber(CLOSE.relief)}*slateCF;
       // The silt bar's ripple marks, across the flow (SLATE_BANKS.silt.ripple).
       float slateRipple = sin(6.2832*(slateStreamQ.y*${glslNumber(SLATE_BANKS.silt.ripple[0])}+.35*slateNoise(vec2(slateStreamQ.y*1.7, slateStreamQ.z*slateStreamQ.w*2.3))))*${glslNumber(SLATE_BANKS.silt.ripple[1])}*slateSilt*slateCN;
       slateDH += vec2(dFdx(slateRipple), dFdy(slateRipple));
@@ -1032,7 +1103,7 @@ const STREAM_LINES = streamLines();
 export function streamWater(x, z, lines = STREAM_LINES, { bed } = SLATE_STREAMS) {
   let best = Infinity,
     level = bed.level;
-  for (const { points, length } of lines)
+  for (const { points, levels } of lines)
     for (let k = 1; k < points.length; k++) {
       const [ax, az, s0] = points[k - 1],
         [bx, bz, s1] = points[k],
@@ -1042,7 +1113,7 @@ export function streamWater(x, z, lines = STREAM_LINES, { bed } = SLATE_STREAMS)
         d = Math.hypot(x - ax - ex * h, z - az - ez * h);
       if (d < best) {
         best = d;
-        level = bed.level - bed.drop * (1 - (s0 + (s1 - s0) * h) / length);
+        level = levels[k - 1] + (levels[k] - levels[k - 1]) * h;
       }
     }
   return level;
@@ -1050,17 +1121,16 @@ export function streamWater(x, z, lines = STREAM_LINES, { bed } = SLATE_STREAMS)
 const STREAM_GLSL = (() => {
   const { meander, wobble, bed } = SLATE_STREAMS;
   const n = (v) => glslNumber(+v.toFixed(4));
-  const courses = STREAM_LINES.map(({ points, width: [w0, w1], length, bends }) => {
-    const pad = (Math.max(w0, w1) / 2) * bed.reach[1] + 0.05,
+  const courses = STREAM_LINES.map(({ points, widths, bends }) => {
+    const pad = (Math.max(...widths) / 2) * bed.reach[1] + 0.05,
       xs = points.map(([x]) => x),
-      zs = points.map(([, z]) => z),
-      width = (s) => w0 + ((w1 - w0) * s) / length;
+      zs = points.map(([, z]) => z);
     const segments = points.slice(1).map(([bx, bz, s1], k) => {
       const [ax, az, s0] = points[k],
         ex = bx - ax,
         ez = bz - az,
         len = Math.hypot(ex, ez);
-      return `pa=p-vec2(${n(ax)},${n(az)});ba=vec2(${n(ex)},${n(ez)});h=clamp(dot(pa,ba)*${n(1 / (len * len))},0.,1.);d=${n(width(s0))}+h*${n(width(s1) - width(s0))};w=length(pa-ba*h)/d;if(w<c.x){c=vec4(w,${n(s0)}+h*${n(len)},(pa.x*ba.y-pa.y*ba.x)*${n(1 / len)}/d,d);cd=ba*${n(1 / len)};cb=${n(bends[k])}+h*${n(bends[k + 1] - bends[k])};}`;
+      return `pa=p-vec2(${n(ax)},${n(az)});ba=vec2(${n(ex)},${n(ez)});h=clamp(dot(pa,ba)*${n(1 / (len * len))},0.,1.);d=${n(widths[k])}+h*${n(widths[k + 1] - widths[k])};w=length(pa-ba*h)/d;if(w<c.x){c=vec4(w,${n(s0)}+h*${n(len)},(pa.x*ba.y-pa.y*ba.x)*${n(1 / len)}/d,d);cd=ba*${n(1 / len)};cb=${n(bends[k])}+h*${n(bends[k + 1] - bends[k])};}`;
     });
     // The nearest segment (in widths) gives the place along and across; the weight follows from it.
     return `if(p.x>${n(Math.min(...xs) - pad)}&&p.x<${n(Math.max(...xs) + pad)}&&p.y>${n(Math.min(...zs) - pad)}&&p.y<${n(Math.max(...zs) + pad)}){c=vec4(1e9,0.,0.,1.);cd=vec2(1.,0.);
@@ -1376,6 +1446,7 @@ export function configureGroundShading(
   const authored = Boolean(useWet && detail);
   // The close soil comes with the authored maps' grit and relief (SLATE_CLOSE).
   const close = Boolean(authored && grit && relief);
+  if (authored) (material.extensions ??= {}).shaderTextureLOD = true;
   const uniforms = contacts ?? createSlateContacts();
   if (authored) uniforms.slateDetail.value = detail;
   if (close) {
@@ -1417,7 +1488,7 @@ uniform vec3 babelFlashKey;
 uniform vec4 babelFlash, babelFlashLight, babelFlashSky;
 #define SLATE_TEXT_KNEE ${glslNumber(WATER.text[1])}
 uniform vec4 slateText, slateAbout;
-${authored ? "uniform sampler2D slateDetail;\n" : ""}${close ? "uniform sampler2D slateGrit, slateRelief;\n" : ""}${RIVER_BED_GLSL}float slateHash(vec2 p){vec3 q=fract(p.xyx*.1031);q+=dot(q,q.yzx+33.33);return fract((q.x+q.y)*q.z);}
+${authored ? "uniform sampler2D slateDetail;\n" + SOIL_SAMPLE : ""}${close ? "#define SLATE_CLOSE_SOIL\nuniform sampler2D slateGrit, slateRelief, slateSoilRoughness;\nuniform float slateSoilRoughnessOn;\n" : ""}${RIVER_BED_GLSL}float slateHash(vec2 p){vec3 q=fract(p.xyx*.1031);q+=dot(q,q.yzx+33.33);return fract((q.x+q.y)*q.z);}
 float slateNoise(vec2 p){vec2 i=floor(p),f=fract(p);f*=f*(3.-2.*f);return mix(mix(slateHash(i),slateHash(i+vec2(1,0)),f.x),mix(slateHash(i+vec2(0,1)),slateHash(i+1.),f.x),f.y);}
 ${STREAM_GLSL}
 ${SLATE_TEXT_GLSL}${LOOK_GLSL}${mistOn ? `uniform mat4 projectionMatrix;\n${MIST_PARS}` : ""}`
@@ -1435,7 +1506,7 @@ ${SLATE_TEXT_GLSL}${LOOK_GLSL}${mistOn ? `uniform mat4 projectionMatrix;\n${MIST
       vec3 slateMean = ${glslVec(SLATE_TILING.mean)};
       vec4 sampledDiffuseColor = vec4(max(slateMean+(mix(slateA.rgb,slateB.rgb,slateW)-slateMean)/length(vec2(slateW,1.-slateW)),0.)*(1.+(slateH-.5)*${glslNumber(DETAIL.albedo)}*slateNear)*(.93+.14*slateNoise(vMudWorld.xz/${glslNumber(SLATE_TILING.macroCell)})),1.);
       ${close ? CLOSE_PRE : ""}${FAR_MAP}
-      diffuseColor *= sampledDiffuseColor;${close ? CLOSE_MAP : ""}
+      diffuseColor *= sampledDiffuseColor;
       #endif`,
       );
     shader.fragmentShader = shader.fragmentShader.replace(
@@ -1480,6 +1551,7 @@ ${SLATE_TEXT_GLSL}${LOOK_GLSL}${mistOn ? `uniform mat4 projectionMatrix;\n${MIST
       vec2 slateStreamDir;
       float slateStreamJoin, slateStreamR, slateStreamBend;
       vec4 slateStreamQ = slateStreamAt(vMudWorld.xz, slateStreamDir, slateStreamJoin, slateStreamR, slateStreamBend);
+      float slateStreamCalm = smoothstep(${glslNumber(SLATE_STREAMS.calm.from)}, ${glslNumber(SLATE_STREAMS.calm.from + SLATE_STREAMS.calm.span)}, slateStreamQ.y);
       float slatePuddle = smoothstep(-.04, .04, max(max(max(${PUDDLE_GLSL}*(${glslNumber(SLATE_PUDDLES.fill)}+.4*slateNoise(vMudWorld.xz*.9))-slateH, slatePoolsAt(slateH, length(vViewPosition))), ${STREAM_LEVEL}), ${RIVER_LEVEL}))*(1.0-slateDry);
       float slateLanternPuddle = slatePuddle*max(1.0-smoothstep(1.0, 1.4, slateRiverR), 1.0-smoothstep(1.0, 1.4, slateStreamR));
       slateWet = max(slateWet, slatePuddle);
@@ -1492,6 +1564,8 @@ ${SLATE_TEXT_GLSL}${LOOK_GLSL}${mistOn ? `uniform mat4 projectionMatrix;\n${MIST
       roughnessFactor = mix(roughnessFactor, ${glslNumber(SLATE_PUDDLES.lantern.roughness)}, slateLanternPuddle);
       float slateMatte = (1.0-smoothstep(${SLATE_WET.close.near.map(glslNumber)}, length(vViewPosition)))*(1.0-slatePuddle)*(1.0-slateBank);
       roughnessFactor = mix(roughnessFactor, max(roughnessFactor, ${glslNumber(SLATE_WET.close.roughness)}), slateMatte);
+      ${close ? "roughnessFactor = clamp(roughnessFactor+slateSoilRough*slateCN*(1.-slatePuddle)*slateSoilMask,.04,1.);" : ""}
+      ${close ? CLOSE_MAP : ""}
       diffuseColor.rgb *= (1.0 - ${glslNumber(SLATE_WET.darken)}*slateWet)*(1.0 - ${glslNumber(SLATE_PUDDLES.darken)}*slatePuddle);
       diffuseColor.rgb = mix(diffuseColor.rgb*(1.0-${glslNumber(SLATE_BANKS.darken)}*slateBank-${glslNumber(SLATE_BANKS.cut)}*slateCut), ${glslVec(SLATE_TILING.mean.map((v) => +(v * SLATE_TILING.lift * SLATE_BANKS.silt.tone).toFixed(4)))}, ${glslNumber(SLATE_BANKS.silt.amount)}*slateSilt*(1.0-${glslNumber(SLATE_BANKS.text)}*slateBehindText()));
       float slateAo = 0.0;
@@ -1513,7 +1587,14 @@ ${SLATE_TEXT_GLSL}${LOOK_GLSL}${mistOn ? `uniform mat4 projectionMatrix;\n${MIST
         "#include <normal_fragment_maps>",
         `#ifdef USE_NORMALMAP_TANGENTSPACE
       vec3 slateNA = texture2D(normalMap, vNormalMapUv).xyz*2.-1., slateNB = texture2D(normalMap, slateUvB).xyz*2.-1.;
-      vec2 slateHx = vec2(texture2D(slateDetail, slateUvD+vec2(1./512.,0.)).r, texture2D(slateDetail, slateUvD+vec2(0.,1./512.)).r);
+      vec2 slateDetailX=dFdx(slateUvD), slateDetailY=dFdy(slateUvD), slateHx=vec2(slateH);
+      #ifdef SLATE_SOIL_GRAD
+      if(slateNear>0.) {
+      #endif
+      slateHx = vec2(slateSoilSample(slateDetail, slateUvD+vec2(1./512.,0.),slateDetailX,slateDetailY).r, slateSoilSample(slateDetail, slateUvD+vec2(0.,1./512.),slateDetailX,slateDetailY).r);
+      #ifdef SLATE_SOIL_GRAD
+      }
+      #endif
       vec3 mapN = vec3((mix(slateNA.xy, slateNB.xy*slateTurnB, slateW)/length(vec2(slateW,1.-slateW))*normalScale+(slateH-slateHx)*slateTurnD*(${glslNumber(DETAIL.strength)}*slateNear))${close ? `*(1.-${glslNumber(CLOSE.calm)}*slateCN)` : ""}*(1.-${glslNumber(SLATE_BANKS.silt.calm)}*slateSilt)*(1.-${glslNumber(SLATE_PUDDLES.flatten)}*slatePuddle), mix(slateNA.z, slateNB.z, slateW));
       normal = normalize(tbn*mapN);${close ? CLOSE_NORMAL : ""}
       #endif`,

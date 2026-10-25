@@ -306,7 +306,7 @@ test("prepared estate growth yields through generation, normals and bounds with 
       for (const tier of ["balanced", "high"])
         for (const each of [detail, direct]) {
           each.applyQuality({ tier });
-          assert.equal(each.mesh.geometry.drawRange.count, tier === "high" ? 145800 : 57348);
+          assert.equal(each.mesh.geometry.drawRange.count, tier === "high" ? 145350 : 57294);
         }
     } finally {
       direct.dispose();
@@ -338,7 +338,7 @@ test("environment prepares once while detached and activates the ready grass at 
       prepared.mesh,
       "activation reuses the prepared geometry",
     );
-    assert.equal(prepared.mesh.geometry.drawRange.count, 57348);
+    assert.equal(prepared.mesh.geometry.drawRange.count, 57294);
     assert.equal(prepared.mesh.visible, true);
     environment.setFilmTreatment(false);
     environment.setFilmTreatment(true);
@@ -362,7 +362,7 @@ test("pending grass activation and disposal never duplicate or leak the detached
     let geometry = null,
       freed = 0;
     BufferGeometry.prototype.setAttribute = function (name, attribute) {
-      if (name === "position" && attribute.count === 64800) {
+      if (name === "position" && attribute.count === 64600) {
         geometry = this;
         this.addEventListener("dispose", () => freed++);
       }
@@ -394,17 +394,17 @@ test("estate growth retains the authored seeded buffers and tier cuts", () => {
   const detail = createEstateGroundDetail(groundHeight),
     geometry = detail.mesh.geometry;
   try {
-    // Recorded before the builder's scratch-buffer optimization: all geometry,
-    // shading and wind data remain byte-identical, not only the silhouette.
+    // Pin the reviewed stream's growth keepout, including all geometry,
+    // shading and wind data, not only the silhouette.
     const expected = {
-      position: "46fb366b8550834ee75c4abe759ac8d13fa1f8034fa576975ecf36aea8f333cb",
-      color: "ff0531b7c5b8049fa560788c428de2315c167fe664519d21a604e432868f4752",
-      aGrass: "85c547b010ec9a20629f541f284da0573335d884852218f05f7ed0d4cc3dfb03",
-      normal: "eac18267a15181946ff50afcf3ad4f3e408fe1ae503102ed0fe76a3e6384768f",
-      index: "46af942b22e92195b4fc932ef2942e5f78868b05b376320ed3b91a5c7ae94209",
+      position: "30aad87d1170e502c28d41ef80ec8f6693737bc0c230689153c23384ce3a8024",
+      color: "08d589a31fbffdc7d1f686122d6dac6a68193e3250c203c248e9b446a8f081ed",
+      aGrass: "5db2d72b76cee36f62d752a1139ea6c1a12e33fc33dcf0d62707b0b69395d704",
+      normal: "5224220376bb8c7b6c2d7e7efb4baa5c9d13f11e5339fba786f62ac9cf9fa7f7",
+      index: "17c887e93b15d5c63dbbfc35e503a5fa1a3338ffd8fbd04b17dbf82db93363dc",
     };
-    assert.equal(geometry.attributes.position.count, 64800);
-    assert.equal(geometry.index.count, 145800);
+    assert.equal(geometry.attributes.position.count, 64600);
+    assert.equal(geometry.index.count, 145350);
     assert.ok(geometry.index.array instanceof Uint16Array);
     for (const [name, hash] of Object.entries(expected)) {
       const { array } = name === "index" ? geometry.index : geometry.attributes[name];
@@ -413,11 +413,11 @@ test("estate growth retains the authored seeded buffers and tier cuts", () => {
       assert.equal(array.buffer.byteLength, array.byteLength, `${name} keeps no unused capacity`);
     }
     detail.setActive(true);
-    assert.equal(geometry.drawRange.count, 145800);
+    assert.equal(geometry.drawRange.count, 145350);
     detail.applyQuality({ tier: "balanced" });
-    assert.equal(geometry.drawRange.count, 57348);
+    assert.equal(geometry.drawRange.count, 57294);
     detail.applyQuality({ tier: "high" });
-    assert.equal(geometry.drawRange.count, 145800);
+    assert.equal(geometry.drawRange.count, 145350);
   } finally {
     detail.dispose();
   }

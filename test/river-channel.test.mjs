@@ -18,12 +18,15 @@ import {
   filmHeight,
   LANTERN_FOOT,
   PUDDLE_ZONES,
+  RIVER,
   RIVER_CHANNEL,
   RIVER_LINE,
+  STREAMS,
   riverAt,
   riverChannel,
   shadeSlateGround,
   shadeSlatePuddles,
+  streamRadius,
   terrainHeight,
 } from "../src/scene/terrain-build.js";
 import { configureGroundShading } from "../src/scene/mud-ground.js";
@@ -117,7 +120,7 @@ test("the complete rendered river has a physical metre bed, a separate same-draw
   assert.ok(deep > 150);
 });
 
-test("the upper surface has no flipped faces or overlapping folds through the tight bend", () => {
+test("the upper surface has no flipped faces, gaps or overlapping folds through the rerouted bends", () => {
   const p = terrain.attributes.position,
     index = terrain.index.array;
   for (const name of ["position", "normal", "slateRiverSurface"])
@@ -129,21 +132,101 @@ test("the upper surface has no flipped faces or overlapping folds through the ti
         (p.getY(b) - p.getY(a)) * (p.getX(c) - p.getX(a));
     assert.ok(area > 0, "every referenced water face faces upward");
   }
-  let covered = 0;
-  for (let x = 48.117; x < 49.14; x += 0.0731)
-    for (let z = 27.197; z < 27.65; z += 0.0617) {
-      ray.ray.origin.set(x, 60, z);
-      const hits = ray.intersectObject(waterMesh);
-      const depth = channel.water(x, z) - height(x, z);
-      assert.ok(hits.length <= 1, `no overlapping offset-fold at ${x},${z}`);
-      if (depth > 0.006) {
-        assert.equal(hits.length, 1, `wet bed has continuous water at ${x},${z}`);
-        covered++;
+  let covered = 0,
+    dry = 0;
+  for (let k = 1; k < RIVER_LINE.length; k++) {
+    const [ax, az] = RIVER_LINE[k - 1],
+      [bx, bz, station] = RIVER_LINE[k];
+    // The unchanged upstream prefix has its own existing offset-strip
+    // coverage. Follow the relocated bend, starting at control 10.
+    const from = riverAt(LANTERN_FOOT.x + RIVER.path[10][0], LANTERN_FOOT.z + RIVER.path[10][1]).s;
+    if (station < from) continue;
+    if (Math.hypot(bx - LANTERN_FOOT.x, bz - LANTERN_FOOT.z) > 24) continue;
+    for (const along of [0.371, 0.713]) {
+      const cx = ax + (bx - ax) * along,
+        cz = az + (bz - az) * along,
+        at = riverAt(cx, cz);
+      for (let across = -1.273; across <= 1.28; across += 0.173) {
+        const x = cx - at.dz * at.w * across,
+          z = cz + at.dx * at.w * across;
+        ray.ray.origin.set(x, 60, z);
+        const hits = ray.intersectObject(waterMesh),
+          depth = channel.water(x, z) - height(x, z);
+        assert.ok(hits.length <= 1, `no overlapping offset-fold at ${x},${z}`);
+        // The branch has its own descending upper datum. Its join is checked
+        // separately; this grid follows the broad river and both of its banks.
+        if (streamRadius(x, z) < 1.8) continue;
+        if (depth > 0.006) {
+          assert.equal(hits.length, 1, `wet bed has continuous water at ${x},${z}`);
+          covered++;
+        }
+        if (depth < -0.006) {
+          assert.equal(hits.length, 0, "the dry inner bank is not covered by a folded water strip");
+          dry++;
+        }
       }
-      if (depth < -0.006)
-        assert.equal(hits.length, 0, "the dry inner bank is not covered by a folded water strip");
     }
-  assert.ok(covered > 20);
+  }
+  assert.ok(covered > 100, `dense coverage through the new bends: ${covered}`);
+  assert.ok(dry > 20, `the samples straddle both actual banks: ${dry}`);
+  // Outer-bank triangles beyond the original root window remain wet too.
+  // These two observed gaps cover the unchanged prefix and the moved bend.
+  for (const [x, z] of [
+    [33.347794693510664, 30.596246926957008],
+    [42.1988365425765, 26.21808247158344],
+  ]) {
+    assert.ok(channel.water(x, z) - height(x, z) > 0.006, "the bank fixture is physically wet");
+    ray.ray.origin.set(x, 60, z);
+    assert.equal(
+      ray.intersectObject(waterMesh).length,
+      1,
+      `continuous outer-bank water at ${x},${z}`,
+    );
+  }
+});
+
+test("the old foreground river is dry ground and the broad water stays six units from the lantern", () => {
+  for (const [dx, dz] of [
+    [-1.9, -3.9],
+    [-0.6, -5.4],
+    [-1.5, -7.8],
+  ]) {
+    const x = LANTERN_FOOT.x + dx,
+      z = LANTERN_FOOT.z + dz;
+    assert.equal(hit(waterMesh, x, z), undefined, `old foreground water is gone at ${dx},${dz}`);
+    assert.ok(
+      height(x, z) > channel.water(x, z) + 0.01,
+      `dry ground replaces the old bed at ${dx},${dz}`,
+    );
+  }
+  const p = terrain.attributes.position,
+    index = terrain.index.array,
+    foot = [LANTERN_FOOT.x, LANTERN_FOOT.z],
+    edgeDistance = ([ax, az], [bx, bz]) => {
+      const dx = bx - ax,
+        dz = bz - az,
+        t = Math.max(
+          0,
+          Math.min(1, ((foot[0] - ax) * dx + (foot[1] - az) * dz) / (dx * dx + dz * dz)),
+        );
+      return Math.hypot(ax + dx * t - foot[0], az + dz * t - foot[1]);
+    };
+  let checked = 0;
+  for (let i = prefix; i < index.length; i += 3) {
+    const triangle = [index[i], index[i + 1], index[i + 2]].map((v) => [p.getX(v), -p.getY(v)]);
+    if (triangle.every(([x, z]) => streamRadius(x, z) < STREAMS.bed.reach[1])) continue;
+    for (let k = 0; k < 3; k++)
+      assert.ok(
+        edgeDistance(triangle[k], triangle[(k + 1) % 3]) >= 6,
+        "the main wet bank stays back from the lantern",
+      );
+    checked++;
+  }
+  assert.ok(checked > 1000, "inspect the actual main-river water faces");
+  assert.ok(
+    riverAt(...foot).d - RIVER.width >= 6,
+    "the channel centre also keeps its near-bank clearance",
+  );
 });
 
 for (const tier of ["high", "balanced"])

@@ -149,8 +149,8 @@ const STREAM_LINES = streamLines();
 // Each course in runs of STREAM_RUN segments, boxed: the half-width at every
 // sample, the run's widest, and its box [x0, x1, z0, z1].
 const STREAM_RUN = 4;
-const STREAM_RUNS = STREAM_LINES.flatMap(({ points, width, length }) => {
-  const half = points.map(([, , s]) => (width[0] + ((width[1] - width[0]) * s) / length) / 2),
+const STREAM_RUNS = STREAM_LINES.flatMap(({ points, widths }) => {
+  const half = widths.map((w) => w / 2),
     runs = [];
   for (let k = 0; k + 1 < points.length; k += STREAM_RUN) {
     const end = Math.min(points.length - 1, k + STREAM_RUN),

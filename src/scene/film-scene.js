@@ -1,9 +1,14 @@
-import { DIRECTED_SHOTS } from "./directed-shots.js";
+import { DIRECTED_SHOTS, measureShot } from "./directed-shots.js";
 import { EARTH } from "./filmic-earth.js";
 import { MIST_PARS, MIST_UNIFORMS } from "./drifting-mist.js";
 import { FLASH_GROUND } from "./film-light.js";
 import { RANGE_MIST, SEA_SINK } from "./hill-silhouette.js";
 import { SLATE_TEXT_GUARD } from "./mud-ground.js";
+import { createCinematicCamera, cinematicSafeArea } from "./cinematic.js";
+import { grassMaterial, GROWTH } from "./estate-ground-detail.js";
+import { ESTATE, estatePathDistance } from "./estate-layout.js";
+import { rockKeepouts } from "./rock-scatter.js";
+import { watchMeasure } from "./opening-star.js";
 
 // Borrow existing resources; restore originals before freeing the derived terrain.
 export function createFilmScene({
@@ -66,6 +71,15 @@ export function createFilmScene({
               RANGE_MIST,
               SEA_SINK,
               DIRECTED_SHOTS,
+              createCinematicCamera,
+              cinematicSafeArea,
+              measureShot,
+              watchMeasure,
+              grassMaterial,
+              GROWTH,
+              ESTATE,
+              estatePathDistance,
+              rockKeepouts,
               originalGeometry,
               active,
             });
@@ -108,6 +122,10 @@ export function createFilmScene({
       if (!active || disposed) return;
       rendering.focusFilmShadow(frame?.shadow || target, frame?.radius || 20);
       rendering.postprocessPipeline.setTextProtection?.(phoneDetail, textBottom);
+    },
+    update(frame) {
+      if (!active || disposed) return false;
+      return settled?.updateForeground?.(frame) ?? false;
     },
     dispose() {
       if (disposed) return false;

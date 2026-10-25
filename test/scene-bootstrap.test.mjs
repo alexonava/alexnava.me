@@ -182,7 +182,7 @@ test("the hidden canvas idles until the reveal, which marks it and lets the rock
   );
   assert.match(
     index,
-    /if \(sceneShown && !canvasShown\) \{ markScene\("reveal"\); rockScatter\.setRevealed\(\); \}/,
+    /if \(sceneShown && !canvasShown\) \{ markScene\("reveal"\); rockScatter\.setRevealed\(\); groundTextures\.update\?\.\(\{ revealed: true \}\); \}/,
   );
 });
 

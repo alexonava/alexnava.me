@@ -280,7 +280,7 @@ const perRange = (values, at = "vT.y") =>
 // (s0), with the cloud banks' average lift (s) and the path light the rock hazes toward (air).
 const SKY_BEHIND_GLSL = `vec3 d=normalize(vL), o=cameraPosition, W=vec3(.2126,.7152,.0722), K=vec3(.715,.625,.313);
 float b=dot(o,d), t=-b+sqrt(max(b*b-dot(o,o)+uSky.x,0.)), a=(o.y+d.y*t)*inversesqrt(uSky.x);
-vec3 s0=(filmSky(a)+filmBand(a))*uSky.y, lift=vec3(.24,.24,.3)*smoothstep(-.03,.17,a)*uSky.y, s=s0+lift, air=s0+${glslFloat(MOUNTAIN_AIR.lift)}*lift;
+vec3 s0=(filmNight(filmSky(a),a,1.)+filmBand(a))*uSky.y, lift=vec3(.24,.24,.3)*smoothstep(-.03,.17,a)*uSky.y, s=s0+lift, air=s0+${glslFloat(MOUNTAIN_AIR.lift)}*lift;
 // The air glows warm toward the orb, as haze does toward a bright light (forward scattering).
 vec2 v=d.xz/max(length(d.xz),1e-4), toSun=normalize(uSun.xz-o.xz);
 air*=1.+vec3(.1,.03,-.05)*pow(max(dot(v,toSun),0.),10.);

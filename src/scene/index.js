@@ -520,6 +520,11 @@ const ORBIT_SPEED = 0.06;
             if (status.status === "ready") qualityState.holdSampling();
             if (qualityDebug) qualityDebug.ground = status;
           },
+          onSoilRoughnessChange(texture) {
+            groundContacts.slateSoilRoughness.value = texture;
+            groundContacts.slateSoilRoughnessOn.value = texture ? 1 : 0;
+            invalidateContent();
+          },
           onDetailChange({
             colorMap,
             normalMap,
@@ -1231,6 +1236,13 @@ const ORBIT_SPEED = 0.06;
           cinematic.target,
         );
         subsystemRegistry.update({
+          camera,
+          viewport,
+          shot: cinematic.shot?.name,
+          cut: transition.cut,
+          still: !liveView.running,
+          revealed: canvasShown,
+          profile: state.profile,
           deltaSeconds,
           elapsedSeconds: elapsedTime,
           motionPaused: visitorHold?.paused,
@@ -1300,6 +1312,9 @@ const ORBIT_SPEED = 0.06;
           markScene("reveal");
           // The rocks fetch and link only after the reveal, off its critical path.
           rockScatter.setRevealed();
+          // A visitor already holding the scene may receive no following frame.
+          // Start optional data here; its decode requests one refinement frame.
+          groundTextures.update?.({ revealed: true });
         }
         canvasShown = sceneShown;
         container?.classList.toggle("is-ready", sceneShown);

@@ -199,3 +199,7 @@ the watch commits, takes the ring's place at once: it shows an empty stand-in
 until its own ranges (the lazy `src/scene/mountain-build.js` chunk, with the
 massifs) are built, and keeps the stand-in if that chunk fails. The scene is revealed
 only after the watch commits, so visitors never see the ring.
+
+## Close soil roughness
+
+The optional `slate-soil-roughness-512.webp` derives from the existing CC0 Poly Haven [Dirt](https://polyhaven.com/a/dirt) roughness source by Charlotte Baglioni. Its original 1024px 16-bit PNG has SHA-256 `29f68a8972f1e69cf47e67924efe469350f953a5f707f63633a9c36cd7c63f6a`. `tools/bake-soil-roughness.py` checks that source, divides by 65535 before float Lanczos filtering, and encodes 512px grayscale WebP at quality 78/method 6. The delivered 3,042-byte tile has SHA-256 `1bfd73de6b856c482275fa572e7b3f360e46c06d1fbd2532481577fe8370ae3d`. The source remains in the private `Assets/Materials/PolyHaven-Dirt` archive. Pillow is used only for authoring; the site downloads only the final WebP.
