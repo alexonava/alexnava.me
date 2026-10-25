@@ -306,7 +306,7 @@ test("every published script is named for the hash of its bytes under an immutab
   assert.ok(scene.length >= 2, "the scene entry and its chunks are published");
   for (const name of names) {
     // Each entry and scene chunk has an immutable rule in _headers.
-    assert.match(name, /^(?:app|scene|webgl-probe)\.(?:[a-z][a-z-]*\.)?[a-f0-9]{8}\.js$/);
+    assert.match(name, /^(?:app|scene|webgl-probe|doors)\.(?:[a-z][a-z-]*\.)?[a-f0-9]{8}\.js$/);
     const bytes = await readFile(path.join(scriptsDir, name));
     const hash = createHash("sha256").update(bytes).digest("hex").slice(0, 8);
     assert.ok(name.endsWith(`.${hash}.js`), `${name} must fingerprint its emitted bytes`);
@@ -510,6 +510,7 @@ test("the build refuses a shared scene chunk that would carry first-party module
     await mkdir(path.join(fixture, "src"));
     await writeFile(path.join(fixture, "src", "app.js"), "void 0;");
     await writeFile(path.join(fixture, "src", "webgl-probe-worker.js"), "void 0;");
+    await writeFile(path.join(fixture, "src", "doors-entry.js"), "void 0;");
     // A lazily imported module that shares a registration with the entry moves
     // it into a chunk that would evaluate before the entry's ordered imports.
     await writeFile(
@@ -563,6 +564,7 @@ test("changing only a fixture tree model changes only its URL and size in the UI
     );
     await writeFile(path.join(fixture, "src", "scene-entry.js"), "void 0;");
     await writeFile(path.join(fixture, "src", "webgl-probe-worker.js"), "void 0;");
+    await writeFile(path.join(fixture, "src", "doors-entry.js"), "void 0;");
     async function buildApp() {
       await execFileP(
         process.execPath,
@@ -705,15 +707,27 @@ test("homepage discovers the deferred scene while its UI excludes the renderer a
   assert.doesNotMatch(app, /gl_Position|WebGLRenderer|GLTFLoader|Invalid architecture GLB/);
 });
 
-test("the stylesheet is named for its bytes and requests no image", async () => {
+test("the stylesheet is named for its bytes and requests no picture", async () => {
   const cssDir = path.join(distDir, "css");
   const cssName = (await readdir(cssDir)).find((name) => /^styles\.[a-f0-9]{8}\.css$/.test(name));
   const css = await readFile(path.join(cssDir, cssName), "utf8");
   assert.equal(cssName, `styles.${createHash("sha256").update(css).digest("hex").slice(0, 8)}.css`);
-  // The night, its stars, the grain and the cursor are drawn in CSS; only fonts load from it.
-  assert.doesNotMatch(css, /\/images\//);
-  for (const [, url] of css.matchAll(/url\("?([^")]+)"?\)/g))
-    assert.match(url, /^(?:data:|\/fonts\/[\w-]+\.[a-f0-9]{8}\.woff2$)/, url.slice(0, 60));
+  // The night, its stars, the grain and the cursor are drawn in CSS; only the fonts and the
+  // opening's paper detail (a material, not a picture) load from it.
+  const urls = [...css.matchAll(/url\("?([^")]+)"?\)/g)].map(([, url]) => url);
+  for (const url of urls) {
+    assert.match(
+      url,
+      /^(?:data:|\/fonts\/[\w-]+\.[a-f0-9]{8}\.woff2$|\/images\/paper\/paper-detail\.[a-f0-9]{8}\.webp$)/,
+      url.slice(0, 60),
+    );
+  }
+  const paper = urls.filter((url) => url.startsWith("/images/"));
+  assert.equal(new Set(paper).size, 1, "one image: the paper's detail");
+  const [published] = await readdir(path.join(distDir, "images", "paper")).then((names) =>
+    names.filter((name) => name.startsWith("paper-detail.")),
+  );
+  assert.equal(paper[0], `/images/paper/${published}`);
 });
 
 test("the stylesheet is published minified", async () => {

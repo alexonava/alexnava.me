@@ -7,7 +7,7 @@ Source for alexnava.me: HTML, CSS, vanilla JavaScript, Three.js r160 and esbuild
 
 ## Rules
 
-1. Keep the UI independent of the scene. The title card (CSS night sky, identity and Contact; no picture) and the text must stand alone when scripts, models or WebGL fail, and on the low tier. The loading line appears only on the live path and never sticks: it completes at the reveal or retires.
+1. Keep the UI independent of the scene. The title card (CSS night sky, identity and Contact; no picture) and the text must stand alone when scripts, models or WebGL fail, and on the low tier. The loading line appears only on the live path and never sticks: it completes at the reveal or retires. The opening's doors stand behind the words and never stick either: the stylesheet alone opens them, and their drawing only ever replaces the stylesheet's paper.
 2. Respect the subsystem hooks (`applyQuality`, `resize`, `update`, `dispose`). Restore borrowed resources before freeing derived ones, and land visible changes on a tour cut.
 3. Before finishing, run `npm run format`, `npm run verify` and `npm test`; changes to published output also need `npm run build:dist`. Shared test helpers live in `test/support/`; source checks use its `flat()` so they survive formatting.
 4. Keep the public discovery files (`public/site-agents.md`, `public/llms.txt`, `public/sitemap.md`, `public/index.md`) accurate and non-sensitive. This file is internal and is never published.
