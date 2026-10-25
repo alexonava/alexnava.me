@@ -5,6 +5,7 @@ import {
   slateMaterialUrl,
 } from "./stone-detail.js";
 import { SLATE_TILING } from "./mud-ground.js";
+import { createSoilRoughness } from "./soil-roughness.js";
 
 export const EARTH = Object.freeze({ width: 384, subdivisions: 128 });
 
@@ -34,6 +35,9 @@ export function createEarthDetail({
   restore,
   report,
   loadImage,
+  publishSoilRoughness,
+  loadSoilImage,
+  requestFrame,
   createCanvas = () => document.createElement("canvas"),
 }) {
   const preset = FILM_GROUND_PRESETS[presetName];
@@ -45,12 +49,25 @@ export function createEarthDetail({
     maps = null;
   function sync() {
     detail.applyQuality(active ? current : { tier: "low" }, active ? context : {});
+    soil?.setActive(active);
+    soil?.applyQuality(current, context);
   }
   function clear() {
     restore(); // Restore material bindings before disposing their resources.
     if (maps) Object.values(maps).forEach((texture) => texture.dispose());
     maps = null;
   }
+  const soil =
+    typeof publishSoilRoughness === "function"
+      ? createSoilRoughness({
+          profile,
+          disabled,
+          anisotropy,
+          publish: publishSoilRoughness,
+          loadImage: loadSoilImage,
+          requestFrame,
+        })
+      : null;
   const detail = createStoneDetailController({
     profile: { tier: "low" },
     disabled,
@@ -110,10 +127,17 @@ export function createEarthDetail({
       context = nextContext;
       sync();
     },
+    update(frame) {
+      return soil?.update(frame) ?? false;
+    },
     dispose() {
       if (disposed) return false;
-      detail.dispose();
       disposed = true;
+      try {
+        soil?.dispose();
+      } finally {
+        detail.dispose();
+      }
       return true;
     },
   };

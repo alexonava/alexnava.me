@@ -248,6 +248,7 @@ import { measureScene, sceneNow } from "./perf-marks.js";
     invalidate = () => {},
     onDetailChange = () => {},
     onDetailStatus = () => {},
+    onSoilRoughnessChange,
   }) {
     const profile = qualityProfile || scene.getSceneQualityProfile("high");
     const balanced = profile.tier === "balanced";
@@ -322,6 +323,8 @@ import { measureScene, sceneNow } from "./perf-marks.js";
       profile,
       disabled: false,
       anisotropy: aniso,
+      publishSoilRoughness: onSoilRoughnessChange,
+      requestFrame: invalidate,
       publish(maps) {
         onDetailChange(maps);
         slateReady = true;
@@ -344,6 +347,9 @@ import { measureScene, sceneNow } from "./perf-marks.js";
       lifecycleOrder: 21,
       applyQuality(profile, context) {
         filmMaps.applyQuality(profile, context);
+      },
+      update(frame) {
+        return filmMaps.update(frame);
       },
       dispose() {
         disposed = true;

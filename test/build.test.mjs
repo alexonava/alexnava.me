@@ -466,6 +466,7 @@ test("CSS asset URLs and bytes are portable across checkout line endings", async
       "grit-512",
       "relief-512",
       "detail-512",
+      "soil-roughness-512",
     ]) {
       await writeFile(path.join(fixture, "images", "materials", `slate-${map}.webp`), binary);
     }

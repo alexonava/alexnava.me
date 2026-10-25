@@ -741,11 +741,42 @@ return [${statement("cloudR")}, ${statement("wedgeR")}, hzS];`,
   assert.ok(CLOUD_RESHAPE.wedge[1] - farLeft >= 20 && farRight - CLOUD_RESHAPE.wedge[2] >= 20);
   const scale = CLOUD_RESHAPE.scale;
   assert.ok(scale > 0 && scale <= 1);
+  // Read the emitted coordinate factor: the environment capture (reshape 0)
+  // must retain its original cloud plane even below the reference dome knee.
+  // Reshape 1 must remain exactly the approved live horizon treatment.
+  const coordinateFactor = new Function(
+    "wedgeR",
+    "cloudR",
+    "bl",
+    "blv",
+    "uCloudReshape",
+    "bend",
+    "mix",
+    `return ${shader.match(/vec2 bn=\w+\*(.*);/)[1]}`,
+  );
+  const blend = (a, b, t) => a + (b - a) * t;
+  for (const deg of [0.02, 0.2, 1, 2.6, 3.5, 3.99, 4.01, 5, 15, 40, 80]) {
+    const bl = blOf(deg),
+      [cloudR, wedgeR] = at(bl);
+    assert.equal(
+      coordinateFactor(wedgeR, cloudR, bl, bl, 0, 0, blend),
+      1,
+      `original capture at ${deg}`,
+    );
+    for (const weight of [0, 0.3, 1])
+      assert.ok(
+        Math.abs(
+          coordinateFactor(wedgeR, cloudR, bl, bl, 1, weight, blend) -
+            blend(wedgeR / bl, (cloudR / bl) * scale, weight),
+        ) < 1e-12,
+        `approved live coordinates at ${deg}`,
+      );
+  }
   assert.ok(
     shader.includes(
       CLOUD_VORTEX.on
-        ? `vec2 bn=bv*mix(wedgeR/blv,cloudR/blv*${scale},bend);`
-        : `vec2 bn=b*mix(wedgeR/bl,cloudR/bl*${scale},bend);`,
+        ? `vec2 bn=bv*mix(mix(1.,wedgeR/blv,uCloudReshape),cloudR/blv*${scale},bend);`
+        : `vec2 bn=b*mix(mix(1.,wedgeR/bl,uCloudReshape),cloudR/bl*${scale},bend);`,
     ),
   );
   assert.match(shader, /vec2 p=bn\+2\.98\*\(/);

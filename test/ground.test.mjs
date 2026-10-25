@@ -476,19 +476,23 @@ test("the river's water lies only below its shore, as the terrain carves it, and
   assert.ok(soil.key.includes("+soil"));
   assert.equal(soil.uniforms.slateGrit.value, grit);
   assert.equal(soil.uniforms.slateRelief.value, relief);
-  assert.ok(soil.fragment.includes("uniform sampler2D slateGrit, slateRelief;"));
+  assert.ok(
+    soil.fragment.includes("uniform sampler2D slateGrit, slateRelief, slateSoilRoughness;"),
+  );
   assert.ok(
     soil.fragment.includes(
       `slateCN = 1.-smoothstep(${SLATE_CLOSE.near.map((v) => v.toFixed(1)).join(",")}, length(vViewPosition));`,
     ),
   );
   assert.ok(
-    soil.fragment.includes(`diffuseColor.rgb *= 1.+(slateCG-.5)*${SLATE_CLOSE.albedo}*slateCN;`),
+    soil.fragment.includes(
+      `diffuseColor.rgb *= 1.+(slateCG-.5)*${SLATE_CLOSE.albedo}*slateCN*(1.-slatePuddle)*slateSoilMask;`,
+    ),
   );
   assert.ok(soil.fragment.includes("*(1.-slatePuddle);"));
   assert.match(
     soil.fragment,
-    /slateDH = \(vec2\(dot\(slateCDH, dFdx\(vMudWorld\.xz\)\), dot\(slateCDH, dFdy\(vMudWorld\.xz\)\)\)\+vec2\(dFdx\(slateCW\), dFdy\(slateCW\)\)\*\(slateCHV-slateCHU\)\)\*[\d.]+\*slateCF;/,
+    /slateDH = \(vec2\(dot\(slateCDH, dFdx\(vMudWorld\.xz\)\), dot\(slateCDH, dFdy\(vMudWorld\.xz\)\)\)\+slateBlendD\*\(slateCHV-slateCHU\)\)\*[\d.]+\*slateCF;/,
   );
   // That slope is worked out at each pixel, from the map's next texels and the crumbs'
   // exact slope, never from the height's screen derivatives, which step in two-pixel
@@ -500,7 +504,11 @@ test("the river's water lies only below its shore, as the terrain carves it, and
     soil.fragment.includes(`slateK1 = -log(slateKS)/${SLATE_CLOSE.crumb.round.toFixed(1)};`),
   );
   // Near the lens the slate's blotches give way to its blurred tone.
-  assert.ok(soil.fragment.includes(`texture2D(map, vMapUv, ${SLATE_CLOSE.blur}.0)`));
+  assert.ok(
+    soil.fragment.includes(
+      `slateSoilSample(map,vMapUv,slateMapX*${2 ** SLATE_CLOSE.blur}.0,slateMapY*${2 ** SLATE_CLOSE.blur}.0)`,
+    ),
+  );
   assert.ok(SLATE_CLOSE.calm > 0 && SLATE_CLOSE.calm < 1);
   // Crumbs: a cellular noise on the close soil's relief and grit, worked out
   // only where they show (near the lens, a cell over a few pixels).
@@ -516,7 +524,31 @@ test("the river's water lies only below its shore, as the terrain carves it, and
   // Their walls tilt at most toward SLATE_CLOSE.crumb.steep (a soft limit on the
   // slope's tangent), so the wall facing the lantern at each valley never lights
   // into a continuous pale rim about the cobble.
-  assert.ok(SLATE_CLOSE.crumb.steep >= 0.8 && SLATE_CLOSE.crumb.steep < 1.5);
+  assert.ok(SLATE_CLOSE.crumb.steep > 0 && SLATE_CLOSE.crumb.steep <= 0.5);
+  assert.ok(SLATE_CLOSE.crumb.cell <= 0.03 && SLATE_CLOSE.relief <= 0.05);
+  // Expensive close lookups are skipped after their fade on gradient-capable
+  // renderers. A WebGL1 renderer without that extension uses filtered sampling
+  // outside the branch, keeping derivatives defined at the boundary.
+  assert.match(soil.fragment, /#if __VERSION__ >= 300 \|\| defined\(GL_EXT_shader_texture_lod\)/);
+  assert.match(soil.fragment, /return texture2DGradEXT\(t,uv,dx,dy\);/);
+  assert.match(soil.fragment, /#else\s*vec4 slateSoilSample[^}]*return texture2D\(t,uv\);/);
+  const closeBranch = soil.fragment.slice(
+    soil.fragment.indexOf("if(slateCN>0.) {"),
+    soil.fragment.indexOf("vec2 slateKP"),
+  );
+  assert.ok(closeBranch.includes("slateSoilSample(slateRelief"));
+  assert.doesNotMatch(closeBranch, /dFd[xy]\(/);
+  assert.match(soil.fragment, /slateSoilRough\*slateCN\*\(1\.-slatePuddle\)\*slateSoilMask/);
+  assert.equal(soil.uniforms.slateSoilRoughnessOn.value, 0, "optional detail begins neutral");
+  assert.ok(
+    soil.fragment.indexOf("float slatePuddle =") <
+      soil.fragment.indexOf("diffuseColor.rgb *= 1.+(slateCG"),
+    "resolve physical water before applying soil grain",
+  );
+  assert.ok(
+    SLATE_CLOSE.featureTexels >= 4,
+    "filter the relief's resolved grains rather than individual source texels",
+  );
   // Near the lens the soil's brightest channel eases past SLATE_CLOSE.ceiling with the
   // colour scaled whole, so a lantern-lit crest keeps its warmth instead of clipping
   // channel by channel into a chalky grey patch.
@@ -891,7 +923,8 @@ test("each ground shading has its own program cache key; the slate's shading nee
   assert.ok(Math.abs(turn - 126.87) < 0.01, `${turn}`);
   // Two normal fetches (both tile lookups) and three detail fetches.
   assert.equal((fragment.match(/texture2D\(normalMap/g) || []).length, 2);
-  assert.equal((fragment.match(/texture2D\(slateDetail/g) || []).length, 3);
+  assert.equal((fragment.match(/texture2D\(slateDetail/g) || []).length, 1);
+  assert.equal((fragment.match(/slateSoilSample\(slateDetail/g) || []).length, 2);
   // Contact darkening: the tree and lantern always, rocks behind a uniform gate.
   assert.match(fragment, new RegExp(`uniform vec4 slateContacts\\[${SLATE_CONTACTS}\\];`));
   assert.match(fragment, /\(i < 2 \? 1\.0 : slateRockContact\)/);

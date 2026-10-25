@@ -348,7 +348,7 @@ ${domeR(
   domeTerms(CLOUD_RESHAPE.wedgeDome, (r) => r),
   R,
 )}
-vec2 bn=${B}*mix(wedgeR/${R},cloudR/${R}*${glslFloat(scale)},bend);
+vec2 bn=${B}*mix(mix(1.,wedgeR/${R},uCloudReshape),cloudR/${R}*${glslFloat(scale)},bend);
 float wa=T*.000436;
 vec2 p=bn+2.98*(sin(wa)*vec2(.923,.385)+(1.-cos(wa))*vec2(-.385,.923));
 vec2 q=p+vec2(5.7,0.9);
