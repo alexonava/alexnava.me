@@ -130,7 +130,9 @@ import {
   DOOR_HEIGHT,
   SLATE_PUDDLES,
   SLATE_STREAMS,
+  riverLine,
   streamLines,
+  streamWater,
 } from "../src/scene/mud-ground.js";
 import { TERRAIN_HORIZON } from "../src/scene/hill-silhouette.js";
 import { rockKeepouts } from "../src/scene/rock-scatter.js";
@@ -224,6 +226,7 @@ test("root supports preserve coarse terrain vertices, map scale and bounded mesh
     channel = riverChannel(filmHeight(base, true));
   const b = hills.attributes.position,
     water = hills.attributes.slateRiverSurface;
+  assert.ok(water.array.every(Number.isFinite), "the alternate base keeps finite surface depths");
   // The refined rectangle: every coarse cell whose centre lies in FINE_WINDOW.
   const refined = (x, z) =>
     x - TREE_FOOTING.x > FINE_WINDOW.x[0] - 1.5 &&
@@ -378,13 +381,13 @@ test("the river lowers only its channel and banks: the lantern's footing and the
   // The trunk's base centre, restated where the walk's tree stands (walk.js).
   assert.deepEqual(ESTATE.tree.trunk, TRUNK);
   assert.equal(ESTATE.lantern.offset, 5);
-  // The river passes the lantern on the lantern shots' side (they look from
-  // -115° to -125°), the lantern standing on its bank clear of its reach.
+  // The broad course stands back from the lantern's foreground, leaving
+  // room for the narrow branch to pass beside the lantern toward the roots.
   const passing = riverAt(LANTERN_FOOT.x, LANTERN_FOOT.z),
     [cx, cz] = riverPoint(RIVER_NEAR);
   assert.ok(Math.abs(passing.s - RIVER_NEAR) < 1e-9);
-  const bearing = (Math.atan2(cz - LANTERN_FOOT.z, cx - LANTERN_FOOT.x) * 180) / Math.PI;
-  assert.ok(bearing > -135 && bearing < -105, `the river passes at ${bearing}°`);
+  assert.ok(passing.d >= 8.5 && passing.d <= 10, `the main course stands back: ${passing.d}`);
+  assert.ok(Math.hypot(cx - LANTERN_FOOT.x, cz - LANTERN_FOOT.z) >= 8.5);
   assert.ok(
     (passing.r - RIVER_BED.reach[1]) * RIVER.width > 0.6,
     "the lantern's foot (0.47 about) stands clear of the bank",
@@ -421,7 +424,19 @@ test("the river lowers only its channel and banks: the lantern's footing and the
   let footing = 0,
     beyond = 0,
     basin = 0;
-  // About where it passes the lantern, well inside the fine grid.
+  // The lantern now stands outside the main-river survey, so probe its
+  // protected footing independently rather than relying on the old proximity.
+  for (let x = lamp.x - 0.55; x <= lamp.x + 0.55; x += 0.11)
+    for (let z = lamp.z - 0.55; z <= lamp.z + 0.55; z += 0.11) {
+      if (Math.hypot(x - lamp.x, z - lamp.z) >= 0.6) continue;
+      const before = a.at(x, z),
+        after = b.at(x, z);
+      assert.ok(Math.abs(before.point.y - after.point.y) < 0.000002, `footing at ${x},${z}`);
+      assert.ok(before.normal.angleTo(after.normal) < 0.0001, `footing normal at ${x},${z}`);
+      footing++;
+    }
+  // Across the moved main course and its banks, including the fine grid's
+  // west edge, where fewer samples lie in its locally refined basin.
   for (let x = cx - 6; x < cx + 6; x += 0.17)
     for (let z = cz - 6; z < cz + 6; z += 0.17) {
       const r = riverRadius(x, z),
@@ -488,7 +503,7 @@ test("the river lowers only its channel and banks: the lantern's footing and the
         basin++;
       }
     }
-  assert.ok(footing > 30 && beyond > 150 && basin > 400, `${footing} ${beyond} ${basin}`);
+  assert.ok(footing > 30 && beyond > 50 && basin > 200, `${footing} ${beyond} ${basin}`);
   // Deep down its middle, as deep as the shape says.
   assert.ok(Math.abs(b.at(cx, cz).point.y - channel.bed(cx, cz)) < 0.015);
   // The full-course bed also continues beyond the original local refinement.
@@ -831,9 +846,29 @@ test("root contact shading is neutral away from the roots and settles the soil a
   // The rendered lift: the terrain above its lift-free surface, at vertices and between them.
   const flat = surface(plainDunes(base)),
     raised = surface(createEarthGeometry(base));
-  // Newly inserted vertices expose the original bank triangles' one-cell
-  // interpolation fringe; they must not change that fringe or dry ground.
-  assert.ok(Math.abs(raised.at(43.60342025756836, 23.25).point.y - 1.6803538647582121) < 2e-6);
+  // This former bank sample now lies inside the relocated river. Its solid
+  // triangle must follow the channel's carve, rather than the old dry height.
+  const sx = 43.60342025756836,
+    sz = 23.25,
+    hit = raised.at(sx, sz),
+    channel = riverChannel(filmHeight(base, true)),
+    foot = flat.at(LANTERN_FOOT.x, LANTERN_FOOT.z).point.y,
+    corners = [hit.face.a, hit.face.b, hit.face.c].map((i) => {
+      const x = p.getX(i),
+        z = -p.getY(i),
+        before = flat.at(x, z).point.y;
+      return [x, z, before + channelCarve(x, z, before, foot) + channel.delta(x, z, before)];
+    }),
+    [v0, v1, v2] = corners,
+    det = (v1[1] - v2[1]) * (v0[0] - v2[0]) + (v2[0] - v1[0]) * (v0[1] - v2[1]),
+    w0 = ((v1[1] - v2[1]) * (sx - v2[0]) + (v2[0] - v1[0]) * (sz - v2[1])) / det,
+    w1 = ((v2[1] - v0[1]) * (sx - v2[0]) + (v0[0] - v2[0]) * (sz - v2[1])) / det,
+    expectedBed = w0 * v0[2] + w1 * v1[2] + (1 - w0 - w1) * v2[2];
+  assert.ok(riverRadius(sx, sz) < 1, "the former fringe now lies in the main channel");
+  assert.ok(hit.point.y < channel.water(sx, sz) - 0.5, "a real bed lies below its water");
+  assert.ok(Math.abs(hit.point.y - expectedBed) < 2e-6, "the rendered triangle follows the carve");
+  assert.ok(Math.abs(terrainHeight(geometry)(sx, sz) - hit.point.y) < 2e-6);
+  // The dry interpolation fringe beyond the river remains untouched.
   assert.ok(Math.abs(raised.at(47.25, 12).point.y - flat.at(47.25, 12).point.y) < 2e-6);
   let lifted = 0;
   for (let x = TREE_FOOTING.x - 8; x < TREE_FOOTING.x + 14.5; x += 0.61)
@@ -1133,7 +1168,17 @@ test("the lazy ground shading extends only the slate's program, under its own ke
     // ripples alone (RIVER_RIPPLE.sway, slateGS); the sky keeps their whole tilt.
     assert.ok(
       fragment.includes(
-        `*slateStreamQ.x*mix(${RIVER_RIPPLE.mouth[2]}, 1.0, smoothstep(${RIVER_RIPPLE.mouth[0]}, ${RIVER_RIPPLE.mouth[1].toFixed(1)}, slateRiverR));`,
+        `*slateStreamQ.x*mix(${RIVER_RIPPLE.mouth}, 1.0, slateShoal)*mix(1.0, ${STREAMS.calm.ripple}, slateStreamCalm);`,
+      ),
+    );
+    assert.ok(
+      fragment.includes(
+        `float slateStreamCalm = smoothstep(${STREAMS.calm.from}, ${STREAMS.calm.from + STREAMS.calm.span}, slateStreamQ.y);`,
+      ),
+    );
+    assert.ok(
+      fragment.includes(
+        `slateFoam *= mix(${STREAMS.foam.plume.toFixed(1)}, 1.0, slateShoal)*mix(1.0, ${STREAMS.calm.foam}, slateStreamCalm);`,
       ),
     );
     assert.ok(RIVER_RIPPLE.sway > 1 && RIVER_RIPPLE.sway <= 4);
@@ -1169,11 +1214,11 @@ test("the lazy ground shading extends only the slate's program, under its own ke
         `${STREAMS.foam.mouth.toFixed(1)}*smoothstep(0.7, 1.0, slateRiverR)*(1.0-smoothstep(1.0, 1.9, slateRiverR))`,
       ),
     );
-    // One sheet of water: down the stream's channel it keeps the stream's own level and
-    // shading, the river's easing into it across the confluence.
+    // One sheet of water: the actual depth eases the shallow stream's shading
+    // into the deep river, independently of its distance from the centreline.
     assert.ok(
       fragment.includes(
-        `slateCapStream=smoothstep(${STREAMS.confluence.join(",")},slateRiverR)*(1.-smoothstep(${STREAMS.bed.reach.join(",")},slateStreamR));`,
+        `slateShoal=1.-smoothstep(${STREAMS.confluence.map((v) => v.toFixed(1)).join(",")},vSlateRiverSurface.y);slateCapStream=slateShoal*(1.-smoothstep(${STREAMS.bed.reach.join(",")},slateStreamR));`,
       ),
     );
     assert.ok(
@@ -2127,7 +2172,7 @@ test("the film terrain builds in idle slices and arrives only where it cannot sh
     digest.update("index").update(new Uint8Array(index.buffer, index.byteOffset, index.byteLength));
     assert.equal(
       digest.digest("hex"),
-      "4cccb65bc6d254668c9e91ab5acaa096aafaa5c0d5c298cd8f85580790f24598",
+      "b66e716730b80910151409d7613ee541b63ededbe06f580e0053bc1adbecc29b",
     );
     for (const name of Object.keys(direct.attributes))
       assert.deepEqual(arrived.attributes[name].array, direct.attributes[name].array, name);
@@ -2617,11 +2662,11 @@ test("cooperative litter and rush builders retain the authored seeded geometry b
     litter = scatterLitter(surface, { r: 0.36, g: 0.31, b: 0.28 }),
     rushes = plantRushes(surface);
   try {
-    // Captured before slicing: positions, colours, normals, wind, placement
-    // metadata and exact bounds stay identical, including Float32 rounding.
+    // Pin the reviewed channel and varied grit seating: positions, colours,
+    // normals, wind, metadata and exact bounds, including Float32 rounding.
     for (const [geometry, count, expected] of [
-      [litter, 257775, "20f8fa1f43397fe05130c62f1c1ec1e024630c4e2268f3e8d56c14500d3af1ba"],
-      [rushes, 4424, "a397b5e30a2d3b87cc751c9b88a01939bbe66b1060811181cf00530406b9d3d6"],
+      [litter, 256887, "e8a0cdc99f10e568d9311552101e9d149838dd81ff436d3d373f990ad0cba890"],
+      [rushes, 4336, "81fdea32dae352633390471f9d3f4e79866917ff483669b451ea5053f536dcef"],
     ]) {
       assert.equal(geometry.attributes.position.count, count);
       const digest = createHash("sha256").update(
@@ -2635,10 +2680,10 @@ test("cooperative litter and rush builders retain the authored seeded geometry b
           .update(new Uint8Array(array.buffer, array.byteOffset, array.byteLength));
       assert.equal(digest.digest("hex"), expected);
     }
-    assert.equal(rushes.index.count, 9804);
+    assert.equal(rushes.index.count, 9612);
     assert.equal(
       createHash("sha256").update(new Uint8Array(rushes.index.array.buffer)).digest("hex"),
-      "4229126f31e4c8ccb5995c8fd7b0de73c2bf776ec95acaf424e4059e7c6c74ec",
+      "47e6c69a61e0c4c7cb6bef2919db51aaf2294290001f7b562c3d2c9ff7a2622e",
     );
     assert.equal(litter.index, null);
   } finally {
@@ -2675,11 +2720,12 @@ test("sparse dark litter and small grey stones lie among the roots, clear of the
       sky >= LITTER.sky[0] && sky <= LITTER.sky[1],
       "in the roots' shade, not on the open plate",
     );
-    // Beside a real root: covered soil within 0.85.
+    // Beside a real root: covered soil within 0.85 (on a grid fine enough to
+    // find cover just inside that reach).
     let near = false;
-    for (let dx = -0.85; dx <= 0.85 && !near; dx += 0.25)
-      for (let dz = -0.85; dz <= 0.85; dz += 0.25)
-        if (rootCovered(x + dx, z + dz)) {
+    for (let dx = -0.85; dx <= 0.85 && !near; dx += 0.05)
+      for (let dz = -0.85; dz <= 0.85; dz += 0.05)
+        if (Math.hypot(dx, dz) <= 0.85 && rootCovered(x + dx, z + dz)) {
           near = true;
           break;
         }
@@ -2908,6 +2954,183 @@ test("the stream restates the ground shader's: it leaves the river and runs to t
     );
 });
 
+test("the longer stream keeps its root reach and turns around a separate low bank", () => {
+  const course = STREAMS.courses[0],
+    line = STREAM_LINES[0];
+  assert.deepEqual(course.path.slice(0, 5), [
+    [5.6, 2.9],
+    [4.9, 2.5],
+    [3.7, 1.5],
+    [2.9, 0.3],
+    [2.4, -1.36],
+  ]);
+  assert.deepEqual(course.path.at(-1), [-6.9, -11.4]);
+  assert.ok(line.length >= 22.5 && line.length <= 23.5, `a longer natural branch: ${line.length}`);
+  assert.equal(line.widths.length, line.points.length);
+  for (let k = 0; k < line.points.length; k++) {
+    const [x, z, s] = line.points[k];
+    assert.ok(Number.isFinite(line.widths[k]) && line.widths[k] > 0);
+    assert.equal(
+      line.levels[k],
+      streamLevel(s, line.length),
+      "geometry and stones share the slope",
+    );
+    assert.ok(Math.abs(streamWater(x, z) - line.levels[k]) < 1e-6);
+    if (s > 5.556) continue;
+    // Pin the already reviewed upper profile in world distance. Extending the
+    // course must not stretch its width or its slope about the roots.
+    assert.ok(Math.abs(line.widths[k] - (0.9 + (0.4 * s) / 9.415)) <= 0.0001);
+    assert.ok(Math.abs(streamLevel(s, line.length) - (-0.14 + (0.1 * s) / 9.415)) <= 1e-8);
+    assert.ok(Math.hypot(x - LANTERN_FOOT.x, z - LANTERN_FOOT.z) > 2);
+  }
+  const middle = line.points.filter(([, , s]) => s >= 8 && s <= line.length - course.flare[1]);
+  assert.ok(middle.length >= 8, "a sustained reach alongside the river");
+  for (const [x, z] of middle)
+    assert.ok(riverRadius(x, z) > 1.3, "the middle reach stays inland of the river's bank");
+  assert.deepEqual(STREAMS.calm, { from: 5.556, span: 2, foam: 0.25, ripple: 0.5 });
+  assert.ok(STREAMS.calm.from > 4.68, "the root reach retains its bright water detail");
+});
+
+test("the stream's shallow river sill has finite support about its new inlet", () => {
+  const points = STREAM_LINES[0].points;
+  let k = points.length - 1;
+  while (k > 1 && riverRadius(points[k][0], points[k][1]) < 1) k--;
+  const [x, z] = points[k],
+    [ax, az] = points[k - 1],
+    [bx, bz] = points[k + 1],
+    length = Math.hypot(bx - ax, bz - az),
+    dx = (bx - ax) / length,
+    dz = (bz - az) / length,
+    channel = riverChannel(filmHeight(groundBase(), true));
+  assert.ok(channel.depth(x, z) <= 0.35, "the bed rises gently at the branch's inlet");
+  for (const [along, across] of [
+    [-10, 0],
+    [10, 0],
+    [0, -10],
+    [0, 10],
+  ]) {
+    const px = x + dx * along - dz * across,
+      pz = z + dz * along + dx * across;
+    assert.ok(
+      Math.abs(channel.depth(px, pz) - RIVER_CHANNEL.depth) < 1e-10,
+      `no sill ${along},${across} away`,
+    );
+  }
+});
+
+test("the emitted water leaves a continuous dry tongue beside the lower stream", () => {
+  const geometry = createEarthGeometry(groundBase()),
+    positions = geometry.attributes.position,
+    index = geometry.index.array,
+    start = geometry.userData.riverBedIndexCount;
+  // Intersect each actual cap triangle with a segment from the stream to the
+  // river's centre, then unite its wet intervals. This observes the drawn cap,
+  // rather than assuming a procedural radius is its physical waterline.
+  const wetIntervals = (x, z, dx, dz, length) => {
+    const intervals = [];
+    for (let i = start; i < index.length; i += 3) {
+      const ids = [index[i], index[i + 1], index[i + 2]],
+        triangle = ids.map((v) => [positions.getX(v), -positions.getY(v)]),
+        [[ax, az], [bx, bz], [cx, cz]] = triangle,
+        orientation = Math.sign((bx - ax) * (cz - az) - (bz - az) * (cx - ax));
+      if (!orientation) continue;
+      let lo = 0,
+        hi = length;
+      for (let e = 0; e < 3 && lo <= hi; e++) {
+        const [ex, ez] = triangle[e],
+          [fx, fz] = triangle[(e + 1) % 3],
+          a = orientation * ((fx - ex) * (z - ez) - (fz - ez) * (x - ex)),
+          b = orientation * ((fx - ex) * dz - (fz - ez) * dx);
+        if (Math.abs(b) < 1e-10) {
+          if (a < -1e-8) hi = -Infinity;
+        } else if (b > 0) lo = Math.max(lo, -a / b);
+        else hi = Math.min(hi, -a / b);
+      }
+      if (lo <= hi) intervals.push([lo, hi]);
+    }
+    intervals.sort((a, b) => a[0] - b[0]);
+    const union = [];
+    for (const [lo, hi] of intervals) {
+      const previous = union.at(-1);
+      if (previous && lo <= previous[1] + 1e-6) previous[1] = Math.max(previous[1], hi);
+      else union.push([lo, hi]);
+    }
+    return union;
+  };
+  // Once the branch turns back toward its inlet, a straight ray to the main
+  // course can cross the branch's own later reach. Survey the parallel part.
+  const [turnX, turnZ] = STREAMS.courses[0].path[9],
+    [, , turnStation] = STREAM_LINES[0].points.find(
+      ([x, z]) =>
+        Math.abs(x - LANTERN_FOOT.x - turnX) < 0.001 &&
+        Math.abs(z - LANTERN_FOOT.z - turnZ) < 0.001,
+    );
+  let samples = 0;
+  for (const [x, z, s] of STREAM_LINES[0].points) {
+    if (s < 7 || s > turnStation) continue;
+    const at = riverAt(x, z),
+      wet = wetIntervals(x, z, at.dz * at.side, -at.dx * at.side, at.d);
+    assert.equal(wet.length, 2, `separate stream and river water at station ${s}`);
+    assert.ok(wet[0][0] < 1e-5, `the branch centre is wet at station ${s}`);
+    assert.ok(wet[1][1] > at.d - 1e-5, `the river centre is wet at station ${s}`);
+    const gap = wet[1][0] - wet[0][1];
+    assert.ok(gap >= 0.35, `a dry tongue at least 0.35 wide at station ${s}: ${gap}`);
+    samples++;
+  }
+  assert.ok(samples >= 12, "follow the full middle reach beside the river");
+  geometry.dispose();
+});
+
+test("the broad river's cap keeps its centre panels joined between rows", () => {
+  const geometry = createEarthGeometry(groundBase()),
+    waterGeometry = new BufferGeometry(),
+    material = new MeshStandardMaterial(),
+    water = geometry.attributes.slateRiverSurface,
+    ray = new Raycaster(new Vector3(), new Vector3(0, -1, 0));
+  assert.ok(water.array.every(Number.isFinite), "every cap vertex keeps a finite depth");
+  for (const [name, attribute] of Object.entries(geometry.attributes))
+    waterGeometry.setAttribute(name, attribute);
+  waterGeometry.setIndex(geometry.index.clone());
+  waterGeometry.setDrawRange(
+    geometry.userData.riverBedIndexCount,
+    geometry.index.count - geometry.userData.riverBedIndexCount,
+  );
+  const mesh = new Mesh(waterGeometry, material);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.updateMatrixWorld(true);
+  let samples = 0;
+  try {
+    for (let k = 1; k < RIVER_LINE.length; k += 3) {
+      const [ax, az] = RIVER_LINE[k - 1],
+        [bx, bz] = RIVER_LINE[k];
+      for (const t of [1 / 3, 2 / 3]) {
+        const x = ax + (bx - ax) * t,
+          z = az + (bz - az) * t;
+        if (
+          Math.abs(x) > 190 ||
+          Math.abs(z) > 190 ||
+          coastDistance(x, z) < SHORE.shelf + 4 ||
+          Math.hypot(x - TREE_FOOTING.x, z - TREE_FOOTING.z) < 25
+        )
+          continue;
+        const at = riverAt(x, z);
+        for (const fraction of [-0.08, 0, 0.08]) {
+          const px = x - at.dz * at.w * fraction,
+            pz = z + at.dx * at.w * fraction;
+          ray.ray.origin.set(px, 60, pz);
+          assert.ok(ray.intersectObject(mesh).length > 0, `continuous centre cap at ${px},${pz}`);
+          samples++;
+        }
+      }
+    }
+    assert.ok(samples > 150, `cover the broad river's centre joins: ${samples}`);
+  } finally {
+    waterGeometry.dispose();
+    geometry.dispose();
+    material.dispose();
+  }
+});
+
 test("the river's water sheet runs on down the stream's channel, at the stream's level, with no step where it leaves the river", () => {
   const base = groundBase(),
     geometry = createEarthGeometry(base),
@@ -2930,8 +3153,10 @@ test("the river's water sheet runs on down the stream's channel, at the stream's
     // over its bed.
     assert.ok(y <= level + 1e-4 && y >= level - drop - 1e-4, `the stream's water at ${x},${z}`);
     assert.ok(kind.getY(i) > 0, `the stream's water under its bed at ${x},${z}`);
-    if (r > STREAMS.confluence[1]) inStream++;
-    else if (r > STREAMS.confluence[0]) confluence++;
+    // These are spatial regions. STREAMS.confluence is a depth range, so it
+    // cannot classify whether a vertex lies inland or at the river's bank.
+    if (r > 1.15) inStream++;
+    else if (r > 0.7) confluence++;
   }
   assert.ok(inStream > 200, `${inStream} points of the sheet down the stream`);
   assert.ok(confluence > 10, `${confluence} points across the confluence`);
@@ -3670,9 +3895,24 @@ test("the water's banks: gravel bars, reeds and debris stay out of the water, of
     let mx = 0,
       mz = 0;
     for (let v = i; v < end; v++) {
+      assert.equal(
+        rootCovered(p.getX(v), p.getZ(v)),
+        false,
+        `piece ${k} vertex ${v - i} under a root`,
+      );
       mx += p.getX(v) / (end - i);
       mz += p.getZ(v) / (end - i);
     }
+    // Probe the projected triangle interiors and edges too: a long twig can
+    // cross a covered root cell while all three corners remain outside it.
+    for (let v = i; v < end; v += 3)
+      for (let a = 0; a <= 4; a++)
+        for (let b = 0; b <= 4 - a; b++) {
+          const c = 4 - a - b,
+            tx = (p.getX(v) * a + p.getX(v + 1) * b + p.getX(v + 2) * c) / 4,
+            tz = (p.getZ(v) * a + p.getZ(v + 1) * b + p.getZ(v + 2) * c) / 4;
+          assert.equal(rootCovered(tx, tz), false, `piece ${k} footprint under a root`);
+        }
     assert.ok(riverRadius(mx, mz) >= WATER_BANKS.gravel.shore - 0.01, `piece ${k} in the river`);
     if (streamRadius(mx, mz) < 0.75 || riverRadius(mx, mz) < 1) inWater++;
   }
@@ -3765,25 +4005,42 @@ test("the water's banks join the scene after the shading's switch, in idle slice
   }
 });
 
-test("the river runs through the set: today's reach past the lantern, wider out on the plain, clear of all that stands, the foothills opening along it", () => {
-  // Today's reach past the lantern (the owner's pick of 2026-10-10): its points, width and step, and
-  // its distance downstream, measured from the same point as before the river ran on.
-  const near = [
+test("the river stands back from the lantern, preserves the coastal course and opens into the plain", () => {
+  // The rerouted foreground keeps every control needed to preserve the
+  // coastal samples, including the tangent entering the unchanged datum.
+  const prefix = [
+    [33.1, 52.6, 3.9, 5],
+    [17.1, 36.6, 3.3, 3],
+    [1.1, 30.6, 2.9, 3],
+    [-14.9, 32.6, 2.8, 3],
+    [-29.9, 30.6, 2.7, 3],
+    [-41.9, 23.6, 2.5, 2.5],
+    [-43.9, 14.6, 2.3, 2],
+    [-36.9, 9.1, 2.1, 1.5],
+    [-21, 0.4, 2, 0.9],
     [-13, -0.9],
     [-8.6, -3.1],
-    [-4.4, -3.8],
-    [-1.9, -3.9],
-    [-0.6, -5.4],
-    [-1.5, -7.8],
-    [-3.5, -10.2],
-    [-5.1, -12.4],
-    [-6.7, -15.8],
   ];
-  const at = RIVER.path.findIndex(([dx, dz]) => dx === -13 && dz === -0.9);
-  assert.deepEqual(RIVER.path.slice(at, at + near.length), near);
-  assert.deepEqual(RIVER.path[at - 1], [-21, 0.4, RIVER.width, RIVER.step]);
-  assert.deepEqual(RIVER.datum, [at, 8.109509849439533]);
-  assert.ok(Math.abs(RIVER_NEAR - 19.8236) < 1e-3, `${RIVER_NEAR}`);
+  assert.deepEqual(RIVER.path.slice(0, prefix.length), prefix);
+  assert.deepEqual(RIVER.datum, [9, 8.109509849439533]);
+  const coastal = (line) => line.filter(([, , s]) => s <= 8.11);
+  assert.deepEqual(
+    coastal(RIVER_LINE),
+    coastal(riverLine({ ...RIVER, path: prefix })),
+    "coastal coordinates, stations, widths and wobble phases remain exact",
+  );
+  const near = [
+    [-7.1, -5.2],
+    [-6.4, -7.5],
+    [-6.5, -9.7],
+    [-7.3, -11.6],
+    [-8.7, -13.5],
+    [-9.9, -15.7],
+    [-9.9, -19],
+    [-8.4, -22.5, 2, 3],
+  ];
+  assert.deepEqual(RIVER.path.slice(prefix.length, prefix.length + near.length), near);
+  assert.ok(riverAt(LANTERN_FOOT.x, LANTERN_FOOT.z).d >= 8.5);
   // About the tree, as far as the supports, pins, drips, rushes and banks reach, it is \`width\` wide.
   for (const [x, z, , w, phase] of RIVER_LINE)
     if (Math.hypot(x - TREE_FOOTING.x, z - TREE_FOOTING.z) < 25) {

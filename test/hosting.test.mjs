@@ -409,7 +409,11 @@ test("Pages header rules resolve one cache policy for stable and fingerprinted p
     assert.equal(cacheControl(hashed), hashedByBuild ? immutable : revalidated, hashed);
     assert.equal(headersFor(hashed).get("x-content-type-options"), "nosniff", hashed);
   }
-  assert.equal(fingerprintable, 25, "14 models, 9 slate maps and 2 optional coast maps");
+  assert.equal(
+    fingerprintable,
+    26,
+    "14 models, 9 slate maps, optional soil roughness and 2 coast maps",
+  );
 });
 
 test("hosting files publish security.txt, raster icons and a stable manifest id", async () => {

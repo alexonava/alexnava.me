@@ -49,6 +49,7 @@ const slateMaps = (tier) => {
     "slate-detail-512.webp",
     `slate-grit-${size}.webp`,
     `slate-relief-${size}.webp`,
+    "slate-soil-roughness-512.webp",
   ];
 };
 

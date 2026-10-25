@@ -2,6 +2,34 @@ import { BackSide, Color, ShaderMaterial, Vector4 } from "three";
 import { CELESTIAL_FIELD_GLSL } from "./celestial-field.js";
 import { DEPTH_LAYER } from "./depth-layers.js";
 
+// Night down to the horizon (the owner's pick of 2026-10-24, A): the clear sky's own glow
+// toward the horizon (filmSky) crossed the grade's first cel threshold some 9 degrees up,
+// and the cel step drew it as one flat band under a ruled line across the frame. From
+// `from` degrees, fully by `to`, the glow's luma rolls off softly from `knee` toward `cap`,
+// under that threshold, so the clear low sky stays in the upper sky's deep band and its banks
+// step against it as the upper ones do; below `from` (mostly behind the ranges) the glow is as
+// it was. filmNight(c, a, w) applies it by weight w: the shell takes it everywhere but over
+// the reference banks above their low part (CLOUD_RESHAPE.wedgeDome's knee), so The watch's
+// usual frames keep every pixel; the ranges haze toward it in full, so they never stand paler
+// than the night behind them. `on`: 0 emits none of it.
+export const SKY_GLOW = Object.freeze({
+  on: 1,
+  knee: 0.152,
+  cap: 0.19,
+  from: 1.5,
+  to: 3.5,
+});
+const glowSpan = (SKY_GLOW.cap - SKY_GLOW.knee).toFixed(6),
+  glowKnee = SKY_GLOW.knee.toFixed(6);
+const SKY_GLOW_GLSL = `
+vec3 filmNight(vec3 c, float a, float w) {
+${
+  SKY_GLOW.on
+    ? `float l=dot(c,vec3(.299,.587,.114)),t=l<${glowKnee}?l:${glowKnee}+${glowSpan}*(1.-exp(-(l-${glowKnee})/${glowSpan}));
+return c*mix(1.,t/l,w*smoothstep(${Math.sin((SKY_GLOW.from * Math.PI) / 180).toFixed(6)},${Math.sin((SKY_GLOW.to * Math.PI) / 180).toFixed(6)},a));`
+    : "return c;"
+}
+}`;
 // The film gradient and horizon band by shell altitude, shared with the mountains,
 // which haze toward the sky behind them (hill-silhouette.js).
 export const FILM_SKY_GLSL = `
@@ -9,7 +37,7 @@ vec3 filmSky(float a) {
 vec3 c=mix(vec3(.30,.36,.49),vec3(.11,.14,.21),smoothstep(-.02,.28,a));
 return mix(c,vec3(.045,.065,.13),smoothstep(.24,.9,a));
 }
-vec3 filmBand(float a) { return vec3(.03,.036,.048)*exp(-pow((a-.03)*6.0,2.0)); }`;
+vec3 filmBand(float a) { return vec3(.03,.036,.048)*exp(-pow((a-.03)*6.0,2.0)); }${SKY_GLOW_GLSL}`;
 
 // The reference banks: The watch's upper left at 1600x900 (the frame's 1100x440 top-left
 // crop), broad, swirling, layered and moonlit, where the authored bank (bankUV) lifts the
@@ -25,6 +53,14 @@ vec3 filmBand(float a) { return vec3(.03,.036,.048)*exp(-pow((a-.03)*6.0,2.0)); 
 //   near the horizon keep about the reference's size and layering instead of shrinking to
 //   small ovals; `scale` then enlarges the open sky's noise evenly, every way alike, to
 //   the reference's breadth;
+// - `dome`: [knee (degrees of altitude), flatness]: below the knee the low sky is drawn as on
+//   a dome, not the flat plane, so its banks keep their shapes instead of flattening into
+//   thin strips toward the horizon (the owner's ask of 2026-10-24, "the top of the sky doesnt
+//   match the sky near the horizon"): how much flatter than round a bank is drawn eases from
+//   the reshaping's own at the knee, so no seam shows, to `flatness` at the horizon (the
+//   plane draws them about three times flatter there). `wedgeDome` does the same for the reference banks' low part, below the
+//   lowest altitude The watch shows them on its usual layouts (squat windows and small
+//   landscape phones reach lower), from the plane's own shapes at its knee;
 // - `banks`: the half-frequency octave decides, broadly, bank or clear sky: across its
 //   values [2]-[3] the density goes from [0] (clear, so no stray peak becomes an island;
 //   it eases in by open squared, so the wedge's ease never reads as a clear column)
@@ -45,6 +81,8 @@ export const CLOUD_RESHAPE = Object.freeze({
   radius: Object.freeze([0.85, 1.12]),
   bend: Object.freeze([99, 196, 0.6]),
   horizon: Object.freeze([1.5, 0.6]),
+  dome: Object.freeze([15, 1.3]),
+  wedgeDome: Object.freeze([4, 1.4]),
   scale: 0.85,
   banks: Object.freeze([-0.22, 0.2, 0.4, 0.6]),
   lanes: 0.1,
@@ -182,6 +220,27 @@ const glslFloat = (value) => (Number.isInteger(value) ? value.toFixed(1) : Strin
 const { wedge, radius, bend, horizon, scale, banks, lanes, swirl, text } = CLOUD_RESHAPE;
 // The soft knee's own offset at the zenith, so the noise radius starts at 0 there.
 const horizonZero = (Math.sqrt(horizon[0] ** 2 + 0.04) - horizon[0]).toFixed(6);
+// The dome (CLOUD_RESHAPE.dome, wedgeDome) in u = ln((1 + sin a) / cos a), 0 at the horizon:
+// below the knee d ln R / d u = -f(u), f easing linearly in u from the mapping's own flatness
+// at the knee (`map`: the plane radius to the noise radius above it) to `flat` at the horizon,
+// so R = R(knee) exp(flat (U - u) + slope (U^2 - u^2)). The shader finds sin a from the
+// plane radius r = 1.1 cos a / (sin a + .24) (its quadratic's root).
+const planeRadius = (s) => (1.1 * Math.sqrt(1 - s * s)) / (s + 0.24);
+const domeU = (s) => 0.5 * Math.log((1 + s) / (1 - s));
+const kneeRadius = (r) => {
+  const out = r - horizon[0];
+  return r - (1 - horizon[1]) * 0.5 * (out + Math.sqrt(out * out + 0.04) - Number(horizonZero));
+};
+function domeTerms([kneeDeg, flat], map) {
+  const s = Math.sin((kneeDeg * Math.PI) / 180),
+    u = domeU(s),
+    h = 1e-5,
+    ln = (x) => Math.log(map(planeRadius(x)));
+  const own = -(ln(s + h) - ln(s - h)) / (domeU(s + h) - domeU(s - h));
+  return [u, map(planeRadius(s)), flat, (own - flat) / (2 * u)].map((v) => v.toFixed(6));
+}
+const domeR = (name, [u, r, flat, slope], fallback) =>
+  `float ${name}=hzU<${u}?${r}*exp(${flat}*(${u}-hzU)+${slope}*(${u}*${u}-hzU*hzU)):${fallback};`;
 const VX = CLOUD_VORTEX;
 const vortexOn = Boolean(VX.on);
 
@@ -282,8 +341,14 @@ float open=(1.-smoothstep(${glslFloat(wedge[0])},${glslFloat(wedge[1])},cloudAz)
 open*=uCloudReshape;
 float bend=(1.-smoothstep(${glslFloat(bend[0])},${glslFloat(wedge[1])},cloudAz)*(1.-smoothstep(${glslFloat(wedge[2])},${glslFloat(bend[1])},cloudAz))*smoothstep(${glslFloat(bend[2])},${glslFloat(radius[1])},bl))*uCloudReshape;
 ${VORTEX_FRAME}float cloudOut=${R}-${glslFloat(horizon[0])};
-float cloudR=${R}-${glslFloat(1 - horizon[1])}*.5*(cloudOut+sqrt(cloudOut*cloudOut+.04)-${horizonZero});
-vec2 bn=${B}*mix(1.,cloudR/${R}*${glslFloat(scale)},bend);
+float hzB=${R}*${R},hzS=(-.48*hzB+sqrt(4.5612*hzB+5.8564))/(2.*hzB+2.42),hzU=.5*log((1.+hzS)/max(1.-hzS,1e-5));
+${domeR("cloudR", domeTerms(CLOUD_RESHAPE.dome, kneeRadius), `${R}-${glslFloat(1 - horizon[1])}*.5*(cloudOut+sqrt(cloudOut*cloudOut+.04)-${horizonZero})`)}
+${domeR(
+  "wedgeR",
+  domeTerms(CLOUD_RESHAPE.wedgeDome, (r) => r),
+  R,
+)}
+vec2 bn=${B}*mix(mix(1.,wedgeR/${R},uCloudReshape),cloudR/${R}*${glslFloat(scale)},bend);
 float wa=T*.000436;
 vec2 p=bn+2.98*(sin(wa)*vec2(.923,.385)+(1.-cos(wa))*vec2(-.385,.923));
 vec2 q=p+vec2(5.7,0.9);
@@ -564,6 +629,9 @@ if(uNebulaLayers>0.5) col+=nebula(normalize(vWorldPosition-cameraPosition));
 if(uClouds>0.001){
 float cloudText=cloudTextAt(vCloudClip);
 ${cloudFieldGLSL("uTime")}
+// Night down to the horizon (SKY_GLOW), but not over the reference banks above their low
+// part, nor in the environment's capture.
+col=filmNight(col,altitude,uCloudReshape*(1.-smoothstep(${glslFloat(wedge[0])},${glslFloat(wedge[1])},cloudAz)*(1.-smoothstep(${glslFloat(wedge[2])},${glslFloat(wedge[3])},cloudAz))*smoothstep(${glslFloat(radius[0])},${glslFloat(radius[1])},bl)*smoothstep(${Math.sin(((CLOUD_RESHAPE.wedgeDome[0] - 1) * Math.PI) / 180).toFixed(6)},${Math.sin((CLOUD_RESHAPE.wedgeDome[0] * Math.PI) / 180).toFixed(6)},altitude)));
 float lit=clamp(.45+(d-da)*4.0,0.0,1.0);
 float thick=smoothstep(.52,.8,d);
 vec3 cloudCol=mix(vec3(.30,.32,.46),vec3(.62,.60,.72),smoothstep(0.,.55,lit));
