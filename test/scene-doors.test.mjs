@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
-import { flat, mediaBlock, rule } from "./support/css.mjs";
+import { flat, mediaBlock, rule, rules } from "./support/css.mjs";
 import { EASE, OPENING, TEAR } from "../src/doors/paper-doors.js";
 
 // The opening's doors (src/ui/scene-doors.js) run in a fake DOM with controllable time,
@@ -81,6 +81,8 @@ function createHarness({
 
   const document = {
     hidden: false,
+    body: { tag: "body" },
+    documentElement: { tag: "html" },
     getElementById: (id) => (id === "scene-doors" && withDoors ? doors : null),
     addEventListener(type, handler) {
       listeners.set(type, handler);
@@ -166,9 +168,15 @@ function createHarness({
     setClock(ms) {
       animationClock = ms;
     },
-    fire(type) {
-      listeners.get(type)?.();
+    fire(type, event) {
+      listeners.get(type)?.(event);
     },
+    // A tap on the paper.
+    touch() {
+      listeners.get("doors:click")?.({ type: "click" });
+    },
+    listening: (type) => listeners.has(type),
+    body: document.body,
   };
 }
 
@@ -270,6 +278,35 @@ test("without frames (a hidden tab) the reveal's doors still part on the timers"
   assert.match(h.classes, /\bis-open\b/);
 });
 
+test("a tap on the paper, a key or keyboard focus parts held doors at once", () => {
+  for (const [what, act] of [
+    ["tap", (h) => h.touch()],
+    ["key", (h) => h.fire("keydown", { type: "keydown", key: "Tab" })],
+    ["focus", (h) => h.fire("focusin", { type: "focusin", target: { tag: "a" } })],
+  ]) {
+    const h = createHarness();
+    act(h);
+    assert.match(h.classes, /\bis-open\b/, what);
+    assert.equal(h.sceneDoors.state, "open", what);
+    for (const type of ["doors:click", "keydown", "focusin"]) {
+      assert.equal(h.listening(type), false, `${what}: the ${type} listener is released`);
+    }
+    h.advance(2300);
+    assert.equal(h.doors.hidden, true, what);
+  }
+});
+
+test("a modifier alone, a browser shortcut or focus coming back to the page keeps them shut", () => {
+  const h = createHarness();
+  h.fire("keydown", { type: "keydown", key: "Shift" });
+  h.fire("keydown", { type: "keydown", key: "Meta" });
+  h.fire("keydown", { type: "keydown", key: "r", ctrlKey: true });
+  h.fire("keydown", { type: "keydown", key: "Tab", altKey: true });
+  h.fire("focusin", { type: "focusin", target: h.body });
+  assert.doesNotMatch(h.classes, /\bis-open\b/);
+  assert.equal(h.sceneDoors.state, "held");
+});
+
 test("the cap opens held doors after 10s of visible time; hidden time pauses it", () => {
   const h = createHarness();
   h.advance(4000);
@@ -328,6 +365,45 @@ test("light() places the stylesheet's glow and lights the seam while the doors a
   h.sceneDoors.open("static");
   h.sceneDoors.light({ star: null, warm: 0, progress: 0.99 });
   assert.equal(h.properties.get("--doors-light"), "0.7", "open doors take no light");
+});
+
+test("the loading line's bar shows on the paper from its first word and goes as they part", () => {
+  const h = createHarness();
+  assert.doesNotMatch(h.classes, /\bis-loading\b/);
+  h.sceneDoors.light({ star: null, warm: 0, progress: 0.3 });
+  assert.match(h.classes, /\bis-loading\b/);
+  assert.equal(h.properties.get("--doors-light"), "0.3");
+  // The paper's bar fills to the progress, where the line's own bar is.
+  assert.match(rule(styles, ".scene-doors::after"), /transform: scaleX\(var\(--doors-light\)\);/);
+  const paperBar =
+    rules(styles, (selector) => selector === ".scene-doors::before, .scene-doors::after")[0]
+      ?.body ?? "";
+  const lineBar = rule(styles, ".scene-loader__track");
+  for (const property of [/top: env\(safe-area-inset-top, 0px\);/, /height: 2px;/]) {
+    assert.match(paperBar, property);
+    assert.match(lineBar, property);
+  }
+  assert.match(paperBar, /opacity: 0;/, "hidden until the line loads");
+  const shown = (name) =>
+    rules(styles, (selector) =>
+      selector
+        .split(",")
+        .map((part) => part.trim())
+        .includes(`.scene-doors.${name}::after`),
+    )[0]?.body ?? "";
+  assert.match(shown("is-loading"), /opacity: 1;/);
+  assert.match(shown("is-open"), /opacity: 0;/);
+});
+
+test("the doors cover the page under the skip link, and take the pointer only while held", () => {
+  const z = (selector) => Number(rule(styles, selector).match(/z-index: (-?\d+);/)?.[1]);
+  const doors = z(".scene-doors");
+  for (const selector of ["main", ".site-footer", ".scene-loader", ".bottom-bar"]) {
+    assert.ok(doors > z(selector), `${selector} (${z(selector)}) under the doors (${doors})`);
+  }
+  assert.ok(doors < z(".skip-link"), "the skip link above them");
+  assert.match(rule(styles, ".scene-doors"), /pointer-events: none;/);
+  assert.match(rule(styles, ".scene-doors.is-held:not(.is-open)"), /pointer-events: auto;/);
 });
 
 test("the live path loads the paper doors' script and hands the doors to the drawing", async () => {

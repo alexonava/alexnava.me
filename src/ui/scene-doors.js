@@ -1,13 +1,15 @@
 // The opening's paper doors (#scene-doors in index.html).
 //
-// The doors are closed behind the identity and Contact at the first paint, before the page
-// knows whether the live scene will load, and the stylesheet alone opens them after 4s,
-// so a page whose scripts never run is never left behind them. Evaluated early (app.js
-// runs this before main.js), the script holds them: the stylesheet's own opening moves out
-// to an 11s backstop and pauses while the tab is hidden, and the script opens them after
-// 10s of visible time at the latest. They part sooner at the scene's reveal and whenever
-// the loading line retires (ui/scene-loader.js end()), and on every static path (main.js
-// disableSceneHost()). Once open they leave the page (hidden) after their opening.
+// The doors are closed over the whole page at the first paint, the identity, Contact and
+// the loading line under them, before the page knows whether the live scene will load, and
+// the stylesheet alone opens them after 4s, so a page whose scripts never run is never left
+// behind them. Evaluated early (app.js runs this before main.js), the script holds them:
+// the stylesheet's own opening moves out to an 11s backstop and pauses while the tab is
+// hidden, and the script opens them after 10s of visible time at the latest. They part
+// sooner at the scene's reveal and whenever the loading line retires (ui/scene-loader.js
+// end()), on every static path (main.js disableSceneHost()), and at once on a tap on the
+// paper, a key or keyboard focus, so nothing the visitor reaches for waits under it. Once
+// open they leave the page (hidden) after their opening.
 //
 // On the live path the loading line's begin() upgrades them: the paper doors' own script
 // (src/doors-entry.js) draws the sheets as real paper over the stylesheet's, in a worker
@@ -34,6 +36,17 @@
   const SETTLE_MS = 900;
   // The stylesheet's glow: its radius in star radii, and its least radius in CSS px.
   const GLOW = Object.freeze({ radii: 7, min: 64 });
+  // Keys that only modify another: pressed alone, they leave the doors closed.
+  const MODIFIER_KEYS = new Set([
+    "Shift",
+    "Control",
+    "Alt",
+    "AltGraph",
+    "Meta",
+    "CapsLock",
+    "Fn",
+    "OS",
+  ]);
   const DOORS_URL = typeof __BABEL_DOORS_URL__ !== "undefined" ? __BABEL_DOORS_URL__ : "";
 
   let doors = null;
@@ -131,13 +144,15 @@
   }
 
   // The star through the paper: its CSS px and radius as the loading line has them, its
-  // warmth (0 to 1) and the load's progress, which lights the seam.
+  // warmth (0 to 1) and the load's progress, which lights the seam and fills the line's bar
+  // on the paper (styles.css .scene-doors::after), shown from the line's first word.
   const light = safe(({ star = null, warm = 0, progress = 0 } = {}) => {
     if (state !== "held") return;
     lit = { star, warm, progress };
     if (paper && typeof paper === "object") safe(() => paper.light(lit), drop)();
     const level = Math.min(1, Math.max(0, Number(progress) || 0));
     doors.style.setProperty("--doors-light", String(Math.round(level * 1000) / 1000));
+    doors.classList.add("is-loading");
     const valid = star && [star.x, star.y, star.radius].every(Number.isFinite) && star.radius > 0;
     const heat = valid ? Math.min(1, Math.max(0, Number(warm) || 0)) : 0;
     const radius = valid ? Math.max(GLOW.min, GLOW.radii * star.radius) : 0;
@@ -215,9 +230,31 @@
     }, TICK_MS);
     document.addEventListener("visibilitychange", onVisibility);
     onVisibility();
+
+    // Nothing waits under the paper: a tap on it (held doors take the pointer, styles.css),
+    // a key or keyboard focus parts them at once. A modifier alone or a browser shortcut
+    // does not, nor focus returning to the page itself. The tap is the click itself, which
+    // lands on the paper: parted on the press, a touch's click would be aimed afresh at the
+    // control under it.
+    const onInput = (event) => {
+      if (event?.type === "keydown") {
+        if (event.ctrlKey || event.metaKey || event.altKey || MODIFIER_KEYS.has(event.key)) return;
+      }
+      if (event?.type === "focusin") {
+        const target = event.target;
+        if (!target || target === document.body || target === document.documentElement) return;
+      }
+      open("input");
+    };
+    doors.addEventListener("click", onInput);
+    document.addEventListener("keydown", onInput, true);
+    document.addEventListener("focusin", onInput, true);
     cleanups.push(
       () => window.clearInterval(tick),
       () => document.removeEventListener("visibilitychange", onVisibility),
+      () => doors.removeEventListener("click", onInput),
+      () => document.removeEventListener("keydown", onInput, true),
+      () => document.removeEventListener("focusin", onInput, true),
     );
   }
 

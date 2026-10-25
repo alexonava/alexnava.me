@@ -760,9 +760,12 @@ body.scene-walk-hidden > :not(.scene-shell) {
 }
 
 /* The opening's paper doors (src/ui/scene-doors.js), the owner's pick of 2026-10-25: one
-   dark sheet torn down the middle, closed over the title card at the first paint, whose
+   dark sheet torn down the middle, closed over the whole page at the first paint, whose
    halves are pulled apart at the scene's reveal, tilting outward about their bottom
-   corners. Each half is a whole-window box whose paper is clipped along the tear (cut
+   corners. The identity, Contact and the loading line wait under the paper and come into
+   view as it parts, as the scene does ("all the text should be inside the loading screen,
+   visible when it opens like everything else"); only the skip link stands above it.
+   Each half is a whole-window box whose paper is clipped along the tear (cut
    from the drawing's TEAR points, src/doors/paper-doors.js), so one transform carries it
    off its side. Its light, the scene's star seen through the paper, counter-moves about
    the same corner and stays where the star is, and the paper's clip hides it as the paper
@@ -781,9 +784,58 @@ body.scene-walk-hidden > :not(.scene-shell) {
   --doors-light: 0;
   position: fixed;
   inset: 0;
-  z-index: 1;
+  z-index: 20;
   overflow: hidden;
   pointer-events: none;
+}
+
+/* Held, the doors take the pointer, so a tap on the paper parts them (ui/scene-doors.js)
+   rather than reaching a control under it; open, they let it through. */
+.scene-doors.is-held:not(.is-open) {
+  pointer-events: auto;
+}
+
+/* The loading line's bar on the paper, which covers the line itself: the same 2px across
+   the top edge, its fill at the progress the script writes (--doors-light), shown while
+   the line loads and fading as the doors part over the line's own bar. */
+.scene-doors::before,
+.scene-doors::after {
+  position: absolute;
+  top: env(safe-area-inset-top, 0px);
+  right: 0;
+  left: 0;
+  z-index: 1;
+  height: 2px;
+  content: "";
+  opacity: 0;
+  pointer-events: none;
+}
+
+.scene-doors::before {
+  background: rgba(247, 241, 234, 0.08);
+  transition: opacity 320ms ease 240ms;
+}
+
+.scene-doors::after {
+  background: var(--text);
+  box-shadow: 0 0 6px rgba(247, 241, 234, 0.3);
+  transform: scaleX(var(--doors-light));
+  transform-origin: 0 50%;
+  transition:
+    transform 520ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 320ms ease 240ms;
+}
+
+.scene-doors.is-loading::before,
+.scene-doors.is-loading::after {
+  opacity: 1;
+}
+
+.scene-doors.is-open::before,
+.scene-doors.is-open::after {
+  opacity: 0;
+  transition-delay: 0ms;
+  transition-duration: 240ms;
 }
 
 .scene-doors__leaf,

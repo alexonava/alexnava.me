@@ -27,6 +27,8 @@ GitHub's runners have no GPU, so Lighthouse audits the static title card, not th
 2. The next stop is Contact, the footer's button. Enter or Space shows the email address and LinkedIn beside it (above it on phones), the next two stops; pressing it again hides them. Escape hides them from anywhere on the page and, when focus was on one of them, returns it to Contact. Without scripts the two links are the stops after the skip link.
 3. Over the live scene on a desktop, `or ~ starts the walk ([Scene modes](SCENE-MODES.md#walk)), which nothing announces: the page fades off the canvas into`visibility: hidden`, so it leaves the accessibility tree and focus with it, and the mouse is captured. The arrow keys and W, A, S and D walk and turn. The same key, or Esc twice, brings the page and the tour back. It never starts under reduced motion or forced colors, or on a touch-primary device.
 
+While the live scene loads, the opening's doors cover the page, the skip link excepted: the first key that is not a modifier alone or a shortcut, the first focus and a tap on the paper part them at once ([scene-doors.js](../src/ui/scene-doors.js)), so no stop is ever under the paper. Without scripts they open on their own after 4 s.
+
 [contact.js](../src/ui/contact.js) owns the disclosure: `aria-expanded`, Escape and focus return. It traps no focus and makes nothing `inert`, so the page stays as it was while the links show. An address ending `#about`, `#profile`, `#experience` or `#contact` (or the same with `-text`) opens the links on load and on every `hashchange`. The footer's targets are 44 px high; the links sit 28 px apart in a row, and one 44 px row apart where they stack above Contact up to 640 px wide. [UI](UI.md#contact) describes Contact in full.
 
 ## Screen readers
@@ -39,7 +41,7 @@ GitHub's runners have no GPU, so Lighthouse audits the static title card, not th
 
 ## Without JavaScript
 
-The page is complete without scripts. Contact stays hidden, and the footer shows the email address and LinkedIn in its place: plain links with 44 px targets over their own scrim. [contact.js](../src/ui/contact.js) folds them behind Contact only once it binds, and not while focus is inside them. A browser that cannot run the UI bundle keeps the links, and the title card never depends on the scene.
+The page is complete without scripts, once the opening's doors, which cover it for its first 4 s, have opened on their own. Contact stays hidden, and the footer shows the email address and LinkedIn in its place: plain links with 44 px targets over their own scrim. [contact.js](../src/ui/contact.js) folds them behind Contact only once it binds, and not while focus is inside them. A browser that cannot run the UI bundle keeps the links, and the title card never depends on the scene.
 
 ## Preferences
 
