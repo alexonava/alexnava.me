@@ -53,6 +53,7 @@ import {
   cloudVortexReach,
   createEstateSkyMaterial,
   FILM_SKY_GLSL,
+  SKY_GLOW,
 } from "../src/scene/estate-sky.js";
 import { celestialClusterDirection, NEBULA_FRAME } from "../src/scene/celestial-field.js";
 import { createFilmScene } from "../src/scene/film-scene.js";
@@ -647,22 +648,64 @@ test("the clouds' reshaping never reaches the reference banks or the clear lane,
   // Past the horizon's knee the noise radius grows slower but never folds back, and
   // nearer the zenith it is the plane's own.
   // (Where the vortex turns, its radius blv stands for bl; elsewhere blv is bl itself.)
-  const outer = new Function("bl", `return ${line("cloudOut").replace(/\bblv\b/g, "bl")}`);
-  const radiusOf = new Function(
+  // Below the dome's knee (CLOUD_RESHAPE.dome) it follows the dome, whose u the shader finds
+  // from the plane radius (hzU); the reference banks' own radius (wedgeR) is the plane's
+  // above their dome's knee (wedgeDome).
+  const statement = (name) => {
+    const match = shader.match(new RegExp(`float ${name}=([^;]+);`));
+    assert.ok(match, name);
+    return match[1].replace(/\bblv\b/g, "bl");
+  };
+  const radii = new Function(
     "bl",
-    "cloudOut",
     "sqrt",
-    `return ${line("cloudR").replace(/\bblv\b/g, "bl")}`,
+    "log",
+    "exp",
+    "max",
+    `const cloudOut=${statement("cloudOut")};
+const hzB=bl*bl,hzS=(-.48*hzB+sqrt(4.5612*hzB+5.8564))/(2.*hzB+2.42),hzU=.5*log((1.+hzS)/max(1.-hzS,1e-5));
+return [${statement("cloudR")}, ${statement("wedgeR")}, hzS];`,
   );
-  const [knee, rate] = CLOUD_RESHAPE.horizon;
-  let previous = 0;
-  for (let bl = 0.001; bl <= 6; bl += 0.01) {
-    const r = radiusOf(bl, outer(bl), Math.sqrt);
-    assert.ok(r > previous && r <= bl + 1e-12);
+  const at = (bl) => radii(bl, Math.sqrt, Math.log, Math.exp, Math.max);
+  const blOf = (deg) => {
+    const s = Math.sin((deg * Math.PI) / 180);
+    return (1.1 * Math.sqrt(1 - s * s)) / (s + 0.24);
+  };
+  // hzS is the shell's sin(altitude) back from the plane radius.
+  for (const deg of [1, 5, 15, 40, 80])
+    assert.ok(Math.abs(at(blOf(deg))[2] - Math.sin((deg * Math.PI) / 180)) < 1e-6);
+  const [knee] = CLOUD_RESHAPE.horizon;
+  let previous = 0,
+    previousWedge = 0;
+  for (let bl = 0.001; bl <= blOf(0.05); bl += 0.01) {
+    const [r, w] = at(bl);
+    assert.ok(r > previous && r <= bl + 1e-12, `cloudR at ${bl}`);
+    assert.ok(w > previousWedge && w <= bl + 1e-12, `wedgeR at ${bl}`);
     if (bl < knee - 0.5) assert.ok(Math.abs(r - bl) < 0.01);
+    if (bl < blOf(CLOUD_RESHAPE.wedgeDome[0]))
+      assert.equal(w, bl, "the reference banks' coordinates above their low part");
     previous = r;
+    previousWedge = w;
   }
-  assert.ok(Math.abs(radiusOf(4, outer(4), Math.sqrt) - (knee + rate * (4 - knee))) < 0.01);
+  // Flatness (d ln R / d ln((1 + sin a) / cos a)) runs on through the knee and ends at the
+  // dome's `flatness` at the horizon, where the plane draws banks about three times flatter.
+  const flatness = (deg, index) => {
+    const lnR = (d) => Math.log(at(blOf(d))[index]),
+      u = (d) => Math.atanh(Math.sin((d * Math.PI) / 180)),
+      h = 1e-3;
+    return -(lnR(deg + h) - lnR(deg - h)) / (u(deg + h) - u(deg - h));
+  };
+  for (const [index, [kneeDeg, flat]] of [CLOUD_RESHAPE.dome, CLOUD_RESHAPE.wedgeDome].entries()) {
+    assert.ok(
+      Math.abs(flatness(kneeDeg + 0.05, index) - flatness(kneeDeg - 0.05, index)) < 0.05,
+      "no seam at the knee",
+    );
+    assert.ok(Math.abs(flatness(0.02, index) - flat) < 0.05, "the dome's flatness at the horizon");
+  }
+  assert.ok(
+    flatness(1, 1) < 2 && blOf(1) > 0,
+    "the reference's low part no longer flattens as the plane's",
+  );
   // The sky draws the reshaping; the environment's capture turns it off.
   assert.match(shader, /\*\(1\.-gapG\);\s*open\*=uCloudReshape;/);
   assert.equal(material.uniforms.uCloudReshape.value, 1);
@@ -701,8 +744,8 @@ test("the clouds' reshaping never reaches the reference banks or the clear lane,
   assert.ok(
     shader.includes(
       CLOUD_VORTEX.on
-        ? `vec2 bn=bv*mix(1.,cloudR/blv*${scale},bend);`
-        : `vec2 bn=b*mix(1.,cloudR/bl*${scale},bend);`,
+        ? `vec2 bn=bv*mix(wedgeR/blv,cloudR/blv*${scale},bend);`
+        : `vec2 bn=b*mix(wedgeR/bl,cloudR/bl*${scale},bend);`,
     ),
   );
   assert.match(shader, /vec2 p=bn\+2\.98\*\(/);
@@ -741,7 +784,8 @@ test("the clouds' reshaping never reaches the reference banks or the clear lane,
   const noiseAt = (x, y) => {
     const bl = Math.max(Math.hypot(x, y), 0.001),
       w = bend(x, y),
-      k = 1 + (radiusOf(bl, outer(bl), Math.sqrt) / bl) * scale * w - w;
+      [cloudR, wedgeR] = at(bl),
+      k = (wedgeR / bl) * (1 - w) + (cloudR / bl) * scale * w;
     const qx = x * k + 5.7,
       qy = y * k + 0.9;
     const nv = noise(qx * 0.5 + 7.3, qy * 0.5 + 1.9);
@@ -762,7 +806,9 @@ test("the clouds' reshaping never reaches the reference banks or the clear lane,
         dx = noiseAt(x + h, y),
         dy = noiseAt(x, y + h);
       const det = ((dx[0] - a[0]) * (dy[1] - a[1]) - (dy[0] - a[0]) * (dx[1] - a[1])) / (h * h);
-      assert.ok(det > 0.1, `the noise folds at ${x.toFixed(2)},${y.toFixed(2)}`);
+      // Never folds; the dome draws the plane's last stretch to the horizon into less noise
+      // by design (about 0.046 at its least), so the margin is smaller than above it.
+      assert.ok(det > 0.03, `the noise folds at ${x.toFixed(2)},${y.toFixed(2)}`);
     }
   // The banks lift only the open sky, and decisively: clear sky below the octave's [2]
   // and a bank above its [3], so no stray peak of the finer octaves stands alone in the
@@ -1432,4 +1478,73 @@ test("the painted sky's brush follows the clouds' flow, and the capture keeps th
     assert.ok(amount <= 0.1 && across > along, "slight, and longer along the brush than across");
   // Sine-free, as every cloud noise is.
   assert.doesNotMatch(edge, /sin\(/);
+});
+
+test("the clear sky stays night down to the ranges, but not over the reference banks above their low part", async () => {
+  // filmNight (SKY_GLOW) rolls the glow's luma off under the grade's first cel threshold, so
+  // the cel step draws no ruled band across the low sky (the owner's pick of 2026-10-24).
+  const glsl = FILM_SKY_GLSL.match(/vec3 filmNight\(vec3 c, float a, float w\) \{([\s\S]*?)\n\}/);
+  assert.ok(glsl, "filmNight");
+  const body = glsl[1]
+    .replace(/vec3\(\.299,\.587,\.114\)/, "Y")
+    .replace(/float l=/, "let l=")
+    .replace(/,t=/, ";let t=");
+  const night = new Function(
+    "c",
+    "a",
+    "w",
+    "dot",
+    "exp",
+    "mix",
+    "smoothstep",
+    "Y",
+    body.replace(/return c\*mix\(1\.,t\/l,(.+)\);/s, "return c*mix(1,t/l,$1);"),
+  );
+  const smoothstep = (e0, e1, x) => {
+    const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
+    return t * t * (3 - 2 * t);
+  };
+  const mix = (x, y, a) => x * (1 - a) + y * a;
+  const luma = (s) =>
+    night(s, Math.sin((20 * Math.PI) / 180), 1, (x, y) => x * y, Math.exp, mix, smoothstep, 1);
+  for (let l = 0.01; l < 0.4; l += 0.01)
+    assert.ok(luma(l) < SKY_GLOW.cap + 1e-9 && luma(l) <= l + 1e-12);
+  assert.equal(luma(0.1), 0.1, "under the knee it is the gradient's own");
+  const below = night(
+    0.3,
+    Math.sin(((SKY_GLOW.from - 0.5) * Math.PI) / 180),
+    1,
+    (x, y) => x * y,
+    Math.exp,
+    mix,
+    smoothstep,
+    1,
+  );
+  assert.equal(below, 0.3, "below `from` (behind the ranges) the glow is as it was");
+  assert.equal(
+    night(0.3, 0.5, 0, (x, y) => x * y, Math.exp, mix, smoothstep, 1),
+    0.3,
+    "weight 0: untouched",
+  );
+  const shader = flat(
+    createEstateSkyMaterial({
+      skyTopColor: 0,
+      skyBottomColor: 0,
+      skyGlowColor: 0,
+      sunDirection: null,
+      sunColor: 0,
+      shellOpacity: 0.52,
+    }).fragmentShader,
+  );
+  // The shell weighs it by the reference banks' protection above their low part and by
+  // uCloudReshape (0 in the environment's capture, whose sky light stays as approved).
+  assert.match(
+    shader,
+    /col=filmNight\(col,altitude,uCloudReshape\*\(1\.-smoothstep\(99\.0,119\.0,cloudAz\)/,
+  );
+  // The ranges haze toward the same night.
+  assert.match(
+    flat(source("src/scene/hill-silhouette.js")),
+    /vec3 s0=\(filmNight\(filmSky\(a\),a,1\.\)\+filmBand\(a\)\)\*uSky\.y/,
+  );
 });
