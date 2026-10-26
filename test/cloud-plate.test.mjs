@@ -157,7 +157,7 @@ test("the decoder bounds bytes and pixels, preserves alpha orientation, and clos
   const decode = async (_blob, options) => {
     decoded++;
     assert.equal(options.premultiplyAlpha, "none");
-    assert.equal(options.imageOrientation, "none");
+    assert.equal(options.imageOrientation, "from-image");
     return { width: 1774, height: 887, close: () => closed++ };
   };
   const fetchImpl = async () => new Response(new Uint8Array([1, 2, 3]), { status: 200 });

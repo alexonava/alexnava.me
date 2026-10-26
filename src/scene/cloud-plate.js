@@ -30,7 +30,7 @@ export async function loadCloudPlateTexture(
   if (!bytes.byteLength || bytes.byteLength > CLOUD_PLATE_LIMITS.bytes)
     throw new Error("Cloud plate byte budget");
   const image = await decode(new Blob([bytes], { type: "image/webp" }), {
-    imageOrientation: "none",
+    imageOrientation: "from-image",
     premultiplyAlpha: "none",
     colorSpaceConversion: "none",
   });
