@@ -5539,10 +5539,10 @@ function* riverSurfaceSteps(geometry, sample, landHeight, EARTH) {
     return upper.get(i);
   };
   for (let i = 0; i < bedCount; i += 3) {
-    // Yields on the scan, before the skips, every 64 triangles: where the
+    // Yields on the scan, before the skips, every 16 triangles: where the
     // water is dense each one is clipped, and a run of them must never make a
     // long task.
-    if (i % 192 === 0) yield;
+    if (i % 48 === 0) yield;
     const tri = indices.slice(i, i + 3),
       xs = tri.map((v) => p[v * 3]),
       zs = tri.map((v) => -p[v * 3 + 1]);
@@ -5952,56 +5952,19 @@ function* earthSteps(groundHeight, EARTH) {
   }
 }
 
-// Runs a build in slices of a few milliseconds, never a long task, so neither
-// the reveal nor a frame waits on it. While the canvas fades in (early), where
-// the terrain has to land and the fade itself is the compositor's, slices of
-// up to 12 ms run back to back; before it (the reveal's own work goes first)
-// and after it they take idle time, and less where the idle wait timed out,
-// as nothing else is idle. index.js requests this chunk with the scene, so
-// the build starts as the watch commits, well before a warm load's reveal.
-// A cancelled build (the film scene disposed) stops and resolves to nothing.
-function inSlices(steps, early = () => false, cancelled = () => false, progress = null) {
-  const idle =
-    typeof globalThis.requestIdleCallback === "function"
-      ? (task) => globalThis.requestIdleCallback(task, { timeout: 100 })
-      : (task) => setTimeout(task, 0);
-  return new Promise((resolve, reject) => {
-    // Without idle callbacks (Safari), short tasks leave room for the frames.
-    const slice = (deadline) => {
-      if (cancelled()) {
-        // Close nested builders so their detached geometries are released.
-        try {
-          steps.return?.();
-        } catch (error) {
-          return reject(error);
-        }
-        return resolve(null);
-      }
-      const rush = early();
-      const until =
-        performance.now() +
-        (rush
-          ? 12
-          : !deadline
-            ? 5
-            : deadline.didTimeout
-              ? 2
-              : Math.max(2, Math.min(8, deadline.timeRemaining())));
-      try {
-        for (;;) {
-          const next = steps.next();
-          if (rush) progress?.();
-          if (next.done) return resolve(next.value);
-          if (performance.now() >= until) break;
-        }
-      } catch (error) {
-        return reject(error);
-      }
-      if (rush) setTimeout(slice, 0);
-      else idle(slice);
-    };
-    idle(slice);
-  });
+// Hidden preparation uses short, unclamped tasks; the fade keeps its existing
+// faster slices, and visible refinement takes idle time. The lazy scheduler
+// owns its queued callbacks and closes its resources when work ends.
+function inSlices(
+  steps,
+  early = () => false,
+  cancelled = () => false,
+  progress = null,
+  priorityMs = () => 4,
+) {
+  return import("./preparation-tasks.js").then(({ runPreparationSteps }) =>
+    runPreparationSteps(steps, { priority: early, cancelled, progress, priorityMs }),
+  );
 }
 
 // The film terrain. Given the scene's rendering, it builds in slices
@@ -6074,6 +6037,7 @@ export function createEarthGeometry(
     () => {
       if (opening()) rendering.openingProgress = (rendering.openingProgress ?? 0) + 1;
     },
+    () => (opening() ? 4 : 12),
   ).then(
     (geometry) =>
       new Promise((resolve) => {

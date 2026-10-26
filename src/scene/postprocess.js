@@ -1142,14 +1142,11 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
           renderer.setRenderTarget(previous);
         }
       };
-      let first;
-      try {
-        first = prepareTarget(offscreen, composer.readBuffer);
-      } catch {
-        compilePromise = Promise.resolve(false);
-        return compilePromise;
-      }
-      compilePromise = Promise.resolve(first)
+      // These light-free fullscreen materials have no transient scene keys.
+      // Yield before their compilation so scene uploads and material capture
+      // retain their synchronous flags without sharing one long setup task.
+      compilePromise = new Promise((resolve) => setTimeout(resolve, 0))
+        .then(() => valid() && prepareTarget(offscreen, composer.readBuffer))
         .then((ready) => {
           if (!ready || !valid()) return false;
           return prepareTarget(screen, null);

@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
+import vm from "node:vm";
+import { cameraPreparationSignatures } from "./support/camera-preparation.mjs";
+import { createCameraPreparation } from "../src/scene/preparation-tasks.js";
 import { sceneGround } from "./support/ground.mjs";
 import {
   BoxGeometry,
@@ -16,6 +20,7 @@ import {
   chooseCinematicAngle,
   cinematicSafeArea,
   createCinematicCamera,
+  loadPreparationTasks,
   isStackedLayout,
   layoutRect,
   letterboxShare,
@@ -27,6 +32,8 @@ import {
   fitPoses,
   fitShot,
   measureShot,
+  measureShotSteps,
+  fitShotSteps,
   MOVE_PHASES,
   resolveDirectedShot,
   shotPose,
@@ -375,13 +382,13 @@ test("prepare measures, then fits, a shot ahead of its cut without touching the 
   ];
   const frame = f.controller.frame,
     counts = { ...f.counts };
-  assert.equal(f.controller.prepare("tree", 0, 1440, 900), "pending");
+  assert.equal(f.controller.prepare("tree", 0, 1440, 900, createCameraPreparation), "pending");
   assert.ok(f.counts.boxes > counts.boxes, "the first step measures");
   assert.equal(f.counts.ground, counts.ground, "and does not fit yet");
-  assert.equal(f.controller.prepare("tree", 0, 1440, 900), "ready");
+  assert.equal(f.controller.prepare("tree", 0, 1440, 900, createCameraPreparation), "ready");
   assert.ok(f.counts.ground > counts.ground, "the second step fits");
   const prepared = { ...f.counts };
-  assert.equal(f.controller.prepare("tree", 0, 1440, 900), "ready");
+  assert.equal(f.controller.prepare("tree", 0, 1440, 900, createCameraPreparation), "ready");
   assert.deepEqual(f.counts, prepared, "a prepared shot is cached");
   assert.deepEqual(
     [
@@ -401,6 +408,95 @@ test("prepare measures, then fits, a shot ahead of its cut without touching the 
   assert.equal(f.controller.shot.name, "Portrait");
   assert.deepEqual(f.counts, prepared, "the cut does no measuring or fitting");
   f.dispose();
+});
+
+test("a hidden opening applies its exact camera only after cooperative preparation", async () => {
+  await loadPreparationTasks();
+  const f = terrainSetup(390, 844),
+    reference = terrainSetup(390, 844);
+  let pending = 0;
+  const before = [f.camera.position.toArray(), f.camera.fov, f.fog.near, f.fog.far];
+  try {
+    for (const fixture of [f, reference]) fixture.controller.setPreviewShot("tree", 1);
+    let applied = false;
+    for (let attempts = 0; !applied && attempts < 1000; attempts++) {
+      applied = f.controller.apply({
+        width: 390,
+        height: 844,
+        elapsedSeconds: 0,
+        tourPhase: 0,
+        prepare: () => pending++,
+      });
+      if (!applied) {
+        assert.equal(f.controller.frame, null);
+        assert.deepEqual(
+          [f.camera.position.toArray(), f.camera.fov, f.fog.near, f.fog.far],
+          before,
+        );
+      }
+    }
+    assert.equal(applied, true);
+    assert.ok(pending > 0, "the first measure yields before fitting");
+    reference.controller.apply({ width: 390, height: 844, elapsedSeconds: 0, tourPhase: 0 });
+    const pose = (fixture) => [
+      fixture.camera.position.toArray(),
+      fixture.camera.fov,
+      [...fixture.camera.projectionMatrix.elements],
+      fixture.fog.near,
+      fixture.fog.far,
+      fixture.controller.frame.distance,
+      fixture.controller.frame.cameraY,
+    ];
+    assert.deepEqual(pose(f), pose(reference), "the first applied pose is numerically identical");
+  } finally {
+    f.dispose();
+    reference.dispose();
+  }
+});
+
+test("hidden camera preparation discards a stale viewport and visible cuts stay synchronous", async () => {
+  await loadPreparationTasks();
+  const f = terrainSetup(1440, 900),
+    reference = terrainSetup(390, 844);
+  try {
+    for (const fixture of [f, reference]) fixture.controller.setPreviewShot("tree", 0);
+    assert.equal(
+      f.controller.apply({ width: 1440, height: 900, tourPhase: 0, prepare() {} }),
+      false,
+    );
+    let applied = false;
+    for (let attempts = 0; !applied && attempts < 1000; attempts++)
+      applied = f.controller.apply({ width: 390, height: 844, tourPhase: 0, prepare() {} });
+    assert.equal(applied, true);
+    reference.controller.apply({ width: 390, height: 844, tourPhase: 0 });
+    assert.deepEqual(f.camera.position.toArray(), reference.camera.position.toArray());
+    assert.equal(f.controller.frame.distance, reference.controller.frame.distance);
+    f.controller.prepare = () => assert.fail("visible cuts must retain their synchronous path");
+    f.controller.setPreviewShot("tree", 2);
+    assert.equal(f.controller.apply({ width: 844, height: 390, tourPhase: 0 }), true);
+  } finally {
+    f.dispose();
+    reference.dispose();
+  }
+});
+
+test("unavailable cooperative preparation retains the synchronous camera fallback", () => {
+  const f = terrainSetup(390, 844);
+  try {
+    f.controller.setPreviewShot("tree", 1);
+    f.controller.prepare = () => "unavailable";
+    assert.equal(
+      f.controller.apply({
+        width: 390,
+        height: 844,
+        tourPhase: 0,
+        prepare: () => assert.fail("an unavailable helper cannot hold opening"),
+      }),
+      true,
+    );
+  } finally {
+    f.dispose();
+  }
 });
 
 test("prepare reports unavailable subjects, invalid angles and disposed controllers", () => {
@@ -1489,4 +1585,84 @@ test("widescreen bars cut desktops to 2.39:1, never phones, portrait, narrow or 
     [1024, 768],
   ])
     assert.ok(height > 500 && letterboxShare(width, height) > 0);
+});
+
+test("cooperative preparation preserves all sixty original delivered-tier camera and measurement signatures", () => {
+  const baseline = JSON.parse(
+    readFileSync(new URL("./support/camera-preparation-baseline.json", import.meta.url), "utf8"),
+  );
+  assert.equal(baseline.source, "6f592625e1d74aa10b37db48dcfb27524260e542");
+  assert.deepEqual(
+    cameraPreparationSignatures(
+      {
+        createCinematicCamera,
+        cinematicSafeArea,
+        measureShot,
+        measureShotSteps,
+      },
+      createCameraPreparation,
+    ),
+    baseline.signatures,
+  );
+});
+
+test("measurement and fit generators expose many bounded steps without changing their synchronous result", () => {
+  const root = new Mesh(new BoxGeometry(4, 20, 4, 32, 32, 32), new MeshBasicMaterial()),
+    shot = DIRECTED_SHOTS.tree[0],
+    measured = measureShot(root, shot),
+    steps = measureShotSteps(root, shot);
+  let count = 0,
+    result;
+  for (;;) {
+    const next = steps.next();
+    if (next.done) {
+      result = next.value;
+      break;
+    }
+    count++;
+  }
+  assert.ok(count > 64, `${count} triangle batches`);
+  assert.deepEqual(result, measured);
+  const area = cinematicSafeArea(1440, 900),
+    fit = fitShot(measured, shot, area, 1440, 900),
+    fitting = fitShotSteps(measured, shot, area, 1440, 900);
+  count = 0;
+  for (;;) {
+    const next = fitting.next();
+    if (next.done) {
+      result = next.value;
+      break;
+    }
+    count++;
+  }
+  assert.ok(count > 64, `${count} projection/point batches`);
+  assert.deepEqual(result, fit);
+  root.geometry.dispose();
+  root.material.dispose();
+});
+
+test("a rejected lazy camera helper settles as unavailable without retrying forever", async () => {
+  const source = readFileSync(new URL("../src/scene/cinematic.js", import.meta.url), "utf8"),
+    begin = source.indexOf("    prepare(kind, nextAngle, width, height, factory"),
+    end = source.indexOf("    get shot()", begin);
+  let requests = 0;
+  const context = vm.createContext({
+    DIRECTED_SHOTS: { tree: [{}] },
+    cameraPreparation: undefined,
+    controller: null,
+    preparation: null,
+    loadPreparationTasks: () => {
+      requests++;
+      context.cameraPreparation = false;
+      return Promise.reject(new Error("blocked helper"));
+    },
+  });
+  context.controller = new vm.Script(
+    `({isAvailable:()=>true, ${source.slice(begin, end)}})`,
+  ).runInContext(context);
+  assert.equal(context.controller.prepare("tree", 0, 1440, 900), "pending");
+  await Promise.resolve();
+  assert.equal(context.controller.prepare("tree", 0, 1440, 900), "unavailable");
+  assert.equal(context.controller.prepare("tree", 0, 1440, 900), "unavailable");
+  assert.equal(requests, 1);
 });

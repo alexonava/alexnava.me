@@ -22,6 +22,7 @@ import { createSceneRendering } from "../src/scene/rendering.js";
 import { createShaderWarmup } from "../src/scene/runtime.js";
 import { compilePrograms } from "../src/scene/shader-programs.js";
 import { createHillSilhouette } from "../src/scene/hill-silhouette.js";
+import { createOpeningPreparation } from "../src/scene/opening-preparation.js";
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 const linkedPoll = () => new Promise((resolve) => setTimeout(resolve, 25));
@@ -1246,4 +1247,97 @@ test("a step between the tiers' shadow map sizes frees the drawn map for one of 
   assert.equal(sun.shadow.mapSize.width, 1024);
   assert.equal(sun.shadow.needsUpdate, true);
   assert.equal(rendering.tier, "balanced");
+});
+
+test("an unfinished hidden camera cannot claim subjects or start opening coverage", async () => {
+  const entry = await source("scene/index.js");
+  const begin = entry.indexOf(
+      "        if (\n          !canvasShown &&\n          cinematicApplied",
+    ),
+    end = entry.indexOf("          const lanternSettled", begin);
+  assert.ok(begin > 0 && end > begin);
+  const calls = [],
+    context = vm.createContext({
+      canvasShown: false,
+      cinematicApplied: false,
+      cinematic: { current: "tree", frame: null },
+      opening: { view: "tree" },
+      sceneFailed: false,
+      settleOpening: (stage) => calls.push(stage),
+    });
+  const body = new vm.Script(entry.slice(begin, end) + "}");
+  body.runInContext(context);
+  context.cinematic.frame = {};
+  body.runInContext(context);
+  assert.deepEqual(calls, [], "a previous fit cannot make pending work ready");
+  context.cinematicApplied = true;
+  context.cinematic.frame = null;
+  body.runInContext(context);
+  assert.deepEqual(calls, []);
+  context.cinematic.frame = {};
+  body.runInContext(context);
+  assert.deepEqual(calls, ["subjects"]);
+});
+
+test("the real frame draw waits for complete opening preparation, and lost or disposed renderers stay safe", async () => {
+  const entry = await source("scene/index.js"),
+    renderingSource = await source("scene/rendering.js"),
+    begin = entry.indexOf("// Partial preparation can still carry linking terrain programs."),
+    end = entry.indexOf("visitorHold?.frameRendered();", begin);
+  assert.ok(begin > 0 && end > begin);
+  const update = renderingSource.match(
+    /update\(\{ render = true \} = \{\}\) \{([\s\S]*?)\n    \},/,
+  );
+  assert.ok(update, "exercise rendering's actual lost-context guard too");
+  const calls = [],
+    openingGate = createOpeningPreparation({ stages: ["terrain", "foreground", "shaders"] }),
+    context = vm.createContext({
+      canvasShown: false,
+      openingGate,
+      shaderWarmup: { pending: 0 },
+      cinematic: { ready: true },
+      groundTextures: { ensureProcedural: () => calls.push("texture") },
+      firstFrameDrawn: false,
+      frameStart: 0,
+      measureScene: () => calls.push("first-frame"),
+      disposed: false,
+      lost: false,
+      renderer: null,
+      composer: { render: () => calls.push("draw") },
+    });
+  context.renderer = { getContext: () => ({ isContextLost: () => context.lost }) };
+  context.rendering = {
+    update: vm.runInContext(`(function({render=true}={}){${update[1]}})`, context),
+  };
+  const frame = new vm.Script(entry.slice(begin, end));
+  frame.runInContext(context);
+  assert.deepEqual(calls, [], "partial preparation must never enter a driver draw");
+  assert.equal(context.firstFrameDrawn, false, "waiting cannot claim a drawn frame");
+  for (const stage of ["terrain", "foreground", "shaders"]) openingGate.settle(stage);
+  context.shaderWarmup.pending = 1;
+  frame.runInContext(context);
+  assert.deepEqual(calls, [], "complete assets still wait for pending warm-ups");
+  context.shaderWarmup.pending = 0;
+  frame.runInContext(context);
+  assert.deepEqual(calls, ["texture", "draw", "first-frame"]);
+  calls.length = 0;
+  context.lost = true;
+  frame.runInContext(context);
+  assert.deepEqual(calls, ["texture"], "physical context loss prevents Three's uniform lookup");
+  calls.length = 0;
+  context.lost = false;
+  openingGate.reopen("foreground", "shaders");
+  frame.runInContext(context);
+  assert.deepEqual(calls, [], "a refit cannot draw its incomplete generation");
+  openingGate.dispose();
+  frame.runInContext(context);
+  assert.deepEqual(calls, [], "cancelled preparation cannot draw late content");
+  context.canvasShown = true;
+  context.shaderWarmup.pending = 1;
+  frame.runInContext(context);
+  assert.deepEqual(calls, ["draw"], "revealed frames retain their existing draw path");
+  calls.length = 0;
+  context.disposed = true;
+  frame.runInContext(context);
+  assert.deepEqual(calls, [], "a retired renderer ignores a stale queued frame");
 });

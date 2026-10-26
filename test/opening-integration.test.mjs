@@ -36,11 +36,17 @@ const begin = between('warmShaders("scene");', "frameScheduler.start();").replac
   'warmShaders("scene");',
   "",
 );
-const readinessStart = source.search(/if\s*\(\s*!canvasShown\s*&&\s*cinematic\.current/);
+const readinessStart = source.lastIndexOf(
+  "        if (",
+  source.indexOf('settleOpening("subjects");'),
+);
 assert.ok(readinessStart >= 0);
 const readiness = source.slice(
   readinessStart,
-  source.indexOf("// Drawing while a warm-up", readinessStart),
+  source.indexOf(
+    "// Partial preparation can still carry linking terrain programs.",
+    readinessStart,
+  ),
 );
 const reveal = between("const sceneShown =", "// Until the reveal, the transparent canvas");
 const tour = between("const tourPhase =", "const tourTransition =");
@@ -145,6 +151,7 @@ function harness({
     },
     frameScheduler: { resume() {} },
     cinematic,
+    cinematicApplied: true,
     cameraTour,
     camera: {},
     viewport: { width: 1920, height: 1080 },
@@ -199,7 +206,7 @@ function harness({
     elapsedTime = setupSeconds;
     ${begin}
     return {
-      step() { ${tour} ${apply} ${readiness} ${reveal} },
+      step() { const {width,height}=viewport; ${tour} const cinematicApplied = ${apply} ${readiness} ${reveal} },
       lose() { ${callback("onContextLost")} },
       restore() { ${callback("onContextRestored")} },
       observe() { observeOpening(); },
@@ -280,6 +287,33 @@ test("unchanged download progress cannot forgive idle synchronous setup after bu
     h.env.elapsedTime = 15;
     h.owner.observe();
     assert.deepEqual(h.failures, [{ stage: "opening", reason: "stalled" }]);
+  } finally {
+    h.owner.dispose();
+  }
+});
+
+test("a pending hidden fit invalidates the old opening and waits before coverage starts", () => {
+  const h = harness(),
+    apply = h.env.cinematic.apply;
+  let pending = true;
+  h.env.cinematic.apply = function (pose) {
+    apply.call(this, pose);
+    if (pending) {
+      pose.prepare();
+      return false;
+    }
+    return true;
+  };
+  try {
+    h.owner.step();
+    assert.equal(h.cohorts.length, 0);
+    assert.equal(h.warms.length, 0);
+    assert.equal(h.owner.state.canvasShown, false);
+    assert.ok(h.invalidations > 0, "a held visitor still receives another preparation frame");
+    pending = false;
+    h.owner.step();
+    assert.equal(h.cohorts.length, 1);
+    assert.equal(h.cohorts[0].frame.camera, h.env.camera);
   } finally {
     h.owner.dispose();
   }

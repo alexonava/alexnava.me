@@ -407,7 +407,9 @@ export function* foregroundChunkSteps(
   for (let kind = 0; kind < FOREGROUND.kinds.length; kind++) {
     const count = FOREGROUND.counts[FOREGROUND.kinds[kind]];
     for (let i = 0; i < count; i++) {
-      if (i % 8 === 0) yield;
+      // A footprint can touch dense water or root geometry. Leave a task
+      // boundary before each seed, rather than grouping eight costly pieces.
+      yield;
       const seed = kind * 10000 + i,
         random = randomFor(tile.x, tile.z, seed + FOREGROUND.seed);
       const x = (tile.x + random()) * 8,
@@ -439,20 +441,25 @@ export function* foregroundChunkSteps(
           x1 = Math.max(...xs) + sway,
           z0 = Math.min(...zs) - sway,
           z1 = Math.max(...zs) + sway;
-        clear =
-          placement.triangleAllowed([
-            [x0, z0],
-            [x1, z0],
-            [x0, z1],
-          ]) &&
-          placement.triangleAllowed([
+        clear = placement.triangleAllowed([
+          [x0, z0],
+          [x1, z0],
+          [x0, z1],
+        ]);
+        yield;
+        if (clear)
+          clear = placement.triangleAllowed([
             [x1, z0],
             [x1, z1],
             [x0, z1],
           ]);
+        yield;
       }
       for (let k = 0; k < piece.index.length; k += 3) {
         if (!clear) break;
+        // The same ordered tests, at most four complete triangle footprints
+        // per generator step, so the outer slice can enforce its short budget.
+        if (k % 12 === 0) yield;
         const triangle = piece.index
           .slice(k, k + 3)
           .map((n) => [piece.positions[n * 3], piece.positions[n * 3 + 2]]);
@@ -556,6 +563,8 @@ export function* foregroundCoverageSteps({
     ESTATE,
     watchMeasure,
     measureShot,
+    measureShotSteps,
+    createCameraPreparation,
   } = helpers;
   shots ??= DIRECTED_SHOTS.tree;
   const tiles = new Map(),
@@ -588,6 +597,8 @@ export function* foregroundCoverageSteps({
     measure(subject, shot) {
       return subject === watch && stored ? stored(subject, shot) : measureShot(subject, shot);
     },
+    measureSteps: (subject, shot) =>
+      subject === watch && stored ? null : measureShotSteps?.(subject, shot),
     getGroundY(x, z) {
       root.worldToLocal(local.set(x, 0, z));
       const y = surface(local.x, local.z);
@@ -613,7 +624,11 @@ export function* foregroundCoverageSteps({
         const view = `${width}:${height}:${shot.name}`;
         views.set(view, 0);
         preview.setPreviewShot(kind, angle);
-        while (preview.prepare(kind, angle, width, height) === "pending") yield;
+        while (
+          preview.prepare(kind, angle, width, height, createCameraPreparation ?? false) ===
+          "pending"
+        )
+          yield;
         for (const phase of onlyShot
           ? Array.from({ length: 25 }, (_, i) => i / 24)
           : [0, 0.25, 0.5, 0.75, 1]) {
@@ -632,6 +647,7 @@ export function* foregroundCoverageSteps({
           for (let tx = Math.floor((cx - 56) / 8); tx <= Math.floor((cx + 56) / 8); tx++) {
             yield;
             for (let tz = Math.floor((cz - 56) / 8); tz <= Math.floor((cz + 56) / 8); tz++) {
+              yield;
               let nearest = Infinity,
                 visible = false,
                 low = Infinity,
@@ -740,42 +756,11 @@ export function* foregroundCoverageSteps({
   }
 }
 
+const loadPreparation = () => import("./preparation-tasks.js");
 function slices(steps, cancelled = () => false, priority = () => false, progress = null) {
-  const idle = (task) =>
-    typeof requestIdleCallback === "function"
-      ? requestIdleCallback(task, { timeout: 100 })
-      : setTimeout(task, 0);
-  return new Promise((resolve, reject) => {
-    const run = (deadline) => {
-      try {
-        if (cancelled()) {
-          steps.return?.();
-          return resolve(null);
-        }
-        const fast = priority(),
-          end =
-            performance.now() +
-            (fast
-              ? 8
-              : deadline?.didTimeout
-                ? 2
-                : Math.max(1, Math.min(5, deadline?.timeRemaining?.() ?? 5)));
-        while (performance.now() < end) {
-          const next = steps.next();
-          if (fast) progress?.();
-          if (next.done) return resolve(next.value);
-        }
-        if (fast) setTimeout(run, 0);
-        else idle(run);
-      } catch (error) {
-        try {
-          steps.return?.();
-        } catch {}
-        reject(error);
-      }
-    };
-    idle(run);
-  });
+  return loadPreparation().then(({ runPreparationSteps }) =>
+    runPreparationSteps(steps, { priority, cancelled, progress, idleMs: 5, minimumMs: 1 }),
+  );
 }
 
 function foregroundMaterial({ grassMaterial }, windTime, shared = {}) {
@@ -830,6 +815,8 @@ function openingKey(frame, root) {
 }
 
 export async function prepareForegroundDetail(options) {
+  const { createCameraPreparation } = await loadPreparation();
+  options = { ...options, helpers: { ...options.helpers, createCameraPreparation } };
   const { root, surface, rendering = null, cancelled = () => false } = options;
   const openingFrame = options.openingFrame,
     initialOpeningSignature = openingFrame ? openingKey(openingFrame, root) : null;

@@ -20,7 +20,7 @@ import {
 } from "three";
 import { createTreeArchitecture } from "../src/scene/architecture.js";
 import { createCinematicCamera, cinematicSafeArea } from "../src/scene/cinematic.js";
-import { DIRECTED_SHOTS, measureShot } from "../src/scene/directed-shots.js";
+import { DIRECTED_SHOTS, measureShot, measureShotSteps } from "../src/scene/directed-shots.js";
 import {
   createEstateGroundDetail,
   grassMaterial,
@@ -63,6 +63,7 @@ const helpers = {
   cinematicSafeArea,
   DIRECTED_SHOTS,
   measureShot,
+  measureShotSteps,
   watchMeasure,
   grassMaterial,
   GROWTH,
@@ -166,6 +167,97 @@ async function fieldFor(tiles, extra = {}) {
   root.add(field.group);
   return field;
 }
+
+test("each foreground step bounds seeded and triangle work while preserving both tiers' complete buffer hashes", () => {
+  let pointChecks = 0,
+    triangleChecks = 0,
+    checked = 0;
+  const steps = foregroundChunkSteps(
+    { x: 2, z: 1 },
+    {
+      surface: flat,
+      helpers: openHelpers,
+      placement: {
+        pointAllowed() {
+          pointChecks++;
+          return true;
+        },
+        triangleAllowed() {
+          triangleChecks++;
+          return true;
+        },
+      },
+    },
+  );
+  let geometry;
+  try {
+    for (;;) {
+      const next = steps.next();
+      assert.ok(pointChecks <= 1, `${pointChecks} seed checks before yielding`);
+      assert.ok(triangleChecks <= 4, `${triangleChecks} triangle checks before yielding`);
+      checked += triangleChecks;
+      pointChecks = triangleChecks = 0;
+      if (next.done) {
+        geometry = next.value;
+        break;
+      }
+    }
+    assert.ok(checked > 10000, "the test exercises every emitted face and grass wind envelope");
+    // Captured from the selected 3683f19 buffers before adding finer yields.
+    // Each tier includes every attribute byte and its complete drawn index range.
+    const baseline = {
+      high: "acc475849f559231c4fc484afc425757850ced5efeae45fe85f179757f6b36d6",
+      balanced: "8e238e5c5a858090ed176ae940823fbbdbd136046623adf7cbb8daab1af0e9ec",
+    };
+    for (const tier of ["high", "balanced"]) {
+      const hash = createHash("sha256");
+      for (const attribute of Object.values(geometry.attributes))
+        hash.update(
+          Buffer.from(
+            attribute.array.buffer,
+            attribute.array.byteOffset,
+            attribute.array.byteLength,
+          ),
+        );
+      const index =
+        tier === "balanced"
+          ? geometry.index.array.subarray(0, geometry.userData.foreground.balanced)
+          : geometry.index.array;
+      hash.update(Buffer.from(index.buffer, index.byteOffset, index.byteLength));
+      assert.equal(
+        hash.digest("hex"),
+        baseline[tier],
+        `${tier}: all authored buffer bytes stay fixed`,
+      );
+    }
+  } finally {
+    steps.return();
+    geometry?.dispose();
+  }
+});
+
+test("cancelling between a foreground piece's footprint checks cannot resume or publish its partial geometry", () => {
+  let triangles = 0;
+  const steps = foregroundChunkSteps(
+    { x: 2, z: 1 },
+    {
+      surface: flat,
+      helpers: openHelpers,
+      placement: {
+        pointAllowed: () => true,
+        triangleAllowed: () => {
+          triangles++;
+          return true;
+        },
+      },
+    },
+  );
+  while (triangles < 4) assert.equal(steps.next().done, false);
+  const count = triangles;
+  assert.deepEqual(steps.return(), { value: undefined, done: true });
+  assert.deepEqual(steps.next(), { value: undefined, done: true });
+  assert.equal(triangles, count);
+});
 
 test("foreground pieces are deterministic, smooth, finite and nondegenerate; balanced keeps whole seeded pieces", () => {
   const a = build(),
@@ -696,15 +788,18 @@ test("idle work pauses at low and disposal cancels queued generation without inv
   const frame = { camera: lens(), still: true, profile: { tier: "high" } };
   try {
     field.update(frame);
+    await new Promise((resolve) => setImmediate(resolve));
     assert.equal(callbacks.length, 1);
     field.update({ ...frame, profile: { tier: "low" } });
     while (callbacks.length) {
       callbacks.shift()({ didTimeout: false, timeRemaining: () => 20 });
       await Promise.resolve();
     }
+    await new Promise((resolve) => setImmediate(resolve));
     assert.equal(field.state.preparedChunks, 0);
     assert.equal(field.group.children.length, 0);
     field.update(frame);
+    await new Promise((resolve) => setImmediate(resolve));
     assert.equal(callbacks.length, 1);
     field.dispose();
     while (callbacks.length) {
