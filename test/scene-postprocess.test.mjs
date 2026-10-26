@@ -521,8 +521,8 @@ test("in film the grade's cel step and ink are the sky's alone; everything else 
   assert.equal(g.uTone, FILM_TONE_UNIFORM, "the shared tone uniform");
   assert.doesNotMatch(shader, /uShadowToe/);
   assert.doesNotMatch(shader, /uSubjectCel|float relief|skySide/);
-  // The star's mask, STAR_LAYER from each of its four parts, stays inside the
-  // exemption's plateau.
+  // The star's mask, STAR_LAYER from each of its parts (the disc and the glow; four
+  // would still fit), stays inside the exemption's plateau.
   assert.ok(4 * STAR_LAYER <= 0.22);
   // The sky's soft highlight shoulder from 0.75 rolls off toward white before the clamp.
   assert.match(
