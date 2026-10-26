@@ -1578,7 +1578,13 @@ function idleTasks() {
     get pending() {
       return queue.length;
     },
+    async ready() {
+      // The scheduler is its own lazy chunk; flush its import before inspecting tasks.
+      await import("../src/scene/preparation-tasks.js");
+      await Promise.resolve();
+    },
     async step() {
+      await this.ready();
       const task = queue.shift();
       if (!task) return;
       const start = performance.now();
@@ -1587,6 +1593,7 @@ function idleTasks() {
       await Promise.resolve();
     },
     async flush() {
+      await this.ready();
       while (queue.length) await this.step();
       await Promise.resolve();
     },
@@ -1903,6 +1910,7 @@ test("disposing terrain cancels partial root detail or frees completed detail wa
     };
     try {
       settleRoots(r.terrain, r.ground, r.rendering, r.base, () => invalidations++, tour);
+      await idle.ready();
       if (phase === "waiting") await idle.flush();
       else while (!tracked.length && idle.pending) await idle.step();
       assert.equal(tracked.length, 1, "the detached litter geometry exists");

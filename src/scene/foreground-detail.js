@@ -741,41 +741,15 @@ export function* foregroundCoverageSteps({
 }
 
 function slices(steps, cancelled = () => false, priority = () => false, progress = null) {
-  const idle = (task) =>
-    typeof requestIdleCallback === "function"
-      ? requestIdleCallback(task, { timeout: 100 })
-      : setTimeout(task, 0);
-  return new Promise((resolve, reject) => {
-    const run = (deadline) => {
-      try {
-        if (cancelled()) {
-          steps.return?.();
-          return resolve(null);
-        }
-        const fast = priority(),
-          end =
-            performance.now() +
-            (fast
-              ? 8
-              : deadline?.didTimeout
-                ? 2
-                : Math.max(1, Math.min(5, deadline?.timeRemaining?.() ?? 5)));
-        while (performance.now() < end) {
-          const next = steps.next();
-          if (fast) progress?.();
-          if (next.done) return resolve(next.value);
-        }
-        if (fast) setTimeout(run, 0);
-        else idle(run);
-      } catch (error) {
-        try {
-          steps.return?.();
-        } catch {}
-        reject(error);
-      }
-    };
-    idle(run);
-  });
+  return import("./preparation-tasks.js").then(({ runPreparationSteps }) =>
+    runPreparationSteps(steps, {
+      priority,
+      cancelled,
+      progress,
+      idleMs: 5,
+      minimumMs: 1,
+    }),
+  );
 }
 
 function foregroundMaterial({ grassMaterial }, windTime, shared = {}) {

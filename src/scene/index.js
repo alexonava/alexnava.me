@@ -1452,8 +1452,9 @@ const ORBIT_SPEED = 0.06;
             });
           }
         }
-        // Drawing while a warm-up links would block on it; the hidden canvas waits.
-        if (canvasShown || !shaderWarmup.pending) {
+        // Partial preparation can still carry linking terrain programs. Only the
+        // complete opening draws hidden; later visible frames retain their path.
+        if (canvasShown || (openingGate.ready && !shaderWarmup.pending)) {
           // Slate may still be loading at the reveal; keep the first visible
           // procedural surface detailed without painting an unused fallback.
           if (!canvasShown && cinematic.ready) groundTextures.ensureProcedural();
