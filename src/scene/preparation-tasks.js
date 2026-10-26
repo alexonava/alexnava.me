@@ -250,7 +250,12 @@ export function queueTourShot(camera, subject, angle, frame, host = globalThis) 
 // References are captured by rendering while its transient warm-up flags are
 // active. No material/light graph is read or changed by the deferred uploads.
 export function uploadTextures(renderer, textures, valid, deadline, host = globalThis) {
-  if (textures.has(null)) return Promise.resolve(false);
+  const cancelled = () =>
+    textures.has(null) ||
+    !valid() ||
+    Date.now() >= deadline ||
+    renderer.getContext?.()?.isContextLost?.();
+  if (cancelled()) return Promise.resolve(false);
   if (!textures.size || typeof renderer.initTexture !== "function") return Promise.resolve(true);
   const retired = new Set(),
     listeners = new Map();
@@ -259,11 +264,6 @@ export function uploadTextures(renderer, textures, valid, deadline, host = globa
     listeners.set(texture, retire);
     texture.addEventListener?.("dispose", retire);
   }
-  const cancelled = () =>
-    textures.has(null) ||
-    !valid() ||
-    Date.now() >= deadline ||
-    renderer.getContext?.()?.isContextLost?.();
   return runPreparationSteps(
     (function* () {
       for (const texture of textures) {
@@ -287,9 +287,9 @@ export function uploadTextures(renderer, textures, valid, deadline, host = globa
 }
 
 export async function finishUploads(renderer, textures, valid, deadline, programs) {
-  const [uploaded, linked] = await Promise.all([
-    uploadTextures(renderer, textures, valid, deadline),
-    programs,
-  ]);
+  // A texture upload must not contend with the driver's parallel compiler.
+  // Keep the original absolute deadline while waiting for captured programs.
+  const linked = await programs;
+  const uploaded = await uploadTextures(renderer, textures, valid, deadline);
   return uploaded && !linked.includes(false);
 }

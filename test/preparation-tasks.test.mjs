@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createCameraPreparation,
+  finishUploads,
   queueTourShot,
   runPreparationSteps,
   uploadTextures,
@@ -421,4 +422,61 @@ for (const reason of ["generation", "context", "deadline", "texture"])
     assert.equal(texture.listeners.size, 0);
     assert.equal(environment.listeners.size, 0);
     assert.equal(environment.queue.size, 0);
+  });
+
+test("captured programs finish before any deferred texture upload, including failed-link fallback", async () => {
+  for (const linked of [true, false]) {
+    const texture = capturedTexture("after-programs"),
+      uploaded = [];
+    let complete;
+    const programs = new Promise((resolve) => {
+        complete = resolve;
+      }),
+      ready = finishUploads(
+        { initTexture: (value) => uploaded.push(value.name) },
+        new Set([texture]),
+        () => true,
+        Date.now() + 1000,
+        programs,
+      );
+    await Promise.resolve();
+    assert.deepEqual(uploaded, [], "linking cannot contend with an upload task");
+    complete([linked]);
+    assert.equal(await ready, linked);
+    assert.deepEqual(
+      uploaded,
+      ["after-programs"],
+      "a failed compile still prepares serial fallback textures",
+    );
+    assert.equal(texture.listeners.size, 0);
+  }
+});
+
+for (const reason of ["generation", "context", "deadline"])
+  test(`a ${reason} change while awaiting captured programs prevents late uploads`, async () => {
+    const texture = capturedTexture("waiting"),
+      uploaded = [];
+    let complete,
+      valid = true,
+      lost = false;
+    const programs = new Promise((resolve) => {
+        complete = resolve;
+      }),
+      ready = finishUploads(
+        {
+          initTexture: (value) => uploaded.push(value),
+          getContext: () => ({ isContextLost: () => lost }),
+        },
+        new Set([texture]),
+        () => valid,
+        reason === "deadline" ? Date.now() + 5 : Date.now() + 1000,
+        programs,
+      );
+    if (reason === "generation") valid = false;
+    if (reason === "context") lost = true;
+    if (reason === "deadline") await new Promise((resolve) => setTimeout(resolve, 10));
+    complete([true]);
+    assert.equal(await ready, false);
+    assert.deepEqual(uploaded, []);
+    assert.equal(texture.listeners.size, 0);
   });
