@@ -38,12 +38,12 @@ Neither page has an inline style: the Content Security Policy forbids them, and 
 
 Colours that recur outside the tokens:
 
-| Value                                       | Use                                                                                                                                                                                                                                                            |
-| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `rgba(247, 241, 234, …)`                    | `--text`, the name's colour, translucent: the loading line's track (0.08) and its fill's glow (0.3); a link's underline in the footer (0.35, 0.6 on hover), the hairline before the links (0.28), and the hover underlines of Contact and the 404's Home (0.5) |
-| `rgba(223, 184, 130, …)`                    | The star's amber: the selection wash                                                                                                                                                                                                                           |
-| `rgb(190, 180, 122)` to `rgb(173, 127, 70)` | The loading line's star's disc: the scene star's pale gold centre to its warm limb at the reveal                                                                                                                                                               |
-| `rgba(7, 10, 18, …)`                        | The scrims: the hero's, the tablet intro's, the footer's two and the bottom bar's                                                                                                                                                                              |
+| Value                    | Use                                                                                                                                                                                                                                                            |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `rgba(247, 241, 234, …)` | `--text`, the name's colour, translucent: the loading line's track (0.08) and its fill's glow (0.3); a link's underline in the footer (0.35, 0.6 on hover), the hairline before the links (0.28), and the hover underlines of Contact and the 404's Home (0.5) |
+| `rgba(223, 184, 130, …)` | The star's amber: the selection wash                                                                                                                                                                                                                           |
+| `rgb(252, 251, 244)`     | The loading line's star's disc: the scene star clipped warm white at the reveal                                                                                                                                                                                |
+| `rgba(7, 10, 18, …)`     | The scrims: the hero's, the tablet intro's, the footer's two and the bottom bar's                                                                                                                                                                              |
 
 ## Breakpoints
 
@@ -131,7 +131,7 @@ The first paint on every path and the last on the static path ([Glossary](GLOSSA
 
 - **Halves.** Each `.scene-doors__leaf` is a whole-window box (`inset: 0`). Its `.scene-doors__paper` is clipped to its side of the tear by a `polygon()` of 81 points, `calc(50% ± Npx)` across and `%` down, so the tear keeps its px jag on any width; the two overlap by 0.6px so no hairline shows. Its `.scene-doors__rim` is the tear's lip, a band inside its own edge: the left's pale fibres (`rgba(214, 196, 164, 0.5)`, warming toward `rgba(255, 190, 116, 0.42)` with the square of the load's light, `--doors-light`, which the script writes), the right's in its shade (`rgba(0, 0, 0, 0.32)`).
 - **Paper.** Parchment `#a47744` under a lamp's pool at the top (`rgba(255, 232, 186, 0.62)`), the creases of quarter folds at 25%, 75% and half height, tide-lined stains from a seamless noise (`data:` URI, 1600px), a darkening toward the edges and an inset shadow that chars the window's edges (never the tear, since each half's box is the whole window), matched to the drawn parchment; `::after` lays the scan's detail tile (`/images/paper/paper-detail.webp`, 768px, one sheet's fibres across the tear) over it and its light with `mix-blend-mode: overlay`, so the fibres show where light comes through.
-- **Light.** `.scene-doors__light` fills its half; its `.scene-doors__glow` is a 100px box at the star's centre, warm at its heart and gone by its edge, which the script translates and scales to seven star radii (at least 64px) as the star warms, with the loading line's star.
+- **Light.** `.scene-doors__light` fills its half; its `.scene-doors__glow` is a 100px box at the star's centre, the camera sun's warm white at its heart (`rgba(255, 236, 215, 0.9)`), warmed through the parchment as it spreads and gone by its edge, which the script translates and scales to seven star radii (at least 64px) as the star warms, with the loading line's star.
 - **Bar.** The loading line lies under the paper, so its bar shows on it, in ink: `::before` the faint track (`rgba(42, 25, 12, 0.18)`) and `::after` the fill (`#2a190c`), 2px along the top edge where the line's own bar is (below the status bar where the page runs under it), the fill scaled to the progress the script writes (`--doors-light`). They come in with the line's first word (`is-loading`, 320ms after 240ms) and fade over 240ms as the doors part, over the line's own bar.
 - **Input.** While held, a tap on the paper, a key (not a modifier alone or a shortcut) or keyboard focus parts the doors at once, so no control the visitor reaches for waits under the paper.
 - **Parting.** The left half turns −2.5° about its bottom-left corner and the right +2.5° about its bottom-right as each travels 58% of the width outward; each light turns and travels back about the same corner, so the glow stays put while the paper passes it.
@@ -154,8 +154,8 @@ The first paint on every path and the last on the static path ([Glossary](GLOSSA
 
 - **Box.** `.scene-star` is absolutely placed at the shell's top-left with no size, at `z-index: 0`: above the shell's background and its star field, and under the canvas (1). It takes no pointer events. scene-loader.js translates it to the star's centre.
 - **Parts.** Two spans, in order: `.scene-star__glow` and `.scene-star__disc`. Each is a 100px box centred on the star's centre (`top` and `left` −50px), at opacity 0 until the script writes it, and sized by its transform.
-- **Disc.** A radial gradient of the painted star's colours at the reveal (solar-body.js `SOLAR_LOOK`): a pale cream centre, `rgb(180, 177, 171)`, through `rgb(175, 166, 131)` to a gold limb, `rgb(172, 149, 90)`.
-- **Glow.** Reaches two radii (its box), carrying on from the limb's gold and fading out by about 1.8.
+- **Disc.** The scene's star at the reveal (solar-body.js `SOLAR_LOOK`) as the canvas shows it beneath the same vignette: clipped white-hot, a little warm, `rgb(252, 251, 244)`, flat to its limb.
+- **Glow.** Reaches two and a half radii (its box, the limb at 40%): the clipped light runs on past the limb at the disc's own colour, then falls away through gold (`rgba(255, 223, 185, 0.84)` at 1.25 radii, `rgba(255, 184, 132, 0.35)` at 1.5) and is gone by about 2.2. The lens's ghosts are the canvas's alone; they come in with its fade.
 
 The star warms from the progress at which its place first became known (`since`) to the reveal: its warmth w is (progress − since) / (1 − since), and 1 at the reveal. For a star centred at (x, y) with radius r in a canvas `width` × `height`, all in CSS px, scene-loader.js writes:
 
@@ -163,7 +163,7 @@ The star warms from the progress at which its place first became known (`since`)
 | ---- | --------------------------------- | ---------------------------- |
 | Star | `translate(x, y)`                 |                              |
 | Disc | `scale(2r / 100 × (0.4 + 0.6√w))` | √w: an unseen ember at first |
-| Glow | `scale(4r / 100 × (0.5 + 0.5w))`  | w                            |
+| Glow | `scale(5r / 100 × (0.5 + 0.5w))`  | w                            |
 
 - **Reveal.** At the reveal w is 1: the star is the scene's own as the opening shot shows it, in place and size, and the canvas's 480ms fade-in covers it, a crossfade with nothing to time. It hides with the line 600ms after the run ends; a line retired below 100% hides it at once.
 - **Writes.** Only the parts' `transform` and `opacity`, at most once a frame, with the value and the bar's fill. The star has no transition, animation, keyframes or pseudo-element of its own.

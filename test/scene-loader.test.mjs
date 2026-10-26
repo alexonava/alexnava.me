@@ -146,7 +146,7 @@ function createHarness({
     hidden: true,
     children: [label, track],
   });
-  // #scene-star: the painted star's glow and disc, as index.html has them.
+  // #scene-star: the star's glow and disc, as index.html has them.
   const parts = ["glow", "disc"].map((part, i) =>
     element(`${part}${i}`, { classes: [`scene-star__${part}`] }),
   );
@@ -701,13 +701,13 @@ test("the scene's report places the star, which warms from that progress to the 
   const warm = (h.state().progress - 0.1) / 0.9;
   close(Number(disc.style.opacity), Math.round(Math.sqrt(warm) * 1000) / 1000, "the disc's light");
   close(Number(glow.style.opacity), Math.round(warm * 1000) / 1000, "the glow's light");
-  // At the reveal: the scene's own star and two radii of glow.
+  // At the reveal: the scene's own star and two and a half radii of glow.
   h.emit("babel:shaders:watch");
   h.host.classList.add("is-ready");
   await settle();
   close(scaleOf(disc.style.transform), 0.4, "the disc at full size");
   close(Number(disc.style.opacity), 1, "the disc's full light");
-  close(scaleOf(glow.style.transform), 0.8, "the glow");
+  close(scaleOf(glow.style.transform), 1, "the glow");
   close(Number(glow.style.opacity), 1, "the glow's full light");
   // A revealed star stays under the canvas's fade-in until the line goes.
   assert.equal(h.star.hidden, false);
@@ -715,17 +715,21 @@ test("the scene's report places the star, which warms from that progress to the 
   assert.equal(h.star.hidden, true);
 });
 
-test("the star is the scene's painted one: its disc and glow, and no lens streak, haze or ghosts", async () => {
+test("the star is the scene's own: its clipped disc and its glow; the lens's ghosts come with the canvas", async () => {
   const styles = await readFile(new URL("../styles.css", import.meta.url), "utf8");
-  // The painted star (solar-body.js SOLAR_LOOK) has no lens flare (postprocess.js LENS_FX).
-  assert.equal("flare" in LENS_FX, false);
-  assert.doesNotMatch(styles, /scene-star__(?:streak|haze|ghost)/);
-  // A pale cream centre warming to a gold limb, and a glow that carries on from it.
-  assert.match(cssRule(styles, ".scene-star > .scene-star__disc"), /rgb\(180, 177, 171\) 0%/);
+  // The canvas brings the lens's flare (postprocess.js LENS_FX.flare) in over it as it fades
+  // in; the loading line draws no lens of its own.
+  assert.ok(LENS_FX.flare.on);
+  assert.doesNotMatch(styles, /scene-star__(?:streak|haze|ghost|burst|flare)/);
+  // A clipped, white-hot disc a little warm and flat to its limb, and a glow that runs on from
+  // it at its own light past the limb (its box's 40%), then falls away through gold to nothing.
   assert.match(
-    cssRule(styles, ".scene-star > .scene-star__glow"),
-    /rgba\(200, 150, 90, 0\.85\) 50%/,
+    cssRule(styles, ".scene-star > .scene-star__disc"),
+    /background: rgb\(252, 251, 244\);/,
   );
+  const glow = cssRule(styles, ".scene-star > .scene-star__glow");
+  assert.match(glow, /rgba\(255, 254, 247, 0\.99\) 40%/);
+  assert.match(glow, /rgba\(255, 140, 80, 0\) 100%/);
   // With both parts in place, the reported star shows.
   const h = createHarness();
   h.sceneLoader.begin({ tier: "high" });

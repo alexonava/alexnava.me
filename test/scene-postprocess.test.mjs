@@ -12,6 +12,7 @@ import {
 } from "three";
 import { DEPTH_LAYER, STAR_LAYER } from "../src/scene/depth-layers.js";
 import { FILM_TONE, FILM_TONE_UNIFORM, filmExposure } from "../src/scene/film-light.js";
+import { SOLAR_LOOK } from "../src/scene/solar-body.js";
 import {
   createPostprocessPipeline,
   DISSOLVE_BRUSH,
@@ -520,8 +521,8 @@ test("in film the grade's cel step and ink are the sky's alone; everything else 
   assert.equal(g.uTone, FILM_TONE_UNIFORM, "the shared tone uniform");
   assert.doesNotMatch(shader, /uShadowToe/);
   assert.doesNotMatch(shader, /uSubjectCel|float relief|skySide/);
-  // The star's mask, STAR_LAYER from each of its four parts, stays inside the
-  // exemption's plateau.
+  // The star's mask, STAR_LAYER from each of its parts (the disc and the glow; four
+  // would still fit), stays inside the exemption's plateau.
   assert.ok(4 * STAR_LAYER <= 0.22);
   // The sky's soft highlight shoulder from 0.75 rolls off toward white before the clamp.
   assert.match(
@@ -1245,7 +1246,7 @@ test("the final pass decodes each frame's layer from a 5-tap cross and mixes by 
   pipeline.dispose();
 });
 
-test("the lens's heat and fringes live in the final pass, in film, off the text and the kept banks", () => {
+test("the lens's heat, fringes and flare live in the final pass, in film, off the text; the heat and fringes off the kept banks", () => {
   const { capture, frame, pipeline } = createRecordedPipeline({
     tier: "high",
     postprocessGrading: true,
@@ -1254,10 +1255,9 @@ test("the lens's heat and fringes live in the final pass, in film, off the text 
   // No new pass: the scene, bloom, grading and the final pass.
   assert.equal(pipeline.composer.passes.length, 4);
   assert.ok(Object.isFrozen(LENS_FX) && Object.isFrozen(LENS_FX.heat));
-  for (const part of ["heat", "aberration"]) assert.ok("on" in LENS_FX[part], part);
-  // The painted star (the owner's pick of 2026-10-20) has no lens flare and no heat of
-  // its own; the lantern's flame keeps its plume.
-  assert.equal("flare" in LENS_FX, false);
+  for (const part of ["heat", "aberration", "flare"]) assert.ok("on" in LENS_FX[part], part);
+  // The star has no heat of its own (a clipped disc shows none); the lantern's flame keeps
+  // its plume.
   assert.deepEqual(Object.keys(LENS_FX.heat).sort(), ["flame", "flameShots", "octaves", "on"]);
   // Outside film it is off; in film each part follows its switch, and the heat's
   // octaves follow the tier.
@@ -1266,7 +1266,7 @@ test("the lens's heat and fringes live in the final pass, in film, off the text 
   assert.deepEqual(final.uLens.value.toArray(), [
     LENS_FX.heat.on ? 1 : 0,
     LENS_FX.aberration.on ? 1 : 0,
-    0,
+    LENS_FX.flare.on ? 1 : 0,
     LENS_FX.heat.octaves.high,
   ]);
   pipeline.setQualityProfile({ tier: "balanced", postprocessGrading: true });
@@ -1318,16 +1318,62 @@ test("the lens's heat and fringes live in the final pass, in film, off the text 
     /if \(uLens\.x > 0\.0 && open > 0\.0\) q \+= lensHeat\(v, flame\) \* \(uLens\.x \* open\);/,
   );
   assert.match(shader, /vec2 s = lensFringe\(v, star\) \* \(uLens\.y \* open\);/);
-  // The heat is the flame's alone, and no flare or ghost is drawn.
-  assert.doesNotMatch(shader, /lensFlare|ghost|color \+= flare/);
+  // The heat is the flame's alone.
   const heat = shader.slice(shader.indexOf("vec2 lensHeat("), shader.indexOf("vec2 lensFringe("));
   assert.doesNotMatch(heat, /vec4 star|\bstar\.[xyzw]/);
+  // The flare keeps off the text but crosses the kept banks (the owner's call of 2026-10-25,
+  // "Ghosts on desktops too").
+  assert.match(shader, /color = 1\.0 - \(1\.0 - color\) \* exp\(-flare \* \(1\.0 - guard\)\);/);
+  const flareAt = shader.indexOf("vec3 lensFlare("),
+    flare = shader.slice(flareAt, shader.indexOf("\n}\n", flareAt));
+  assert.doesNotMatch(flare, /lensKeep|keep/);
   // The focus's taps never sit behind a per-pixel branch: no early return in lensView.
   const viewAt = shader.indexOf("vec4 lensView("),
     view = shader.slice(viewAt, shader.indexOf("\n}\n", viewAt));
   assert.equal((view.match(/return /g) || []).length, 1);
   // The text guard reaches LENS_FX.text of the smaller side.
   assert.ok(shader.includes(`lensBehind(slateText, vUv, ${LENS_FX.text[0]})`));
+  pipeline.dispose();
+});
+
+test("the star through the lens: the aureole past the star's own and soft ghosts, no rays, easing in with the star", () => {
+  const { flare } = LENS_FX;
+  const num = (v) => (Number.isInteger(v) ? v.toFixed(1) : String(v));
+  assert.ok(Object.isFrozen(flare) && Object.isFrozen(flare.ghosts));
+  // No rays or lines out of the star: "just a tight ball of brightness" (the owner's ask of
+  // 2026-10-25).
+  assert.equal("burst" in flare || "streak" in flare, false);
+  // A few soft ghosts, spread along the line through the frame's centre so they never bunch.
+  assert.ok(flare.ghosts.length >= 2 && flare.ghosts.length <= 5);
+  const along = flare.ghosts.map(([t]) => t).sort((a, b) => a - b);
+  along.slice(1).forEach((t, i) => assert.ok(t - along[i] >= 0.3, `ghosts at ${along[i]}, ${t}`));
+  for (const [, size, , , , strength] of flare.ghosts) assert.ok(size <= 0.1 && strength <= 0.15);
+  const { pipeline } = createRecordedPipeline({ tier: "high", postprocessGrading: true });
+  const shader = pipeline.passes.vignetteGrain.material.fragmentShader;
+  const at = shader.indexOf("vec3 lensFlare("),
+    body = shader.slice(at, shader.indexOf("\n}\n", at));
+  // Only while the star is in frame, easing in over the frame's edge, the bars' included.
+  assert.match(body, /float shown = star\.w \* smoothstep\(-star\.z, 2\.0 \* star\.z, inside\);/);
+  assert.match(body, /min\(star\.y - uBars, 1\.0 - uBars - star\.y\)/);
+  assert.match(body, /return c \* shown;/);
+  // The aureole carries on from the star's own (solar-body.js SOLAR_LOOK.near) after the
+  // grade, so the clouds' cel step never bands it.
+  assert.ok(
+    body.includes(
+      `vec3 c = solarAureole(h) * smoothstep(${num(SOLAR_LOOK.near[0])}, ${num(SOLAR_LOOK.near[1])}, r);`,
+    ),
+  );
+  assert.ok(shader.indexOf("vec3 solarAureole(") < at);
+  // Nothing in it runs by angle about the star: no spikes or streak.
+  assert.doesNotMatch(body, /atan\(|spike/);
+  // Each ghost stands on the line from the star through the frame's centre.
+  for (const [t] of flare.ghosts)
+    assert.ok(body.includes(`g = star.xy + (0.5 - star.xy) * ${num(t)};`), `ghost at ${t}`);
+  // Each frame's flare goes with its own star's turn in the dissolve.
+  assert.match(
+    shader,
+    /if \(uProgress < 1\.0\) flare = lensFlare\(prevUv, uStarPrev\) \* \(1\.0 - turnPrev\) \+ flare \* turnNow;/,
+  );
   pipeline.dispose();
 });
 

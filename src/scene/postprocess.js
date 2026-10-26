@@ -16,6 +16,7 @@ import {
   ZeroFactor,
 } from "three";
 import { FILM_TONE, FILM_TONE_GLSL, FILM_TONE_UNIFORM, filmExposure } from "./film-light.js";
+import { SOLAR_AUREOLE_GLSL, SOLAR_LOOK } from "./solar-body.js";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { FullScreenQuad } from "three/examples/jsm/postprocessing/Pass.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
@@ -266,7 +267,7 @@ export const LENS_FX = Object.freeze({
   // lantern's flame in the shots that look at it (`flameShots`; `plume` world
   // units tall, `width` wide at the flame). `amount` is the drift (world units),
   // `scale` the noise's frequency (per unit), `rise` its upward flow a second and
-  // `boil` its churn; `octaves` per tier. (The painted star has none.)
+  // `boil` its churn; `octaves` per tier. (The star has none: a clipped disc shows none.)
   heat: Object.freeze({
     on: 1,
     flame: Object.freeze({
@@ -286,14 +287,34 @@ export const LENS_FX = Object.freeze({
   // apart across the star's edge: a film lens (the owner's ask of
   // 2026-10-13, "more lens artifacts"), stronger about the star.
   aberration: Object.freeze({ on: 1, edge: 1.2, star: 1 }),
+  // The star through the lens (the owner's pick of 2026-10-25, "As a camera sees it", with the
+  // ghosts of "the lens flare that's in C", the brightest of the three tried, at twice their
+  // strength, "make the lens glare a bit stronger", and no rays: "just a tight ball of
+  // brightness"), only while the star is in frame: the aureole's far part, past where the star
+  // draws it (solar-body.js SOLAR_LOOK, from its `near` on), over the clouds' cel step; and
+  // ghosts along the line from the star through the frame's centre, shaped as the aperture (six
+  // blades turned `angle` radians) and a little brighter at the rim: [t along it (1 at the
+  // centre), radius in frame heights, r, g, b, strength]. Its light adds as light does to film,
+  // never past white.
+  flare: Object.freeze({
+    on: 1,
+    angle: 0.3,
+    ghosts: Object.freeze([
+      Object.freeze([0.4, 0.03, 1, 0.72, 0.42, 0.14]),
+      Object.freeze([0.8, 0.05, 0.5, 0.85, 1, 0.08]),
+      Object.freeze([1.45, 0.022, 0.7, 1, 0.7, 0.12]),
+      Object.freeze([2.2, 0.09, 0.85, 0.55, 1, 0.06]),
+    ]),
+  }),
   // None of it reaches the text: it eases out over `text[0]` of the screen's
   // smaller side about the name and intro, and `text[1]` about Contact.
   text: Object.freeze([0.1, 0.05]),
-  // Nor The watch's reference banks (STYLE.md, Sky) on desktop landscape frames: the
-  // frame's share [x0, y0, x1, y1] from its top-left corner, kept whole, with
-  // the lens easing in over `keepSoft` frame heights beyond it. Looking up toward the star
-  // from the east, The watch sees them across the lower middle of the frame, behind the name
-  // (0.09-0.76 of the width, from 0.37 of the height down, at 1440x800
+  // Nor do the heat and the fringes reach The watch's reference banks (STYLE.md, Sky) on
+  // desktop landscape frames: the frame's share [x0, y0, x1, y1] from its top-left corner, kept
+  // whole, with the lens easing in over `keepSoft` frame heights beyond it. The flare's light
+  // crosses them (the owner's call of 2026-10-25, "Ghosts on desktops too"). Looking up toward
+  // the star from the east, The watch sees them across the lower middle of the frame, behind
+  // the name (0.09-0.76 of the width, from 0.37 of the height down, at 1440x800
   // to 2560x1080); the star stands to their right.
   keep: Object.freeze({ "The watch": Object.freeze([0.08, 0.36, 0.78, 1]) }),
   keepSoft: 0.03,
@@ -304,7 +325,11 @@ export const LENS_FX = Object.freeze({
 
 const lensNumber = (value) => (Number.isInteger(value) ? value.toFixed(1) : String(value));
 const lensVec3 = (values) => `vec3(${values.map(lensNumber).join(", ")})`;
-const LENS_FLAME = LENS_FX.heat.flame;
+const LENS_FLAME = LENS_FX.heat.flame,
+  LENS_FLARE = LENS_FX.flare;
+// The aperture's turn: its blades' (the ghosts' shape).
+const lensTurn = (x, y) =>
+  `vec2(${lensNumber(Math.cos(LENS_FLARE.angle))} * ${x} + ${lensNumber(Math.sin(LENS_FLARE.angle))} * ${y}, ${lensNumber(Math.cos(LENS_FLARE.angle))} * ${y} - ${lensNumber(Math.sin(LENS_FLARE.angle))} * ${x})`;
 const LENS_GLSL = `
 uniform vec4 uStar;
 uniform vec4 uStarPrev;
@@ -397,7 +422,40 @@ vec4 lensView(sampler2D map, vec2 uv, vec2 v, float blur, float nearCap, vec3 gr
   }
   return texel;
 }
-`;
+${
+  LENS_FLARE.on
+    ? `${SOLAR_AUREOLE_GLSL}
+// The star through the lens at v (LENS_FX.flare), easing in over the frame's edge with it: the
+// aureole past the star's own and the ghosts.
+vec3 lensFlare(vec2 v, vec4 star) {
+  vec2 aspect = lensAspect();
+  float inside = min(min(star.x, 1.0 - star.x) * aspect.x, min(star.y - uBars, 1.0 - uBars - star.y));
+  float shown = star.w * smoothstep(-star.z, 2.0 * star.z, inside);
+  if (shown <= 0.0) return vec3(0.0);
+  float r = length((v - star.xy) * aspect) / star.z, h = max(r - 1.0, 0.0);
+  vec3 c = solarAureole(h) * smoothstep(${lensNumber(SOLAR_LOOK.near[0])}, ${lensNumber(SOLAR_LOOK.near[1])}, r);
+  // The ghosts: the aperture's shape, a little brighter at its rim.
+${LENS_FLARE.ghosts.length ? "  vec2 g, e;\n" : ""}${LENS_FLARE.ghosts
+        .map(
+          ([
+            t,
+            size,
+            red,
+            green,
+            blue,
+            strength,
+          ]) => `  g = star.xy + (0.5 - star.xy) * ${lensNumber(t)};
+  e = (v - g) * aspect / ${lensNumber(size)};
+  e = ${lensTurn("e.x", "e.y")};
+  e.x = max(abs(e.x), max(abs(0.5 * e.x + 0.866 * e.y), abs(0.5 * e.x - 0.866 * e.y)));
+  c += ${lensVec3([red, green, blue])} * (${lensNumber(strength)} * (1.0 - smoothstep(0.75, 1.0, e.x)) * (0.55 + 0.45 * smoothstep(0.35, 0.95, e.x)));`,
+        )
+        .join("\n")}
+  return c * shown;
+}
+`
+    : ""
+}`;
 
 const VIGNETTE_GRAIN_SHADER = {
   name: "BabelVignetteGrainShader",
@@ -439,7 +497,7 @@ const VIGNETTE_GRAIN_SHADER = {
     uFlamePrev: { value: new Vector4(0, 0, 0, 0) },
     uKeep: { value: new Vector4(2, 2, -1, -1) },
     uKeepPrev: { value: new Vector4(2, 2, -1, -1) },
-    // Heat and aberration on (1) or off, z unused, and the heat's octaves.
+    // Heat, aberration and flare on (1) or off, and the heat's octaves.
     uLens: { value: new Vector4(0, 0, 0, 1) },
     uLensTime: { value: 0 },
     // The text boxes the lens keeps off (index.js lends the ground's).
@@ -642,7 +700,17 @@ void main() {
     texel = mix(prevTexel, texel, w);
     protection = mix(uTextProtectionFrom, uTextProtection, w);
   }
-  vec3 color = texel.rgb;
+  vec3 color = texel.rgb;${
+    LENS_FLARE.on
+      ? `
+  // The star through the lens, going with each frame's own star's turn (starTurn), off the text.
+  if (uLayered > 0.5 && uLens.z > 0.0) {
+    vec3 flare = lensFlare(vUv, uStar);
+    if (uProgress < 1.0) flare = lensFlare(prevUv, uStarPrev) * (1.0 - turnPrev) + flare * turnNow;
+    color = 1.0 - (1.0 - color) * exp(-flare * (1.0 - guard));
+  }`
+      : ""
+  }
 
   if (uVignetteEnabled == 1) {
     float dist = distance(vUv, vec2(0.5));
@@ -961,7 +1029,7 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
     finalUniforms.uLens.value.set(
       film && LENS_FX.heat.on ? 1 : 0,
       film && LENS_FX.aberration.on ? 1 : 0,
-      0,
+      film && LENS_FX.flare.on ? 1 : 0,
       LENS_FX.heat.octaves[profile.tier] ?? LENS_FX.heat.octaves.high,
     );
   }
