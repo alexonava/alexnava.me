@@ -759,8 +759,8 @@ body.scene-walk-hidden > :not(.scene-shell) {
   }
 }
 
-/* The opening's paper doors (src/ui/scene-doors.js), the owner's pick of 2026-10-25: one
-   dark sheet torn down the middle, closed over the whole page at the first paint, whose
+/* The opening's paper doors (src/ui/scene-doors.js), the owner's picks of 2026-10-25: one
+   sheet of weathered parchment torn down the middle (a pirate's map), closed over the whole page at the first paint, whose
    halves are pulled apart at the scene's reveal, tilting outward about their bottom
    corners. The identity, Contact and the loading line wait under the paper and come into
    view as it parts, as the scene does ("all the text should be inside the loading screen,
@@ -796,8 +796,9 @@ body.scene-walk-hidden > :not(.scene-shell) {
 }
 
 /* The loading line's bar on the paper, which covers the line itself: the same 2px across
-   the top edge, its fill at the progress the script writes (--doors-light), shown while
-   the line loads and fading as the doors part over the line's own bar. */
+   the top edge, in ink on the parchment, its fill at the progress the script writes
+   (--doors-light), shown while the line loads and fading as the doors part over the
+   line's own bar. */
 .scene-doors::before,
 .scene-doors::after {
   position: absolute;
@@ -812,13 +813,12 @@ body.scene-walk-hidden > :not(.scene-shell) {
 }
 
 .scene-doors::before {
-  background: rgba(247, 241, 234, 0.08);
+  background: rgba(42, 25, 12, 0.18);
   transition: opacity 320ms ease 240ms;
 }
 
 .scene-doors::after {
-  background: var(--text);
-  box-shadow: 0 0 6px rgba(247, 241, 234, 0.3);
+  background: #2a190c;
   transform: scaleX(var(--doors-light));
   transform-origin: 0 50%;
   transition:
@@ -924,17 +924,49 @@ body.scene-walk-hidden > :not(.scene-shell) {
   }
 }
 
-/* The sheet: dark paper in moonlight, cooler at the top, matched to the drawn paper so it
-   comes in without a change of tone. */
+/* The sheet: a pirate's map, weathered parchment under a lamp above its top, browned and
+   charred toward its edges, with tide-lined stains (a seamless noise, data: URI) and the
+   creases of quarter folds; matched to the drawn paper so it comes in without a change of
+   tone. Each half's box is the whole window, so its inset shadow chars the window's edges
+   and never the tear. */
 .scene-doors__paper {
-  background-color: #2f2e36;
+  background-color: #a47744;
   background-image:
     radial-gradient(
-      ellipse 70% 60% at 28% 18%,
-      rgba(150, 160, 196, 0.05) 0%,
-      rgba(150, 160, 196, 0) 70%
+      ellipse 66% 54% at 50% 18%,
+      rgba(255, 232, 186, 0.62) 0%,
+      rgba(255, 232, 186, 0) 75%
     ),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.02) 0%, rgba(0, 0, 0, 0.16) 100%);
+    linear-gradient(
+      90deg,
+      rgba(64, 36, 14, 0) calc(25% - 2px),
+      rgba(64, 36, 14, 0.3) 25%,
+      rgba(64, 36, 14, 0) calc(25% + 2px)
+    ),
+    linear-gradient(
+      90deg,
+      rgba(64, 36, 14, 0) calc(75% - 2px),
+      rgba(64, 36, 14, 0.3) 75%,
+      rgba(64, 36, 14, 0) calc(75% + 2px)
+    ),
+    linear-gradient(
+      180deg,
+      rgba(64, 36, 14, 0) calc(50% - 2px),
+      rgba(64, 36, 14, 0.3) 50%,
+      rgba(64, 36, 14, 0) calc(50% + 2px)
+    ),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1600' height='1600'%3E%3Cfilter id='s' x='0' y='0' width='1' height='1' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.0042' numOctaves='4' seed='11' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.36 0 0 0 0 0.21 0 0 0 0 0.08 0 0 0 1.6 -0.3'/%3E%3CfeComponentTransfer%3E%3CfeFuncA type='table' tableValues='0 0 0 0 0 0 0.06 0.6 0.24 0.2 0.2 0.2 0.2'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23s)'/%3E%3C/svg%3E"),
+    radial-gradient(ellipse 100% 92% at 50% 34%, rgba(40, 20, 8, 0) 42%, rgba(40, 20, 8, 0.88) 100%);
+  background-size:
+    auto,
+    auto,
+    auto,
+    auto,
+    1600px 1600px,
+    auto;
+  box-shadow:
+    inset 0 0 26px 8px rgba(20, 10, 3, 0.95),
+    inset 0 -50px 110px -10px rgba(30, 15, 6, 0.65);
 }
 
 /* Its fibres and specks (a CC0 scan, high-passed to its detail about mid grey), laid over
@@ -1293,7 +1325,7 @@ body.scene-walk-hidden > :not(.scene-shell) {
     calc(50% - 17.9px) 1.25%,
     calc(50% - 20.2px) 0%
   );
-  background: rgba(214, 202, 182, 0.1);
+  background: rgba(214, 196, 164, 0.5);
 }
 
 .scene-doors__leaf--right .scene-doors__rim {

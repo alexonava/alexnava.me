@@ -4,20 +4,24 @@
 // to one (src/doors-entry.js), and knows nothing of the page: its canvas, size, pixel
 // ratio and animation frames are given.
 //
-// One dark sheet torn down the middle (the owner's pick of 2026-10-25), its halves grids
-// in CSS px under a camera that frames their plane at 1:1. The paper is lit as paper: a
-// raking moonlight across the tooth of a scanned sheet (images/paper, CC0 ambientCG
+// One sheet of weathered parchment torn down the middle, a pirate's map (the owner's picks
+// of 2026-10-25: torn, then "a more traditional but maybe slightly darker/dirtier
+// parchment. like it belonged to a pirate"), its halves grids in CSS px under a camera
+// that frames their plane at 1:1. The paper is lit as paper: a warm lamp above the sheet's
+// top and a dim moonlight across the tooth of a scanned sheet (images/paper, CC0 ambientCG
 // Paper006: its height for the relief and the sheet's thickness, its colour for the
-// specks) and the night's ambient. The scene's star stands behind it and its light comes
-// through: an inverse-square falloff on the sheet and a wider glow scattered inside it,
-// thinned where the fibre lies thick (the sheet's flocs and fibres show against it) and
-// warmed through the paper's colour, with the film's red-orange halation about its heart.
-// The tear is the stylesheet's tear, with a paler, thinner lip and a fringe of loose
-// fibres; the left half's lip lies a little proud and shades the right half's edge.
-// Opening, each half is drawn aside on the stylesheet's timing, turning outward about its
-// bottom corner: it lifts, its free edge bends and settles with the pull (damped springs
-// on the half's acceleration), its edges and fibres blur with the motion, and the focus
-// pulls past the paper to the scene.
+// specks). It is aged in its own px: broad mottling, stains of tea and sea water with
+// darker dried tide lines, rust foxing, handling grime gathered toward the edges, a scorch
+// browning to char along them, and the creases of a map folded in quarters, worn and dark
+// with dirt. The scene's star stands behind it and its light comes through: an
+// inverse-square falloff on the sheet and a wider glow scattered inside it, thinned where
+// the fibre lies thick and warmed through the paper's colour, with the film's red-orange
+// halation about its heart. The tear is the stylesheet's tear, with a paler, thinner lip
+// and a fringe of loose fibres; the left half's lip lies a little proud and shades the
+// right half's edge. Opening, each half is drawn aside on the stylesheet's timing, turning
+// outward about its bottom corner: it lifts, its free edge bends and settles with the pull
+// (damped springs on the half's acceleration), its edges and fibres blur with the motion,
+// and the focus pulls past the paper to the scene.
 
 // The tear's offsets from the window's centre, CSS px, top to bottom: the stylesheet's
 // polygons are cut from the same 81 points (test/scene-doors.test.mjs holds them to it).
@@ -31,23 +35,30 @@ export const TEAR = [
 
 // The scan's tile, CSS px.
 const TILE = 768;
-// The sheet, in linear colour: its dyed albedo and the paler core its torn lip shows; the
-// moonlight raking it from the upper left; the night's ambient and the night behind it;
-// the star's gold and its strength; the sheet's transmittance, its relief and long waves
-// (px), and the exposure.
+// The sheet, in linear colour: its parchment's albedo and the paler core its torn lip
+// shows; a dim moonlight from the upper left and the night's ambient; the lamp (its colour,
+// its place as fractions of the window's width and height and its height above the sheet
+// as a fraction of the window's height, and its gain); the night behind the sheet; the
+// star's gold and its strength; the sheet's transmittance, its relief and long waves (px);
+// its age (broad mottling, stains, foxing, grime) and its wear (dirt toward the edges,
+// scorch, folds), each 0 to 1; and the exposure.
 const PAPER = Object.freeze({
-  albedo: [0.052, 0.045, 0.038],
-  core: [0.15, 0.135, 0.115],
-  moon: [0.46, 0.5, 0.64],
+  albedo: [0.36, 0.25, 0.13],
+  core: [0.62, 0.52, 0.38],
+  moon: [0.14, 0.16, 0.22],
   moonDir: [-0.42, -0.62, 0.66],
-  ambient: [0.05, 0.054, 0.072],
-  sky: [0.012, 0.014, 0.026],
-  star: [1, 0.6, 0.3],
-  starGain: 9,
-  thin: 0.2,
-  relief: 1.45,
+  ambient: [0.03, 0.03, 0.04],
+  lamp: [1, 0.8, 0.56],
+  lampAt: [0.5, 0.16, 0.46, 0.48],
+  sky: [0.01, 0.01, 0.016],
+  star: [1, 0.62, 0.32],
+  starGain: 7,
+  thin: 0.24,
+  relief: 0.85,
   cockle: 6,
-  exposure: 1.6,
+  age: [1, 1, 0.9, 0.85],
+  wear: [0.9, 0.75, 1],
+  exposure: 0.95,
 });
 // The opening, on the stylesheet's timing (styles.css .scene-doors): its length, how far
 // each half travels (window widths), its outward turn (degrees), its lift toward the camera
@@ -223,11 +234,65 @@ void main() {
   float floc = fine * 0.7 + fbm(p / 41.0 + 5.3) * 0.3;
   float thick = (1.0 + 0.24 * (floc - 0.5) + 1.4 * (h - 0.5)) * (1.0 - 0.6 * lip);
   vec3 albedo = ALBEDO * clamp(1.0 + 1.5 * (speck - 0.5) + 0.25 * (h - 0.5), 0.4, 1.6);
+  // Age: broad mottling.
+  albedo *= mix(1.0, 0.8 + 0.4 * fbm(p / 260.0 + 3.1), ${PAPER.age[0].toFixed(2)});
+  // Stains of tea and sea water, darker within and darkest along their dried tide lines.
+  float st = fbm(p / 190.0 + 41.0) * 0.75 + fbm(p / 57.0 + 7.0) * 0.25;
+  float stain = smoothstep(0.6, 0.68, st);
+  float tide = smoothstep(0.575, 0.6, st) * (1.0 - smoothstep(0.6, 0.63, st));
+  albedo *= mix(vec3(1.0), vec3(0.8, 0.68, 0.52), stain * ${PAPER.age[1].toFixed(2)});
+  albedo *= mix(vec3(1.0), vec3(0.6, 0.46, 0.3), tide * ${PAPER.age[1].toFixed(2)});
+  // Foxing: rust spots with soft haloes.
+  vec2 cell = floor(p / 46.0);
+  float fox = 0.0;
+  for (int j = -1; j <= 1; j++) {
+    for (int k = -1; k <= 1; k++) {
+      vec2 c = cell + vec2(float(j), float(k));
+      if (hash(c + 7.0) > 1.0 - 0.2 * ${PAPER.age[2].toFixed(2)}) {
+        vec2 centre = (c + vec2(hash(c + 1.0), hash(c + 2.0))) * 46.0;
+        float r = 1.2 + 4.5 * hash(c + 3.0);
+        float d = length(p - centre) + (vnoise(p * 0.4) - 0.5) * 2.0;
+        fox = max(fox, (1.0 - smoothstep(r * 0.35, r, d)) + 0.35 * (1.0 - smoothstep(r, r * 2.6, d)));
+      }
+    }
+  }
+  albedo *= mix(vec3(1.0), vec3(0.6, 0.44, 0.3), min(fox, 1.0) * 0.65);
+  // Grime: handling dirt in smudges, gathered toward the edges.
+  float edgeDist = min(min(p.x, uView.x - p.x), min(p.y, uView.y - p.y));
+  float worn = edgeDist + (fbm(p / 48.0 + 21.0) - 0.5) * 110.0;
+  float dirt = clamp(fbm(p / 72.0 + 13.0) * fbm(p / 21.0 + 2.0) * 2.2 - 0.45, 0.0, 1.0);
+  float grime = dirt * ${PAPER.age[3].toFixed(2)} + (1.0 - smoothstep(0.0, 240.0, worn)) * ${PAPER.wear[0].toFixed(2)} * 0.7;
+  albedo *= mix(vec3(1.0), vec3(0.5, 0.42, 0.34), clamp(grime, 0.0, 1.0));
+  // Scorch: browned, then near black, nearest the edges.
+  float scorch = 1.0 - smoothstep(0.0, 90.0, worn);
+  float charred = 1.0 - smoothstep(0.0, 26.0, worn + (vnoise(p / 6.0) - 0.5) * 12.0);
+  albedo = mix(albedo, albedo * vec3(0.55, 0.36, 0.2), scorch * ${PAPER.wear[1].toFixed(2)});
+  albedo = mix(albedo, vec3(0.02, 0.014, 0.01), charred * ${PAPER.wear[1].toFixed(2)});
+  // Folds: a map folded in quarters, its creases worn and dark with dirt.
+  vec2 fd = vec2(p.x - uView.x * (p.x < uView.x * 0.5 ? 0.25 : 0.75), p.y - uView.y * 0.5);
+  // The creases wander, and wear and gather dirt unevenly along their length.
+  fd += (vec2(fbm(vec2(p.y / 160.0, 5.0)), fbm(vec2(p.x / 160.0, 9.0))) - 0.5) * 9.0;
+  vec2 along = vec2(fbm(vec2(p.y / 55.0, 2.0)), fbm(vec2(p.x / 55.0, 4.0)));
+  vec2 valley = exp(-fd * fd / 5.0) * (0.35 + 0.9 * along);
+  vec2 band = exp(-fd * fd / 140.0);
+  albedo *= 1.0 - ${PAPER.wear[2].toFixed(2)} * 0.28 * max(valley.x, valley.y);
+  // Fibre lifted paler on the crease's shoulders.
+  albedo *= 1.0 + ${PAPER.wear[2].toFixed(2)} * 0.14 * max(band.x, band.y) * (fbm(p / 5.0) - 0.3);
+  n.xy += ${PAPER.wear[2].toFixed(2)} * 0.32 * vec2(-sign(fd.x) * exp(-fd.x * fd.x / 70.0), -sign(fd.y) * exp(-fd.y * fd.y / 70.0));
+  n = normalize(n);
   albedo = mix(albedo, CORE, lip * 0.75);
 
   vec3 view = normalize(vec3(uView * 0.5, uCamZ) - vWorld);
   vec3 color = albedo * (MOON * max(dot(n, MOON_DIR), 0.0) + AMBIENT * (0.55 + 0.45 * n.z));
   color += MOON * 0.03 * pow(max(dot(n, normalize(MOON_DIR + view)), 0.0), 16.0) * (1.0 - lip);
+  // The lamp: a warm pool from above the sheet's top.
+  vec3 lampAt = vec3(uView.x * ${PAPER.lampAt[0].toFixed(3)}, uView.y * ${PAPER.lampAt[1].toFixed(3)}, uView.y * ${PAPER.lampAt[2].toFixed(3)});
+  vec3 l = lampAt - vWorld;
+  float dl = length(l) / uView.y;
+  vec3 ln = normalize(l);
+  float fall = ${PAPER.lampAt[3].toFixed(3)} / (dl * dl + 0.05);
+  color += albedo * ${glsl(PAPER.lamp)} * max(dot(n, ln), 0.0) * fall;
+  color += ${glsl(PAPER.lamp)} * 0.045 * pow(max(dot(n, normalize(ln + view)), 0.0), 14.0) * fall * (1.0 - lip);
   color *= 1.0 - crease;
 
   // Through the sheet: the night, the star, and at the opening the scene beyond the gap.
