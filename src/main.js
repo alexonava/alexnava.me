@@ -119,11 +119,12 @@ import { createOpeningPreparation } from "./scene/opening-preparation.js";
   // bundle.
 
   // The title card stays. A loading line already shown (ui/scene-loader.js)
-  // retires below 100%.
+  // retires below 100%, and the opening's doors (ui/scene-doors.js) part onto it.
   function disableSceneHost() {
     const host = document.getElementById("home-scene");
     if (host) host.hidden = true;
     site.sceneLoader?.end?.("static");
+    site.sceneDoors?.open?.("static");
   }
 
   function enableSceneHost() {

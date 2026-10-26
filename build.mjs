@@ -19,9 +19,12 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const APP_ENTRY = "src/app.js";
 const SCENE_ENTRY = "src/scene-entry.js";
 const WEBGL_PROBE_ENTRY = "src/webgl-probe-worker.js";
+// The opening's doors drawn as paper: the UI loads it on the live path only.
+const DOORS_ENTRY = "src/doors-entry.js";
 const SCRIPT_ENTRIES = [
   { basename: "scene", entry: SCENE_ENTRY, split: true },
   { basename: "webgl-probe", entry: WEBGL_PROBE_ENTRY },
+  { basename: "doors", entry: DOORS_ENTRY },
   { basename: "app", entry: APP_ENTRY },
 ];
 // esbuild names split output here only to resolve import paths; with
@@ -63,7 +66,8 @@ export function isFingerprintedSource(file) {
   return (
     /^fonts\/[^/]+\.woff2$/.test(path) ||
     /^images\/architecture\/[^/]+\.glb$/.test(path) ||
-    /^images\/materials\/(?:slate-[^/]+|coast-detail-256|coast-albedo-512)\.webp$/.test(path)
+    /^images\/materials\/(?:slate-[^/]+|coast-detail-256|coast-albedo-512)\.webp$/.test(path) ||
+    /^images\/paper\/paper-(?:detail|height)\.webp$/.test(path)
   );
 }
 export const BUILD_INPUT_FILES = [
@@ -81,7 +85,7 @@ export const BUILD_INPUT_DIRS = ["src", ...STATIC_DIRS, PUBLIC_DIR, "tools"];
 // esbuild keeps template literal text verbatim: the scene's GLSL loses its
 // indentation, comments and spaces beside punctuation here instead
 // (tools/shader-compact.mjs). Three.js's own shaders are left as published.
-const SCENE_SOURCE = /[\\/]src[\\/]scene[\\/][^\\/]+\.js$/;
+const SCENE_SOURCE = /[\\/]src[\\/](?:scene|doors)[\\/][^\\/]+\.js$/;
 const compactShaders = {
   name: "compact-shaders",
   setup(bundler) {
@@ -200,6 +204,23 @@ async function materialAssetManifest() {
   return { urls, files, ...coast };
 }
 
+// The opening's paper (images/paper/paper-*.webp, a CC0 scan's detail and height) is
+// hashed too: { urls: source URL -> hashed URL, files }. The stylesheet's url() and the
+// page's preload name the detail; the doors' script (src/doors-entry.js) reads both.
+const PAPER_MAPS = ["detail", "height"];
+async function paperAssetManifest() {
+  const urls = {};
+  const files = [];
+  for (const map of PAPER_MAPS) {
+    const name = `paper-${map}.webp`;
+    const bytes = await readFile(join(__dirname, "images", "paper", name));
+    const hashedName = name.replace(".webp", `.${sha8(bytes)}.webp`);
+    urls[`/images/paper/${name}`] = `/images/paper/${hashedName}`;
+    files.push({ hashedName, bytes });
+  }
+  return { urls, files };
+}
+
 // Split output refers to its chunks by esbuild's temporary names. Rename each
 // chunk after the sha256 of its final bytes, dependencies first, so an
 // importer's hash covers the fingerprinted names it loads: any chunk change
@@ -279,6 +300,7 @@ async function buildScriptBundle(
   materials,
   sceneModulePreloads,
   webglProbeUrl,
+  doorsUrl,
 ) {
   const options = scriptBuildOptions(entry, split);
   const { urls, sizes } = architecture ?? (await architectureAssetManifest());
@@ -310,7 +332,15 @@ async function buildScriptBundle(
           __BABEL_ARCHITECTURE_PREFETCH_BYTES__: JSON.stringify(openingModels(sizes)),
           __BABEL_SCENE_MODULE_PRELOADS__: JSON.stringify(sceneModulePreloads ?? []),
           __BABEL_WEBGL_PROBE_URL__: JSON.stringify(webglProbeUrl ?? ""),
+          __BABEL_DOORS_URL__: JSON.stringify(doorsUrl ?? ""),
         };
+  if (entry === DOORS_ENTRY) {
+    const { urls: paper } = await paperAssetManifest();
+    options.define.__BABEL_PAPER_URLS__ = JSON.stringify({
+      detail: paper["/images/paper/paper-detail.webp"],
+      height: paper["/images/paper/paper-height.webp"],
+    });
+  }
   const result = await build(options);
   if (split) return fingerprintChunks({ basename, entry }, result);
   const out = result.outputFiles?.[0];
@@ -327,6 +357,7 @@ async function buildScripts(architecture, materials) {
   const built = [];
   let sceneModulePreloads;
   let webglProbeUrl;
+  let doorsUrl;
   for (const script of SCRIPT_ENTRIES) {
     const chunks = await buildScriptBundle(
       script,
@@ -334,6 +365,7 @@ async function buildScripts(architecture, materials) {
       materials,
       sceneModulePreloads,
       webglProbeUrl,
+      doorsUrl,
     );
     if (script.entry === SCENE_ENTRY) {
       sceneModulePreloads = chunks
@@ -342,6 +374,7 @@ async function buildScripts(architecture, materials) {
         .map(({ name }) => `/scripts/${name}`);
     }
     if (script.entry === WEBGL_PROBE_ENTRY) webglProbeUrl = `/scripts/${chunks[0].name}`;
+    if (script.entry === DOORS_ENTRY) doorsUrl = `/scripts/${chunks[0].name}`;
     built.push({ script, chunks });
   }
   return built;
@@ -353,21 +386,25 @@ export function contentDateModified(markdown) {
   return frontMatter.match(/^dateModified:\s*["']?(\d{4}-\d{2}-\d{2})["']?\s*$/m)?.[1];
 }
 
-// A font URL without a content hash: the build publishes none.
+// A font or paper URL without a content hash: the build publishes none.
 const UNHASHED_FONT = /\/fonts\/[\w-]+\.woff2/;
+const UNHASHED_PAPER = /\/images\/paper\/[\w-]+\.webp/;
 
 // Points a page at the published, content-hashed assets. The sources name
 // the plain paths; an un-hashed stylesheet, script or font path, or a ?v=
 // query, left after the rewrite would request a file the build never publishes.
-function rewriteHtml(name, src, { appPath, cssPath, scenePath, fontPaths }) {
+function rewriteHtml(name, src, { appPath, cssPath, scenePath, fontPaths, paperPaths = {} }) {
   let html = src
     .replaceAll("/styles.css", cssPath)
     .replaceAll("/scripts/app.js", appPath)
     .replaceAll("/scripts/scene.js", scenePath);
-  for (const [sourcePath, hashedPath] of Object.entries(fontPaths)) {
+  for (const [sourcePath, hashedPath] of Object.entries({ ...fontPaths, ...paperPaths })) {
     html = html.replaceAll(sourcePath, hashedPath);
   }
-  const stale = html.match(/\/styles\.css|\/scripts\/[\w-]+\.js|\?v=/) ?? html.match(UNHASHED_FONT);
+  const stale =
+    html.match(/\/styles\.css|\/scripts\/[\w-]+\.js|\?v=/) ??
+    html.match(UNHASHED_FONT) ??
+    html.match(UNHASHED_PAPER);
   if (stale) throw new Error(`${name} names an un-hashed asset after the rewrite: ${stale[0]}`);
   return html;
 }
@@ -380,6 +417,7 @@ async function writePayload(DIST_DIR) {
   const architecture = await architectureAssetManifest();
   const materials = await materialAssetManifest();
   const fonts = await fontAssetManifest();
+  const paper = await paperAssetManifest();
 
   const scriptPaths = {};
   for (const { script, chunks } of await buildScripts(architecture, materials)) {
@@ -399,11 +437,11 @@ async function writePayload(DIST_DIR) {
   // Git checkouts can use CRLF on Windows; hash and publish the same LF bytes
   // everywhere so a release has one asset URL independent of the build host.
   let cssSrc = (await readFile(join(__dirname, "styles.css"), "utf8")).replace(/\r\n?/g, "\n");
-  for (const [sourcePath, hashedPath] of Object.entries(fonts.urls)) {
+  for (const [sourcePath, hashedPath] of Object.entries({ ...fonts.urls, ...paper.urls })) {
     cssSrc = cssSrc.replaceAll(sourcePath, hashedPath);
   }
-  const staleFont = cssSrc.match(UNHASHED_FONT);
-  if (staleFont) throw new Error(`styles.css names an un-hashed font: ${staleFont[0]}`);
+  const staleFont = cssSrc.match(UNHASHED_FONT) ?? cssSrc.match(UNHASHED_PAPER);
+  if (staleFont) throw new Error(`styles.css names an un-hashed asset: ${staleFont[0]}`);
   // Minify after rewriting, then hash the published bytes. Without a browser
   // target esbuild lowers no syntax, and url() paths pass through unresolved.
   const { code: css } = await transform(cssSrc, {
@@ -424,7 +462,7 @@ async function writePayload(DIST_DIR) {
     }),
   );
   // Fingerprinted sources publish only under their hashed names: the fonts,
-  // every model and the slate maps. Nothing the
+  // every model, the slate maps and the opening's paper. Nothing the
   // build writes names their source paths, so no plain copy is kept.
   await Promise.all(
     STATIC_DIRS.map((dir) =>
@@ -448,6 +486,10 @@ async function writePayload(DIST_DIR) {
   for (const { hashedName, bytes } of materials.files) {
     await writeFile(join(DIST_DIR, "images", "materials", hashedName), bytes);
   }
+  await mkdir(join(DIST_DIR, "images", "paper"), { recursive: true });
+  for (const { hashedName, bytes } of paper.files) {
+    await writeFile(join(DIST_DIR, "images", "paper", hashedName), bytes);
+  }
 
   for (const name of ["index.html", "404.html"]) {
     const htmlSrc = await readFile(join(__dirname, name), "utf8");
@@ -456,6 +498,7 @@ async function writePayload(DIST_DIR) {
       cssPath: cssHashedUrl,
       scenePath: scriptPaths.scene,
       fontPaths: fonts.urls,
+      paperPaths: paper.urls,
     });
     await writeFile(join(DIST_DIR, name), rewritten);
   }

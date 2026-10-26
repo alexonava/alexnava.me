@@ -123,13 +123,18 @@ import { resolveSceneOpening } from "../scene/scene-modes.js";
   // The star warms from the progress its place became known to the reveal.
   function paintStar(r, shown) {
     const s = r.star;
+    const warm = !s
+      ? 0
+      : shown >= 1
+        ? 1
+        : Math.min(1, Math.max(0, (shown - r.since) / Math.max(1e-3, 1 - r.since)));
+    // The opening's doors show the same star through their paper (ui/scene-doors.js).
+    site.sceneDoors?.light?.({ star: s, warm, progress: shown });
     if (!r.starEl) return;
     if (!s) {
       r.starEl.hidden = true;
       return;
     }
-    const warm =
-      shown >= 1 ? 1 : Math.min(1, Math.max(0, (shown - r.since) / Math.max(1e-3, 1 - r.since)));
     const glowing = Math.sqrt(warm);
     const size = (diameter) => diameter / 100;
     const set = (el, transform, opacity) => {
@@ -184,6 +189,8 @@ import { resolveSceneOpening } from "../scene/scene-modes.js";
       r.target = 1;
       paint(r);
     }
+    // The opening's doors part as the line ends, whatever ends it.
+    site.sceneDoors?.open?.(r.status);
     r.el.classList.add("is-done");
     r.el.classList.remove("is-loading");
     // A revealed star sits under the canvas, which fades in over it; a retired
@@ -295,6 +302,8 @@ import { resolveSceneOpening } from "../scene/scene-modes.js";
     void el.offsetWidth;
     el.classList.add("is-loading");
     paint(r);
+    // The live path: the opening's doors are drawn as paper while the scene loads.
+    site.sceneDoors?.upgrade?.({ tier: r.tier });
   }
 
   function stage(name) {

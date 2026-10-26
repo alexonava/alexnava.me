@@ -125,6 +125,24 @@
       <div class="scene-vignette"></div>
     </div>
     <div class="site-shell" aria-hidden="true"></div>
+    <!-- The opening's paper doors (ui/scene-doors.js): one weathered parchment torn down the middle,
+         closed over the whole page at the first paint; its halves part at the scene's
+         reveal, on a static path, at the cap or at a tap, key or focus, and without scripts
+         the stylesheet opens them on its own. -->
+    <div class="scene-doors" id="scene-doors" aria-hidden="true">
+      <div class="scene-doors__leaf scene-doors__leaf--left">
+        <div class="scene-doors__paper">
+          <div class="scene-doors__light"><span class="scene-doors__glow"></span></div>
+        </div>
+        <div class="scene-doors__rim"></div>
+      </div>
+      <div class="scene-doors__leaf scene-doors__leaf--right">
+        <div class="scene-doors__paper">
+          <div class="scene-doors__light"><span class="scene-doors__glow"></span></div>
+        </div>
+        <div class="scene-doors__rim"></div>
+      </div>
+    </div>
 
     <main id="main" tabindex="-1">
       <section id="home" class="hero section">
