@@ -4,24 +4,26 @@
 // to one (src/doors-entry.js), and knows nothing of the page: its canvas, size, pixel
 // ratio and animation frames are given.
 //
-// One sheet of weathered parchment torn down the middle, a pirate's map (the owner's picks
-// of 2026-10-25: torn, then "a more traditional but maybe slightly darker/dirtier
-// parchment. like it belonged to a pirate"), its halves grids in CSS px under a camera
-// that frames their plane at 1:1. The paper is lit as paper: a warm lamp above the sheet's
-// top and a dim moonlight across the tooth of a scanned sheet (images/paper, CC0 ambientCG
-// Paper006: its height for the relief and the sheet's thickness, its colour for the
-// specks). It is aged in its own px: broad mottling, stains of tea and sea water with
-// darker dried tide lines, rust foxing, handling grime gathered toward the edges, a scorch
-// browning to char along them, and the creases of a map folded in quarters, worn and dark
-// with dirt. The scene's star stands behind it and its light comes through: an
-// inverse-square falloff on the sheet and a wider glow scattered inside it, thinned where
-// the fibre lies thick and warmed through the paper's colour, with the film's red-orange
-// halation about its heart. The tear is the stylesheet's tear, with a paler, thinner lip
-// and a fringe of loose fibres; the left half's lip lies a little proud and shades the
-// right half's edge. Opening, each half is drawn aside on the stylesheet's timing, turning
-// outward about its bottom corner: it lifts, its free edge bends and settles with the pull
-// (damped springs on the half's acceleration), its edges and fibres blur with the motion,
-// and the focus pulls past the paper to the scene.
+// One sheet of washi torn down the middle (the owner's picks of 2026-10-25, torn, and of
+// 2026-10-26, "Washi", when he asked for the paper to be less of a stained map or document
+// and "more artistic and playful because it will open to such amazing graphics"), its halves
+// grids in CSS px under a camera that frames their plane at 1:1. The paper is lit as paper:
+// a warm lamp above the sheet's top and a dim moonlight across the tooth of a scanned sheet
+// (images/paper, CC0 ambientCG Paper006: its height for the relief and the sheet's
+// thickness, its colour for the specks). It is kozo washi in its own px: a thin, even
+// mulberry sheet clouded at a few px, long fibres laid through it, curving and crossing,
+// from wisps to strands and here and there gathered into soft bundles, and flecks of bark;
+// the fibres read a shade whiter in the lamp. The scene's star stands behind it and its
+// light comes through: an inverse-square falloff on the sheet and a wider glow scattered
+// inside it, thinned where the fibres lie thick, so they stand out dark against it, and
+// warmed through the paper's colour, with the film's red-orange halation about its heart;
+// in a lantern opening the lantern's light, which flickers as a candle does. The tear is
+// the stylesheet's tear, with a paler, thinner lip and a fringe of long, loose fibres
+// pulled from it; the left half's lip lies a little proud and shades the right half's edge.
+// Opening, each half is drawn aside on the stylesheet's timing, turning outward about its
+// bottom corner: it lifts, its free edge bends and settles with the pull (damped springs
+// on the half's acceleration), its edges and fibres blur with the motion, and the focus
+// pulls past the paper to the scene.
 
 // The tear's offsets from the window's centre, CSS px, top to bottom: the stylesheet's
 // polygons are cut from the same 81 points (test/scene-doors.test.mjs holds them to it).
@@ -35,18 +37,17 @@ export const TEAR = [
 
 // The scan's tile, CSS px.
 const TILE = 768;
-// The sheet, in linear colour: its parchment's albedo and the paler core its torn lip
-// shows; a dim moonlight from the upper left and the night's ambient; the lamp (its colour,
-// its place as fractions of the window's width and height and its height above the sheet
-// as a fraction of the window's height, and its gain); the night behind the sheet; the
-// star's gold and its strength, or in a lantern opening the lantern glass's deeper amber (the
-// owner's pick of 2026-10-26, "Lantern glass") and its; the sheet's transmittance, its relief
-// and long waves (px);
-// its age (broad mottling, stains, foxing, grime) and its wear (dirt toward the edges,
-// scorch, folds), each 0 to 1; and the exposure.
+// The sheet, in linear colour: its washi's albedo and the paler core its torn lip shows; a
+// dim moonlight from the upper left and the night's ambient; the lamp (its colour, its
+// place as fractions of the window's width and height and its height above the sheet as a
+// fraction of the window's height, and its gain); the night behind the sheet; the star's
+// gold and its strength, or in a lantern opening the lantern glass's deeper amber (the
+// owner's pick of 2026-10-26, "Lantern glass") and its; the sheet's transmittance, its
+// relief and long waves (px); how far its light falls away toward the window's edges, 0 to
+// 1; and the exposure.
 const PAPER = Object.freeze({
-  albedo: [0.36, 0.25, 0.13],
-  core: [0.62, 0.52, 0.38],
+  albedo: [0.6, 0.56, 0.47],
+  core: [0.78, 0.74, 0.66],
   moon: [0.14, 0.16, 0.22],
   moonDir: [-0.42, -0.62, 0.66],
   ambient: [0.03, 0.03, 0.04],
@@ -57,13 +58,17 @@ const PAPER = Object.freeze({
   starGain: 7,
   lantern: [1, 0.5, 0.2],
   lanternGain: 4.5,
-  thin: 0.24,
-  relief: 0.85,
+  thin: 0.5,
+  relief: 0.5,
   cockle: 6,
-  age: [1, 1, 0.9, 0.85],
-  wear: [0.9, 0.75, 1],
-  exposure: 0.95,
+  edge: 0.2,
+  exposure: 0.85,
 });
+// A lantern's light flickers as the scene's candle does: redrawn this many times a second
+// while it is lit behind the closed doors, few enough to leave the scene's preparation its
+// pace (24 cost the lantern opening about 4% of its time to the reveal), enough for a
+// flicker no quicker than candle() (below).
+const FLICKER_FPS = 15;
 // The opening, on the stylesheet's timing (styles.css .scene-doors): its length, how far
 // each half travels (window widths), its outward turn (degrees), its lift toward the camera
 // (px), the bend's gain on its acceleration, and how far the focus pulls past the paper
@@ -204,22 +209,24 @@ void main() {
   float di = (uSide < 0.0 ? edge - p.x : p.x - edge) + 0.5;
   float aa = max(max(fwidth(di) * 0.75, abs(uVel) * 0.5), uDefocus);
   float body = smoothstep(-aa, aa, di);
-  // Loose fibres out to 4.6px past the edge, gone in the motion and the defocus.
+  // Long, loose fibres pulled from the torn washi out to 12px past the edge, wisps across
+  // it, gone in the motion and the defocus.
   float fringe = 0.0;
   if (di < 0.0) {
     float out_ = -di;
-    float fib = vnoise(vec2(p.x * 0.42, p.y * 3.3)) * 0.62 + vnoise(vec2(p.x * 0.95, p.y * 7.1)) * 0.38;
-    fringe = smoothstep(0.6, 0.78, fib - out_ * 0.045) * (1.0 - smoothstep(0.0, 4.6, out_));
+    float fib = vnoise(vec2(p.x * 0.16, p.y * 1.9)) * 0.6 + vnoise(vec2(p.x * 0.4, p.y * 4.3)) * 0.4;
+    fringe = smoothstep(0.62, 0.8, fib - out_ * 0.022) * (1.0 - smoothstep(0.0, 12.0, out_));
     fringe *= 1.0 - smoothstep(0.0, 6.0, abs(uVel) + uDefocus);
   }
-  float alpha = max(body, fringe * 0.8);
+  float alpha = max(body, fringe * 0.7);
   if (alpha < 0.003) discard;
 
   // The lip: within a wandering width of the edge the sheet is thinner and paler. The
   // right half's edge lies in the left's shade while the halves meet.
   float lipWidth = 1.2 + 3.0 * vnoise(vec2(p.y * 0.06, 11.0));
   float lip = max(1.0 - smoothstep(0.0, lipWidth, max(di, 0.0)), step(di, 0.0) * fringe);
-  float crease = (uSide > 0.0 ? 1.0 - smoothstep(0.0, 4.0, di) : 0.0) * 0.5 * (1.0 - uGap);
+  // The thin sheet casts a soft shade.
+  float crease = (uSide > 0.0 ? 1.0 - smoothstep(0.0, 7.0, di) : 0.0) * 0.2 * (1.0 - uGap);
 
   vec2 uv = p / ${TILE.toFixed(1)};
   vec2 gx = dFdx(uv) + vec2((abs(uVel) + uDefocus) / ${TILE.toFixed(1)}, 0.0);
@@ -233,57 +240,51 @@ void main() {
   float speck = textureGrad(uDetail, uv, gx, gy).r;
   vec3 n = normalize(vNormal + vec3(-hx, -hy, 0.0) * ${PAPER.relief.toFixed(2)});
 
-  // Formation: the sheet's flocs, fine and broad, and its fibres, as thickness.
-  float fine = mix(fbm(p / 9.0), 0.5, smoothstep(0.0, 6.0, uDefocus));
-  float floc = fine * 0.7 + fbm(p / 41.0 + 5.3) * 0.3;
-  float thick = (1.0 + 0.24 * (floc - 0.5) + 1.4 * (h - 0.5)) * (1.0 - 0.6 * lip);
-  vec3 albedo = ALBEDO * clamp(1.0 + 1.5 * (speck - 0.5) + 0.25 * (h - 0.5), 0.4, 1.6);
-  // Age: broad mottling.
-  albedo *= mix(1.0, 0.8 + 0.4 * fbm(p / 260.0 + 3.1), ${PAPER.age[0].toFixed(2)});
-  // Stains of tea and sea water, darker within and darkest along their dried tide lines.
-  float st = fbm(p / 190.0 + 41.0) * 0.75 + fbm(p / 57.0 + 7.0) * 0.25;
-  float stain = smoothstep(0.6, 0.68, st);
-  float tide = smoothstep(0.575, 0.6, st) * (1.0 - smoothstep(0.6, 0.63, st));
-  albedo *= mix(vec3(1.0), vec3(0.8, 0.68, 0.52), stain * ${PAPER.age[1].toFixed(2)});
-  albedo *= mix(vec3(1.0), vec3(0.6, 0.46, 0.3), tide * ${PAPER.age[1].toFixed(2)});
-  // Foxing: rust spots with soft haloes.
-  vec2 cell = floor(p / 46.0);
-  float fox = 0.0;
-  for (int j = -1; j <= 1; j++) {
-    for (int k = -1; k <= 1; k++) {
-      vec2 c = cell + vec2(float(j), float(k));
-      if (hash(c + 7.0) > 1.0 - 0.2 * ${PAPER.age[2].toFixed(2)}) {
-        vec2 centre = (c + vec2(hash(c + 1.0), hash(c + 2.0))) * 46.0;
-        float r = 1.2 + 4.5 * hash(c + 3.0);
-        float d = length(p - centre) + (vnoise(p * 0.4) - 0.5) * 2.0;
-        fox = max(fox, (1.0 - smoothstep(r * 0.35, r, d)) + 0.35 * (1.0 - smoothstep(r, r * 2.6, d)));
-      }
-    }
+  // Formation: a thin, even mulberry sheet clouded at a few px, with long kozo fibres laid
+  // through it, curving and crossing, of every width from a wisp to a strand, here and there
+  // gathered into soft bundles. Fibres and bundles are thickness: a shade whiter in the lamp,
+  // and dark against the light behind. They soften as the focus pulls past the paper.
+  float soft = smoothstep(0.0, 6.0, uDefocus);
+  float cloud = mix(fbm(p / 26.0 + 2.0) * 0.6 + fbm(p / 75.0 + 8.0) * 0.4, 0.5, soft);
+  float fibre = 0.0;
+  for (int k = 0; k < 4; k++) {
+    float fk = float(k);
+    vec2 pw = p + 70.0 * (vec2(fbm(p / 340.0 + fk * 3.1), fbm(p / 340.0 + fk * 5.7)) - 0.5);
+    float ang = 0.35 + 1.13 * fk + 0.5 * (vnoise(pw / 420.0 + fk) - 0.5);
+    vec2 dir = vec2(cos(ang), sin(ang));
+    vec2 q = vec2(dot(pw, dir), dot(pw, vec2(-dir.y, dir.x)));
+    float width = mix(1.4, 4.2, vnoise(pw / 230.0 + fk * 7.0)) + uDefocus;
+    // Each fibre's edge is antialiased by the noise's own change across the pixel.
+    float strand = vnoise(vec2(q.x / 260.0, q.y / width) + fk * 17.0);
+    float wisp = vnoise(vec2(q.x / 150.0, q.y / (1.6 + uDefocus)) + fk * 29.0);
+    float as = fwidth(strand), aw = fwidth(wisp);
+    fibre += smoothstep(0.83 - as, 0.93 + as, strand) * 0.95
+      + smoothstep(0.89 - aw, 0.96 + aw, wisp) * 0.4 * (1.0 - soft);
   }
-  albedo *= mix(vec3(1.0), vec3(0.6, 0.44, 0.3), min(fox, 1.0) * 0.65);
-  // Grime: handling dirt in smudges, gathered toward the edges.
+  fibre = min(fibre, 1.6);
+  float bundle = smoothstep(0.5, 0.82, fbm(p / 150.0 + 6.0));
+  float thick = (0.92 + 0.6 * fibre + 0.3 * bundle + 0.36 * (cloud - 0.5) + 0.35 * (h - 0.5))
+    * (1.0 - 0.6 * lip);
+  vec3 albedo = ALBEDO
+    * (1.0 + 0.14 * fibre + 0.06 * bundle + 0.08 * (cloud - 0.5) + 0.15 * (speck - 0.5));
+  // Chiri: flecks of bark caught in the sheet, from specks to slivers, dark and pale.
+  vec2 bc = floor(p / 110.0);
+  if (hash(bc + 9.1) > 0.8) {
+    vec2 bp = (bc + vec2(hash(bc + 1.3), hash(bc + 2.9))) * 110.0;
+    float ba = hash(bc + 4.4) * 6.283;
+    vec2 bd = p - bp + 4.0 * (vec2(vnoise(p / 4.0), vnoise(p / 4.0 + 3.0)) - 0.5);
+    bd = vec2(dot(bd, vec2(cos(ba), sin(ba))), dot(bd, vec2(-sin(ba), cos(ba))));
+    float size = hash(bc + 7.0);
+    vec2 axes = vec2(1.5 + 9.0 * size * size, 0.8 + 1.4 * hash(bc + 8.0));
+    float bark = 1.0 - smoothstep(0.55, 1.25, length(bd / axes));
+    vec3 tone = mix(vec3(0.5, 0.4, 0.3), vec3(0.82, 0.74, 0.6), step(0.7, hash(bc + 6.0)));
+    albedo *= mix(vec3(1.0), tone, bark);
+    thick += 0.8 * bark;
+  }
+  // The lamp's pool falls away toward the window's edges.
   float edgeDist = min(min(p.x, uView.x - p.x), min(p.y, uView.y - p.y));
   float worn = edgeDist + (fbm(p / 48.0 + 21.0) - 0.5) * 110.0;
-  float dirt = clamp(fbm(p / 72.0 + 13.0) * fbm(p / 21.0 + 2.0) * 2.2 - 0.45, 0.0, 1.0);
-  float grime = dirt * ${PAPER.age[3].toFixed(2)} + (1.0 - smoothstep(0.0, 240.0, worn)) * ${PAPER.wear[0].toFixed(2)} * 0.7;
-  albedo *= mix(vec3(1.0), vec3(0.5, 0.42, 0.34), clamp(grime, 0.0, 1.0));
-  // Scorch: browned, then near black, nearest the edges.
-  float scorch = 1.0 - smoothstep(0.0, 90.0, worn);
-  float charred = 1.0 - smoothstep(0.0, 26.0, worn + (vnoise(p / 6.0) - 0.5) * 12.0);
-  albedo = mix(albedo, albedo * vec3(0.55, 0.36, 0.2), scorch * ${PAPER.wear[1].toFixed(2)});
-  albedo = mix(albedo, vec3(0.02, 0.014, 0.01), charred * ${PAPER.wear[1].toFixed(2)});
-  // Folds: a map folded in quarters, its creases worn and dark with dirt.
-  vec2 fd = vec2(p.x - uView.x * (p.x < uView.x * 0.5 ? 0.25 : 0.75), p.y - uView.y * 0.5);
-  // The creases wander, and wear and gather dirt unevenly along their length.
-  fd += (vec2(fbm(vec2(p.y / 160.0, 5.0)), fbm(vec2(p.x / 160.0, 9.0))) - 0.5) * 9.0;
-  vec2 along = vec2(fbm(vec2(p.y / 55.0, 2.0)), fbm(vec2(p.x / 55.0, 4.0)));
-  vec2 valley = exp(-fd * fd / 5.0) * (0.35 + 0.9 * along);
-  vec2 band = exp(-fd * fd / 140.0);
-  albedo *= 1.0 - ${PAPER.wear[2].toFixed(2)} * 0.28 * max(valley.x, valley.y);
-  // Fibre lifted paler on the crease's shoulders.
-  albedo *= 1.0 + ${PAPER.wear[2].toFixed(2)} * 0.14 * max(band.x, band.y) * (fbm(p / 5.0) - 0.3);
-  n.xy += ${PAPER.wear[2].toFixed(2)} * 0.32 * vec2(-sign(fd.x) * exp(-fd.x * fd.x / 70.0), -sign(fd.y) * exp(-fd.y * fd.y / 70.0));
-  n = normalize(n);
+  albedo *= 1.0 - ${PAPER.edge.toFixed(2)} * 0.7 * (1.0 - smoothstep(0.0, 240.0, worn));
   albedo = mix(albedo, CORE, lip * 0.75);
 
   vec3 view = normalize(vec3(uView * 0.5, uCamZ) - vWorld);
@@ -362,6 +363,30 @@ async function texture(gl, url) {
   const aniso = gl.getExtension("EXT_texture_filter_anisotropic");
   if (aniso) gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, 8);
   return tex;
+}
+
+// A candle's flicker at `t` seconds, about 1 and never past 1 ± 0.22: a slow sway in two
+// beats and a quicker unrest of smooth noise, as a flame breathes in still air. The paper's
+// lamp and the tone curve take most of it, so through the sheet it reads as a gentle
+// breath of the glow.
+export function candle(t) {
+  const hash = (k) => {
+    const v = Math.sin(k * 127.1 + 311.7) * 43758.5453;
+    return v - Math.floor(v);
+  };
+  const noise = (x) => {
+    const i = Math.floor(x),
+      f = x - i,
+      s = f * f * (3 - 2 * f);
+    return 2 * (hash(i) + (hash(i + 1) - hash(i)) * s) - 1;
+  };
+  return (
+    1 +
+    0.075 * Math.sin(2 * Math.PI * 0.33 * t + 1.1) +
+    0.065 * Math.sin(2 * Math.PI * 0.87 * t + 2.3) +
+    0.055 * noise(t * 3.1) +
+    0.025 * noise(t * 6.7 + 40)
+  );
 }
 
 // cubic-bezier(x1, y1, x2, y2) at time x, solved for its parameter by Newton steps.
@@ -499,12 +524,17 @@ export async function createPaperDoors(
       const frameSize = Math.sqrt(width * tall);
       const depth = Math.min(Math.max(2.2 * star.radius, 0.035 * frameSize), 0.06 * frameSize);
       gl.uniform4f(uniforms.uStar, star.x, star.y, depth, 1);
-      gl.uniform2f(uniforms.uHalo, Math.min(1.3 * depth, 0.06 * frameSize), 0.11 * frameSize);
+      const flame = star.kind === "lantern" ? candle(performance.now() / 1000) : 1;
+      gl.uniform2f(
+        uniforms.uHalo,
+        Math.min(1.3 * depth, 0.06 * frameSize) * (0.6 + 0.4 * flame),
+        0.11 * frameSize,
+      );
       // Ember to star: deep and dim at first, gold and full at the reveal; a lantern's to its
-      // glass's amber.
+      // glass's amber, flickering as a candle does.
       const lantern = star.kind === "lantern",
         tint = lantern ? PAPER.lantern : PAPER.star,
-        heat = warm * warm * (lantern ? PAPER.lanternGain : PAPER.starGain);
+        heat = warm * warm * (lantern ? PAPER.lanternGain * flame : PAPER.starGain);
       gl.uniform3f(
         uniforms.uStarLight,
         tint[0] * heat,
@@ -539,8 +569,24 @@ export async function createPaperDoors(
     }
   }
 
+  // While a lantern's light is lit behind the closed doors the sheet redraws FLICKER_FPS
+  // times a second for its flicker; the opening draws every frame of its own.
+  let flickering = 0;
+  let flickered = 0;
+  const flickers = () => !opening && !lost && !disposed && star?.kind === "lantern" && warm > 0;
+  function flicker(now) {
+    flickering = 0;
+    if (!flickers()) return;
+    if (now - flickered >= 1000 / FLICKER_FPS - 1) {
+      flickered = now;
+      draw();
+    }
+    flickering = frame(flicker);
+  }
+
   function schedule() {
     if (!pending && !opening && !lost && !disposed) pending = frame(draw);
+    if (!flickering && flickers()) flickering = frame(flicker);
   }
 
   const onLostContext = (event) => {
@@ -573,7 +619,8 @@ export async function createPaperDoors(
     open() {
       if (opening) return opening.done;
       if (pending) cancel(pending);
-      pending = 0;
+      if (flickering) cancel(flickering);
+      pending = flickering = 0;
       const start = performance.now();
       const turn = (OPENING.turn * Math.PI) / 180;
       let last = start;
@@ -615,6 +662,7 @@ export async function createPaperDoors(
     dispose() {
       disposed = true;
       if (pending) cancel(pending);
+      if (flickering) cancel(flickering);
       canvas.removeEventListener?.("webglcontextlost", onLostContext);
       gl.getExtension("WEBGL_lose_context")?.loseContext();
     },

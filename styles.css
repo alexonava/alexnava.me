@@ -753,26 +753,141 @@ body.scene-walk-hidden > :not(.scene-shell) {
   );
 }
 
-/* In a lantern opening the light is the lantern's (scene-loader.js `is-lantern`): its glass lit
-   by the flame, a deep amber glow with no bright core, wider and dimmer than the star's (the
-   owner's pick of 2026-10-26, "Lantern glass"). */
+/* In a lantern opening the light is the lantern's (scene-loader.js `is-lantern`), as the
+   film's lens sees it (the owner's pick of 2026-10-26, "Camera glare"): a hot core clipped
+   warm white, an amber bloom, a faint, wide veiling glare, the lens's anamorphic streak across
+   it, as the scene draws it over the flame (architecture.js FLAME_STREAK: six glow radii either
+   side, falling as 0.7 exp(-3.6x) + 0.5 exp(-45x²), and as exp(-30y²) across), and a candle's
+   flicker. At the reveal the scene's own streak takes over in the same place. */
 .scene-star.is-lantern > .scene-star__disc {
   background: radial-gradient(
     circle closest-side,
-    rgba(255, 186, 104, 0.72) 0%,
-    rgba(244, 136, 60, 0.42) 45%,
-    rgba(220, 100, 40, 0) 100%
+    rgba(255, 251, 240, 1) 0%,
+    rgba(255, 232, 186, 0.96) 5%,
+    rgba(255, 200, 128, 0.82) 11%,
+    rgba(255, 164, 84, 0.56) 20%,
+    rgba(246, 130, 58, 0.32) 33%,
+    rgba(230, 104, 44, 0.16) 50%,
+    rgba(212, 88, 38, 0.07) 70%,
+    rgba(200, 80, 34, 0) 100%
+  );
+  animation: scene-star-flicker 2.3s linear infinite;
+}
+
+.scene-star.is-lantern > .scene-star__disc::after {
+  position: absolute;
+  top: 28.55%;
+  bottom: 28.55%;
+  left: -250%;
+  right: -250%;
+  content: "";
+  background: linear-gradient(
+    90deg,
+    rgba(255, 196, 140, 0) 0%,
+    rgba(255, 196, 140, 0.008) 5%,
+    rgba(255, 196, 140, 0.025) 10%,
+    rgba(255, 196, 140, 0.035) 15%,
+    rgba(255, 196, 140, 0.075) 25%,
+    rgba(255, 196, 140, 0.16) 35%,
+    rgba(255, 200, 146, 0.26) 40%,
+    rgba(255, 206, 156, 0.51) 45%,
+    rgba(255, 214, 170, 0.65) 47.5%,
+    rgba(255, 226, 190, 0.75) 50%,
+    rgba(255, 214, 170, 0.65) 52.5%,
+    rgba(255, 206, 156, 0.51) 55%,
+    rgba(255, 200, 146, 0.26) 60%,
+    rgba(255, 196, 140, 0.16) 65%,
+    rgba(255, 196, 140, 0.075) 75%,
+    rgba(255, 196, 140, 0.035) 85%,
+    rgba(255, 196, 140, 0.025) 90%,
+    rgba(255, 196, 140, 0.008) 95%,
+    rgba(255, 196, 140, 0) 100%
+  );
+  mask-image: linear-gradient(
+    180deg,
+    transparent 25%,
+    rgba(0, 0, 0, 0.07) 35%,
+    rgba(0, 0, 0, 0.38) 41%,
+    #000 50%,
+    rgba(0, 0, 0, 0.38) 59%,
+    rgba(0, 0, 0, 0.07) 65%,
+    transparent 75%
   );
 }
 
 .scene-star.is-lantern > .scene-star__glow {
   background: radial-gradient(
     circle closest-side,
-    rgba(248, 138, 58, 0.44) 0%,
-    rgba(220, 104, 44, 0.26) 45%,
-    rgba(190, 80, 36, 0.09) 80%,
-    rgba(190, 80, 36, 0) 100%
+    rgba(255, 168, 86, 0.36) 0%,
+    rgba(246, 132, 60, 0.21) 16%,
+    rgba(230, 108, 46, 0.11) 34%,
+    rgba(214, 92, 40, 0.05) 58%,
+    rgba(200, 82, 36, 0.018) 80%,
+    rgba(200, 82, 36, 0) 100%
   );
+  animation: scene-star-flicker-glow 3.7s linear infinite;
+}
+
+/* A candle's flicker: brightness only, so the loading line's warmth (its opacity) and place
+   (its transform) stay the script's. */
+@keyframes scene-star-flicker {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  9% {
+    filter: brightness(1.07);
+  }
+  17% {
+    filter: brightness(0.96);
+  }
+  26% {
+    filter: brightness(1.03);
+  }
+  38% {
+    filter: brightness(0.98);
+  }
+  47% {
+    filter: brightness(1.06);
+  }
+  59% {
+    filter: brightness(0.97);
+  }
+  71% {
+    filter: brightness(1.04);
+  }
+  84% {
+    filter: brightness(0.95);
+  }
+}
+
+@keyframes scene-star-flicker-glow {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  13% {
+    filter: brightness(1.04);
+  }
+  31% {
+    filter: brightness(0.97);
+  }
+  52% {
+    filter: brightness(1.05);
+  }
+  68% {
+    filter: brightness(0.98);
+  }
+  86% {
+    filter: brightness(1.03);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scene-star.is-lantern > .scene-star__disc,
+  .scene-star.is-lantern > .scene-star__glow {
+    animation: none;
+  }
 }
 
 @media (forced-colors: active), (prefers-contrast: more) {
@@ -781,10 +896,10 @@ body.scene-walk-hidden > :not(.scene-shell) {
   }
 }
 
-/* The opening's paper doors (src/ui/scene-doors.js), the owner's picks of 2026-10-25: one
-   sheet of weathered parchment torn down the middle (a pirate's map), closed over the whole page at the first paint, whose
-   halves are pulled apart at the scene's reveal, tilting outward about their bottom
-   corners. The identity, Contact and the loading line wait under the paper and come into
+/* The opening's paper doors (src/ui/scene-doors.js), the owner's picks of 2026-10-25 and,
+   for the paper, of 2026-10-26: one sheet of washi torn down the middle, closed over the
+   whole page at the first paint, whose halves are pulled apart at the scene's reveal,
+   tilting outward about their bottom corners. The identity, Contact and the loading line wait under the paper and come into
    view as it parts, as the scene does ("all the text should be inside the loading screen,
    visible when it opens like everything else"); only the skip link stands above it.
    Each half is a whole-window box whose paper is clipped along the tear (cut
@@ -818,7 +933,7 @@ body.scene-walk-hidden > :not(.scene-shell) {
 }
 
 /* The loading line's bar on the paper, which covers the line itself: the same 2px across
-   the top edge, in ink on the parchment, its fill at the progress the script writes
+   the top edge, in ink on the washi, its fill at the progress the script writes
    (--doors-light), shown while the line loads and fading as the doors part over the
    line's own bar. */
 .scene-doors::before,
@@ -946,49 +1061,37 @@ body.scene-walk-hidden > :not(.scene-shell) {
   }
 }
 
-/* The sheet: a pirate's map, weathered parchment under a lamp above its top, browned and
-   charred toward its edges, with tide-lined stains (a seamless noise, data: URI) and the
-   creases of quarter folds; matched to the drawn paper so it comes in without a change of
-   tone. Each half's box is the whole window, so its inset shadow chars the window's edges
-   and never the tear. */
+/* The sheet: washi under a lamp above its top (the owner's pick of 2026-10-26, "Washi"), a
+   pale mulberry sheet, its light falling away toward the window's sides and less toward its
+   foot; matched to the drawn paper, whose fibres come in with it, so it comes in without a
+   change of tone. Each half's box is the whole window, so its inset shadow dims the window's
+   edges and never the tear. */
 .scene-doors__paper {
-  background-color: #a47744;
+  background-color: #b9ac96;
   background-image:
     radial-gradient(
-      ellipse 66% 54% at 50% 18%,
-      rgba(255, 232, 186, 0.62) 0%,
-      rgba(255, 232, 186, 0) 75%
+      ellipse 64% 78% at 50% 18%,
+      rgba(255, 250, 232, 0.7) 0%,
+      rgba(255, 250, 232, 0.36) 45%,
+      rgba(255, 250, 232, 0) 82%
     ),
     linear-gradient(
       90deg,
-      rgba(64, 36, 14, 0) calc(25% - 2px),
-      rgba(64, 36, 14, 0.3) 25%,
-      rgba(64, 36, 14, 0) calc(25% + 2px)
-    ),
-    linear-gradient(
-      90deg,
-      rgba(64, 36, 14, 0) calc(75% - 2px),
-      rgba(64, 36, 14, 0.3) 75%,
-      rgba(64, 36, 14, 0) calc(75% + 2px)
+      rgba(46, 38, 30, 0.34) 0,
+      rgba(46, 38, 30, 0) 260px,
+      rgba(46, 38, 30, 0) calc(100% - 260px),
+      rgba(46, 38, 30, 0.34) 100%
     ),
     linear-gradient(
       180deg,
-      rgba(64, 36, 14, 0) calc(50% - 2px),
-      rgba(64, 36, 14, 0.3) 50%,
-      rgba(64, 36, 14, 0) calc(50% + 2px)
-    ),
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1600' height='1600'%3E%3Cfilter id='s' x='0' y='0' width='1' height='1' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.0042' numOctaves='4' seed='11' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.36 0 0 0 0 0.21 0 0 0 0 0.08 0 0 0 1.6 -0.3'/%3E%3CfeComponentTransfer%3E%3CfeFuncA type='table' tableValues='0 0 0 0 0 0 0.06 0.6 0.24 0.2 0.2 0.2 0.2'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23s)'/%3E%3C/svg%3E"),
-    radial-gradient(ellipse 100% 92% at 50% 34%, rgba(40, 20, 8, 0) 42%, rgba(40, 20, 8, 0.88) 100%);
-  background-size:
-    auto,
-    auto,
-    auto,
-    auto,
-    1600px 1600px,
-    auto;
+      rgba(46, 38, 30, 0.12) 0,
+      rgba(46, 38, 30, 0) 220px,
+      rgba(46, 38, 30, 0) calc(100% - 300px),
+      rgba(46, 38, 30, 0.2) 100%
+    );
   box-shadow:
-    inset 0 0 26px 8px rgba(20, 10, 3, 0.95),
-    inset 0 -50px 110px -10px rgba(30, 15, 6, 0.65);
+    inset 0 0 26px 8px rgba(40, 32, 26, 0.35),
+    inset 0 -50px 110px -10px rgba(40, 32, 26, 0.18);
 }
 
 /* Its fibres and specks (a CC0 scan, high-passed to its detail about mid grey), laid over
@@ -1550,7 +1653,8 @@ body.scene-walk-hidden > :not(.scene-shell) {
 }
 
 /* A lantern opening's light through the paper (scene-doors.js `is-lantern`): the lantern
-   glass's deep amber, as the drawing's (paper-doors.js PAPER.lantern). */
+   glass's amber, as the drawing's (paper-doors.js PAPER.lantern), flickering as a candle
+   does. */
 .scene-doors.is-lantern .scene-doors__glow {
   background: radial-gradient(
     circle closest-side,
@@ -1562,8 +1666,8 @@ body.scene-walk-hidden > :not(.scene-shell) {
     rgba(150, 64, 32, 0.03) 80%,
     rgba(150, 64, 32, 0) 100%
   );
+  animation: scene-star-flicker 2.3s linear infinite;
 }
-
 /* The doors drawn as paper (src/doors-entry.js) fade in over these, which then leave
    them alone. */
 .scene-doors__canvas {

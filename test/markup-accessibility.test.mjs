@@ -176,27 +176,47 @@ test("the canvas keeps one 480ms fade over the title card, and the loading line 
     );
   }
   // The line and its star move only with real progress: no glint sweeps them, for anyone,
-  // and the star has no transition of its own (the canvas's fade covers it at the reveal).
+  // and the star has no transition of its own (the canvas's fade covers it at the reveal). A
+  // lantern opening's light is the lantern as the film's lens sees it (the owner's pick of
+  // 2026-10-26, "Camera glare"): it carries the lens's streak, which holds still, and
+  // flickers as a candle does by brightness alone, its place and warmth still the script's.
+  const layers = cssRules(
+    styles,
+    (selector) => /scene-loader|scene-star/.test(selector) && /::(?:after|before)/.test(selector),
+  );
   assert.deepEqual(
+    layers.map(({ selector }) => selector),
+    [".scene-star.is-lantern > .scene-star__disc::after"],
+    "no decorative layer on the loading line but the lantern's streak",
+  );
+  assert.doesNotMatch(layers[0].body, /animation|transition/, "the streak holds still");
+  assert.doesNotMatch(styles, /@keyframes scene-loader|glint/, "no glint keyframes");
+  const frames = [...styles.matchAll(/@keyframes (scene-star[\w-]*) \{([\s\S]*?)\n\}/g)];
+  assert.deepEqual(
+    frames.map(([, name]) => name),
+    ["scene-star-flicker", "scene-star-flicker-glow"],
+  );
+  for (const [, name, body] of frames)
+    assert.doesNotMatch(body, /opacity|transform|translate|scale\(/, `${name} is brightness alone`);
+  assert.doesNotMatch(
     cssRules(
       styles,
-      (selector) => /scene-loader|scene-star/.test(selector) && /::(?:after|before)/.test(selector),
-    ),
-    [],
-    "no decorative layer on the loading line",
-  );
-  assert.doesNotMatch(
-    styles,
-    /@keyframes scene-loader|@keyframes scene-star|glint/,
-    "no glint keyframes",
-  );
-  assert.doesNotMatch(
-    cssRules(styles, (selector) => /scene-loader|scene-star/.test(selector))
+      (selector) => /scene-loader|scene-star/.test(selector) && !/is-lantern/.test(selector),
+    )
       .map(({ body }) => body)
       .join(""),
     /animation/,
-    "nothing on the loading line animates",
+    "nothing on the loading line animates but the lantern's flicker",
   );
+  for (const { selector, body } of cssRules(styles, (list) =>
+    list.includes("scene-star.is-lantern"),
+  ))
+    for (const [, value] of body.matchAll(/animation:\s*([^;]+);/g))
+      assert.match(
+        value,
+        /^(?:scene-star-flicker(?:-glow)? [\d.]+s linear infinite|none)$/,
+        selector,
+      );
   assert.doesNotMatch(
     cssRules(styles, (selector) => selector.includes("scene-star"))
       .map(({ body }) => body)

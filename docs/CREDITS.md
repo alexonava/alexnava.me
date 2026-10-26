@@ -185,7 +185,8 @@ not published. Credit is not required under CC0; it is given here.
 ["Paper 006"](https://ambientcg.com/view?id=Paper006) on ambientCG, released under
 [CC0](https://docs.ambientcg.com/license/). The detail tile is the colour scan's
 luminance against its own local mean; the height tile is its displacement map at half
-contrast; both greyscale, 768 px and tiling. The source set, its checksum and the
+contrast; both greyscale, 768 px and tiling. They give the washi its fine tooth;
+`src/doors/paper-doors.js` draws its fibres and flecks of bark itself. The source set, its checksum and the
 script that makes both (`make-paper.ps1`) are in `Assets/Materials/paper-v1`; they are
 not published. Credit is not required under CC0; it is given here.
 

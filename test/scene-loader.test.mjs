@@ -874,7 +874,7 @@ test("an unknown, off-frame or malformed star shows nothing, and a late report c
   assert.equal(bare.state().status, "loading");
 });
 
-test("a lantern opening's light is the lantern glass's amber: the report's kind, its class and the stylesheet's glow", async () => {
+test("a lantern opening's light is the lantern as the film's lens sees it: the report's kind, its class and the stylesheet's glare", async () => {
   const styles = await readFile(new URL("../styles.css", import.meta.url), "utf8");
   // Lantern study, rolled by main.js chooseOpening(): the line waits for the tree too.
   const h = createHarness({ search: "", selection: { view: "tree", angle: 1 } });
@@ -892,15 +892,31 @@ test("a lantern opening's light is the lantern glass's amber: the report's kind,
     assert.equal(h.star.classList.contains("is-lantern"), false, JSON.stringify(report));
     assert.deepEqual(h.state().star, STAR);
   }
-  // The lantern's glass lit by its flame: a deep amber with no bright core rather than the
-  // star's flat disc, and a wider, dimmer glow.
+  // The camera's glare (the owner's pick of 2026-10-26): a hot core clipped warm white, an
+  // amber bloom and a faint veiling glare, each flickering by brightness alone, so the script
+  // keeps their opacity and transform.
+  const disc = cssRule(styles, ".scene-star.is-lantern > .scene-star__disc");
+  assert.match(disc, /radial-gradient\(\s*circle closest-side,\s*rgba\(255, 251, 240, 1\) 0%/);
+  assert.match(disc, /animation: scene-star-flicker 2\.3s linear infinite;/);
+  const glow = cssRule(styles, ".scene-star.is-lantern > .scene-star__glow");
+  assert.match(glow, /rgba\(255, 168, 86, 0\.36\) 0%/);
+  assert.match(glow, /animation: scene-star-flicker-glow 3\.7s linear infinite;/);
+  for (const name of ["scene-star-flicker", "scene-star-flicker-glow"]) {
+    const keyframes = styles.match(new RegExp(`@keyframes ${name} \\{([\\s\\S]*?)\\n\\}`))?.[1];
+    assert.ok(keyframes, name);
+    assert.doesNotMatch(keyframes, /opacity|transform/, `${name} leaves the script's styles`);
+    for (const [, value] of keyframes.matchAll(/brightness\(([\d.]+)\)/g))
+      assert.ok(Number(value) >= 0.95 && Number(value) <= 1.07, `${name}: ${value}`);
+  }
+  // The lens's anamorphic streak across it, six radii either side (the disc's box is two), as
+  // the scene draws it over the flame (architecture.js FLAME_STREAK), thinned by a mask.
+  const streak = cssRule(styles, ".scene-star.is-lantern > .scene-star__disc::after");
+  assert.match(streak, /left: -250%;/);
+  assert.match(streak, /right: -250%;/);
+  assert.match(streak, /mask-image: linear-gradient\(/);
   assert.match(
-    cssRule(styles, ".scene-star.is-lantern > .scene-star__disc"),
-    /radial-gradient\(\s*circle closest-side,\s*rgba\(255, 186, 104, 0\.72\) 0%/,
-  );
-  assert.match(
-    cssRule(styles, ".scene-star.is-lantern > .scene-star__glow"),
-    /rgba\(248, 138, 58, 0\.44\) 0%/,
+    styles,
+    /@media \(prefers-reduced-motion: reduce\) \{\s*\.scene-star\.is-lantern > \.scene-star__disc,\s*\.scene-star\.is-lantern > \.scene-star__glow \{\s*animation: none;/,
   );
 });
 
