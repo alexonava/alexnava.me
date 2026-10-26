@@ -406,6 +406,7 @@ test("CSS asset URLs and bytes are portable across checkout line endings", async
       "fonts",
       "images/architecture",
       "images/materials",
+      "images/paper",
       "public/.well-known",
     ]) {
       await mkdir(path.join(fixture, dir), { recursive: true });
@@ -434,7 +435,7 @@ test("CSS asset URLs and bytes are portable across checkout line endings", async
     ]) {
       await writeFile(path.join(fixture, file), "fixture\n");
     }
-    for (const file of ["app.js", "scene-entry.js", "webgl-probe-worker.js"]) {
+    for (const file of ["app.js", "scene-entry.js", "webgl-probe-worker.js", "doors-entry.js"]) {
       await writeFile(path.join(fixture, "src", file), "void 0;\n");
     }
     for (const file of ["index.html", "404.html"]) {
@@ -472,6 +473,9 @@ test("CSS asset URLs and bytes are portable across checkout line endings", async
     }
     await writeFile(path.join(fixture, "images", "materials", "coast-detail-256.webp"), binary);
     await writeFile(path.join(fixture, "images", "materials", "coast-albedo-512.webp"), binary);
+    for (const map of ["detail", "height"]) {
+      await writeFile(path.join(fixture, "images", "paper", `paper-${map}.webp`), binary);
+    }
     // The stylesheet's fonts, under their source names.
     for (const name of (await readdir(path.join(projectRoot, "fonts"))).filter((file) =>
       file.endsWith(".woff2"),
@@ -504,9 +508,12 @@ test("CSS asset URLs and bytes are portable across checkout line endings", async
     const crlf = await buildCss(lfSource.replace(/\n/g, "\r\n"));
     assert.deepEqual(crlf, lf, "LF and CRLF checkouts must publish identical CSS bytes and URLs");
     assert.ok(!crlf.bytes.includes(13), "emitted CSS must contain only LF line endings");
-    // The stylesheet's one kind of asset URL, its fonts, names their hashed copies.
+    // The stylesheet's asset URLs, its fonts and the opening's paper, name hashed copies.
     const font = "instrument-sans-variable";
     assert.ok(crlf.bytes.toString("utf8").includes(`/fonts/${font}.${hash(binary)}.woff2`));
+    assert.ok(
+      crlf.bytes.toString("utf8").includes(`/images/paper/paper-detail.${hash(binary)}.webp`),
+    );
     assert.deepEqual(
       await readFile(path.join(fixture, "dist", "fonts", `${font}.${hash(binary)}.woff2`)),
       binary,

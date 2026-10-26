@@ -360,6 +360,7 @@ test("Pages header rules resolve one cache policy for stable and fingerprinted p
     `/scripts/scene.${hash}.js`,
     `/scripts/scene.shared.${hash}.js`,
     `/scripts/scene.rock-build.${hash}.js`,
+    `/scripts/doors.${hash}.js`,
   ]) {
     assert.equal(cacheControl(pathname), immutable, pathname);
   }
@@ -387,9 +388,9 @@ test("Pages header rules resolve one cache policy for stable and fingerprinted p
     assert.equal(headersFor(pathname).get("content-type"), "text/plain; charset=utf-8", pathname);
   }
 
-  // The build publishes the architecture models and the film slate's maps only
-  // as name.HASH.ext, which are immutable; any other image would keep a
-  // revalidated plain URL.
+  // The build publishes the architecture models, the film slate's maps and the
+  // opening's paper only as name.HASH.ext, which are immutable; any other image
+  // would keep a revalidated plain URL.
   let fingerprintable = 0;
   const images = path.join(projectRoot, "images");
   for (const entry of await readdir(images, { recursive: true, withFileTypes: true })) {
@@ -401,7 +402,7 @@ test("Pages header rules resolve one cache policy for stable and fingerprinted p
     const stable = `/images/${relative}`;
     const hashed = stable.replace(/\.(\w+)$/, `.${hash}.$1`);
     const hashedByBuild =
-      /^(?:architecture\/[^/]+\.glb|materials\/(?:slate-[^/]+|coast-detail-256|coast-albedo-512)\.webp)$/.test(
+      /^(?:architecture\/[^/]+\.glb|materials\/(?:slate-[^/]+|coast-detail-256|coast-albedo-512)\.webp|paper\/paper-(?:detail|height)\.webp)$/.test(
         relative,
       );
     fingerprintable += hashedByBuild;
@@ -411,8 +412,8 @@ test("Pages header rules resolve one cache policy for stable and fingerprinted p
   }
   assert.equal(
     fingerprintable,
-    26,
-    "14 models, 9 slate maps, optional soil roughness and 2 coast maps",
+    28,
+    "14 models, 9 slate maps, optional soil roughness, 2 optional coast maps and 2 paper maps",
   );
 });
 
