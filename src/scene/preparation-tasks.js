@@ -246,3 +246,50 @@ export function queueTourShot(camera, subject, angle, frame, host = globalThis) 
     else tourPreparations.delete(camera);
   });
 }
+
+// References are captured by rendering while its transient warm-up flags are
+// active. No material/light graph is read or changed by the deferred uploads.
+export function uploadTextures(renderer, textures, valid, deadline, host = globalThis) {
+  if (textures.has(null)) return Promise.resolve(false);
+  if (!textures.size || typeof renderer.initTexture !== "function") return Promise.resolve(true);
+  const retired = new Set(),
+    listeners = new Map();
+  for (const texture of textures) {
+    const retire = () => retired.add(texture);
+    listeners.set(texture, retire);
+    texture.addEventListener?.("dispose", retire);
+  }
+  const cancelled = () =>
+    textures.has(null) ||
+    !valid() ||
+    Date.now() >= deadline ||
+    renderer.getContext?.()?.isContextLost?.();
+  return runPreparationSteps(
+    (function* () {
+      for (const texture of textures) {
+        if (cancelled() || retired.size) return false;
+        renderer.initTexture(texture);
+        yield;
+      }
+      return !cancelled() && retired.size === 0;
+    })(),
+    { priority: () => true, cancelled },
+    host,
+  )
+    .then(
+      (ready) => ready === true,
+      () => false,
+    )
+    .finally(() => {
+      for (const [texture, listener] of listeners)
+        texture.removeEventListener?.("dispose", listener);
+    });
+}
+
+export async function finishUploads(renderer, textures, valid, deadline, programs) {
+  const [uploaded, linked] = await Promise.all([
+    uploadTextures(renderer, textures, valid, deadline),
+    programs,
+  ]);
+  return uploaded && !linked.includes(false);
+}

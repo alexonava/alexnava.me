@@ -22,6 +22,7 @@ import { FILM_LIGHT } from "./film-light.js";
 import { createPostprocessPipeline } from "./postprocess.js";
 import { disposeSceneRuntimeResources } from "./runtime.js";
 import { compilePrograms, linkedPrograms } from "./shader-programs.js";
+import { loadPreparationTasks } from "./cinematic.js";
 
 export function createSceneRendering({
   container,
@@ -180,27 +181,6 @@ export function createSceneRendering({
     compileGeneration = 0;
   let disposeResult = null;
 
-  // Uploads every visible map before a shot first shows its subject, so a
-  // cut never uploads mid-crossfade; uploaded maps only rebind.
-  function uploadTextures() {
-    if (typeof renderer.initTexture !== "function") return;
-    const materials = new Set();
-    const upload = (value) => {
-      const image = value?.isTexture && !value.isRenderTargetTexture ? value.image : null;
-      if (image && image.complete !== false) {
-        renderer.initTexture(value);
-      }
-    };
-    homeScene.traverseVisible((object) => {
-      for (const material of [object.material].flat()) {
-        if (!material || materials.has(material)) continue;
-        materials.add(material);
-        Object.values(material).forEach(upload);
-        Object.values(material.uniforms ?? {}).forEach((uniform) => upload(uniform?.value));
-      }
-    });
-  }
-
   // Three's color compile does not prepare the separate shadow-depth programs.
   // Borrow only the caster geometry; these probes never draw or enter the live
   // graph. Keep the depth materials until disposal so their program leases hold
@@ -242,10 +222,8 @@ export function createSceneRendering({
             material[key] = source[key];
         }
         const probe = new Mesh(object.geometry, material);
-        probe.isInstancedMesh = object.isInstancedMesh;
-        probe.instanceMatrix = object.instanceMatrix;
-        probe.instanceColor = object.instanceColor;
-        probe.isSkinnedMesh = object.isSkinnedMesh;
+        for (const key of ["isInstancedMesh", "instanceMatrix", "instanceColor", "isSkinnedMesh"])
+          probe[key] = object[key];
         probes.add(probe);
       }
     });
@@ -363,35 +341,58 @@ export function createSceneRendering({
     compileShaders(timeoutMs = 2000) {
       if (disposed || renderer.getContext?.()?.isContextLost?.()) return Promise.resolve(false);
       const postprocessReady = postprocessPipeline.compile?.();
-      uploadTextures();
-      if (typeof renderer.compile !== "function") return Promise.resolve(false);
-      if (renderer.extensions?.has?.("KHR_parallel_shader_compile") !== true)
-        return Promise.resolve(false);
-      const previousTarget = renderer.getRenderTarget?.() ?? null;
-      const generation = compileGeneration;
+      // Snapshot textures and their retirement while transient warm-up flags are current.
+      let generation = compileGeneration;
+      const retire = () => {
+        generation = -1;
+      };
+      const textures = new Set();
+      const capture = (value) => {
+        const image = value?.isTexture && !value.isRenderTargetTexture ? value.image : null;
+        if (image && image.complete !== false) {
+          textures.add(value);
+          value.addEventListener("dispose", retire);
+        }
+      };
+      homeScene.traverseVisible((object) => {
+        for (const material of [object.material].flat()) {
+          if (!material) continue;
+          Object.values(material).forEach(capture);
+          Object.values(material.uniforms ?? {}).forEach((uniform) => capture(uniform?.value));
+        }
+      });
       const valid = () => !disposed && generation === compileGeneration;
-      let pending;
-      let shadows;
-      try {
-        renderer.setRenderTarget?.(composer.readBuffer ?? null);
-        pending = compilePrograms(renderer, homeScene, camera, null, valid, timeoutMs);
-        shadows = prepareShadowPrograms(valid, timeoutMs);
-      } catch {
-        return Promise.resolve(false);
-      } finally {
-        renderer.setRenderTarget?.(previousTarget);
+      let pending = false,
+        shadows;
+      if (
+        typeof renderer.compile === "function" &&
+        renderer.extensions?.has?.("KHR_parallel_shader_compile") === true
+      ) {
+        const previousTarget = renderer.getRenderTarget?.() ?? null;
+        try {
+          renderer.setRenderTarget?.(composer.readBuffer ?? null);
+          pending = compilePrograms(renderer, homeScene, camera, null, valid, timeoutMs);
+          shadows = prepareShadowPrograms(valid, timeoutMs);
+        } catch {
+          pending = false;
+        } finally {
+          renderer.setRenderTarget?.(previousTarget);
+        }
       }
+      const deadline = Date.now() + timeoutMs;
+      const programs = Promise.all([pending, postprocessReady, shadows]).catch(() => [false]);
+      const uploads = loadPreparationTasks().then(({ finishUploads }) =>
+        finishUploads(renderer, textures, valid, deadline, programs),
+      );
       return new Promise((resolve) => {
-        const timer = setTimeout(() => resolve(false), timeoutMs);
-        Promise.all([pending, postprocessReady, shadows])
-          .then(
-            (results) => results.every((ready) => ready !== false),
-            () => false,
-          )
-          .then((ready) => {
-            clearTimeout(timer);
-            resolve(ready);
-          });
+        const finish = (ready) => {
+          for (const texture of textures) texture.removeEventListener("dispose", retire);
+          textures.clear();
+          clearTimeout(timer);
+          resolve(ready);
+        };
+        const timer = setTimeout(finish, timeoutMs, false);
+        uploads.then(finish, () => finish(false));
       });
     },
     // Where shaders compile in parallel, links the programs a quality step
