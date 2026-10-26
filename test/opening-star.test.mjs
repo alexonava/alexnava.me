@@ -339,7 +339,7 @@ test("the lantern's stored outline is the bake of both tiers' models", () => {
   near(Math.max(...heights), LANTERN_AUTHORING_HEIGHT, LANTERN_RESOLUTION, "its top");
 });
 
-// The tree's shots framed on the lantern alone: Lantern study, and Root and lantern.
+// The selected before framing measures only Lantern study on the whole lantern.
 const LANTERN_SHOTS = DIRECTED_SHOTS.tree.flatMap((shot, angle) =>
   shot.subject === "tree-lantern" ? [angle] : [],
 );
@@ -347,7 +347,7 @@ const inFrame = (source) =>
   source[3] > 0 && source[0] > 0 && source[0] < 1 && source[1] > 0 && source[1] < 1;
 
 test("openingFlame() puts the flame where the scene's camera fitted to the supplied lantern puts it", () => {
-  assert.deepEqual(LANTERN_SHOTS, [1, 3]);
+  assert.deepEqual(LANTERN_SHOTS, [1]);
   const stages = { high: stagedLantern("high"), balanced: stagedLantern("balanced") };
   // The window shapes the star's own test measures.
   for (const [tier, width, height, hero, nav] of [
@@ -411,7 +411,11 @@ test("only a shot framed on the lantern gives the line a flame", () => {
   assert.equal(openingFlame({ ...base, selected: "watch", angle: 0 }), null, "The watch");
   assert.equal(openingFlame({ ...base, angle: 0 }), null, "Portrait frames the tree");
   assert.equal(openingFlame({ ...base, angle: 2 }), null, "Close-up frames the crown");
-  assert.ok(openingFlame({ ...base, angle: 3 }), "Root and lantern frames the lantern too");
+  assert.equal(
+    openingFlame({ ...base, angle: 3 }),
+    null,
+    "Root and lantern frames the roots; its actual fitted camera reports the light",
+  );
   assert.equal(openingFlame({ ...base, foot: null }), null);
   assert.equal(openingFlame({ ...base, width: 0 }), null);
 });

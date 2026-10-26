@@ -558,7 +558,7 @@ test("an anchored tour shot keeps its fit through an address bar while its reach
     locked = f.controller.frame;
   // Portrait sets the tree on the phone's lower third, a little left of centre, and lifts the
   // camera to look over the root at the lantern.
-  assert.deepEqual(shot.anchor, [0.41, 0.62]);
+  assert.deepEqual(shot.anchor, [0.39, 0.66]);
   assert.equal(shot.height, 0.38);
   const a = cinematicSafeArea(390, 844, f.hero, { top: 844 - 110 }),
     reach =
@@ -1330,11 +1330,10 @@ test("the five directed shots keep their names and distinct viewpoints", () => {
   const keys = new Set(all.map((s) => `${s.azimuth}/${s.height}/${s.region.join()}`));
   assert.equal(keys.size, 5);
   for (const shot of all) {
-    // Camera heights follow the selected subject's scale: the wider root
-    // companion stands above the small lantern rather than above the tree.
+    // The selected before root shot frames the tree's low root volume.
     if (shot.name === "Root and lantern") {
-      assert.equal(shot.subject, "tree-lantern");
-      assert.ok(shot.height >= 1 && shot.height <= 3);
+      assert.equal(shot.subject, undefined);
+      assert.equal(shot.height, 0.14);
     } else assert.ok(shot.height >= 0.1 && shot.height <= 0.7);
     assert.ok(shot.fov >= 30 && shot.fov <= 46);
   }
@@ -1557,11 +1556,10 @@ test("widescreen bars cut desktops to 2.39:1, never phones, portrait, narrow or 
   assert.equal(phone.top, 201);
 
   // The bars pick a shot's letterbox variant, built once; shots without one
-  // keep their base form. The wider root companion adjusts its eye height
-  // and scale inside the bars, without changing the protected lantern view.
+  // keep their base form. The selected before presets use their base forms.
   assert.deepEqual(
     [...DIRECTED_SHOTS.watch, ...DIRECTED_SHOTS.tree].filter((s) => s.letterbox).map((s) => s.name),
-    ["Root and lantern"],
+    [],
   );
   for (const base of [
     ...DIRECTED_SHOTS.watch,
@@ -1591,7 +1589,7 @@ test("cooperative preparation preserves all sixty original delivered-tier camera
   const baseline = JSON.parse(
     readFileSync(new URL("./support/camera-preparation-baseline.json", import.meta.url), "utf8"),
   );
-  assert.equal(baseline.source, "6f592625e1d74aa10b37db48dcfb27524260e542");
+  assert.equal(baseline.source, "046ba230f9cdc273a76210a1272eb8e8417d2296");
   assert.deepEqual(
     cameraPreparationSignatures(
       {

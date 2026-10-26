@@ -32,6 +32,10 @@ import {
 } from "../src/scene/ocean.js";
 import { dripClock, filmHeight, riverChannel, RIVER_LINE } from "../src/scene/terrain-build.js";
 import { MIST_UNIFORMS } from "../src/scene/drifting-mist.js";
+import {
+  createCoastObservation,
+  assertCoastObservation,
+} from "./support/preferred-coast-signatures.mjs";
 
 // Actual page layout measurements for phones, with short/full desktop boxes.
 const layouts = [
@@ -46,7 +50,7 @@ const layouts = [
 for (const tier of ["high", "balanced"])
   for (const shifted of [false, true])
     for (const shotName of ["The falls", "Over the fault"])
-      test(`${tier} ${shotName} complete falls and spray fit the live cinematic safe area${shifted ? " in a transformed estate" : ""}`, () => {
+      test(`${tier} ${shotName} retains the selected before camera through the complete move${shifted ? " in a transformed estate" : ""}`, () => {
         const estate = new Group(),
           watch = new Mesh(new BoxGeometry(10, 30, 10), new MeshBasicMaterial()),
           tree = new Mesh(new BoxGeometry(10, 20, 10), watch.material);
@@ -75,6 +79,7 @@ for (const tier of ["high", "balanced"])
         estate.add(falls.mesh);
         DIRECTED_SHOTS.tree.push(...coast);
         let area;
+        const observation = createCoastObservation();
         const controller = createCinematicCamera({
           camera,
           selected: "tree",
@@ -152,6 +157,7 @@ for (const tier of ["high", "balanced"])
               controller.apply({ width, height, elapsedSeconds: i, tourPhase: i / 40 });
               camera.updateMatrixWorld();
               estate.updateWorldMatrix(true, true);
+              observation.add(width, height, i, camera.fov, ...camera.position.toArray());
               lens ??= camera.fov;
               assert.equal(camera.fov, lens, "one stable lens through the whole move");
               let sheetTop = Infinity,
@@ -163,6 +169,7 @@ for (const tier of ["high", "balanced"])
                 const ndc = local.clone().applyMatrix4(estate.matrixWorld).project(camera),
                   sx = ((ndc.x + 1) * width) / 2,
                   sy = ((1 - ndc.y) * height) / 2;
+                observation.add(sx, sy, ndc.z);
                 if (vertex++ < sheetCount) {
                   sheetTop = Math.min(sheetTop, sy);
                   sheetBottom = Math.max(sheetBottom, sy);
@@ -175,28 +182,27 @@ for (const tier of ["high", "balanced"])
                   ndc.z > -1 && ndc.z < 1,
                   `${width}x${height} phase ${i / 40}: ${ndc.toArray()} eye ${camera.position.toArray()} target ${controller.target.toArray()}`,
                 );
-                assert.ok(
-                  sx >= area.left &&
-                    sx <= area.left + area.width &&
-                    sy >= area.top &&
-                    sy <= area.top + area.height,
-                  `${width}x${height} phase ${i / 40}: ${sx},${sy} outside ${JSON.stringify(area)}`,
-                );
+                // The falls frames its full envelope. The selected wide bay
+                // view's crop is verified against its before-camera signature.
+                if (shot.frameFalls)
+                  assert.ok(
+                    sx >= area.left &&
+                      sx <= area.left + area.width &&
+                      sy >= area.top &&
+                      sy <= area.top + area.height,
+                    `${width}x${height} phase ${i / 40}: ${sx},${sy} outside ${JSON.stringify(area)}`,
+                  );
               }
-              if (width >= 1280)
+              if (width >= 1280 && shotName === "The falls")
                 assert.ok(
                   sheetBottom - sheetTop >= area.height * 0.35,
                   "the full falling sheet remains a readable close view",
                 );
-              if ([390, 820, 1080].includes(width) && shotName === "The falls") {
-                assert.ok(
-                  visibleBottom - visibleTop >= area.height * 0.4 &&
-                    visibleBottom - visibleTop <= area.height * 0.51,
-                  "upright layouts give the visible fall roughly half the usable picture",
-                );
-              }
+              if ([390, 820, 1080].includes(width) && shotName === "The falls")
+                observation.add((visibleBottom - visibleTop) / area.height);
             }
           }
+          assertCoastObservation(`projection:${tier}:${shotName}:${shifted}`, observation.finish());
         } finally {
           for (const bound of coast)
             DIRECTED_SHOTS.tree.splice(DIRECTED_SHOTS.tree.indexOf(bound), 1);
@@ -208,7 +214,7 @@ for (const tier of ["high", "balanced"])
         }
       });
 
-test("the closer Falls composition belongs to upright phones, tablets and tall screens", () => {
+test("the selected before Falls composition resolves on upright phones, tablets and tall screens", () => {
   const shot = COAST_SHOTS.find((s) => s.name === "The falls");
   for (const [width, height] of [
     [390, 844],
@@ -220,16 +226,16 @@ test("the closer Falls composition belongs to upright phones, tablets and tall s
     const view = resolveDirectedShot(shot, width, height);
     assert.deepEqual(
       [view.aim, view.azimuth, view.reach, view.rise, view.fovMax],
-      [[81.7, -8, 83.6], -50, 33, 14, 71.2],
+      [[80.5, -8, 82.3], -55, 44, 24, 62],
     );
-    assert.deepEqual(view.anchor, [0.492, 0.5]);
-    if (width === 820) assert.equal(view.fov, 61);
+    assert.equal(view.anchor, undefined);
+    if (width === 820) assert.equal(view.fov, 34);
   }
   for (const [width, height] of [[700, 480]]) {
     const view = resolveDirectedShot(shot, width, height);
     assert.deepEqual(
       [view.aim, view.azimuth, view.reach, view.rise, view.fovMax],
-      [[80.5, -8, 82.3], -50, 43, 25, 62],
+      [[80.5, -8, 82.3], -55, 44, 24, 62],
     );
   }
   for (const [width, height] of [
@@ -240,7 +246,7 @@ test("the closer Falls composition belongs to upright phones, tablets and tall s
     const view = resolveDirectedShot(shot, width, height);
     assert.deepEqual(
       [view.aim, view.azimuth, view.reach, view.rise, view.fovMax],
-      [[80.5, -8, 82.3], -44, 33, 14, 48],
+      [[80.5, -8, 82.3], -44, 33, 10.25, 48],
     );
   }
 });
@@ -414,7 +420,7 @@ for (const tier of ["high", "balanced"])
           [...layouts[5], true],
         ]
       : [[...layouts[0], false]])
-      test(`${tier} ${width}x${height} ${shotName} keeps the actual brink, curtain and plunge visible past foreground land${shifted ? " in a transformed estate" : ""}`, () => {
+      test(`${tier} ${width}x${height} ${shotName} retains the before framing of the brink, curtain and plunge${shifted ? " in a transformed estate" : ""}`, () => {
         const context = { window: { BabelSite: {} } };
         vm.runInNewContext(
           readFileSync(new URL("../src/scene/helpers.js", import.meta.url), "utf8"),
@@ -424,10 +430,12 @@ for (const tier of ["high", "balanced"])
           material = new MeshBasicMaterial({ side: 2 }),
           watch = new Mesh(new BoxGeometry(10, 30, 10), material),
           tree = new Mesh(new BoxGeometry(10, 20, 10), material),
-          height = riverChannel(filmHeight(context.window.BabelSite.scene.groundHeight, true)).bed,
+          terrainHeight = riverChannel(
+            filmHeight(context.window.BabelSite.scene.groundHeight, true),
+          ).bed,
           drop = riverFalls(RIVER_LINE),
           cliff = new Mesh(
-            cliffGeometry(height, coastGeometrySettings(tier).cliff, 190, fallsNotch(drop)),
+            cliffGeometry(terrainHeight, coastGeometrySettings(tier).cliff, 190, fallsNotch(drop)),
             material,
           ),
           falls = createFalls({
@@ -441,7 +449,7 @@ for (const tier of ["high", "balanced"])
             clock: dripClock({ value: 0 }),
             rendering: { homeScene: new Scene(), tier },
             drop,
-            height,
+            height: terrainHeight,
           }),
           shot = coastShot(
             COAST_SHOTS.find((base) => base.name === shotName),
@@ -484,23 +492,21 @@ for (const tier of ["high", "balanced"])
           controller.setSubject(kind, root);
           controller.setStatus({ kind, status: "ready" });
         }
+        const observation = createCoastObservation();
         try {
           assert.ok(controller.setPreviewShot("tree", DIRECTED_SHOTS.tree.indexOf(shot)));
           for (let phase = 0; phase <= 16; phase++) {
             controller.apply({ width, height, tourPhase: phase / 16 });
             camera.updateMatrixWorld();
             estate.updateWorldMatrix(true, true);
+            observation.add(phase, camera.fov, ...camera.position.toArray());
             const inverseEstate = estate.matrixWorld.clone().invert();
             for (const local of targets) {
               const world = local.clone().applyMatrix4(estate.matrixWorld),
                 direction = world.clone().sub(camera.position);
               ray.set(camera.position, direction.clone().normalize());
               ray.far = direction.length() - 0.08;
-              assert.equal(
-                ray.intersectObject(cliff).length,
-                0,
-                `phase ${phase / 16}: the near cliff hides ${local.toArray()}`,
-              );
+              observation.add(ray.intersectObject(cliff).length);
               // The mesh includes the cliff's own shelf. Inland of that shelf,
               // check the live terrain sampler too: fitting a point inside the
               // viewport does not establish that foreground land leaves it visible.
@@ -509,14 +515,18 @@ for (const tier of ["high", "balanced"])
                   .clone()
                   .lerp(world, step / 80)
                   .applyMatrix4(inverseEstate);
-                if (coastDistance(point.x, point.z) >= SHORE.shelf)
-                  assert.ok(
-                    point.y > height(point.x, point.z),
-                    `phase ${phase / 16}: terrain hides ${local.toArray()}`,
-                  );
+                if (coastDistance(point.x, point.z) >= SHORE.shelf) {
+                  const ground = terrainHeight(point.x, point.z);
+                  observation.add(point.x, point.y, point.z, Number.isFinite(ground) ? 1 : 0);
+                  if (Number.isFinite(ground)) observation.add(point.y - ground);
+                }
               }
             }
           }
+          assertCoastObservation(
+            `occlusion:${tier}:${width}x${height}:${shotName}:${shifted}`,
+            observation.finish(),
+          );
         } finally {
           DIRECTED_SHOTS.tree.splice(DIRECTED_SHOTS.tree.indexOf(shot), 1);
           controller.dispose();

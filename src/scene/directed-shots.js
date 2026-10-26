@@ -5,10 +5,18 @@ import { Box3, Vector3 } from "three";
 // entire horizontal slice would turn every portrait detail into a wide shot.
 // hold: seconds the tour stays on a shot, cut to cut; tour=3|5|20 overrides it.
 //
-// One moonlit place, from the intimate lantern to the tree, painted sky and
-// broken coast. The watch fits its stored outline rather than a visible model;
-// anchors and lenses may change without invalidating that measurement. Lantern
-// study is the fixed visual benchmark; the surrounding shots frame its setting.
+// Under the milky sky (the owner's direction of 2026-10-11: "make this more about the artsy
+// background milky theme, with bigger than life close up scenes… one cohesive idea"): the
+// tour alternates the sky over the watch and the tree by the water. The watch (GIANT, below)
+// stands its lens low on the terrace and looks up, so on desktops the horizon, the plain and
+// the ranges fall below the name and the painted banks fill the frame behind it, the star and
+// its maelstrom whole beside the name, and travels a dolly zoom as the gaze lifts; no lens
+// softens the sky. The lookout it was framed around is gone (the owner's call of 2026-10-20:
+// "leave the tower out going forward"); it frames that lookout's stored outline
+// (opening-star.js watchMeasure()), so the sky keeps the composition picked with it. The
+// tree's shots keep their own framings, which show the plain, the river and the stream (the
+// owner's call of 2026-10-12: "i liked the tree shots how they were. they showed the water
+// more").
 const GIANT_MOVE = Object.freeze({
   dolly: Object.freeze([1.04, 0.94]),
   tilt: Object.freeze([0, 2.5]),
@@ -40,7 +48,7 @@ const PORTRAIT_UPRIGHT = Object.freeze({
     crane: Object.freeze([0, 0.08]),
     ease: 0.6,
   }),
-  margin: 0.98,
+  margin: 0.93,
   tilt: null,
 });
 // Phones (the owner's rule of 2026-10-15: the lantern first): at -41.75 with a quarter-degree
@@ -56,8 +64,8 @@ const PORTRAIT_UPRIGHT = Object.freeze({
 // band, which index.js gives arc-2 shots.)
 const PORTRAIT_PHONE = Object.freeze({
   ...PORTRAIT_UPRIGHT,
-  anchor: Object.freeze([0.41, 0.62]),
-  margin: 0.99,
+  anchor: Object.freeze([0.39, 0.66]),
+  margin: 0.97,
   height: 0.38,
   arc: 0.25,
   azimuth: -41.75,
@@ -73,15 +81,15 @@ const PORTRAIT_PHONE = Object.freeze({
 const PORTRAIT_WIDE = Object.freeze({
   azimuth: -43.5,
   arc: 1,
-  anchor: Object.freeze([0.6, 0.62]),
-  margin: 0.98,
+  anchor: Object.freeze([0.6, 0.66]),
+  margin: 0.93,
   height: 0.12,
 });
 export const DIRECTED_SHOTS = {
   watch: [
     {
       name: "The watch",
-      // The sky over the terrace, facing the star from the east (164 degrees), the
+      // The opener: the sky over the terrace, facing the star from the east (164 degrees), the
       // star and its maelstrom whole right of the frame's middle, the name in the open sky on
       // its left. Its region, focus, height and target height select the stored outline it
       // frames (opening-outline-key.js), the lookout's cab and upper legs, from the foot of
@@ -96,7 +104,7 @@ export const DIRECTED_SHOTS = {
       region: [0.5, 1],
       targetHeight: 0.66,
       azimuth: -16,
-      anchor: [0.38, 0.54],
+      anchor: [0.45, 0.54],
       hold: 9,
       ground: { ...AFTER_RAIN, mist: { ...AFTER_RAIN.mist, amount: 0.75 } },
       // Portrait screens, narrower, aim left of centre, the star whole to its right, and keep
@@ -104,18 +112,17 @@ export const DIRECTED_SHOTS = {
       // as it is.
       portrait: {
         azimuth: -12,
-        anchor: [0.22, 0.54],
+        anchor: [0.28, 0.54],
         margin: 0.88,
         focus: { width: 0.22, depth: [-0.3, 0.3] },
         move: { zoom: [44, 38], dollyZoom: true, tilt: GIANT_MOVE.tilt, ease: 0.6 },
       },
-      tablet: { anchor: [0.25, 0.54] },
-      tall: { anchor: [0.28, 0.54] },
+      tablet: { anchor: [0.31, 0.54] },
       // Landscape phones fit a little higher, the short frame all sky.
-      landscape: { move: null, region: [0.56, 1], anchor: [0.44, 0.62] },
-      compact: { move: null, region: [0.56, 1], anchor: [0.44, 0.62] },
+      landscape: { move: null, region: [0.56, 1], anchor: [0.5, 0.62] },
+      compact: { move: null, region: [0.56, 1], anchor: [0.5, 0.62] },
       // Squarish short windows aim further left, so the star stays whole inside the right edge.
-      squat: { move: null, anchor: [0.29, 0.54] },
+      squat: { move: null, anchor: [0.35, 0.54] },
     },
   ],
   tree: [
@@ -126,7 +133,7 @@ export const DIRECTED_SHOTS = {
       // Tablets, portrait monitors and squat windows turn a little further (PORTRAIT_WIDE).
       tablet: { ...PORTRAIT_WIDE },
       tall: { ...PORTRAIT_WIDE },
-      squat: { ...PORTRAIT_UPRIGHT, ...PORTRAIT_WIDE, azimuth: -43, anchor: [0.58, 0.62] },
+      squat: { ...PORTRAIT_UPRIGHT, ...PORTRAIT_WIDE, azimuth: -43, anchor: [0.58, 0.66] },
       // One night (2026-10-12): the lantern a little stronger at the trunk's
       // foot, leading into Lantern study.
       light: { fill: 0.85, lantern: 1.2 },
@@ -146,10 +153,12 @@ export const DIRECTED_SHOTS = {
       height: 0.12,
       arc: 4,
       hold: 9,
-      // The complete tree fills about a tenth more of the desktop frame, with
-      // its river-to-crown lift and open sky retained. Short landscapes keep
-      // the looser fit required by their drift and shallow text-safe area.
-      margin: 0.91,
+      // Sky first (the owner's pick of 2026-10-11, "A sky open"): the tree fits
+      // smaller (0.93 before) so more of the clouds stand over it; the aim starts a
+      // little high, so the tilt keeps the whole tree inside the frame. Water to sky
+      // (the owner's pick of 2026-10-12): the camera opens tilted 1 degree down onto
+      // the river and lifts 4 degrees up into the crown by the end of the move.
+      margin: 0.82,
       anchor: [0.5, 0.42],
       tilt: [-1, 4],
       // The moon through a break in the cloud lights the plain about the tree;
@@ -171,7 +180,7 @@ export const DIRECTED_SHOTS = {
         pools: 0.85,
       },
       // Landscape phones keep the drift: no room about the name for a move.
-      landscape: { move: null, margin: 0.82 },
+      landscape: { move: null },
     },
     {
       name: "Lantern study",
@@ -228,57 +237,48 @@ export const DIRECTED_SHOTS = {
     },
     {
       name: "Close-up",
-      // One night: moonlit bark with restrained sky fill. Its twigs'
+      // One night (2026-10-12): a pure backlight, less frontal fill. Its twigs'
       // glints off the intro (glintText): a one-pixel sparkle behind it set the
       // small window's intro at 5.25:1 (599x499, the re-review of 2026-10-15).
       light: { fill: 0.7, glintText: 1 },
       // No lens blur: the clouds behind the crown read sharp (sky first, below). A tracking
       // pan (the owner's pick of 2026-10-12): the camera slides to its left while the lens
       // turns to hold the crown, so the limbs slide across the clouds behind it.
-      move: { truck: [-0.055, 0.055], pan: [-1.2, 0], ease: 0.5 },
-      // A substantial fork, seen farther around its moonlit face; the smaller
-      // truck holds the bark plane rather than sweeping a lattice of twigs.
-      region: [0.36, 0.6],
+      move: { truck: [-0.1, 0.1], pan: [-2, 2], ease: 0.5 },
+      // The crown: low under the fork high on the trunk, looking up at the
+      // limbs against the sky, open sky beside the name.
+      region: [0.5, 0.78],
       fov: 32,
-      azimuth: -35,
-      height: 0.12,
-      arc: 1.2,
+      azimuth: -155,
+      height: 0.28,
+      arc: 2,
       hold: 6,
-      focus: { width: 0.16, depth: [-0.08, 0.14] },
-      // Deliberate trunk crops with open sky beside the name; the clouds stay sharp.
-      margin: 0.85,
-      anchor: [0.65, 0.45],
+      focus: { width: 0.32, depth: [-0.15, 0.2] },
+      // Sky first (the owner's pick of 2026-10-11, "A sky open"): the crown fits
+      // smaller (0.92 before; phones keep it, or the roots enter their frame) and the
+      // lens no longer softens the sky.
+      margin: 0.8,
+      anchor: [0.58, 0.45],
       // Phones push in: a sideways truck this close takes the lens into the
       // trunk. Their aim sits a little high, which lifts the far range's snow
       // clear above the name on portrait monitors.
       portrait: {
-        region: [0.4, 0.64],
-        height: 0.25,
-        focus: { width: 0.18, depth: [-0.08, 0.14] },
-        anchor: [0.55, 0.4],
+        focus: { width: 0.26, depth: [-0.15, 0.2] },
+        anchor: [0.5, 0.4],
         move: { dolly: [1.1, 0.94], ease: 0.5 },
         margin: 0.92,
       },
       // Landscape phones keep the drift (no room about the name for a move),
       // from higher, so the roots stay below the short frame.
-      landscape: {
-        move: null,
-        region: [0.36, 0.6],
-        margin: 0.83,
-        height: 0.5,
-        anchor: [0.5, 0.5],
-      },
-      // Portrait monitors retain their measured right-side crop: a more frontal
-      // fork would bring lower wood into the name beneath this long frame.
-      tall: {
-        azimuth: -170.5,
-        region: [0.5, 0.78],
-        focus: { width: 0.26, depth: [-0.15, 0.2] },
-        anchor: [0.6, 0.555],
-        height: 0.46,
-        arc: 2,
-        margin: 0.96,
-      },
+      landscape: { move: null, margin: 0.83, height: 0.5, anchor: [0.5, 0.5] },
+      // Portrait monitors, the name below the subject: turned 15.5 degrees, the trunk a little
+      // larger and right of centre, seen from higher (0.46) and aimed lower, so the trunk keeps
+      // 25 CSS px or more off the name and the intro through the push (from -162 at the centre
+      // it crossed "ex" and "va" by the end; at -166 the intro's last word met it), the roots
+      // and lantern stay below the frame, and the ranges stand wholly above the name, the text
+      // on the plain below their feet (from 0.28 a crag's crest ran through "Alex" and their
+      // feet behind "Nava").
+      tall: { azimuth: -170.5, anchor: [0.6, 0.555], height: 0.46, margin: 0.96 },
     },
     {
       name: "Root and lantern",
@@ -294,43 +294,28 @@ export const DIRECTED_SHOTS = {
       // One night (2026-10-12): less of the frontal fill, as in Lantern study.
       light: { key: 0.6, fill: 0.6, lantern: 1.4, grassInside: 1, glintText: 1 },
       lens: { blur: 6, near: 0.35 },
-      // The lantern sets this wider companion's scale. Its eye follows
-      // the stream around the root elbow to the complete lantern on the right.
-      subject: "tree-lantern",
-      region: [0, 1],
-      fov: 34,
-      azimuth: -125,
-      height: 1,
+      // Round from the -115° axis, so the trunk stands right of centre and
+      // the lantern on the right third, the plain behind the name; the aim
+      // sits low, which keeps the ranges under the top edge's open band.
+      // Phones set the lantern low on that third.
+      region: [0, 0.16],
+      fov: 32,
+      azimuth: -120,
+      height: 0.14,
       arc: 1,
       hold: 6,
-      margin: 0.36,
-      anchor: [0.62, 0.6],
+      focus: { width: 0.3, depth: [-0.1, 0.32] },
+      margin: 0.91,
+      anchor: [0.52, 0.64],
       ground: AFTER_RAIN,
-      letterbox: { height: 1.28, margin: 0.4 },
       portrait: {
-        anchor: [0.56, 0.62],
-        height: 2.6,
-        move: { dolly: [0.92, 1.06], ease: 0.6 },
-      },
-      tall: { height: 2 },
-      squat: {
-        height: 2,
-        anchor: [0.56, 0.62],
+        focus: { width: 0.25, depth: [-0.1, 0.32] },
+        anchor: [0.55, 0.66],
         move: { dolly: [0.92, 1.06], ease: 0.6 },
       },
       // Landscape phones keep the drift (no room about the name for a move)
       // and the -115° axis.
-      landscape: {
-        move: null,
-        azimuth: -115,
-        subject: null,
-        region: [0, 0.16],
-        fov: 32,
-        height: 0.14,
-        focus: { width: 0.3, depth: [-0.1, 0.32] },
-        margin: 0.91,
-        anchor: [0.5, 0.5],
-      },
+      landscape: { move: null, azimuth: -115, anchor: [0.5, 0.5] },
     },
   ],
 };

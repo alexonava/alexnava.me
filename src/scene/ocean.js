@@ -1978,33 +1978,25 @@ const COAST_LOOK = Object.freeze({
   }),
 });
 const BROKEN_COAST_VIEW = Object.freeze({
-  aim: Object.freeze([125, -6, 112]),
-  azimuth: -160,
-  reach: 72,
-  fov: 42,
-});
-const FALLS_UPRIGHT = Object.freeze({
-  aim: Object.freeze([80.5, -8, 82.3]),
-  azimuth: -50,
-  reach: 43,
-  rise: 25,
-  fovMax: 62,
-  anchor: Object.freeze([0.5, 0.5]),
-  shadow: Object.freeze([62, 70]),
+  aim: Object.freeze([140, -8.75, 115]),
+  azimuth: -137.1,
+  reach: 95.5,
+  fov: 40,
 });
 export const COAST_SHOTS = Object.freeze([
-  // An oblique view along the broken edge, with less near shelf and a longer
-  // view of its side planes, out through the stacks to the horizon.
+  // High on the cliffs' edge, down the bay and out past the stacks to the
+  // horizon, pushing in.
   Object.freeze({
     ...COAST_LOOK,
     name: "The broken coast",
     after: "Portrait",
     ...BROKEN_COAST_VIEW,
-    // Upright phones retain the bearing and lens that separate the complete
-    // offshore forms. Their raised eye and aim expose the edge beneath them;
-    // wider canvases take the more oblique composition.
+    // On upright phones a wider bearing holds the offshore pillar and tilted
+    // slab apart across open water, from beyond the tree (farther back it
+    // stands in the frame); the lens is as narrow as both allow, 76 degrees
+    // (82 before: too wide). Wider canvases keep the wide view.
     portrait: Object.freeze({
-      aim: Object.freeze([120.3, -6, 115]),
+      aim: Object.freeze([120.3, -8.75, 115]),
       azimuth: -127.8,
       reach: 82.2,
       fov: 76,
@@ -2012,7 +2004,7 @@ export const COAST_SHOTS = Object.freeze([
     tablet: BROKEN_COAST_VIEW,
     tall: BROKEN_COAST_VIEW,
     squat: BROKEN_COAST_VIEW,
-    rise: 10.5,
+    rise: 8.25,
     shadow: Object.freeze([85, 72]),
     move: Object.freeze({ dolly: Object.freeze([1.05, 0.95]), ease: 0.6 }),
   }),
@@ -2024,62 +2016,43 @@ export const COAST_SHOTS = Object.freeze([
     name: "The falls",
     after: "Lantern study",
     frameFalls: true,
-    aim: FALLS_UPRIGHT.aim,
-    // Upright phones come closer and lower across the bay: the full fall takes
-    // roughly half the usable picture while its brink, pool and spray remain.
-    // Wider upright/squat canvases keep their established complete envelope.
+    aim: Object.freeze([80.5, -8, 82.3]),
+    // Upright screens stand farther back, round toward the land and higher, so
+    // they look over the near rim into the bay, and may open the lens further
+    // (their frame is narrow), so the falls never shrink into a thread.
+    // Their shadow centres nearer them, so it still holds the land at their feet.
     portrait: Object.freeze({
-      ...FALLS_UPRIGHT,
-      aim: Object.freeze([81.7, -8, 83.6]),
-      reach: 33,
-      rise: 14,
-      fovMax: 71.2,
-      anchor: Object.freeze([0.492, 0.5]),
+      azimuth: -55,
+      reach: 44,
+      rise: 24,
+      fovMax: 62,
+      shadow: Object.freeze([62, 70]),
     }),
-    tablet: Object.freeze({
-      ...FALLS_UPRIGHT,
-      fov: 61,
-      aim: Object.freeze([81.7, -8, 83.6]),
-      reach: 33,
-      rise: 14,
-      fovMax: 71.2,
-      anchor: Object.freeze([0.492, 0.5]),
-    }),
-    tall: Object.freeze({
-      ...FALLS_UPRIGHT,
-      aim: Object.freeze([81.7, -8, 83.6]),
-      reach: 33,
-      rise: 14,
-      fovMax: 71.2,
-      anchor: Object.freeze([0.492, 0.5]),
-    }),
-    squat: FALLS_UPRIGHT,
     // Short landscape phones hold it still, farther back, higher and a little
     // wider for their short frame.
     landscape: Object.freeze({
       move: null,
-      azimuth: -50,
-      reach: 39,
-      rise: 19,
+      azimuth: -55,
+      reach: 42,
+      rise: 15,
       fovMax: 48,
       shadow: Object.freeze([62, 70]),
     }),
     azimuth: -44,
     reach: 33,
-    rise: 14,
+    rise: 10.25,
     shadow: Object.freeze([83, 90]),
     fov: 34,
     // Its lens opens to fit the falls, their pool and spray, but no further.
     fovMax: 48,
     move: Object.freeze({ dolly: Object.freeze([1.04, 0.95]), ease: 0.5 }),
   }),
-  // Above the bay's head, following the incoming river over its brink into
-  // the complete fall, impact pool and open water beyond.
+  // Down the fault's broken V from above, its stacks in their surf across the
+  // top, craning down toward them; the tree stands behind the lens.
   Object.freeze({
     ...COAST_LOOK,
     name: "Over the fault",
     after: "Root and lantern",
-    frameFalls: true,
     // The moon through a break in the cloud lights the fault and the falls; the
     // cloud's shadow lies on the clifftop beyond, under the name (mud-ground.js
     // SLATE_LOOK: its moonlit crests held the name near 5:1 in full moonlight).
@@ -2093,20 +2066,12 @@ export const COAST_SHOTS = Object.freeze([
         shade: Object.freeze([0, 22, 70]),
       }),
     }),
-    aim: Object.freeze([79, -4, 80]),
-    azimuth: -45,
-    reach: 34,
-    rise: 28,
+    aim: Object.freeze([90, -8.75, 90]),
+    azimuth: -125,
+    reach: 45,
+    rise: 23.25,
     shadow: Object.freeze([85, 72]),
-    fov: 46,
-    fovMax: 60,
-    anchor: Object.freeze([0.4, 0.48]),
-    portrait: Object.freeze({
-      reach: 43,
-      rise: 34,
-      anchor: Object.freeze([0.5, 0.48]),
-      fovMax: 70,
-    }),
+    fov: 58,
     move: Object.freeze({
       dolly: Object.freeze([1.06, 0.94]),
       crane: Object.freeze([0.3, 0]),
