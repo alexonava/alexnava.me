@@ -407,7 +407,9 @@ export function* foregroundChunkSteps(
   for (let kind = 0; kind < FOREGROUND.kinds.length; kind++) {
     const count = FOREGROUND.counts[FOREGROUND.kinds[kind]];
     for (let i = 0; i < count; i++) {
-      if (i % 8 === 0) yield;
+      // A footprint can touch dense water or root geometry. Leave a task
+      // boundary before each seed, rather than grouping eight costly pieces.
+      yield;
       const seed = kind * 10000 + i,
         random = randomFor(tile.x, tile.z, seed + FOREGROUND.seed);
       const x = (tile.x + random()) * 8,
@@ -439,20 +441,25 @@ export function* foregroundChunkSteps(
           x1 = Math.max(...xs) + sway,
           z0 = Math.min(...zs) - sway,
           z1 = Math.max(...zs) + sway;
-        clear =
-          placement.triangleAllowed([
-            [x0, z0],
-            [x1, z0],
-            [x0, z1],
-          ]) &&
-          placement.triangleAllowed([
+        clear = placement.triangleAllowed([
+          [x0, z0],
+          [x1, z0],
+          [x0, z1],
+        ]);
+        yield;
+        if (clear)
+          clear = placement.triangleAllowed([
             [x1, z0],
             [x1, z1],
             [x0, z1],
           ]);
+        yield;
       }
       for (let k = 0; k < piece.index.length; k += 3) {
         if (!clear) break;
+        // The same ordered tests, at most four complete triangle footprints
+        // per generator step, so the outer slice can enforce its short budget.
+        if (k % 12 === 0) yield;
         const triangle = piece.index
           .slice(k, k + 3)
           .map((n) => [piece.positions[n * 3], piece.positions[n * 3 + 2]]);
