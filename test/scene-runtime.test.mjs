@@ -245,6 +245,35 @@ test("the refresh estimator snaps, adopts on two agreeing estimates and keeps it
   assert.equal(feed(1000 / 90, 16), 90);
 });
 
+test("callback jitter and missed vsyncs do not bias the refresh estimate upward", () => {
+  const estimator = createRefreshEstimator();
+  const offsets = [0, 0.2, 0, -0.1];
+  let ticks = 0,
+    previous = 0;
+  for (let sample = 1; sample <= 512; sample += 1) {
+    ticks += sample % 17 === 0 ? 2 : 1;
+    const timestamp = (ticks * 1000) / 175 + offsets[sample % offsets.length];
+    estimator.sample(timestamp - previous);
+    previous = timestamp;
+    if (sample >= 128) assert.equal(estimator.hz, 175, "one stable native cadence");
+  }
+});
+
+test("nearby-rate bursts keep cadence stable while sustained monitor changes are followed", () => {
+  const estimator = createRefreshEstimator();
+  const feed = (hz, samples) => {
+    for (let index = 0; index < samples; index += 1) estimator.sample(1000 / hz);
+    return estimator.hz;
+  };
+  assert.equal(feed(175, 32), 175);
+  for (let cycle = 0; cycle < 3; cycle += 1) {
+    for (const hz of [180, 175, 165, 175])
+      assert.equal(feed(hz, 64), 175, "a brief adjacent estimate cannot change the divisor");
+  }
+  assert.equal(feed(180, 160), 180, "a sustained nearby rate is adopted");
+  assert.equal(feed(60, 48), 60, "a large monitor change retains the existing response time");
+});
+
 // Steps a scheduler through display frames, each timestamp from at(frame).
 function runCadence({ round, frames: count, at, skip = () => false }) {
   const frames = createFrameHarness();
@@ -278,9 +307,11 @@ test("a display cadence renders every nth vsync, evenly, at common refresh rates
     [60, "floor", 1, 60],
     [90, "floor", 1, 90],
     [144, "floor", 2, 72],
+    [175, "floor", 2, 87.5],
     [240, "floor", 4, 60],
     [90, "ceil", 2, 45],
     [120, "ceil", 2, 60],
+    [175, "ceil", 3, 175 / 3],
   ]) {
     const vsync = 1000 / hz;
     const updates = runCadence({ round, frames: 2 * hz, at: (frame) => frame * vsync });
@@ -304,6 +335,18 @@ test("a display cadence renders every nth vsync, evenly, at common refresh rates
     intervals.every((interval) => Math.abs(interval - 2 * vsync) < 0.5),
     "72 fps, even",
   );
+});
+
+test("jitter around a native 175 Hz cadence does not alternate two- and three-vsync draws", () => {
+  const offsets = [0, 0.2, 0, -0.1];
+  const updates = runCadence({
+    round: "floor",
+    frames: 700,
+    at: (frame) => (frame * 1000) / 175 + offsets[frame % offsets.length],
+  });
+  const { count, intervals } = lastSecond(updates, 4000);
+  assert.ok(Math.abs(count - 87.5) <= 1, `${count} frames`);
+  assert.ok(intervals.every((interval) => Math.abs(interval - 2000 / 175) < 0.5));
 });
 
 test("a display cadence starts at the base rate, follows a monitor switch and never bursts", () => {
