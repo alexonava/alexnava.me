@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
+import vm from "node:vm";
+import { cameraPreparationSignatures } from "./support/camera-preparation.mjs";
+import { createCameraPreparation } from "../src/scene/preparation-tasks.js";
 import { sceneGround } from "./support/ground.mjs";
 import {
   BoxGeometry,
@@ -27,6 +31,8 @@ import {
   fitPoses,
   fitShot,
   measureShot,
+  measureShotSteps,
+  fitShotSteps,
   MOVE_PHASES,
   resolveDirectedShot,
   shotPose,
@@ -375,13 +381,13 @@ test("prepare measures, then fits, a shot ahead of its cut without touching the 
   ];
   const frame = f.controller.frame,
     counts = { ...f.counts };
-  assert.equal(f.controller.prepare("tree", 0, 1440, 900), "pending");
+  assert.equal(f.controller.prepare("tree", 0, 1440, 900, createCameraPreparation), "pending");
   assert.ok(f.counts.boxes > counts.boxes, "the first step measures");
   assert.equal(f.counts.ground, counts.ground, "and does not fit yet");
-  assert.equal(f.controller.prepare("tree", 0, 1440, 900), "ready");
+  assert.equal(f.controller.prepare("tree", 0, 1440, 900, createCameraPreparation), "ready");
   assert.ok(f.counts.ground > counts.ground, "the second step fits");
   const prepared = { ...f.counts };
-  assert.equal(f.controller.prepare("tree", 0, 1440, 900), "ready");
+  assert.equal(f.controller.prepare("tree", 0, 1440, 900, createCameraPreparation), "ready");
   assert.deepEqual(f.counts, prepared, "a prepared shot is cached");
   assert.deepEqual(
     [
@@ -1489,4 +1495,84 @@ test("widescreen bars cut desktops to 2.39:1, never phones, portrait, narrow or 
     [1024, 768],
   ])
     assert.ok(height > 500 && letterboxShare(width, height) > 0);
+});
+
+test("cooperative preparation preserves all sixty original delivered-tier camera and measurement signatures", () => {
+  const baseline = JSON.parse(
+    readFileSync(new URL("./support/camera-preparation-baseline.json", import.meta.url), "utf8"),
+  );
+  assert.equal(baseline.source, "6f592625e1d74aa10b37db48dcfb27524260e542");
+  assert.deepEqual(
+    cameraPreparationSignatures(
+      {
+        createCinematicCamera,
+        cinematicSafeArea,
+        measureShot,
+        measureShotSteps,
+      },
+      createCameraPreparation,
+    ),
+    baseline.signatures,
+  );
+});
+
+test("measurement and fit generators expose many bounded steps without changing their synchronous result", () => {
+  const root = new Mesh(new BoxGeometry(4, 20, 4, 32, 32, 32), new MeshBasicMaterial()),
+    shot = DIRECTED_SHOTS.tree[0],
+    measured = measureShot(root, shot),
+    steps = measureShotSteps(root, shot);
+  let count = 0,
+    result;
+  for (;;) {
+    const next = steps.next();
+    if (next.done) {
+      result = next.value;
+      break;
+    }
+    count++;
+  }
+  assert.ok(count > 64, `${count} triangle batches`);
+  assert.deepEqual(result, measured);
+  const area = cinematicSafeArea(1440, 900),
+    fit = fitShot(measured, shot, area, 1440, 900),
+    fitting = fitShotSteps(measured, shot, area, 1440, 900);
+  count = 0;
+  for (;;) {
+    const next = fitting.next();
+    if (next.done) {
+      result = next.value;
+      break;
+    }
+    count++;
+  }
+  assert.ok(count > 64, `${count} projection/point batches`);
+  assert.deepEqual(result, fit);
+  root.geometry.dispose();
+  root.material.dispose();
+});
+
+test("a rejected lazy camera helper settles as unavailable without retrying forever", async () => {
+  const source = readFileSync(new URL("../src/scene/cinematic.js", import.meta.url), "utf8"),
+    begin = source.indexOf("    prepare(kind, nextAngle, width, height, factory"),
+    end = source.indexOf("    get shot()", begin);
+  let requests = 0;
+  const context = vm.createContext({
+    DIRECTED_SHOTS: { tree: [{}] },
+    cameraPreparation: undefined,
+    controller: null,
+    preparation: null,
+    loadPreparationTasks: () => {
+      requests++;
+      context.cameraPreparation = false;
+      return Promise.reject(new Error("blocked helper"));
+    },
+  });
+  context.controller = new vm.Script(
+    `({isAvailable:()=>true, ${source.slice(begin, end)}})`,
+  ).runInContext(context);
+  assert.equal(context.controller.prepare("tree", 0, 1440, 900), "pending");
+  await Promise.resolve();
+  assert.equal(context.controller.prepare("tree", 0, 1440, 900), "unavailable");
+  assert.equal(context.controller.prepare("tree", 0, 1440, 900), "unavailable");
+  assert.equal(requests, 1);
 });

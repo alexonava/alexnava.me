@@ -1,4 +1,4 @@
-import { DIRECTED_SHOTS, measureShot } from "./directed-shots.js";
+import { DIRECTED_SHOTS, measureShot, measureShotSteps } from "./directed-shots.js";
 import { EARTH } from "./filmic-earth.js";
 import { MIST_PARS, MIST_UNIFORMS } from "./drifting-mist.js";
 import { COAST_MOOD, FLASH_GROUND } from "./film-light.js";
@@ -83,6 +83,7 @@ export function createFilmScene({
               createCinematicCamera,
               cinematicSafeArea,
               measureShot,
+              measureShotSteps,
               watchMeasure,
               grassMaterial,
               GROWTH,

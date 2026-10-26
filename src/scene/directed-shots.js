@@ -412,7 +412,17 @@ export function resolveDirectedShot(shot, width, height) {
 // Clip each triangle against the directed volume, retaining intersections rather
 // than discarding large triangles whose vertices lie outside the crop. The same
 // world-space points drive the fit and its regression checks on both asset tiers.
+// Synchronous callers and cooperative preparation drain the same arithmetic.
+export function finishShotSteps(steps) {
+  for (;;) {
+    const next = steps.next();
+    if (next.done) return next.value;
+  }
+}
 export function measureShot(root, shot) {
+  return finishShotSteps(measureShotSteps(root, shot));
+}
+export function* measureShotSteps(root, shot) {
   root.updateWorldMatrix(true, true);
   const subject =
     (shot.subject && root.getObjectByName(shot.subject)) ||
@@ -459,13 +469,16 @@ export function measureShot(root, shot) {
   // A selected prop is measured on its own. Other shots include surrounding
   // meshes within the volume (notably the lantern in Root and lantern).
   const traversalRoot = shot.subject ? subject : root;
-  traversalRoot.traverse((mesh) => {
-    if (!mesh.isMesh || !mesh.visible || mesh.userData.excludeFromShot) return;
+  const meshes = [];
+  traversalRoot.traverse((mesh) => meshes.push(mesh));
+  for (const mesh of meshes) {
+    if (!mesh.isMesh || !mesh.visible || mesh.userData.excludeFromShot) continue;
     const position = mesh.geometry.attributes.position,
       index = mesh.geometry.index;
-    if (!position) return;
+    if (!position) continue;
     const count = index ? index.count : position.count;
     for (let i = 0; i < count; i += 3) {
+      if (i % 384 === 0) yield;
       const vertices = [a, b, c];
       vertices.forEach((p, k) =>
         p
@@ -492,7 +505,7 @@ export function measureShot(root, shot) {
         region.expandByPoint(p);
       }
     }
-  });
+  }
   if (!points.length) throw new Error("Empty cinematic focal region");
   const target = region.getCenter(new Vector3());
   target.y = footing + height * (shot.targetHeight ?? (shot.region[0] + shot.region[1]) / 2);
@@ -583,6 +596,9 @@ export function shotAnchor(shot) {
 }
 
 export function fitShot(measured, shot, area, width, height) {
+  return finishShotSteps(fitShotSteps(measured, shot, area, width, height));
+}
+export function* fitShotSteps(measured, shot, area, width, height) {
   const aspect = width / height,
     margin = shot.margin ?? 0.85,
     [across, down] = shotAnchor(shot),
@@ -603,6 +619,7 @@ export function fitShot(measured, shot, area, width, height) {
       si = Math.sin(yaw);
     const data = new Float32Array(measured.points.length);
     for (let i = 0; i < data.length; i += 3) {
+      if (i % 768 === 0) yield;
       const x = measured.points[i] - measured.target.x,
         y = measured.points[i + 1] - measured.target.y,
         z = measured.points[i + 2] - measured.target.z;
@@ -612,7 +629,7 @@ export function fitShot(measured, shot, area, width, height) {
     }
     projected.push(data);
   }
-  const fits = (distance) => {
+  function* fits(distance) {
     for (let k = 0; k < poses.length; k++) {
       const { scale, crane, truck, tilt = 0, pan = 0 } = poses[k],
         [left, right, above, below] = limits[k],
@@ -632,6 +649,7 @@ export function fitShot(measured, shot, area, width, height) {
       // tilt pitches it up about its own horizontal axis. Without a pan the
       // arithmetic is the unpanned form exactly.
       for (let i = 0; i < points.length; i += 3) {
+        if (i % 384 === 0) yield;
         let level, rising, across;
         if (pan) {
           const ahead = reach - points[i + 2],
@@ -659,13 +677,13 @@ export function fitShot(measured, shot, area, width, height) {
       }
     }
     return true;
-  };
+  }
   let lo = 0.1,
     hi = Math.max(20, measured.height * 3);
-  while (!fits(hi) && hi < 4096) hi *= 2;
+  while (!(yield* fits(hi)) && hi < 4096) hi *= 2;
   for (let i = 0; i < 22; i++) {
     const mid = (lo + hi) / 2;
-    if (fits(mid)) hi = mid;
+    if (yield* fits(mid)) hi = mid;
     else lo = mid;
   }
   return { distance: hi, radius: measured.radius, region: measured.region, area };

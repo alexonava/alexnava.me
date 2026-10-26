@@ -563,6 +563,8 @@ export function* foregroundCoverageSteps({
     ESTATE,
     watchMeasure,
     measureShot,
+    measureShotSteps,
+    createCameraPreparation,
   } = helpers;
   shots ??= DIRECTED_SHOTS.tree;
   const tiles = new Map(),
@@ -595,6 +597,8 @@ export function* foregroundCoverageSteps({
     measure(subject, shot) {
       return subject === watch && stored ? stored(subject, shot) : measureShot(subject, shot);
     },
+    measureSteps: (subject, shot) =>
+      subject === watch && stored ? null : measureShotSteps?.(subject, shot),
     getGroundY(x, z) {
       root.worldToLocal(local.set(x, 0, z));
       const y = surface(local.x, local.z);
@@ -620,7 +624,11 @@ export function* foregroundCoverageSteps({
         const view = `${width}:${height}:${shot.name}`;
         views.set(view, 0);
         preview.setPreviewShot(kind, angle);
-        while (preview.prepare(kind, angle, width, height) === "pending") yield;
+        while (
+          preview.prepare(kind, angle, width, height, createCameraPreparation ?? false) ===
+          "pending"
+        )
+          yield;
         for (const phase of onlyShot
           ? Array.from({ length: 25 }, (_, i) => i / 24)
           : [0, 0.25, 0.5, 0.75, 1]) {
@@ -639,6 +647,7 @@ export function* foregroundCoverageSteps({
           for (let tx = Math.floor((cx - 56) / 8); tx <= Math.floor((cx + 56) / 8); tx++) {
             yield;
             for (let tz = Math.floor((cz - 56) / 8); tz <= Math.floor((cz + 56) / 8); tz++) {
+              yield;
               let nearest = Infinity,
                 visible = false,
                 low = Infinity,
@@ -747,15 +756,10 @@ export function* foregroundCoverageSteps({
   }
 }
 
+const loadPreparation = () => import("./preparation-tasks.js");
 function slices(steps, cancelled = () => false, priority = () => false, progress = null) {
-  return import("./preparation-tasks.js").then(({ runPreparationSteps }) =>
-    runPreparationSteps(steps, {
-      priority,
-      cancelled,
-      progress,
-      idleMs: 5,
-      minimumMs: 1,
-    }),
+  return loadPreparation().then(({ runPreparationSteps }) =>
+    runPreparationSteps(steps, { priority, cancelled, progress, idleMs: 5, minimumMs: 1 }),
   );
 }
 
@@ -811,6 +815,8 @@ function openingKey(frame, root) {
 }
 
 export async function prepareForegroundDetail(options) {
+  const { createCameraPreparation } = await loadPreparation();
+  options = { ...options, helpers: { ...options.helpers, createCameraPreparation } };
   const { root, surface, rendering = null, cancelled = () => false } = options;
   const openingFrame = options.openingFrame,
     initialOpeningSignature = openingFrame ? openingKey(openingFrame, root) : null;

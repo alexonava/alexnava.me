@@ -2,7 +2,7 @@ import "./quality.js";
 import { createSolarBody, SOLAR_RADIUS } from "./solar-body.js";
 import { LENS_FX, lensKeepRect, lensSource } from "./postprocess.js";
 import { openingStar, watchMeasure } from "./opening-star.js";
-import { measureShot } from "./directed-shots.js";
+import { measureShot, measureShotSteps } from "./directed-shots.js";
 import { createStarfield } from "./starfield.js";
 import { readTourInterval, createCameraTour, TOUR_IDLE, TOUR_TRANSITION } from "./camera-tour.js";
 import { createFilmScene } from "./film-scene.js";
@@ -13,6 +13,7 @@ import {
   createCinematicCamera,
   isStackedLayout,
   layoutRect,
+  loadPreparationTasks,
 } from "./cinematic.js";
 import {
   COAST_MOOD,
@@ -293,32 +294,21 @@ const ORBIT_SPEED = 0.06;
         getGroundY: (x, z) => cinematicGroundY(x, z),
         measure: (root, shot) =>
           root === watchRoot ? measureWatch(root, shot) : measureShot(root, shot),
+        measureSteps: (root, shot) => (root === watchRoot ? null : measureShotSteps(root, shot)),
       });
       subsystemRegistry.register(cinematic);
       const tourInterval = readTourInterval(window.location.search);
-      // The tour fits its next shot ahead of the cut in idle slices, one measure
-      // or fit each; the latest request wins. Safari has no requestIdleCallback.
-      const whenIdle =
-        typeof window.requestIdleCallback === "function"
-          ? (task) => window.requestIdleCallback(task, { timeout: 1500 })
-          : (task) => window.setTimeout(task, 50);
-      let tourShot = null;
+      // Queue ownership and bounded preparation live in the lazy builder helper.
       function prepareTourShot(subject, angle) {
-        const idle = !tourShot;
-        tourShot = [subject, angle];
-        if (idle)
-          whenIdle(function step() {
-            if (runtimeDisposed) return;
-            // A late slot waits out a capture and its crossfade.
-            const { capture, progress } = cameraTour?.transition ?? TOUR_IDLE;
-            if (
-              capture ||
-              progress < 1 ||
-              cinematic.prepare(...tourShot, viewport.width, viewport.height) === "pending"
-            )
-              whenIdle(step);
-            else tourShot = null;
-          });
+        void loadPreparationTasks()
+          .then(({ queueTourShot }) =>
+            queueTourShot(cinematic, subject, angle, () =>
+              runtimeDisposed
+                ? null
+                : [viewport.width, viewport.height, cameraTour?.transition ?? TOUR_IDLE],
+            ),
+          )
+          .catch(() => {});
       }
       const cameraTour = tourInterval
         ? createCameraTour({

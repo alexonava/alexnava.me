@@ -20,7 +20,7 @@ import {
 } from "three";
 import { createTreeArchitecture } from "../src/scene/architecture.js";
 import { createCinematicCamera, cinematicSafeArea } from "../src/scene/cinematic.js";
-import { DIRECTED_SHOTS, measureShot } from "../src/scene/directed-shots.js";
+import { DIRECTED_SHOTS, measureShot, measureShotSteps } from "../src/scene/directed-shots.js";
 import {
   createEstateGroundDetail,
   grassMaterial,
@@ -63,6 +63,7 @@ const helpers = {
   cinematicSafeArea,
   DIRECTED_SHOTS,
   measureShot,
+  measureShotSteps,
   watchMeasure,
   grassMaterial,
   GROWTH,
@@ -787,15 +788,18 @@ test("idle work pauses at low and disposal cancels queued generation without inv
   const frame = { camera: lens(), still: true, profile: { tier: "high" } };
   try {
     field.update(frame);
+    await new Promise((resolve) => setImmediate(resolve));
     assert.equal(callbacks.length, 1);
     field.update({ ...frame, profile: { tier: "low" } });
     while (callbacks.length) {
       callbacks.shift()({ didTimeout: false, timeRemaining: () => 20 });
       await Promise.resolve();
     }
+    await new Promise((resolve) => setImmediate(resolve));
     assert.equal(field.state.preparedChunks, 0);
     assert.equal(field.group.children.length, 0);
     field.update(frame);
+    await new Promise((resolve) => setImmediate(resolve));
     assert.equal(callbacks.length, 1);
     field.dispose();
     while (callbacks.length) {

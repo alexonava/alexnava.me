@@ -136,7 +136,113 @@ export function runPreparationSteps(
         finish(null, error);
       }
     }
-    document?.addEventListener?.("visibilitychange", visibilityChanged);
-    enqueue();
+    try {
+      // A lazy import can settle after its owner has gone. Do not even enqueue
+      // a stale builder into another owner's next idle window.
+      if (cancelled()) {
+        steps.return?.();
+        return finish(null);
+      }
+      document?.addEventListener?.("visibilitychange", visibilityChanged);
+      enqueue();
+    } catch (error) {
+      finish(null, error);
+    }
+  });
+}
+
+// A preparation job snapshots the same root and safe area the synchronous cut
+// would use. Only completed measurements/fits enter the camera's existing caches.
+export function createCameraPreparation(
+  camera,
+  roots,
+  shots,
+  resolveShot,
+  safeArea,
+  measure,
+  fit,
+  now = () => performance.now(),
+) {
+  let job = null;
+  const cancel = () => {
+    const previous = job;
+    job = null;
+    previous?.steps.return?.();
+  };
+  return {
+    cancel,
+    prepare(kind, angle, width, height) {
+      const base = shots[kind]?.[angle];
+      if (!base || !camera.isAvailable(kind)) {
+        cancel();
+        return "unavailable";
+      }
+      const root = roots()[kind === "tree" ? 1 : 0],
+        shot = resolveShot(base, width, height),
+        area = { ...safeArea(width, height) };
+      root.updateWorldMatrix(true, false);
+      const snapshot = [
+        root,
+        shot,
+        width,
+        height,
+        area.left,
+        area.top,
+        area.width,
+        area.height,
+        ...root.matrixWorld.elements,
+      ];
+      if (job && !snapshot.every((value, i) => value === job.snapshot[i])) cancel();
+      if (!job)
+        job = {
+          snapshot,
+          steps: (function* () {
+            const measured = yield* measure(root, shot, true);
+            return yield* fit(shot, measured, area, width, height);
+          })(),
+        };
+      const until = now() + 4;
+      do {
+        const next = job.steps.next();
+        if (next.done) {
+          job = null;
+          return "ready";
+        }
+        if (next.value === true) return "pending";
+      } while (now() < until);
+      return "pending";
+    },
+  };
+}
+
+const tourPreparations = new WeakMap();
+export function queueTourShot(camera, subject, angle, frame, host = globalThis) {
+  let job = tourPreparations.get(camera);
+  if (job) {
+    job.shot = [subject, angle];
+    job.frame = frame;
+    return;
+  }
+  job = { shot: [subject, angle], frame };
+  tourPreparations.set(camera, job);
+  const idle = (task) =>
+    host.requestIdleCallback
+      ? host.requestIdleCallback(task, { timeout: 1500 })
+      : host.setTimeout(task, 50);
+  idle(function step() {
+    const current = job.frame();
+    if (!current) {
+      tourPreparations.delete(camera);
+      return;
+    }
+    const [width, height, transition] = current;
+    if (
+      host.document?.hidden ||
+      transition.capture ||
+      transition.progress < 1 ||
+      camera.prepare(...job.shot, width, height, createCameraPreparation) === "pending"
+    )
+      idle(step);
+    else tourPreparations.delete(camera);
   });
 }

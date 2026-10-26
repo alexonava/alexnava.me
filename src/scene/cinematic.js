@@ -3,7 +3,9 @@ import { Vector3 } from "three";
 import {
   DIRECTED_SHOTS,
   measureShot,
-  fitShot,
+  measureShotSteps,
+  fitShotSteps,
+  finishShotSteps,
   isStackedLayout,
   resolveDirectedShot,
   fitPoses,
@@ -16,6 +18,18 @@ import {
 
 // The bootstrap reads the page's layout from here too.
 export { isStackedLayout, PUSH_IN, LETTERBOX, letterboxShare };
+let preparationTasks, cameraPreparation;
+export const loadPreparationTasks = () =>
+  (preparationTasks ||= import("./preparation-tasks.js").then(
+    (module) => {
+      cameraPreparation = module.createCameraPreparation;
+      return module;
+    },
+    (error) => {
+      cameraPreparation = false;
+      throw error;
+    },
+  ));
 
 export function chooseCinematicView(search = "") {
   return resolveSceneOpening(search).view;
@@ -66,10 +80,7 @@ export function layoutRect(element) {
 // A tour shot keeps its fit through height-only resizes up to this share (a
 // phone's address bar) until the next cut.
 const DEFER_HEIGHT_SHARE = 0.2;
-function sameMatrix(a, b) {
-  for (let i = 0; i < 16; i++) if (a[i] !== b[i]) return false;
-  return true;
-}
+const sameMatrix = (a, b) => a.every((value, i) => value === b[i]);
 // The fit in use is kept while the view is unchanged or, during a tour, while
 // only the height changes a little and the subject stays on the canvas.
 function keepsFit(lock, shot, measured, area, width, height, defer) {
@@ -98,14 +109,6 @@ function keepsFit(lock, shot, measured, area, width, height, defer) {
     extent = Math.min(1, (shot.margin ?? 0.85) / (1 - PUSH_IN)) * a.height * (1 - down);
   return a.top + a.height * down + extent <= height - 16;
 }
-// A move's nearest pose, as a share of its fitted distance (for the fog).
-const nearestScales = new WeakMap();
-function nearestScale(shot) {
-  let scale = nearestScales.get(shot);
-  if (scale === undefined)
-    nearestScales.set(shot, (scale = Math.min(...fitPoses(shot).map((pose) => pose.scale))));
-  return scale;
-}
 export function createCinematicCamera({
   camera,
   fog,
@@ -117,23 +120,24 @@ export function createCinematicCamera({
   // stored measurement (the watch's, opening-star.js watchMeasure()). A shot
   // with its own measure and fit (ocean.js coastShot()) frames itself.
   measure = measureShot,
+  measureSteps,
 }) {
   let watch = null,
     tree = null,
     disposed = false,
     started = null,
-    applied = false;
+    applied = false,
+    preparation;
   let status = { watch: "pending", tree: "pending" };
   const target = new Vector3(),
     aim = new Vector3();
   // The fit in use: { shot, measured, fitted, width, height, area, areaKey }.
   let lock = null;
-  let currentShot = null;
+  let currentShot = null,
+    nearestScale = 1;
   // Resolved shot -> { root, matrix, measured }; area key -> Map<shot, { measured, fitted }>.
   const measurements = new Map(),
     fits = new Map();
-  const areaMemo = [];
-  let areaKey = "";
   const originalFog = fog ? { near: fog.near, far: fog.far } : null;
   function cachedMeasurement(root, shot) {
     const entry = measurements.get(shot);
@@ -141,39 +145,38 @@ export function createCinematicCamera({
       ? entry.measured
       : null;
   }
-  function measurementFor(root, shot) {
+  function* measurementFor(root, shot, cooperative) {
     let measured = cachedMeasurement(root, shot);
     if (!measured) {
-      measured = (shot.measure || measure)(root, shot);
+      const steps =
+        cooperative &&
+        !shot.measure &&
+        (measureSteps
+          ? measureSteps(root, shot)
+          : measure === measureShot
+            ? measureShotSteps(root, shot)
+            : null);
+      measured = steps ? yield* steps : (shot.measure || measure)(root, shot);
       measurements.set(shot, {
         root,
-        matrix: Float64Array.from(root.matrixWorld.elements),
+        matrix: Array.from(root.matrixWorld.elements),
         measured,
       });
+      if (cooperative) yield true;
     }
     return measured;
   }
   function areaKeyFor(area, width, height) {
-    const m = areaMemo;
-    if (
-      m[0] !== width ||
-      m[1] !== height ||
-      m[2] !== area.left ||
-      m[3] !== area.top ||
-      m[4] !== area.width ||
-      m[5] !== area.height
-    ) {
-      m.splice(0, 6, width, height, area.left, area.top, area.width, area.height);
-      areaKey = m.join(",");
-    }
-    return areaKey;
+    return [width, height, area.left, area.top, area.width, area.height].join(",");
   }
-  function fitWithClearance(shot, measured, area, width, height) {
+  function* fitWithClearance(shot, measured, area, width, height) {
     let cameraY = measured.cameraY,
       fitted;
     const targetFoot = measured.groundAnchor;
     for (let pass = 0; pass < 6; pass++) {
-      fitted = (shot.fit || fitShot)({ ...measured, cameraY }, shot, area, width, height);
+      fitted = shot.fit
+        ? shot.fit({ ...measured, cameraY }, shot, area, width, height)
+        : yield* fitShotSteps({ ...measured, cameraY }, shot, area, width, height);
       fitted.cameraY = cameraY;
       if (!getGroundY) break;
       let clearanceY = cameraY;
@@ -213,6 +216,7 @@ export function createCinematicCamera({
           }
         }
       }
+      yield;
       if (clearanceY - cameraY < 0.005) break;
       cameraY = clearanceY;
     }
@@ -220,7 +224,7 @@ export function createCinematicCamera({
   }
   // Fits are kept for the last three viewport/safe-area generations; the
   // generation of the fit in use is never evicted.
-  function fitFor(shot, measured, area, width, height) {
+  function* fitFor(shot, measured, area, width, height) {
     const key = areaKeyFor(area, width, height);
     let generation = fits.get(key);
     if (!generation) {
@@ -230,7 +234,7 @@ export function createCinematicCamera({
     }
     const entry = generation.get(shot);
     if (entry?.measured === measured) return entry.fitted;
-    const fitted = fitWithClearance(shot, measured, area, width, height);
+    const fitted = yield* fitWithClearance(shot, measured, area, width, height);
     generation.set(shot, { measured, fitted });
     return fitted;
   }
@@ -241,7 +245,7 @@ export function createCinematicCamera({
     if (tree && status.tree === "ready") return "tree";
     return ["fallback", "procedural"].includes(status.tree) ? "watch" : null;
   }
-  return {
+  const controller = {
     get selected() {
       return selected;
     },
@@ -270,21 +274,25 @@ export function createCinematicCamera({
       lock = null;
       return true;
     },
-    // Measures, then fits, a shot ahead of its cut: one heavy step per call.
-    // Never touches the camera, fog or the fit in use.
-    prepare(kind, nextAngle, width, height) {
-      const base = DIRECTED_SHOTS[kind]?.[nextAngle];
-      if (!base || !this.isAvailable(kind)) return "unavailable";
-      const root = kind === "tree" ? tree : watch,
-        shot = resolveDirectedShot(base, width, height);
-      root.updateWorldMatrix(true, false);
-      const measured = cachedMeasurement(root, shot);
-      if (!measured) {
-        measurementFor(root, shot);
+    // Cooperative work is lazy; the public pending/ready contract stays the same.
+    // The preparer owns only its job, never the current camera, fog or fit.
+    prepare(kind, nextAngle, width, height, factory = cameraPreparation) {
+      if (!DIRECTED_SHOTS[kind]?.[nextAngle] || !this.isAvailable(kind) || factory === false)
+        return "unavailable";
+      if (!factory) {
+        void loadPreparationTasks().catch(() => {});
         return "pending";
       }
-      fitFor(shot, measured, getSafeArea(width, height), width, height);
-      return "ready";
+      preparation ||= factory(
+        controller,
+        () => [watch, tree],
+        DIRECTED_SHOTS,
+        resolveDirectedShot,
+        getSafeArea,
+        measurementFor,
+        fitFor,
+      );
+      return preparation.prepare(kind, nextAngle, width, height);
     },
     get shot() {
       return currentShot;
@@ -308,6 +316,7 @@ export function createCinematicCamera({
     },
     setSubject(kind, root) {
       if (disposed) return;
+      preparation?.cancel();
       lock = null;
       measurements.clear();
       fits.clear();
@@ -344,19 +353,21 @@ export function createCinematicCamera({
         width,
         height,
       );
-      const measured = measurementFor(root, shot),
+      const measured = finishShotSteps(measurementFor(root, shot)),
         area = getSafeArea(width, height);
       if (!keepsFit(lock, shot, measured, area, width, height, tourPhase !== null))
         lock = {
           shot,
           measured,
-          fitted: fitFor(shot, measured, area, width, height),
+          fitted: finishShotSteps(fitFor(shot, measured, area, width, height)),
           width,
           height,
           area,
           areaKey: areaKeyFor(area, width, height),
         };
       const { fitted } = lock;
+      if (shot.move && currentShot !== shot)
+        nearestScale = Math.min(...fitPoses(shot).map((pose) => pose.scale));
       currentShot = shot;
       target.copy(measured.target);
       // A shot with a move travels its path (below). Others drift at a constant
@@ -401,7 +412,7 @@ export function createCinematicCamera({
         camera.lookAt(aim);
         fov = pose.fov;
         if (shot.move.tilt) pitch = pose.tilt;
-        nearest = fitted.distance * nearestScale(shot);
+        nearest = fitted.distance * nearestScale;
       } else {
         const arc = reducedMotion
           ? 0
@@ -463,6 +474,7 @@ export function createCinematicCamera({
     dispose() {
       if (disposed) return false;
       disposed = true;
+      preparation?.cancel();
       watch = tree = null;
       lock = currentShot = null;
       measurements.clear();
@@ -475,4 +487,5 @@ export function createCinematicCamera({
       return true;
     },
   };
+  return controller;
 }

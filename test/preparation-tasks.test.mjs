@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { runPreparationSteps } from "../src/scene/preparation-tasks.js";
+import {
+  createCameraPreparation,
+  queueTourShot,
+  runPreparationSteps,
+} from "../src/scene/preparation-tasks.js";
 
 function taskHost({ postTask = true } = {}) {
   let clock = 0,
@@ -150,6 +154,27 @@ test("visible refinement retains idle slices rather than priority tasks", async 
   assert.equal(environment.listeners.size, 0);
 });
 
+test("an owner cancelled before its lazy scheduler arrives queues no stale callback", async () => {
+  const environment = taskHost();
+  let closed = 0;
+  assert.equal(
+    await runPreparationSteps(
+      {
+        next: () => assert.fail("cancelled work cannot start"),
+        return: () => {
+          closed++;
+        },
+      },
+      { cancelled: () => true },
+      environment.host,
+    ),
+    null,
+  );
+  assert.equal(closed, 1);
+  assert.equal(environment.queue.size, 0);
+  assert.equal(environment.listeners.size, 0);
+});
+
 test("a rejected scheduler task falls back once to message turns without leaking an aborted callback", async () => {
   const environment = taskHost();
   let attempts = 0;
@@ -237,4 +262,88 @@ test("failed work closes generator resources and rejects without a late callback
   assert.equal(environment.closed, 2);
   assert.equal(environment.queue.size, 0);
   assert.equal(environment.listeners.size, 0);
+});
+
+test("camera preparation discards stale root and safe-area jobs before publishing a fit", () => {
+  let clock = 0,
+    released = 0,
+    available = true;
+  const area = { left: 0, top: 0, width: 800, height: 600 },
+    root = { matrixWorld: { elements: new Array(16).fill(0) }, updateWorldMatrix() {} },
+    published = [],
+    shot = {},
+    camera = { isAvailable: () => available },
+    measure = function* () {
+      const stamp = root.matrixWorld.elements[12];
+      try {
+        for (let i = 0; i < 8; i++) {
+          clock++;
+          yield;
+        }
+        return stamp;
+      } finally {
+        released++;
+      }
+    },
+    fit = function* (_, measured, target) {
+      for (let i = 0; i < 8; i++) {
+        clock++;
+        yield;
+      }
+      published.push([measured, target.width]);
+    },
+    job = createCameraPreparation(
+      camera,
+      () => [root, root],
+      { tree: [shot] },
+      (value) => value,
+      () => area,
+      measure,
+      fit,
+      () => clock,
+    );
+  assert.equal(job.prepare("tree", 0, 800, 600), "pending");
+  root.matrixWorld.elements[12] = 3;
+  assert.equal(job.prepare("tree", 0, 800, 600), "pending");
+  assert.equal(released, 1, "the stale measurement generator closed");
+  // Advance the new job into its fit, then invalidate the captured safe area.
+  job.prepare("tree", 0, 800, 600);
+  job.prepare("tree", 0, 800, 600);
+  area.width = 700;
+  while (job.prepare("tree", 0, 800, 600) === "pending") {}
+  assert.deepEqual(published, [[3, 700]]);
+  job.prepare("tree", 0, 800, 600);
+  job.cancel();
+  available = false;
+  assert.equal(job.prepare("tree", 0, 800, 600), "unavailable");
+  assert.deepEqual(published, [[3, 700]], "cancelled work cannot publish late content");
+});
+
+test("the lazy tour queue keeps the latest shot, waits for a capture/hidden page and retires on disposal", () => {
+  const environment = taskHost(),
+    calls = [];
+  let active = true,
+    capture = true;
+  const camera = {
+      prepare: (...args) => {
+        calls.push(args.slice(0, 4));
+        return calls.length === 1 ? "pending" : "ready";
+      },
+    },
+    frame = () => (active ? [390, 844, { capture, progress: 1 }] : null);
+  queueTourShot(camera, "tree", 0, frame, environment.host);
+  queueTourShot(camera, "tree", 2, frame, environment.host);
+  environment.next();
+  assert.equal(calls.length, 0);
+  capture = false;
+  environment.hidden(true);
+  environment.next();
+  assert.equal(calls.length, 0);
+  environment.hidden(false);
+  environment.next();
+  assert.deepEqual(calls, [["tree", 2, 390, 844]]);
+  active = false;
+  environment.drain();
+  assert.equal(calls.length, 1);
+  assert.equal(environment.queue.size, 0);
 });
