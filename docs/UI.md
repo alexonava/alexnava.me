@@ -139,8 +139,8 @@ The first paint on every path and the last on the static path ([Glossary](GLOSSA
 
 - **Box.** `.scene-star` is absolutely placed at the shell's top-left with no size, at `z-index: 0`: above the shell's background and its star field, and under the canvas (1). It takes no pointer events. scene-loader.js translates it to the star's centre.
 - **Parts.** Two spans, in order: `.scene-star__glow` and `.scene-star__disc`. Each is a 100px box centred on the star's centre (`top` and `left` −50px), at opacity 0 until the script writes it, and sized by its transform.
-- **Disc.** A radial gradient of the painted star's colours at the reveal (solar-body.js `SOLAR_LOOK`): a pale cream centre, `rgb(180, 177, 171)`, through `rgb(175, 166, 131)` to a gold limb, `rgb(172, 149, 90)`.
-- **Glow.** Reaches two radii (its box), carrying on from the limb's gold and fading out by about 1.8.
+- **Disc.** The scene's star at the reveal (solar-body.js `SOLAR_LOOK`) as the canvas shows it beneath the same vignette: clipped white-hot, a little warm, `rgb(252, 251, 244)`, flat to its limb.
+- **Glow.** Reaches two and a half radii (its box, the limb at 40%): the clipped light runs on past the limb at the disc's own colour, then falls away through gold (`rgba(255, 223, 185, 0.84)` at 1.25 radii, `rgba(255, 184, 132, 0.35)` at 1.5) and is gone by about 2.2. The lens's ghosts are the canvas's alone; they come in with its fade.
 
 The star warms from the progress at which its place first became known (`since`) to the reveal: its warmth w is (progress − since) / (1 − since), and 1 at the reveal. For a star centred at (x, y) with radius r in a canvas `width` × `height`, all in CSS px, scene-loader.js writes:
 
@@ -148,7 +148,7 @@ The star warms from the progress at which its place first became known (`since`)
 | ---- | --------------------------------- | ---------------------------- |
 | Star | `translate(x, y)`                 |                              |
 | Disc | `scale(2r / 100 × (0.4 + 0.6√w))` | √w: an unseen ember at first |
-| Glow | `scale(4r / 100 × (0.5 + 0.5w))`  | w                            |
+| Glow | `scale(5r / 100 × (0.5 + 0.5w))`  | w                            |
 
 - **Reveal.** At the reveal w is 1: the star is the scene's own as the opening shot shows it, in place and size, and the canvas's 480ms fade-in covers it, a crossfade with nothing to time. It hides with the line 600ms after the run ends; a line retired below 100% hides it at once.
 - **Writes.** Only the parts' `transform` and `opacity`, at most once a frame, with the value and the bar's fill. The star has no transition, animation, keyframes or pseudo-element of its own.

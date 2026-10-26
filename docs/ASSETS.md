@@ -100,11 +100,11 @@ The 512px lossy albedo tile is sRGB and is normalized in the shader by its measu
 | `icon-192.png`          |   1,969 | 192×192   | Palette with transparency (tRNS)                          |
 | `icon-512.png`          |  18,901 | 512×512   | RGBA                                                      |
 | `icon-maskable-512.png` |   2,928 | 512×512   | Opaque palette                                            |
-| `og.png`                | 298,576 | 1200×630  | Share card; opaque, 224-colour palette                    |
+| `og.png`                | 297,959 | 1200×630  | Share card; opaque, 224-colour palette                    |
 
 The icons are the initials AN in the name's face, Cormorant Garamond 700, in the name's colour (`#f7f1ea`) on the night (`#090b16`) ([Style](STYLE.md#static-images)). `favicon.svg` and `icon.svg` draw, on a 512 viewBox, the night tile with its corners rounded at 112 and the initials as one outline path (even-odd fill), so they need no font. `icon-maskable.svg` is full bleed, its initials scaled to 0.815 of theirs to sit inside the maskable safe circle, and `apple-touch-icon.png` is `icon.svg`'s drawing full bleed (iOS rounds it). The PNGs and the ICO's images are Chrome's renderings of these drawings.
 
-`tools/og-card-backdrop.webp` (66,932 bytes, 1600×670, opaque) is the share card's backdrop: The watch, the painted star in the milky banks, the owner's pick of 2026-10-20 (the sky opener): a still of that shot at 6 s on high with every page layer but the canvas hidden. It is never published (`test/hosting.test.mjs`, `test/bundle-output.test.mjs`).
+`tools/og-card-backdrop.webp` (58,772 bytes, 1600×670, opaque) is the share card's backdrop: The watch, the star as a camera sees it in the milky banks (the owner's pick of 2026-10-25), the shot the owner picked on 2026-10-20 (the sky opener): a still of that shot at 6 s on high with every page layer but the canvas hidden. It is never published (`test/hosting.test.mjs`, `test/bundle-output.test.mjs`).
 
 ## Sources
 
@@ -133,7 +133,7 @@ Runtime assets are committed in their delivered form. Local authoring helpers al
 | Complete scene, balanced                                                                         | 3.5 MiB (3,670,016)                                | 2,271,022        | The same                                                                                  |
 | UI bundle and capability worker (`app.HASH.js` + `webgl-probe.HASH.js`)                          | under 30 KiB                                       |                  | `bundle-output`: "UI and capability worker together stay under the existing LCP budget"   |
 | Scene entry and the chunks it imports statically                                                 | under 831 KiB, exactly two files                   |                  | `bundle-output`: "scene bundle stays under the deferred-payload budget"                   |
-| `public/og.png`                                                                                  | opaque, exactly 1200×630, at most 300 KB (300,000) | 298,576          | `hosting`: "the share image is an opaque 1200x630 PNG of at most 300 KB, as its tags say" |
+| `public/og.png`                                                                                  | opaque, exactly 1200×630, at most 300 KB (300,000) | 297,959          | `hosting`: "the share image is an opaque 1200x630 PNG of at most 300 KB, as its tags say" |
 
 The cliff and stack meshes together are capped at 45,000 triangles on high and 25,000 on balanced (`coastGeometrySettings`, `test/coast-geometry.test.mjs`). Their default geometry totals 41,360 and 20,000 triangles; with the river's actual falls notch it totals 41,322 and 19,962. The three buttresses and sparse rubble stay merged into the existing cliff groups rather than adding meshes or passes. The live terrain prepares these same cliff and stack buffers cooperatively in its existing idle slices before handing them to the coastal owner; fixed byte baselines hold the output equal to the synchronous builders. This changes preparation scheduling, not the geometry, shaders, asset downloads or draw groups.
 
@@ -185,7 +185,7 @@ The two variable fonts are the only ones the design allows ([Style](STYLE.md#pal
 
 ### Refresh the share card
 
-1. Refresh `tools/og-card-backdrop.webp` only from an accepted live view: a 1600×900 still with every page layer but the canvas hidden, cropped to the picture between the film's widescreen bars (1600×670). Today's is The watch at 6 s on high, rendered by the capture scripts in the owner's archive (`Assets/Review captures/notower-20261020`). Edit `tools/og-card.html` when the card's text changes.
+1. Refresh `tools/og-card-backdrop.webp` only from an accepted live view: a 1600×900 still with every page layer but the canvas hidden, cropped to the picture between the film's widescreen bars (1600×670). Today's is The watch at 6 s on high, rendered by the capture scripts in the owner's archive (`Assets/Review captures/sun-20261025`, `cap.cjs` with `SCENEONLY`). Edit `tools/og-card.html` when the card's text changes.
 2. Render and quantize the card with the commands in `tools/og-card.html`'s header comment (headless Edge, then ImageMagick to a palette PNG).
 3. Use the largest dither amount that keeps `public/og.png` at or under 300 KB (the header comment gives the steps). Then set the `?card=` of `index.html`'s `og:image` and `twitter:image` to the first eight hex digits of the new file's SHA-256, so link previews fetch it afresh, and run `node --test test/hosting.test.mjs`, which holds the file opaque, exactly 1200×630 and at most 300 KB, and both tags on its hash.
 4. After the release, purge `/og.png` ([Operations](OPERATIONS.md#headers-and-caching)) and re-scrape it with LinkedIn Post Inspector.
