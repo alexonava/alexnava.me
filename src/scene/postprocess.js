@@ -70,13 +70,10 @@ export const FILM_LOOK = Object.freeze({
   weave: Object.freeze({ on: 1, amount: 0.35 }),
 });
 
-// The painted sky's ink (the owner's ask of 2026-10-14, "a paint brush sky theme"): in film
-// its clouds' edges take `mix`, its weight thickening and thinning by up to `vary` over a
-// slow noise `scale` cells across the frame's height, as a brush's line does. (No canvas
-// tooth: a woven one, fixed to the screen, read as a grid across a wide sky; the owner's
-// call of 2026-10-14.)
+// The live cloud plate keeps continuous shade and soft edges. The baseline's ink
+// remains available outside film; the film sky takes none of its contour treatment.
 export const SKY_INK = Object.freeze({
-  mix: 0.2,
+  mix: 0,
   vary: 0.5,
   scale: 9,
 });
@@ -136,8 +133,6 @@ vec3 saturateColor(vec3 color, float amount) {
 
 void main() {
   vec4 texel = texture2D(tDiffuse, vUv);
-  // The lit layers' scene-linear light through the film's tone curve (film-light.js
-  // FILM_TONE); the painted sky and the star (codes under .2) as shown.
   float scene = uLayerRelief * uTone.w * smoothstep(0.17, 0.25, texel.a);
   vec3 color = mix(texel.rgb, filmTone(texel.rgb), scene);
   float luma = dot(color, vec3(0.299, 0.587, 0.114));
@@ -160,14 +155,8 @@ void main() {
   float gradedLuma = max(0.02, dot(color, vec3(0.299, 0.587, 0.114)));
   float tonalBand = floor(gradedLuma * 5.0 + 0.5) / 5.0;
   vec3 celColor = color * (tonalBand / gradedLuma);
-  // The ground (depth code 2/3) takes no band: its soil, cracks and water stay
-  // continuous, close up and far.
   float groundLayer = uLayerRelief * (1.0 - smoothstep(0.04, 0.12, abs(texel.a - 0.6667)));
-  // The star and its glow (depth-layers.js STAR_LAYER over the sky's 0) stay
-  // continuous: the cloud banks' steps never ring them.
   float starLayer = uLayerRelief * smoothstep(0.0005, 0.006, texel.a) * (1.0 - smoothstep(0.22, 0.28, texel.a));
-  // Only the sky takes the cel palette; the lit layers' deep shade is the tone
-  // curve's toe. Partly covered edges blend toward the sky's code as before.
   float skyLayer = 1.0 - smoothstep(0.0, 0.3, texel.a);
   float celWeight = mix(1.0, skyLayer, uLayerRelief);
   color = mix(color, celColor, uCelMix * celWeight * (1.0 - groundLayer) * (1.0 - starLayer));
@@ -181,21 +170,13 @@ void main() {
   float verticalEdge = abs(dot(e3.rgb, Y) - dot(e4.rgb, Y));
   float inkContour = smoothstep(0.2, 0.48, max(horizontalEdge, verticalEdge));
   float nearest = max(max(e1.a, e2.a), max(e3.a, e4.a));
-  // In film only where the pixel and its four neighbours are all bare sky: the
-  // clouds' own edges, never an outline on a subject, a crest or the ground.
   float skyInk = mix(1.0, (1.0 - smoothstep(0.0, 0.006, texel.a)) * (1.0 - step(0.006, nearest)), uLayerRelief);
-  // A brush's line: its weight thickens and thins along the clouds' edges.
   float inkWeight = 1.0 + uInkVary.x * (2.0 * inkNoise(vUv * vec2(uTexelSize.y / uTexelSize.x, 1.0) * uInkVary.y) - 1.0);
   color = mix(color, vec3(0.035, 0.055, 0.095), clamp(inkContour * uInkMix * skyInk * inkWeight, 0.0, 1.0));
   }
-  // Halation: the bloom's light again, tinted, as film stock bleeds about bright lights,
-  // only from warm ones (FILM_LOOK.halation.warm).
   vec3 halo = texture2D(tHalation, vUv).rgb;
   color += halo * uHalation * smoothstep(${FILM_LOOK.halation.warm[0].toFixed(3)}, ${FILM_LOOK.halation.warm[1].toFixed(3)}, (halo.r - halo.b) / max(halo.r, 1e-4));
-  // A print film's toe: the blacks lift toward a cool, milky tint.
   color += uPrintTint * uPrint.x * (1.0 - smoothstep(0.0, uPrint.y, dot(color, vec3(0.299, 0.587, 0.114))));
-  // A soft shoulder for the sky (the lit layers have the tone curve's): highlights
-  // past the knee roll off toward white, not clip.
   vec3 over = max(color - 0.75, 0.0);
   color = mix(color, min(color, 0.75) + 0.25 * (1.0 - exp(-over / 0.25)), uLayerRelief * (1.0 - scene));
 
@@ -1001,7 +982,7 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
     bloomPass.strength = settings.bloomStrength ?? 0.18;
     bloomPass.blendMaterial.blending = film ? CustomBlending : AdditiveBlending;
     gradingPass.enabled = gradingEnabled;
-    gradingPass.uniforms.uCelMix.value = settings.celMix ?? 0.24;
+    gradingPass.uniforms.uCelMix.value = film ? 0 : (settings.celMix ?? 0.24);
     gradingPass.uniforms.uInkMix.value = film ? SKY_INK.mix : 0.14;
     gradingPass.uniforms.uInkVary.value.set(film ? SKY_INK.vary : 0, SKY_INK.scale);
     // The film look: halation only where the bloom draws.

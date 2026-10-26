@@ -41,6 +41,7 @@ import { createSceneAtmosphere } from "../src/scene/atmosphere.js";
 import {
   CLOUD_BRUSH,
   CLOUD_ISLANDS,
+  CLOUD_PLATE_GLSL,
   CLOUD_RESHAPE,
   CLOUD_TEXT_GLSL,
   CLOUD_VORTEX,
@@ -532,7 +533,7 @@ test("film makes the sky opaque and restores its baseline compositing", () => {
   ground.material.dispose();
 });
 
-test("estate sky uses one world-space shell with preserved baseline uniforms and no image dependency", () => {
+test("estate sky keeps one world-space shell and defaults its optional cloud plate off", () => {
   const direction = new Vector3(1, 2, 3).normalize();
   const material = createEstateSkyMaterial({
     skyTopColor: 0x112233,
@@ -554,7 +555,10 @@ test("estate sky uses one world-space shell with preserved baseline uniforms and
     material.fragmentShader,
     /gl_FragColor=uFilm>\.5\?vec4\(col\*0\.9,0\.0\):vec4\(col,0\.9\);/,
   );
-  assert.doesNotMatch(material.fragmentShader, /sampler2D|gl_FragCoord/);
+  assert.equal(material.uniforms.uCloudMap.value, null);
+  assert.equal(material.uniforms.uCloudMix.value, 0);
+  assert.ok(material.fragmentShader.includes(CLOUD_PLATE_GLSL));
+  assert.doesNotMatch(material.fragmentShader, /gl_FragCoord/);
   // The film gradient and horizon band are the shared functions the mountains haze toward.
   assert.ok(material.fragmentShader.includes(FILM_SKY_GLSL));
   assert.match(material.fragmentShader, /col=filmSky\(altitude\);/);
@@ -912,18 +916,18 @@ return [${statement("cloudR")}, ${statement("wedgeR")}, hzS];`,
   for (const nv0 of [0, 0.5, 1])
     assert.ok(Math.abs(bank(1, nv0, 0.5, 1) - (bank(1, nv0) - clearing)) < 1e-12);
   const field = cloudFieldGLSL("uTime");
-  // It reaches the reshaped bank, where the vortex turns the vortex (CLOUD_VORTEX), and the
-  // brush's dry edge, which eases off there (CLOUD_BRUSH): density only, never tone.
+  // It reaches the procedural bank, the vortex and the plate's opacity, never its colour.
   assert.equal(
     field.match(/cloudText/g).length,
-    1 + (CLOUD_VORTEX.on ? 1 : 0) + (CLOUD_BRUSH.on ? 1 : 0),
-    "the guard reaches only the bank, the vortex and the brush's edge",
+    2 + (CLOUD_VORTEX.on ? 1 : 0),
+    "the guard reaches the bank, the vortex and the optional cloud plate",
   );
-  // It ends with the bank's cover, its threshold broken by the brush's dry edge (CLOUD_BRUSH),
-  // with no lone islands (CLOUD_ISLANDS): the fine octaves move it only where the coarse
-  // field comes near the threshold.
-  assert.match(field, /float cover=smoothstep\(\.548-w,\.548\+w,d\+brushEdge\);\n/);
-  assert.match(field, /cover\*=horizonFade\*uClouds;$/);
+  // The procedural fallback keeps its bounded cover and no lone islands (CLOUD_ISLANDS).
+  assert.match(field, /float cover=smoothstep\(\.548-w,\.548\+w,d\);\n/);
+  assert.match(
+    field.slice(0, field.indexOf("float cw=")).trimEnd(),
+    /cover\*=horizonFade\*uClouds;$/,
+  );
   // Only the finest octaves count: the medium one (n1) shapes lanes, windows and pockets.
   assert.ok(field.includes("fineD=(g2-.62)*.16+(fine-.5)*.07;"));
   const [c0, c1] = CLOUD_ISLANDS.clear.map((m) => (0.548 - m).toFixed(3)),
@@ -1119,7 +1123,7 @@ test("the maelstrom comes now and then, and each shot has it whole or not at all
   const index = flat(source("src/scene/index.js"));
   assert.match(
     index,
-    /if \(cinematic\.shot !== vortexShot\) vortexHere = vortexSeason && cloudVortexPresent\(skyShell\.material\.uniforms\.uTime\.value\); vortexShot = cinematic\.shot;/,
+    /if \(cinematic\.shot !== vortexShot\) \{ atmosphereSystem\.commitSky\(\); vortexHere = vortexSeason && cloudVortexPresent\(skyShell\.material\.uniforms\.uTime\.value\); \} vortexShot = cinematic\.shot;/,
   );
   assert.match(
     index,
@@ -1514,27 +1518,18 @@ test("every part of the star writes the star's layer mask, and the glow faces th
   controller.dispose();
 });
 
-test("the painted sky's brush follows the clouds' flow, and the capture keeps them as authored", () => {
+test("the cloud artwork keeps its own soft detail without procedural brush edges or bristles", () => {
   const field = cloudFieldGLSL();
   const shader = skyMaterial().fragmentShader;
-  assert.equal(CLOUD_BRUSH.on, 1);
-  // The dry edge: in the clouds' own noise space (q, after the warp), on high and balanced,
-  // eased off behind the text and scaled by uCloudReshape (0 in the environment capture).
-  const edge = field.slice(field.indexOf("float brushEdge=0.;"));
+  assert.equal(CLOUD_BRUSH.on, 0);
+  assert.doesNotMatch(field, /brushEdge|float be=/);
+  assert.doesNotMatch(shader, /float bs=|cloudCol\*=1\.\+/);
+  const artwork = shader.indexOf("cloudCol=mix(cloudCol,cp.rgb,cw);");
+  assert.ok(artwork > 0 && artwork < shader.indexOf("vec3 kn=vec3(.64,.62,.66)"));
   assert.ok(
-    field.indexOf("q+=wo; p+=wo;") < field.indexOf("float brushEdge=0.;"),
-    "after the warp",
+    field.includes("float cw=uCloudMix*uCloudReshape;"),
+    "the authored environment capture excludes the plate",
   );
-  assert.match(edge, /^float brushEdge=0\.;\nif\(uNebulaLayers>1\.5\)\{vec2 bex=vec2\(dot\(q,/);
-  assert.match(edge, /brushEdge=[\d.]+\*\(be-\.5\)\*2\.\*\(1\.-cloudText\)\*uCloudReshape;/);
-  // The streaks: before the soft knee, high only, scaled the same way.
-  const streak = shader.indexOf("if(uNebulaLayers>2.5){vec2 bsx=");
-  assert.ok(streak > 0 && streak < shader.indexOf("vec3 kn=vec3(.64,.62,.66)"));
-  assert.match(shader, /cloudCol\*=1\.\+[\d.]+\*\(bs-\.5\)\*2\.\*uCloudReshape;/);
-  for (const [amount, along, across] of [CLOUD_BRUSH.edge, CLOUD_BRUSH.streak])
-    assert.ok(amount <= 0.1 && across > along, "slight, and longer along the brush than across");
-  // Sine-free, as every cloud noise is.
-  assert.doesNotMatch(edge, /sin\(/);
 });
 
 test("the clear sky stays night down to the ranges, but not over the reference banks above their low part", async () => {

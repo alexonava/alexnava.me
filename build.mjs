@@ -66,7 +66,9 @@ export function isFingerprintedSource(file) {
   return (
     /^fonts\/[^/]+\.woff2$/.test(path) ||
     /^images\/architecture\/[^/]+\.glb$/.test(path) ||
-    /^images\/materials\/(?:slate-[^/]+|coast-detail-256|coast-albedo-512)\.webp$/.test(path) ||
+    /^images\/materials\/(?:slate-[^/]+|coast-detail-256|coast-albedo-512|moonlit-clouds-1774)\.webp$/.test(
+      path,
+    ) ||
     /^images\/paper\/paper-(?:detail|height)\.webp$/.test(path)
   );
 }
@@ -201,7 +203,11 @@ async function materialAssetManifest() {
     files.push({ hashedName, bytes });
     coast[key] = `/images/materials/${hashedName}`;
   }
-  return { urls, files, ...coast };
+  const cloudName = "moonlit-clouds-1774.webp";
+  const cloudBytes = await readFile(join(__dirname, "images", "materials", cloudName));
+  const cloudHashedName = cloudName.replace(".webp", `.${sha8(cloudBytes)}.webp`);
+  files.push({ hashedName: cloudHashedName, bytes: cloudBytes });
+  return { urls, files, ...coast, cloudPlateUrl: `/images/materials/${cloudHashedName}` };
 }
 
 // The opening's paper (images/paper/paper-*.webp, a CC0 scan's detail and height) is
@@ -323,6 +329,9 @@ async function buildScriptBundle(
           ),
           __BABEL_COAST_ALBEDO_URL__: JSON.stringify(
             (materials ?? (await materialAssetManifest())).coastAlbedoUrl,
+          ),
+          __BABEL_CLOUD_PLATE_URL__: JSON.stringify(
+            (materials ?? (await materialAssetManifest())).cloudPlateUrl,
           ),
         }
       : {

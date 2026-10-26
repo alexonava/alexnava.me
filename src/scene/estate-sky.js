@@ -185,7 +185,7 @@ export const CLOUD_VORTEX = Object.freeze({
 // take it too (the owner's call of 2026-10-14, "one film over all"): their shapes and
 // places stay as authored. `on`: 0 emits none of it.
 export const CLOUD_BRUSH = Object.freeze({
-  on: 1,
+  on: 0,
   dir: Object.freeze([0.848, -0.53]),
   edge: Object.freeze([0.035, 0.6, 10]),
   streak: Object.freeze([0.09, 0.8, 18]),
@@ -203,19 +203,6 @@ export const CLOUD_ISLANDS = Object.freeze({
   clear: Object.freeze([0.07, 0.015]),
   fill: Object.freeze([0.01, 0.06]),
 });
-// A value noise on the field's own sine-free hash, at the plane point x (GLSL statements
-// leaving the float named out).
-const brushNoise = (x, out) =>
-  `vec2 ${out}x=${x},${out}i=floor(${out}x),${out}f=fract(${out}x);${out}f=${out}f*${out}f*(3.-2.*${out}f);
-vec4 ${out}cx=${out}i.x+vec4(0.,1.,0.,1.),${out}cy=${out}i.y+vec4(0.,0.,1.,1.);
-vec4 ${out}h1=fract(${out}cx*.1031),${out}h2=fract(${out}cy*.1031),${out}hd=${out}h1*(${out}h2+33.33)+${out}h2*(${out}h1+33.33)+${out}h1*(${out}h1+33.33);
-vec4 ${out}hv=fract((${out}h1+${out}h2+2.*${out}hd)*(${out}h1+${out}hd));
-float ${out}=mix(mix(${out}hv.x,${out}hv.y,${out}f.x),mix(${out}hv.z,${out}hv.w,${out}f.x),${out}f.y);
-`;
-// The plane point q in the brush's frame, stretched [along, across].
-const brushFrame = ([, along, across]) =>
-  `vec2(dot(q,vec2(${glslFloat(CLOUD_BRUSH.dir[0])},${glslFloat(CLOUD_BRUSH.dir[1])})),dot(q,vec2(${glslFloat(-CLOUD_BRUSH.dir[1])},${glslFloat(CLOUD_BRUSH.dir[0])})))*vec2(${glslFloat(along)},${glslFloat(across)})`;
-
 const glslFloat = (value) => (Number.isInteger(value) ? value.toFixed(1) : String(value));
 const { wedge, radius, bend, horizon, scale, banks, lanes, swirl, text } = CLOUD_RESHAPE;
 // The soft knee's own offset at the zenith, so the noise radius starts at 0 there.
@@ -318,8 +305,10 @@ const VORTEX_DENSITY = vortexOn
   ? `
 if(vxW>0.&&uVortex.z>=0.){vec2 vxL=L*clamp(bl*.1,.1,.2);
 float vxK=vxW*(1.-cloudText);
-d+=vxK*cloudVortex(vxE,T); da+=vxK*cloudVortex(vxE+vec2(dot(vxL,vxT),dot(vxL,vxR)*${glslFloat(VX.squash)}),T);}`
+vd=vxK*cloudVortex(vxE,T); d+=vd; da+=vxK*cloudVortex(vxE+vec2(dot(vxL,vxT),dot(vxL,vxR)*${glslFloat(VX.squash)}),T);}`
   : "";
+
+export const CLOUD_PLATE_GLSL = "uniform sampler2D uCloudMap;uniform float uCloudMix;";
 
 // The film's cloud field on the sky shell, as GLSL statements, shared with the stars,
 // which dim behind the banks (starfield.js). They expect `vec3 direction` (the shell
@@ -404,22 +393,26 @@ float thin=exp(-dot(thinUV,thinUV));
 float eaveG=exp(-dot(eaveUV,eaveUV));
 float shape=exp(-dot(bankUV,bankUV))*.24+exp(-dot(sunBankUV,sunBankUV))*.30-gapG*.19
 -eaveG*.17-thin*.06-smoothstep(.70,.84,altitude)*.22;
-d+=shape; da+=shape;${VORTEX_DENSITY}
+d+=shape; da+=shape;float vd=0.;${VORTEX_DENSITY}
 float horizonFade=uNebulaLayers>1.5?smoothstep(0.,.045,altitude):smoothstep(-.03,.17,altitude);
 float w=uNebulaLayers>1.5?.034:mix(.05,.034,smoothstep(.45,.8,altitude));
-float brushEdge=0.;
-${
-  CLOUD_BRUSH.on
-    ? `if(uNebulaLayers>1.5){${brushNoise(brushFrame(CLOUD_BRUSH.edge), "be")}brushEdge=${glslFloat(CLOUD_BRUSH.edge[0])}*(be-.5)*2.*(1.-cloudText)*uCloudReshape;}
-`
-    : ""
-}float cover=smoothstep(.548-w,.548+w,d+brushEdge);
+float cover=smoothstep(.548-w,.548+w,d);
 ${
   CLOUD_ISLANDS.on
     ? `if(uNebulaLayers>1.5){float dC=d-fineD;cover=mix(cover,max(cover*smoothstep(${(0.548 - CLOUD_ISLANDS.clear[0]).toFixed(3)},${(0.548 - CLOUD_ISLANDS.clear[1]).toFixed(3)},dC),smoothstep(${(0.548 + CLOUD_ISLANDS.fill[0]).toFixed(3)},${(0.548 + CLOUD_ISLANDS.fill[1]).toFixed(3)},dC)),uCloudReshape);}
 `
     : ""
-}cover*=horizonFade*uClouds;`;
+}cover*=horizonFade*uClouds;
+float cw=uCloudMix*uCloudReshape;
+vec4 cp=vec4(0.);
+if(cw>.001){
+float ca=dot(${B},${B})<1e-10?0.:atan(${B}.y,${B}.x);
+vec2 cu=vec2(fract(ca*.31830989+T*.00004),.78-asin(clamp(hzS,0.,1.))*.63661977);
+cp=texture2D(uCloudMap,cu);
+cp.a=clamp(cp.a+vd*.5,0.,1.)*smoothstep(0.,.045,min(cu.x,1.-cu.x))*horizonFade*uClouds*(1.-.18*cloudText);
+cover=mix(cover,cp.a,cw);
+d=mix(d,.44+.36*cp.a,cw);
+}`;
 }
 
 // The cloud field's text guard, `cloudText`: 1 behind the name and intro (slateText,
@@ -560,6 +553,8 @@ export function createEstateSkyMaterial(config, textGuard = null) {
       uClouds: { value: 1 },
       uNebulaLayers: { value: 0 },
       uCloudReshape: { value: 1 },
+      uCloudMap: { value: null },
+      uCloudMix: { value: 0 },
       // The vortex's eye (CLOUD_VORTEX): the star from the world origin until a shot
       // sets it from its own lens (cloudVortexCenter()); the stars borrow it.
       uVortex: {
@@ -601,6 +596,7 @@ mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);
 ${CELESTIAL_FIELD_GLSL}
 ${FILM_SKY_GLSL}
 ${CLOUD_TEXT_GLSL}
+${CLOUD_PLATE_GLSL}
 ${CLOUD_VORTEX_GLSL}vec3 nebula(vec3 direction) {
 vec2 p=celestialPlane(direction);
 float envelope=celestialEnvelope(direction,p);
@@ -629,8 +625,6 @@ if(uNebulaLayers>0.5) col+=nebula(normalize(vWorldPosition-cameraPosition));
 if(uClouds>0.001){
 float cloudText=cloudTextAt(vCloudClip);
 ${cloudFieldGLSL("uTime")}
-// Night down to the horizon (SKY_GLOW), but not over the reference banks above their low
-// part, nor in the environment's capture.
 col=filmNight(col,altitude,uCloudReshape*(1.-smoothstep(${glslFloat(wedge[0])},${glslFloat(wedge[1])},cloudAz)*(1.-smoothstep(${glslFloat(wedge[2])},${glslFloat(wedge[3])},cloudAz))*smoothstep(${glslFloat(radius[0])},${glslFloat(radius[1])},bl)*smoothstep(${Math.sin(((CLOUD_RESHAPE.wedgeDome[0] - 1) * Math.PI) / 180).toFixed(6)},${Math.sin((CLOUD_RESHAPE.wedgeDome[0] * Math.PI) / 180).toFixed(6)},altitude)));
 float lit=clamp(.45+(d-da)*4.0,0.0,1.0);
 float thick=smoothstep(.52,.8,d);
@@ -639,19 +633,14 @@ cloudCol=mix(cloudCol,vec3(1.05,1.02,1.10),smoothstep(.5,1.,lit)*(.6+.4*thick));
 cloudCol+=vec3(.07,.07,.09)*smoothstep(.5,1.,lit)*(1.-thick)*cover;
 cloudCol*=(1.0+.4*smoothstep(.55,.85,altitude))*(.86+.26*smoothstep(-.35,.45,direction.z))
 *(1.0-.14*thin)*(1.0-.3*max(gapG,eaveG));
+cloudCol=mix(cloudCol,cp.rgb,cw);
 ${
-  CLOUD_BRUSH.on
-    ? `if(uNebulaLayers>2.5){${brushNoise(brushFrame(CLOUD_BRUSH.streak), "bs")}cloudCol*=1.+${glslFloat(CLOUD_BRUSH.streak[0])}*(bs-.5)*2.*uCloudReshape;}
-`
-    : ""
-}${
-      vortexOn
-        ? `// The star's warmth on the swirl's lit edges (CLOUD_VORTEX.warm), never behind the text.
-if(vxW>0.&&uVortex.z>=0.){float vxGlow=vxW*(1.-cloudText)*exp(-vxRho/${glslFloat(VX.warm[1])})*smoothstep(.45,1.,lit);
+  vortexOn
+    ? `if(vxW>0.&&uVortex.z>=0.){float vxGlow=vxW*(1.-cloudText)*exp(-vxRho/${glslFloat(VX.warm[1])})*smoothstep(.45,1.,lit);
 cloudCol=mix(cloudCol,cloudCol*vec3(1.22,.98,.74)+vec3(.05,.03,0.),vxGlow*${glslFloat(VX.warm[0])});}
 `
-        : ""
-    }vec3 kn=vec3(.64,.62,.66), cap=vec3(.88,.86,.91);
+    : ""
+}vec3 kn=vec3(.64,.62,.66), cap=vec3(.88,.86,.91);
 cloudCol=min(cloudCol,kn)+(cap-kn)*(1.-exp(-max(cloudCol-kn,0.)/(cap-kn)));
 ${FLASH_GLSL}
 col+=vec3(.027,.03,.036)*smoothstep(.36,.54,d)*horizonFade*uClouds;

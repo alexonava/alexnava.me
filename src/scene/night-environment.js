@@ -189,6 +189,8 @@ export function createNightEnvironment(
       envKeyDirection: { value: key },
       slateText: { value: { x: 2, y: 2, z: -1, w: -1 } },
       uCloudReshape: { value: 0 },
+      uCloudMap: { value: null },
+      uCloudMix: { value: 0 },
       uFlash: { value: new Vector4(0, 1, 0, 0) },
     });
     material.uniforms.uFilm.value = 1;

@@ -1254,11 +1254,14 @@ const LANTERN_GLOW = 0.35;
         else lookTarget.set(0, lookAtHeight, 0);
         // The cloud vortex's eye sits where this lens sees the star, set on each cut and
         // each refit (a resize; estate-sky.js CLOUD_VORTEX), so it stays about the star.
+        if (!canvasShown) atmosphereSystem.commitSky();
         if (cinematicApplied && (cinematic.shot !== vortexShot || cinematic.frame !== vortexFit)) {
           // Each shot takes the maelstrom whole or not at all as it opens, by the sky's drift
           // clock (estate-sky.js CLOUD_VORTEX.life): it is never seen forming; a refit keeps it.
-          if (cinematic.shot !== vortexShot)
+          if (cinematic.shot !== vortexShot) {
+            atmosphereSystem.commitSky();
             vortexHere = vortexSeason && cloudVortexPresent(skyShell.material.uniforms.uTime.value);
+          }
           vortexShot = cinematic.shot;
           vortexFit = cinematic.frame;
           camera.updateMatrixWorld();

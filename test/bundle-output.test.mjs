@@ -161,6 +161,7 @@ test("model and task preparation, optional effects and the walk are the only laz
   const { entry, loaded, lazy } = await sceneScripts();
   assert.deepEqual(lazy.map((name) => name.replace(/\.[a-f0-9]{8}\.js$/, "")).sort(), [
     "scene.architecture-prepare",
+    "scene.cloud-plate",
     "scene.lantern-flame",
     "scene.mountain-build",
     "scene.preparation-tasks",
@@ -348,7 +349,7 @@ test("Three.js does not leak into the UI bundle", async () => {
   assert.doesNotMatch(text, /gl_Position/, "app bundle contains Three.js GLSL");
 });
 
-test("the scene requests only the slate maps and two lazy coastal maps", async () => {
+test("the scene requests only slate maps and the three maps in their lazy owners", async () => {
   const app = await readFile(await findHashedScript("app"), "utf8");
   const scene = await readSceneStatic();
   assert.doesNotMatch(app, /images\/materials\//);
@@ -356,24 +357,29 @@ test("the scene requests only the slate maps and two lazy coastal maps", async (
   const materials = await readdir(path.join(projectRoot, "images", "materials"));
   assert.ok(
     materials.every(
-      (name) => name.startsWith("slate-") || /^coast-(?:detail-256|albedo-512)\.webp$/.test(name),
+      (name) =>
+        name.startsWith("slate-") ||
+        /^(?:coast-(?:detail-256|albedo-512)|moonlit-clouds-1774)\.webp$/.test(name),
     ),
     materials.join(", "),
   );
   const published = await readdir(path.join(distDir, "images", "materials"));
   assert.ok(
     published.every((name) =>
-      /^(?:slate-[\w-]+|coast-detail-256|coast-albedo-512)\.[a-f0-9]{8}\.webp$/.test(name),
+      /^(?:slate-[\w-]+|coast-detail-256|coast-albedo-512|moonlit-clouds-1774)\.[a-f0-9]{8}\.webp$/.test(
+        name,
+      ),
     ),
     published.join(", "),
   );
 });
 
-for (const [file, budget] of [
-  ["coast-detail-256.webp", 48 * 1024],
-  ["coast-albedo-512.webp", 96 * 1024],
+for (const [file, budget, owner] of [
+  ["coast-detail-256.webp", 48 * 1024, "scene.terrain-build."],
+  ["coast-albedo-512.webp", 96 * 1024, "scene.terrain-build."],
+  ["moonlit-clouds-1774.webp", 384 * 1024, "scene.cloud-plate."],
 ])
-  test(`${file} is fingerprinted and named only in the lazy terrain owner`, async () => {
+  test(`${file} is fingerprinted and named only in its lazy owner`, async () => {
     const bytes = await readFile(path.join(projectRoot, "images", "materials", file)),
       hash = createHash("sha256").update(bytes).digest("hex").slice(0, 8),
       published = file.replace(".webp", `.${hash}.webp`),
@@ -382,9 +388,13 @@ for (const [file, budget] of [
     assert.ok(bytes.length <= budget, "each compact map stays within its streaming limit");
     assert.deepEqual(await readFile(path.join(distDir, "images", "materials", published)), bytes);
     const { loaded, lazy } = await sceneScripts(),
-      terrain = lazy.find((name) => name.startsWith("scene.terrain-build."));
-    assert.ok(terrain);
-    assert.ok((await readFile(path.join(scriptsDir, terrain), "utf8")).includes(url));
+      chunk = lazy.find((name) => name.startsWith(owner));
+    assert.ok(chunk);
+    assert.ok((await readFile(path.join(scriptsDir, chunk), "utf8")).includes(url));
+    for (const other of lazy.filter((name) => name !== chunk))
+      assert.ok(
+        !(await readFile(path.join(scriptsDir, other), "utf8")).includes(file.slice(0, -5)),
+      );
     for (const text of loaded.values()) assert.ok(!text.includes(file.slice(0, -5)));
     assert.ok(!(await readFile(await findHashedScript("app"), "utf8")).includes(file.slice(0, -5)));
   });

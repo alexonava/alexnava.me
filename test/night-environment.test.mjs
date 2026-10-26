@@ -325,6 +325,11 @@ test("the environment is the film sky shell's own shader, with the moon's glow, 
   const renderer = parallelRenderer(),
     environment = createNightEnvironment(renderer, { keyDirection: [32, 28, 14] }),
     sky = skyMaterial();
+  const liveCloud = new Texture();
+  let cloudDisposals = 0;
+  liveCloud.addEventListener("dispose", () => cloudDisposals++);
+  sky.uniforms.uCloudMap.value = liveCloud;
+  sky.uniforms.uCloudMix.value = 1;
   assert.equal(environment.status, "none");
   assert.equal(environment.capture(), null, "no sky, no capture");
   // The sky arrives at start-up: its capture program links in the background.
@@ -345,6 +350,10 @@ test("the environment is the film sky shell's own shader, with the moon's glow, 
   assert.equal(material.uniforms.uClouds.value, 1);
   assert.equal(material.uniforms.uNebulaLayers.value, NIGHT_SKY.layers);
   assert.equal(material.uniforms.uTime.value, 0);
+  assert.equal(material.uniforms.uCloudMap.value, null);
+  assert.equal(material.uniforms.uCloudMix.value, 0);
+  assert.equal(sky.uniforms.uCloudMap.value, liveCloud);
+  assert.equal(sky.uniforms.uCloudMix.value, 1);
   assert.equal(sky.uniforms.uFilm.value, 0);
   // The cube's faces have no name behind them: the clouds' text guard reads an empty
   // box of the capture's own, never the live one the clone would share.
@@ -377,6 +386,8 @@ test("the environment is the film sky shell's own shader, with the moon's glow, 
   assert.ok(NIGHT_SKY.ranges.tone.every((value) => value < 0.12));
   sky.dispose();
   environment.dispose();
+  assert.equal(cloudDisposals, 0, "the capture never frees the live artwork");
+  liveCloud.dispose();
 });
 
 test("the published, compacted sky shader keeps the environment's anchor", async () => {

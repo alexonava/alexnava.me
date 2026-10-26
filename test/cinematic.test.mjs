@@ -382,13 +382,15 @@ test("prepare measures, then fits, a shot ahead of its cut without touching the 
   ];
   const frame = f.controller.frame,
     counts = { ...f.counts };
-  assert.equal(f.controller.prepare("tree", 0, 1440, 900, createCameraPreparation), "pending");
+  // Test phase ordering independently of host contention; slice deadlines have their own clock tests.
+  const preparation = (...args) => createCameraPreparation(...args, () => 0);
+  assert.equal(f.controller.prepare("tree", 0, 1440, 900, preparation), "pending");
   assert.ok(f.counts.boxes > counts.boxes, "the first step measures");
   assert.equal(f.counts.ground, counts.ground, "and does not fit yet");
-  assert.equal(f.controller.prepare("tree", 0, 1440, 900, createCameraPreparation), "ready");
+  assert.equal(f.controller.prepare("tree", 0, 1440, 900, preparation), "ready");
   assert.ok(f.counts.ground > counts.ground, "the second step fits");
   const prepared = { ...f.counts };
-  assert.equal(f.controller.prepare("tree", 0, 1440, 900, createCameraPreparation), "ready");
+  assert.equal(f.controller.prepare("tree", 0, 1440, 900, preparation), "ready");
   assert.deepEqual(f.counts, prepared, "a prepared shot is cached");
   assert.deepEqual(
     [
