@@ -1249,6 +1249,36 @@ test("a step between the tiers' shadow map sizes frees the drawn map for one of 
   assert.equal(rendering.tier, "balanced");
 });
 
+test("an unfinished hidden camera cannot claim subjects or start opening coverage", async () => {
+  const entry = await source("scene/index.js");
+  const begin = entry.indexOf(
+      "        if (\n          !canvasShown &&\n          cinematicApplied",
+    ),
+    end = entry.indexOf("          const lanternSettled", begin);
+  assert.ok(begin > 0 && end > begin);
+  const calls = [],
+    context = vm.createContext({
+      canvasShown: false,
+      cinematicApplied: false,
+      cinematic: { current: "tree", frame: null },
+      opening: { view: "tree" },
+      sceneFailed: false,
+      settleOpening: (stage) => calls.push(stage),
+    });
+  const body = new vm.Script(entry.slice(begin, end) + "}");
+  body.runInContext(context);
+  context.cinematic.frame = {};
+  body.runInContext(context);
+  assert.deepEqual(calls, [], "a previous fit cannot make pending work ready");
+  context.cinematicApplied = true;
+  context.cinematic.frame = null;
+  body.runInContext(context);
+  assert.deepEqual(calls, []);
+  context.cinematic.frame = {};
+  body.runInContext(context);
+  assert.deepEqual(calls, ["subjects"]);
+});
+
 test("the real frame draw waits for complete opening preparation, and lost or disposed renderers stay safe", async () => {
   const entry = await source("scene/index.js"),
     renderingSource = await source("scene/rendering.js"),

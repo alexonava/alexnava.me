@@ -1108,6 +1108,8 @@ const ORBIT_SPEED = 0.06;
         timestamp,
       }) {
         const frameStart = firstFrameDrawn ? 0 : sceneNow();
+        // Resize observers update the viewport between frames, never during one.
+        const { width, height } = viewport;
         if (++groundTextFrames % 30 === 1 || groundTextStale) {
           groundTextStale = false;
           measureGroundText();
@@ -1193,14 +1195,20 @@ const ORBIT_SPEED = 0.06;
         const cinematicApplied =
           !walking &&
           cinematic.apply({
-            width: viewport.width,
-            height: viewport.height,
+            width,
+            height,
             elapsedSeconds: canvasShown ? Math.max(0, elapsedTime - revealTime) : 0,
             reducedMotion,
             tourPhase: canvasShown ? tourPhase : 0,
             fallbackFov: cameraProfile.fov,
+            prepare:
+              !canvasShown &&
+              (() => {
+                retireOpening();
+                invalidateContent();
+              }),
           });
-        if (walking) walk.update(deltaSeconds, viewport.width, viewport.height);
+        if (walking) walk.update(deltaSeconds, width, height);
         else if (!cinematicApplied) {
           camera.position.set(
             Math.cos(orbitAngle) * orbitDistance,
@@ -1262,7 +1270,7 @@ const ORBIT_SPEED = 0.06;
         );
         post.setBars?.(
           filmActive && (cinematicApplied || walking)
-            ? letterboxShare(viewport.width, viewport.height) * (walk?.bars ?? 1)
+            ? letterboxShare(width, height) * (walk?.bars ?? 1)
             : 0,
         );
         if (!reducedMotion && !visitorHold?.paused) post.setFilmTime?.(elapsedTime);
@@ -1274,8 +1282,8 @@ const ORBIT_SPEED = 0.06;
           const weave = filmActive && (cinematicApplied || walking) ? post.weaveOffset?.() : null;
           if (weave && (weave[0] || weave[1])) {
             const shift = camera.projectionMatrix.elements;
-            shift[8] += (2 * weave[0]) / viewport.width;
-            shift[9] += (2 * weave[1]) / viewport.height;
+            shift[8] += (2 * weave[0]) / width;
+            shift[9] += (2 * weave[1]) / height;
             camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
           }
         }
@@ -1304,13 +1312,8 @@ const ORBIT_SPEED = 0.06;
               ? lensSource(camera, treeArchitecture.light.getWorldPosition(lensPoint), 1, lensFlame)
               : null,
             keep:
-              shot && viewport.width >= 1000 && viewport.width > 1.2 * viewport.height
-                ? lensKeepRect(
-                    LENS_FX.keep[shot.name],
-                    star,
-                    viewport.width / viewport.height,
-                    lensKeep,
-                  )
+              shot && width >= 1000 && width > 1.2 * height
+                ? lensKeepRect(LENS_FX.keep[shot.name], star, width / height, lensKeep)
                 : null,
           });
         }
@@ -1331,7 +1334,7 @@ const ORBIT_SPEED = 0.06;
           cut: transition.cut,
           still: !liveView.running,
           revealed: canvasShown,
-          preparing: !canvasShown,
+          preparing: !canvasShown && cinematicApplied,
           nextShot: cameraTour?.nextShot?.name,
           profile: state.profile,
           deltaSeconds,
@@ -1350,11 +1353,8 @@ const ORBIT_SPEED = 0.06;
             camera,
             lookTarget,
             walking ? walk.frame : cinematic.frame,
-            !walking &&
-              viewport.width < 900 &&
-              isStackedLayout(viewport.width, viewport.height) &&
-              cinematic.shot?.arc === 2,
-            (cinematicArea?.top || 200) / viewport.height,
+            !walking && width < 900 && isStackedLayout(width, height) && cinematic.shot?.arc === 2,
+            (cinematicArea?.top || 200) / height,
           );
         if (qualityDebug)
           qualityDebug.cinematic = {
@@ -1366,7 +1366,13 @@ const ORBIT_SPEED = 0.06;
             current: cinematic.current,
           };
         if (qualityDebug) qualityDebug.walk = walk?.state ?? null;
-        if (!canvasShown && cinematic.current === opening.view && !sceneFailed) {
+        if (
+          !canvasShown &&
+          cinematicApplied &&
+          cinematic.frame &&
+          cinematic.current === opening.view &&
+          !sceneFailed
+        ) {
           settleOpening("subjects");
           const lanternSettled =
             opening.view !== "tree" ||

@@ -242,10 +242,8 @@ export function createSceneRendering({
             material[key] = source[key];
         }
         const probe = new Mesh(object.geometry, material);
-        probe.isInstancedMesh = object.isInstancedMesh;
-        probe.instanceMatrix = object.instanceMatrix;
-        probe.instanceColor = object.instanceColor;
-        probe.isSkinnedMesh = object.isSkinnedMesh;
+        for (const key of ["isInstancedMesh", "instanceMatrix", "instanceColor", "isSkinnedMesh"])
+          probe[key] = object[key];
         probes.add(probe);
       }
     });

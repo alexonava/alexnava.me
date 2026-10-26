@@ -154,12 +154,13 @@ test("scene bundle stays under the deferred-payload budget", async () => {
   );
 });
 
-test("model preparation, optional effects and the walk are the only lazy chunks, and Three.js ships once", async () => {
+test("model and task preparation, optional effects and the walk are the only lazy chunks, and Three.js ships once", async () => {
   const { entry, loaded, lazy } = await sceneScripts();
   assert.deepEqual(lazy.map((name) => name.replace(/\.[a-f0-9]{8}\.js$/, "")).sort(), [
     "scene.architecture-prepare",
     "scene.lantern-flame",
     "scene.mountain-build",
+    "scene.preparation-tasks",
     "scene.rock-build",
     "scene.terrain-build",
     "scene.walk",
@@ -174,6 +175,19 @@ test("model preparation, optional effects and the walk are the only lazy chunks,
       assert.doesNotMatch(text, /BabelSite/, `${name} carries ordered scene side effects`);
     }
   }
+});
+
+test("preparation task scheduling stays lazy and outside the independent UI", async () => {
+  const { loaded, lazy } = await sceneScripts();
+  const name = lazy.find((item) => item.startsWith("scene.preparation-tasks."));
+  assert.ok(name);
+  const tasks = await readFile(path.join(scriptsDir, name), "utf8");
+  assert.match(tasks, /MessageChannel/);
+  assert.match(tasks, /postTask/);
+  assert.deepEqual(chunkImports(tasks), { static: [], dynamic: [] });
+  const app = await readFile(await findHashedScript("app"), "utf8");
+  assert.doesNotMatch(app, /preparation-tasks/);
+  assert.doesNotMatch([...loaded.values()].join("\n"), /priority:"user-visible"/);
 });
 
 test("cooperative model preparation loads on demand and reuses the scene's Three.js chunk", async () => {

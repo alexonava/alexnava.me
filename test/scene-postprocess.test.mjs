@@ -1633,12 +1633,12 @@ test("the film look: halation where bloom draws, a print toe, midtone grain, and
   const weaveAt = index.indexOf(
     "const weave = filmActive && (cinematicApplied || walking) ? post.weaveOffset?.() : null;",
   );
+  assert.ok(index.includes("const { width, height } = viewport;"), "one size snapshot per frame");
   assert.ok(weaveAt > index.indexOf("const cinematicApplied = !walking && cinematic.apply("));
-  assert.ok(weaveAt > index.indexOf("walk.update(deltaSeconds, viewport.width, viewport.height);"));
+  const walkAt = index.indexOf("walk.update(deltaSeconds, width, height);");
+  assert.ok(walkAt >= 0 && weaveAt > walkAt, "after the walk updates the same frame's camera");
   assert.ok(
-    index.includes(
-      "shift[8] += (2 * weave[0]) / viewport.width; shift[9] += (2 * weave[1]) / viewport.height;",
-    ),
+    index.includes("shift[8] += (2 * weave[0]) / width; shift[9] += (2 * weave[1]) / height;"),
   );
   assert.ok(
     weaveAt < index.indexOf("const shot = filmActive && cinematicApplied ? cinematic.shot : null,"),

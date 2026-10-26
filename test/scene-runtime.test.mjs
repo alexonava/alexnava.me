@@ -1491,6 +1491,7 @@ test("a shot's light mood merges over the neutral default and never shares it", 
 
 test("each frame applies the shot's light, lens, bars and grain, holding the grain while still", () => {
   const index = flat(source("src/scene/index.js"));
+  assert.ok(index.includes("const { width, height } = viewport;"), "one size snapshot per frame");
   // The mood follows the shot on screen in film only.
   assert.ok(
     index.includes(
@@ -1530,7 +1531,7 @@ test("each frame applies the shot's light, lens, bars and grain, holding the gra
   // The bars ease out under the dissolve into the walk and back in after it (walk.js bars).
   assert.ok(
     index.includes(
-      "post.setBars?.(filmActive && (cinematicApplied || walking) ? letterboxShare(viewport.width, viewport.height) * (walk?.bars ?? 1) : 0);",
+      "post.setBars?.(filmActive && (cinematicApplied || walking) ? letterboxShare(width, height) * (walk?.bars ?? 1) : 0);",
     ),
   );
   // The grain's frame advances only while the scene moves: never under reduced
@@ -1555,7 +1556,7 @@ test("each frame applies the shot's light, lens, bars and grain, holding the gra
   // The kept rect ends short of the star beside it (lensKeepRect).
   assert.ok(
     index.includes(
-      "keep: shot && viewport.width >= 1000 && viewport.width > 1.2 * viewport.height ? lensKeepRect(LENS_FX.keep[shot.name], star, viewport.width / viewport.height, lensKeep) : null });",
+      "keep: shot && width >= 1000 && width > 1.2 * height ? lensKeepRect(LENS_FX.keep[shot.name], star, width / height, lensKeep) : null });",
     ),
   );
   // It reads the ground's own text boxes.

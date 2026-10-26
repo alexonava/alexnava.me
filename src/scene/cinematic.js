@@ -333,6 +333,7 @@ export function createCinematicCamera({
       reducedMotion = false,
       fallbackFov = 45,
       tourPhase = null,
+      prepare,
     }) {
       if (disposed) return false;
       const view = resolved();
@@ -343,6 +344,12 @@ export function createCinematicCamera({
           camera.updateProjectionMatrix();
           applied = false;
         }
+        return false;
+      }
+      // Hidden openings finish the same cached fit cooperatively. Visible
+      // cuts and resizes retain the synchronous fallback below.
+      if (prepare && controller.prepare(view, angle, width, height) === "pending") {
+        prepare();
         return false;
       }
       started ??= elapsedSeconds;

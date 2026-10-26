@@ -20,6 +20,7 @@ import {
   chooseCinematicAngle,
   cinematicSafeArea,
   createCinematicCamera,
+  loadPreparationTasks,
   isStackedLayout,
   layoutRect,
   letterboxShare,
@@ -407,6 +408,95 @@ test("prepare measures, then fits, a shot ahead of its cut without touching the 
   assert.equal(f.controller.shot.name, "Portrait");
   assert.deepEqual(f.counts, prepared, "the cut does no measuring or fitting");
   f.dispose();
+});
+
+test("a hidden opening applies its exact camera only after cooperative preparation", async () => {
+  await loadPreparationTasks();
+  const f = terrainSetup(390, 844),
+    reference = terrainSetup(390, 844);
+  let pending = 0;
+  const before = [f.camera.position.toArray(), f.camera.fov, f.fog.near, f.fog.far];
+  try {
+    for (const fixture of [f, reference]) fixture.controller.setPreviewShot("tree", 1);
+    let applied = false;
+    for (let attempts = 0; !applied && attempts < 1000; attempts++) {
+      applied = f.controller.apply({
+        width: 390,
+        height: 844,
+        elapsedSeconds: 0,
+        tourPhase: 0,
+        prepare: () => pending++,
+      });
+      if (!applied) {
+        assert.equal(f.controller.frame, null);
+        assert.deepEqual(
+          [f.camera.position.toArray(), f.camera.fov, f.fog.near, f.fog.far],
+          before,
+        );
+      }
+    }
+    assert.equal(applied, true);
+    assert.ok(pending > 0, "the first measure yields before fitting");
+    reference.controller.apply({ width: 390, height: 844, elapsedSeconds: 0, tourPhase: 0 });
+    const pose = (fixture) => [
+      fixture.camera.position.toArray(),
+      fixture.camera.fov,
+      [...fixture.camera.projectionMatrix.elements],
+      fixture.fog.near,
+      fixture.fog.far,
+      fixture.controller.frame.distance,
+      fixture.controller.frame.cameraY,
+    ];
+    assert.deepEqual(pose(f), pose(reference), "the first applied pose is numerically identical");
+  } finally {
+    f.dispose();
+    reference.dispose();
+  }
+});
+
+test("hidden camera preparation discards a stale viewport and visible cuts stay synchronous", async () => {
+  await loadPreparationTasks();
+  const f = terrainSetup(1440, 900),
+    reference = terrainSetup(390, 844);
+  try {
+    for (const fixture of [f, reference]) fixture.controller.setPreviewShot("tree", 0);
+    assert.equal(
+      f.controller.apply({ width: 1440, height: 900, tourPhase: 0, prepare() {} }),
+      false,
+    );
+    let applied = false;
+    for (let attempts = 0; !applied && attempts < 1000; attempts++)
+      applied = f.controller.apply({ width: 390, height: 844, tourPhase: 0, prepare() {} });
+    assert.equal(applied, true);
+    reference.controller.apply({ width: 390, height: 844, tourPhase: 0 });
+    assert.deepEqual(f.camera.position.toArray(), reference.camera.position.toArray());
+    assert.equal(f.controller.frame.distance, reference.controller.frame.distance);
+    f.controller.prepare = () => assert.fail("visible cuts must retain their synchronous path");
+    f.controller.setPreviewShot("tree", 2);
+    assert.equal(f.controller.apply({ width: 844, height: 390, tourPhase: 0 }), true);
+  } finally {
+    f.dispose();
+    reference.dispose();
+  }
+});
+
+test("unavailable cooperative preparation retains the synchronous camera fallback", () => {
+  const f = terrainSetup(390, 844);
+  try {
+    f.controller.setPreviewShot("tree", 1);
+    f.controller.prepare = () => "unavailable";
+    assert.equal(
+      f.controller.apply({
+        width: 390,
+        height: 844,
+        tourPhase: 0,
+        prepare: () => assert.fail("an unavailable helper cannot hold opening"),
+      }),
+      true,
+    );
+  } finally {
+    f.dispose();
+  }
 });
 
 test("prepare reports unavailable subjects, invalid angles and disposed controllers", () => {
