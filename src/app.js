@@ -8,5 +8,6 @@ import "./shared/motion.js";
 import "./scene/quality.js";
 import "./ui/hero.js";
 import "./ui/contact.js";
+import "./ui/scene-doors.js";
 import "./ui/scene-loader.js";
 import "./main.js";

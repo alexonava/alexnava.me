@@ -174,6 +174,16 @@ the packed-data script and provenance are in
 `Assets/Materials/coast-detail-v1` in the private archive; those sources are
 not published. Credit is not required under CC0; it is given here.
 
+## The opening's paper
+
+`images/paper/paper-detail.webp` and `images/paper/paper-height.webp` derive from
+["Paper 006"](https://ambientcg.com/view?id=Paper006) on ambientCG, released under
+[CC0](https://docs.ambientcg.com/license/). The detail tile is the colour scan's
+luminance against its own local mean; the height tile is its displacement map at half
+contrast; both greyscale, 768 px and tiling. The source set, its checksum and the
+script that makes both (`make-paper.ps1`) are in `Assets/Materials/paper-v1`; they are
+not published. Credit is not required under CC0; it is given here.
+
 ## Icons
 
 The icons in `public/` draw the initials AN in Cormorant Garamond 700 (SIL Open
