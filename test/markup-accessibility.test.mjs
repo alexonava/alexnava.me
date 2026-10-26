@@ -841,9 +841,9 @@ test("Contact and its links take the name's colour over edgeless text scrims of 
   );
 });
 
-test("on tablets the intro keeps its own text scrim", async () => {
+test("on portrait phones and tablets the intro keeps its own text scrim", async () => {
   const styles = await readStyles();
-  // Tablets in portrait: the intro runs on one line past the hero scrim's reach,
+  // Phones and tablets in portrait: the intro reaches past the hero scrim,
   // over the close shots' subjects, so it sits over its own soft oval, as Contact
   // does: behind the line, in its own stacking context, transparent before
   // every edge with the hero's (1 - t²)² falloff.
@@ -851,11 +851,17 @@ test("on tablets the intro keeps its own text scrim", async () => {
     styles,
     "(min-width: 761px) and (max-width: 1024px) and (orientation: portrait)",
   );
-  const intro = cssRule(tablet, ".hero-intro");
+  const portrait = mediaBlock(styles, "(max-width: 1024px) and (orientation: portrait)");
+  const intro = cssRule(portrait, ".hero-intro");
   assert.match(intro, /position:\s*relative;/);
   assert.match(intro, /isolation:\s*isolate;/);
-  assert.match(intro, /max-width:\s*31ch;/);
-  const scrim = cssRule(tablet, ".hero-intro::before");
+  assert.match(cssRule(tablet, ".hero-intro"), /max-width:\s*31ch;/);
+  assert.match(
+    cssRule(mediaBlock(styles, "(max-width: 640px)"), ".hero-intro"),
+    /max-width:\s*30ch;/,
+    "phones retain their existing type width",
+  );
+  const scrim = cssRule(portrait, ".hero-intro::before");
   assert.match(scrim, /z-index:\s*-1;/);
   assert.match(scrim, /pointer-events:\s*none;/);
   assert.match(scrim, /width:\s*calc\(100% \+ 240px\);/);
@@ -880,7 +886,7 @@ test("on tablets the intro keeps its own text scrim", async () => {
   assert.match(scrim, /opacity:\s*0;/);
   assert.match(scrim, new RegExp(`transition:\\s*opacity ${canvasFade} ease-out;`));
   assert.match(
-    cssRule(tablet, ".hero-minimal.is-over-scene .hero-intro::before"),
+    cssRule(portrait, ".hero-minimal.is-over-scene .hero-intro::before"),
     /^\s*opacity:\s*1;\s*$/,
   );
   assert.match(
@@ -889,10 +895,10 @@ test("on tablets the intro keeps its own text scrim", async () => {
   );
   // The name paints above the intro, so the oval's upward reach never dims its
   // feet: the name keeps #f7f1ea.
-  const name = cssRule(tablet, ".hero h1");
+  const name = cssRule(portrait, ".hero h1");
   assert.match(name, /position:\s*relative;/);
   assert.match(name, /z-index:\s*1;/);
-  // Only there: phones, desktops and landscape keep the hero's scrim alone, and
+  // Only there: desktops and landscape keep the hero's scrim alone, and
   // forced colours drop it with the others.
   assert.equal(
     cssRules(styles, (selector) => selector.includes(".hero-intro::before")).filter(({ body }) =>
