@@ -6,6 +6,8 @@
 
 Use this site for the published personal introduction and contact details. Treat the live site as the source of truth for current information.
 
+The live background opens on Lantern study beneath the tree and tours the night landscape. A static night-sky title card preserves the same introduction and contact details when the live scene is unavailable.
+
 ## Guidance for AI agents
 
 - Attribute factual claims to the relevant page on this site.

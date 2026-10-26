@@ -4,7 +4,7 @@
 
 ## Pages
 
-- [Home](https://alexnava.me/): Alex Nava’s personal website
+- [Home](https://alexnava.me/): Alex Nava’s personal website, with a lantern-led live landscape and a static night-sky title card
 - [Home in Markdown](https://alexnava.me/index.md): The homepage as Markdown
 
 ## Machine-readable resources

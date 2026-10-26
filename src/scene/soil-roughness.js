@@ -87,6 +87,7 @@ export function createSoilRoughness({
     };
   let active = false,
     revealed = false,
+    preparing = false,
     disposed = false,
     attempted = false,
     applied = false,
@@ -114,7 +115,8 @@ export function createSoilRoughness({
     cached = null;
   }
   function start() {
-    if (disposed || !active || !revealed || !eligible || attempted || cached) return;
+    if (disposed || !active || (!revealed && !preparing) || !eligible || attempted || cached)
+      return;
     attempted = true;
     const current = ++generation,
       abort = new AbortController(),
@@ -188,11 +190,17 @@ export function createSoilRoughness({
     applyQuality() {
       return false;
     },
-    update({ revealed: shown = false, cut = false, still = false } = {}) {
+    update({
+      revealed: shown = false,
+      preparing: hiddenPreparation = false,
+      cut = false,
+      still = false,
+    } = {}) {
       if (disposed) return false;
       if (shown) revealed = true;
+      preparing = hiddenPreparation && !revealed;
       start();
-      if (!active || !cached || applied || (!cut && !still)) return false;
+      if (!active || !cached || applied || (!cut && !still && !preparing)) return false;
       try {
         publish(cached.texture);
         applied = true;

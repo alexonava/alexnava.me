@@ -20,6 +20,7 @@ import {
 import { markSceneEvaluated, measureScene, sceneNow } from "../src/scene/perf-marks.js";
 import { createSceneRendering } from "../src/scene/rendering.js";
 import { createShaderWarmup } from "../src/scene/runtime.js";
+import { compilePrograms } from "../src/scene/shader-programs.js";
 import { createHillSilhouette } from "../src/scene/hill-silhouette.js";
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
@@ -354,6 +355,160 @@ test("shader warm-up uploads visible maps; a quality step links its shadow varia
   );
   rendering.dispose();
   assert.equal(await rendering.prepareQuality(balanced), true);
+});
+
+test("shader completion rejects an unsuccessful native link even with diagnostics disabled", async () => {
+  for (const linked of [false, true]) {
+    const handle = {},
+      calls = [],
+      program = { program: handle, isReady: () => true },
+      gl = {
+        LINK_STATUS: 0x8b82,
+        getProgramParameter(value, parameter) {
+          calls.push([value, parameter]);
+          return linked;
+        },
+      },
+      renderer = {
+        debug: { checkShaderErrors: false },
+        getContext: () => gl,
+        compile: () => new Set([{}]),
+        properties: { get: () => ({ currentProgram: program }) },
+      };
+    assert.equal(
+      program.diagnostics,
+      undefined,
+      "production need not populate Three's lazy diagnostics",
+    );
+    assert.equal(await compilePrograms(renderer, {}, {}, null, () => true), linked);
+    assert.deepEqual(
+      calls,
+      [[handle, gl.LINK_STATUS]],
+      "only the ready captured native program is checked",
+    );
+  }
+});
+
+test("a ready program with failed diagnostics or a retired handle cannot pass shader preparation", async () => {
+  for (const mode of ["diagnostics", "retired"]) {
+    const program = {
+        program: mode === "retired" ? undefined : {},
+        isReady: () => true,
+        ...(mode === "diagnostics" ? { diagnostics: { runnable: false } } : {}),
+      },
+      renderer = {
+        getContext: () => ({
+          LINK_STATUS: 0x8b82,
+          getProgramParameter() {
+            assert.fail("failed or retired programs are never queried");
+          },
+        }),
+        compile: () => new Set([{}]),
+        properties: { get: () => ({ currentProgram: program }) },
+      };
+    assert.equal(await compilePrograms(renderer, {}, {}, null, () => true), false);
+  }
+});
+
+test("native link validation waits for parallel completion and stops before a lost generation", async () => {
+  let ready = false,
+    live = true,
+    queries = 0;
+  const program = { program: {}, isReady: () => ready },
+    renderer = {
+      getContext: () => ({
+        LINK_STATUS: 0x8b82,
+        getProgramParameter() {
+          queries++;
+          assert.equal(ready, true);
+          assert.equal(live, true);
+          return true;
+        },
+      }),
+      compile: () => new Set([{}]),
+      properties: { get: () => ({ currentProgram: program }) },
+    };
+  const pending = compilePrograms(renderer, {}, {}, null, () => live);
+  await linkedPoll();
+  assert.equal(queries, 0, "LINK_STATUS never blocks a still-compiling program");
+  ready = true;
+  assert.equal(await pending, true);
+  assert.equal(queries, 1);
+  ready = false;
+  const retired = compilePrograms(renderer, {}, {}, null, () => live);
+  live = false;
+  ready = true;
+  assert.equal(await retired, false);
+  assert.equal(queries, 1, "retired generations never issue another native link query");
+});
+
+test("the serial hidden draw validates current native links and cannot query after loss or disposal", () => {
+  for (const linked of [false, true]) {
+    let lost = false,
+      queries = 0;
+    const handle = {},
+      { rendering } = createRendering({
+        info: { programs: [{ program: handle }] },
+        getContext: () => ({
+          LINK_STATUS: 0x8b82,
+          isContextLost: () => lost,
+          getProgramParameter(value, parameter) {
+            assert.equal(value, handle);
+            assert.equal(parameter, 0x8b82);
+            queries++;
+            return linked;
+          },
+        }),
+      });
+    assert.equal(rendering.programsLinked(), linked);
+    lost = true;
+    assert.equal(rendering.programsLinked(), false);
+    assert.equal(queries, 1);
+    lost = false;
+    rendering.dispose();
+    assert.equal(rendering.programsLinked(), false);
+    assert.equal(queries, 1);
+  }
+});
+
+test("link validation rechecks context and generation at each post-ready query", async () => {
+  let live = true;
+  const program = {
+      program: {},
+      isReady() {
+        live = false;
+        return true;
+      },
+    },
+    renderer = {
+      getContext: () => ({
+        LINK_STATUS: 0x8b82,
+        getProgramParameter() {
+          assert.fail("completion retired this generation before its native link query");
+        },
+      }),
+      compile: () => new Set([{}]),
+      properties: { get: () => ({ currentProgram: program }) },
+    };
+  assert.equal(await compilePrograms(renderer, {}, {}, null, () => live), false);
+
+  let lost = false,
+    queries = 0;
+  const { rendering } = createRendering({
+    info: { programs: [{ program: {} }, { program: {} }] },
+    getContext: () => ({
+      LINK_STATUS: 0x8b82,
+      isContextLost: () => lost,
+      getProgramParameter() {
+        queries++;
+        lost = true;
+        return true;
+      },
+    }),
+  });
+  assert.equal(rendering.programsLinked(), false);
+  assert.equal(queries, 1, "loss during the first result prevents a query of the next old handle");
+  rendering.dispose();
 });
 
 test("the first draw waits for compositor and caster depth programs without changing live materials", async () => {
@@ -796,7 +951,10 @@ async function loadGroundTextures() {
   return globalThis.window.BabelSite.scene.createGroundTextures;
 }
 
-function createGround(createGroundTextures, { tier = "high", groundSize = 1024 } = {}) {
+function createGround(
+  createGroundTextures,
+  { tier = "high", groundSize = 1024, soil = false } = {},
+) {
   const draws = [];
   const canvases = [];
   const statuses = [];
@@ -816,6 +974,7 @@ function createGround(createGroundTextures, { tier = "high", groundSize = 1024 }
     invalidate: () => (invalidations += 1),
     onDetailStatus: (status) => statuses.push(status),
     onDetailChange: (maps) => published.push(maps),
+    onSoilRoughnessChange: soil ? () => {} : undefined,
   });
   return {
     draws,
@@ -888,6 +1047,111 @@ function recordingGroundRequests(t) {
   });
   return requests;
 }
+
+test("a bounded hidden ground preparation keeps a late slate result off the opening hold", async (t) => {
+  const createGroundTextures = await loadGroundTextures(),
+    requests = recordingGroundRequests(t),
+    film = createGround(createGroundTextures);
+  try {
+    film.ground.setFilmActive(true);
+    assert.equal(await film.ground.prepareOpening({ timeoutMs: 10 }), true);
+    assert.equal(film.ground.openingState.maps, "fallback");
+    const before = film.published.at(-1);
+    for (const { url, resolve } of requests) resolve({ ok: true, blob: async () => ({ url }) });
+    await flush();
+    assert.equal(film.published.at(-1).colorMap, before.colorMap);
+    film.ground.update({ revealed: true, still: false });
+    assert.equal(
+      film.published.at(-1).colorMap,
+      before.colorMap,
+      "a late decode cannot replace the first hold",
+    );
+    film.ground.update({ revealed: true, cut: true });
+    assert.notEqual(
+      film.published.at(-1).colorMap,
+      before.colorMap,
+      "the next unseen cut may adopt it",
+    );
+  } finally {
+    film.ground.dispose();
+  }
+});
+
+test("a ground reset retires late staged slate maps before a later cut or still", async (t) => {
+  const createGroundTextures = await loadGroundTextures(),
+    requests = recordingGroundRequests(t),
+    film = createGround(createGroundTextures);
+  try {
+    film.ground.setFilmActive(true);
+    await film.ground.prepareOpening({ timeoutMs: 10 });
+    for (const { url, resolve } of requests) resolve({ ok: true, blob: async () => ({ url }) });
+    await flush();
+    assert.equal(film.statuses.at(-1).status, "ready");
+    assert.equal(film.published.at(-1).colorMap, film.ground.colorMap, "late maps remain staged");
+
+    film.ground.applyQuality({ tier: "low" }, { assetTier: "high" });
+    assert.equal(film.statuses.at(-1).status, "ready", "adaptive quality retains the startup maps");
+    film.ground.applyQuality({ tier: "low" });
+    assert.equal(film.statuses.at(-1).status, "procedural", "an actual map reset withdraws slate");
+    const count = film.published.length;
+    for (const frame of [
+      { revealed: true, cut: true },
+      { revealed: true, still: true },
+    ]) {
+      film.ground.update(frame);
+      assert.equal(film.published.length, count, "retired staged textures cannot publish again");
+      assert.equal(film.published.at(-1).colorMap, film.ground.colorMap);
+    }
+  } finally {
+    film.ground.dispose();
+  }
+});
+
+test("a known optional soil failure settles opening preparation without waiting its deadline", async (t) => {
+  const createGroundTextures = await loadGroundTextures(),
+    requests = recordingGroundRequests(t),
+    film = createGround(createGroundTextures, { soil: true });
+  try {
+    film.ground.setFilmActive(true);
+    let settled = false;
+    const ready = film.ground.prepareOpening().then((result) => {
+      settled = true;
+      return result;
+    });
+    await flush();
+    assert.equal(requests.length, 6);
+    for (const { url, resolve, reject } of requests) {
+      if (url.includes("soil-roughness")) reject(new Error("optional map missing"));
+      else resolve({ ok: true, blob: async () => ({ url }) });
+    }
+    await flush();
+    assert.equal(settled, true);
+    assert.equal(await ready, true);
+    assert.deepEqual(film.ground.openingState, { maps: "ready", soil: "fallback" });
+  } finally {
+    film.ground.dispose();
+  }
+});
+
+test("known slate failure settles hidden preparation immediately and disposal settles a pending run", async (t) => {
+  const createGroundTextures = await loadGroundTextures(),
+    requests = recordingGroundRequests(t),
+    film = createGround(createGroundTextures);
+  try {
+    film.ground.setFilmActive(true);
+    const opening = film.ground.prepareOpening();
+    for (const { reject } of requests) reject(new Error("missing map"));
+    assert.equal(await opening, true);
+    assert.equal(film.ground.openingState.maps, "fallback");
+  } finally {
+    film.ground.dispose();
+  }
+  const pending = createGround(createGroundTextures);
+  pending.ground.setFilmActive(true);
+  const opening = pending.ground.prepareOpening();
+  pending.ground.dispose();
+  assert.equal(await opening, true);
+});
 
 test("successful slate maps avoid full procedural painting until a real film reset", async (t) => {
   const createGroundTextures = await loadGroundTextures();

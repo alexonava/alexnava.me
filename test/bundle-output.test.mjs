@@ -468,7 +468,7 @@ test("the pages publish no picture, and the share card's backdrop stays unpublis
   });
 });
 
-test("the UI carries the loading line and its tree byte sizes; the scene only reports to it", async () => {
+test("the UI carries the loading line and its opening subjects' byte sizes; the scene only reports to it", async () => {
   const app = await readFile(await findHashedScript("app"), "utf8");
   const scene = await readSceneStatic();
   assert.match(app, /scene-loader__value/);
@@ -476,7 +476,7 @@ test("the UI carries the loading line and its tree byte sizes; the scene only re
   assert.match(app, /scene-star/);
   assert.match(app, /sceneLoader/);
   for (const tier of ["high", "balanced"]) {
-    for (const role of ["tree"]) {
+    for (const role of ["tree", "lantern"]) {
       const { size } = await stat(
         path.join(projectRoot, "images", "architecture", `${role}-${tier}.glb`),
       );
@@ -484,7 +484,7 @@ test("the UI carries the loading line and its tree byte sizes; the scene only re
       assert.ok(!scene.includes(`${role}:${size}`), `the scene carries no ${role}-${tier} size`);
     }
   }
-  for (const role of ROLES.filter((item) => item !== "tree")) {
+  for (const role of ROLES.filter((item) => !["tree", "lantern"].includes(item))) {
     const { size } = await stat(
       path.join(projectRoot, "images", "architecture", `${role}-high.glb`),
     );
@@ -535,7 +535,7 @@ test("the build refuses a shared scene chunk that would carry first-party module
   }
 });
 
-test("changing only a fixture tree model changes only its URL and size in the UI, and a rebuild is stable", async () => {
+test("early tree and lantern model revisions change only their UI manifest entries, and rebuilds are stable", async () => {
   const fixture = await mkdtemp(path.join(scratchRoot, "model-size-build-"));
   const sourcePath = path.join(projectRoot, "images", "architecture", "tree-high.glb");
   const sourceBefore = await readFile(sourcePath);
@@ -554,7 +554,13 @@ test("changing only a fixture tree model changes only its URL and size in the UI
     await cp(path.join(projectRoot, "public"), path.join(fixture, "public"), { recursive: true });
     await cp(path.join(projectRoot, "tools"), path.join(fixture, "tools"), { recursive: true });
     await mkdir(path.join(fixture, "src", "ui"), { recursive: true });
-    for (const file of ["main.js", "ui/scene-loader.js"]) {
+    await mkdir(path.join(fixture, "src", "scene"), { recursive: true });
+    for (const file of [
+      "main.js",
+      "ui/scene-loader.js",
+      "scene/scene-modes.js",
+      "scene/opening-preparation.js",
+    ]) {
       await cp(path.join(projectRoot, "src", file), path.join(fixture, "src", file));
     }
     await writeFile(
@@ -578,17 +584,18 @@ test("changing only a fixture tree model changes only its URL and size in the UI
         text: await readFile(path.join(fixture, "dist", "scripts", names[0]), "utf8"),
       };
     }
-    // The UI's model manifest: each tier's tree URL and size.
+    // The UI's model manifest: each tier's early tree and lantern URLs and sizes.
     const manifest = (text) => ({
       urls: text.match(/\/images\/architecture\/[\w-]+\.[a-f0-9]{8}\.glb/g),
-      sizes: text.match(/\btree:\d+\b/g),
+      // Model payloads exceed 100 bytes; the pure selector also names tree:4.
+      sizes: text.match(/\b(?:tree|lantern):\d{3,}\b/g),
     });
     const before = await buildApp();
     const was = manifest(before.text);
     const oldUrl = `/images/architecture/tree-high.${sha8(sourceBefore)}.glb`;
     const oldSize = `tree:${sourceBefore.length}`;
-    assert.equal(was.urls.length, 2);
-    assert.equal(was.sizes.length, 2);
+    assert.equal(was.urls.length, 4);
+    assert.equal(was.sizes.length, 4);
     assert.equal(
       was.urls.filter((url) => url === oldUrl).length,
       1,
@@ -606,12 +613,30 @@ test("changing only a fixture tree model changes only its URL and size in the UI
       urls: was.urls.map((url) => (url === oldUrl ? newUrl : url)),
       sizes: was.sizes.map((size) => (size === oldSize ? `tree:${changed.length}` : size)),
     });
-    // An unchanged rebuild publishes the same UI, and a model the UI does not
-    // request early (the lantern) never changes it.
+    // An unchanged rebuild publishes the same UI. The selected opener's
+    // lantern also changes precisely its own URL and size.
     assert.equal((await buildApp()).name, after.name);
     const lantern = path.join(fixture, "images", "architecture", "lantern-high.glb");
-    await writeFile(lantern, Buffer.concat([await readFile(lantern), Buffer.from("fixture")]));
-    assert.equal((await buildApp()).name, after.name);
+    const lanternBefore = await readFile(lantern);
+    const lanternAfter = Buffer.concat([lanternBefore, Buffer.from("fixture")]);
+    await writeFile(lantern, lanternAfter);
+    const withLantern = await buildApp();
+    assert.notEqual(withLantern.name, after.name);
+    assert.deepEqual(manifest(withLantern.text), {
+      urls: manifest(after.text).urls.map((url) =>
+        url.replace(sha8(lanternBefore), sha8(lanternAfter)),
+      ),
+      sizes: manifest(after.text).sizes.map((size) =>
+        size === `lantern:${lanternBefore.length}` ? `lantern:${lanternAfter.length}` : size,
+      ),
+    });
+    const rock = path.join(fixture, "images", "architecture", "lichen-rock-high.glb");
+    await writeFile(rock, Buffer.concat([await readFile(rock), Buffer.from("fixture")]));
+    assert.equal(
+      (await buildApp()).name,
+      withLantern.name,
+      "later assets stay out of the UI manifest",
+    );
     assert.deepEqual(await readFile(sourcePath), sourceBefore, "the tracked model must not change");
   } finally {
     assert.equal(path.dirname(path.resolve(fixture)), scratchRoot);
@@ -619,7 +644,7 @@ test("changing only a fixture tree model changes only its URL and size in the UI
   }
 });
 
-test("models and slate maps are deferred: the scene entry names their hashed copies, the UI only the early tree", async () => {
+test("models and slate maps are deferred: the scene entry names all copies, the UI only early tree and lantern", async () => {
   const app = await readFile(await findHashedScript("app"), "utf8");
   const scene = await readSceneStatic();
   // The hashed model manifest lives in the entry, so a model revision changes
@@ -650,7 +675,7 @@ test("models and slate maps are deferred: the scene entry names their hashed cop
       assert.ok(loaded.get(entry).includes(`/images/architecture/${published}`), published);
       assert.equal(
         app.includes(`/images/architecture/${published}`),
-        role === "tree",
+        role === "tree" || role === "lantern",
         `the UI names ${published} only to request it early`,
       );
     }

@@ -520,6 +520,22 @@ test("optional lantern releases staged and late parses after tier switches, gate
   }
 });
 
+test("opening deadline cancels only the optional lantern and releases its late parse", async () => {
+  const h = harness({ includeLantern: true });
+  h.controller.setQuality({ tier: "high" }, true);
+  const late = request(h, "lantern");
+  assert.equal(h.controller.cancelOptional("tree"), false);
+  assert.equal(h.controller.cancelOptional("lantern"), true);
+  assert.equal(late.signal.aborted, true);
+  assert.equal(request(h, "tree").signal.aborted, false);
+  const stale = asset("late-lantern");
+  late.resolve(stale);
+  await flush();
+  assertReleased(stale);
+  assert.equal(h.statuses.at(-1).reason, "opening-deadline");
+  h.controller.dispose();
+});
+
 function glb(json, binary = Buffer.alloc(0)) {
   const source = Buffer.from(JSON.stringify(json));
   const jsonLength = Math.ceil(source.length / 4) * 4;

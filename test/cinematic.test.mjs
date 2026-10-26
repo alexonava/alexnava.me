@@ -67,20 +67,18 @@ function setup(selected = "watch", width = 1440, height = 900, angle = 0) {
   };
 }
 
-test("every ordinary visit opens The watch while explicit subject URLs remain valid", () => {
+test("ordinary visits open Lantern study while explicit and legacy subject URLs remain valid", () => {
   const unexpectedRandom = () => {
     throw new Error("opening composition must not use RNG");
   };
+  for (const query of ["", "?quality=high", "?architecture=classic", "?setting=previous"])
+    assert.equal(chooseCinematicView(query, unexpectedRandom), "tree");
   for (const query of [
-    "",
-    "?quality=high",
     "?view=unknown",
     // The lookout's own view left with it: its old URLs open The watch.
     "?view=tower",
     "?angle=3",
     "?view=orbit",
-    "?architecture=classic",
-    "?setting=previous",
   ])
     assert.equal(chooseCinematicView(query, unexpectedRandom), "watch");
   for (const view of ["watch", "tree"])
@@ -141,7 +139,10 @@ test("valid angle overrides remain reproducible and missing or invalid angles se
       "?angle=2.5",
       "?angle=invalid",
     ])
-      assert.equal(chooseCinematicAngle(query, view, unexpectedRandom), 0);
+      assert.equal(
+        chooseCinematicAngle(query, view, unexpectedRandom),
+        query === "" && view === "tree" ? 1 : 0,
+      );
 });
 
 test("short landscape uses a side-by-side safe area instead of backing out below the hero", () => {
@@ -461,10 +462,13 @@ test("an anchored tour shot keeps its fit through an address bar while its reach
     locked = f.controller.frame;
   // Portrait sets the tree on the phone's lower third, a little left of centre, and lifts the
   // camera to look over the root at the lantern.
-  assert.deepEqual(shot.anchor, [0.39, 0.66]);
+  assert.deepEqual(shot.anchor, [0.41, 0.62]);
   assert.equal(shot.height, 0.38);
   const a = cinematicSafeArea(390, 844, f.hero, { top: 844 - 110 }),
-    reach = a.top + a.height * 0.66 + Math.min(1, shot.margin / (1 - PUSH_IN)) * a.height * 0.34,
+    reach =
+      a.top +
+      a.height * shot.anchor[1] +
+      Math.min(1, shot.margin / (1 - PUSH_IN)) * a.height * (1 - shot.anchor[1]),
     edge = Math.ceil(reach + 16);
   f.apply(390, edge + 1);
   assert.equal(f.controller.frame, locked, "kept while its reach stays on the canvas");
@@ -1230,7 +1234,12 @@ test("the five directed shots keep their names and distinct viewpoints", () => {
   const keys = new Set(all.map((s) => `${s.azimuth}/${s.height}/${s.region.join()}`));
   assert.equal(keys.size, 5);
   for (const shot of all) {
-    assert.ok(shot.height >= 0.1 && shot.height <= 0.7);
+    // Camera heights follow the selected subject's scale: the wider root
+    // companion stands above the small lantern rather than above the tree.
+    if (shot.name === "Root and lantern") {
+      assert.equal(shot.subject, "tree-lantern");
+      assert.ok(shot.height >= 1 && shot.height <= 3);
+    } else assert.ok(shot.height >= 0.1 && shot.height <= 0.7);
     assert.ok(shot.fov >= 30 && shot.fov <= 46);
   }
 });
@@ -1451,12 +1460,12 @@ test("widescreen bars cut desktops to 2.39:1, never phones, portrait, narrow or 
   const phone = cinematicSafeArea(390, 844, { right: 299, bottom: 177 }, { top: 738 });
   assert.equal(phone.top, 201);
 
-  // The bars pick a shot's letterbox variant, built once; shots without one keep their base
-  // form. No directed shot carries one: the tour's shots frame every desktop alike (a probe
-  // below takes the variant's path).
+  // The bars pick a shot's letterbox variant, built once; shots without one
+  // keep their base form. The wider root companion adjusts its eye height
+  // and scale inside the bars, without changing the protected lantern view.
   assert.deepEqual(
     [...DIRECTED_SHOTS.watch, ...DIRECTED_SHOTS.tree].filter((s) => s.letterbox).map((s) => s.name),
-    [],
+    ["Root and lantern"],
   );
   for (const base of [
     ...DIRECTED_SHOTS.watch,

@@ -1,4 +1,4 @@
-import { resolveSceneView } from "./scene-modes.js";
+import { resolveSceneOpening } from "./scene-modes.js";
 import { Vector3 } from "three";
 import {
   DIRECTED_SHOTS,
@@ -18,15 +18,13 @@ import {
 export { isStackedLayout, PUSH_IN, LETTERBOX, letterboxShare };
 
 export function chooseCinematicView(search = "") {
-  return resolveSceneView(search);
+  return resolveSceneOpening(search).view;
 }
 export function chooseCinematicAngle(search = "", view = null) {
-  const q = new URLSearchParams(search),
-    explicit = Number(q.get("angle")),
-    count = DIRECTED_SHOTS[view]?.length ?? 3;
-  if (Number.isInteger(explicit) && explicit >= 1 && explicit <= count) return explicit - 1;
-  // Every fresh visit opens The watch; subject and valid angle URLs remain reproducible.
-  return 0;
+  const opening = resolveSceneOpening(search);
+  return view !== null && view !== opening.view
+    ? resolveSceneOpening(search, { view }).angle
+    : opening.angle;
 }
 // Stacked layouts frame the subject below the name. The others frame it beside
 // the name, right of the hero, from 32px under the top edge down to the bottom

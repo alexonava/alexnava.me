@@ -51,7 +51,7 @@ test("models and maps keep the startup tier, and quality is sampled only after t
     flat(source("src/scene/textures.js")),
     /applyQuality\(profile, context\) \{ filmMaps\.applyQuality\(profile, context\); \}/,
   );
-  assert.match(index, /const revealed = sceneReadyMarked && cinematic\.ready;/);
+  assert.match(index, /const revealed = canvasShown && cinematic\.ready;/);
   assert.match(
     index,
     /revealed && !reducedMotion && !adaptiveSteps\.pending \? qualityState\.sampleRevealed\?\.\(/,
@@ -82,7 +82,7 @@ test("each event that brings uploads or compiles restarts the sampling hold", ()
   ]) {
     const start = index.indexOf(anchor);
     assert.ok(start >= 0, label);
-    assert.ok(index.slice(start, start + 160).includes("qualityState.holdSampling()"), label);
+    assert.ok(index.slice(start, start + 320).includes("qualityState.holdSampling()"), label);
   }
 });
 
@@ -160,9 +160,9 @@ test("the reveal waits for the shader warm-up, and nothing draws while one links
   );
   assert.match(
     index,
-    /const sceneShown = !sceneFailed && cinematic\.ready && \(canvasShown \|\| !shaderWarmup\.pending\);/,
+    /const sceneShown = !sceneFailed && cinematic\.ready && \(canvasShown \|\| \(openingGate\.ready && !shaderWarmup\.pending\)\);/,
   );
-  assert.match(index, /warmShaders\("scene"\); frameScheduler\.start\(\);/);
+  assert.match(index, /warmShaders\("scene"\); observeOpening\(\); frameScheduler\.start\(\);/);
   // The watch's commit links the film's programs before the reveal. A committed
   // tree replaces nothing visible, so it stays hidden until its programs link.
   assert.match(index, /measureScene\("assembly:watch", assemblyStart\); warmShaders\("watch"\);/);
@@ -182,7 +182,7 @@ test("the hidden canvas idles until the reveal, which marks it and lets the rock
   );
   assert.match(
     index,
-    /if \(sceneShown && !canvasShown\) \{ markScene\("reveal"\); rockScatter\.setRevealed\(\); groundTextures\.update\?\.\(\{ revealed: true \}\); \}/,
+    /if \(sceneShown && !canvasShown\) \{ markScene\("reveal"\); revealTime = elapsedTime; cameraTour\?\.reset\(\); stopOpeningPreparation\(\); rockScatter\.setRevealed\(\); groundTextures\.update\?\.\(\{ revealed: true \}\); \}/,
   );
 });
 
@@ -202,7 +202,10 @@ test("the phone text band shades only a name stacked above the subject", () => {
 
 test("the authored scene's shadow map redraws only on reported changes", () => {
   assert.match(index, /rendering\.setStaticShadows\(true\);/);
-  assert.match(index, /rendering\.invalidateShadows\(\); invalidateContent\(\); \}\);/);
+  assert.match(
+    index,
+    /rendering\.invalidateShadows\(\); invalidateContent\(\); resolve\(ready\); \}\)\);/,
+  );
 });
 
 test("the drawing buffer follows the full-bleed container while the canvas keeps its CSS size", () => {
@@ -301,7 +304,7 @@ test("the tour fits its next shot in idle slices and refits after a resize, a fo
   );
 });
 
-test("the film terrain is film-scene.js's lazy chunk and never holds the reveal", () => {
+test("the film terrain is film-scene.js's lazy chunk with explicit hidden preparation", () => {
   // It builds in short slices and lands only where it cannot show mid-shot,
   // so the film takes the tour, not the scene's warm-up.
   assert.match(index, /createFilmScene\(\{[^}]*tour: liveView,/);

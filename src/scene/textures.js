@@ -267,6 +267,15 @@ import { measureScene, sceneNow } from "./perf-marks.js";
     let detailed = false;
     let slateReady = false;
     let disposed = false;
+    let opening = null,
+      openingTimer = null,
+      openingSettled = false,
+      finishOpening = () => {},
+      stagedMaps = null;
+    const openingState = { maps: "pending", soil: "pending" };
+    function checkOpening() {
+      if (openingState.maps !== "pending" && openingState.soil !== "pending") finishOpening();
+    }
     function paintGround(detail) {
       const start = sceneNow();
       const paintSize = detail ? size : 4;
@@ -316,6 +325,7 @@ import { measureScene, sceneNow } from "./perf-marks.js";
     // The slate maps replace the procedural pair only after they decode; the
     // procedural canvases stay alive so a reset or fallback can rebind them.
     function publishGround() {
+      stagedMaps = null; // The restoring owner disposes any retired slate maps next.
       slateReady = false;
       onDetailChange({ ...textures, normalMap: null, roughnessMap: null, normalScale: 0 });
     }
@@ -323,14 +333,38 @@ import { measureScene, sceneNow } from "./perf-marks.js";
       profile,
       disabled: false,
       anisotropy: aniso,
-      publishSoilRoughness: onSoilRoughnessChange,
+      publishSoilRoughness:
+        typeof onSoilRoughnessChange === "function"
+          ? (texture) => {
+              onSoilRoughnessChange(texture);
+              if (texture) {
+                openingState.soil = "ready";
+                checkOpening();
+              }
+            }
+          : undefined,
+      reportSoil({ status }) {
+        if (["ready", "fallback"].includes(status)) {
+          openingState.soil = status;
+          checkOpening();
+        }
+      },
       requestFrame: invalidate,
       publish(maps) {
+        if (openingSettled) {
+          stagedMaps = maps;
+          invalidate();
+          return;
+        }
         onDetailChange(maps);
         slateReady = true;
       },
       restore: publishGround,
       report(status) {
+        if (["ready", "fallback"].includes(status.status)) {
+          openingState.maps = status.status;
+          checkOpening();
+        }
         if (status.status === "fallback") ensureProcedural();
         onDetailStatus({ ...status, material: FILM_GROUND_PRESETS.slate.material });
       },
@@ -338,8 +372,32 @@ import { measureScene, sceneNow } from "./perf-marks.js";
     return {
       ...textures,
       ensureProcedural,
+      openingState,
+      prepareOpening({ timeoutMs = 8000 } = {}) {
+        if (opening) return opening;
+        if (disposed) return Promise.resolve(true);
+        opening = new Promise((resolve) => {
+          finishOpening = () => {
+            openingSettled = true;
+            clearTimeout(openingTimer);
+            finishOpening = () => {};
+            resolve(true);
+          };
+          openingTimer = setTimeout(() => {
+            for (const key of ["maps", "soil"])
+              if (openingState[key] === "pending") openingState[key] = "fallback";
+            ensureProcedural();
+            finishOpening();
+          }, timeoutMs);
+          if (typeof onSoilRoughnessChange !== "function") openingState.soil = "fallback";
+          filmMaps.update({ preparing: true });
+          checkOpening();
+        });
+        return opening;
+      },
       setFilmActive(active) {
         if (disposed) return;
+        stagedMaps = null;
         publishGround();
         filmMaps.setActive(active);
         if (!active) ensureProcedural();
@@ -349,10 +407,17 @@ import { measureScene, sceneNow } from "./perf-marks.js";
         filmMaps.applyQuality(profile, context);
       },
       update(frame) {
-        return filmMaps.update(frame);
+        if (stagedMaps && (frame?.cut || frame?.still)) {
+          onDetailChange(stagedMaps);
+          stagedMaps = null;
+          slateReady = true;
+        }
+        return filmMaps.update({ ...frame, preparing: Boolean(opening && !openingSettled) });
       },
       dispose() {
         disposed = true;
+        stagedMaps = null;
+        finishOpening();
         return filmMaps.dispose();
       },
     };

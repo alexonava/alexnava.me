@@ -169,6 +169,73 @@ for (const tier of ["high", "balanced"])
     }
   });
 
+test("optional opening rocks prepare, link and commit while the canvas remains hidden", async () => {
+  const r = rig({ terrain: () => Object.assign(() => 0, { ready: Promise.resolve(true) }) });
+  try {
+    const prepared = r.owner.prepareOpening();
+    r.owner.setFilmActive(true);
+    r.owner.setTreeStatus("ready");
+    assert.equal(await prepared, true);
+    assert.equal(r.owner.committed, true);
+    assert.equal(r.root().visible, true);
+    assert.deepEqual(r.statuses, ["loading", "ready"]);
+    assert.equal(r.requests.length, 2);
+    r.owner.setRevealed();
+    await flush();
+    assert.equal(r.requests.length, 2, "reveal reuses prepared assets");
+  } finally {
+    r.owner.dispose();
+    r.freed();
+  }
+});
+
+test("an optional opening rock deadline disposes late assets and settles fallback once", async () => {
+  const assets = deferred();
+  let r;
+  r = rig({
+    terrain: () => Object.assign(() => 0, { ready: Promise.resolve(true) }),
+    loadAsset: (_url, request) => assets.promise.then(() => r.asset(request.role)),
+  });
+  try {
+    r.owner.setFilmActive(true);
+    r.owner.setTreeStatus("ready");
+    assert.equal(await r.owner.prepareOpening({ timeoutMs: 10 }), true);
+    assert.deepEqual(r.statuses, ["loading", "fallback"]);
+    assets.resolve();
+    await flush();
+    assert.equal(r.owner.committed, false);
+    assert.deepEqual(r.statuses, ["loading", "fallback"]);
+    r.freed();
+  } finally {
+    r.owner.dispose();
+  }
+});
+
+test("the optional rock download deadline does not charge time awaiting required terrain", async () => {
+  const terrain = deferred(),
+    r = rig({ terrain: () => terrain.promise });
+  try {
+    r.owner.setFilmActive(true);
+    r.owner.setTreeStatus("ready");
+    let settled = false;
+    const ready = r.owner.prepareOpening({ timeoutMs: 10 }).then((value) => {
+      settled = true;
+      return value;
+    });
+    await flush();
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    assert.equal(settled, false);
+    assert.deepEqual(r.statuses, ["loading"]);
+    terrain.resolve(Object.assign(() => 0, { ready: Promise.resolve(true) }));
+    assert.equal(await ready, true);
+    assert.equal(r.owner.committed, true);
+    assert.deepEqual(r.statuses, ["loading", "ready"]);
+  } finally {
+    r.owner.dispose();
+    r.freed();
+  }
+});
+
 for (const failed of ["terrain", "ready"])
   test(`${failed} rejection while GLBs are pending is observed and frees their late results`, async () => {
     const terrain = deferred(),

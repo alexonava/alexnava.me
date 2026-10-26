@@ -1106,7 +1106,7 @@ test("the lazy ground shading extends only the slate's program, under its own ke
     // without it.
     assert.match(
       fragment,
-      /#ifdef USE_ENVMAP\s*vec3 slateSkyW = textureCubeUV\(envMap, slateR, [\d.]+\*slateRough\+[\d.]+\*slateRoughT\)\.rgb\*envMapIntensity\*[\d.]+\*\(babelFlash\.y > 0\.0 \? 1\.0\+babelFlash\.y\*\(1\.0-slateBehindText\(\)\) : 1\.0\);\s*#else\s*vec3 slateSkyW = mix\(/,
+      /#ifdef USE_ENVMAP\s*float slateEnvRough = [\d.]+\*slateRough\+[\d.]+\*slateRoughT;\s*if \(slateCoastStudy > \.5\) slateEnvRough = max\([^;]+;\s*vec3 slateSkyW = textureCubeUV\(envMap, slateR, slateEnvRough\)\.rgb\*envMapIntensity\*[\d.]+\*\(babelFlash\.y > 0\.0 \? 1\.0\+babelFlash\.y\*\(1\.0-slateBehindText\(\)\) : 1\.0\);\s*#else\s*vec3 slateSkyW = mix\(/,
     );
     assert.match(fragment, /slatePuddle = mix\(slatePuddle, smoothstep\([^;]*\), slateZoneW\);/);
     assert.match(
@@ -1150,7 +1150,10 @@ test("the lazy ground shading extends only the slate's program, under its own ke
     // at the full river's physical speed on the drips' clock (the same uniform, so they hold as the
     // drips do), easing out toward the shore; the finer octave fades out
     // before it aliases.
-    assert.match(fragment, /^uniform vec4 slateDrip, slateFlame;\nuniform float slateFlow;\n/m);
+    assert.match(
+      fragment,
+      /^uniform vec4 slateDrip, slateFlame;\nuniform float slateFlow, slateCoastStudy;\n/m,
+    );
     assert.ok(
       fragment.includes(
         `vec2 slateFU = vec2(slateRiverQ.y+slateFlow*${RIVER_CHANNEL.speed}, slateRiverQ.z);`,
@@ -1240,9 +1243,10 @@ test("the lazy ground shading extends only the slate's program, under its own ke
     assert.ok(RIVER_RIPPLE.rough >= 0.1 && RIVER_RIPPLE.rough <= 0.2);
     assert.ok(
       fragment.includes(
-        `textureCubeUV(envMap, slateR, ${RIVER_RIPPLE.rough}*slateRough+${RIVER_RIPPLE.roughTilt}*slateRoughT).rgb`,
+        `float slateEnvRough = ${RIVER_RIPPLE.rough}*slateRough+${RIVER_RIPPLE.roughTilt}*slateRoughT;`,
       ),
     );
+    assert.ok(fragment.includes("textureCubeUV(envMap, slateR, slateEnvRough).rgb"));
     assert.ok(fragment.includes("slateRough = slateFS;"));
     assert.ok(fragment.includes("slateRough = max(slateRough, slateStreamQ.x);"));
     // Where the stream's ripples are steepest (where it pours in) it mirrors the sky up
@@ -1592,6 +1596,70 @@ function idleTasks() {
     },
   };
 }
+
+for (const failedBuilder of ["roots", "banks"])
+  test(`hidden opening rejects an explicit ${failedBuilder} detail build failure`, async () => {
+    const r = linkRig({ parallel: false }),
+      clock = frames(),
+      previousIdle = globalThis.requestIdleCallback,
+      idle = [];
+    let scheduled = 0,
+      result;
+    globalThis.requestIdleCallback = (task) => {
+      if (++scheduled === (failedBuilder === "roots" ? 1 : 2))
+        throw new Error("Unavailable detail scheduler");
+      idle.push(task);
+    };
+    try {
+      const height = settleRoots(r.terrain, r.ground, r.rendering, r.base);
+      const ready = height.prepareOpening().then((value) => (result = value));
+      const deadline = performance.now() + 10000;
+      while (result === undefined && performance.now() < deadline) {
+        await clock.step();
+        for (const task of idle.splice(0)) task({ didTimeout: true, timeRemaining: () => 0 });
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+      assert.equal(
+        result,
+        false,
+        "a caught required detail failure cannot report a finished opener",
+      );
+      assert.equal(await ready, false);
+      assert.equal(height.openingState.terrain, true);
+      assert.equal(height.openingState.details, false);
+      assert.equal(height.openingState.failed, true);
+      assert.equal(height.openingState.foreground, false);
+      assert.equal(r.root.getObjectByName("estate-foreground-field"), undefined);
+    } finally {
+      r.terrain.dispose();
+      await clock.step(3);
+      r.tufts.dispose();
+      r.material.dispose();
+      if (previousIdle) globalThis.requestIdleCallback = previousIdle;
+      else delete globalThis.requestIdleCallback;
+      clock.restore();
+    }
+  });
+
+test("hidden opening preserves the established no-growth detail fallback", async () => {
+  const r = linkRig({ parallel: false }),
+    clock = frames();
+  r.tufts.mesh.removeFromParent();
+  try {
+    const height = settleRoots(r.terrain, r.ground, r.rendering, r.base);
+    let result;
+    const ready = height.prepareOpening().then((value) => (result = value));
+    for (let n = 0; n < 10 && result === undefined; n++) await clock.step();
+    assert.equal(await ready, true);
+    assert.equal(height.openingState.details, true);
+    assert.equal(height.openingState.failed, false);
+  } finally {
+    r.terrain.dispose();
+    r.tufts.dispose();
+    r.material.dispose();
+    clock.restore();
+  }
+});
 
 test("settling the roots seats the tufts at once and never holds the reveal for the shaded ground", async () => {
   const r = linkRig(),
@@ -3394,10 +3462,10 @@ test("the rapids quicken the river's last stretch toward the falls: streaks, sta
   assert.equal(shadeSlatePuddles(shader), true);
   const fragment = shader.fragmentShader;
   // The rapids' own copy (ocean.js rapidsGlsl()), the falls' run takes the same.
-  assert.ok(fragment.includes(rapidsGlsl("slateRp", RAPIDS_AT)));
+  assert.ok(fragment.includes(rapidsGlsl("slateRp", RAPIDS_AT, RAPIDS, "slateCoastStudy")));
   // Their froth joins the stream's before the froth's roughness and the mirror give way to it.
   const call = fragment.indexOf(
-      "slateRpP = slateRpRapids(slateRpU.y, slateRpA, slateRiverR, slateFlow, slateRpFP)",
+      "slateRpP = slateRpRapids(slateRpU.y, slateRpA, slateRpR, slateFlow, slateRpFP)",
     ),
     froth = fragment.indexOf("slateFoam = max(slateFoam, slateRapid);"),
     rough = fragment.indexOf("roughnessFactor = mix(roughnessFactor, .85, slateFoam);");

@@ -1417,6 +1417,7 @@ test("a shot's light mood merges over the neutral default and never shares it", 
     glintText: 0,
     stoneText: 0,
     poolAbout: 0,
+    coastStudy: 0,
   });
   for (const shot of [null, undefined, {}, { light: null }])
     assert.deepEqual(shotLight(shot), SHOT_LIGHT_DEFAULT);
@@ -1429,6 +1430,7 @@ test("a shot's light mood merges over the neutral default and never shares it", 
     glintText: 0,
     stoneText: 0,
     poolAbout: 0,
+    coastStudy: 0,
   });
   assert.notEqual(shotLight(null), SHOT_LIGHT_DEFAULT, "a fresh object each time");
   mood.key = 3;
@@ -1492,7 +1494,7 @@ test("each frame applies the shot's light, lens, bars and grain, holding the gra
   // The mood follows the shot on screen in film only.
   assert.ok(
     index.includes(
-      "const mood = shotLight(filmActive && cinematicApplied ? cinematic.shot : null); rendering.setShotLight?.(mood); if (LANTERN_MOOD.value !== mood.lantern) { LANTERN_MOOD.value = mood.lantern; treeArchitecture?.refreshLantern?.(); } GLINT_MOOD.value = filmActive ? mood.glintText : 0; GRASS_MOOD.value = filmActive ? mood.grassInside : 0;",
+      "const mood = shotLight(filmActive && cinematicApplied ? cinematic.shot : null); rendering.setShotLight?.(mood); if (LANTERN_MOOD.value !== mood.lantern) { LANTERN_MOOD.value = mood.lantern; treeArchitecture?.refreshLantern?.(); } COAST_MOOD.value = filmActive ? mood.coastStudy : 0; GLINT_MOOD.value = filmActive ? mood.glintText : 0; GRASS_MOOD.value = filmActive ? mood.grassInside : 0;",
     ),
   );
   // The ground's pool knee about Contact follows it too, off out of film.
@@ -1500,6 +1502,8 @@ test("each frame applies the shot's light, lens, bars and grain, holding the gra
     "groundContacts.slatePoolAbout.value = filmActive ? mood.poolAbout : 0;",
   );
   const moodAt = index.indexOf("const mood = shotLight(");
+  const coast = index.indexOf("COAST_MOOD.value = filmActive ? mood.coastStudy : 0;");
+  assert.ok(coast > moodAt && coast < index.indexOf("camera.updateMatrixWorld();", moodAt));
   assert.ok(pool > moodAt, "after the mood");
   assert.ok(pool < index.indexOf("camera.updateMatrixWorld();", moodAt), "in the mood's block");
   // So does the stones' lamplight knee behind the name and intro, on the

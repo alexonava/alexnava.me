@@ -17,6 +17,7 @@ import {
   landFactor,
   riverFalls,
   RAPIDS,
+  RAPIDS_BODY,
   rapidsFrame,
   rapidsGlsl,
   rapidsSpeed,
@@ -2092,7 +2093,7 @@ const LAMP_FOOT = LANTERN_IMAGE.glow * LANTERN_IMAGE.scale;
 // set per draw on the CPU. slateFlame: the lantern flame's draught (height
 // factor, 0 without the flame module; lean in lantern units along world x, z).
 const PUDDLE_HEAD = `uniform vec4 slateDrip, slateFlame;
-uniform float slateFlow;
+uniform float slateFlow, slateCoastStudy;
 vec3 slateNoiseD(vec2 p){vec2 i=floor(p),f=fract(p),u=f*f*(3.-2.*f),du=6.*f*(1.-f);float a=slateHash(i),b=slateHash(i+vec2(1,0)),c=slateHash(i+vec2(0,1)),d=slateHash(i+1.),k=a-b-c+d;return vec3(a+(b-a)*u.x+(c-a)*u.y+k*u.x*u.y,du*(vec2(b-a,c-a)+k*u.yx));}
 // The live drip's tilt of the water at p (world xz); rings finer than about
 // three pixels of ground footprint (fp, units) fade out instead of aliasing.
@@ -2108,7 +2109,7 @@ vec2 slateRipples(vec2 p, float fp) {
   vec2 g = s*q/max(r, .001)/sqrt(1.0+2.0*r)*(1.0-smoothstep(${glsl(DRIP_RIPPLES.life - 0.6)}, ${glsl(DRIP_RIPPLES.life)}, a));
   return g*min(1.0, ${glsl(DRIP_RIPPLES.maxTilt)}/max(length(g), 1e-5));
 }
-${RAPIDS_AT ? rapidsGlsl("slateRp", RAPIDS_AT) : ""}
+${RAPIDS_AT ? rapidsGlsl("slateRp", RAPIDS_AT, RAPIDS, "slateCoastStudy") : ""}
 `;
 // The flame's colours and glass light; its core's luminance, and the core's once the gain is clipped at white.
 const MF = MIRROR_FLAME,
@@ -2129,7 +2130,7 @@ if (slateWater > 0.0) {
   // The water's own normal, for the mirror and its Fresnel only (the bottom keeps the soil's): level as it deepens, a still micro-undulation near the lens, and the drips.
   float slateDeep = smoothstep(-.01, .05, slateLevel)*(1.0-slateDry)*slateZoneW;
   vec3 slateN = normalize(normal*mat3(viewMatrix)), slateNI = slateN, slateV = normalize(cameraPosition-vMudWorld);
-  float slateView = length(vViewPosition), slateRough = 0.0, slateRoughT = 0.0, slateSWG = 1.0, slateGR = 0.0;
+  float slateView = length(vViewPosition), slateRough = 0.0, slateRoughT = 0.0, slateSWG = 1.0, slateGR = 0.0, slateBrink = 0.0;
   vec2 slateGG = vec2(0.0);
   vec3 slateNG = vec3(0.0, 1.0, 0.0);
   if (slateDeep > 0.0) {
@@ -2182,8 +2183,17 @@ ${
     ? `    // The rapids' streaks and standing waves (STREAM_FOAM's slateRpP) take over from the calm current as it quickens;
     // where they are steep the sky blurs.
     if (slateRpWt > 0.0) {
-      slateGC = slateGC*(1.0-slateRpWt)+slateRiverDir*slateRpP.x+vec2(-slateRiverDir.y, slateRiverDir.x)*slateRpP.y;
+      vec2 slateRpDir = slateRiverDir;
+      if (slateCoastStudy > .5) slateRpDir = normalize(mix(slateRpDir, ${glslVec(-RAPIDS_AT.head[0], -RAPIDS_AT.head[1])}, slateRpBlend));
+      slateGC = slateGC*(1.0-slateRpWt)+slateRpDir*slateRpP.x+vec2(-slateRpDir.y, slateRpDir.x)*slateRpP.y;
       slateRoughT = max(slateRoughT, slateRpP.w);
+      // The same world gradient and roughness reach the falling body's head.
+      // Suppress only the old independent micro ripples as this field takes over.
+      if (slateCoastStudy > .5) {
+        slateBrink = slateRpWt;
+        slateG *= 1.0-slateRpWt;
+        slateRoughT = mix(slateRoughT, slateRpP.w, slateRpWt);
+      }
     }
 `
     : ""
@@ -2218,7 +2228,9 @@ ${
     : ""
 }  // The night sky (the film's environment, night-environment.js) at its sharpest, brighter in a lightning flash away from the text (film-light.js FLASH_GROUND); without it, a sky from the horizon, fog and zenith colours.
   #ifdef USE_ENVMAP
-  vec3 slateSkyW = textureCubeUV(envMap, slateR, ${glsl(RIVER_RIPPLE.rough)}*slateRough+${glsl(RIVER_RIPPLE.roughTilt)}*slateRoughT).rgb*envMapIntensity*${glsl(M.sky)}*(babelFlash.y > 0.0 ? 1.0+babelFlash.y*(1.0-slateBehindText()) : 1.0);
+  float slateEnvRough = ${glsl(RIVER_RIPPLE.rough)}*slateRough+${glsl(RIVER_RIPPLE.roughTilt)}*slateRoughT;
+  if (slateCoastStudy > .5) slateEnvRough = max(slateEnvRough, (.25+.5*slateRoughT)*slateBrink);
+  vec3 slateSkyW = textureCubeUV(envMap, slateR, slateEnvRough).rgb*envMapIntensity*${glsl(M.sky)}*(babelFlash.y > 0.0 ? 1.0+babelFlash.y*(1.0-slateBehindText()) : 1.0);
   #else
   vec3 slateSkyW = mix(mix(${glslVec(...M.horizon)}, fogColor, smoothstep(0.0, .1, slateR.y)), ${glslVec(...M.zenith)}, smoothstep(.12, .6, slateR.y));
   slateSkyW *= 1.0+${glsl(2 * M.cloud)}*(slateNoise((slateP.xz+slateR.xz*(60.0/max(slateR.y, .05)))/45.0)-.5)*smoothstep(.02, .12, slateR.y);
@@ -2365,13 +2377,20 @@ ${
 // shelf's edge). Near the lip in the falls' straight frame, farther up along its own course; only
 // on its last stretch. The froth thins behind the text.
 vec2 slateRpU = slateRpUQ(vMudWorld.xz);
+vec2 slateRpWorld = slateRpU;
+float slateRpBlend = 0.0;
+if (slateCoastStudy > .5) slateRpBlend = 1.0-smoothstep(3.0, 8.0, slateRpRA(slateRpWorld));
 slateRpU = mix(slateRpU, vec2(slateRiverQ.y-(${glsl(RAPIDS_AT.s)}), slateRiverQ.z), smoothstep(3.0, 8.0, slateRpU.x));
+if (slateCoastStudy > .5) slateRpU = mix(slateRpU, slateRpWorld, slateRpBlend);
 float slateRpA = slateRpRA(slateRpU), slateRpFP = max(length(fwidth(vMudWorld.xz)), 1e-4), slateRapid = 0.0;
-float slateRpWt = slateRpW(slateRpA, slateRiverR)*step(slateRiverQ.y-(${glsl(RAPIDS_AT.s)}), ${glsl(RAPIDS.reach + 8)});
+float slateRpR = slateRiverR;
+if (slateCoastStudy > .5) slateRpR = mix(slateRpR, abs(slateRpWorld.y)/${glsl(RAPIDS_AT.half)}, slateRpBlend);
+float slateRpWt = slateRpW(slateRpA, slateRpR)*step(slateRiverQ.y-(${glsl(RAPIDS_AT.s)}), ${glsl(RAPIDS.reach + 8)});
 vec4 slateRpP = vec4(0.0);
 if (slateRpWt > 0.0) {
-  slateRpP = slateRpRapids(slateRpU.y, slateRpA, slateRiverR, slateFlow, slateRpFP)*step(slateRiverQ.y-(${glsl(RAPIDS_AT.s)}), ${glsl(RAPIDS.reach + 8)});
+  slateRpP = slateRpRapids(slateRpU.y, slateRpA, slateRpR, slateFlow, slateRpFP)*step(slateRiverQ.y-(${glsl(RAPIDS_AT.s)}), ${glsl(RAPIDS.reach + 8)});
   slateRapid = slateRpP.z*slatePuddle*(1.0-${glsl(RAPIDS.text)}*slateBehindText());
+  if (slateCoastStudy > .5) diffuseColor.rgb = mix(diffuseColor.rgb, ${glslVec(...RAPIDS_BODY)}, slateRpWt*slatePuddle);
 }
 diffuseColor.rgb = mix(diffuseColor.rgb, vec3(${glsl(RAPIDS.albedo)}), slateRapid);
 slateFoam = max(slateFoam, slateRapid);
@@ -2392,7 +2411,7 @@ const RIPPLE_TIME = { value: DRIP_RIPPLES.start },
 // The puddles' own edit list: all or nothing, independent of the root list
 // (shadeSlateGround() applies it first; either may fail alone). Returns false,
 // leaving the shader unchanged, if the slate program lacks an anchor.
-export function shadeSlatePuddles(shader) {
+export function shadeSlatePuddles(shader, coastStudy = { value: 0 }) {
   const edits = [
     [
       "vertexShader",
@@ -2476,6 +2495,7 @@ ${STREAM_FOAM}`,
   if (!applyEdits(shader, edits)) return false;
   shader.uniforms.slateDrip = DRIP;
   shader.uniforms.slateFlow = RIPPLE_TIME;
+  shader.uniforms.slateCoastStudy = coastStudy;
   shader.uniforms.slateFlame = FLAME_DRAUGHT;
   return true;
 }
@@ -2585,7 +2605,7 @@ export function shadeSlateGround(
     coastDetailOn: { value: 0 },
   },
 ) {
-  const puddles = shadeSlatePuddles(shader);
+  const puddles = shadeSlatePuddles(shader, coastRock.coastStudy);
   // The fault (ocean.js): its distance.
   const shore = applyEdits(shader, slateShoreEdits());
   if (shore) shadeCoastBedrock(shader, coastRock);
@@ -4295,7 +4315,14 @@ export function settleRoots(
   lib = null,
 ) {
   let landed = ground.geometry === terrain,
-    resolveReady;
+    resolveReady,
+    openingPreparing = false,
+    opening = null,
+    rootDetails = Promise.resolve(true),
+    bankDetails = Promise.resolve(true),
+    resolveForeground;
+  const foregroundReady = new Promise((resolve) => (resolveForeground = resolve)),
+    openingState = { terrain: false, details: false, foreground: false, failed: false };
   const liftAt = terrainLift(terrain),
     material = ground.material,
     landHeight = filmHeight(groundHeight, true),
@@ -4304,6 +4331,7 @@ export function settleRoots(
   // The shelf's bindings for the coast's albedo and detail maps (ocean.js lends them).
   const previousRock = material.userData.coastRockUniforms,
     coastRock = {
+      coastStudy: lib?.COAST_MOOD ?? { value: 0 },
       coastAlbedo: { value: null },
       coastAlbedoOn: { value: 0 },
       coastDetail: { value: null },
@@ -4319,6 +4347,7 @@ export function settleRoots(
     film,
     shore: (x, z) => (landed ? coastDistance(x, z) : Infinity),
     ready: new Promise((resolve) => (resolveReady = resolve)),
+    openingState,
   });
   const growth = ground.parent?.getObjectByName("estate-ground-growth");
   let litter = null,
@@ -4353,7 +4382,7 @@ export function settleRoots(
     const surface = terrainHeight(terrain),
       soil = material.color ?? { r: 0.36, g: 0.31, b: 0.28 },
       unseenNow = unseen(rendering, tour),
-      landable = () => landed && active && unseenNow();
+      landable = () => landed && active && (hiddenOpening() || unseenNow());
     // Optional litter and rushes build detached in idle slices. Tuft seating
     // and the rocks' analytic height stay immediate; neither the reveal nor
     // the ground's shading link waits for these meshes.
@@ -4378,21 +4407,31 @@ export function settleRoots(
             if (!finished) for (const mesh of built) mesh.geometry.dispose();
           }
         })(),
-        () => false,
+        () => hiddenOpening(),
         () => !live,
+        () => {
+          if (hiddenOpening()) rendering.openingProgress = (rendering.openingProgress ?? 0) + 1;
+        },
       )
-        .then((built) => {
-          if (!built) return;
-          (function land() {
-            if (!live) return built.forEach((mesh) => mesh.geometry.dispose());
-            if (!landable()) return nextFrame(land);
-            [litter, rushes] = built;
-            built.forEach(seat);
-            growth.userData.retier?.();
-            invalidate();
-          })();
-        })
-        .catch(() => {});
+        .then(
+          (built) =>
+            new Promise((resolve) => {
+              if (!built) return resolve(false);
+              (function land() {
+                if (!live) {
+                  built.forEach((mesh) => mesh.geometry.dispose());
+                  return resolve(false);
+                }
+                if (!landable()) return nextFrame(land);
+                [litter, rushes] = built;
+                built.forEach(seat);
+                growth.userData.retier?.();
+                invalidate();
+                resolve(true);
+              })();
+            }),
+        )
+        .catch(() => false);
     seatBanks = (built) => {
       built.forEach(seat);
       extras.push(...built);
@@ -4411,22 +4450,38 @@ export function settleRoots(
             [driftLeaves(surface(LANTERN_FOOT.x, LANTERN_FOOT.z)), "estate-drift-leaves"],
           ].map(([geometry, name]) => Object.assign(new Mesh(geometry, growth.material), { name }));
         })(),
-        () => false,
+        () => hiddenOpening(),
         () => !live,
-      ).then((built) => {
-        if (!built) return;
-        (function land() {
-          if (!live) return built.forEach((mesh) => mesh.geometry.dispose());
-          if (!landable()) return nextFrame(land);
-          seatBanks(built);
-          invalidate();
-        })();
-      });
+        () => {
+          if (hiddenOpening()) rendering.openingProgress = (rendering.openingProgress ?? 0) + 1;
+        },
+      )
+        .then(
+          (built) =>
+            new Promise((resolve) => {
+              if (!built) return resolve(false);
+              (function land() {
+                if (!live) {
+                  built.forEach((mesh) => mesh.geometry.dispose());
+                  return resolve(false);
+                }
+                if (!landable()) return nextFrame(land);
+                seatBanks(built);
+                invalidate();
+                resolve(true);
+              })();
+            }),
+        )
+        .catch(() => false);
   }
   const renderer = rendering.renderer,
     scene = rendering.homeScene,
     early = earlyFade(rendering, SHADING_EARLY);
-  const allowed = () => !tour?.running || tour.transition.cut || (parallel && early());
+  const hiddenOpening = () =>
+    (openingPreparing || rendering.openingPreparing === true) &&
+    !renderer?.domElement?.parentNode?.classList?.contains("is-ready");
+  const allowed = () =>
+    hiddenOpening() || !tour?.running || tour.transition.cut || (parallel && early());
   const clock = dripClock(RIPPLE_TIME, motionHeld()),
     keyWorld = new Vector3(),
     keyTarget = new Vector3();
@@ -4566,10 +4621,15 @@ export function settleRoots(
   // Optional camera-near cover borrows the entry's providers. Keeping the
   // lazy field independent of entry modules avoids a new shared boot chunk.
   height.updateForeground = (frame = {}) => {
+    if (frame.revealed) openingPreparing = false;
     foregroundFrame = frame;
     if (foreground) {
       foreground.setActive(active && landed);
       foreground.update(frame);
+      if (openingPreparing) {
+        openingState.foreground = ["ready", "fallback"].includes(foreground.state.openingStatus);
+        openingState.foregroundStatus = foreground.state.openingStatus;
+      }
       return;
     }
     if (
@@ -4577,6 +4637,8 @@ export function settleRoots(
       !live ||
       !active ||
       !landed ||
+      (!frame.revealed && !frame.preparing) ||
+      (frame.preparing && !openingState.details) ||
       !frame.camera ||
       frame.profile?.tier === "low" ||
       !ground.parent ||
@@ -4605,6 +4667,7 @@ export function settleRoots(
             [litter, ...extras].filter((mesh) => mesh?.geometry).map((mesh) => mesh.geometry),
           windTime: growth?.material.userData.grassTime,
           rendering,
+          openingFrame: frame.preparing ? frame : null,
           invalidate,
           cancelled: () => !live,
           helpers: {
@@ -4633,9 +4696,60 @@ export function settleRoots(
         root.add(detail.group);
         detail.setActive(active && landed);
         if (foregroundFrame) detail.update(foregroundFrame);
+        resolveForeground(detail);
         invalidate();
       })
-      .catch(() => {});
+      .catch(() => resolveForeground(null));
+  };
+  height.prepareOpening = (frame = {}) => {
+    foregroundFrame = { ...frame, preparing: true, revealed: false };
+    openingPreparing = true;
+    if (foreground && openingState.details) {
+      const next = foreground.prepareOpening(foregroundFrame);
+      openingState.foreground = ["ready", "fallback"].includes(foreground.state.openingStatus);
+      openingState.foregroundStatus = foreground.state.openingStatus;
+      return next.then((ready) => {
+        openingState.foreground = ready;
+        openingState.foregroundStatus = foreground.state.openingStatus;
+        return ready;
+      });
+    }
+    if (opening) return opening;
+    opening = (async () => {
+      if (!live || (await height.ready) === false) return false;
+      openingState.terrain = true;
+      const details = await Promise.all([rootDetails, bankDetails]);
+      if (!live || details.includes(false)) return false;
+      openingState.details = true;
+      height.updateForeground(foregroundFrame);
+      if (!foregroundTried) {
+        openingState.foreground = true;
+        openingState.foregroundStatus = "fallback";
+        return true;
+      }
+      const detail = await foregroundReady;
+      if (!live) return false;
+      if (!detail) {
+        openingState.foreground = true;
+        openingState.foregroundStatus = "fallback";
+        return true;
+      }
+      const ready = await detail.prepareOpening(foregroundFrame);
+      openingState.foreground = ready;
+      openingState.foregroundStatus = detail.state.openingStatus;
+      return ready;
+    })().then(
+      (ready) => {
+        openingState.failed = !ready;
+        return ready;
+      },
+      () => {
+        openingState.failed = true;
+        return false;
+      },
+    );
+    if (!checking) check();
+    return opening;
   };
   const landShore = () => {
     if (!shore.length || shore[0].mesh.parent || !ground.parent) return;
@@ -4679,6 +4793,7 @@ export function settleRoots(
   };
   terrain.addEventListener("dispose", () => {
     live = false;
+    resolveForeground(null);
     foreground?.dispose();
     height.setActive(false);
     resolveReady(false);
@@ -4700,7 +4815,7 @@ export function settleRoots(
       mesh.geometry.dispose();
     }
   });
-  buildRoots();
+  rootDetails = buildRoots();
   const shadedKey = () => {
     material.userData.slateRoot = shadeGround;
     const key = material.customProgramCacheKey?.();
@@ -4794,7 +4909,7 @@ export function settleRoots(
     material.userData.slateRoot = shadeGround;
     material.needsUpdate = true;
     // Then the water's banks are built, in idle slices.
-    if (!clocked) buildBanks();
+    if (!clocked) bankDetails = buildBanks();
     // The water first shows now: its drips start in a calm gap.
     if (!clocked) {
       clocked = true;
@@ -4825,7 +4940,12 @@ export function settleRoots(
       return nextFrame(check);
     }
     const container = renderer?.domElement?.parentNode;
-    if (!linking && !linked && (!container || container.classList?.contains("is-ready"))) link();
+    if (
+      !linking &&
+      !linked &&
+      (hiddenOpening() || !container || container.classList?.contains("is-ready"))
+    )
+      link();
     if (linked && allowed()) {
       if (linked === programState()) return commit();
       linked = "";
@@ -5840,7 +5960,7 @@ function* earthSteps(groundHeight, EARTH) {
 // as nothing else is idle. index.js requests this chunk with the scene, so
 // the build starts as the watch commits, well before a warm load's reveal.
 // A cancelled build (the film scene disposed) stops and resolves to nothing.
-function inSlices(steps, early = () => false, cancelled = () => false) {
+function inSlices(steps, early = () => false, cancelled = () => false, progress = null) {
   const idle =
     typeof globalThis.requestIdleCallback === "function"
       ? (task) => globalThis.requestIdleCallback(task, { timeout: 100 })
@@ -5870,6 +5990,7 @@ function inSlices(steps, early = () => false, cancelled = () => false) {
       try {
         for (;;) {
           const next = steps.next();
+          if (rush) progress?.();
           if (next.done) return resolve(next.value);
           if (performance.now() >= until) break;
         }
@@ -5942,7 +6063,18 @@ export function createEarthGeometry(
     }
   }
   const allowed = unseen(rendering, tour);
-  return inSlices(steps, fading(rendering, false), cancelled).then(
+  const fade = fading(rendering, false),
+    opening = () =>
+      rendering.openingPreparing === true &&
+      !rendering.renderer?.domElement?.parentNode?.classList?.contains("is-ready");
+  return inSlices(
+    steps,
+    () => opening() || fade(),
+    cancelled,
+    () => {
+      if (opening()) rendering.openingProgress = (rendering.openingProgress ?? 0) + 1;
+    },
+  ).then(
     (geometry) =>
       new Promise((resolve) => {
         (function check() {

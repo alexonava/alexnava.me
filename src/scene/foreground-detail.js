@@ -544,6 +544,8 @@ export function* foregroundCoverageSteps({
   surface,
   shots = null,
   layouts = FOREGROUND.layouts,
+  onlyShot = null,
+  tier = "high",
   helpers,
 }) {
   const {
@@ -564,7 +566,9 @@ export function* foregroundCoverageSteps({
     world = new Vector3(),
     projection = new Matrix4(),
     coverageFrustum = new Frustum(),
-    groundBox = new Box3();
+    groundBox = new Box3(),
+    near = new Sphere(),
+    required = new Set();
   const tree = root.getObjectByName("supplied-meshy-tree");
   if (!tree) return { tiles: [], shots: ["The watch"], poses: 0 };
   const watch = new Object3D(),
@@ -603,12 +607,16 @@ export function* foregroundCoverageSteps({
       ...shots.map((shot, angle) => ({ kind: "tree", shot, angle })),
     ];
     for (const [width, height] of layouts)
-      for (const { kind, shot, angle } of courses) {
+      for (const { kind, shot, angle } of courses.filter(
+        ({ shot }) => !onlyShot || shot.name === onlyShot,
+      )) {
         const view = `${width}:${height}:${shot.name}`;
         views.set(view, 0);
         preview.setPreviewShot(kind, angle);
         while (preview.prepare(kind, angle, width, height) === "pending") yield;
-        for (const phase of [0, 0.25, 0.5, 0.75, 1]) {
+        for (const phase of onlyShot
+          ? Array.from({ length: 25 }, (_, i) => i / 24)
+          : [0, 0.25, 0.5, 0.75, 1]) {
           preview.apply({ width, height, elapsedSeconds: phase * 9, tourPhase: phase });
           camera.updateMatrixWorld(true);
           poses++;
@@ -666,7 +674,13 @@ export function* foregroundCoverageSteps({
               );
               if (
                 !visible &&
-                !(Number.isFinite(low) && nearest <= 62 && coverageFrustum.intersectsBox(groundBox))
+                !(
+                  Number.isFinite(low) &&
+                  nearest <= 62 &&
+                  (onlyShot
+                    ? coverageFrustum.intersectsSphere(groundBox.getBoundingSphere(near))
+                    : coverageFrustum.intersectsBox(groundBox))
+                )
               )
                 continue;
               views.set(view, views.get(view) + 1);
@@ -684,10 +698,39 @@ export function* foregroundCoverageSteps({
               tile.views.set(view, Math.min(tile.views.get(view) ?? Infinity, nearest));
             }
           }
+          if (onlyShot) {
+            // Prepare the batches that can enter during the complete authored
+            // hold, plus four neighbouring slots at each sampled pose. Other
+            // shots and viewport envelopes remain off this critical path.
+            const candidates = [];
+            for (const tile of tiles.values()) {
+              tile.box.getBoundingSphere(near);
+              if (!coverageFrustum.intersectsSphere(near)) continue;
+              near.applyMatrix4(root.matrixWorld);
+              const distance = Math.max(
+                0,
+                near.center.distanceTo(world.copy(camera.position)) - near.radius,
+              );
+              if (distance <= 56 * (tier === "balanced" ? 0.7 : 1))
+                candidates.push({ tile, distance });
+            }
+            candidates.sort(
+              (a, b) =>
+                a.distance - b.distance ||
+                tileKey(a.tile.x, a.tile.z).localeCompare(tileKey(b.tile.x, b.tile.z)),
+            );
+            for (const { tile } of candidates.slice(
+              0,
+              FOREGROUND.batches[tier === "balanced" ? "balanced" : "high"] + 4,
+            ))
+              required.add(tileKey(tile.x, tile.z));
+          }
         }
       }
     return {
-      tiles: [...tiles.values()],
+      tiles: [...tiles.values()].filter(
+        (tile) => !onlyShot || required.has(tileKey(tile.x, tile.z)),
+      ),
       shots: ["The watch", ...shots.map((shot) => shot.name)],
       poses,
       views: Object.fromEntries(views),
@@ -697,7 +740,7 @@ export function* foregroundCoverageSteps({
   }
 }
 
-function slices(steps, cancelled = () => false) {
+function slices(steps, cancelled = () => false, priority = () => false, progress = null) {
   const idle = (task) =>
     typeof requestIdleCallback === "function"
       ? requestIdleCallback(task, { timeout: 100 })
@@ -709,14 +752,21 @@ function slices(steps, cancelled = () => false) {
           steps.return?.();
           return resolve(null);
         }
-        const end =
-          performance.now() +
-          (deadline?.didTimeout ? 2 : Math.max(1, Math.min(5, deadline?.timeRemaining?.() ?? 5)));
+        const fast = priority(),
+          end =
+            performance.now() +
+            (fast
+              ? 8
+              : deadline?.didTimeout
+                ? 2
+                : Math.max(1, Math.min(5, deadline?.timeRemaining?.() ?? 5)));
         while (performance.now() < end) {
           const next = steps.next();
+          if (fast) progress?.();
           if (next.done) return resolve(next.value);
         }
-        idle(run);
+        if (fast) setTimeout(run, 0);
+        else idle(run);
       } catch (error) {
         try {
           steps.return?.();
@@ -762,9 +812,53 @@ transformed.y-=.02*(1.-foregroundKeep);
   return material;
 }
 
+function openingKey(frame, root) {
+  const tree = root.getObjectByName("supplied-meshy-tree"),
+    lantern = tree?.getObjectByName("tree-lantern");
+  tree?.updateWorldMatrix(true, false);
+  lantern?.updateWorldMatrix(true, true);
+  return [
+    frame.shot,
+    frame.viewport?.width,
+    frame.viewport?.height,
+    frame.profile?.tier,
+    frame.camera?.fov,
+    tree?.matrixWorld.elements.join(","),
+    lantern?.matrixWorld.elements.join(","),
+    lantern?.children.map((child) => child.uuid).join(","),
+  ].join("|");
+}
+
 export async function prepareForegroundDetail(options) {
   const { root, surface, rendering = null, cancelled = () => false } = options;
-  const coverage = options.coverage ?? (await slices(foregroundCoverageSteps(options), cancelled));
+  const openingFrame = options.openingFrame,
+    initialOpeningSignature = openingFrame ? openingKey(openingFrame, root) : null;
+  const hiddenPreparation = () =>
+    Boolean(openingFrame) &&
+    !rendering?.renderer?.domElement?.parentNode?.classList?.contains("is-ready");
+  const progress = () => {
+    if (rendering && hiddenPreparation())
+      rendering.openingProgress = (rendering.openingProgress ?? 0) + 1;
+  };
+  const coverage =
+    options.coverage ??
+    (await slices(
+      foregroundCoverageSteps({
+        ...options,
+        ...(openingFrame
+          ? {
+              onlyShot: openingFrame.shot,
+              tier: openingFrame.profile?.tier,
+              layouts: [
+                [openingFrame.viewport?.width ?? 1600, openingFrame.viewport?.height ?? 900],
+              ],
+            }
+          : {}),
+      }),
+      cancelled,
+      hiddenPreparation,
+      progress,
+    ));
   if (!coverage || cancelled()) return null;
   const group = new Group();
   group.name = "estate-foreground-field";
@@ -777,7 +871,7 @@ export async function prepareForegroundDetail(options) {
     local = new Vector3(),
     world = new Vector3(),
     sphere = new Sphere();
-  const tiles = coverage.tiles.map((tile) => ({
+  const tileRecord = (tile) => ({
     ...tile,
     key: tileKey(tile.x, tile.z),
     mesh: null,
@@ -787,7 +881,9 @@ export async function prepareForegroundDetail(options) {
     fade: 0,
     used: 0,
     bytes: 0,
-  }));
+  });
+  const tiles = coverage.tiles.map(tileRecord),
+    openingKeys = new Set(openingFrame ? tiles.map((tile) => tile.key) : []);
   let disposed = false,
     active = true,
     tier = "high",
@@ -795,7 +891,13 @@ export async function prepareForegroundDetail(options) {
     busy = false,
     stamp = 0,
     resident = 0,
-    warmed = false;
+    warmed = false,
+    opening = null,
+    resolveOpening = null,
+    openingSignature = null,
+    coverageVersion = 0,
+    openingCoveragePending = false,
+    fullCoverage = !openingFrame;
   const state = {
     tiles: tiles.length,
     poses: coverage.poses,
@@ -808,6 +910,7 @@ export async function prepareForegroundDetail(options) {
     pendingChunks: 0,
     committedChunks: 0,
     failed: false,
+    openingStatus: "idle",
   };
   group.userData.foreground = state;
   const budget = () => (tier === "balanced" ? "balanced" : "high");
@@ -815,7 +918,8 @@ export async function prepareForegroundDetail(options) {
     const limit = FOREGROUND.bytes[budget()];
     for (const tile of [...cache.values()].sort((a, b) => a.used - b.used)) {
       if (resident + bytes <= limit) break;
-      if (tile.mesh.visible || tile.warming) continue;
+      if (tile.mesh.visible || tile.warming || (resolveOpening && openingKeys.has(tile.key)))
+        continue;
       resident -= tile.bytes;
       tile.mesh.removeFromParent();
       tile.mesh.geometry.dispose();
@@ -829,6 +933,46 @@ export async function prepareForegroundDetail(options) {
     }
     state.residentBytes = resident;
     return resident + bytes <= limit;
+  }
+  function checkOpening() {
+    if (!resolveOpening) return;
+    if (openingCoveragePending && !disposed) return;
+    if (
+      !disposed &&
+      !state.failed &&
+      tiles.some((tile) => openingKeys.has(tile.key) && !tile.ready && !tile.empty)
+    )
+      return;
+    state.openingStatus = disposed || state.failed ? "fallback" : "ready";
+    if (!disposed && !state.failed)
+      for (const tile of tiles) if (tile.ready && openingKeys.has(tile.key)) tile.committed = true;
+    const resolve = resolveOpening;
+    resolveOpening = null;
+    resolve(!disposed);
+    if (!disposed) options.invalidate?.();
+  }
+  function mergeCoverage(next) {
+    for (const tile of next.tiles) {
+      const existing = tiles.find((entry) => entry.key === tileKey(tile.x, tile.z));
+      if (existing) for (const [view, distance] of tile.views) existing.views.set(view, distance);
+      else tiles.push(tileRecord(tile));
+    }
+    coverage.shots = next.shots;
+    state.tiles = tiles.length;
+    state.poses += next.poses;
+    state.shots = next.shots;
+    state.views = { ...state.views, ...next.views };
+  }
+  function completeCoverage() {
+    if (fullCoverage || disposed) return;
+    fullCoverage = true;
+    void slices(foregroundCoverageSteps(options), () => disposed || cancelled())
+      .then((next) => {
+        if (!next || disposed) return;
+        mergeCoverage(next);
+        options.invalidate?.();
+      })
+      .catch(() => {});
   }
   async function work() {
     if (busy || disposed || !active || tier === "low" || state.failed) return;
@@ -848,6 +992,8 @@ export async function prepareForegroundDetail(options) {
             helpers: options.helpers,
           }),
           () => disposed || cancelled(),
+          () => Boolean(resolveOpening) && hiddenPreparation(),
+          progress,
         );
         if (!geometry) break;
         if (!geometry.index.count) {
@@ -859,6 +1005,11 @@ export async function prepareForegroundDetail(options) {
         const bytes = geometry.userData.foreground.bytes;
         if (disposed || cancelled() || tier === "low" || !evict(bytes)) {
           geometry.dispose();
+          if (resolveOpening && !disposed && tier !== "low") {
+            state.failed = true;
+            queued.clear();
+            group.visible = false;
+          }
           continue;
         }
         // Separate small material owners share one retained program and clock;
@@ -933,9 +1084,14 @@ export async function prepareForegroundDetail(options) {
         tile.ready = true;
         options.invalidate?.();
       }
+    } catch {
+      state.failed = true;
+      queued.clear();
+      group.visible = false;
     } finally {
       busy = false;
       state.pendingChunks = queued.size;
+      checkOpening();
     }
   }
   function queue(tile) {
@@ -944,6 +1100,52 @@ export async function prepareForegroundDetail(options) {
   const controller = {
     group,
     state,
+    prepareOpening(next = {}) {
+      const signature = openingKey(next, root);
+      if (opening && signature === openingSignature) return opening;
+      const reuse = !opening && (!openingFrame || signature === initialOpeningSignature),
+        version = ++coverageVersion;
+      openingSignature = signature;
+      state.openingStatus = "preparing";
+      if (!resolveOpening) opening = new Promise((resolve) => (resolveOpening = resolve));
+      openingCoveragePending = true;
+      const admit = (nextCoverage) => {
+        if (version !== coverageVersion || disposed) return;
+        openingCoveragePending = false;
+        if (nextCoverage) {
+          mergeCoverage(nextCoverage);
+          openingKeys.clear();
+          for (const tile of nextCoverage.tiles) openingKeys.add(tileKey(tile.x, tile.z));
+        } else if (!openingKeys.size) for (const tile of tiles) openingKeys.add(tile.key);
+        queued.clear();
+        controller.update({ ...next, preparing: true, revealed: false });
+        for (const tile of tiles) if (openingKeys.has(tile.key)) queue(tile);
+        checkOpening();
+        void work();
+      };
+      if (reuse) admit(null);
+      else
+        void slices(
+          foregroundCoverageSteps({
+            ...options,
+            onlyShot: next.shot,
+            tier: next.profile?.tier,
+            layouts: [[next.viewport?.width ?? 1600, next.viewport?.height ?? 900]],
+          }),
+          () => disposed || cancelled() || version !== coverageVersion,
+          hiddenPreparation,
+          progress,
+        )
+          .then(admit)
+          .catch(() => {
+            if (version !== coverageVersion) return;
+            openingCoveragePending = false;
+            state.failed = true;
+            group.visible = false;
+            checkOpening();
+          });
+      return opening;
+    },
     setActive(value) {
       active = Boolean(value);
       group.visible = active && tier !== "low" && !state.failed;
@@ -960,6 +1162,9 @@ export async function prepareForegroundDetail(options) {
       if (frame.profile?.tier && frame.profile.tier !== tier)
         controller.applyQuality(frame.profile);
       if (!active || tier === "low" || !frame.camera || state.failed) return;
+      if (frame.preparing && opening && openingKey(frame, root) !== openingSignature)
+        void controller.prepareOpening(frame);
+      if (frame.revealed) completeCoverage();
       const camera = frame.camera;
       camera.updateMatrixWorld(true);
       group.updateWorldMatrix(true, false);
@@ -1047,8 +1252,7 @@ export async function prepareForegroundDetail(options) {
       }
       // Prefetch only finite authored envelopes for the following tour shot.
       // No candidate or geometry is generated by this frame callback.
-      const names = coverage.shots ?? [],
-        nextShot = names[(names.indexOf(frame.shot) + 1) % names.length];
+      const nextShot = frame.nextShot;
       const layout = FOREGROUND.layouts.reduce(
         (best, size) =>
           Math.abs(size[0] / size[1] - width / height) <
@@ -1058,11 +1262,12 @@ export async function prepareForegroundDetail(options) {
         FOREGROUND.layouts[0],
       );
       const view = `${layout[0]}:${layout[1]}:${nextShot}`;
-      tiles
-        .filter((tile) => tile.views?.has(view))
-        .sort((a, b) => a.views.get(view) - b.views.get(view))
-        .slice(0, limit + 2)
-        .forEach(queue);
+      if (nextShot && !resolveOpening)
+        tiles
+          .filter((tile) => tile.views?.has(view))
+          .sort((a, b) => a.views.get(view) - b.views.get(view))
+          .slice(0, limit + 2)
+          .forEach(queue);
       state.visibleBatches = batches;
       state.visibleTriangles = triangles;
       state.pendingChunks = queued.size + Number(busy);
@@ -1073,6 +1278,7 @@ export async function prepareForegroundDetail(options) {
     dispose() {
       if (disposed) return false;
       disposed = true;
+      checkOpening();
       group.removeFromParent();
       queued.clear();
       for (const tile of cache.values()) {

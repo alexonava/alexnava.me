@@ -1,10 +1,12 @@
+import { resolveSceneOpening } from "../scene/scene-modes.js";
+
 // The title card's loading line (#scene-loader in index.html).
 //
 // main.js begins a run only on the live path, after every static gate has
 // passed, and reports two stages: the scene bundle loaded and the scene
 // initialized. The opening subjects' build steps follow, as the scene's User
 // Timing measures (perf-marks.js names) report them: the watch's commit
-// (assembly) and shader warm-up, and with ?view=tree the tree's download
+// (assembly) and shader warm-up, and for a tree opening the tree's download
 // (its bytes, through track()), parse, assembly and warm-up. The value is that
 // real progress, as the label's percentage and as the fill of a bar along the
 // window's top edge, held below 100% until #home-scene gains is-ready (the
@@ -50,6 +52,7 @@
     ledger: [],
     stages: { bundle: false, init: false },
     built: {},
+    preparation: null,
   };
   let run = IDLE;
 
@@ -103,7 +106,10 @@
       0.04 * r.stages.init +
       (share && (share * got) / total) +
       ((0.82 - share) * built) / steps;
-    return Math.min(Math.round(value * 1e6) / 1e6, CAP);
+    const preparation = r.preparation;
+    const prepared = preparation?.total ? preparation.completed / preparation.total : 0;
+    const combined = preparation ? value * 0.8 + CAP * 0.2 * prepared : value;
+    return Math.min(Math.round(combined * 1e6) / 1e6, CAP);
   }
 
   function paint(r) {
@@ -164,6 +170,15 @@
     const r = run;
     if (!loading(r)) return;
     r.status = reason === "revealed" || reason === "stalled" ? reason : "static";
+    if (r.status === "stalled") {
+      safe(() =>
+        window.dispatchEvent(
+          new window.CustomEvent("babel:opening-timeout", {
+            detail: { reason: "idle" },
+          }),
+        ),
+      )();
+    }
     r.cleanups.splice(0).forEach((cleanup) => safe(cleanup)());
     if (r.status === "revealed") {
       r.target = 1;
@@ -192,11 +207,12 @@
     const starEl = document.getElementById("scene-star");
     const starParts = starEl ? Array.from(starEl.children) : [];
     if (run.exit) window.clearTimeout(run.exit);
-    // The watch opens the film; ?view=tree also waits for the tree.
-    const roles =
-      new URLSearchParams(window.location?.search || "").get("view") === "tree"
-        ? ["watch", "tree"]
-        : ["watch"];
+    // UI boot and the renderer resolve public links and script selection alike.
+    const opening = resolveSceneOpening(window.location?.search || "", {
+      view: site.scene?.cinematicSelection,
+      angle: site.scene?.cinematicAngle,
+    });
+    const roles = opening.view === "tree" ? ["watch", "tree"] : ["watch"];
     const r = (run = {
       el,
       fill,
@@ -218,6 +234,7 @@
             : { assembly: false, shaders: false },
         ]),
       ),
+      preparation: null,
       target: 0,
       seen: 0,
       idle: 0,
@@ -258,6 +275,9 @@
     };
     document.addEventListener("visibilitychange", onVisibility);
     r.cleanups.push(() => document.removeEventListener("visibilitychange", onVisibility));
+    const onPreparation = (event) => preparation(event.detail);
+    window.addEventListener?.("babel:opening-preparation", onPreparation);
+    r.cleanups.push(() => window.removeEventListener?.("babel:opening-preparation", onPreparation));
     // Only visible time counts toward a stall.
     const watchdog = window.setInterval(() => {
       if (!loading(r)) return;
@@ -283,6 +303,36 @@
       r.stages[name] = true;
       update(r);
     }
+  }
+
+  // These are completed preparation stages, supplied by the independent scene
+  // gate. No elapsed-time animation can claim that maps or programs are ready.
+  function preparation(snapshot) {
+    const r = run;
+    if (
+      !loading(r) ||
+      !snapshot ||
+      !["preparing", "ready", "fallback", "failed"].includes(snapshot.status)
+    )
+      return;
+    const total = Number.isFinite(snapshot.total) && snapshot.total > 0 ? snapshot.total : 0;
+    const completed = Number.isFinite(snapshot.completed)
+      ? Math.max(0, Math.min(total, snapshot.completed))
+      : 0;
+    const next = {
+      status: snapshot.status,
+      completed,
+      total,
+      stage: typeof snapshot.stage === "string" ? snapshot.stage : "",
+      reason: typeof snapshot.reason === "string" ? snapshot.reason : "",
+    };
+    if (JSON.stringify(next) !== JSON.stringify(r.preparation)) {
+      r.preparation = next;
+      r.idle = 0;
+      r.seen = r.target;
+    }
+    update(r);
+    if (next.status === "fallback" || next.status === "failed") end("static");
   }
 
   // Counts a required model's body as it arrives. The body is read eagerly, so
@@ -372,6 +422,7 @@
     star: safe(star),
     track: safe(track, (url, response) => response),
     stage: safe(stage),
+    preparation: safe(preparation),
     end,
     get state() {
       const r = run;
@@ -385,6 +436,7 @@
         ),
         stages: { ...r.stages },
         built: JSON.parse(JSON.stringify(r.built)),
+        preparation: r.preparation ? { ...r.preparation } : null,
         star: r.star ? { ...r.star } : null,
       };
     },

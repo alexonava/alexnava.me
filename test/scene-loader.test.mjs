@@ -4,15 +4,17 @@ import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import { rule as cssRule } from "./support/css.mjs";
 import { LENS_FX } from "../src/scene/postprocess.js";
+import { resolveSceneOpening } from "../src/scene/scene-modes.js";
 
 // The title card's loading line (src/ui/scene-loader.js) runs in a fake DOM
 // with controllable observers, frames and timers, and Node's own Response and
 // ReadableStream for the byte counting.
-const source = await readFile(new URL("../src/ui/scene-loader.js", import.meta.url), "utf8");
+const source = (
+  await readFile(new URL("../src/ui/scene-loader.js", import.meta.url), "utf8")
+).replace(/^import \{ resolveSceneOpening \} from .*;\r?\n/m, "");
 const SIZES = { high: { tree: 1000 }, balanced: { tree: 400 } };
 const TREE = "/images/architecture/tree-high.0123abcd.glb";
-// The default view opens on the watch, which has no model; ?view=tree also
-// waits for the tree's download.
+// Most ledger fixtures explicitly choose the watch, which has no model.
 const TREE_VIEW = "?view=tree";
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 
@@ -41,7 +43,8 @@ class FakeClassList {
 }
 
 function createHarness({
-  search = "",
+  search = "?view=watch",
+  selection,
   sizes = SIZES,
   withLoader = true,
   withStar = true,
@@ -52,6 +55,8 @@ function createHarness({
   const mutationObservers = new Set();
   const timingObservers = new Set();
   const visibilityListeners = new Set();
+  const eventListeners = new Map();
+  const dispatched = [];
   const frames = [];
   const timers = new Map();
   let nextTimer = 1;
@@ -202,12 +207,32 @@ function createHarness({
     return id;
   }
   const window = {
-    BabelSite: {},
+    BabelSite: selection
+      ? { scene: { cinematicSelection: selection.view, cinematicAngle: selection.angle } }
+      : {},
     location: { search },
     MutationObserver,
     ...(performanceObserver ? { PerformanceObserver } : {}),
     ReadableStream,
     Response,
+    CustomEvent: class CustomEvent {
+      constructor(type, options) {
+        this.type = type;
+        this.detail = options?.detail;
+      }
+    },
+    addEventListener(type, handler) {
+      if (!eventListeners.has(type)) eventListeners.set(type, new Set());
+      eventListeners.get(type).add(handler);
+    },
+    removeEventListener(type, handler) {
+      eventListeners.get(type)?.delete(handler);
+    },
+    dispatchEvent(event) {
+      dispatched.push(event);
+      eventListeners.get(event.type)?.forEach((handler) => handler(event));
+      return true;
+    },
     requestAnimationFrame(callback) {
       frames.push(callback);
       return frames.length;
@@ -217,7 +242,7 @@ function createHarness({
     clearTimeout: (id) => timers.delete(id),
     clearInterval: (id) => timers.delete(id),
   };
-  const context = { window, document, URLSearchParams };
+  const context = { window, document, URLSearchParams, resolveSceneOpening };
   if (sizes) context.__BABEL_ARCHITECTURE_PREFETCH_BYTES__ = sizes;
   vm.runInNewContext(source, context, { filename: "src/ui/scene-loader.js" });
 
@@ -230,6 +255,12 @@ function createHarness({
     value,
     document,
     events,
+    dispatched,
+    preparation(snapshot) {
+      window.dispatchEvent(
+        new window.CustomEvent("babel:opening-preparation", { detail: snapshot }),
+      );
+    },
     sceneLoader: window.BabelSite.sceneLoader,
     // The state as plain objects of this realm, for deep comparisons.
     state() {
@@ -245,7 +276,12 @@ function createHarness({
       return frames.length;
     },
     get observerCount() {
-      return mutationObservers.size + timingObservers.size + visibilityListeners.size;
+      return (
+        mutationObservers.size +
+        timingObservers.size +
+        visibilityListeners.size +
+        [...eventListeners.values()].reduce((total, listeners) => total + listeners.size, 0)
+      );
     },
     get timerCount() {
       return timers.size;
@@ -503,6 +539,73 @@ test("?view=tree waits for the tree's bytes and build steps as well", async () =
   for (const step of ["assembly", "shaders"]) h.emit(`babel:${step}:tree`);
   assert.equal(h.state().progress, 0.96);
   assert.equal(h.state().status, "loading", "only the reveal completes the line");
+});
+
+test("the loading ledger resolves ordinary, explicit and scripted openings like the scene", () => {
+  for (const [options, roles] of [
+    [{ search: "" }, ["watch", "tree"]],
+    [{ search: "?quality=high" }, ["watch", "tree"]],
+    [{ search: "?view=watch" }, ["watch"]],
+    [{ search: "?view=invalid&angle=2" }, ["watch"]],
+    [{ search: "?angle=2" }, ["watch"]],
+    [{ search: "", selection: { view: "watch" } }, ["watch"]],
+    [{ search: "?view=watch", selection: { view: "tree", angle: 1 } }, ["watch", "tree"]],
+  ]) {
+    const h = createHarness(options);
+    h.sceneLoader.begin({ tier: "high" });
+    assert.deepEqual(h.state().roles, roles, JSON.stringify(options));
+    h.sceneLoader.end("static");
+  }
+});
+
+test("preparation counts completed work, holds below reveal, and cleans its event bridge", async () => {
+  const h = createHarness();
+  h.sceneLoader.begin({ tier: "high" });
+  h.sceneLoader.preparation({ status: "preparing", completed: 0, total: 4, stage: "maps" });
+  completeWatch(h);
+  assert.equal(h.state().progress, 0.768);
+  h.preparation({ status: "preparing", completed: 2, total: 4, stage: "programs" });
+  assert.equal(h.state().progress, 0.864);
+  h.advance(14000);
+  h.preparation({ status: "preparing", completed: 3, total: 4, stage: "foreground" });
+  h.advance(14000);
+  assert.equal(h.state().status, "loading", "real preparation restarts idle time");
+  h.preparation({ status: "ready", completed: 4, total: 4, stage: "ready" });
+  assert.equal(h.state().progress, 0.96);
+  assert.equal(h.state().status, "loading", "ready work is not a revealed canvas");
+  h.host.classList.add("is-ready");
+  await settle();
+  assert.equal(h.state().progress, 1);
+  assert.equal(h.observerCount, 0);
+  h.preparation({ status: "failed", completed: 0, total: 4 });
+  assert.equal(h.state().status, "revealed");
+});
+
+test("duplicate preparation cannot keep a stalled loader alive and terminal failure retires it", () => {
+  const h = createHarness();
+  h.sceneLoader.begin();
+  const snapshot = { status: "preparing", completed: 0, total: 4, stage: "maps" };
+  h.sceneLoader.preparation(snapshot);
+  h.advance(12000);
+  h.sceneLoader.preparation(snapshot);
+  h.advance(4000);
+  assert.equal(h.state().status, "stalled");
+  assert.equal(h.dispatched.filter((event) => event.type === "babel:opening-timeout").length, 1);
+  assert.equal(h.dispatched.at(-1).detail.reason, "idle");
+  for (const status of ["fallback", "failed"]) {
+    const failed = createHarness();
+    failed.sceneLoader.begin();
+    failed.sceneLoader.preparation({
+      status,
+      completed: 1,
+      total: 4,
+      stage: "maps",
+      reason: "timeout",
+    });
+    assert.equal(failed.state().status, "static");
+    assert.equal(failed.state().preparation.reason, "timeout");
+    assert.equal(failed.observerCount, 0);
+  }
 });
 
 test("the reveal completes the line at 100% and retires it with the canvas fade", async () => {
