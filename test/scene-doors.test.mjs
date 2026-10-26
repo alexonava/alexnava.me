@@ -386,10 +386,21 @@ test("a lantern opening's light shows through the paper as the lantern glass's a
   assert.match(amber, /rgba\(255, 178, 117, 0\.81\) 0%/);
   assert.match(amber, /rgba\(150, 64, 32, 0\) 100%/);
   assert.match(amber, /animation: scene-star-flicker 2\.3s linear infinite;/);
+  assert.match(
+    rule(styles, ".scene-doors__leaf--left .scene-doors__rim::after"),
+    /rgba\(255, 211, 165, 0\.42\)/,
+    "the sun keeps its warm-white seam",
+  );
+  assert.match(
+    rule(styles, ".scene-doors.is-lantern .scene-doors__leaf--left .scene-doors__rim::after"),
+    /rgba\(255, 190, 116, 0\.42\)/,
+    "the lantern keeps its amber seam",
+  );
   const paper = flatCode(
     await readFile(new URL("../src/doors/paper-doors.js", import.meta.url), "utf8"),
   );
   assert.match(paper, /lantern: \[1, 0\.5, 0\.2\], lanternGain: 4\.5,/);
+  assert.match(paper, /star: \[1, 0\.88, 0\.66\], starGain: 7,/);
   assert.match(
     paper,
     /const lantern = star\.kind === "lantern", tint = lantern \? PAPER\.lantern : PAPER\.star, heat = warm \* warm \* \(lantern \? PAPER\.lanternGain \* flame : PAPER\.starGain\);/,

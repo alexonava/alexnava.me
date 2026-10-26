@@ -1,83 +1,50 @@
-import {
-  Group,
-  Mesh,
-  PlaneGeometry,
-  Quaternion,
-  ShaderMaterial,
-  SphereGeometry,
-  Vector2,
-} from "three";
+import { Group, Mesh, PlaneGeometry, Quaternion, ShaderMaterial, SphereGeometry } from "three";
 import { starBlending } from "./depth-layers.js";
 
 // The disc's radius in world units.
 export const SOLAR_RADIUS = (6.5 * 1.15 * 0.81) / 2;
 // The sky's tiers (atmosphere.js and starfield.js read the profile's through this).
 const CELESTIAL_TIERS = Object.freeze(["high", "balanced", "low"]);
-// The star, painted (the owner's pick of 2026-10-20, "more artistic sort of like the sky", A
-// Brushed): the disc is laid in with a brush in the sky's own manner, a pale `core` warming to
-// `mid` and `rim` in soft bands (`bands`: the core's and the mid's outer radii, and their
-// softness), their edges wandering by `wobble` radii, bristles lighter and darker by `streak`
-// along the stroke (`dir`, the sky's brush direction on screen; `along` and `across` per
-// radius). The glow carries on from the limb's colour with no line where they meet (`glow`:
-// strength, falloff per radius, reach; `tail`: a faint wash bleeding further, strength and
-// falloff), `inner` warming to `outer` as it goes, and is brushwork too: `texture` of it is
-// bristle in straight strokes, its edge irregular, never a circle. No photographic surface,
-// flames, loops or lens streak. Its light breathes by up to `breath` on irregular noise
-// (`breathRate` per second) and leans by up to `lean` toward a slowly wandering side
-// (`leanRate`), on the celestial clock, so reduced motion holds it still. The glow's plane is
-// `plane` radii across. The star mask (depth-layers.js STAR_LAYER) is held whole over the
-// glow, out past its reach, and feathered over `hold.feather` radii beyond (`hold.cover`: the
-// coverage that marks it whole), so the clouds' cel step never bands its tail.
+// The star as a camera sees it (the owner's pick of 2026-10-25, "As a camera sees it", its glow
+// "bright … just … tight", the tighter of two; its lens flare is postprocess.js LENS_FX.flare):
+// the night is exposed for the moon and the clouds, so the star lies far past the exposure and
+// its clipped light spreads a little past the limb before it falls away. Its disc is `exposure`
+// times the night's white in `color` (its light), darkened toward the limb by channel (`limb`:
+// the share each loses at the limb, I = 1 - u(1 - mu)), so the limb is dimmer and redder; its
+// edge softens over `soft` radii either side of the limb (the air's seeing and a slight
+// defocus), never a hard painted edge, and it has no texture, as a clipped disc shows none. The
+// lens spreads it in a steep wing (`wing`: at the limb, and its scale in radii, falling as the
+// cube), and about it the air's forward scatter, the aureole, is `aureole[0]` at the limb and
+// falls as the inverse square of the distance from the limb (`aureole[1]` radii its scale), both
+// shading from `inner` near the disc to `outer`; the aureole eases out over the second half of
+// its `reach` (radii). All of it clips softly, channel by channel, at `white`, the camera's
+// white as the grade shows it warm, so the clipped core is flat and white-hot and only its limb
+// and the light falling off it show their warmth. The star draws the wing and the aureole out to
+// `near` (easing out between the two radii), where the lens (LENS_FX.flare) carries the aureole
+// on past the clouds' cel step. The star mask (depth-layers.js STAR_LAYER) is held whole over the
+// near part out past its end (`hold.reach` radii) and feathered over `hold.feather` radii beyond
+// (`hold.cover`: the coverage that marks it whole), so the clouds' cel step never bands it. It
+// neither breathes nor leans. The glow's plane is `plane` radii across.
 export const SOLAR_LOOK = Object.freeze({
-  core: Object.freeze([1, 0.96, 0.84]),
-  mid: Object.freeze([1, 0.86, 0.58]),
-  rim: Object.freeze([1, 0.76, 0.44]),
-  bands: Object.freeze([0.45, 0.85, 0.14]),
-  wobble: 0.06,
-  streak: 0.1,
-  dir: Object.freeze([0.848, -0.53]),
-  along: 1.4,
-  across: 9,
-  glow: Object.freeze([0.85, 2.4, 2.5]),
-  tail: Object.freeze([0.16, 0.9]),
-  inner: Object.freeze([1, 0.78, 0.44]),
-  outer: Object.freeze([1, 0.58, 0.26]),
-  texture: 0.6,
-  breath: 0.1,
-  breathRate: 0.5,
-  lean: 0.25,
-  leanRate: 0.03,
-  hold: Object.freeze({ feather: 0.45, cover: 0.18 }),
+  exposure: 10,
+  color: Object.freeze([1, 0.86, 0.62]),
+  limb: Object.freeze([0.45, 0.6, 0.8]),
+  soft: 0.12,
+  wing: Object.freeze([6, 0.2]),
+  aureole: Object.freeze([0.6, 0.6]),
+  inner: Object.freeze([1, 0.88, 0.7]),
+  outer: Object.freeze([1, 0.6, 0.3]),
+  white: Object.freeze([1.7, 1.5, 1.12]),
+  near: Object.freeze([1.5, 2.4]),
+  reach: 2.5,
+  hold: Object.freeze({ reach: 2.5, feather: 0.45, cover: 0.18 }),
   plane: 7,
 });
-// The glow's furthest reach in world units (framing.test keeps it clear of the text and of
+// The aureole's furthest reach in world units (framing.test keeps it clear of the text and of
 // The watch's crests).
-export const SOLAR_GLOW_RADIUS = SOLAR_RADIUS * SOLAR_LOOK.glow[2];
+export const SOLAR_GLOW_RADIUS = SOLAR_RADIUS * SOLAR_LOOK.reach;
 export function celestialTier(profile = {}) {
   return CELESTIAL_TIERS.includes(profile.tier) ? profile.tier : "high";
-}
-// Smooth 1D value noise, 0..1, from a seeded lattice: irregular, never periodic.
-function wander(x, seed) {
-  const i = Math.floor(x),
-    f = x - i,
-    u = f * f * (3 - 2 * f),
-    h = (n) => {
-      const v = Math.sin((n + seed * 17.13) * 127.1) * 43758.5453;
-      return v - Math.floor(v);
-    };
-  return h(i) + (h(i + 1) - h(i)) * u;
-}
-// The star's unrest at celestial time `time`: its light's factor (1 +- breath)
-// and the glow's lean, a vector up to `lean` long that slowly turns.
-export function solarUnrest(time = 0, look = SOLAR_LOOK) {
-  const b =
-      0.65 * wander(time * look.breathRate, 1) + 0.35 * wander(time * look.breathRate * 2.3, 2),
-    angle = Math.PI * 4 * wander(time * look.leanRate, 3),
-    reach = look.lean * (0.5 + 0.5 * wander(time * look.leanRate * 1.7, 4));
-  return {
-    breath: 1 + look.breath * (2 * b - 1),
-    lean: [Math.cos(angle) * reach, Math.sin(angle) * reach],
-  };
 }
 const glsl = (value) => (Number.isInteger(value) ? value.toFixed(1) : String(value));
 const vec3 = (values) => `vec3(${values.map(glsl).join(",")})`;
@@ -103,48 +70,45 @@ export function seededRandom(seed = 23917) {
   };
 }
 
-const NOISE = `
-float hash31(vec3 p) {
-  p = fract(p * .1031);
-  p += dot(p, p.yzx + 33.33);
-  return fract((p.x + p.y) * p.z);
-}
-float noise3(vec3 p) {
-  vec3 i = floor(p), f = fract(p);
-  f = f*f*(3.0-2.0*f);
-  return mix(mix(mix(hash31(i),hash31(i+vec3(1,0,0)),f.x),
-                 mix(hash31(i+vec3(0,1,0)),hash31(i+vec3(1,1,0)),f.x),f.y),
-             mix(mix(hash31(i+vec3(0,0,1)),hash31(i+vec3(1,0,1)),f.x),
-                 mix(hash31(i+vec3(0,1,1)),hash31(i+vec3(1,1,1)),f.x),f.y),f.z);
-}
-`;
 const L = SOLAR_LOOK;
-// A point v on screen (radii from the star's centre) in the brush's frame: along, across.
-const brush = (v) =>
-  `vec2(dot(${v},vec2(${glsl(L.dir[0])},${glsl(L.dir[1])})),dot(${v},vec2(${glsl(-L.dir[1])},${glsl(L.dir[0])})))`;
+// The aureole at h radii past the limb (SOLAR_LOOK.aureole, gone by its reach), shared with the
+// lens.
+export const SOLAR_AUREOLE_GLSL = `
+vec3 solarAureole(float h){
+  float k=1.0+h/${glsl(L.aureole[1])};
+  return mix(${vec3(L.outer)},${vec3(L.inner)},1.0/k)*${glsl(L.aureole[0])}/(k*k)*(1.0-smoothstep(${glsl(L.reach / 2 - 1)},${glsl(L.reach - 1)},h));
+}`;
+// The star's light r radii from its centre on screen: the disc, limb-darkened and softened at
+// its edge, and the lens's wing and the near aureole about it, coming in over the limb, all
+// clipped softly at the camera's white. The disc and the glow both draw it, so they meet
+// seamlessly wherever the disc's silhouette falls.
+const LIGHT = `${SOLAR_AUREOLE_GLSL}
+vec3 solarLight(float r){
+  float mu=sqrt(max(1.0-r*r,0.0)), h=max(r-1.0,0.0), w=1.0+h/${glsl(L.wing[1])};
+  vec3 halo=(solarAureole(h)+mix(${vec3(L.outer)},${vec3(L.inner)},1.0/w)*${glsl(L.wing[0])}/(w*w*w))*smoothstep(${glsl(1 - 3 * L.soft)},1.0,r)*(1.0-smoothstep(${glsl(L.near[0])},${glsl(L.near[1])},r));
+  vec3 light=${glsl(L.exposure)}*${vec3(L.color)}*(1.0-${vec3(L.limb)}*(1.0-mu))*(1.0-smoothstep(${glsl(-L.soft)},${glsl(L.soft)},r-1.0))+halo, q=light/${vec3(L.white)};
+  q*=q;
+  return light*inversesqrt(sqrt(1.0+q*q));
+}`;
+// The disc's point in radii on screen: its offset from the centre in the plane through the
+// centre facing the lens, where the glow measures its own.
 const DISC_VERTEX = `
-varying vec3 vViewNormal;
+varying vec3 vView;
+varying vec3 vCentre;
 void main() {
-  vViewNormal = normalize(normalMatrix * normal);
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);
+  vec4 p = modelViewMatrix * vec4(position,1.0);
+  vView = p.xyz;
+  vCentre = (modelViewMatrix * vec4(0.0,0.0,0.0,1.0)).xyz;
+  gl_Position = projectionMatrix * p;
 }
 `;
-// The disc on screen: d its point in radii from the centre (the view normal's xy), banded
-// warm from the core out, the bands' edges wobbling, bristles along the stroke.
 const DISC_FRAGMENT = `
-uniform float uTime;
-uniform float uBreath;
-varying vec3 vViewNormal;
-${NOISE}
+varying vec3 vView;
+varying vec3 vCentre;
+${LIGHT}
 void main() {
-  vec2 d=normalize(vViewNormal).xy;
-  float r=length(d), t=uTime*.01;
-  float rr=r+${glsl(L.wobble)}*(2.0*noise3(vec3(d*2.3,t))-1.0)*(.4+.6*r);
-  vec3 color=mix(${vec3(L.core)},${vec3(L.mid)},smoothstep(${glsl(L.bands[0] - L.bands[2])},${glsl(L.bands[0] + L.bands[2])},rr));
-  color=mix(color,${vec3(L.rim)},smoothstep(${glsl(L.bands[1] - L.bands[2])},${glsl(L.bands[1] + L.bands[2])},rr));
-  float bristle=noise3(vec3(${brush("d")}*vec2(${glsl(L.along)},${glsl(L.across)}),3.1+t));
-  color*=(1.0+${glsl(L.streak)}*(2.0*bristle-1.0))*mix(1.0,uBreath,.5);
-  gl_FragColor=vec4(color,1.0);
+  float r=length(vView.xy*(vCentre.z/vView.z)-vCentre.xy)/${glsl(SOLAR_RADIUS)};
+  gl_FragColor=vec4(solarLight(r),1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }
@@ -153,26 +117,17 @@ const GLOW_VERTEX = `
 varying vec2 vUv;
 void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}
 `;
-// The glow: brushed light that carries on from the limb's colour and falls off quickly, then a
-// faint tail bleeding into the sky, its edge irregular. It runs on under the disc, which hides
-// it there, so no seam opens at the limb.
+// The glow: the disc's softened edge and the near aureole past the limb. It runs on under the
+// disc, which lays the same light over it.
 const GLOW_FRAGMENT = `
-uniform float uTime;
-uniform float uBreath;
-uniform vec2 uLean;
 varying vec2 vUv;
-${NOISE}
+${LIGHT}
 void main() {
-  vec2 p=(vUv-.5)*${glsl(L.plane)};
-  float r=length(p), t=uTime*.01, h=max(0.0,r-1.0);
-  vec2 n=p/max(r,1e-4);
-  float bristle=noise3(vec3(${brush("p")}*vec2(${glsl(L.along * 0.8)},${glsl(L.across * 0.6)}),t));
-  float reach=${glsl(L.glow[2])}*(.78+.22*noise3(vec3(n*1.6,5.3+t)));
-  float g=(${glsl(L.glow[0])}*exp(-h*${glsl(L.glow[1])})*mix(1.0,.35+1.3*bristle,${glsl(L.texture)})+${glsl(L.tail[0])}*exp(-h*${glsl(L.tail[1])})*mix(1.0,.6+.8*bristle,${glsl(L.texture)}))*(1.0-smoothstep(reach-1.1,reach,r))*(1.0+dot(n,uLean));
-  vec3 color=mix(${vec3(L.outer)},${vec3(L.inner)},exp(-h*3.0))*g*uBreath;
-  float alpha=g*(1.0-smoothstep(${glsl(L.plane / 2 - 0.6)},${glsl(L.plane / 2)},r));
-  // The mask alone (its light is added with factor one): whole over the glow, past its reach.
-  float hold=${glsl(L.hold.cover)}*(1.0-smoothstep(${glsl(L.glow[2])},${glsl(L.glow[2] + L.hold.feather)},r));
+  float r=length((vUv-.5)*${glsl(L.plane)});
+  vec3 color=solarLight(r);
+  float alpha=min(dot(color,vec3(.2126,.7152,.0722)),1.0)*(1.0-smoothstep(${glsl(L.plane / 2 - 0.6)},${glsl(L.plane / 2)},r));
+  // The mask alone (its light is added with factor one): whole over the near aureole, past its end.
+  float hold=${glsl(L.hold.cover)}*(1.0-smoothstep(${glsl(L.hold.reach)},${glsl(L.hold.reach + L.hold.feather)},r));
   gl_FragColor=vec4(color,min(max(alpha,hold),1.0));
   #include <colorspace_fragment>
 }
@@ -180,18 +135,13 @@ void main() {
 
 export function createSolarBody({ parent, camera, position, profile = {} }) {
   const root = new Group(),
-    clock = createCelestialClock(),
     parentQuaternion = new Quaternion();
   root.name = "solar-body";
   root.position.copy(position);
   parent.add(root);
-  const uTime = { value: 0 },
-    uBreath = { value: 1 },
-    uLean = { value: new Vector2() };
-  // The glow goes down first, under the disc, so the disc's smoothed edge lays over it.
+  // The glow goes down first, under the disc.
   const glowMaterial = new ShaderMaterial({
     name: "SolarGlow",
-    uniforms: { uTime, uBreath, uLean },
     vertexShader: GLOW_VERTEX,
     fragmentShader: GLOW_FRAGMENT,
     transparent: true,
@@ -209,7 +159,6 @@ export function createSolarBody({ parent, camera, position, profile = {} }) {
   root.add(glow);
   const discMaterial = new ShaderMaterial({
     name: "SolarDisc",
-    uniforms: { uTime, uBreath },
     vertexShader: DISC_VERTEX,
     fragmentShader: DISC_FRAGMENT,
     transparent: true,
@@ -235,13 +184,8 @@ export function createSolarBody({ parent, camera, position, profile = {} }) {
       tier = celestialTier(next);
       return true;
     },
-    update({ elapsedSeconds = 0, reducedMotion = false, motionPaused = false } = {}) {
+    update() {
       if (disposed) return false;
-      // A visitor pause holds the star's breath with the rest of the sky.
-      uTime.value = clock.tick(elapsedSeconds, reducedMotion || motionPaused);
-      const unrest = solarUnrest(uTime.value);
-      uBreath.value = unrest.breath;
-      uLean.value.set(...unrest.lean);
       if (camera) {
         camera.getWorldQuaternion(glow.quaternion);
         root.getWorldQuaternion(parentQuaternion).invert();

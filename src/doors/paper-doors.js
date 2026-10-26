@@ -41,7 +41,7 @@ const TILE = 768;
 // dim moonlight from the upper left and the night's ambient; the lamp (its colour, its
 // place as fractions of the window's width and height and its height above the sheet as a
 // fraction of the window's height, and its gain); the night behind the sheet; the star's
-// gold and its strength, or in a lantern opening the lantern glass's deeper amber (the
+// clipped warm white and its strength, or in a lantern opening the lantern glass's deeper amber (the
 // owner's pick of 2026-10-26, "Lantern glass") and its; the sheet's transmittance, its
 // relief and long waves (px); how far its light falls away toward the window's edges, 0 to
 // 1; and the exposure.
@@ -54,7 +54,7 @@ const PAPER = Object.freeze({
   lamp: [1, 0.8, 0.56],
   lampAt: [0.5, 0.16, 0.46, 0.48],
   sky: [0.01, 0.01, 0.016],
-  star: [1, 0.62, 0.32],
+  star: [1, 0.88, 0.66],
   starGain: 7,
   lantern: [1, 0.5, 0.2],
   lanternGain: 4.5,
@@ -530,7 +530,7 @@ export async function createPaperDoors(
         Math.min(1.3 * depth, 0.06 * frameSize) * (0.6 + 0.4 * flame),
         0.11 * frameSize,
       );
-      // Ember to star: deep and dim at first, gold and full at the reveal; a lantern's to its
+      // Ember to star: deep and dim at first, warm white and full at the reveal; a lantern's to its
       // glass's amber, flickering as a candle does.
       const lantern = star.kind === "lantern",
         tint = lantern ? PAPER.lantern : PAPER.star,

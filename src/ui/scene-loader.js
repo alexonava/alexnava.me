@@ -36,9 +36,9 @@ import { resolveSceneOpening } from "../scene/scene-modes.js";
   const EXIT_MS = 600;
   const WATCH_MS = 2000;
   const STALL_MS = 15000;
-  // The star's parts at full warmth: its painted disc and its glow out to `glow` radii, as
-  // the scene's star shows at the reveal (solar-body.js SOLAR_LOOK).
-  const STAR = Object.freeze({ glow: 2 });
+  // The star's parts at full warmth: its disc and its glow out to `glow` radii, as the
+  // scene's star shows at the reveal (solar-body.js SOLAR_LOOK).
+  const STAR = Object.freeze({ glow: 2.5 });
   // Each tier's tree size in bytes (build.mjs), as decoded bodies.
   const SIZES =
     typeof __BABEL_ARCHITECTURE_PREFETCH_BYTES__ !== "undefined"
@@ -151,7 +151,10 @@ import { resolveSceneOpening } from "../scene/scene-modes.js";
     }
     r.starEl.style.transform = `translate(${s.x}px, ${s.y}px)`;
     set(disc, `scale(${size(2 * s.radius) * (0.4 + 0.6 * glowing)})`, glowing);
-    set(glow, `scale(${size(2 * STAR.glow * s.radius) * (0.5 + 0.5 * warm)})`, warm);
+    // Keep the lantern's approved camera glare while the sun uses its tighter
+    // photographed profile's own two-and-a-half-radius reach.
+    const glowRadii = lantern ? 2 : STAR.glow;
+    set(glow, `scale(${size(2 * glowRadii * s.radius) * (0.5 + 0.5 * warm)})`, warm);
     r.starEl.hidden = false;
   }
 
