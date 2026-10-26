@@ -1498,13 +1498,13 @@ body.scene-walk-hidden > :not(.scene-shell) {
   position: absolute;
   inset: 0;
   content: "";
-  background: rgba(255, 190, 116, 0.42);
+  background: rgba(255, 211, 165, 0.42);
   opacity: calc(var(--doors-light) * var(--doors-light));
 }
 
 /* The star through the paper: a 100px box at the star's centre that the script moves and
-   scales; warm at its heart and gone well past the star's own glow, as a lamp is behind a
-   sheet. */
+   scales; the camera sun's warm white at its heart, warmed through the parchment as it
+   spreads, and gone well past the star's own glow, as a lamp is behind a sheet. */
 .scene-doors__glow {
   position: absolute;
   top: -50px;
@@ -1515,13 +1515,13 @@ body.scene-walk-hidden > :not(.scene-shell) {
   opacity: 0;
   background: radial-gradient(
     circle closest-side,
-    rgba(255, 226, 176, 0.9) 0%,
-    rgba(250, 196, 124, 0.72) 8%,
-    rgba(232, 156, 86, 0.46) 20%,
-    rgba(204, 118, 62, 0.24) 38%,
-    rgba(172, 94, 50, 0.1) 60%,
-    rgba(150, 82, 44, 0.03) 80%,
-    rgba(150, 82, 44, 0) 100%
+    rgba(255, 236, 215, 0.9) 0%,
+    rgba(250, 204, 147, 0.72) 8%,
+    rgba(232, 162, 99, 0.46) 20%,
+    rgba(204, 120, 65, 0.24) 38%,
+    rgba(172, 97, 54, 0.1) 60%,
+    rgba(150, 85, 47, 0.03) 80%,
+    rgba(150, 85, 47, 0) 100%
   );
 }
 

@@ -39,7 +39,8 @@ const TILE = 768;
 // shows; a dim moonlight from the upper left and the night's ambient; the lamp (its colour,
 // its place as fractions of the window's width and height and its height above the sheet
 // as a fraction of the window's height, and its gain); the night behind the sheet; the
-// star's gold and its strength; the sheet's transmittance, its relief and long waves (px);
+// star's light, the camera's sun clipped warm white (the owner's pick of 2026-10-25, "Warm
+// white"), and its strength; the sheet's transmittance, its relief and long waves (px);
 // its age (broad mottling, stains, foxing, grime) and its wear (dirt toward the edges,
 // scorch, folds), each 0 to 1; and the exposure.
 const PAPER = Object.freeze({
@@ -51,7 +52,7 @@ const PAPER = Object.freeze({
   lamp: [1, 0.8, 0.56],
   lampAt: [0.5, 0.16, 0.46, 0.48],
   sky: [0.01, 0.01, 0.016],
-  star: [1, 0.62, 0.32],
+  star: [1, 0.88, 0.66],
   starGain: 7,
   thin: 0.24,
   relief: 0.85,
@@ -496,7 +497,7 @@ export async function createPaperDoors(
       const depth = Math.min(Math.max(2.2 * star.radius, 0.035 * frameSize), 0.06 * frameSize);
       gl.uniform4f(uniforms.uStar, star.x, star.y, depth, 1);
       gl.uniform2f(uniforms.uHalo, Math.min(1.3 * depth, 0.06 * frameSize), 0.11 * frameSize);
-      // Ember to star: deep and dim at first, gold and full at the reveal.
+      // Ember to star: deep and dim at first, warm white and full at the reveal.
       const heat = warm * warm * PAPER.starGain;
       gl.uniform3f(
         uniforms.uStarLight,
