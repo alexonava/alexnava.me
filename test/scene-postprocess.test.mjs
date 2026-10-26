@@ -836,6 +836,8 @@ test("compile awaits all compositor programs once for their real targets; dispos
   renderer.setRenderTarget(previous);
   const pending = pipeline.compile();
   assert.equal(pipeline.compile(), pending, "concurrent warm-ups share readiness");
+  assert.equal(calls.length, 0, "compositor compilation yields out of scene setup");
+  await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(calls.length, 1, "the first target must link before changing a material's key");
   const { render, bloom, grading, vignetteGrain } = pipeline.passes;
   assert.deepEqual(
@@ -928,6 +930,7 @@ test("a lost context cancels remaining preparation from an earlier generation", 
   const renderer = pipeline.composer.renderer;
   const { calls, settle } = controlledCompiler(renderer);
   const old = pipeline.compile();
+  await new Promise((resolve) => setTimeout(resolve, 0));
   pipeline.invalidatePrograms();
   const fresh = pipeline.compile();
   assert.notEqual(old, fresh);
@@ -956,6 +959,7 @@ test("pending compositor polls stop before disposed or physically lost programs 
       },
     });
     const pending = pipeline.compile();
+    await new Promise((resolve) => setTimeout(resolve, 0));
     assert.equal(reads, 1);
     if (interruption === "dispose") pipeline.dispose();
     else lost = true;
@@ -969,6 +973,30 @@ test("pending compositor polls stop before disposed or physically lost programs 
     pipeline.invalidatePrograms();
     assert.equal(await pipeline.compile(), false, "disposal stays terminal after invalidation");
     assert.equal(calls.length, 1);
+  }
+});
+
+test("deferred compositor work restores the current borrowed target and skips retired generations", async () => {
+  const { pipeline } = createRecordedPipeline(GRADING_ONLY),
+    renderer = pipeline.composer.renderer;
+  const { calls } = controlledCompiler(renderer, { ready: true });
+  const pending = pipeline.compile(),
+    externalTarget = { isWebGLRenderTarget: true };
+  renderer.setRenderTarget(externalTarget);
+  assert.equal(calls.length, 0);
+  assert.equal(await pending, true);
+  assert.equal(renderer.getRenderTarget(), externalTarget);
+  pipeline.dispose();
+
+  for (const interruption of ["dispose", "invalidate"]) {
+    const { pipeline: retired } = createRecordedPipeline(GRADING_ONLY);
+    const tracked = controlledCompiler(retired.composer.renderer, { ready: true });
+    const stale = retired.compile();
+    if (interruption === "dispose") retired.dispose();
+    else retired.invalidatePrograms();
+    assert.equal(await stale, false);
+    assert.equal(tracked.calls.length, 0, "retired queued work cannot touch materials or targets");
+    retired.dispose();
   }
 });
 
