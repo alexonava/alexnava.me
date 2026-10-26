@@ -113,7 +113,10 @@ test("UI and capability worker together stay under the existing LCP budget", asy
   const { size } = await stat(file);
   const worker = await stat(await findHashedScript("webgl-probe"));
   const kb = (size + worker.size) / 1024;
-  assert.ok(kb < 30, `app and worker total ${kb.toFixed(1)} kB; budget is 30 kB`);
+  // 34 kB since the opening's doors (scene-doors.js), its preparation and its opener's chance
+  // (main.js, scene-modes.js, opening-preparation.js) and the lantern opening's light met (the
+  // owner's call of 2026-10-26); 30 kB before.
+  assert.ok(kb < 34, `app and worker total ${kb.toFixed(1)} kB; budget is 34 kB`);
 });
 
 test("the cold WebGL probe is a separate same-origin worker named by the UI", async () => {
@@ -142,13 +145,15 @@ test("scene bundle stays under the deferred-payload budget", async () => {
   let bytes = 0;
   for (const name of loaded.keys()) bytes += (await stat(path.join(scriptsDir, name))).size;
   const kb = bytes / 1024;
-  // 831 kB since the fault's own shots joined the tour (the owner's call of 2026-10-17:
-  // their framing rides in the terrain's chunk, the entry keeps their hooks);
-  // 830 kB since the loading line's star lines up with the opening shot's: The watch's
-  // stored outline (opening-outline.js) is about 10 kB of it.
+  // 835 kB since a lantern opening's light lines up from the scene's start: the supplied
+  // lantern's stored outline (opening-lantern.js) and its fit (opening-star.js openingFlame())
+  // are about 3.3 kB of it (the owner's call of 2026-10-26); 831 kB since the fault's own shots
+  // joined the tour (the owner's call of 2026-10-17: their framing rides in the terrain's chunk,
+  // the entry keeps their hooks); 830 kB since the loading line's star lines up with the
+  // opening shot's: The watch's stored outline (opening-outline.js) is about 10 kB of it.
   assert.ok(
-    kb < 831,
-    `scene bundle (${[...loaded.keys()].join(" + ")}) is ${kb.toFixed(3)} kB; budget is 831 kB`,
+    kb < 835,
+    `scene bundle (${[...loaded.keys()].join(" + ")}) is ${kb.toFixed(3)} kB; budget is 835 kB`,
   );
 });
 

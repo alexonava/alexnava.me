@@ -91,6 +91,9 @@ function createContext({
   modulePreloads,
   prefetch = false,
   prefetchLantern = false,
+  // main.js chooseOpening()'s roll for an address without a view or an angle: below 0.5
+  // Lantern study, else The watch; a function is called for each roll.
+  random = 0.25,
   selection,
   // Model requests answer at once instead of staying in flight.
   respond = false,
@@ -188,7 +191,12 @@ function createContext({
       },
       begin(options) {
         events.push("loader:begin");
-        loaderCalls.push({ method: "begin", tier: options?.tier });
+        const scene = window.BabelSite.scene;
+        loaderCalls.push({
+          method: "begin",
+          tier: options?.tier,
+          opening: [scene?.cinematicSelection ?? null, scene?.cinematicAngle ?? null],
+        });
       },
       stage(name) {
         events.push(`loader:${name}`);
@@ -318,6 +326,9 @@ function createContext({
     navigator,
     console: logger,
     URLSearchParams,
+    Math: Object.assign(Object.create(Math), {
+      random: typeof random === "function" ? random : () => random,
+    }),
     resolveSceneOpening,
     createOpeningPreparation,
     requestAnimationFrame: window.requestAnimationFrame,
@@ -1275,6 +1286,55 @@ test("selected tree openings prefetch tree then lantern, while explicit Watch ke
     assert.equal(entries.size, roles.length);
     entries.forEach((entry) => entry.abort());
     assert.ok(harness.fetches.every(({ options: init }) => init.signal.aborted));
+  }
+});
+
+test("a visit naming no view or angle opens on Lantern study or The watch by chance, rolled once before the loading line begins", async () => {
+  // Rolled below 0.5, Lantern study: its tree and lantern come early, ahead of the rest.
+  for (const [random, opening, roles, priority] of [
+    [0.25, ["tree", 1], ["tree", "lantern"], "high"],
+    [0.75, ["watch", 0], ["tree"], "low"],
+  ]) {
+    const harness = createContext({ ...CAPABLE, prefetchLantern: true, sceneLoader: true, random });
+    await loadMainWithQuality(harness.context);
+    await harness.context.window.BabelSite.ensureSceneReady();
+    const begins = harness.loaderCalls.filter(({ method }) => method === "begin");
+    assert.equal(begins.length, 1);
+    assert.deepEqual(begins[0].opening, opening, `rolled ${random}`);
+    assert.deepEqual(
+      harness.fetches.map(({ url }) => /\/(tree|lantern)-/.exec(url)[1]),
+      roles,
+    );
+    assert.ok(harness.fetches.every(({ options: init }) => init.priority === priority));
+    const { cinematicSelection, cinematicAngle } = harness.context.window.BabelSite.scene;
+    assert.deepEqual([cinematicSelection, cinematicAngle], opening, "the scene keeps it");
+  }
+  // One roll a visit, however often the scene is asked for.
+  let rolls = 0;
+  const once = createContext({ ...CAPABLE, sceneLoader: true, random: () => (rolls++, 0.75) });
+  await loadMainWithQuality(once.context);
+  await once.context.window.BabelSite.ensureSceneReady();
+  await once.context.window.BabelSite.ensureSceneReady();
+  assert.equal(rolls, 1);
+  // An address naming a view or an angle, or a script's selection, is never rolled.
+  const never = () => {
+    throw new Error("an opening the address or a script names is not rolled");
+  };
+  for (const options of [
+    { search: "?view=tree&angle=2" },
+    { search: "?view=watch" },
+    { search: "?angle=1" },
+    { selection: { view: "tree", angle: 3 } },
+  ]) {
+    const harness = createContext({ ...CAPABLE, sceneLoader: true, random: never, ...options });
+    await loadMainWithQuality(harness.context);
+    await harness.context.window.BabelSite.ensureSceneReady();
+    const [begin] = harness.loaderCalls.filter(({ method }) => method === "begin");
+    assert.deepEqual(
+      begin.opening,
+      options.selection ? ["tree", 3] : [null, null],
+      JSON.stringify(options),
+    );
   }
 });
 

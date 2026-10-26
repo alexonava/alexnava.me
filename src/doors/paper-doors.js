@@ -39,7 +39,9 @@ const TILE = 768;
 // shows; a dim moonlight from the upper left and the night's ambient; the lamp (its colour,
 // its place as fractions of the window's width and height and its height above the sheet
 // as a fraction of the window's height, and its gain); the night behind the sheet; the
-// star's gold and its strength; the sheet's transmittance, its relief and long waves (px);
+// star's gold and its strength, or in a lantern opening the lantern glass's deeper amber (the
+// owner's pick of 2026-10-26, "Lantern glass") and its; the sheet's transmittance, its relief
+// and long waves (px);
 // its age (broad mottling, stains, foxing, grime) and its wear (dirt toward the edges,
 // scorch, folds), each 0 to 1; and the exposure.
 const PAPER = Object.freeze({
@@ -53,6 +55,8 @@ const PAPER = Object.freeze({
   sky: [0.01, 0.01, 0.016],
   star: [1, 0.62, 0.32],
   starGain: 7,
+  lantern: [1, 0.5, 0.2],
+  lanternGain: 4.5,
   thin: 0.24,
   relief: 0.85,
   cockle: 6,
@@ -496,13 +500,16 @@ export async function createPaperDoors(
       const depth = Math.min(Math.max(2.2 * star.radius, 0.035 * frameSize), 0.06 * frameSize);
       gl.uniform4f(uniforms.uStar, star.x, star.y, depth, 1);
       gl.uniform2f(uniforms.uHalo, Math.min(1.3 * depth, 0.06 * frameSize), 0.11 * frameSize);
-      // Ember to star: deep and dim at first, gold and full at the reveal.
-      const heat = warm * warm * PAPER.starGain;
+      // Ember to star: deep and dim at first, gold and full at the reveal; a lantern's to its
+      // glass's amber.
+      const lantern = star.kind === "lantern",
+        tint = lantern ? PAPER.lantern : PAPER.star,
+        heat = warm * warm * (lantern ? PAPER.lanternGain : PAPER.starGain);
       gl.uniform3f(
         uniforms.uStarLight,
-        PAPER.star[0] * heat,
-        PAPER.star[1] * heat * (0.55 + 0.45 * warm),
-        PAPER.star[2] * heat * (0.35 + 0.65 * warm),
+        tint[0] * heat,
+        tint[1] * heat * (0.55 + 0.45 * warm),
+        tint[2] * heat * (0.35 + 0.65 * warm),
       );
     } else {
       gl.uniform4f(uniforms.uStar, 0, 0, 1, 0);
@@ -547,11 +554,14 @@ export async function createPaperDoors(
   if (gl.getError() !== gl.NO_ERROR) throw new Error("paper doors: the first frame failed");
 
   return {
-    // The star's place and warmth from the loading line (ui/scene-doors.js light()).
+    // The star's (or a lantern opening's flame's) place and warmth from the loading line
+    // (ui/scene-doors.js light()).
     light(next) {
       const valid =
         next?.star && [next.star.x, next.star.y, next.star.radius].every(Number.isFinite);
-      star = valid ? { x: next.star.x, y: next.star.y, radius: next.star.radius } : null;
+      star = valid
+        ? { x: next.star.x, y: next.star.y, radius: next.star.radius, kind: next.star.kind }
+        : null;
       warm = valid ? Math.min(1, Math.max(0, Number(next.warm) || 0)) : 0;
       schedule();
     },

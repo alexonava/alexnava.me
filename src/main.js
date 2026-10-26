@@ -97,6 +97,23 @@ import { createOpeningPreparation } from "./scene/opening-preparation.js";
     return false;
   }
 
+  // The film opens on Lantern study or The watch, by chance (the owner's pick of 2026-10-26,
+  // "Watch or Lantern by chance"), unless the address names a view or an angle or a script has
+  // chosen a subject. Chosen once, before the loading line begins and the models are requested,
+  // so the line and its light, the early requests and the scene agree: each resolves the
+  // opening through scene-modes.js resolveSceneOpening(), which keeps this choice. Its default,
+  // for an address with neither, is Lantern study.
+  const WATCH_OPENING = Object.freeze({ view: "watch", angle: 0 });
+  function chooseOpening(random = Math.random) {
+    const scene = (site.scene = site.scene || {});
+    if (scene.cinematicSelection != null) return;
+    const query = new URLSearchParams(window.location?.search || "");
+    if (query.has("view") || query.has("angle")) return;
+    const opening = random() < 0.5 ? resolveSceneOpening("") : WATCH_OPENING;
+    scene.cinematicSelection = opening.view;
+    scene.cinematicAngle = opening.angle;
+  }
+
   function getSceneScriptUrl() {
     const metadata = document.querySelector("meta[data-scene-script]");
     const configuredUrl = metadata?.getAttribute?.("content")?.trim();
@@ -385,6 +402,7 @@ import { createOpeningPreparation } from "./scene/opening-preparation.js";
       try {
         const starting = !sceneInitialized;
         if (starting) {
+          chooseOpening();
           startOpeningBudget();
           site.sceneLoader?.begin?.({ tier: sceneStartupTier });
           site.sceneLoader?.stage?.("bundle");
@@ -440,6 +458,7 @@ import { createOpeningPreparation } from "./scene/opening-preparation.js";
 
         // Only the live path shows the title card's loading line.
         sceneStartupTier = startupTier;
+        chooseOpening();
         site.sceneLoader?.begin?.({ tier: startupTier });
         const sceneScript = loadScriptOnce(getSceneScriptUrl(), getSceneModulePreloads());
         // Issued after the bundle request, which keeps its head start.

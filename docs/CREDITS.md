@@ -81,6 +81,11 @@ The stand-in lantern, the iron post lantern the scene shows until the
 supplied lantern commits and keeps if it fails, is built in code
 (`src/scene/architecture.js`) and is part of neither model.
 
+The lantern's stored outline (`src/scene/opening-lantern.js`) is measured from
+the supplied lantern's geometry, the same on both tiers: its convex hull and
+its luminous centre, which place a Lantern study opening's loading light.
+`tools/bake-lantern-outline.mjs` derives it from the delivered GLBs.
+
 The delivered tree also contains a local geometry repair on both tiers: added
 volume at a small tree fork. `tools/repair-landmark-geometry.py` reproduces these from the
 SHA-pinned original GLBs with local NumPy. Topology, UVs, embedded artwork,

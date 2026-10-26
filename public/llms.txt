@@ -4,7 +4,7 @@
 
 ## Main site
 
-- [Homepage](https://alexnava.me/): Personal introduction and contact details; the live backdrop opens with Lantern study beneath the tree and tours the night landscape.
+- [Homepage](https://alexnava.me/): Personal introduction and contact details; the live backdrop opens with Lantern study beneath the tree or The watch under the night sky, by chance, and tours the night landscape.
 - [Homepage in Markdown](https://alexnava.me/index.md): Markdown version of the homepage.
 - [Site map](https://alexnava.me/sitemap.md): Human-readable overview of public pages.
 

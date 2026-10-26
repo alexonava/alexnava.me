@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
+import { flat as flatCode } from "./support/code.mjs";
 import { flat, mediaBlock, rule, rules } from "./support/css.mjs";
 import { EASE, OPENING, TEAR } from "../src/doors/paper-doors.js";
 
@@ -365,6 +366,33 @@ test("light() places the stylesheet's glow and lights the seam while the doors a
   h.sceneDoors.open("static");
   h.sceneDoors.light({ star: null, warm: 0, progress: 0.99 });
   assert.equal(h.properties.get("--doors-light"), "0.7", "open doors take no light");
+});
+
+test("a lantern opening's light shows through the paper as the lantern glass's amber", async () => {
+  const h = createHarness();
+  const flame = { x: 700, y: 520, radius: 24, kind: "lantern" };
+  h.sceneDoors.light({ star: flame, warm: 0.4, progress: 0.5 });
+  assert.match(h.classes, /\bis-lantern\b/);
+  assert.equal(h.glows[0].style.opacity, "0.4");
+  assert.match(h.glows[0].style.transform, /^translate\(700px, 520px\) scale\([\d.]+\)$/);
+  // A light without a place changes nothing; the star's is the star's again.
+  h.sceneDoors.light({ star: null, warm: 0, progress: 0.55 });
+  assert.match(h.classes, /\bis-lantern\b/);
+  h.sceneDoors.light({ star: { x: 1188, y: 498, radius: 26.5 }, warm: 0.5, progress: 0.6 });
+  assert.doesNotMatch(h.classes, /\bis-lantern\b/);
+  // The stylesheet's glow and the drawing's light: the lantern glass's deeper amber, with its
+  // own strength (the owner's pick of 2026-10-26, "Lantern glass").
+  const amber = rule(styles, ".scene-doors.is-lantern .scene-doors__glow");
+  assert.match(amber, /rgba\(255, 178, 117, 0\.81\) 0%/);
+  assert.match(amber, /rgba\(150, 64, 32, 0\) 100%/);
+  const paper = flatCode(
+    await readFile(new URL("../src/doors/paper-doors.js", import.meta.url), "utf8"),
+  );
+  assert.match(paper, /lantern: \[1, 0\.5, 0\.2\], lanternGain: 4\.5,/);
+  assert.match(
+    paper,
+    /const lantern = star\.kind === "lantern", tint = lantern \? PAPER\.lantern : PAPER\.star, heat = warm \* warm \* \(lantern \? PAPER\.lanternGain : PAPER\.starGain\);/,
+  );
 });
 
 test("the loading line's bar shows on the paper from its first word and goes as they part", () => {

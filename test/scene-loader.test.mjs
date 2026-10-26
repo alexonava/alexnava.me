@@ -874,6 +874,36 @@ test("an unknown, off-frame or malformed star shows nothing, and a late report c
   assert.equal(bare.state().status, "loading");
 });
 
+test("a lantern opening's light is the lantern glass's amber: the report's kind, its class and the stylesheet's glow", async () => {
+  const styles = await readFile(new URL("../styles.css", import.meta.url), "utf8");
+  // Lantern study, rolled by main.js chooseOpening(): the line waits for the tree too.
+  const h = createHarness({ search: "", selection: { view: "tree", angle: 1 } });
+  h.sceneLoader.begin({ tier: "high" });
+  assert.deepEqual(h.state().roles, ["watch", "tree"]);
+  h.sceneLoader.star({ ...STAR, kind: "lantern" });
+  h.frame();
+  assert.equal(h.star.hidden, false);
+  assert.ok(h.star.classList.contains("is-lantern"));
+  assert.deepEqual(h.state().star, { ...STAR, kind: "lantern" });
+  // A report without a kind, or with one the line does not know, is the star's.
+  for (const report of [{ ...STAR }, { ...STAR, kind: "moon" }]) {
+    h.sceneLoader.star(report);
+    h.frame();
+    assert.equal(h.star.classList.contains("is-lantern"), false, JSON.stringify(report));
+    assert.deepEqual(h.state().star, STAR);
+  }
+  // The lantern's glass lit by its flame: a deep amber with no bright core rather than the
+  // star's flat disc, and a wider, dimmer glow.
+  assert.match(
+    cssRule(styles, ".scene-star.is-lantern > .scene-star__disc"),
+    /radial-gradient\(\s*circle closest-side,\s*rgba\(255, 186, 104, 0\.72\) 0%/,
+  );
+  assert.match(
+    cssRule(styles, ".scene-star.is-lantern > .scene-star__glow"),
+    /rgba\(248, 138, 58, 0\.44\) 0%/,
+  );
+});
+
 test("without PerformanceObserver the build share waits for the reveal", async () => {
   const h = createHarness({ performanceObserver: false });
   h.sceneLoader.begin({ tier: "high" });

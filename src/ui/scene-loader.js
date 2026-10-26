@@ -142,6 +142,13 @@ import { resolveSceneOpening } from "../scene/scene-modes.js";
       el.style.opacity = String(Math.round(opacity * 1000) / 1000);
     };
     const [glow, disc] = r.starParts;
+    // A lantern opening's light is the lantern glass's amber (styles.css .scene-star.is-lantern).
+    const lantern = s.kind === "lantern";
+    if (r.lantern !== lantern) {
+      r.lantern = lantern;
+      if (lantern) r.starEl.classList.add("is-lantern");
+      else r.starEl.classList.remove("is-lantern");
+    }
     r.starEl.style.transform = `translate(${s.x}px, ${s.y}px)`;
     set(disc, `scale(${size(2 * s.radius) * (0.4 + 0.6 * glowing)})`, glowing);
     set(glow, `scale(${size(2 * STAR.glow * s.radius) * (0.5 + 0.5 * warm)})`, warm);
@@ -214,7 +221,9 @@ import { resolveSceneOpening } from "../scene/scene-modes.js";
     const starEl = document.getElementById("scene-star");
     const starParts = starEl ? Array.from(starEl.children) : [];
     if (run.exit) window.clearTimeout(run.exit);
-    // UI boot and the renderer resolve public links and script selection alike.
+    // UI boot and the renderer resolve public links and script selection alike: main.js
+    // chooseOpening() has set The watch or Lantern study by chance unless the address names a
+    // view or an angle. A tree opening waits for the tree too.
     const opening = resolveSceneOpening(window.location?.search || "", {
       view: site.scene?.cinematicSelection,
       angle: site.scene?.cinematicAngle,
@@ -227,6 +236,7 @@ import { resolveSceneOpening } from "../scene/scene-modes.js";
       starEl: starParts.length === 2 ? starEl : null,
       starParts,
       star: null,
+      lantern: false,
       since: 0,
       tier: tier || null,
       roles,
@@ -400,8 +410,9 @@ import { resolveSceneOpening } from "../scene/scene-modes.js";
     return copy;
   }
 
-  // The scene's star on screen (postprocess.js lensSource(): canvas UV, y up, and its
-  // radius in frame heights), reported until the reveal once its camera is fitted.
+  // The opening shot's light on screen (postprocess.js lensSource(): canvas UV, y up, and its
+  // radius in frame heights), reported until the reveal once its camera is fitted: the star,
+  // or, when the shot looks at the lantern, its flame (`kind` "lantern").
   function star(source) {
     const r = run;
     if (!loading(r)) return;
@@ -421,6 +432,7 @@ import { resolveSceneOpening } from "../scene/scene-modes.js";
           radius: source.radius,
           width: source.width,
           height: source.height,
+          ...(source.kind === "lantern" ? { kind: "lantern" } : {}),
         }
       : null;
     schedule(r);

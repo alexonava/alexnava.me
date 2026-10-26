@@ -753,6 +753,28 @@ body.scene-walk-hidden > :not(.scene-shell) {
   );
 }
 
+/* In a lantern opening the light is the lantern's (scene-loader.js `is-lantern`): its glass lit
+   by the flame, a deep amber glow with no bright core, wider and dimmer than the star's (the
+   owner's pick of 2026-10-26, "Lantern glass"). */
+.scene-star.is-lantern > .scene-star__disc {
+  background: radial-gradient(
+    circle closest-side,
+    rgba(255, 186, 104, 0.72) 0%,
+    rgba(244, 136, 60, 0.42) 45%,
+    rgba(220, 100, 40, 0) 100%
+  );
+}
+
+.scene-star.is-lantern > .scene-star__glow {
+  background: radial-gradient(
+    circle closest-side,
+    rgba(248, 138, 58, 0.44) 0%,
+    rgba(220, 104, 44, 0.26) 45%,
+    rgba(190, 80, 36, 0.09) 80%,
+    rgba(190, 80, 36, 0) 100%
+  );
+}
+
 @media (forced-colors: active), (prefers-contrast: more) {
   .scene-star {
     display: none;
@@ -1524,6 +1546,21 @@ body.scene-walk-hidden > :not(.scene-shell) {
     rgba(172, 94, 50, 0.1) 60%,
     rgba(150, 82, 44, 0.03) 80%,
     rgba(150, 82, 44, 0) 100%
+  );
+}
+
+/* A lantern opening's light through the paper (scene-doors.js `is-lantern`): the lantern
+   glass's deep amber, as the drawing's (paper-doors.js PAPER.lantern). */
+.scene-doors.is-lantern .scene-doors__glow {
+  background: radial-gradient(
+    circle closest-side,
+    rgba(255, 178, 117, 0.81) 0%,
+    rgba(250, 145, 77, 0.63) 8%,
+    rgba(232, 112, 53, 0.4) 20%,
+    rgba(204, 86, 40, 0.2) 38%,
+    rgba(172, 72, 35, 0.08) 60%,
+    rgba(150, 64, 32, 0.03) 80%,
+    rgba(150, 64, 32, 0) 100%
   );
 }
 
