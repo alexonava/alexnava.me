@@ -51,7 +51,7 @@ test("models and maps keep the startup tier, and quality is sampled only after t
     flat(source("src/scene/textures.js")),
     /applyQuality\(profile, context\) \{ filmMaps\.applyQuality\(profile, context\); \}/,
   );
-  assert.match(index, /const revealed = sceneReadyMarked && cinematic\.ready;/);
+  assert.match(index, /const revealed = canvasShown && cinematic\.ready;/);
   assert.match(
     index,
     /revealed && !reducedMotion && !adaptiveSteps\.pending \? qualityState\.sampleRevealed\?\.\(/,
@@ -82,13 +82,15 @@ test("each event that brings uploads or compiles restarts the sampling hold", ()
   ]) {
     const start = index.indexOf(anchor);
     assert.ok(start >= 0, label);
-    assert.ok(index.slice(start, start + 160).includes("qualityState.holdSampling()"), label);
+    assert.ok(index.slice(start, start + 320).includes("qualityState.holdSampling()"), label);
   }
 });
 
 test("each frame runs the tour, the quality step, the capture skip, the crossfade, the camera and the draw in order", () => {
   const frame = index.slice(index.indexOf("function updateSceneFrame("));
-  const order = [
+  assert.match(frame, /const \{ width, height \} = viewport;/);
+  const anchors = [
+    "const { width, height } = viewport;",
     "qualityState.sampleRevealed?.(",
     "cameraTour?.update(",
     "const tourTransition = cameraTour?.transition ?? TOUR_IDLE;",
@@ -99,15 +101,13 @@ test("each frame runs the tour, the quality step, the capture skip, the crossfad
     "qualityState.skipSamples?.(3)",
     "rendering.postprocessPipeline.setTransition?.(transition);",
     "cinematic.apply(",
-    "walk.update(deltaSeconds, viewport.width, viewport.height);",
+    "walk.update(deltaSeconds, width, height);",
     "subsystemRegistry.update(",
-    "rendering.update();",
+    "if (canvasShown || (openingGate.ready && !shaderWarmup.pending)) {",
     "visitorHold?.frameRendered();",
-  ].map((anchor) => frame.indexOf(anchor));
-  assert.ok(
-    order.every((at) => at >= 0),
-    "each frame step is wired",
-  );
+  ];
+  const order = anchors.map((anchor) => frame.indexOf(anchor));
+  anchors.forEach((anchor, i) => assert.ok(order[i] >= 0, `${anchor} is wired`));
   assert.deepEqual(
     order,
     [...order].sort((a, b) => a - b),
@@ -149,20 +149,30 @@ test("the visitor pause stops the tour and holds rendering; content changes stil
   );
 });
 
-test("the reveal waits for the shader warm-up, and nothing draws while one links before it", () => {
+test("the first frame and reveal wait for the complete opening and linked shaders", () => {
   assert.match(
     index,
     /const shaderWarmup = createShaderWarmup\(\{ compile: \(\) => rendering\.compileShaders\(\) \}\);/,
   );
   assert.match(
     index,
-    /if \(canvasShown \|\| !shaderWarmup\.pending\) \{ if \(!canvasShown && cinematic\.ready\) groundTextures\.ensureProcedural\(\); rendering\.update\(\);/,
+    /if \(canvasShown \|\| \(openingGate\.ready && !shaderWarmup\.pending\)\) \{ if \(!canvasShown && cinematic\.ready\) groundTextures\.ensureProcedural\(\); rendering\.update\(\); if \(!firstFrameDrawn\) \{ firstFrameDrawn = true; measureScene\("first-frame", frameStart\);/,
+  );
+  // Hidden preparation starts only once the cooperative fit has been applied.
+  assert.match(index, /preparing: !canvasShown && cinematicApplied,/);
+  assert.match(
+    index,
+    /if \(!canvasShown && cinematicApplied && cinematic\.frame && cinematic\.current === opening\.view && !sceneFailed\) \{ settleOpening\("subjects"\);/,
   );
   assert.match(
     index,
-    /const sceneShown = !sceneFailed && cinematic\.ready && \(canvasShown \|\| !shaderWarmup\.pending\);/,
+    /if \(openingPrepared && !openingShaderStarted && !shaderWarmup\.pending\) \{ openingShaderStarted = true; const generation = openingGeneration; warmShaders\("opening"\)/,
   );
-  assert.match(index, /warmShaders\("scene"\); frameScheduler\.start\(\);/);
+  assert.match(
+    index,
+    /const sceneShown = !sceneFailed && cinematic\.ready && \(canvasShown \|\| \(openingGate\.ready && !shaderWarmup\.pending\)\);/,
+  );
+  assert.match(index, /warmShaders\("scene"\); observeOpening\(\); frameScheduler\.start\(\);/);
   // The watch's commit links the film's programs before the reveal. A committed
   // tree replaces nothing visible, so it stays hidden until its programs link.
   assert.match(index, /measureScene\("assembly:watch", assemblyStart\); warmShaders\("watch"\);/);
@@ -182,7 +192,7 @@ test("the hidden canvas idles until the reveal, which marks it and lets the rock
   );
   assert.match(
     index,
-    /if \(sceneShown && !canvasShown\) \{ markScene\("reveal"\); rockScatter\.setRevealed\(\); groundTextures\.update\?\.\(\{ revealed: true \}\); \}/,
+    /if \(sceneShown && !canvasShown\) \{ markScene\("reveal"\); revealTime = elapsedTime; cameraTour\?\.reset\(\); stopOpeningPreparation\(\); rockScatter\.setRevealed\(\); groundTextures\.update\?\.\(\{ revealed: true \}\); \}/,
   );
 });
 
@@ -196,13 +206,16 @@ test("renders keep an even display cadence near 60 Hz: desktops at or above it, 
 test("the phone text band shades only a name stacked above the subject", () => {
   assert.match(
     index,
-    /filmScene\.finishFrame\(camera, lookTarget, walking \? walk\.frame : cinematic\.frame, !walking && viewport\.width < 900 && isStackedLayout\(viewport\.width, viewport\.height\) && cinematic\.shot\?\.arc === 2, \(cinematicArea\?\.top \|\| 200\) \/ viewport\.height\);/,
+    /filmScene\.finishFrame\(camera, lookTarget, walking \? walk\.frame : cinematic\.frame, !walking && width < 900 && isStackedLayout\(width, height\) && cinematic\.shot\?\.arc === 2, \(cinematicArea\?\.top \|\| 200\) \/ height\);/,
   );
 });
 
 test("the authored scene's shadow map redraws only on reported changes", () => {
   assert.match(index, /rendering\.setStaticShadows\(true\);/);
-  assert.match(index, /rendering\.invalidateShadows\(\); invalidateContent\(\); \}\);/);
+  assert.match(
+    index,
+    /rendering\.invalidateShadows\(\); invalidateContent\(\); resolve\(ready\); \}\)\);/,
+  );
 });
 
 test("the drawing buffer follows the full-bleed container while the canvas keeps its CSS size", () => {
@@ -274,16 +287,34 @@ test("the scene entry marks its evaluation first, and the bootstrap reuses the p
 });
 
 test("the tour fits its next shot in idle slices and refits after a resize, a font load or a model change", () => {
-  // Each idle slice measures or fits once; Safari falls back to a timer.
+  const preparation = flat(source("src/scene/preparation-tasks.js"));
+  const request = between("function prepareTourShot(", "const cameraTour =");
+  // The lazy helper owns the bounded preparation queue, and failed optional
+  // imports are handled. A disposed scene retires its queued request.
+  assert.match(request, /loadPreparationTasks\(\)\s*\.then\(/);
   assert.match(
-    index,
-    /typeof window\.requestIdleCallback === "function" \? \(task\) => window\.requestIdleCallback\(task, \{ timeout: 1500 \}\) : \(task\) => window\.setTimeout\(task, 50\);/,
+    request,
+    /queueTourShot\(cinematic, subject, angle, \(\) => runtimeDisposed \? null : \[viewport\.width, viewport\.height, cameraTour\?\.transition \?\? TOUR_IDLE\]\)/,
+  );
+  assert.match(request, /\.catch\(\(\) => \{\}\);/);
+  // Idle work retains its timer fallback on browsers without requestIdleCallback.
+  assert.match(
+    preparation,
+    /host\.requestIdleCallback \? host\.requestIdleCallback\(task, \{ timeout: 1500 \}\) : host\.setTimeout\(task, 50\);/,
   );
   // One chain at a time, on the latest request; a slot that lands on a
-  // capture or its crossfade waits for the next one.
+  // hidden page, capture or crossfade waits for the next one.
   assert.match(
-    index,
-    /const idle = !tourShot; tourShot = \[subject, angle\]; if \(idle\) whenIdle\(function step\(\) \{ if \(runtimeDisposed\) return; const \{ capture, progress \} = cameraTour\?\.transition \?\? TOUR_IDLE; if \(capture \|\| progress < 1 \|\| cinematic\.prepare\(\.\.\.tourShot, viewport\.width, viewport\.height\) === "pending"\) whenIdle\(step\); else tourShot = null;/,
+    preparation,
+    /let job = tourPreparations\.get\(camera\); if \(job\) \{ job\.shot = \[subject, angle\]; job\.frame = frame; return; \}/,
+  );
+  assert.match(
+    preparation,
+    /const current = job\.frame\(\); if \(!current\) \{ tourPreparations\.delete\(camera\); return; \}/,
+  );
+  assert.match(
+    preparation,
+    /host\.document\?\.hidden \|\| transition\.capture \|\| transition\.progress < 1 \|\| camera\.prepare\(\.\.\.job\.shot, width, height, createCameraPreparation\) === "pending"\) idle\(step\); else tourPreparations\.delete\(camera\);/,
   );
   assert.match(index, /createCameraTour\(\{[^}]*prepare: prepareTourShot \}\)/);
   assert.match(
@@ -301,7 +332,7 @@ test("the tour fits its next shot in idle slices and refits after a resize, a fo
   );
 });
 
-test("the film terrain is film-scene.js's lazy chunk and never holds the reveal", () => {
+test("the film terrain is film-scene.js's lazy chunk with explicit hidden preparation", () => {
   // It builds in short slices and lands only where it cannot show mid-shot,
   // so the film takes the tour, not the scene's warm-up.
   assert.match(index, /createFilmScene\(\{[^}]*tour: liveView,/);
@@ -328,7 +359,7 @@ test("the walk holds the tour, drives the camera between its cuts, and lands con
   assert.match(index, /const cinematicApplied = !walking && cinematic\.apply\(\{/);
   assert.match(
     index,
-    /if \(walking\) walk\.update\(deltaSeconds, viewport\.width, viewport\.height\); else if \(!cinematicApplied\) \{/,
+    /if \(walking\) walk\.update\(deltaSeconds, width, height\); else if \(!cinematicApplied\) \{/,
   );
   assert.match(
     index,

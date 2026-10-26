@@ -18,6 +18,31 @@ import {
 import { createEarthDetail } from "../src/scene/filmic-earth.js";
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
+
+test("hidden opening preparation decodes and binds optional soil without claiming a reveal", async () => {
+  let loads = 0;
+  const image = bitmap(),
+    r = rig({
+      loadImage: async () => {
+        loads++;
+        return image;
+      },
+    });
+  try {
+    r.owner.setActive(true);
+    r.owner.update({ preparing: true });
+    await tick();
+    assert.equal(loads, 1);
+    assert.equal(r.applications.length, 0, "decode alone never publishes");
+    assert.equal(r.owner.update({ preparing: true }), true);
+    assert.equal(r.applications.length, 1);
+    assert.deepEqual(r.statuses, ["loading", "staged", "ready"]);
+    r.owner.update({ revealed: true });
+    assert.equal(loads, 1);
+  } finally {
+    r.owner.dispose();
+  }
+});
 function bitmap(width = 512, height = width) {
   return {
     width,

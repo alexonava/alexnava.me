@@ -21,7 +21,7 @@ import { createNightEnvironment } from "./night-environment.js";
 import { FILM_LIGHT } from "./film-light.js";
 import { createPostprocessPipeline } from "./postprocess.js";
 import { disposeSceneRuntimeResources } from "./runtime.js";
-import { compilePrograms } from "./shader-programs.js";
+import { compilePrograms, linkedPrograms } from "./shader-programs.js";
 
 export function createSceneRendering({
   container,
@@ -242,10 +242,8 @@ export function createSceneRendering({
             material[key] = source[key];
         }
         const probe = new Mesh(object.geometry, material);
-        probe.isInstancedMesh = object.isInstancedMesh;
-        probe.instanceMatrix = object.instanceMatrix;
-        probe.instanceColor = object.instanceColor;
-        probe.isSkinnedMesh = object.isSkinnedMesh;
+        for (const key of ["isInstancedMesh", "instanceMatrix", "instanceColor", "isSkinnedMesh"])
+          probe[key] = object[key];
         probes.add(probe);
       }
     });
@@ -255,6 +253,14 @@ export function createSceneRendering({
   const rendering = {
     camera,
     compilePrograms,
+    programsLinked() {
+      const generation = compileGeneration;
+      return linkedPrograms(
+        renderer,
+        renderer.info.programs,
+        () => !disposed && generation === compileGeneration,
+      );
+    },
     composer,
     get disposeResult() {
       return disposeResult;

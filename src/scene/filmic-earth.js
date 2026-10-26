@@ -36,6 +36,7 @@ export function createEarthDetail({
   report,
   loadImage,
   publishSoilRoughness,
+  reportSoil,
   loadSoilImage,
   requestFrame,
   createCanvas = () => document.createElement("canvas"),
@@ -64,6 +65,7 @@ export function createEarthDetail({
           disabled,
           anisotropy,
           publish: publishSoilRoughness,
+          report: reportSoil,
           loadImage: loadSoilImage,
           requestFrame,
         })

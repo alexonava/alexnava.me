@@ -409,10 +409,13 @@ test("cancelling actual queued river preparation frees its detached geometry bef
       true,
     );
     let slices = 0;
+    // The real scheduler is lazy; let its import enqueue the first idle task.
+    await import("../src/scene/preparation-tasks.js");
+    await new Promise((resolve) => setImmediate(resolve));
     while (!owned) {
       assert.ok(queue.length && ++slices < 2000);
       queue.shift()({ didTimeout: true, timeRemaining: () => 0 });
-      await Promise.resolve();
+      await new Promise((resolve) => setImmediate(resolve));
     }
     assert.ok(queue.length, "new river work remains detached in cooperative slices");
     cancelled = true;

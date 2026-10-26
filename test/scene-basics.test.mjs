@@ -234,18 +234,18 @@ test("supportsWebGL detects standard, experimental-only, and missing contexts", 
   assert.equal(throws.supportsWebGL(), false);
 });
 
-test("the film opens on the watch unless the URL asks for the tree", () => {
+test("ordinary visits open the tree while explicit and legacy subject URLs retain their meaning", () => {
   assert.deepEqual(SCENE_VIEWS, ["watch", "tree"]);
   for (const search of [
-    "",
     "?view=watch&angle=1",
-    "?quality=balanced&qaTime=0&tour=0",
     "?view=unknown",
     // An old link to the tower opens on the watch.
     "?view=tower",
   ]) {
     assert.equal(resolveSceneView(search), "watch", search);
   }
+  assert.equal(resolveSceneView(""), "tree");
+  assert.equal(resolveSceneView("?quality=balanced&qaTime=0&tour=0"), "tree");
   assert.equal(resolveSceneView("?view=tree"), "tree");
   assert.equal(resolveSceneView("?view=tree&angle=4&sceneDebug=1"), "tree");
 });

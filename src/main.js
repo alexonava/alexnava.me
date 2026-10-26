@@ -1,11 +1,81 @@
+import { resolveSceneOpening } from "./scene/scene-modes.js";
+import { createOpeningPreparation } from "./scene/opening-preparation.js";
+
 (() => {
   const site = (window.BabelSite = window.BabelSite || {});
+  (site.shared ||= {}).createOpeningPreparation = createOpeningPreparation;
   let sceneInitialized = false;
   let sceneLoadPromise = null;
   let sceneStartupTier = null;
   let staticRecoveryInstalled = false;
   let staticRecoveryAttempted = false;
   const staticRecoveryCleanups = [];
+  let openingBudget = null,
+    openingElapsed = 0,
+    openingFailed = false;
+
+  function stopOpeningBudget() {
+    if (!openingBudget) return;
+    const budget = openingBudget;
+    openingBudget = null;
+    clearTimeout(budget.timer);
+    budget.cleanups.forEach((cleanup) => cleanup());
+    openingElapsed += budget.gate.state.elapsed;
+    budget.gate.dispose();
+  }
+
+  function startOpeningBudget() {
+    if (openingBudget) return openingBudget;
+    let reject;
+    const expired = new Promise((resolve, fail) => (reject = fail)),
+      budget = { expired, cleanups: [], timer: null, completed: 0 };
+    expired.catch(() => {});
+    budget.gate = createOpeningPreparation({
+      stages: [],
+      totalMs: Math.max(0, 30000 - openingElapsed),
+      fail(reason) {
+        openingFailed = true;
+        stopOpeningBudget();
+        cancelDeferredPrefetch();
+        releaseArchitecturePrefetch();
+        disableSceneHost();
+        clearStaticPreferenceRecovery();
+        reject(new Error(`Opening ${reason}`));
+      },
+    });
+    openingBudget = budget;
+    budget.observe = () => {
+      if (openingBudget !== budget) return;
+      clearTimeout(budget.timer);
+      const blocked = staticPreferenceBlocksScene(readSceneQualityControls());
+      budget.gate.tick(
+        window.performance.now(),
+        !document.hidden && !blocked,
+        (site.sceneLoader?.state?.progress ?? 0) + budget.completed,
+      );
+      if (openingBudget !== budget) return;
+      if (!blocked && !document.hidden) budget.timer = setTimeout(budget.observe, 200);
+    };
+    document.addEventListener("visibilitychange", budget.observe);
+    budget.cleanups.push(() => document.removeEventListener("visibilitychange", budget.observe));
+    for (const target of [
+      window.matchMedia?.("(prefers-reduced-motion: reduce)"),
+      window.matchMedia?.("(prefers-reduced-data: reduce)"),
+      window.matchMedia?.("(forced-colors: active)"),
+      typeof navigator !== "undefined" ? navigator.connection : null,
+    ]) {
+      const cleanup = addChangeListener(target, budget.observe);
+      if (cleanup) budget.cleanups.push(cleanup);
+    }
+    const scene = (site.scene = site.scene || {});
+    scene.takeOpeningBudget = () => {
+      openingBudget?.observe();
+      stopOpeningBudget();
+      return Math.max(0, 30000 - openingElapsed);
+    };
+    budget.observe();
+    return budget;
+  }
 
   // The UI modules app.js imports before this one.
   function initUi() {
@@ -15,11 +85,12 @@
   }
 
   function initScene() {
+    if (openingFailed) return false;
     if (sceneInitialized) return true;
     const scene = site.scene || {};
     if (typeof scene.initHomeScene === "function") {
       const initialized = scene.initHomeScene();
-      if (initialized === false) return false;
+      if (initialized === false || openingFailed) return false;
       sceneInitialized = true;
       return true;
     }
@@ -218,7 +289,7 @@
     }
   }
 
-  // Once the live scene is chosen, request the startup tier's tree beside the
+  // Once the live scene is chosen, request the startup tier's models beside the
   // bundle rather than after the scene's first frame. architecture-assets.js
   // takes a response whose URL matches once and releases the rest.
   let modelPrefetchStarted = false;
@@ -239,16 +310,26 @@
     try {
       const scene = (site.scene = site.scene || {});
       // Unknown limits would make the scene probe again; do not guess its tier.
-      const url = tier ? urls[tier]?.tree : null;
-      if (!url) return;
-      const controller = new AbortController();
-      // The loading line counts the body as it arrives, before the scene
-      // takes it; the scene receives the copy it returns.
-      const response = fetch(url, { priority: "low", signal: controller.signal }).then(
-        (received) => site.sceneLoader?.track?.(url, received) ?? received,
-      );
-      response.catch(() => {});
-      scene.prefetched = new Map([[url, { response, abort: () => controller.abort() }]]);
+      if (!tier || !urls[tier]?.tree) return;
+      const opening = resolveSceneOpening(window.location?.search || "", {
+        view: scene.cinematicSelection,
+        angle: scene.cinematicAngle,
+      });
+      const roles = opening.view === "tree" ? ["tree", "lantern"] : ["tree"];
+      const prefetched = (scene.prefetched = new Map());
+      for (const role of roles) {
+        const url = tier ? urls[tier]?.[role] : null;
+        if (!url) continue;
+        const controller = new AbortController();
+        // The loading line counts tree bytes; the scene's preparation gate
+        // reports the optional lantern's actual completion or fallback.
+        const response = fetch(url, {
+          priority: opening.view === "tree" ? "high" : "low",
+          signal: controller.signal,
+        }).then((received) => site.sceneLoader?.track?.(url, received) ?? received);
+        response.catch(() => {});
+        prefetched.set(url, { response, abort: () => controller.abort() });
+      }
     } catch {
       // The scene requests its own models when an early request cannot start.
     }
@@ -285,6 +366,7 @@
   }
 
   site.ensureSceneReady = async function ensureSceneReady() {
+    if (openingFailed) return false;
     if (detectsForcedColors()) {
       // CSS hides an initialized scene while forced colors is active. Keep its
       // host available when the preference clears after one-shot recovery.
@@ -303,6 +385,7 @@
       try {
         const starting = !sceneInitialized;
         if (starting) {
+          startOpeningBudget();
           site.sceneLoader?.begin?.({ tier: sceneStartupTier });
           site.sceneLoader?.stage?.("bundle");
         }
@@ -323,14 +406,20 @@
         disableSceneHost();
         clearStaticPreferenceRecovery();
         return false;
+      } finally {
+        stopOpeningBudget();
       }
     }
 
     sceneLoadPromise = (async () => {
+      const budget = startOpeningBudget();
       try {
         const prepared =
           site.shared.prepareWebGLCapabilities?.() ?? site.shared.getWebGLCapabilities();
-        const capabilities = typeof prepared?.then === "function" ? await prepared : prepared;
+        const capabilities =
+          typeof prepared?.then === "function"
+            ? await Promise.race([prepared, budget.expired])
+            : prepared;
         // The asynchronous worker may outlive a preference change. Recheck
         // before any scene request, and keep recovery available for that visit.
         const latestControls = readSceneQualityControls();
@@ -355,7 +444,10 @@
         const sceneScript = loadScriptOnce(getSceneScriptUrl(), getSceneModulePreloads());
         // Issued after the bundle request, which keeps its head start.
         prefetchArchitectureModels(startupTier);
-        await sceneScript;
+        await Promise.race([sceneScript, budget.expired]);
+        budget.completed++;
+        budget.observe();
+        if (openingFailed) return false;
         site.sceneLoader?.stage?.("bundle");
         cancelDeferredPrefetch();
         // Preferences may change during the download too. Wait to initialize
@@ -381,6 +473,8 @@
         disableSceneHost();
         clearStaticPreferenceRecovery();
         return false;
+      } finally {
+        stopOpeningBudget();
       }
     })();
     try {

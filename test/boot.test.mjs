@@ -7,6 +7,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import { createContactDom } from "./support/contact-dom.mjs";
+import { resolveSceneOpening } from "../src/scene/scene-modes.js";
+import { createOpeningPreparation } from "../src/scene/opening-preparation.js";
+
+const classicSource = (source) =>
+  source.replace(
+    /^import \{ (?:resolveSceneOpening|createOpeningPreparation) \} from .*;\r?\n/gm,
+    "",
+  );
 
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -18,7 +26,7 @@ const qualitySourcePath = path.join(projectRoot, "src", "scene", "quality.js");
 
 const webglProbePath = path.join(projectRoot, "src", "shared", "webgl-probe.js");
 
-// The UI bundle names only each tier's tree (build.mjs).
+// A minimal manifest also exercises builds without an optional lantern entry.
 const ARCHITECTURE_URLS = Object.fromEntries(
   ["high", "balanced"].map((tier) => [
     tier,
@@ -82,6 +90,8 @@ function createContext({
   maxTextureSize = 0,
   modulePreloads,
   prefetch = false,
+  prefetchLantern = false,
+  selection,
   // Model requests answer at once instead of staying in flight.
   respond = false,
   reducedMotion = false,
@@ -106,6 +116,9 @@ function createContext({
   const pendingScripts = [];
   const workers = [];
   const idleCallbacks = [];
+  const timers = new Map();
+  let now = 0,
+    timerId = 0;
   const motionQuery = createMutableChangeTarget(reducedMotion);
   const dataQuery = createMutableChangeTarget(saveData);
   const forcedColorsQuery = createMutableChangeTarget(forcedColors);
@@ -129,7 +142,12 @@ function createContext({
   let webglProbeCount = 0;
   const window = {
     // The UI modules app.js boots before main.js; Contact stays native here.
-    BabelSite: { ui: { initHeroChrome() {}, initContact() {} } },
+    BabelSite: {
+      ui: { initHeroChrome() {}, initContact() {} },
+      ...(selection
+        ? { scene: { cinematicSelection: selection.view, cinematicAngle: selection.angle } }
+        : {}),
+    },
     WebGLRenderingContext: function WebGLRenderingContext() {},
     innerHeight: height,
     innerWidth: width,
@@ -162,8 +180,12 @@ function createContext({
   // Without the recorder main.js runs exactly as before: every call is optional.
   const loaderCalls = [];
   const tracked = new Map();
+  let loaderProgress = 0;
   if (sceneLoader) {
     window.BabelSite.sceneLoader = {
+      get state() {
+        return { progress: loaderProgress };
+      },
       begin(options) {
         events.push("loader:begin");
         loaderCalls.push({ method: "begin", tier: options?.tier });
@@ -296,10 +318,19 @@ function createContext({
     navigator,
     console: logger,
     URLSearchParams,
+    resolveSceneOpening,
+    createOpeningPreparation,
     requestAnimationFrame: window.requestAnimationFrame,
-    setTimeout() {},
-    clearTimeout() {},
+    setTimeout(callback, delay = 0) {
+      const id = ++timerId;
+      timers.set(id, { callback, at: now + delay });
+      return id;
+    },
+    clearTimeout(id) {
+      timers.delete(id);
+    },
   };
+  window.performance = { now: () => now };
   if (workerProbe) context.__BABEL_WEBGL_PROBE_URL__ = "/scripts/webgl-probe.0123abcd.js";
   // The build names the scene entry's statically imported chunks in the UI bundle.
   if (modulePreloads) context.__BABEL_SCENE_MODULE_PRELOADS__ = modulePreloads;
@@ -307,7 +338,14 @@ function createContext({
   // recorded and left pending, as a download in flight.
   if (prefetch) {
     Object.assign(context, {
-      __BABEL_ARCHITECTURE_PREFETCH_URLS__: ARCHITECTURE_URLS,
+      __BABEL_ARCHITECTURE_PREFETCH_URLS__: prefetchLantern
+        ? Object.fromEntries(
+            Object.entries(ARCHITECTURE_URLS).map(([tier, urls]) => [
+              tier,
+              { ...urls, lantern: `/images/architecture/lantern-${tier}.0123abcd.glb` },
+            ]),
+          )
+        : ARCHITECTURE_URLS,
       AbortController,
       fetch(url, options) {
         events.push(`fetch:${url}`);
@@ -323,6 +361,9 @@ function createContext({
     fetches,
     loaderCalls,
     tracked,
+    setLoaderProgress(value) {
+      loaderProgress = value;
+    },
     host,
     connection,
     dataQuery,
@@ -340,6 +381,22 @@ function createContext({
     setHidden(value) {
       document.hidden = Boolean(value);
       for (const handler of [...visibilityListeners]) handler({ type: "visibilitychange" });
+    },
+    advance(ms) {
+      const end = now + ms;
+      for (;;) {
+        const next = [...timers]
+          .filter(([, timer]) => timer.at <= end)
+          .sort((a, b) => a[1].at - b[1].at)[0];
+        if (!next) break;
+        now = next[1].at;
+        timers.delete(next[0]);
+        next[1].callback();
+      }
+      now = end;
+    },
+    get pendingTimers() {
+      return timers.size;
     },
     get visibilityListenerCount() {
       return visibilityListeners.size;
@@ -361,7 +418,7 @@ async function loadMainWithQuality(context) {
   const mainSource = await readFile(mainSourcePath, "utf8");
   vm.runInNewContext(probeSource, context, { filename: webglProbePath });
   vm.runInNewContext(qualitySource, context, { filename: qualitySourcePath });
-  vm.runInNewContext(mainSource, context, { filename: mainSourcePath });
+  vm.runInNewContext(classicSource(mainSource), context, { filename: mainSourcePath });
 }
 
 const WORKER_CAPABILITIES = {
@@ -370,6 +427,23 @@ const WORKER_CAPABILITIES = {
   maxAnisotropy: 16,
   maxTextureSize: 8192,
 };
+
+test("UI boot publishes the actual pure opening factory without replacing shared capability helpers", async () => {
+  const h = createContext({ ...CAPABLE });
+  await loadMainWithQuality(h.context);
+  const shared = h.context.window.BabelSite.shared;
+  assert.equal(shared.createOpeningPreparation, createOpeningPreparation);
+  assert.equal(typeof shared.getWebGLCapabilities, "function");
+  assert.equal(h.getScriptAppendCount(), 0, "the bridge exists before any deferred scene request");
+  const failures = [],
+    gate = shared.createOpeningPreparation({
+      stages: ["scene"],
+      fail: (reason) => failures.push(reason),
+    });
+  gate.tick(0, true);
+  gate.tick(15000, true);
+  assert.deepEqual(failures, ["stalled"], "the bridge carries the real deadline behavior");
+});
 
 test("static preferences block the worker before cold GPU probing", async () => {
   for (const options of [{ forcedColors: true }, { reducedMotion: true }, { saveData: true }]) {
@@ -795,7 +869,11 @@ test("visibility recovery does not prefetch models under a preference enabled du
       const harness = createContext({ ...CAPABLE, hidden: true, scriptOutcomes: ["pending"] });
       await loadMainWithQuality(harness.context);
       const ready = harness.context.window.BabelSite.ensureSceneReady();
-      assert.equal(harness.visibilityListenerCount, 1);
+      assert.equal(
+        harness.visibilityListenerCount,
+        2,
+        "prefetch and opening budget observe visibility",
+      );
       const change = {
         data: (value) => harness.connection.setSaveData(value),
         motion: (value) => harness.motionQuery.setMatches(value),
@@ -1148,7 +1226,7 @@ test("invalid quality override does not bypass the data-saver gate", async () =>
   assert.equal(getWebglProbeCount(), 0, "malformed override must not bypass data-saver");
 });
 
-test("the live scene requests its startup tier's tree at low priority after its bundle", async () => {
+test("the live scene prioritizes its startup tree after requesting the bundle", async () => {
   for (const [options, tier] of [
     [{}, "high"],
     [{ hardwareConcurrency: 4 }, "balanced"],
@@ -1163,7 +1241,7 @@ test("the live scene requests its startup tier's tree at low priority after its 
     const urls = [ARCHITECTURE_URLS[tier].tree];
     assert.deepEqual(harness.events, ["script", ...urls.map((url) => `fetch:${url}`)]);
     for (const { options: init } of harness.fetches) {
-      assert.equal(init.priority, "low");
+      assert.equal(init.priority, "high");
       assert.equal(init.signal.aborted, false);
     }
     const prefetched = harness.context.window.BabelSite.scene.prefetched;
@@ -1173,6 +1251,30 @@ test("the live scene requests its startup tier's tree at low priority after its 
 
     assert.equal(await harness.context.window.BabelSite.ensureSceneReady(), true);
     assert.equal(harness.fetches.length, 1, "an initialized scene requests nothing again");
+  }
+});
+
+test("selected tree openings prefetch tree then lantern, while explicit Watch keeps background priority", async () => {
+  for (const [options, roles, priority] of [
+    [{ search: "" }, ["tree", "lantern"], "high"],
+    [{ search: "?view=tree&angle=2" }, ["tree", "lantern"], "high"],
+    [{ search: "?view=watch" }, ["tree"], "low"],
+    [{ search: "?view=unknown" }, ["tree"], "low"],
+    [{ search: "", selection: { view: "watch" } }, ["tree"], "low"],
+    [{ search: "?view=watch", selection: { view: "tree", angle: 1 } }, ["tree", "lantern"], "high"],
+  ]) {
+    const harness = createContext({ ...CAPABLE, prefetchLantern: true, ...options });
+    await loadMainWithQuality(harness.context);
+    await harness.context.window.BabelSite.ensureSceneReady();
+    assert.deepEqual(
+      harness.fetches.map(({ url }) => /\/(tree|lantern)-/.exec(url)[1]),
+      roles,
+    );
+    assert.ok(harness.fetches.every(({ options: init }) => init.priority === priority));
+    const entries = harness.context.window.BabelSite.scene.prefetched;
+    assert.equal(entries.size, roles.length);
+    entries.forEach((entry) => entry.abort());
+    assert.ok(harness.fetches.every(({ options: init }) => init.signal.aborted));
   }
 });
 
@@ -1230,18 +1332,18 @@ test("static title card paths and the low tier make no early model request", asy
   }
 });
 
-test("a failed scene bundle or initialization releases the early tree request", async () => {
+test("a failed scene bundle or initialization releases both early opening models", async () => {
   for (const options of [
     { logger: { warn() {} }, scriptOutcomes: ["error", "load"] },
     { initResult: false },
   ]) {
-    const harness = createContext({ ...CAPABLE, ...options });
+    const harness = createContext({ ...CAPABLE, prefetchLantern: true, ...options });
     await loadMainWithQuality(harness.context);
 
     assert.equal(await harness.context.window.BabelSite.ensureSceneReady(), false);
 
     assert.equal(harness.host.hidden, true);
-    assert.equal(harness.fetches.length, 1);
+    assert.equal(harness.fetches.length, 2);
     assert.ok(harness.fetches.every(({ options: init }) => init.signal.aborted));
     assert.equal(harness.context.window.BabelSite.scene.prefetched.size, 0);
   }
@@ -1271,9 +1373,18 @@ test("a hidden page requests models only if it is shown while the bundle still l
     urls,
     "shown before the scene initializes, the page requests the startup tier's tree",
   );
-  assert.equal(shown.visibilityListenerCount, 0);
+  assert.equal(
+    shown.visibilityListenerCount,
+    1,
+    "only the pending opening budget still observes visibility",
+  );
   shown.loadPendingScripts();
   assert.equal(await ready, true);
+  assert.equal(
+    shown.visibilityListenerCount,
+    0,
+    "settling startup releases its remaining observer",
+  );
   assert.deepEqual([...shown.context.window.BabelSite.scene.prefetched.keys()], urls);
 
   for (const options of [{}, { logger: { warn() {} }, scriptOutcomes: ["error"] }]) {
@@ -1288,6 +1399,138 @@ test("a hidden page requests models only if it is shown while the bundle still l
       "an initialized scene requests its own models at its first frame; a failed one needs none",
     );
   }
+});
+
+test("stalled entry or shared-chunk downloads fail without a loader and cannot initialize late", async () => {
+  for (const modulePreloads of [[], ["/scripts/scene.shared.0123abcd.js"]])
+    for (const sceneLoader of [false, true]) {
+      const warnings = [],
+        h = createContext({
+          ...CAPABLE,
+          prefetchLantern: true,
+          sceneLoader,
+          modulePreloads,
+          scriptOutcomes: ["pending"],
+          logger: { warn: (...args) => warnings.push(args) },
+        });
+      await loadMainWithQuality(h.context);
+      let finished = false;
+      const ready = h.context.window.BabelSite.ensureSceneReady().then((result) => {
+        finished = true;
+        return result;
+      });
+      h.advance(14999);
+      await Promise.resolve();
+      assert.equal(finished, false);
+      h.advance(1);
+      assert.equal(await ready, false);
+      assert.match(warnings[0][1].message, /Opening stalled/);
+      assert.equal(h.host.hidden, true);
+      assert.equal(h.pendingTimers, 0);
+      assert.equal(h.visibilityListenerCount, 0);
+      assert.equal(h.fetches.length, 2);
+      assert.ok(h.fetches.every(({ options }) => options.signal.aborted));
+      assert.equal(h.context.window.BabelSite.scene.prefetched.size, 0);
+      h.loadPendingScripts();
+      assert.equal(await h.context.window.BabelSite.ensureSceneReady(), false);
+      h.forcedColorsQuery.setMatches(true);
+      h.forcedColorsQuery.setMatches(false);
+      assert.equal(
+        h.getSceneInitCount(),
+        0,
+        "a late evaluated module cannot revive an expired attempt",
+      );
+      assert.equal(h.getScriptAppendCount(), 1);
+    }
+});
+
+test("download progress cannot extend the one total visible opening deadline", async () => {
+  const warnings = [],
+    h = createContext({
+      ...CAPABLE,
+      sceneLoader: true,
+      scriptOutcomes: ["pending"],
+      logger: { warn: (...args) => warnings.push(args) },
+    });
+  await loadMainWithQuality(h.context);
+  const ready = h.context.window.BabelSite.ensureSceneReady();
+  for (let second = 5; second <= 25; second += 5) {
+    h.advance(5000);
+    h.setLoaderProgress(second / 100);
+  }
+  h.advance(4999);
+  assert.equal(h.host.hidden, false);
+  h.advance(1);
+  assert.equal(await ready, false);
+  assert.match(warnings[0][1].message, /Opening deadline/);
+  assert.equal(h.pendingTimers, 0);
+});
+
+test("the scene inherits only the opening time left after downloads and synchronous setup", async () => {
+  let remaining;
+  const h = createContext({
+    ...CAPABLE,
+    sceneLoader: true,
+    scriptOutcomes: ["pending"],
+    initResult(scene) {
+      h.advance(5000);
+      remaining = scene.takeOpeningBudget();
+      return true;
+    },
+  });
+  await loadMainWithQuality(h.context);
+  const ready = h.context.window.BabelSite.ensureSceneReady();
+  h.advance(9000);
+  h.setLoaderProgress(0.2);
+  h.advance(9000);
+  h.loadPendingScripts();
+  assert.equal(await ready, true);
+  assert.equal(remaining, 7000);
+  assert.equal(h.pendingTimers, 0);
+  assert.equal(h.visibilityListenerCount, 0);
+  const failures = [],
+    gate = createOpeningPreparation({
+      stages: ["shaders"],
+      totalMs: remaining,
+      fail: (reason) => failures.push(reason),
+    });
+  gate.tick(0, true);
+  gate.tick(6999, true);
+  assert.deepEqual(failures, []);
+  gate.tick(7000, true);
+  assert.deepEqual(failures, ["deadline"], "download and preparation share thirty seconds");
+});
+
+test("background and static-preference pauses preserve the consumed opening budget on recovery", async () => {
+  let remaining;
+  const h = createContext({
+    ...CAPABLE,
+    scriptOutcomes: ["pending"],
+    initResult(scene) {
+      remaining = scene.takeOpeningBudget();
+      return true;
+    },
+  });
+  await loadMainWithQuality(h.context);
+  const ready = h.context.window.BabelSite.ensureSceneReady();
+  h.advance(5000);
+  h.setHidden(true);
+  h.advance(120000);
+  assert.equal(h.pendingTimers, 0);
+  h.setHidden(false);
+  h.advance(2000);
+  h.forcedColorsQuery.setMatches(true);
+  h.advance(120000);
+  assert.equal(h.pendingTimers, 0);
+  h.loadPendingScripts();
+  assert.equal(await ready, false);
+  h.forcedColorsQuery.setMatches(false);
+  assert.equal(h.getSceneInitCount(), 1);
+  assert.equal(remaining, 23000);
+  assert.equal(h.getScriptAppendCount(), 1);
+  assert.ok(h.fetches.every(({ options }) => !options.signal.aborted));
+  assert.equal(h.pendingTimers, 0);
+  assert.equal(h.visibilityListenerCount, 0);
 });
 
 test("static title card paths never begin the loading line", async () => {
@@ -1413,10 +1656,12 @@ function createFixture({ readyState = "complete" } = {}) {
         document: dom.document,
         navigator: {},
         URLSearchParams,
+        resolveSceneOpening,
+        createOpeningPreparation,
       });
       vm.runInContext(qualitySource, context, { filename: "src/scene/quality.js" });
       vm.runInContext(contactSource, context, { filename: "src/ui/contact.js" });
-      vm.runInContext(mainSource, context, { filename: "src/main.js" });
+      vm.runInContext(classicSource(mainSource), context, { filename: "src/main.js" });
     },
   };
 }

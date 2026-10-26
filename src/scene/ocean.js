@@ -335,11 +335,16 @@ const sprayGlsl = (falls) => `uniform vec4 seaPlume;
 float sprayErf(float x){return 1.-2./(exp(2.4*clamp(x,-8.,8.))+1.);}
 float seaSpray(vec3 p,float y0){
 if(seaPlume.w<=0.)return 0.;
-vec3 k=vec3(1.,.8,1.),O=(cameraPosition-vec3(seaPlume.x,y0+${glsl(falls.spray[0])},seaPlume.y))*k,D=(p-cameraPosition)*k;
+vec3 k=vec3(1.,.8,1.);float plumeHeight=${glsl(falls.spray[0])},plumeSize=seaPlume.z;
+// The coast study keeps the airborne core close to its actual landing instead
+// of veiling the whole lower curtain with a broad elevated cloud.
+if(coastStudy>.5){k.y=1.1;plumeHeight*=.6;plumeSize*=.65;}
+vec3 O=(cameraPosition-vec3(seaPlume.x,y0+plumeHeight,seaPlume.y))*k,D=(p-cameraPosition)*k;
 float L=length(D);D/=max(L,1e-4);
-float t0=-dot(O,D),s=seaPlume.z,e=exp(-(dot(O,O)-t0*t0)/(s*s));
+float t0=-dot(O,D),s=plumeSize,e=exp(-(dot(O,O)-t0*t0)/(s*s));
 vec3 m=cameraPosition+(p-cameraPosition)*clamp(t0/max(L,1e-4),0.,1.);
 float bill=.35+1.3*seaFoam(vec2(m.x+m.z,m.y*1.6)/(.45*s)+seaTime*vec2(.15,-.5));
+if(coastStudy>.5)bill*=mix(.7,1.,1.-smoothstep(y0+1.,y0+4.,p.y));
 return 1.-exp(-${glsl(falls.spray[2])}*e*bill*.886*s*(sprayErf((L-t0)/s)+sprayErf(t0/s))*(.8+.2*sin(seaTime*.9)));
 }`;
 // The spray over c at p (b: behind the text), lit as white water is.
@@ -380,6 +385,7 @@ return mix(vec3(.062,.065,.073),vec3(.07,.085,.13),smoothstep(0.,.5,d.y));
 #endif
 }
 uniform vec3 seaKey,seaKeyColor,seaFill,seaFillColor,seaAmbient,seaHemiSky,seaHemiGround;
+uniform float coastStudy;
 ${shadowGlsl()}
 vec3 seaDiffuse(vec3 n){return seaKeyColor*max(dot(n,seaKey),0.)*seaSun+seaFillColor*max(dot(n,seaFill),0.)+seaAmbient+mix(seaHemiGround,seaHemiSky,.5*n.y+.5);}
 // The shore's subdued diffuse response: raw scene light intensities over pi,
@@ -491,6 +497,9 @@ float slick=.5+(seaNoise(mat2(.8,.6,-.6,.8)*P.xz/90.+seaTime*vec2(.004,.003))-.5
 float sv=mix(.45,1.6,smoothstep(.25,.75,slick)),sa=sqrt(sv);
 ${ripple}
 v*=sv;
+// The coast studies resolve less fine slope into a ruled reflection lattice;
+// the removed slope energy broadens the same physical reflection lobe.
+if(coastStudy>.5){vec2 fine=g-gw;float keep=.62;v+=dot(fine,fine)*(1.-keep*keep);g=gw+fine*keep;}
 // Impact roughens only the plunge, leaving the open sea's calm swell intact.
 if(seaFalls.w>0.){vec2 pool=(P.xz-seaFalls.xy)/max(seaFalls.z,1e-4);float impact=1.-smoothstep(.15,.95,length(pool));
 if(impact>0.){vec3 churn=seaFlowD(pool*4.+seaTime*vec2(.13,-.09),seaTime*.45);float resolve=smoothstep(1.5,3.,seaFalls.z/(4.*fp));
@@ -550,7 +559,7 @@ float burst=smoothstep(${glsl(1 - surf.cover)},${glsl(1 - surf.cover + 0.25)},n)
 // breaking swell surging in thinner near it, so it breaks into strands, never one
 // flat sheet; about the stacks (breathing with the swell) and in the churning heart
 // of where the falls land; beyond, it thins into lace.
-float k=max(.75*(1.-smoothstep(.3,2.6+fp,z)),.7*burst*(1.-smoothstep(${glsl(surf.reach * 0.6)},${glsl(surf.reach)},z))),shore=1.;
+float k=max(.75*(1.-smoothstep(.3,2.6+fp,z)),.7*burst*(1.-smoothstep(${glsl(surf.reach * 0.6)},${glsl(surf.reach)},z))),shore=1.,landing=0.;
 if(seaFalls.w>0.){
 vec2 pool=(P.xz-seaFalls.xy)/seaFalls.z;
 // A persistent turbulent core, with broken expanding fans carried seaward.
@@ -562,9 +571,13 @@ float core=1.-smoothstep(.06,.3,pr),wash=.45*(1.-smoothstep(.25,.95,pr))*mix(.35
 // the water churns white end to end, never dark beside a round pool.
 vec2 hd=seaSheet.zw;float la=dot(pool,vec2(-hd.y,hd.x)),lo=dot(pool,hd);
 core=max(core,(1.-smoothstep(${glsl(0.85 / FALLS.plunge)},${glsl(1.35 / FALLS.plunge)},abs(la)))*(1.-smoothstep(.1,.3,abs(lo+.05)))*(.8+.2*seaFoam(pool*6.+seaTime*vec2(.2,-.1))));
+// Aerated water persists at the landing line; the lace may break its outward
+// fans, but cannot punch dark holes through the sheet's immediate contact.
+if(coastStudy>.5)landing=core;
 // The falling current clears the shore's steady blanket. Its broken fans,
 // rather than a uniform contact band, carry foam across the exposed water.
 shore=1.-.8*(1.-smoothstep(.25,.95,pr));
+if(coastStudy>.5)shore=1.-.94*(1.-smoothstep(.3,1.15,pr));
 k=max(k*shore,max(core,wash));}
 k=max(k,sf*(.85+.15*sin(seaTime*1.3+P.x*.2+P.z*.13)));
 // Thick, it covers the water; thinning, only its lace's strands stay, drifting.
@@ -576,6 +589,7 @@ fq+=vec2(.4*sin(fq.y*.6+seaTime*.17),.3*sin(fq.x*.4-seaTime*.12));
 float far=clamp(fp*1.2-.6,0.,1.),lace=.65*seaFoam(fq)+.35*seaFoam(fq*2.7+3.1),fw=.18+fp*.6;
 float foam=mix(k,smoothstep(1.-k-fw,1.-k+fw,lace)*smoothstep(0.,.02,k),seaLace*(1.-far));
 foam=mix(foam,max(${glsl(surf.far)}*(1.-smoothstep(0.,${glsl(surf.reach)},z))*shore*(.6+.8*swash),.45*sf),far);
+if(coastStudy>.5)foam=max(foam,.8*landing);
 foam*=1.-${glsl(sea.text)}*b;
 vec3 lit=seaLight(vec3(0.,1.,0.),babelFlash.x*(1.-b));
 c=mix(c,${glsl(surf.albedo)}*lit,clamp(foam,0.,1.));}
@@ -661,6 +675,7 @@ function sharedUniforms(lib, clock, plunge = null, falls = FALLS) {
     seaTime: clock.uniform,
     seaLace: { value: 1 },
     seaFine: { value: 1 },
+    coastStudy: lib.COAST_MOOD ?? { value: 0 },
     seaKey: { value: new Vector3(0.71, 0.62, 0.31) },
     seaKeyColor: { value: new Vector3(1, 1, 1) },
     seaFill: { value: new Vector3(0, 1, 0) },
@@ -1756,6 +1771,12 @@ vec3 scan=mix(texture2D(coastDetail,vec2(vC.x,vRock.y)/${glsl(COAST_DETAIL.tile)
 float relief=(1.-smoothstep(.06,.24,px))*.48;
 n=normalize(n*sqrt(max(.15,1.-dot(xy,xy)*relief*relief))+(t*xy.x+bt*xy.y)*relief);
 rockRough=scan.b;}
+// The fault studies reveal the dry upper mineral planes with the existing
+// moon/sky lights. The spray-darkened foot and ground's dust seam stay put.
+if(coastStudy>.5){float mineral=clamp(.5+.55*(n1.x-.5)+.3*(hc-.5)+.2*(n2.x-.5),0.,1.);
+alb*=mix(vec3(1.),mix(vec3(.84,.88,.94),vec3(1.14,1.07,.96),mineral),side);
+alb*=mix(1.,1.+.25*smoothstep(${glsl(STACKS.weed + 1)},${glsl(STACKS.weed + 6)},hs),stack);
+rockRough=clamp(rockRough*(.86+.28*mineral),.45,.95);}
 // Spray darkens and wets the foot.
 float wet=1.-smoothstep(vSeaY,vSeaY+${glsl(cliff.wet)},vW.y);
 alb*=1.-.45*wet;
@@ -1950,32 +1971,40 @@ const COAST_LOOK = Object.freeze({
   hold: 7,
   // Landscape phones hold it still, as every shot: no room about the name for a move.
   landscape: Object.freeze({ move: null }),
-  light: Object.freeze({ key: 1, fill: 0.6, lantern: 1.2 }),
+  light: Object.freeze({ key: 1, fill: 0.85, lantern: 1.2, coastStudy: 1 }),
   ground: Object.freeze({
-    mist: Object.freeze({ color: Object.freeze([0.27, 0.26, 0.29]), amount: 0.35 }),
+    mist: Object.freeze({ color: Object.freeze([0.27, 0.26, 0.29]), amount: 0.25 }),
     gloss: Object.freeze({ film: 0.32, gain: 1, cool: 0 }),
   }),
 });
 const BROKEN_COAST_VIEW = Object.freeze({
-  aim: Object.freeze([140, -8.75, 115]),
-  azimuth: -137.1,
-  reach: 95.5,
-  fov: 40,
+  aim: Object.freeze([125, -6, 112]),
+  azimuth: -160,
+  reach: 72,
+  fov: 42,
+});
+const FALLS_UPRIGHT = Object.freeze({
+  aim: Object.freeze([80.5, -8, 82.3]),
+  azimuth: -50,
+  reach: 43,
+  rise: 25,
+  fovMax: 62,
+  anchor: Object.freeze([0.5, 0.5]),
+  shadow: Object.freeze([62, 70]),
 });
 export const COAST_SHOTS = Object.freeze([
-  // High on the cliffs' edge, down the bay and out past the stacks to the
-  // horizon, pushing in.
+  // An oblique view along the broken edge, with less near shelf and a longer
+  // view of its side planes, out through the stacks to the horizon.
   Object.freeze({
     ...COAST_LOOK,
     name: "The broken coast",
     after: "Portrait",
     ...BROKEN_COAST_VIEW,
-    // On upright phones a wider bearing holds the offshore pillar and tilted
-    // slab apart across open water, from beyond the tree (farther back it
-    // stands in the frame); the lens is as narrow as both allow, 76 degrees
-    // (82 before: too wide). Wider canvases keep the wide view.
+    // Upright phones retain the bearing and lens that separate the complete
+    // offshore forms. Their raised eye and aim expose the edge beneath them;
+    // wider canvases take the more oblique composition.
     portrait: Object.freeze({
-      aim: Object.freeze([120.3, -8.75, 115]),
+      aim: Object.freeze([120.3, -6, 115]),
       azimuth: -127.8,
       reach: 82.2,
       fov: 76,
@@ -1983,7 +2012,7 @@ export const COAST_SHOTS = Object.freeze([
     tablet: BROKEN_COAST_VIEW,
     tall: BROKEN_COAST_VIEW,
     squat: BROKEN_COAST_VIEW,
-    rise: 8.25,
+    rise: 10.5,
     shadow: Object.freeze([85, 72]),
     move: Object.freeze({ dolly: Object.freeze([1.05, 0.95]), ease: 0.6 }),
   }),
@@ -1995,43 +2024,62 @@ export const COAST_SHOTS = Object.freeze([
     name: "The falls",
     after: "Lantern study",
     frameFalls: true,
-    aim: Object.freeze([80.5, -8, 82.3]),
-    // Upright screens stand farther back, round toward the land and higher, so
-    // they look over the near rim into the bay, and may open the lens further
-    // (their frame is narrow), so the falls never shrink into a thread.
-    // Their shadow centres nearer them, so it still holds the land at their feet.
+    aim: FALLS_UPRIGHT.aim,
+    // Upright phones come closer and lower across the bay: the full fall takes
+    // roughly half the usable picture while its brink, pool and spray remain.
+    // Wider upright/squat canvases keep their established complete envelope.
     portrait: Object.freeze({
-      azimuth: -55,
-      reach: 44,
-      rise: 24,
-      fovMax: 62,
-      shadow: Object.freeze([62, 70]),
+      ...FALLS_UPRIGHT,
+      aim: Object.freeze([81.7, -8, 83.6]),
+      reach: 33,
+      rise: 14,
+      fovMax: 71.2,
+      anchor: Object.freeze([0.492, 0.5]),
     }),
+    tablet: Object.freeze({
+      ...FALLS_UPRIGHT,
+      fov: 61,
+      aim: Object.freeze([81.7, -8, 83.6]),
+      reach: 33,
+      rise: 14,
+      fovMax: 71.2,
+      anchor: Object.freeze([0.492, 0.5]),
+    }),
+    tall: Object.freeze({
+      ...FALLS_UPRIGHT,
+      aim: Object.freeze([81.7, -8, 83.6]),
+      reach: 33,
+      rise: 14,
+      fovMax: 71.2,
+      anchor: Object.freeze([0.492, 0.5]),
+    }),
+    squat: FALLS_UPRIGHT,
     // Short landscape phones hold it still, farther back, higher and a little
     // wider for their short frame.
     landscape: Object.freeze({
       move: null,
-      azimuth: -55,
-      reach: 42,
-      rise: 15,
+      azimuth: -50,
+      reach: 39,
+      rise: 19,
       fovMax: 48,
       shadow: Object.freeze([62, 70]),
     }),
     azimuth: -44,
     reach: 33,
-    rise: 10.25,
+    rise: 14,
     shadow: Object.freeze([83, 90]),
     fov: 34,
     // Its lens opens to fit the falls, their pool and spray, but no further.
     fovMax: 48,
     move: Object.freeze({ dolly: Object.freeze([1.04, 0.95]), ease: 0.5 }),
   }),
-  // Down the fault's broken V from above, its stacks in their surf across the
-  // top, craning down toward them; the tree stands behind the lens.
+  // Above the bay's head, following the incoming river over its brink into
+  // the complete fall, impact pool and open water beyond.
   Object.freeze({
     ...COAST_LOOK,
     name: "Over the fault",
     after: "Root and lantern",
+    frameFalls: true,
     // The moon through a break in the cloud lights the fault and the falls; the
     // cloud's shadow lies on the clifftop beyond, under the name (mud-ground.js
     // SLATE_LOOK: its moonlit crests held the name near 5:1 in full moonlight).
@@ -2045,12 +2093,20 @@ export const COAST_SHOTS = Object.freeze([
         shade: Object.freeze([0, 22, 70]),
       }),
     }),
-    aim: Object.freeze([90, -8.75, 90]),
-    azimuth: -125,
-    reach: 45,
-    rise: 23.25,
+    aim: Object.freeze([79, -4, 80]),
+    azimuth: -45,
+    reach: 34,
+    rise: 28,
     shadow: Object.freeze([85, 72]),
-    fov: 58,
+    fov: 46,
+    fovMax: 60,
+    anchor: Object.freeze([0.4, 0.48]),
+    portrait: Object.freeze({
+      reach: 43,
+      rise: 34,
+      anchor: Object.freeze([0.5, 0.48]),
+      fovMax: 70,
+    }),
     move: Object.freeze({
       dolly: Object.freeze([1.06, 0.94]),
       crane: Object.freeze([0.3, 0]),
@@ -2136,13 +2192,15 @@ export function coastShot(shot, frame, falls = null) {
         up = new Vector3(),
         delta = new Vector3(),
         yaw = view.azimuth * RAD,
-        dolly = view.move?.dolly ?? [1, 0.955];
+        dolly = view.move?.dolly ?? [1, 0.955],
+        crane = view.move?.crane ?? [0, 0],
+        [across, down] = view.anchor ?? [0.5, 0.5];
       let slope = Math.tan((view.fov * RAD) / 2);
       for (let step = 0; step <= 8; step++) {
         const reach = view.reach * (dolly[0] + ((dolly[1] - dolly[0]) * step) / 8);
         eye.set(
           measured.target.x + Math.cos(yaw) * reach,
-          measured.cameraY,
+          measured.cameraY + (crane[0] + ((crane[1] - crane[0]) * step) / 8) * measured.height,
           measured.target.z + Math.sin(yaw) * reach,
         );
         forward.subVectors(measured.target, eye).normalize();
@@ -2150,11 +2208,15 @@ export function coastShot(shot, frame, falls = null) {
         up.crossVectors(right, forward);
         for (let i = 0; i < measured.points.length; i += 3) {
           delta.subVectors(point.fromArray(measured.points, i), eye);
-          const depth = Math.max(0.001, delta.dot(forward));
+          const depth = Math.max(0.001, delta.dot(forward)),
+            horizontal = delta.dot(right),
+            vertical = delta.dot(up);
           slope = Math.max(
             slope,
-            (Math.abs(delta.dot(right)) * height) / (depth * area.width * 0.86),
-            (Math.abs(delta.dot(up)) * height) / (depth * area.height * 0.86),
+            (Math.abs(horizontal) * height) /
+              (depth * area.width * 0.86 * 2 * (horizontal < 0 ? across : 1 - across)),
+            (Math.abs(vertical) * height) /
+              (depth * area.height * 0.86 * 2 * (vertical > 0 ? down : 1 - down)),
           );
         }
       }
@@ -2312,6 +2374,9 @@ export const RAPIDS = Object.freeze({
   chop: Object.freeze([0.8, 2.2, 0.12]),
   text: 0.9,
 });
+// The coastal run borrows the ground's water and froth albedos. Its manual
+// light evaluation uses the same legacy-light gains, without another lookup.
+export const RAPIDS_BODY = Object.freeze([0.016, 0.035, 0.037]);
 // The rapids' speed's length scale (its speed grows by e over it).
 const rapidsScale = (rapids) => rapids.reach / Math.log(rapids.to / rapids.from);
 export const rapidsSpeed = (ra, rapids = RAPIDS) =>
@@ -2371,7 +2436,7 @@ export function rapidsFrame(drop) {
 // and across +q, its white water and its mirror's blur, r river radii from its
 // middle at time t, fp units a pixel. Both the ground and the falls' run take
 // the same copy, so their patterns meet at the shelf's edge.
-export function rapidsGlsl(p, frame, rapids = RAPIDS) {
+export function rapidsGlsl(p, frame, rapids = RAPIDS, coastProfile = null) {
   const L = rapidsScale(rapids),
     R = rapids.reach,
     [SA, ST, TA, TQ] = rapids.streak,
@@ -2416,7 +2481,34 @@ float cell=min(${glsl(1 / LA)},sp/${glsl(LT)})/fp,lace=(1.-smoothstep(0.,mix(.08
 // White streaks drawn out along the flow where it churns, whiter toward the brink.
 float streakFoam=mix(.22,smoothstep(.05,.7,s.x),smoothstep(1.5,3.,min(${glsl(1 / SA)},sp/${glsl(ST)})/fp));
 float foam=max(mix(lace,.3*churn,clamp(1.5-cell*.25,0.,1.)),streakFoam*smoothstep(.15,.6,churn)*mix(.55,1.,k)*mix(.25,1.15,smoothstep(.3,.75,.5+.5*ch1.x)));
-return vec4(g*w,clamp(foam*w,0.,1.),w*(k*${glsl(rapids.rough)}+min(length(g)*4.,.3)));}`;
+${
+  coastProfile
+    ? `// Near the brink, advected rafts break the lace's cell borders into foam
+// fragments; a complete bright cell scaffold cannot survive between packets.
+// Both water owners use these same fields and clock over the existing support.
+if(${coastProfile}>.5){
+// The existing chop compresses along the flow as T*sp changes. Its analytic
+// footprint needs no new noise sample or derivative inside the branch.
+float coastStretch=1.-T*sp/${glsl(L)};
+float coastBrinkSlope=(${glsl(b1)})+2.*(${glsl(b2)})*q;
+float coastChopSpan=1./(${glsl(CA)}*sqrt(1.+coastStretch*coastStretch*(1.+coastBrinkSlope*coastBrinkSlope)));
+float coastChopResolve=smoothstep(1.5,3.,coastChopSpan/fp);
+float coastChop=mix(.25,1.15,smoothstep(.3,.75,.5+.5*ch1.x));
+// Mean of this multiplier over the existing flow field, numerically sampled;
+// fully resolved water retains the original expression exactly.
+if(coastChopResolve<1.)coastChop=mix(0.66589,coastChop,coastChopResolve);
+float coastChurn=mix(${glsl(rapids.white[0])},${glsl(rapids.white[1])},k*k)+${glsl(rapids.banks)}*smoothstep(.5,.95,r);
+float coastPacket=streakFoam*smoothstep(.15,.6,coastChurn)*mix(.55,1.,k)*coastChop;
+float coastLace=mix(lace,.3*churn,clamp(1.5-cell*.25,0.,1.));
+float coastTongue=1.-smoothstep(.15,.45,r);
+float coastCrest=1.-smoothstep(0.,${glsl(rapids.brink[0])}*(1.-${glsl(rapids.tongue)}*coastTongue),ra);
+float coastRaft=clamp(coastPacket*(1.+.2*coastLace),0.,1.);
+coastRaft=max(coastRaft,${glsl(rapids.brink[1])}*coastCrest*(.7+.3*coastRaft));
+foam=mix(foam,coastRaft,1.-smoothstep(${glsl(W5)},${glsl(R)},ra));
+}
+`
+    : ""
+}return vec4(g*w,clamp(foam*w,0.,1.),w*(k*${glsl(rapids.rough)}+min(length(g)*4.,.3)));}`;
 }
 
 // The upper river's continuous handoff to the cliff shelf, including the
@@ -2653,7 +2745,7 @@ ${NOISE_GLSL}
 ${sprayGlsl(falls)}
 ${coastGlsl()}
 ${flowNoiseGlsl("fallsSheet", "seaHash")}
-${frame ? rapidsGlsl("fallsRp", frame, rapids) : ""}
+${frame ? rapidsGlsl("fallsRp", frame, rapids, "coastStudy") : ""}
 void main(){
 // It whitens over the first eighth of its drop (its rows are spaced by time: v 1.25 is about 12% of the height down).
 float a=abs(vF.x),v=vF.y,fall=smoothstep(.86,1.1,v),white=smoothstep(.9,1.25,v),q=vF.x+.18*vF.z;
@@ -2675,14 +2767,24 @@ float a1=1.-smoothstep(.3,1.05,max(fx*6.,ft*4.5)),a2=1.-smoothstep(.3,1.05,max(f
 vec3 bend=fallsSheet(vec2(q*2.3+.7,tau*.5-seaTime*.3),seaTime*.13);
 float r1=mix(.5,.5+.5*fallsSheet(vec2(q*6.+bend.x*.9,4.5*(tau-seaTime)),seaTime*.35).x,a1),r2=mix(.5,.5+.5*fallsSheet(vec2(q*16.+bend.x*1.7+3.,5.*(tau-seaTime)),seaTime*.53).x,a2),r3=mix(.5,.5+.5*fallsSheet(vec2(q*40.+bend.x*2.4+7.,10.*(tau-seaTime)),seaTime*.71).x,a3);
 float streak=r1*.45+r2*.35+r3*.2,d=smoothstep(.22,.78,.5+(streak-.5)*1.4/max(.3,sqrt(.2025*a1*a1+.1225*a2*a2+.04*a3*a3)));
+// Broad aerated clusters interrupt the fine vertical ribbons without changing
+// the closed body, travel clock, sample count or upper river's rapids.
+if(coastStudy>.5){float cluster=clamp(.5+(r1-.5)*.6+.27*bend.x+(r2-.5)*.2,0.,1.);d=mix(d,smoothstep(.12,.88,cluster),.8);}
 // The closed skin defines the silhouette. The same current turns around its
 // real lateral faces; froth may thin, but never discards a wall of the body.
 float side=4.*vF.z*(1.-vF.z),edge=max(side,1.-smoothstep(.62-fx,1.+fx,a+.3*(r2-.5)*smoothstep(.86,1.,v)+.4*smoothstep(1.2,2.,v)*(r1-.5)));
 // Where it runs over the lip, in the rapids' frame (the shelf's, ocean.js rapidsFrame()).
 ${frame ? "vec2 rpU=fallsRpUQ(vW.xz);float rpA=fallsRpRA(rpU),rpFP=max(length(fwidth(vW.xz)),1e-4);" : ""}
+float toe=1.-smoothstep(vSeaY+.15,vSeaY+1.8,vW.y);
+if(coastStudy>.5)toe=1.-smoothstep(vSeaY+.05,vSeaY+1.2+.5*bend.x,vW.y);
 vec3 E=normalize(cameraPosition-vW),n=normalize(vN);
+if(coastStudy>.5)n=normalize(mix(vec3(0.,1.,0.),n,fall));
 // The slot's walls may hide the moon from it.
-seaSun=seaShadow(vW,n);
+// At contact the same lookup approaches the pool's sea-level/up-facing datum;
+// a lit vertical skin cannot keep a different shadow from the water it enters.
+vec3 shadowPoint=vW,shadowNormal=n;
+if(coastStudy>.5){shadowPoint=mix(vW,vec3(vW.x,vSeaY,vW.z),toe);shadowNormal=normalize(mix(n,vec3(0.,1.,0.),toe));}
+seaSun=seaShadow(shadowPoint,shadowNormal);
 // Over the lip it is the river's rapids (RAPIDS: the shelf's own, on the ground's
 // clock, so they meet at its edge): their streaks, standing waves and white
 // water, breaking white at each stream's own brink (raV units up from it), its
@@ -2692,16 +2794,22 @@ seaSun=seaShadow(vW,n);
 float raV=max(.85-v,0.)*${glsl(run[1])};
 ${
   frame
-    ? `vec4 rp=fallsRpRapids(rpU.y,rpA,a,fallsFlow,rpFP)*(1.-fall);
+    ? `float rpR=a;if(coastStudy>.5){rpR=abs(rpU.y)/${glsl(frame.half)};raV=rpA;}
+vec4 rp=fallsRpRapids(rpU.y,rpA,rpR,fallsFlow,rpFP)*(1.-fall);
 vec3 rn=normalize(n-vec3((${glsl(-hx)})*rp.x+(${glsl(hz)})*rp.y,0.,(${glsl(-hz)})*rp.x-(${glsl(hx)})*rp.y));`
     : "vec4 rp=vec4(0.);vec3 rn=n;"
 }
 float tongue=1.-smoothstep(.15,.45,a),crest=(1.-smoothstep(0.,${glsl(rapids.brink[0])}*(1.-${glsl(rapids.tongue)}*tongue),raV))*(1.-fall);
 float runFoam=max(rp.z,${glsl(rapids.brink[1])}*crest*(.7+.3*rp.z));
+// The accelerating water roughens before it curls: soften hard reflected
+// cloud bands at the brink while the shared upstream handoff stays exact.
+if(coastStudy>.5)runFoam=rp.z;
 // Adjacent streams aerate at slightly different depths, keeping the head
 // joined while white water gathers gradually into broader current clusters.
 white=smoothstep(.92+.045*bend.x-.04*smoothstep(.2,.5,a),1.26+.065*bend.x,v);
-float foam=mix(max(smoothstep(.5,.9,streak)*.4*smoothstep(.835,.87,v),runFoam),mix(.03,1.,d),white)*mix(1.,smoothstep(.02,.45,edge),fall);
+float headFoam=max(smoothstep(.5,.9,streak)*.4*smoothstep(.835,.87,v),runFoam);
+if(coastStudy>.5)headFoam=runFoam;
+float foam=mix(headFoam,mix(.03,1.,d),white)*mix(1.,smoothstep(.02,.45,edge),fall);
 // Near the plunge, broken pockets of aerated water interrupt long ribbons
 // without widening the sheet or adding another particle/effect pass.
 // Packets of denser white water fall through the streams, each at its own pace.
@@ -2714,24 +2822,43 @@ float impact=smoothstep(1.5,2.,v)*(.5+.5*bend.x);
 foam=mix(foam,max(foam,.4+.5*r2),impact*.45);
 // Fine streams thin unevenly into the existing impact cloud. Lower coverage
 // changes optical thickness, not geometry or an opaque grey overlay.
-float toe=1.-smoothstep(vSeaY+.15,vSeaY+1.8,vW.y);
 foam=mix(foam,max(foam,.75+.25*r2),toe*.8);
+if(coastStudy>.5)foam=mix(foam,.8,toe);
 float b=slateBehindText();
-vec3 R=reflect(-E,rn);R.y=max(R.y,.08);
+vec3 R=reflect(-E,rn);float runSky=${glsl(2 * SEA.sky)};
+if(coastStudy>.5){R.y=mix(R.y,max(R.y,.08),white);runSky=mix(1.,runSky,white);}
+else R.y=max(R.y,.08);
 // Its mirror at the river's gain, through its knee, blurred where the rapids are steep.
-vec3 water=seaEnv(normalize(R),.25+.5*rp.w)*(.02+.98*pow(1.-max(dot(rn,E),0.),5.))*${glsl(2 * SEA.sky)};
+vec3 water=seaEnv(normalize(R),.25+.5*rp.w)*(.02+.98*pow(1.-max(dot(rn,E),0.),5.))*runSky;
 float wY=dot(water,vec3(.2126,.7152,.0722));water=vec3(.004,.007,.009)+water*${glsl(SEA.knee)}*(1.-exp(-wY/${glsl(SEA.knee)}))/max(wY,1e-5);
 // Lit through as well as on: falling white water scatters the light from every side, as the surf does.
 // Falling, it is a cloud of droplets: lit through, it glows toward an eye looking into the moon (FALLS.scatter).
-vec3 lit=(mix(seaLight(n,babelFlash.x*(1.-b)),seaLight(vec3(0.,1.,0.),babelFlash.x*(1.-b)),white)+seaKeyColor*seaSun*(.25/SEA_PI+${glsl(falls.scatter[1])}*seaHG(dot(-seaKey,E),${glsl(falls.scatter[0])})*white))*${glsl(falls.albedo)};
+vec3 poolLight=seaLight(vec3(0.,1.,0.),babelFlash.x*(1.-b));
+vec3 lit=(mix(seaLight(n,babelFlash.x*(1.-b)),poolLight,white)+seaKeyColor*seaSun*(.25/SEA_PI+${glsl(falls.scatter[1])}*seaHG(dot(-seaKey,E),${glsl(falls.scatter[0])})*white))*${glsl(falls.albedo)};
+// The already-submerged toe shares the pool's diffuse aeration instead of
+// carrying the falling sheet's forward-scattering stripes to a straight edge.
+if(coastStudy>.5)lit=mix(lit,poolLight*${glsl(SEA.surf.albedo)},toe);
 // Falling, the water between its streams is thinner white water, never a mirror: only the lip is glassy.
 // Over the lip it takes the river's bluer, brighter sheen (the ground's own mirror of the film's sky),
 // and its froth the shelf's soil-lit froth's light, up from the crest (RAPIDS.run).
-water*=mix(vec3(1.),vec3(1.25,1.25,1.5),1.-fall);
+if(coastStudy<=.5)water*=mix(vec3(1.),vec3(1.25,1.25,1.5),1.-fall);
 // Glassy over the lip, it catches the moon.
 water+=seaGGX(rn,E,.07+.3*rp.w,.02)*(1.-white)*(1.-.8*b);
 lit*=mix(1.,${glsl(rapids.run)},smoothstep(.3,1.6,raV)*(1.-fall));
+if(coastStudy>.5){
+// Match the ground's legacy-light Lambert balance and its indirect tint.
+// poolLight already contains this environment lookup; recover that component
+// rather than sampling the sky again. The white falling body keeps its own light.
+vec3 runEnv=poolLight-seaDiffuse(vec3(0.,1.,0.))/SEA_PI;
+vec3 runLight=seaKeyColor*max(seaKey.y,0.)*seaSun*1.35+seaFillColor*max(seaFill.y,0.)*.35;
+runLight+=(.3*(seaAmbient+seaHemiSky)+1.5*runEnv)*vec3(1.14,1.19,1.25);
+float runF=.02+.98*pow(1.-max(dot(rn,E),0.),5.);
+float runCover=foam*(1.-${glsl(SEA.text)}*b),runDiffuse=1.-runF*(1.-runCover);
+water+=(runLight*${glslVec(...RAPIDS_BODY)}*runDiffuse-vec3(.004,.007,.009))*(1.-white);
+lit=mix(runLight*${glsl(rapids.albedo)}*runDiffuse,lit,white);
+}
 water=mix(water,lit*.12,white);
+if(coastStudy>.5)water=mix(water,lit*.28,white);
 vec3 c=mix(water,lit,foam*(1.-${glsl(SEA.text)}*b));
 ${landMist(lib)}
 gl_FragColor=vec4(c,${SEA_SHARED.layer});

@@ -401,6 +401,7 @@ function walkIn(rig, start = 0) {
 // Runs the actual index.js walk/media wiring and teardown around the real walk
 // owner. The scene's other owners need only their disposal hooks in this race.
 function wireSceneWalk(rig) {
+  let openingStops = 0;
   const forcedColors = rig.site.forcedColors;
   const noop = () => {};
   const owner = { dispose: noop };
@@ -420,6 +421,7 @@ function wireSceneWalk(rig) {
     runtimeDisposed: false,
     webglContextAvailable: true,
     sceneFailed: false,
+    stopOpeningPreparation: () => openingStops++,
     sceneReadyMarked: true,
     filmActive: true,
     walkGround: Object.assign(() => 0, { shore: () => 1 }),
@@ -446,7 +448,15 @@ function wireSceneWalk(rig) {
   const end = index.indexOf('warmShaders("scene");', start);
   assert.ok(start > 0 && end > start, "locate real scene walk wiring and teardown");
   vm.runInNewContext(index.slice(start, end), context);
-  return { context, forcedColors, dispose: () => context.scene.disposeHomeSceneRuntime() };
+  return {
+    context,
+    forcedColors,
+    dispose: () => {
+      const result = context.scene.disposeHomeSceneRuntime();
+      assert.equal(openingStops, 1, "scene teardown retires opening work exactly once");
+      return result;
+    },
+  };
 }
 
 test("the scene's actual ground consumer enables walk only after a successful current coastal commit", async () => {

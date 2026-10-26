@@ -44,13 +44,30 @@ function idleQueue() {
   let slices = 0;
   globalThis.requestIdleCallback = (task) => queue.push(task);
   return {
-    async flush() {
-      while (queue.length) {
-        assert.ok(++slices < 5000, "detached preparation settles without an animation frame");
-        queue.shift()({ didTimeout: true, timeRemaining: () => 0 });
+    async flush(pending) {
+      let complete = !pending,
+        failure,
+        rounds = 0;
+      if (pending)
+        Promise.resolve(pending).then(
+          () => {
+            complete = true;
+          },
+          (error) => {
+            complete = true;
+            failure = error;
+          },
+        );
+      do {
+        assert.ok(++rounds < 5000, "lazy scheduling must settle");
         await tick();
-      }
-      await tick();
+        while (queue.length) {
+          assert.ok(++slices < 5000, "detached preparation settles without an animation frame");
+          queue.shift()({ didTimeout: true, timeRemaining: () => 0 });
+          await tick();
+        }
+      } while (!complete);
+      if (failure) throw failure;
     },
     get slices() {
       return slices;
@@ -84,7 +101,7 @@ for (const tier of ["high", "balanced"])
       });
       await tick();
       assert.equal(resolved, false, "the producer actually waits for cooperative preparation");
-      await idle.flush();
+      await idle.flush(pending);
       terrain = await pending;
       assert.ok(idle.slices > 1);
       const record = terrain.userData.coastGeometry,
@@ -206,7 +223,7 @@ test("actual prepared terrain hands buffers to settlement, caches withdrawal and
   };
   try {
     const pending = createEarthGeometry(base, EARTH, rendering, tour, () => false, true);
-    await idle.flush();
+    await idle.flush(pending);
     terrain = await pending;
     const record = terrain.userData.coastGeometry,
       cliff = record.cliff,
@@ -275,7 +292,7 @@ test("synchronous and non-scene producers retain the terrain-only compatibility 
       [renderingFor("balanced"), false],
     ]) {
       const pending = createEarthGeometry(base, EARTH, rendering, null, () => false, prepareOnly);
-      await idle.flush();
+      await idle.flush(pending);
       built.push(await pending);
     }
     for (const terrain of built) {

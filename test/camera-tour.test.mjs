@@ -92,9 +92,13 @@ const coastalTourOrder = TOUR_ORDER.flatMap((name) => [
   name,
   ...COAST_SHOTS.filter((shot) => shot.after === name).map((shot) => shot.name),
 ]);
-const tourShots = TOUR_ORDER.filter((name) => !coastNames.includes(name)).map((name) =>
-  allShots.find((shot) => shot.name === name),
-);
+// These timing fixtures explicitly start on The watch, while ordinary visitors
+// start at the rotated tour's Lantern study anchor.
+const watchAt = TOUR_ORDER.indexOf("The watch");
+const fixtureOrder = [...TOUR_ORDER.slice(watchAt), ...TOUR_ORDER.slice(0, watchAt)];
+const tourShots = fixtureOrder
+  .filter((name) => !coastNames.includes(name))
+  .map((name) => allShots.find((shot) => shot.name === name));
 
 const tourHolds = tourShots.map((shot) => shot.hold),
   tourNames = tourShots.map((shot) => shot.name);
@@ -120,6 +124,32 @@ test("tour defaults to per-shot holds even when a link chooses its opening compo
   f.dispose();
 });
 
+test("opening preparation holds the native dwell and reset grants a full visible hold", () => {
+  const f = setup(TOUR_PER_SHOT);
+  f.controller.setPreviewShot("tree", 1);
+  assert.equal(f.tour.nextShot.name, "Close-up");
+  assert.equal(f.tour.nextShot.subject, "tree");
+  assert.equal(f.tour.nextShot.angle, 2);
+  assert.equal(f.tour.nextShot.shot, DIRECTED_SHOTS.tree[2]);
+  assert.equal(f.render(0, { ready: false }), 0);
+  assert.equal(f.render(90, { ready: false }), 0);
+  assert.equal(f.tour.running, false);
+  f.tour.reset();
+  assert.equal(f.render(100), 0, "hidden preparation time is not a camera phase");
+  assert.equal(f.tour.running, true);
+  const hold = DIRECTED_SHOTS.tree[1].hold;
+  close(f.render(100 + hold / 2), 0.5);
+  assert.equal(f.render(100 + hold), 1);
+  assert.equal(f.transition.capture, true);
+  f.tour.reset();
+  assert.equal(f.render(200), 0);
+  idle(f);
+  assert.equal(f.name, "Lantern study", "reset does not select another shot");
+  f.tour.dispose();
+  assert.equal(f.tour.nextShot, null);
+  f.dispose();
+});
+
 test("the five tour views wrap with small drift and cached repeat framing", () => {
   for (const interval of [3, 5]) {
     const f = setup(interval);
@@ -132,7 +162,7 @@ test("the five tour views wrap with small drift and cached repeat framing", () =
     assert.equal(f.camera.position.y, firstPosition.y);
     const names = [f.name];
     assert.equal(f.tour.state.total, 5);
-    assert.equal(f.tour.state.index, 1);
+    assert.equal(f.tour.state.index, watchAt + 1);
     let captured = null;
     f.run(interval * 0.5, interval * 5 + 0.5, () => {
       const { capture, cut } = f.transition;
@@ -140,7 +170,7 @@ test("the five tour views wrap with small drift and cached repeat framing", () =
         assert.ok(captured, "a capture frame precedes every cut");
         assert.notEqual(f.name, captured, "the cut changes the shot");
         names.push(f.name);
-        assert.equal(f.tour.state.index, ((names.length - 1) % 5) + 1);
+        assert.equal(f.tour.state.index, ((watchAt + names.length - 1) % 5) + 1);
       }
       captured = capture ? f.name : null;
     });
@@ -473,7 +503,7 @@ test("unavailable subjects are skipped, loading holds, and disposal blocks later
   f.dispose();
 });
 
-test("a URL's shot outside the tour holds the fallback, then is followed by The watch", () => {
+test("a URL's shot outside the tour holds the fallback, then is followed by Lantern study", () => {
   // Every directed shot is a tour shot now; one appended to the watch's list without a hold
   // (a URL's angle) stands in for a shot outside it.
   const probe = { ...DIRECTED_SHOTS.watch[0], name: "Off-tour probe", hold: undefined };
@@ -491,18 +521,18 @@ test("a URL's shot outside the tour holds the fallback, then is followed by The 
     f.render(7);
     assert.equal(f.transition.capture, true);
     f.render(7.05);
-    assert.equal(f.name, "The watch");
-    assert.equal(f.controller.angle, 0);
+    assert.equal(f.name, "Lantern study");
+    assert.equal(f.controller.angle, 1);
     assert.equal(f.tour.state.index, 1);
     f.dispose();
-    // Skipped on, it too is followed by The watch.
+    // Skipped on, it too is followed by Lantern study.
     const g = setup(TOUR_PER_SHOT);
     assert.equal(g.controller.setPreviewShot("watch", angle), true);
     g.render(0);
     assert.equal(g.name, "Off-tour probe");
     g.tour.next();
     g.render(1);
-    assert.equal(g.name, "The watch");
+    assert.equal(g.name, "Lantern study");
     assert.equal(g.tour.state.index, 1);
     idle(g);
     g.dispose();
@@ -511,9 +541,9 @@ test("a URL's shot outside the tour holds the fallback, then is followed by The 
   }
 });
 
-test("the tour order opens on The watch, then the tree's four, and keeps Lantern study from Root and lantern", () => {
+test("the tour rotates to Lantern study while preserving every shot and circular adjacency", () => {
   assert.ok(Object.isFrozen(TOUR_ORDER));
-  assert.equal(TOUR_ORDER[0], "The watch");
+  assert.equal(TOUR_ORDER[0], "Lantern study");
   assert.equal(new Set(TOUR_ORDER).size, TOUR_ORDER.length);
   const subjects = new Map(
     Object.entries(DIRECTED_SHOTS).flatMap(([subject, shots]) =>
@@ -529,24 +559,24 @@ test("the tour order opens on The watch, then the tree's four, and keeps Lantern
     assert.equal(TOUR_ORDER.includes(name), shot.tour !== false, `${name} membership`);
   // Every one of the fault's shots is in the tour, none beside another, none first.
   assert.deepEqual(coastalTourOrder, [
-    "The watch",
-    "Portrait",
-    "The broken coast",
     "Lantern study",
     "The falls",
     "Close-up",
     "Root and lantern",
     "Over the fault",
+    "The watch",
+    "Portrait",
+    "The broken coast",
   ]);
   coastalTourOrder.forEach((name, i) => {
     const next = coastalTourOrder[(i + 1) % coastalTourOrder.length];
     assert.ok(!(coastNames.includes(name) && coastNames.includes(next)), `${name} then ${next}`);
   });
-  // Before the sea lands: the sky over the watch, then the tree's four shots.
+  // The five land anchors retain their subjects and circular adjacency.
   const land = TOUR_ORDER.filter((name) => !coastNames.includes(name));
   assert.deepEqual(
     land.map((name) => subjects.get(name).subject),
-    ["watch", "tree", "tree", "tree", "tree"],
+    ["tree", "tree", "tree", "watch", "tree"],
   );
   const pairs = land.map((name, i) => [name, land[(i + 1) % land.length]]);
   for (const [a, b] of pairs)
@@ -724,7 +754,11 @@ test("the fault's shots join the tour when the sea lands, frame themselves from 
     assert.deepEqual(names(), tourNames);
     DIRECTED_SHOTS.tree.push(...coast);
     assert.equal(f.tour.state.total, coastalTourOrder.length);
-    assert.deepEqual(names(), coastalTourOrder);
+    const start = coastalTourOrder.indexOf("The watch");
+    assert.deepEqual(names(), [
+      ...coastalTourOrder.slice(start),
+      ...coastalTourOrder.slice(0, start),
+    ]);
     // A coast shot looks at its aim from its reach and rise, its shadow on the land.
     for (const shot of coast) {
       assert.ok(f.controller.setPreviewShot("tree", DIRECTED_SHOTS.tree.indexOf(shot)));

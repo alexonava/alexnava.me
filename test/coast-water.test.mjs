@@ -406,8 +406,9 @@ test("the falls' run takes the shelf's rapids on the ground's clock, so they mee
     }),
     fragment = falls.material.fragmentShader;
   assert.equal(falls.material.uniforms.fallsFlow, flowClock);
-  assert.ok(fragment.includes(rapidsGlsl("fallsRp", rapidsFrame(drop))));
-  assert.ok(fragment.includes("vec4 rp=fallsRpRapids(rpU.y,rpA,a,fallsFlow,rpFP)*(1.-fall);"));
+  assert.ok(fragment.includes(rapidsGlsl("fallsRp", rapidsFrame(drop), RAPIDS, "coastStudy")));
+  assert.ok(fragment.includes("float rpR=a;if(coastStudy>.5){rpR=abs(rpU.y)/"));
+  assert.ok(fragment.includes("vec4 rp=fallsRpRapids(rpU.y,rpA,rpR,fallsFlow,rpFP)*(1.-fall);"));
   falls.dispose();
   const alone = createFalls({ lib, clock, rendering: rendering(), drop, height: () => 1.25 });
   assert.equal(

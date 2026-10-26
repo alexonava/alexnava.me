@@ -41,6 +41,14 @@ Lighthouse (`lighthouserc.json`) audits the homepage from the built `dist/` thre
 
 `deploy.yml` runs on pushes to `main` and manual runs, in one job in the `production` environment. Before publishing it installs, audits, checks formatting, verifies, tests and builds, as CI's `build` job does, then checks the credentials. It does not run Lighthouse: that gate runs only in `ci.yml`, on pull requests and manual runs. `cloudflare-audit.yml` runs weekly. CodeQL uses GitHub's default setup, not a workflow.
 
+## Opening and tour review
+
+The query-free live page opens Lantern study. Before reviewing a release, compare a fresh first reveal with a warmed reference: the tree, supplied or fallback lantern, physical soil and water, root/bank details, nearby rocks and visible foreground must appear together. Loading consumes none of its six-second move. Check explicit Watch and tree links separately; their addresses and shot numbers retain their meanings.
+
+Compare all eight shots at native move start, quarter, middle, three-quarter and end on high and balanced, with desktop, tall, tablet and both phone orientations. Include full moving tours and the wrap back to Lantern study. Keep baseline and candidate distributions separate and bind captures to their exact source and output hashes. Camera-pose or deterministic-clock review copies are evidence tools; performance measurements and the three default Lighthouse runs use the normal production distribution and native timing.
+
+Exercise required missing assets, optional missing/late maps, hidden preparation, cancellation, saved pause, reduced motion, resize and graphics restoration. The functional opening gate ends a stalled attempt after 15 seconds without real download/build progress or 30 seconds of visible preparation; background time is excluded. An unsuccessful attempt retains the standalone title and Contact. Repeat the established contrast matrix and dense revised-path sweeps with Contact closed and open, retaining both rectangular and rendered-line measurements and every failure. Both methods must reach 5:1. Use quiet, warmed production runs for paired performance: three 20-second samples per shot on desktop high and phone balanced, no new automatic quality downgrade, at most 5% median and 10% p95 frame-time regression.
+
 ## Credentials
 
 Cloudflare credentials are two repository secrets: `CLOUDFLARE_API_TOKEN` (this account, `Account → Cloudflare Pages → Edit`) and `CLOUDFLARE_ACCOUNT_ID`. Each step that calls Cloudflare sets exactly those two in its own `env`; no job or workflow exposes them. The `preview` environment (approval by `alexonava`) and the `production` environment (`main` only) gate the jobs that use them.

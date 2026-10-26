@@ -6,20 +6,20 @@ export const TOUR_PER_SHOT = "shot";
 export const DEFAULT_TOUR_INTERVAL = TOUR_PER_SHOT;
 const TOUR_INTERVALS = [3, 5, 20];
 export const TOUR_HOLD_FALLBACK = 7;
-// The tour opens on The watch, the sky, then the tree's four shots in two
-// pairs, Portrait then Lantern study and Close-up then Root and lantern, each
+// The tour opens on Lantern study, then continues the existing circular sequence:
+// Close-up, Root and lantern, the sky, and Portrait. Each adjacent tree pair is
 // a change of height and bearing (Lantern study and Root and lantern nearly
 // share both, so they are kept apart); one sky shot, the owner's call of
 // 2026-10-20. The fault's three shots (ocean.js COAST_SHOTS) join once the sea has landed,
 // one between each pair and after the last: wide down the coast after
-// Portrait, the falls after Lantern study, and the bay from above to close
-// the loop.
+// Portrait, the falls after Lantern study, and the bay from above after
+// Root and lantern, before The watch.
 export const TOUR_ORDER = Object.freeze([
-  "The watch",
-  "Portrait",
   "Lantern study",
   "Close-up",
   "Root and lantern",
+  "The watch",
+  "Portrait",
 ]);
 // The tour's views as the lists stand: the fault's shots join the tree's when
 // the sea lands (ocean.js COAST_SHOTS), and until then the tour passes them by.
@@ -160,6 +160,15 @@ export function createCameraTour({
     get running() {
       return running();
     },
+    // Dynamic, so coastal withdrawal and a missing subject cannot leave a stale
+    // preparation target. This observes the same next view that advance takes.
+    get nextShot() {
+      if (disposed) return null;
+      const view = findNext(({ subject }) => camera.isAvailable(subject));
+      if (!view) return null;
+      const shot = DIRECTED_SHOTS[view.subject]?.[view.angle];
+      return { ...view, name: shot?.name ?? null, shot };
+    },
     get state() {
       const subject = camera.current,
         views = tourViews(),
@@ -177,11 +186,16 @@ export function createCameraTour({
         total: views.length,
       };
     },
-    update({ elapsedSeconds, reducedMotion = false, held: holding = false }) {
+    update({
+      elapsedSeconds,
+      reducedMotion = false,
+      held: holding = false,
+      ready: allowed = true,
+    }) {
       if (disposed) return null;
       reduced = reducedMotion;
       held = holding;
-      ready = camera.ready && camera.isAvailable(camera.current);
+      ready = allowed && camera.ready && camera.isAvailable(camera.current);
       const active = running();
       cut = false;
       if (!active) capturing = dissolving = false;
@@ -207,6 +221,15 @@ export function createCameraTour({
       return reduced ? 0.5 : Math.min(1, elapsed / hold());
     },
     setPaused,
+    // Startup can prepare a complete opener while held, then give it a full
+    // visible dwell. Resetting does not select a different view or public angle.
+    reset() {
+      if (disposed) return;
+      elapsed = 0;
+      prepared = false;
+      settle();
+      invalidate();
+    },
     toggle() {
       setPaused(!paused);
     },

@@ -122,8 +122,8 @@ export const ROCK_LIB = Object.freeze({
 
 const NO_ROCKS = Object.freeze([]);
 
-// Fetches rock-build.js once the scene has revealed, the film is on and the
-// tree channel has settled, on high and balanced only. Nothing about the rocks delays the reveal. terrain()
+// Fetches rock-build.js once revealed or explicitly preparing a hidden opening,
+// with the film on and the tree settled, on high and balanced only. terrain()
 // resolves to the prepared film sampler (film-scene.js ready). The chunk and
 // GLBs start while that sampler is preparing, wait for its coastal commit before placement, and
 // takes the stable film height even if film withdraws during those loads.
@@ -139,19 +139,81 @@ export function createRockScatter({
     revealed = false,
     started = false,
     disposed = false,
-    rocks = null;
+    rocks = null,
+    preparing = false,
+    openingDone = false,
+    opening = null,
+    openingTimeout = 8000,
+    openingPoll = null,
+    lastStatus = null,
+    finishOpening = () => {};
+  const pendingLoads = new Set();
+  function openingAsset(url, request) {
+    const loadAsset = options.loadAsset ?? loadArchitectureAsset;
+    if (!preparing) return loadAsset(url, request);
+    return new Promise((resolve, reject) => {
+      const abort = new AbortController();
+      let ended = false,
+        timer;
+      const clean = () => {
+        clearTimeout(timer);
+        pendingLoads.delete(cancel);
+        request.signal?.removeEventListener("abort", cancel);
+      };
+      const cancel = () => {
+        if (ended) return;
+        ended = true;
+        clean();
+        abort.abort();
+        reject(new Error("Optional opening rock deadline"));
+      };
+      pendingLoads.add(cancel);
+      request.signal?.addEventListener("abort", cancel, { once: true });
+      timer = setTimeout(cancel, openingTimeout);
+      if (request.signal?.aborted) cancel();
+      if (ended) return;
+      Promise.resolve()
+        .then(() => loadAsset(url, { ...request, signal: abort.signal }))
+        .then(
+          (asset) => {
+            if (ended) {
+              if (!asset?.scene) return;
+              const resources = collectResources(asset);
+              for (const [kind, set] of Object.entries(resources))
+                if (kind !== "bitmaps") set.forEach((resource) => resource.dispose?.());
+              resources.bitmaps?.forEach((bitmap) => bitmap.close?.());
+              return;
+            }
+            ended = true;
+            clean();
+            resolve(asset);
+          },
+          (error) => {
+            if (ended) return;
+            ended = true;
+            clean();
+            reject(error);
+          },
+        );
+    });
+  }
+  const status = (value) => {
+    lastStatus = value.status;
+    onStatus(value);
+    if (["ready", "fallback"].includes(value.status)) finishOpening();
+  };
   function start() {
     if (
       started ||
       disposed ||
       !film ||
       !settled ||
-      !revealed ||
+      (!revealed && !preparing) ||
       !["high", "balanced"].includes(tier)
     )
       return;
     started = true;
-    onStatus({ status: "loading", tier });
+    status({ status: "loading", tier });
     // Observe both stages even if the chunk fails or the owner is disposed.
     // Neither terrain preparation nor its eventual cut delays the downloads.
     const groundHeight = Promise.resolve()
@@ -162,14 +224,45 @@ export function createRockScatter({
       .then(load)
       .then(({ createRocks }) => {
         if (disposed) return;
-        rocks = createRocks(ROCK_LIB, { ...options, groundHeight, tier, onStatus });
+        rocks = createRocks(ROCK_LIB, {
+          ...options,
+          groundHeight,
+          tier,
+          onStatus: status,
+          loadAsset: openingAsset,
+        });
         rocks.setFilmActive(film);
       })
       .catch(() => {
-        if (!disposed) onStatus({ status: "fallback", tier });
+        if (!disposed) status({ status: "fallback", tier });
       });
   }
   return {
+    // Optional asset requests settle within eight seconds. Already loaded
+    // assets may wait for required terrain without spending that allowance.
+    prepareOpening({ timeoutMs = 8000 } = {}) {
+      if (opening) return opening;
+      if (disposed || !["high", "balanced"].includes(tier)) return Promise.resolve(true);
+      if (["ready", "fallback"].includes(lastStatus)) return Promise.resolve(true);
+      preparing = true;
+      openingTimeout = timeoutMs;
+      opening = new Promise((resolve) => {
+        finishOpening = () => {
+          openingDone = true;
+          clearTimeout(openingPoll);
+          finishOpening = () => {};
+          resolve(true);
+        };
+        const poll = () => {
+          if (disposed) return finishOpening();
+          start();
+          rocks?.take({ running: false, nowMs: performance.now() });
+          if (!openingDone && !rocks?.committed) openingPoll = setTimeout(poll, 16);
+        };
+        poll();
+      });
+      return opening;
+    },
     get committed() {
       return rocks?.committed === true;
     },
@@ -194,11 +287,13 @@ export function createRockScatter({
       start();
     },
     take(frame) {
-      return rocks?.take(frame) ?? false;
+      return rocks?.take(frame?.preparing ? { ...frame, running: false } : frame) ?? false;
     },
     dispose() {
       if (disposed) return false;
       disposed = true;
+      finishOpening();
+      for (const cancel of [...pendingLoads]) cancel();
       rocks?.dispose();
       return true;
     },

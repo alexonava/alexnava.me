@@ -290,8 +290,8 @@ function fingerprintChunks({ basename, entry: source }, { metafile, outputFiles 
   }));
 }
 
-// The scene loads every role. The UI requests only the startup tier's tree
-// beside the scene bundle, so it names only that: the other roles' hashes (the
+// The scene loads every role. The UI can request the startup tree and lantern
+// beside the scene bundle, so it names only those: the other roles' hashes (the
 // rocks among them) then never change the UI bundle.
 // Returns the published scripts, entry first, as [{ name, text, lazy }].
 async function buildScriptBundle(
@@ -304,8 +304,10 @@ async function buildScriptBundle(
 ) {
   const options = scriptBuildOptions(entry, split);
   const { urls, sizes } = architecture ?? (await architectureAssetManifest());
-  const treeOnly = (manifest) =>
-    Object.fromEntries(Object.entries(manifest).map(([tier, { tree }]) => [tier, { tree }]));
+  const openingModels = (manifest) =>
+    Object.fromEntries(
+      Object.entries(manifest).map(([tier, { tree, lantern }]) => [tier, { tree, lantern }]),
+    );
   // The scene manifests are string literals that the scene parses: an
   // object-valued define becomes a virtual module that splitting places in the
   // shared Three.js chunk, so each model or map revision would change its URL.
@@ -324,10 +326,10 @@ async function buildScriptBundle(
           ),
         }
       : {
-          __BABEL_ARCHITECTURE_PREFETCH_URLS__: JSON.stringify(treeOnly(urls)),
+          __BABEL_ARCHITECTURE_PREFETCH_URLS__: JSON.stringify(openingModels(urls)),
           // The same files' sizes, which the title card's loading line
           // (src/ui/scene-loader.js) counts each download against.
-          __BABEL_ARCHITECTURE_PREFETCH_BYTES__: JSON.stringify(treeOnly(sizes)),
+          __BABEL_ARCHITECTURE_PREFETCH_BYTES__: JSON.stringify(openingModels(sizes)),
           __BABEL_SCENE_MODULE_PRELOADS__: JSON.stringify(sceneModulePreloads ?? []),
           __BABEL_WEBGL_PROBE_URL__: JSON.stringify(webglProbeUrl ?? ""),
           __BABEL_DOORS_URL__: JSON.stringify(doorsUrl ?? ""),

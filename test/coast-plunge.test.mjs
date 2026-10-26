@@ -140,10 +140,11 @@ test("plunge backwash clears the steady shore blanket while retaining the impact
         wash(pr, boil, lace, smoothstep, mix),
         Math.max,
       );
+  const initialShore = /\bfloat\s+k\s*=[^;\n]*?\bshore\s*=\s*([\d.]+)\s*(?=[,;])/.exec(fragment);
   assert.ok(
-    fragment.indexOf("shore=1.;") >= 0 &&
-      fragment.indexOf("shore=1.;") <
-        fragment.indexOf("if(seaFalls.w>0.)", fragment.indexOf("shore=1.;")),
+    initialShore &&
+      Number(initialShore[1]) === 1 &&
+      initialShore.index < fragment.indexOf("if(seaFalls.w>0.)", initialShore.index),
     "without a pool the shore starts unchanged",
   );
   assert.ok(

@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
+import vm from "node:vm";
+import { cameraPreparationSignatures } from "./support/camera-preparation.mjs";
+import { createCameraPreparation } from "../src/scene/preparation-tasks.js";
 import { sceneGround } from "./support/ground.mjs";
 import {
   BoxGeometry,
@@ -16,6 +20,7 @@ import {
   chooseCinematicAngle,
   cinematicSafeArea,
   createCinematicCamera,
+  loadPreparationTasks,
   isStackedLayout,
   layoutRect,
   letterboxShare,
@@ -27,6 +32,8 @@ import {
   fitPoses,
   fitShot,
   measureShot,
+  measureShotSteps,
+  fitShotSteps,
   MOVE_PHASES,
   resolveDirectedShot,
   shotPose,
@@ -67,20 +74,18 @@ function setup(selected = "watch", width = 1440, height = 900, angle = 0) {
   };
 }
 
-test("every ordinary visit opens The watch while explicit subject URLs remain valid", () => {
+test("ordinary visits open Lantern study while explicit and legacy subject URLs remain valid", () => {
   const unexpectedRandom = () => {
     throw new Error("opening composition must not use RNG");
   };
+  for (const query of ["", "?quality=high", "?architecture=classic", "?setting=previous"])
+    assert.equal(chooseCinematicView(query, unexpectedRandom), "tree");
   for (const query of [
-    "",
-    "?quality=high",
     "?view=unknown",
     // The lookout's own view left with it: its old URLs open The watch.
     "?view=tower",
     "?angle=3",
     "?view=orbit",
-    "?architecture=classic",
-    "?setting=previous",
   ])
     assert.equal(chooseCinematicView(query, unexpectedRandom), "watch");
   for (const view of ["watch", "tree"])
@@ -141,7 +146,10 @@ test("valid angle overrides remain reproducible and missing or invalid angles se
       "?angle=2.5",
       "?angle=invalid",
     ])
-      assert.equal(chooseCinematicAngle(query, view, unexpectedRandom), 0);
+      assert.equal(
+        chooseCinematicAngle(query, view, unexpectedRandom),
+        query === "" && view === "tree" ? 1 : 0,
+      );
 });
 
 test("short landscape uses a side-by-side safe area instead of backing out below the hero", () => {
@@ -374,13 +382,13 @@ test("prepare measures, then fits, a shot ahead of its cut without touching the 
   ];
   const frame = f.controller.frame,
     counts = { ...f.counts };
-  assert.equal(f.controller.prepare("tree", 0, 1440, 900), "pending");
+  assert.equal(f.controller.prepare("tree", 0, 1440, 900, createCameraPreparation), "pending");
   assert.ok(f.counts.boxes > counts.boxes, "the first step measures");
   assert.equal(f.counts.ground, counts.ground, "and does not fit yet");
-  assert.equal(f.controller.prepare("tree", 0, 1440, 900), "ready");
+  assert.equal(f.controller.prepare("tree", 0, 1440, 900, createCameraPreparation), "ready");
   assert.ok(f.counts.ground > counts.ground, "the second step fits");
   const prepared = { ...f.counts };
-  assert.equal(f.controller.prepare("tree", 0, 1440, 900), "ready");
+  assert.equal(f.controller.prepare("tree", 0, 1440, 900, createCameraPreparation), "ready");
   assert.deepEqual(f.counts, prepared, "a prepared shot is cached");
   assert.deepEqual(
     [
@@ -400,6 +408,95 @@ test("prepare measures, then fits, a shot ahead of its cut without touching the 
   assert.equal(f.controller.shot.name, "Portrait");
   assert.deepEqual(f.counts, prepared, "the cut does no measuring or fitting");
   f.dispose();
+});
+
+test("a hidden opening applies its exact camera only after cooperative preparation", async () => {
+  await loadPreparationTasks();
+  const f = terrainSetup(390, 844),
+    reference = terrainSetup(390, 844);
+  let pending = 0;
+  const before = [f.camera.position.toArray(), f.camera.fov, f.fog.near, f.fog.far];
+  try {
+    for (const fixture of [f, reference]) fixture.controller.setPreviewShot("tree", 1);
+    let applied = false;
+    for (let attempts = 0; !applied && attempts < 1000; attempts++) {
+      applied = f.controller.apply({
+        width: 390,
+        height: 844,
+        elapsedSeconds: 0,
+        tourPhase: 0,
+        prepare: () => pending++,
+      });
+      if (!applied) {
+        assert.equal(f.controller.frame, null);
+        assert.deepEqual(
+          [f.camera.position.toArray(), f.camera.fov, f.fog.near, f.fog.far],
+          before,
+        );
+      }
+    }
+    assert.equal(applied, true);
+    assert.ok(pending > 0, "the first measure yields before fitting");
+    reference.controller.apply({ width: 390, height: 844, elapsedSeconds: 0, tourPhase: 0 });
+    const pose = (fixture) => [
+      fixture.camera.position.toArray(),
+      fixture.camera.fov,
+      [...fixture.camera.projectionMatrix.elements],
+      fixture.fog.near,
+      fixture.fog.far,
+      fixture.controller.frame.distance,
+      fixture.controller.frame.cameraY,
+    ];
+    assert.deepEqual(pose(f), pose(reference), "the first applied pose is numerically identical");
+  } finally {
+    f.dispose();
+    reference.dispose();
+  }
+});
+
+test("hidden camera preparation discards a stale viewport and visible cuts stay synchronous", async () => {
+  await loadPreparationTasks();
+  const f = terrainSetup(1440, 900),
+    reference = terrainSetup(390, 844);
+  try {
+    for (const fixture of [f, reference]) fixture.controller.setPreviewShot("tree", 0);
+    assert.equal(
+      f.controller.apply({ width: 1440, height: 900, tourPhase: 0, prepare() {} }),
+      false,
+    );
+    let applied = false;
+    for (let attempts = 0; !applied && attempts < 1000; attempts++)
+      applied = f.controller.apply({ width: 390, height: 844, tourPhase: 0, prepare() {} });
+    assert.equal(applied, true);
+    reference.controller.apply({ width: 390, height: 844, tourPhase: 0 });
+    assert.deepEqual(f.camera.position.toArray(), reference.camera.position.toArray());
+    assert.equal(f.controller.frame.distance, reference.controller.frame.distance);
+    f.controller.prepare = () => assert.fail("visible cuts must retain their synchronous path");
+    f.controller.setPreviewShot("tree", 2);
+    assert.equal(f.controller.apply({ width: 844, height: 390, tourPhase: 0 }), true);
+  } finally {
+    f.dispose();
+    reference.dispose();
+  }
+});
+
+test("unavailable cooperative preparation retains the synchronous camera fallback", () => {
+  const f = terrainSetup(390, 844);
+  try {
+    f.controller.setPreviewShot("tree", 1);
+    f.controller.prepare = () => "unavailable";
+    assert.equal(
+      f.controller.apply({
+        width: 390,
+        height: 844,
+        tourPhase: 0,
+        prepare: () => assert.fail("an unavailable helper cannot hold opening"),
+      }),
+      true,
+    );
+  } finally {
+    f.dispose();
+  }
 });
 
 test("prepare reports unavailable subjects, invalid angles and disposed controllers", () => {
@@ -461,10 +558,13 @@ test("an anchored tour shot keeps its fit through an address bar while its reach
     locked = f.controller.frame;
   // Portrait sets the tree on the phone's lower third, a little left of centre, and lifts the
   // camera to look over the root at the lantern.
-  assert.deepEqual(shot.anchor, [0.39, 0.66]);
+  assert.deepEqual(shot.anchor, [0.41, 0.62]);
   assert.equal(shot.height, 0.38);
   const a = cinematicSafeArea(390, 844, f.hero, { top: 844 - 110 }),
-    reach = a.top + a.height * 0.66 + Math.min(1, shot.margin / (1 - PUSH_IN)) * a.height * 0.34,
+    reach =
+      a.top +
+      a.height * shot.anchor[1] +
+      Math.min(1, shot.margin / (1 - PUSH_IN)) * a.height * (1 - shot.anchor[1]),
     edge = Math.ceil(reach + 16);
   f.apply(390, edge + 1);
   assert.equal(f.controller.frame, locked, "kept while its reach stays on the canvas");
@@ -1230,7 +1330,12 @@ test("the five directed shots keep their names and distinct viewpoints", () => {
   const keys = new Set(all.map((s) => `${s.azimuth}/${s.height}/${s.region.join()}`));
   assert.equal(keys.size, 5);
   for (const shot of all) {
-    assert.ok(shot.height >= 0.1 && shot.height <= 0.7);
+    // Camera heights follow the selected subject's scale: the wider root
+    // companion stands above the small lantern rather than above the tree.
+    if (shot.name === "Root and lantern") {
+      assert.equal(shot.subject, "tree-lantern");
+      assert.ok(shot.height >= 1 && shot.height <= 3);
+    } else assert.ok(shot.height >= 0.1 && shot.height <= 0.7);
     assert.ok(shot.fov >= 30 && shot.fov <= 46);
   }
 });
@@ -1451,12 +1556,12 @@ test("widescreen bars cut desktops to 2.39:1, never phones, portrait, narrow or 
   const phone = cinematicSafeArea(390, 844, { right: 299, bottom: 177 }, { top: 738 });
   assert.equal(phone.top, 201);
 
-  // The bars pick a shot's letterbox variant, built once; shots without one keep their base
-  // form. No directed shot carries one: the tour's shots frame every desktop alike (a probe
-  // below takes the variant's path).
+  // The bars pick a shot's letterbox variant, built once; shots without one
+  // keep their base form. The wider root companion adjusts its eye height
+  // and scale inside the bars, without changing the protected lantern view.
   assert.deepEqual(
     [...DIRECTED_SHOTS.watch, ...DIRECTED_SHOTS.tree].filter((s) => s.letterbox).map((s) => s.name),
-    [],
+    ["Root and lantern"],
   );
   for (const base of [
     ...DIRECTED_SHOTS.watch,
@@ -1480,4 +1585,84 @@ test("widescreen bars cut desktops to 2.39:1, never phones, portrait, narrow or 
     [1024, 768],
   ])
     assert.ok(height > 500 && letterboxShare(width, height) > 0);
+});
+
+test("cooperative preparation preserves all sixty original delivered-tier camera and measurement signatures", () => {
+  const baseline = JSON.parse(
+    readFileSync(new URL("./support/camera-preparation-baseline.json", import.meta.url), "utf8"),
+  );
+  assert.equal(baseline.source, "6f592625e1d74aa10b37db48dcfb27524260e542");
+  assert.deepEqual(
+    cameraPreparationSignatures(
+      {
+        createCinematicCamera,
+        cinematicSafeArea,
+        measureShot,
+        measureShotSteps,
+      },
+      createCameraPreparation,
+    ),
+    baseline.signatures,
+  );
+});
+
+test("measurement and fit generators expose many bounded steps without changing their synchronous result", () => {
+  const root = new Mesh(new BoxGeometry(4, 20, 4, 32, 32, 32), new MeshBasicMaterial()),
+    shot = DIRECTED_SHOTS.tree[0],
+    measured = measureShot(root, shot),
+    steps = measureShotSteps(root, shot);
+  let count = 0,
+    result;
+  for (;;) {
+    const next = steps.next();
+    if (next.done) {
+      result = next.value;
+      break;
+    }
+    count++;
+  }
+  assert.ok(count > 64, `${count} triangle batches`);
+  assert.deepEqual(result, measured);
+  const area = cinematicSafeArea(1440, 900),
+    fit = fitShot(measured, shot, area, 1440, 900),
+    fitting = fitShotSteps(measured, shot, area, 1440, 900);
+  count = 0;
+  for (;;) {
+    const next = fitting.next();
+    if (next.done) {
+      result = next.value;
+      break;
+    }
+    count++;
+  }
+  assert.ok(count > 64, `${count} projection/point batches`);
+  assert.deepEqual(result, fit);
+  root.geometry.dispose();
+  root.material.dispose();
+});
+
+test("a rejected lazy camera helper settles as unavailable without retrying forever", async () => {
+  const source = readFileSync(new URL("../src/scene/cinematic.js", import.meta.url), "utf8"),
+    begin = source.indexOf("    prepare(kind, nextAngle, width, height, factory"),
+    end = source.indexOf("    get shot()", begin);
+  let requests = 0;
+  const context = vm.createContext({
+    DIRECTED_SHOTS: { tree: [{}] },
+    cameraPreparation: undefined,
+    controller: null,
+    preparation: null,
+    loadPreparationTasks: () => {
+      requests++;
+      context.cameraPreparation = false;
+      return Promise.reject(new Error("blocked helper"));
+    },
+  });
+  context.controller = new vm.Script(
+    `({isAvailable:()=>true, ${source.slice(begin, end)}})`,
+  ).runInContext(context);
+  assert.equal(context.controller.prepare("tree", 0, 1440, 900), "pending");
+  await Promise.resolve();
+  assert.equal(context.controller.prepare("tree", 0, 1440, 900), "unavailable");
+  assert.equal(context.controller.prepare("tree", 0, 1440, 900), "unavailable");
+  assert.equal(requests, 1);
 });

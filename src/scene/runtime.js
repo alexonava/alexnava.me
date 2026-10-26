@@ -1,5 +1,9 @@
 const DEFAULT_FRAME_SECONDS = 1 / 60;
-const REFRESH_RATES = [30, 48, 50, 60, 72, 75, 90, 100, 120, 144, 165, 180, 240, 360];
+const REFRESH_RATES = [30, 48, 50, 60, 72, 75, 90, 100, 120, 144, 165, 175, 180, 240, 360];
+
+function requireFunction(value, message) {
+  if (typeof value !== "function") throw new TypeError(message);
+}
 
 function clampFrameSeconds(value, maximum) {
   if (!Number.isFinite(value) || value < 0) return 0;
@@ -18,16 +22,19 @@ export function renderDivisor(hz, { baseRate = 60, round = "floor" } = {}) {
 }
 
 /**
- * Estimates the display's refresh rate from rAF intervals. Every 16 samples
- * the 30th percentile of the last 32 is snapped to a common rate within 4%;
- * two agreeing estimates adopt it. Estimation never stops, so a monitor
- * switch or an LTPO rate change is followed. reset() drops the samples and
- * keeps the adopted rate; hz is 0 until one is adopted.
+ * Estimates refresh from rAF intervals. Every 16 samples, the last 32 give
+ * a mean tick period: their 30th percentile identifies missed-vsync multiples,
+ * not the rate itself, so short callback jitter cannot bias it upward.
+ * Estimates snap to common rates within 4%. Two agreeing estimates adopt a
+ * new rate; neighboring rates within 10% need eight to avoid cadence changes
+ * from brief jitter. Estimation follows monitor and LTPO changes. reset()
+ * drops samples and confirmations, keeping the adopted rate; hz starts at 0.
  */
 export function createRefreshEstimator() {
   const intervals = new Float64Array(32);
   const sorted = new Float64Array(32);
   let candidate = 0;
+  let confirmations = 0;
   let count = 0;
   let fresh = 0;
   let hz = 0;
@@ -38,7 +45,7 @@ export function createRefreshEstimator() {
       return hz;
     },
     reset() {
-      candidate = count = fresh = next = 0;
+      candidate = confirmations = count = fresh = next = 0;
     },
     sample(intervalMs) {
       if (!(intervalMs >= 2.5 && intervalMs <= 40)) return hz;
@@ -49,15 +56,23 @@ export function createRefreshEstimator() {
       fresh = 0;
       sorted.set(intervals);
       const window = sorted.subarray(0, count).sort();
-      const rate = 1000 / window[Math.floor((count - 1) * 0.3)];
+      const unit = window[Math.floor((count - 1) * 0.3)];
+      let ticks = 0,
+        duration = 0;
+      for (const step of window) {
+        ticks += Math.round(step / unit);
+        duration += step;
+      }
+      const rate = (1000 * ticks) / duration;
       let snapped = 0;
       for (const common of REFRESH_RATES) {
         const error = Math.abs(rate - common);
-        const nearest = !snapped || error < Math.abs(rate - snapped);
-        if (error <= common * 0.04 && nearest) snapped = common;
+        if (error <= common * 0.04 && error < Math.abs(rate - snapped)) snapped = common;
       }
-      if (snapped && snapped === candidate) hz = snapped;
+      confirmations = snapped && snapped === candidate ? confirmations + 1 : 1;
       candidate = snapped;
+      if (snapped && confirmations >= (hz && Math.abs(snapped / hz - 1) <= 0.1 ? 8 : 2))
+        hz = snapped;
       return hz;
     },
   };
@@ -93,12 +108,8 @@ export function createSceneFrameScheduler({
   requestFrame = globalThis.requestAnimationFrame?.bind(globalThis),
   targetFrameRate = 0,
 } = {}) {
-  if (typeof onUpdate !== "function") {
-    throw new TypeError("createSceneFrameScheduler requires onUpdate");
-  }
-  if (typeof requestFrame !== "function") {
-    throw new TypeError("createSceneFrameScheduler requires requestFrame");
-  }
+  requireFunction(onUpdate, "createSceneFrameScheduler requires onUpdate");
+  requireFunction(requestFrame, "createSceneFrameScheduler requires requestFrame");
 
   const stableStride = Math.max(1, Math.floor(frameStride || 1));
   const cadence = displayCadence || null;
@@ -483,9 +494,7 @@ export function createSceneResizeController({
   if (typeof onResize !== "function" || typeof readSize !== "function") {
     throw new TypeError("createSceneResizeController requires readSize and onResize");
   }
-  if (typeof requestFrame !== "function") {
-    throw new TypeError("createSceneResizeController requires requestFrame");
-  }
+  requireFunction(requestFrame, "createSceneResizeController requires requestFrame");
 
   let disposed = false;
   let frameHandle = null;
@@ -546,9 +555,7 @@ export function createPixelRatioWatcher({
   matchMedia = globalThis.matchMedia?.bind(globalThis),
   onChange,
 } = {}) {
-  if (typeof onChange !== "function") {
-    throw new TypeError("createPixelRatioWatcher requires onChange");
-  }
+  requireFunction(onChange, "createPixelRatioWatcher requires onChange");
   let disposed = false;
   let query = null;
 

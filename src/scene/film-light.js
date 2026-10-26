@@ -66,6 +66,7 @@ export const SHOT_LIGHT_DEFAULT = Object.freeze({
   glintText: 0,
   stoneText: 0,
   poolAbout: 0,
+  coastStudy: 0,
 });
 export function shotLight(shot) {
   return { ...SHOT_LIGHT_DEFAULT, ...(shot?.light ?? {}) };
@@ -73,6 +74,9 @@ export function shotLight(shot) {
 
 // A mutable lantern share the tree's practical multiplies (architecture.js).
 export const LANTERN_MOOD = { value: 1 };
+// Only the fault's three studies refine the shore response. The protected
+// lantern opening, other tree views and walk keep the established path at zero.
+export const COAST_MOOD = { value: 0 };
 
 // A lightning flash on the film ground's sky light and water (lightning.js),
 // read by the slate (mud-ground.js) and its puddle mirror (terrain-build.js).

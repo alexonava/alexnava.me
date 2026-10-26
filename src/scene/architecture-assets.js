@@ -384,6 +384,14 @@ export function createArchitectureAssetController({
   return {
     lifecycleOrder: 23,
     setQuality,
+    cancelOptional(kind, reason = "opening-deadline") {
+      if (disposed || kind !== "lantern") return false;
+      const channel = channels.find((entry) => entry.kind === kind);
+      if (!channel) return false;
+      stop(channel, true);
+      publish(channel, "fallback", reason);
+      return true;
+    },
     applyQuality(profile, context) {
       return setQuality(profile, live, context);
     },

@@ -668,7 +668,8 @@ test("the moon's shadow on the coast: the rock casts it, and the cliffs, the sta
     assert.ok(fragment.includes("seaSun=1.;c=mix(c,"));
   }
   assert.ok(cliff.material.fragmentShader.includes("seaSun=seaShadow(vW,n);"));
-  assert.ok(falls.material.fragmentShader.includes("seaSun=seaShadow(vW,n);"));
+  assert.ok(falls.material.fragmentShader.includes("vec3 shadowPoint=vW,shadowNormal=n;"));
+  assert.ok(falls.material.fragmentShader.includes("seaSun=seaShadow(shadowPoint,shadowNormal);"));
   assert.ok(falls.material.fragmentShader.includes("seaKeyColor*seaSun*(.25/SEA_PI+"));
   sea.dispose();
   cliff.dispose();

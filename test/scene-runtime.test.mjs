@@ -245,6 +245,35 @@ test("the refresh estimator snaps, adopts on two agreeing estimates and keeps it
   assert.equal(feed(1000 / 90, 16), 90);
 });
 
+test("callback jitter and missed vsyncs do not bias the refresh estimate upward", () => {
+  const estimator = createRefreshEstimator();
+  const offsets = [0, 0.2, 0, -0.1];
+  let ticks = 0,
+    previous = 0;
+  for (let sample = 1; sample <= 512; sample += 1) {
+    ticks += sample % 17 === 0 ? 2 : 1;
+    const timestamp = (ticks * 1000) / 175 + offsets[sample % offsets.length];
+    estimator.sample(timestamp - previous);
+    previous = timestamp;
+    if (sample >= 128) assert.equal(estimator.hz, 175, "one stable native cadence");
+  }
+});
+
+test("nearby-rate bursts keep cadence stable while sustained monitor changes are followed", () => {
+  const estimator = createRefreshEstimator();
+  const feed = (hz, samples) => {
+    for (let index = 0; index < samples; index += 1) estimator.sample(1000 / hz);
+    return estimator.hz;
+  };
+  assert.equal(feed(175, 32), 175);
+  for (let cycle = 0; cycle < 3; cycle += 1) {
+    for (const hz of [180, 175, 165, 175])
+      assert.equal(feed(hz, 64), 175, "a brief adjacent estimate cannot change the divisor");
+  }
+  assert.equal(feed(180, 160), 180, "a sustained nearby rate is adopted");
+  assert.equal(feed(60, 48), 60, "a large monitor change retains the existing response time");
+});
+
 // Steps a scheduler through display frames, each timestamp from at(frame).
 function runCadence({ round, frames: count, at, skip = () => false }) {
   const frames = createFrameHarness();
@@ -278,9 +307,11 @@ test("a display cadence renders every nth vsync, evenly, at common refresh rates
     [60, "floor", 1, 60],
     [90, "floor", 1, 90],
     [144, "floor", 2, 72],
+    [175, "floor", 2, 87.5],
     [240, "floor", 4, 60],
     [90, "ceil", 2, 45],
     [120, "ceil", 2, 60],
+    [175, "ceil", 3, 175 / 3],
   ]) {
     const vsync = 1000 / hz;
     const updates = runCadence({ round, frames: 2 * hz, at: (frame) => frame * vsync });
@@ -304,6 +335,18 @@ test("a display cadence renders every nth vsync, evenly, at common refresh rates
     intervals.every((interval) => Math.abs(interval - 2 * vsync) < 0.5),
     "72 fps, even",
   );
+});
+
+test("jitter around a native 175 Hz cadence does not alternate two- and three-vsync draws", () => {
+  const offsets = [0, 0.2, 0, -0.1];
+  const updates = runCadence({
+    round: "floor",
+    frames: 700,
+    at: (frame) => (frame * 1000) / 175 + offsets[frame % offsets.length],
+  });
+  const { count, intervals } = lastSecond(updates, 4000);
+  assert.ok(Math.abs(count - 87.5) <= 1, `${count} frames`);
+  assert.ok(intervals.every((interval) => Math.abs(interval - 2000 / 175) < 0.5));
 });
 
 test("a display cadence starts at the base rate, follows a monitor switch and never bursts", () => {
@@ -1417,6 +1460,7 @@ test("a shot's light mood merges over the neutral default and never shares it", 
     glintText: 0,
     stoneText: 0,
     poolAbout: 0,
+    coastStudy: 0,
   });
   for (const shot of [null, undefined, {}, { light: null }])
     assert.deepEqual(shotLight(shot), SHOT_LIGHT_DEFAULT);
@@ -1429,6 +1473,7 @@ test("a shot's light mood merges over the neutral default and never shares it", 
     glintText: 0,
     stoneText: 0,
     poolAbout: 0,
+    coastStudy: 0,
   });
   assert.notEqual(shotLight(null), SHOT_LIGHT_DEFAULT, "a fresh object each time");
   mood.key = 3;
@@ -1489,10 +1534,11 @@ test("a shot's light mood merges over the neutral default and never shares it", 
 
 test("each frame applies the shot's light, lens, bars and grain, holding the grain while still", () => {
   const index = flat(source("src/scene/index.js"));
+  assert.ok(index.includes("const { width, height } = viewport;"), "one size snapshot per frame");
   // The mood follows the shot on screen in film only.
   assert.ok(
     index.includes(
-      "const mood = shotLight(filmActive && cinematicApplied ? cinematic.shot : null); rendering.setShotLight?.(mood); if (LANTERN_MOOD.value !== mood.lantern) { LANTERN_MOOD.value = mood.lantern; treeArchitecture?.refreshLantern?.(); } GLINT_MOOD.value = filmActive ? mood.glintText : 0; GRASS_MOOD.value = filmActive ? mood.grassInside : 0;",
+      "const mood = shotLight(filmActive && cinematicApplied ? cinematic.shot : null); rendering.setShotLight?.(mood); if (LANTERN_MOOD.value !== mood.lantern) { LANTERN_MOOD.value = mood.lantern; treeArchitecture?.refreshLantern?.(); } COAST_MOOD.value = filmActive ? mood.coastStudy : 0; GLINT_MOOD.value = filmActive ? mood.glintText : 0; GRASS_MOOD.value = filmActive ? mood.grassInside : 0;",
     ),
   );
   // The ground's pool knee about Contact follows it too, off out of film.
@@ -1500,6 +1546,8 @@ test("each frame applies the shot's light, lens, bars and grain, holding the gra
     "groundContacts.slatePoolAbout.value = filmActive ? mood.poolAbout : 0;",
   );
   const moodAt = index.indexOf("const mood = shotLight(");
+  const coast = index.indexOf("COAST_MOOD.value = filmActive ? mood.coastStudy : 0;");
+  assert.ok(coast > moodAt && coast < index.indexOf("camera.updateMatrixWorld();", moodAt));
   assert.ok(pool > moodAt, "after the mood");
   assert.ok(pool < index.indexOf("camera.updateMatrixWorld();", moodAt), "in the mood's block");
   // So does the stones' lamplight knee behind the name and intro, on the
@@ -1526,7 +1574,7 @@ test("each frame applies the shot's light, lens, bars and grain, holding the gra
   // The bars ease out under the dissolve into the walk and back in after it (walk.js bars).
   assert.ok(
     index.includes(
-      "post.setBars?.(filmActive && (cinematicApplied || walking) ? letterboxShare(viewport.width, viewport.height) * (walk?.bars ?? 1) : 0);",
+      "post.setBars?.(filmActive && (cinematicApplied || walking) ? letterboxShare(width, height) * (walk?.bars ?? 1) : 0);",
     ),
   );
   // The grain's frame advances only while the scene moves: never under reduced
@@ -1551,7 +1599,7 @@ test("each frame applies the shot's light, lens, bars and grain, holding the gra
   // The kept rect ends short of the star beside it (lensKeepRect).
   assert.ok(
     index.includes(
-      "keep: shot && viewport.width >= 1000 && viewport.width > 1.2 * viewport.height ? lensKeepRect(LENS_FX.keep[shot.name], star, viewport.width / viewport.height, lensKeep) : null });",
+      "keep: shot && width >= 1000 && width > 1.2 * height ? lensKeepRect(LENS_FX.keep[shot.name], star, width / height, lensKeep) : null });",
     ),
   );
   // It reads the ground's own text boxes.

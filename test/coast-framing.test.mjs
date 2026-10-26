@@ -39,156 +39,211 @@ const layouts = [
   [844, 390, { right: 262, bottom: 138 }, { top: 316 }],
   [1280, 720, { right: 430, bottom: 570 }, { top: 638 }],
   [1920, 1080, { right: 534, bottom: 900 }, { top: 998 }],
+  [820, 1180, { left: 16, right: 323, top: 48, bottom: 226 }, { top: 1098 }],
+  [1080, 1920, { left: 16, right: 283, top: 1496, bottom: 1726 }, { top: 1838 }],
 ];
 
 for (const tier of ["high", "balanced"])
   for (const shifted of [false, true])
-    test(`${tier} complete falls and spray fit the live cinematic safe area${shifted ? " in a transformed estate" : ""}`, () => {
-      const estate = new Group(),
-        watch = new Mesh(new BoxGeometry(10, 30, 10), new MeshBasicMaterial()),
-        tree = new Mesh(new BoxGeometry(10, 20, 10), watch.material);
-      estate.position.set(shifted ? 13 : 0, -6.8, shifted ? -9 : 0);
-      if (shifted) {
-        estate.rotation.y = 0.17;
-        estate.scale.setScalar(1.06);
-      }
-      estate.add(watch, tree);
-      const falls = createFalls({
-          lib: {
-            MIST_UNIFORMS,
-            FLASH_GROUND: { babelFlash: { value: new Color() } },
-            RANGE_MIST: { value: { x: 0, y: 0, z: 0, w: 0 } },
-            SLATE_TEXT_GUARD: "",
-            MIST_PARS: "",
-          },
-          clock: dripClock({ value: 0 }),
-          rendering: { homeScene: new Scene(), tier },
-          drop: riverFalls(RIVER_LINE),
-          height: riverChannel(filmHeight(() => 0, true)).bed,
-        }),
-        coast = COAST_SHOTS.map((base) => coastShot(base, estate, falls)),
-        shot = coast.find((base) => base.frameFalls),
-        camera = new PerspectiveCamera(45, 1, 0.1, 450);
-      estate.add(falls.mesh);
-      DIRECTED_SHOTS.tree.push(...coast);
-      let area;
-      const controller = createCinematicCamera({
-        camera,
-        selected: "tree",
-        getSafeArea: () => area,
-      });
-      for (const [kind, root] of [
-        ["watch", watch],
-        ["tree", tree],
-      ]) {
-        controller.setSubject(kind, root);
-        controller.setStatus({ kind, status: "ready" });
-      }
-      const points = [];
-      // Assert actual delivered sheet vertices, independently of fit's point table.
-      const p = falls.mesh.geometry.attributes.position;
-      for (let i = 0; i < p.count; i++) points.push(new Vector3().fromBufferAttribute(p, i));
-      const sheetCount = points.length,
-        [x, z, radius] = falls.plunge,
-        sigma = radius * FALLS.spray[1],
-        spray = sigma * SPRAY_FIT,
-        centre = SEA.level + FALLS.spray[0];
-      // A denser independent contour than the fit's proxy: all of the
-      // shader's radial fan support and the spray's heart above sea (its
-      // thinner haze beyond may run past the frame, as a cloud does).
-      for (let turn = 0; turn < 96; turn++) {
-        const angle = (turn * Math.PI) / 48;
-        points.push(
-          new Vector3(
-            x + Math.cos(angle) * radius * 1.15,
-            SEA.level,
-            z + Math.sin(angle) * radius * 1.15,
-          ),
-        );
-        for (let row = 0; row <= 32; row++) {
-          const phi = (row * Math.PI) / 32,
-            y = centre + (Math.cos(phi) * spray) / 0.8;
-          if (y >= SEA.level)
-            points.push(
-              new Vector3(
-                x + Math.cos(angle) * Math.sin(phi) * spray,
-                y,
-                z + Math.sin(angle) * Math.sin(phi) * spray,
-              ),
-            );
+    for (const shotName of ["The falls", "Over the fault"])
+      test(`${tier} ${shotName} complete falls and spray fit the live cinematic safe area${shifted ? " in a transformed estate" : ""}`, () => {
+        const estate = new Group(),
+          watch = new Mesh(new BoxGeometry(10, 30, 10), new MeshBasicMaterial()),
+          tree = new Mesh(new BoxGeometry(10, 20, 10), watch.material);
+        estate.position.set(shifted ? 13 : 0, -6.8, shifted ? -9 : 0);
+        if (shifted) {
+          estate.rotation.y = 0.17;
+          estate.scale.setScalar(1.06);
         }
-      }
-      try {
-        // Resolve all short-landscape shots consecutively: a shared variant
-        // cache once reused the first shot's bound aim for its siblings and
-        // for a second estate. The two wide shots keep their original lenses.
-        area = cinematicSafeArea(844, 390, layouts[1][2], layouts[1][3]);
-        for (const bound of coast) {
-          assert.ok(controller.setPreviewShot("tree", DIRECTED_SHOTS.tree.indexOf(bound)));
-          controller.apply({ width: 844, height: 390, tourPhase: 0.5 });
-          estate.updateWorldMatrix(true, true);
-          assert.equal(controller.shot.name, bound.name);
-          assert.ok(
-            controller.target.distanceTo(
-              new Vector3(...bound.aim).applyMatrix4(estate.matrixWorld),
-            ) < 1e-8,
-            `${bound.name} keeps its own estate's target`,
+        estate.add(watch, tree);
+        const falls = createFalls({
+            lib: {
+              MIST_UNIFORMS,
+              FLASH_GROUND: { babelFlash: { value: new Color() } },
+              RANGE_MIST: { value: { x: 0, y: 0, z: 0, w: 0 } },
+              SLATE_TEXT_GUARD: "",
+              MIST_PARS: "",
+            },
+            clock: dripClock({ value: 0 }),
+            rendering: { homeScene: new Scene(), tier },
+            drop: riverFalls(RIVER_LINE),
+            height: riverChannel(filmHeight(() => 0, true)).bed,
+          }),
+          coast = COAST_SHOTS.map((base) => coastShot(base, estate, falls)),
+          shot = coast.find((base) => base.name === shotName),
+          camera = new PerspectiveCamera(45, 1, 0.1, 450);
+        estate.add(falls.mesh);
+        DIRECTED_SHOTS.tree.push(...coast);
+        let area;
+        const controller = createCinematicCamera({
+          camera,
+          selected: "tree",
+          getSafeArea: () => area,
+        });
+        for (const [kind, root] of [
+          ["watch", watch],
+          ["tree", tree],
+        ]) {
+          controller.setSubject(kind, root);
+          controller.setStatus({ kind, status: "ready" });
+        }
+        const points = [];
+        // Assert actual delivered sheet vertices, independently of fit's point table.
+        const p = falls.mesh.geometry.attributes.position;
+        for (let i = 0; i < p.count; i++) points.push(new Vector3().fromBufferAttribute(p, i));
+        const sheetCount = points.length,
+          [x, z, radius] = falls.plunge,
+          sigma = radius * FALLS.spray[1],
+          spray = sigma * SPRAY_FIT,
+          centre = SEA.level + FALLS.spray[0];
+        // A denser independent contour than the fit's proxy: all of the
+        // shader's radial fan support and the spray's heart above sea (its
+        // thinner haze beyond may run past the frame, as a cloud does).
+        for (let turn = 0; turn < 96; turn++) {
+          const angle = (turn * Math.PI) / 48;
+          points.push(
+            new Vector3(
+              x + Math.cos(angle) * radius * 1.15,
+              SEA.level,
+              z + Math.sin(angle) * radius * 1.15,
+            ),
           );
-          if (!bound.frameFalls)
-            assert.equal(camera.fov, bound.fov, `${bound.name} keeps its lens`);
-          assert.equal(controller.shot.hold, bound.hold);
-          assert.equal(controller.shot.move, null, "short-landscape variant remains still");
-        }
-        for (const [width, height, hero, nav] of layouts) {
-          area = cinematicSafeArea(width, height, hero, nav);
-          assert.ok(controller.setPreviewShot("tree", DIRECTED_SHOTS.tree.indexOf(shot)));
-          let lens;
-          for (let i = 0; i <= 40; i++) {
-            controller.apply({ width, height, elapsedSeconds: i, tourPhase: i / 40 });
-            camera.updateMatrixWorld();
-            estate.updateWorldMatrix(true, true);
-            lens ??= camera.fov;
-            assert.equal(camera.fov, lens, "one stable lens through the whole move");
-            let sheetTop = Infinity,
-              sheetBottom = -Infinity,
-              vertex = 0;
-            for (const local of points) {
-              const ndc = local.clone().applyMatrix4(estate.matrixWorld).project(camera),
-                sx = ((ndc.x + 1) * width) / 2,
-                sy = ((1 - ndc.y) * height) / 2;
-              if (vertex++ < sheetCount) {
-                sheetTop = Math.min(sheetTop, sy);
-                sheetBottom = Math.max(sheetBottom, sy);
-              }
-              assert.ok(
-                ndc.z > -1 && ndc.z < 1,
-                `${width}x${height} phase ${i / 40}: ${ndc.toArray()} eye ${camera.position.toArray()} target ${controller.target.toArray()}`,
-              );
-              assert.ok(
-                sx >= area.left &&
-                  sx <= area.left + area.width &&
-                  sy >= area.top &&
-                  sy <= area.top + area.height,
-                `${width}x${height} phase ${i / 40}: ${sx},${sy} outside ${JSON.stringify(area)}`,
-              );
-            }
-            if (width >= 1280)
-              assert.ok(
-                sheetBottom - sheetTop >= area.height * 0.35,
-                "the full falling sheet remains a readable close view",
+          for (let row = 0; row <= 32; row++) {
+            const phi = (row * Math.PI) / 32,
+              y = centre + (Math.cos(phi) * spray) / 0.8;
+            if (y >= SEA.level)
+              points.push(
+                new Vector3(
+                  x + Math.cos(angle) * Math.sin(phi) * spray,
+                  y,
+                  z + Math.sin(angle) * Math.sin(phi) * spray,
+                ),
               );
           }
         }
-      } finally {
-        for (const bound of coast)
-          DIRECTED_SHOTS.tree.splice(DIRECTED_SHOTS.tree.indexOf(bound), 1);
-        controller.dispose();
-        falls.dispose();
-        watch.geometry.dispose();
-        tree.geometry.dispose();
-        watch.material.dispose();
-      }
-    });
+        try {
+          // Resolve all short-landscape shots consecutively: a shared variant
+          // cache once reused the first shot's bound aim for its siblings and
+          // for a second estate. The two wide shots keep their original lenses.
+          area = cinematicSafeArea(844, 390, layouts[1][2], layouts[1][3]);
+          for (const bound of coast) {
+            assert.ok(controller.setPreviewShot("tree", DIRECTED_SHOTS.tree.indexOf(bound)));
+            controller.apply({ width: 844, height: 390, tourPhase: 0.5 });
+            estate.updateWorldMatrix(true, true);
+            assert.equal(controller.shot.name, bound.name);
+            assert.ok(
+              controller.target.distanceTo(
+                new Vector3(...bound.aim).applyMatrix4(estate.matrixWorld),
+              ) < 1e-8,
+              `${bound.name} keeps its own estate's target`,
+            );
+            if (!bound.frameFalls)
+              assert.equal(camera.fov, bound.fov, `${bound.name} keeps its lens`);
+            assert.equal(controller.shot.hold, bound.hold);
+            assert.equal(controller.shot.move, null, "short-landscape variant remains still");
+          }
+          for (const [width, height, hero, nav] of shotName === "The falls"
+            ? layouts
+            : layouts.slice(0, 4)) {
+            area = cinematicSafeArea(width, height, hero, nav);
+            assert.ok(controller.setPreviewShot("tree", DIRECTED_SHOTS.tree.indexOf(shot)));
+            let lens;
+            for (let i = 0; i <= 40; i++) {
+              controller.apply({ width, height, elapsedSeconds: i, tourPhase: i / 40 });
+              camera.updateMatrixWorld();
+              estate.updateWorldMatrix(true, true);
+              lens ??= camera.fov;
+              assert.equal(camera.fov, lens, "one stable lens through the whole move");
+              let sheetTop = Infinity,
+                sheetBottom = -Infinity,
+                visibleTop = Infinity,
+                visibleBottom = -Infinity,
+                vertex = 0;
+              for (const local of points) {
+                const ndc = local.clone().applyMatrix4(estate.matrixWorld).project(camera),
+                  sx = ((ndc.x + 1) * width) / 2,
+                  sy = ((1 - ndc.y) * height) / 2;
+                if (vertex++ < sheetCount) {
+                  sheetTop = Math.min(sheetTop, sy);
+                  sheetBottom = Math.max(sheetBottom, sy);
+                  if (local.y >= SEA.level) {
+                    visibleTop = Math.min(visibleTop, sy);
+                    visibleBottom = Math.max(visibleBottom, sy);
+                  }
+                }
+                assert.ok(
+                  ndc.z > -1 && ndc.z < 1,
+                  `${width}x${height} phase ${i / 40}: ${ndc.toArray()} eye ${camera.position.toArray()} target ${controller.target.toArray()}`,
+                );
+                assert.ok(
+                  sx >= area.left &&
+                    sx <= area.left + area.width &&
+                    sy >= area.top &&
+                    sy <= area.top + area.height,
+                  `${width}x${height} phase ${i / 40}: ${sx},${sy} outside ${JSON.stringify(area)}`,
+                );
+              }
+              if (width >= 1280)
+                assert.ok(
+                  sheetBottom - sheetTop >= area.height * 0.35,
+                  "the full falling sheet remains a readable close view",
+                );
+              if ([390, 820, 1080].includes(width) && shotName === "The falls") {
+                assert.ok(
+                  visibleBottom - visibleTop >= area.height * 0.4 &&
+                    visibleBottom - visibleTop <= area.height * 0.51,
+                  "upright layouts give the visible fall roughly half the usable picture",
+                );
+              }
+            }
+          }
+        } finally {
+          for (const bound of coast)
+            DIRECTED_SHOTS.tree.splice(DIRECTED_SHOTS.tree.indexOf(bound), 1);
+          controller.dispose();
+          falls.dispose();
+          watch.geometry.dispose();
+          tree.geometry.dispose();
+          watch.material.dispose();
+        }
+      });
+
+test("the closer Falls composition belongs to upright phones, tablets and tall screens", () => {
+  const shot = COAST_SHOTS.find((s) => s.name === "The falls");
+  for (const [width, height] of [
+    [390, 844],
+    [360, 780],
+    [414, 896],
+    [820, 1180],
+    [1080, 1920],
+  ]) {
+    const view = resolveDirectedShot(shot, width, height);
+    assert.deepEqual(
+      [view.aim, view.azimuth, view.reach, view.rise, view.fovMax],
+      [[81.7, -8, 83.6], -50, 33, 14, 71.2],
+    );
+    assert.deepEqual(view.anchor, [0.492, 0.5]);
+    if (width === 820) assert.equal(view.fov, 61);
+  }
+  for (const [width, height] of [[700, 480]]) {
+    const view = resolveDirectedShot(shot, width, height);
+    assert.deepEqual(
+      [view.aim, view.azimuth, view.reach, view.rise, view.fovMax],
+      [[80.5, -8, 82.3], -50, 43, 25, 62],
+    );
+  }
+  for (const [width, height] of [
+    [1920, 1080],
+    [2560, 1080],
+    [1440, 900],
+  ]) {
+    const view = resolveDirectedShot(shot, width, height);
+    assert.deepEqual(
+      [view.aim, view.azimuth, view.reach, view.rise, view.fovMax],
+      [[80.5, -8, 82.3], -44, 33, 14, 48],
+    );
+  }
+});
 
 for (const tier of ["high", "balanced"])
   test(`${tier} portrait broken coast shows two separate offshore forms through its full move`, () => {
@@ -349,109 +404,124 @@ for (const tier of ["high", "balanced"])
   });
 
 for (const tier of ["high", "balanced"])
-  test(`${tier} portrait falls keep the actual brink, curtain and plunge visible past foreground land`, () => {
-    const context = { window: { BabelSite: {} } };
-    vm.runInNewContext(
-      readFileSync(new URL("../src/scene/helpers.js", import.meta.url), "utf8"),
-      context,
-    );
-    const estate = new Group(),
-      material = new MeshBasicMaterial({ side: 2 }),
-      watch = new Mesh(new BoxGeometry(10, 30, 10), material),
-      tree = new Mesh(new BoxGeometry(10, 20, 10), material),
-      height = riverChannel(filmHeight(context.window.BabelSite.scene.groundHeight, true)).bed,
-      drop = riverFalls(RIVER_LINE),
-      cliff = new Mesh(
-        cliffGeometry(height, coastGeometrySettings(tier).cliff, 190, fallsNotch(drop)),
-        material,
-      ),
-      falls = createFalls({
-        lib: {
-          MIST_UNIFORMS,
-          FLASH_GROUND: { babelFlash: { value: new Color() } },
-          RANGE_MIST: { value: { x: 0, y: 0, z: 0, w: 0 } },
-          SLATE_TEXT_GUARD: "",
-          MIST_PARS: "",
-        },
-        clock: dripClock({ value: 0 }),
-        rendering: { homeScene: new Scene(), tier },
-        drop,
-        height,
-      }),
-      shot = coastShot(
-        COAST_SHOTS.find((base) => base.frameFalls),
-        estate,
-        falls,
-      ),
-      camera = new PerspectiveCamera(45, 1, 0.1, 450),
-      area = cinematicSafeArea(390, 844, layouts[0][2], layouts[0][3]),
-      controller = createCinematicCamera({ camera, selected: "tree", getSafeArea: () => area }),
-      ray = new Raycaster(),
-      position = falls.mesh.geometry.attributes.position,
-      course = falls.mesh.geometry.attributes.aFall,
-      targets = [];
-    estate.position.y = -6.8;
-    estate.add(watch, tree, cliff, falls.mesh);
-    // Sample both actual skins and their rounded sides, not just the old
-    // zero-thickness central curtain or the fit proxy. A point can project
-    // inside the safe area while the near shelf still hides it.
-    for (let i = 0; i < position.count; i++)
-      if (
-        ((Math.abs(course.getX(i)) < 0.01 && course.getZ(i) === 0) ||
-          (course.getY(i) >= 1.05 &&
-            (Math.abs(course.getX(i)) < 0.01 || Math.abs(course.getX(i)) > 0.99))) &&
-        course.getY(i) >= 0.85 &&
-        position.getY(i) >= SEA.level
-      )
-        targets.push(new Vector3().fromBufferAttribute(position, i));
-    assert.ok(targets.length > 40, "the complete curtain contains multiple rows and streams");
-    const [x, z] = falls.plunge;
-    targets.push(new Vector3(x, SEA.level + 0.05, z));
-    DIRECTED_SHOTS.tree.push(shot);
-    for (const [kind, root] of [
-      ["watch", watch],
-      ["tree", tree],
-    ]) {
-      controller.setSubject(kind, root);
-      controller.setStatus({ kind, status: "ready" });
-    }
-    try {
-      assert.ok(controller.setPreviewShot("tree", DIRECTED_SHOTS.tree.indexOf(shot)));
-      for (let phase = 0; phase <= 16; phase++) {
-        controller.apply({ width: 390, height: 844, tourPhase: phase / 16 });
-        camera.updateMatrixWorld();
-        estate.updateWorldMatrix(true, true);
-        for (const local of targets) {
-          const world = local.clone().applyMatrix4(estate.matrixWorld),
-            direction = world.clone().sub(camera.position);
-          ray.set(camera.position, direction.clone().normalize());
-          ray.far = direction.length() - 0.08;
-          assert.equal(
-            ray.intersectObject(cliff).length,
-            0,
-            `phase ${phase / 16}: the near cliff hides ${local.toArray()}`,
-          );
-          // The mesh includes the cliff's own shelf. Inland of that shelf,
-          // check the live terrain sampler too: fitting a point inside the
-          // viewport does not establish that foreground land leaves it visible.
-          for (let step = 1; step < 80; step++) {
-            const point = camera.position
-              .clone()
-              .lerp(world, step / 80)
-              .sub(estate.position);
-            if (coastDistance(point.x, point.z) >= SHORE.shelf)
-              assert.ok(
-                point.y > height(point.x, point.z),
-                `phase ${phase / 16}: terrain hides ${local.toArray()}`,
-              );
-          }
+  for (const shotName of ["The falls", "Over the fault"])
+    for (const [width, height, hero, nav, shifted] of shotName === "The falls"
+      ? [
+          [...layouts[0], false],
+          [...layouts[4], false],
+          [...layouts[5], false],
+          [...layouts[4], true],
+          [...layouts[5], true],
+        ]
+      : [[...layouts[0], false]])
+      test(`${tier} ${width}x${height} ${shotName} keeps the actual brink, curtain and plunge visible past foreground land${shifted ? " in a transformed estate" : ""}`, () => {
+        const context = { window: { BabelSite: {} } };
+        vm.runInNewContext(
+          readFileSync(new URL("../src/scene/helpers.js", import.meta.url), "utf8"),
+          context,
+        );
+        const estate = new Group(),
+          material = new MeshBasicMaterial({ side: 2 }),
+          watch = new Mesh(new BoxGeometry(10, 30, 10), material),
+          tree = new Mesh(new BoxGeometry(10, 20, 10), material),
+          height = riverChannel(filmHeight(context.window.BabelSite.scene.groundHeight, true)).bed,
+          drop = riverFalls(RIVER_LINE),
+          cliff = new Mesh(
+            cliffGeometry(height, coastGeometrySettings(tier).cliff, 190, fallsNotch(drop)),
+            material,
+          ),
+          falls = createFalls({
+            lib: {
+              MIST_UNIFORMS,
+              FLASH_GROUND: { babelFlash: { value: new Color() } },
+              RANGE_MIST: { value: { x: 0, y: 0, z: 0, w: 0 } },
+              SLATE_TEXT_GUARD: "",
+              MIST_PARS: "",
+            },
+            clock: dripClock({ value: 0 }),
+            rendering: { homeScene: new Scene(), tier },
+            drop,
+            height,
+          }),
+          shot = coastShot(
+            COAST_SHOTS.find((base) => base.name === shotName),
+            estate,
+            falls,
+          ),
+          camera = new PerspectiveCamera(45, 1, 0.1, 450),
+          area = cinematicSafeArea(width, height, hero, nav),
+          controller = createCinematicCamera({ camera, selected: "tree", getSafeArea: () => area }),
+          ray = new Raycaster(),
+          position = falls.mesh.geometry.attributes.position,
+          course = falls.mesh.geometry.attributes.aFall,
+          targets = [];
+        estate.position.set(shifted ? 13 : 0, -6.8, shifted ? -9 : 0);
+        if (shifted) {
+          estate.rotation.y = 0.17;
+          estate.scale.setScalar(1.06);
         }
-      }
-    } finally {
-      DIRECTED_SHOTS.tree.splice(DIRECTED_SHOTS.tree.indexOf(shot), 1);
-      controller.dispose();
-      falls.dispose();
-      for (const mesh of [cliff, watch, tree]) mesh.geometry.dispose();
-      material.dispose();
-    }
-  });
+        estate.add(watch, tree, cliff, falls.mesh);
+        // Sample both actual skins and their rounded sides, not just the old
+        // zero-thickness central curtain or the fit proxy. A point can project
+        // inside the safe area while the near shelf still hides it.
+        for (let i = 0; i < position.count; i++)
+          if (
+            ((Math.abs(course.getX(i)) < 0.01 && course.getZ(i) === 0) ||
+              (course.getY(i) >= 1.05 &&
+                (Math.abs(course.getX(i)) < 0.01 || Math.abs(course.getX(i)) > 0.99))) &&
+            course.getY(i) >= 0.85 &&
+            position.getY(i) >= SEA.level
+          )
+            targets.push(new Vector3().fromBufferAttribute(position, i));
+        assert.ok(targets.length > 40, "the complete curtain contains multiple rows and streams");
+        const [x, z] = falls.plunge;
+        targets.push(new Vector3(x, SEA.level + 0.05, z));
+        DIRECTED_SHOTS.tree.push(shot);
+        for (const [kind, root] of [
+          ["watch", watch],
+          ["tree", tree],
+        ]) {
+          controller.setSubject(kind, root);
+          controller.setStatus({ kind, status: "ready" });
+        }
+        try {
+          assert.ok(controller.setPreviewShot("tree", DIRECTED_SHOTS.tree.indexOf(shot)));
+          for (let phase = 0; phase <= 16; phase++) {
+            controller.apply({ width, height, tourPhase: phase / 16 });
+            camera.updateMatrixWorld();
+            estate.updateWorldMatrix(true, true);
+            const inverseEstate = estate.matrixWorld.clone().invert();
+            for (const local of targets) {
+              const world = local.clone().applyMatrix4(estate.matrixWorld),
+                direction = world.clone().sub(camera.position);
+              ray.set(camera.position, direction.clone().normalize());
+              ray.far = direction.length() - 0.08;
+              assert.equal(
+                ray.intersectObject(cliff).length,
+                0,
+                `phase ${phase / 16}: the near cliff hides ${local.toArray()}`,
+              );
+              // The mesh includes the cliff's own shelf. Inland of that shelf,
+              // check the live terrain sampler too: fitting a point inside the
+              // viewport does not establish that foreground land leaves it visible.
+              for (let step = 1; step < 80; step++) {
+                const point = camera.position
+                  .clone()
+                  .lerp(world, step / 80)
+                  .applyMatrix4(inverseEstate);
+                if (coastDistance(point.x, point.z) >= SHORE.shelf)
+                  assert.ok(
+                    point.y > height(point.x, point.z),
+                    `phase ${phase / 16}: terrain hides ${local.toArray()}`,
+                  );
+              }
+            }
+          }
+        } finally {
+          DIRECTED_SHOTS.tree.splice(DIRECTED_SHOTS.tree.indexOf(shot), 1);
+          controller.dispose();
+          falls.dispose();
+          for (const mesh of [cliff, watch, tree]) mesh.geometry.dispose();
+          material.dispose();
+        }
+      });

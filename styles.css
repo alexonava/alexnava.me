@@ -1765,10 +1765,7 @@ body.scene-walk-hidden > :not(.scene-shell) {
     padding-top: max(48px, calc(38px + env(safe-area-inset-top)));
   }
 
-  /* Above the intro, whose scrim reaches up behind the name's feet. */
   .hero h1 {
-    position: relative;
-    z-index: 1;
     max-width: 8ch;
     font-size: clamp(54px, 8vw, 72px);
   }
@@ -1778,19 +1775,35 @@ body.scene-walk-hidden > :not(.scene-shell) {
     padding-left: clamp(24px, 5vw, 40px);
   }
 
-  /* The intro runs on one line here, its end past the reach of the hero's
-     scrim and over the subject in the close shots (Close-up's pale
-     branches), so it keeps its own text scrim, as Contact does: a
-     soft oval centred on the line that reaches transparent before every edge of
-     its box (the hero's (1 - t²)² falloff), 0.6 at its centre. It guards the
-     line over the live scene only: hero.js marks the hero is-over-scene while
-     the scene host is ready, and the oval fades in and out with the canvas, so
-     the title card's night, which needs no scrim, never shows it as a shape. */
+  .hero-intro {
+    max-width: 31ch;
+    margin-top: 12px;
+  }
+
+  .site-shell {
+    opacity: 0.2;
+  }
+
+  .bottom-btn--icon {
+    width: 52px;
+    height: 52px;
+  }
+}
+
+/* On portrait phones and tablets, the intro can cross the close shots' pale
+   branches beyond the name's scrim. Its own soft oval guards the whole line,
+   with the hero's (1 - t²)² falloff and transparent edges. It follows the live
+   canvas's fade; the standalone title card never shows it as a shape. */
+@media (max-width: 1024px) and (orientation: portrait) {
+  /* Above the intro, whose scrim reaches up behind the name's feet. */
+  .hero h1 {
+    position: relative;
+    z-index: 1;
+  }
+
   .hero-intro {
     position: relative;
     isolation: isolate;
-    max-width: 31ch;
-    margin-top: 12px;
   }
 
   .hero-intro::before {
@@ -1823,15 +1836,6 @@ body.scene-walk-hidden > :not(.scene-shell) {
 
   .hero-minimal.is-over-scene .hero-intro::before {
     opacity: 1;
-  }
-
-  .site-shell {
-    opacity: 0.2;
-  }
-
-  .bottom-btn--icon {
-    width: 52px;
-    height: 52px;
   }
 }
 

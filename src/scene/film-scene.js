@@ -1,7 +1,7 @@
-import { DIRECTED_SHOTS, measureShot } from "./directed-shots.js";
+import { DIRECTED_SHOTS, measureShot, measureShotSteps } from "./directed-shots.js";
 import { EARTH } from "./filmic-earth.js";
 import { MIST_PARS, MIST_UNIFORMS } from "./drifting-mist.js";
-import { FLASH_GROUND } from "./film-light.js";
+import { COAST_MOOD, FLASH_GROUND } from "./film-light.js";
 import { RANGE_MIST, SEA_SINK } from "./hill-silhouette.js";
 import { SLATE_TEXT_GUARD } from "./mud-ground.js";
 import { createCinematicCamera, cinematicSafeArea } from "./cinematic.js";
@@ -37,6 +37,14 @@ export function createFilmScene({
     get active() {
       return active;
     },
+    get openingState() {
+      return settled?.openingState ?? null;
+    },
+    async prepareOpening(frame) {
+      const height = await pending;
+      if (disposed || !active || !height?.prepareOpening) return false;
+      return height.prepareOpening(frame);
+    },
     setActive(next) {
       if (disposed || active === Boolean(next)) return;
       active = Boolean(next);
@@ -68,12 +76,14 @@ export function createFilmScene({
               MIST_PARS,
               MIST_UNIFORMS,
               FLASH_GROUND,
+              COAST_MOOD,
               RANGE_MIST,
               SEA_SINK,
               DIRECTED_SHOTS,
               createCinematicCamera,
               cinematicSafeArea,
               measureShot,
+              measureShotSteps,
               watchMeasure,
               grassMaterial,
               GROWTH,

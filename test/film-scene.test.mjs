@@ -68,6 +68,42 @@ test("film scene restores geometry, lighting and sky before disposal and tolerat
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 
+test("hidden opening preparation waits for the terrain sampler and delegates the latest frame", async () => {
+  const ground = new Mesh(new BoxGeometry(), new MeshStandardMaterial());
+  let release;
+  const loading = new Promise((resolve) => (release = resolve));
+  const frames = [];
+  const height = Object.assign(() => 0, {
+    openingState: { terrain: true, details: true, foreground: true },
+    setActive() {},
+    prepareOpening: async (frame) => {
+      frames.push(frame);
+      return true;
+    },
+  });
+  const controller = createFilmScene({
+    ground,
+    groundHeight: () => 0,
+    skyMaterial: { uniforms: { sunColor: { value: new Color() } } },
+    rendering: { setFilmTreatment() {} },
+    atmosphere: { setFilmTreatment() {} },
+    loadTerrain: () => loading,
+  });
+  controller.setActive(true);
+  const frame = { viewport: { width: 390, height: 844 }, shot: "Lantern study" };
+  const preparation = controller.prepareOpening(frame);
+  assert.equal(frames.length, 0);
+  const terrain = new BoxGeometry();
+  release({ createEarthGeometry: async () => terrain, settleRoots: () => height });
+  assert.equal(await preparation, true);
+  assert.equal(frames[0], frame);
+  assert.equal(controller.openingState, height.openingState);
+  controller.dispose();
+  assert.equal(await controller.prepareOpening(frame), false);
+  ground.geometry.dispose();
+  ground.material.dispose();
+});
+
 const canvas = () => ({ width: 0, height: 0, getContext: () => ({ drawImage() {} }) });
 
 test("the default film slate binds its seamless maps and shared detail map at the classic tile after the film gate", async () => {

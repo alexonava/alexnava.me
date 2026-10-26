@@ -20,7 +20,7 @@ import {
 } from "three";
 import { createTreeArchitecture } from "../src/scene/architecture.js";
 import { createCinematicCamera, cinematicSafeArea } from "../src/scene/cinematic.js";
-import { DIRECTED_SHOTS, measureShot } from "../src/scene/directed-shots.js";
+import { DIRECTED_SHOTS, measureShot, measureShotSteps } from "../src/scene/directed-shots.js";
 import {
   createEstateGroundDetail,
   grassMaterial,
@@ -63,6 +63,7 @@ const helpers = {
   cinematicSafeArea,
   DIRECTED_SHOTS,
   measureShot,
+  measureShotSteps,
   watchMeasure,
   grassMaterial,
   GROWTH,
@@ -166,6 +167,97 @@ async function fieldFor(tiles, extra = {}) {
   root.add(field.group);
   return field;
 }
+
+test("each foreground step bounds seeded and triangle work while preserving both tiers' complete buffer hashes", () => {
+  let pointChecks = 0,
+    triangleChecks = 0,
+    checked = 0;
+  const steps = foregroundChunkSteps(
+    { x: 2, z: 1 },
+    {
+      surface: flat,
+      helpers: openHelpers,
+      placement: {
+        pointAllowed() {
+          pointChecks++;
+          return true;
+        },
+        triangleAllowed() {
+          triangleChecks++;
+          return true;
+        },
+      },
+    },
+  );
+  let geometry;
+  try {
+    for (;;) {
+      const next = steps.next();
+      assert.ok(pointChecks <= 1, `${pointChecks} seed checks before yielding`);
+      assert.ok(triangleChecks <= 4, `${triangleChecks} triangle checks before yielding`);
+      checked += triangleChecks;
+      pointChecks = triangleChecks = 0;
+      if (next.done) {
+        geometry = next.value;
+        break;
+      }
+    }
+    assert.ok(checked > 10000, "the test exercises every emitted face and grass wind envelope");
+    // Captured from the selected 3683f19 buffers before adding finer yields.
+    // Each tier includes every attribute byte and its complete drawn index range.
+    const baseline = {
+      high: "acc475849f559231c4fc484afc425757850ced5efeae45fe85f179757f6b36d6",
+      balanced: "8e238e5c5a858090ed176ae940823fbbdbd136046623adf7cbb8daab1af0e9ec",
+    };
+    for (const tier of ["high", "balanced"]) {
+      const hash = createHash("sha256");
+      for (const attribute of Object.values(geometry.attributes))
+        hash.update(
+          Buffer.from(
+            attribute.array.buffer,
+            attribute.array.byteOffset,
+            attribute.array.byteLength,
+          ),
+        );
+      const index =
+        tier === "balanced"
+          ? geometry.index.array.subarray(0, geometry.userData.foreground.balanced)
+          : geometry.index.array;
+      hash.update(Buffer.from(index.buffer, index.byteOffset, index.byteLength));
+      assert.equal(
+        hash.digest("hex"),
+        baseline[tier],
+        `${tier}: all authored buffer bytes stay fixed`,
+      );
+    }
+  } finally {
+    steps.return();
+    geometry?.dispose();
+  }
+});
+
+test("cancelling between a foreground piece's footprint checks cannot resume or publish its partial geometry", () => {
+  let triangles = 0;
+  const steps = foregroundChunkSteps(
+    { x: 2, z: 1 },
+    {
+      surface: flat,
+      helpers: openHelpers,
+      placement: {
+        pointAllowed: () => true,
+        triangleAllowed: () => {
+          triangles++;
+          return true;
+        },
+      },
+    },
+  );
+  while (triangles < 4) assert.equal(steps.next().done, false);
+  const count = triangles;
+  assert.deepEqual(steps.return(), { value: undefined, done: true });
+  assert.deepEqual(steps.next(), { value: undefined, done: true });
+  assert.equal(triangles, count);
+});
 
 test("foreground pieces are deterministic, smooth, finite and nondegenerate; balanced keeps whole seeded pieces", () => {
   const a = build(),
@@ -520,6 +612,72 @@ test("committed chunks enter the frustum during a move without waiting for anoth
   }
 });
 
+test("hidden opening preparation publishes its whole finite move cohort before the first visible hold", async () => {
+  const field = await fieldFor([tile(2, 0), tile(7, 0)]),
+    camera = lens(),
+    frame = { camera, profile: { tier: "high" }, revealed: false, preparing: true };
+  try {
+    const ready = field.prepareOpening(frame);
+    await flush(field, frame, () => field.state.openingStatus === "ready");
+    assert.equal(await ready, true);
+    assert.equal(field.state.preparedChunks, 2);
+    const geometries = field.group.children.map((mesh) => mesh.geometry);
+    for (let step = 0; step <= 60; step++) {
+      camera.position.x = 20 + (step * 2) / 3;
+      camera.lookAt(camera.position.x, 0, 0);
+      field.update({ ...frame, revealed: true, preparing: false, deltaSeconds: 0.1 });
+      assert.equal(field.state.pendingChunks, 0);
+      assert.ok(field.state.visibleBatches <= 12);
+    }
+    assert.deepEqual(
+      field.group.children.map((mesh) => mesh.geometry),
+      geometries,
+    );
+  } finally {
+    field.dispose();
+  }
+});
+
+test("disposing an opening cohort settles its readiness without publishing a stale redraw", async () => {
+  const saved = globalThis.requestIdleCallback,
+    idle = [];
+  globalThis.requestIdleCallback = (task) => idle.push(task);
+  let invalidations = 0;
+  const field = await fieldFor([tile(2, 0)], { invalidate: () => invalidations++ });
+  try {
+    const ready = field.prepareOpening({ camera: lens(), revealed: false });
+    field.dispose();
+    while (idle.length) {
+      idle.shift()({ didTimeout: true, timeRemaining: () => 0 });
+      await Promise.resolve();
+    }
+    assert.equal(await ready, false);
+    assert.equal(invalidations, 0);
+  } finally {
+    field.dispose();
+    globalThis.requestIdleCallback = saved;
+  }
+});
+
+test("hidden preparation reports actual generator progress rather than frames or elapsed time", async () => {
+  const frame = { camera: lens(), preparing: true, revealed: false, profile: { tier: "high" } },
+    rendering = {
+      renderer: { domElement: { parentNode: { classList: { contains: () => false } } } },
+    },
+    field = await fieldFor([tile(2, 0)], { openingFrame: frame, rendering });
+  try {
+    const ready = field.prepareOpening(frame);
+    await flush(field, frame, () => field.state.openingStatus === "ready");
+    assert.equal(await ready, true);
+    assert.ok(rendering.openingProgress > 0);
+    const completed = rendering.openingProgress;
+    for (let n = 0; n < 10; n++) field.update({ ...frame, deltaSeconds: 100 });
+    assert.equal(rendering.openingProgress, completed, "waiting/held frames add no work progress");
+  } finally {
+    field.dispose();
+  }
+});
+
 test("compiler polling restores the target immediately and a failed optional program stays hidden", async () => {
   let settle,
     current = "home",
@@ -630,15 +788,18 @@ test("idle work pauses at low and disposal cancels queued generation without inv
   const frame = { camera: lens(), still: true, profile: { tier: "high" } };
   try {
     field.update(frame);
+    await new Promise((resolve) => setImmediate(resolve));
     assert.equal(callbacks.length, 1);
     field.update({ ...frame, profile: { tier: "low" } });
     while (callbacks.length) {
       callbacks.shift()({ didTimeout: false, timeRemaining: () => 20 });
       await Promise.resolve();
     }
+    await new Promise((resolve) => setImmediate(resolve));
     assert.equal(field.state.preparedChunks, 0);
     assert.equal(field.group.children.length, 0);
     field.update(frame);
+    await new Promise((resolve) => setImmediate(resolve));
     assert.equal(callbacks.length, 1);
     field.dispose();
     while (callbacks.length) {
@@ -774,123 +935,225 @@ test("a narrow visible ground sliver between the nine coverage probes still admi
   assert.ok(coverage.tiles.some((tile) => tile.x === 0 && tile.z === 0));
 });
 
-test("the live film owner supplies the lazy foreground closure and publishes actual terrain chunks", async () => {
-  // Exercise both real ownership boundaries, rather than passing a duplicate
-  // helper fixture straight into prepareForegroundDetail. Missing lexical
-  // imports in settleRoots' async closure must fail this observable result.
-  const base = baseGround(),
-    root = new Group(),
-    original = new PlaneGeometry(2, 2),
-    material = new MeshStandardMaterial();
-  configureGroundShading(material, true);
-  const ground = new Mesh(original, material),
-    growth = createEstateGroundDetail(base);
-  const tree = createTreeArchitecture({
-    asset: glbAsset(modelBytes("tree", "high")),
-    groundHeight: base,
-    anchor: [55.1, 36.1],
-  });
-  root.position.y = -6.8;
-  root.add(ground, growth.mesh, tree.root);
-  root.updateMatrixWorld(true);
-  const camera = lens(LANTERN_FOOT.x - 3, LANTERN_FOOT.z - 5);
-  camera.position.y = base(LANTERN_FOOT.x - 3, LANTERN_FOOT.z - 5) - 6.8 + 2;
-  camera.lookAt(LANTERN_FOOT.x, base(LANTERN_FOOT.x, LANTERN_FOOT.z) - 6.8, LANTERN_FOOT.z);
-  const rendering = {
-    renderer: {
-      domElement: { parentNode: { classList: { contains: () => true } } },
-      extensions: { has: () => false },
-      getContext: () => ({ isContextLost: () => false }),
-      shadowMap: { enabled: false },
-      getPixelRatio: () => 1,
-    },
-    homeScene: root,
-    camera,
-    composer: { readBuffer: null },
-    setFilmTreatment() {},
-  };
-  const idle = [],
-    animation = [],
-    previousIdle = globalThis.requestIdleCallback,
-    previousFrame = globalThis.requestAnimationFrame;
-  globalThis.requestIdleCallback = (task) => idle.push(task);
-  globalThis.requestAnimationFrame = (task) => animation.push(task);
-  let invalidations = 0,
-    field,
-    disposedGeometry = null;
-  const film = createFilmScene({
-    ground,
-    groundHeight: base,
-    rendering,
-    atmosphere: { setFilmTreatment() {} },
-    skyMaterial: {
-      uniforms: { sunColor: { value: new Color(0xffffff) }, uFilm: { value: 0 } },
-      transparent: false,
-    },
-    invalidate: () => invalidations++,
-  });
-  const frame = {
-    camera,
-    viewport: { width: 1920, height: 1080 },
-    profile: { tier: "high" },
-    still: true,
-    revealed: true,
-    shot: "Lantern study",
-    deltaSeconds: 1 / 60,
-  };
-  try {
-    film.setActive(true);
-    let prepared = false;
-    film.ready.then(() => (prepared = true));
-    const deadline = performance.now() + 30000;
-    while (performance.now() < deadline) {
-      for (let n = 0; n < 8 && idle.length; n++)
-        idle.shift()({ didTimeout: true, timeRemaining: () => 0 });
-      for (const task of animation.splice(0)) task(performance.now());
-      await new Promise((resolve) => setImmediate(resolve));
-      film.update(frame);
-      field = root.getObjectByName("estate-foreground-field");
-      if (
-        prepared &&
-        field?.userData.foreground.preparedChunks > 0 &&
-        field.userData.foreground.visibleBatches > 0
-      )
-        break;
+for (const tier of ["high", "balanced"])
+  test(`${tier} live film owner prepares the complete lantern move and its physical ground while still hidden`, async () => {
+    // Exercise both real ownership boundaries, rather than passing a duplicate
+    // helper fixture straight into prepareForegroundDetail. Missing lexical
+    // imports in settleRoots' async closure must fail this observable result.
+    const base = baseGround(),
+      root = new Group(),
+      original = new PlaneGeometry(2, 2),
+      material = new MeshStandardMaterial();
+    configureGroundShading(material, true);
+    const ground = new Mesh(original, material),
+      growth = createEstateGroundDetail(base);
+    const tree = createTreeArchitecture({
+      asset: glbAsset(modelBytes("tree", tier)),
+      groundHeight: base,
+      anchor: [55.1, 36.1],
+    });
+    root.position.y = -6.8;
+    root.add(ground, growth.mesh, tree.root);
+    root.updateMatrixWorld(true);
+    const camera = lens(LANTERN_FOOT.x - 3, LANTERN_FOOT.z - 5);
+    const opener = createCinematicCamera({
+      camera,
+      selected: "tree",
+      angle: 1,
+      getSafeArea: cinematicSafeArea,
+      getGroundY: (x, z) => base(x, z) - 6.8,
+    });
+    opener.setSubject("watch", new Group());
+    opener.setSubject("tree", tree.root);
+    opener.setStatus({ kind: "watch", status: "ready" });
+    opener.setStatus({ kind: "tree", status: "ready" });
+    opener.apply({ width: 1920, height: 1080, elapsedSeconds: 0, tourPhase: 0 });
+    const rendering = {
+      assetTier: tier,
+      renderer: {
+        domElement: { parentNode: { classList: { contains: () => false } } },
+        extensions: { has: () => false },
+        getContext: () => ({ isContextLost: () => false }),
+        shadowMap: { enabled: false },
+        getPixelRatio: () => 1,
+      },
+      homeScene: root,
+      camera,
+      composer: { readBuffer: null },
+      setFilmTreatment() {},
+    };
+    const idle = [],
+      animation = [],
+      previousIdle = globalThis.requestIdleCallback,
+      previousFrame = globalThis.requestAnimationFrame;
+    globalThis.requestIdleCallback = (task) => idle.push(task);
+    globalThis.requestAnimationFrame = (task) => animation.push(task);
+    let invalidations = 0,
+      field,
+      openingResult,
+      preparedHeight,
+      disposedGeometry = null;
+    const film = createFilmScene({
+      ground,
+      groundHeight: base,
+      rendering,
+      atmosphere: { setFilmTreatment() {} },
+      skyMaterial: {
+        uniforms: { sunColor: { value: new Color(0xffffff) }, uFilm: { value: 0 } },
+        transparent: false,
+      },
+      invalidate: () => invalidations++,
+    });
+    const frame = {
+      camera,
+      viewport: { width: 1920, height: 1080 },
+      profile: { tier },
+      still: false,
+      preparing: true,
+      revealed: false,
+      shot: "Lantern study",
+      deltaSeconds: 1 / 60,
+    };
+    try {
+      film.setActive(true);
+      let prepared = false;
+      film.ready.then((height) => {
+        prepared = true;
+        preparedHeight = height;
+        void height.prepareOpening(frame).then((ready) => (openingResult = ready));
+      });
+      const deadline = performance.now() + 30000;
+      while (performance.now() < deadline) {
+        for (let n = 0; n < 8 && idle.length; n++)
+          idle.shift()({ didTimeout: true, timeRemaining: () => 0 });
+        for (const task of animation.splice(0)) task(performance.now());
+        await new Promise((resolve) => setImmediate(resolve));
+        film.update(frame);
+        field = root.getObjectByName("estate-foreground-field");
+        if (
+          prepared &&
+          openingResult &&
+          field?.userData.foreground.preparedChunks > 0 &&
+          field.userData.foreground.visibleBatches > 0
+        )
+          break;
+      }
+      assert.ok(prepared, "real film terrain and settleRoots completed");
+      assert.equal(openingResult, true);
+      assert.deepEqual(
+        { ...preparedHeight.openingState },
+        {
+          terrain: true,
+          details: true,
+          foreground: true,
+          failed: false,
+          foregroundStatus: "ready",
+        },
+      );
+      assert.ok(field, "settleRoots' real lazy import/provider closure added the field");
+      assert.ok(field.userData.foreground.preparedChunks > 0, "actual terrain generated a chunk");
+      assert.ok(
+        field.userData.foreground.visibleBatches > 0,
+        "the hidden opener published its complete cohort",
+      );
+      assert.equal(field.userData.foreground.failed, false);
+      assert.equal(field.userData.foreground.openingStatus, "ready");
+      for (const name of [
+        "estate-root-litter",
+        "estate-river-rushes",
+        "estate-stream-reeds",
+        "estate-water-banks",
+      ])
+        assert.ok(root.getObjectByName(name), `${name} settled before reveal`);
+      assert.equal(
+        field.userData.foreground.poses,
+        25,
+        "only the full opening move was fitted before reveal",
+      );
+      const preparedNames = new Set(field.children.map((mesh) => mesh.name));
+      film.update({ ...frame, preparing: false, revealed: true });
+      for (let tick = 0; tick < 1000 && field.userData.foreground.poses === 25; tick++) {
+        for (let n = 0; n < 8 && idle.length; n++)
+          idle.shift()({ didTimeout: true, timeRemaining: () => 0 });
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+      assert.ok(
+        field.userData.foreground.poses > 25,
+        "other shot/viewport envelopes completed only after reveal",
+      );
+      for (let tick = 0; tick <= 120; tick++) {
+        opener.apply({
+          width: 1920,
+          height: 1080,
+          elapsedSeconds: tick / 20,
+          tourPhase: tick / 120,
+        });
+        film.update({ ...frame, preparing: false, revealed: true, deltaSeconds: 1 / 20 });
+        assert.equal(
+          field.userData.foreground.pendingChunks,
+          0,
+          `no missing opening tile at ${tick / 20}s`,
+        );
+        for (const mesh of field.children)
+          if (mesh.visible) assert.ok(preparedNames.has(mesh.name));
+      }
+      // A resize while the host is still hidden needs a new complete cohort,
+      // rather than reusing a fulfilled readiness promise for the old lens.
+      opener.apply({ width: 390, height: 844, elapsedSeconds: 0, tourPhase: 0 });
+      const resized = { ...frame, viewport: { width: 390, height: 844 } },
+        beforeResize = field.userData.foreground.poses;
+      let resizedReady = false;
+      const refreshed = preparedHeight
+        .prepareOpening(resized)
+        .then((ready) => (resizedReady = ready));
+      assert.equal(preparedHeight.openingState.foreground, false);
+      const resizeDeadline = performance.now() + 15000;
+      while (!resizedReady && performance.now() < resizeDeadline) {
+        for (let n = 0; n < 8 && idle.length; n++)
+          idle.shift()({ didTimeout: true, timeRemaining: () => 0 });
+        for (const task of animation.splice(0)) task(performance.now());
+        await new Promise((resolve) => setImmediate(resolve));
+        film.update(resized);
+      }
+      assert.equal(await refreshed, true);
+      assert.equal(field.userData.foreground.poses, beforeResize + 25);
+      assert.equal(preparedHeight.openingState.foreground, true);
+      for (let tick = 0; tick <= 120; tick++) {
+        opener.apply({ width: 390, height: 844, elapsedSeconds: tick / 20, tourPhase: tick / 120 });
+        film.update({ ...resized, preparing: false, revealed: true, deltaSeconds: 1 / 20 });
+        assert.equal(
+          field.userData.foreground.pendingChunks,
+          0,
+          `no missing resized opening tile at ${tick / 20}s`,
+        );
+      }
+      assert.ok(
+        field.userData.foreground.shots.includes("The falls"),
+        "coastal providers and shots landed before coverage",
+      );
+      assert.ok(invalidations > 0);
+      disposedGeometry = field.children[0].geometry;
+      let freed = 0;
+      disposedGeometry.addEventListener("dispose", () => freed++);
+      film.dispose();
+      opener.dispose();
+      assert.equal(root.getObjectByName("estate-foreground-field"), undefined);
+      assert.equal(ground.geometry, original, "the borrowed ground is restored");
+      assert.equal(freed, 1, "terrain disposal frees the foreground chunk once");
+    } finally {
+      film.dispose();
+      for (let n = 0; n < 100 && (idle.length || animation.length); n++) {
+        idle.splice(0).forEach((task) => task({ didTimeout: true, timeRemaining: () => 0 }));
+        animation.splice(0).forEach((task) => task(performance.now()));
+        await Promise.resolve();
+      }
+      if (previousIdle) globalThis.requestIdleCallback = previousIdle;
+      else delete globalThis.requestIdleCallback;
+      if (previousFrame) globalThis.requestAnimationFrame = previousFrame;
+      else delete globalThis.requestAnimationFrame;
+      growth.dispose();
+      tree.dispose();
+      material.dispose();
+      original.dispose();
     }
-    assert.ok(prepared, "real film terrain and settleRoots completed");
-    assert.ok(field, "settleRoots' real lazy import/provider closure added the field");
-    assert.ok(field.userData.foreground.preparedChunks > 0, "actual terrain generated a chunk");
-    assert.ok(
-      field.userData.foreground.visibleBatches > 0,
-      "the still frame published the completed chunk",
-    );
-    assert.equal(field.userData.foreground.failed, false);
-    assert.ok(
-      field.userData.foreground.shots.includes("The falls"),
-      "coastal providers and shots landed before coverage",
-    );
-    assert.ok(invalidations > 0);
-    disposedGeometry = field.children[0].geometry;
-    let freed = 0;
-    disposedGeometry.addEventListener("dispose", () => freed++);
-    film.dispose();
-    assert.equal(root.getObjectByName("estate-foreground-field"), undefined);
-    assert.equal(ground.geometry, original, "the borrowed ground is restored");
-    assert.equal(freed, 1, "terrain disposal frees the foreground chunk once");
-  } finally {
-    film.dispose();
-    for (let n = 0; n < 100 && (idle.length || animation.length); n++) {
-      idle.splice(0).forEach((task) => task({ didTimeout: true, timeRemaining: () => 0 }));
-      animation.splice(0).forEach((task) => task(performance.now()));
-      await Promise.resolve();
-    }
-    if (previousIdle) globalThis.requestIdleCallback = previousIdle;
-    else delete globalThis.requestIdleCallback;
-    if (previousFrame) globalThis.requestAnimationFrame = previousFrame;
-    else delete globalThis.requestAnimationFrame;
-    growth.dispose();
-    tree.dispose();
-    material.dispose();
-    original.dispose();
-  }
-});
+  });

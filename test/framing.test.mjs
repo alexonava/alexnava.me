@@ -437,15 +437,21 @@ test("The watch resolves its landscape variant only for short landscape viewport
       );
   }
   // Portrait screens take the portrait variant: turned to -12 and aimed left of centre, the
-  // star whole to its right. Portrait monitors take it as it is; tablets aim a little further
-  // right.
+  // star whole to its right. Portrait monitors keep the prior anchor so far
+  // snow stays off the lower name; tablets aim a little further right.
   const portrait = resolveDirectedShot(watch, 430, 932);
   assert.equal(portrait.azimuth, watch.portrait.azimuth);
   assert.equal(portrait.azimuth, -12);
   assert.ok(portrait.anchor[0] < 0.5);
   const monitor = resolveDirectedShot(watch, 1080, 1920);
-  assert.equal(watch.tall, undefined);
-  assert.deepEqual({ ...monitor }, { ...watch, ...watch.portrait });
+  assert.deepEqual(watch.tall, { anchor: [0.28, 0.54] });
+  assert.deepEqual({ ...monitor }, { ...watch, ...watch.portrait, ...watch.tall });
+  assert.deepEqual(monitor.anchor, [0.28, 0.54]);
+  assert.equal(
+    outlineKey(monitor),
+    outlineKey(portrait),
+    "an anchor never changes the stored outline",
+  );
   const tablet = resolveDirectedShot(watch, 820, 1180);
   assert.deepEqual({ ...tablet }, { ...watch, ...watch.portrait, ...watch.tablet });
   assert.equal(tablet.azimuth, portrait.azimuth);
