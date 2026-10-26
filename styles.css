@@ -698,8 +698,9 @@ body.scene-walk-hidden > :not(.scene-shell) {
    shot will show it, drawn under the canvas, so the canvas's own fade-in covers it as
    the scene's star appears in its place. Every part is a 100px box centred on the
    star's centre, sized by its transform; the script writes only transforms and
-   opacities, as the load progresses. Its painted disc and its glow follow solar-body.js
-   (SOLAR_LOOK) as the scene grades them at the reveal. */
+   opacities, as the load progresses. Its disc and its glow are the scene's star
+   (solar-body.js SOLAR_LOOK) as the canvas shows it at the reveal, under the same
+   vignette; the lens's ghosts come in with the canvas. */
 .scene-star {
   position: absolute;
   top: 0;
@@ -719,37 +720,34 @@ body.scene-walk-hidden > :not(.scene-shell) {
   opacity: 0;
 }
 
-/* The disc: a pale cream centre warming to a gold limb. */
+/* The disc: clipped white-hot, a little warm, flat to its limb. */
 .scene-star > .scene-star__disc {
   border-radius: 50%;
-  background: radial-gradient(
-    circle closest-side,
-    rgb(180, 177, 171) 0%,
-    rgb(178, 173, 154) 30%,
-    rgb(175, 166, 131) 52%,
-    rgb(173, 158, 106) 74%,
-    rgb(172, 149, 90) 96%,
-    rgb(170, 146, 90) 100%
-  );
+  background: rgb(252, 251, 244);
 }
 
-/* The glow about the limb, two radii out (its box): it carries on from the limb's gold
-   and is gone by about 1.8 radii. */
+/* The glow about the limb, two and a half radii out (its box, 40% the limb): the clipped
+   light runs on past the limb, then falls away through gold and is gone by about 2.2 radii. */
 .scene-star > .scene-star__glow {
   border-radius: 50%;
   background: radial-gradient(
     circle closest-side,
-    rgba(200, 150, 90, 0.85) 50%,
-    rgba(200, 150, 90, 0.8) 52%,
-    rgba(200, 150, 90, 0.72) 56%,
-    rgba(200, 150, 90, 0.64) 59%,
-    rgba(200, 150, 90, 0.53) 63%,
-    rgba(200, 150, 90, 0.42) 67%,
-    rgba(200, 150, 90, 0.31) 70%,
-    rgba(200, 150, 90, 0.23) 74%,
-    rgba(200, 150, 90, 0.12) 81%,
-    rgba(200, 150, 90, 0.05) 89%,
-    rgba(200, 150, 90, 0) 100%
+    rgba(255, 254, 247, 0.99) 40%,
+    rgba(255, 254, 246, 0.98) 44%,
+    rgba(255, 251, 236, 0.97) 46%,
+    rgba(255, 242, 214, 0.93) 48%,
+    rgba(255, 223, 185, 0.84) 50%,
+    rgba(255, 207, 166, 0.73) 52%,
+    rgba(255, 197, 153, 0.61) 54%,
+    rgba(255, 191, 147, 0.5) 56%,
+    rgba(255, 184, 132, 0.35) 60%,
+    rgba(255, 178, 127, 0.23) 64%,
+    rgba(255, 167, 116, 0.15) 68%,
+    rgba(255, 152, 96, 0.09) 72%,
+    rgba(255, 140, 80, 0.055) 76%,
+    rgba(255, 140, 80, 0.03) 80%,
+    rgba(255, 140, 80, 0.008) 88%,
+    rgba(255, 140, 80, 0) 100%
   );
 }
 
@@ -1500,13 +1498,13 @@ body.scene-walk-hidden > :not(.scene-shell) {
   position: absolute;
   inset: 0;
   content: "";
-  background: rgba(255, 190, 116, 0.42);
+  background: rgba(255, 211, 165, 0.42);
   opacity: calc(var(--doors-light) * var(--doors-light));
 }
 
 /* The star through the paper: a 100px box at the star's centre that the script moves and
-   scales; warm at its heart and gone well past the star's own glow, as a lamp is behind a
-   sheet. */
+   scales; the camera sun's warm white at its heart, warmed through the parchment as it
+   spreads, and gone well past the star's own glow, as a lamp is behind a sheet. */
 .scene-doors__glow {
   position: absolute;
   top: -50px;
@@ -1517,13 +1515,13 @@ body.scene-walk-hidden > :not(.scene-shell) {
   opacity: 0;
   background: radial-gradient(
     circle closest-side,
-    rgba(255, 226, 176, 0.9) 0%,
-    rgba(250, 196, 124, 0.72) 8%,
-    rgba(232, 156, 86, 0.46) 20%,
-    rgba(204, 118, 62, 0.24) 38%,
-    rgba(172, 94, 50, 0.1) 60%,
-    rgba(150, 82, 44, 0.03) 80%,
-    rgba(150, 82, 44, 0) 100%
+    rgba(255, 236, 215, 0.9) 0%,
+    rgba(250, 204, 147, 0.72) 8%,
+    rgba(232, 162, 99, 0.46) 20%,
+    rgba(204, 120, 65, 0.24) 38%,
+    rgba(172, 97, 54, 0.1) 60%,
+    rgba(150, 85, 47, 0.03) 80%,
+    rgba(150, 85, 47, 0) 100%
   );
 }
 

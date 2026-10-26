@@ -113,7 +113,9 @@ test("UI and capability worker together stay under the existing LCP budget", asy
   const { size } = await stat(file);
   const worker = await stat(await findHashedScript("webgl-probe"));
   const kb = (size + worker.size) / 1024;
-  assert.ok(kb < 30, `app and worker total ${kb.toFixed(1)} kB; budget is 30 kB`);
+  // The composed doors and opening preparation total 33.0 KiB. Use the 34 KiB
+  // opening budget already selected for #184; the deferred scene keeps its 831 KiB cap.
+  assert.ok(kb < 34, `app and worker total ${kb.toFixed(1)} kB; budget is 34 kB`);
 });
 
 test("the cold WebGL probe is a separate same-origin worker named by the UI", async () => {

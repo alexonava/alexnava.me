@@ -28,7 +28,6 @@ import {
   SOLAR_GLOW_RADIUS,
   SOLAR_LOOK,
   SOLAR_RADIUS,
-  solarUnrest,
 } from "../src/scene/solar-body.js";
 import { STAR_LAYER } from "../src/scene/depth-layers.js";
 import {
@@ -88,7 +87,7 @@ test("the star's two parts, its tiers and its resources survive repeated transit
   });
   const disc = objects.find((o) => o.name === "solar-disc"),
     glow = objects.find((o) => o.name === "solar-glow");
-  // The painted disc and its glow: no photographic surface, loops or lens streak.
+  // The disc and its glow: no surface, loops or lens streak (a clipped disc shows none).
   assert.deepEqual(objects.map((o) => o.name).sort(), ["solar-disc", "solar-glow"]);
   assert.deepEqual(controller.root.position.toArray(), [-85, 55, -29]);
   assert.equal(disc.geometry.parameters.radius, SOLAR_RADIUS);
@@ -115,21 +114,82 @@ test("the star's two parts, its tiers and its resources survive repeated transit
   assert.equal(controller.update({ elapsedSeconds: 20 }), false);
 });
 
-test("the star is painted: a pale core warming to its limb in brushed bands, its glow carrying on from the limb", () => {
-  assert.ok(Object.isFrozen(SOLAR_LOOK) && Object.isFrozen(SOLAR_LOOK.glow));
-  const { core, mid, rim, bands, inner, outer, glow, tail, plane, hold } = SOLAR_LOOK;
-  // Paler at the core and warmer out to the limb, every channel past red stepping down;
-  // the glow warms as it goes.
-  assert.ok(core[1] > mid[1] && mid[1] > rim[1] && core[2] > mid[2] && mid[2] > rim[2]);
+// The star's light r radii from its centre on screen, as solar-body.js draws it (the disc and
+// the glow), and the aureole's part the lens carries on (postprocess.js lensFlare()).
+const smooth = (a, b, x) => {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+const toward = (from, to, t) => from.map((v, i) => v + (to[i] - v) * t);
+function solarAureole(h, L = SOLAR_LOOK) {
+  const k = 1 + h / L.aureole[1],
+    fade = 1 - smooth(L.reach / 2 - 1, L.reach - 1, h);
+  return toward(L.outer, L.inner, 1 / k).map((c) => ((c * L.aureole[0]) / (k * k)) * fade);
+}
+function solarLight(r, L = SOLAR_LOOK) {
+  const mu = Math.sqrt(Math.max(1 - r * r, 0)),
+    h = Math.max(r - 1, 0),
+    w = 1 + h / L.wing[1],
+    near = smooth(1 - 3 * L.soft, 1, r) * (1 - smooth(L.near[0], L.near[1], r)),
+    aureole = solarAureole(h, L),
+    wing = toward(L.outer, L.inner, 1 / w).map((c) => (c * L.wing[0]) / w ** 3);
+  return [0, 1, 2].map((i) => {
+    const light =
+      L.exposure * L.color[i] * (1 - L.limb[i] * (1 - mu)) * (1 - smooth(-L.soft, L.soft, r - 1)) +
+      (aureole[i] + wing[i]) * near;
+    return light / Math.sqrt(Math.sqrt(1 + (light / L.white[i]) ** 4));
+  });
+}
+const lensAureole = (r, L = SOLAR_LOOK) =>
+  solarAureole(Math.max(r - 1, 0), L).map((c) => c * smooth(L.near[0], L.near[1], r));
+
+test("the star is a camera's: a clipped warm-white core, a redder limb, a soft edge and a tight glow", () => {
+  assert.ok(Object.isFrozen(SOLAR_LOOK) && Object.isFrozen(SOLAR_LOOK.hold));
+  const { color, limb, white, inner, outer, near, reach, plane, hold, exposure } = SOLAR_LOOK;
+  // Far past the exposure: the core clips flat at the camera's white, which the grade shows
+  // warm; the limb loses more of each channel past red, so it is dimmer and redder.
+  for (const i of [0, 1, 2]) assert.ok(exposure * color[i] >= 3 * white[i], `channel ${i}`);
+  assert.ok(white[0] > white[1] && white[1] > white[2]);
+  assert.ok(limb[0] < limb[1] && limb[1] < limb[2]);
+  const core = solarLight(0),
+    mid = solarLight(0.6);
+  for (const i of [0, 1, 2]) {
+    assert.ok(Math.abs(mid[i] - core[i]) < 0.01 * core[i], "flat, clipped");
+    assert.ok(core[i] > 0.95 * white[i] && core[i] <= white[i]);
+  }
+  // Overexposed, the clipped light spreads a little past the limb, then falls away warm: where
+  // its red has halved, its blue has fallen further.
+  let edge = 1;
+  while (solarLight(edge)[0] > white[0] / 2) edge += 0.005;
+  assert.ok(edge > 1 && edge < 1.5, `halved at ${edge.toFixed(3)} radii`);
+  const fall = solarLight(edge);
+  assert.ok(fall[2] / fall[0] < core[2] / core[0], "a warm edge");
+  // The glow warms as it goes, and the light falls off past the limb with no ring: never
+  // rising again, the star's part and the lens's together, out to the aureole's reach, where
+  // it is gone. The star's part has ended by the end of `near`, the lens's starts there.
   assert.ok(inner[1] > outer[1] && inner[2] > outer[2]);
-  assert.ok(bands[0] < bands[1] && bands[1] + bands[2] < 1.0);
-  // The glow starts near the limb's own light (no dark line where they meet) and its tail
-  // is fainter and slower to fall.
-  assert.ok(glow[0] >= 0.8 && tail[0] < glow[0] && tail[1] < glow[1]);
-  // Its furthest reach is the one SOLAR_GLOW_RADIUS (the framing checks') mirrors, inside
-  // the plane's own fade.
-  assert.equal(SOLAR_GLOW_RADIUS, SOLAR_RADIUS * glow[2]);
-  assert.ok(glow[2] < plane / 2 - 0.6);
+  let previous = solarLight(1).map((c, i) => c + lensAureole(1)[i]);
+  for (let r = 1.01; r <= reach + 0.2; r += 0.01) {
+    const total = solarLight(r).map((c, i) => c + lensAureole(r)[i]);
+    total.forEach((c, i) => assert.ok(c <= previous[i] + 1e-9, `rises at ${r.toFixed(2)}`));
+    previous = total;
+  }
+  assert.ok(Math.max(...solarLight(reach)) < 1e-9 && Math.max(...lensAureole(reach)) < 1e-9);
+  assert.ok(Math.max(...lensAureole(near[0])) < 1e-9);
+  assert.ok(
+    solarLight(near[1]).every((c) => c < 1e-9),
+    "the star's own glow is gone by the end of near",
+  );
+  // The aureole's reach is the one SOLAR_GLOW_RADIUS (the framing checks') mirrors. A tight
+  // glow: four radii at most.
+  assert.equal(SOLAR_GLOW_RADIUS, SOLAR_RADIUS * reach);
+  assert.ok(reach <= 4);
+  // The mask is held whole over the star's part, past its end, so the clouds' cel step never
+  // bands it (the owner's note of 2026-10-10), and ends inside the plane; the hold marks the
+  // mask whole in the grade (STAR_LAYER x cover >= its 0.006 knee).
+  assert.ok(near[1] <= hold.reach);
+  assert.ok(STAR_LAYER * hold.cover >= 0.006);
+  assert.ok(hold.reach + hold.feather <= plane / 2 - 0.2);
   const parent = new Group(),
     controller = createSolarBody({
       parent,
@@ -143,80 +203,47 @@ test("the star is painted: a pale core warming to its limb in brushed bands, its
     halo = plate.material.fragmentShader;
   assert.equal(plate.geometry.parameters.width, SOLAR_RADIUS * plane);
   const glsl = (v) => (Number.isInteger(v) ? v.toFixed(1) : String(v));
-  // The disc: soft bands, their edges wobbling, bristles along the sky's brush.
+  // The disc and the glow draw one light, so they meet seamlessly wherever the disc's
+  // silhouette falls: the disc measures its point on screen as the glow's plane does.
+  const light = (s) => s.slice(s.indexOf("vec3 solarAureole("), s.indexOf("void main()"));
+  assert.equal(light(disc), light(halo));
+  assert.ok(disc.includes("float r=length(vView.xy*(vCentre.z/vView.z)-vCentre.xy)/"));
+  assert.ok(halo.includes(`float r=length((vUv-.5)*${glsl(plane)});`));
+  // The aureole falls as the inverse square of the distance from the limb; all of it clips
+  // softly at the camera's white.
   assert.ok(
-    disc.includes(`smoothstep(${glsl(bands[0] - bands[2])},${glsl(bands[0] + bands[2])},rr)`),
+    disc.includes(`float k=1.0+h/${glsl(SOLAR_LOOK.aureole[1])};`) && disc.includes("/(k*k)"),
   );
-  assert.ok(disc.includes(`float rr=r+${glsl(SOLAR_LOOK.wobble)}*`));
-  assert.ok(disc.includes(`vec2(${glsl(SOLAR_LOOK.dir[0])},${glsl(SOLAR_LOOK.dir[1])})`));
-  // No photographic surface: no granules, spots or limb darkening.
-  assert.doesNotMatch(disc, /cells\(|spot|umbra|limb=/);
-  // The glow: brushed, its edge irregular (never a circle), its tail fainter.
-  assert.ok(halo.includes(`vec2 p=(vUv-.5)*${glsl(plane)};`));
-  assert.ok(halo.includes(`float reach=${glsl(glow[2])}*(.78+.22*noise3(`));
-  assert.ok(halo.includes(`${glsl(glow[0])}*exp(-h*${glsl(glow[1])})`));
-  assert.ok(halo.includes(`${glsl(tail[0])}*exp(-h*${glsl(tail[1])})`));
-  assert.doesNotMatch(halo, /solarFire|outside/);
-  // The mask is held whole over the whole glow, past its reach, so the clouds' cel step
-  // never bands its tail (the owner's note of 2026-10-10), and ends inside the plane; the
-  // hold marks the mask whole in the grade (STAR_LAYER x cover >= its 0.006 knee).
+  assert.ok(disc.includes(`q=light/vec3(${white.map(glsl).join(",")})`));
+  assert.ok(disc.includes("return light*inversesqrt(sqrt(1.0+q*q));"));
+  // No texture or unrest: a clipped disc shows none.
+  assert.doesNotMatch(disc + halo, /noise3|cells\(|bristle|spot|uTime|uBreath|uLean/);
   assert.ok(
     halo.includes(
-      `float hold=${glsl(hold.cover)}*(1.0-smoothstep(${glsl(glow[2])},${glsl(glow[2] + hold.feather)},r));`,
+      `float hold=${glsl(hold.cover)}*(1.0-smoothstep(${glsl(hold.reach)},${glsl(hold.reach + hold.feather)},r));`,
     ),
   );
-  assert.ok(STAR_LAYER * hold.cover >= 0.006);
-  assert.ok(glow[2] + hold.feather <= plane / 2 - 0.2);
-  // A pause holds it with the rest of the sky.
-  controller.update({ elapsedSeconds: 0 });
-  controller.update({ elapsedSeconds: 4 });
-  const time = plate.material.uniforms.uTime.value;
-  controller.update({ elapsedSeconds: 6, motionPaused: true });
-  assert.equal(plate.material.uniforms.uTime.value, time);
   controller.dispose();
 });
 
-test("the star's unrest is gentle, irregular and still under reduced motion", () => {
-  const { breath, breathRate, lean } = SOLAR_LOOK;
-  assert.deepEqual(solarUnrest(12.5), solarUnrest(12.5));
-  let low = Infinity,
-    high = -Infinity,
-    jump = 0,
-    previous = solarUnrest(0).breath;
-  for (let t = 1 / 60; t < 600; t += 1 / 60) {
-    const u = solarUnrest(t);
-    low = Math.min(low, u.breath);
-    high = Math.max(high, u.breath);
-    jump = Math.max(jump, Math.abs(u.breath - previous));
-    previous = u.breath;
-    assert.ok(Math.hypot(...u.lean) <= lean + 1e-9);
-  }
-  // Within its bounds, using most of them, and never a frame-to-frame flicker.
-  assert.ok(low >= 1 - breath - 1e-9 && high <= 1 + breath + 1e-9);
-  assert.ok(high - low > breath);
-  assert.ok(jump < breath * 0.05, `breath jumps ${jump} in a frame`);
-  // Not a steady beat: one noise period on, it has moved on.
-  const period = 1 / breathRate;
-  assert.ok(
-    [3, 7, 11, 19].some(
-      (t) => Math.abs(solarUnrest(t).breath - solarUnrest(t + period).breath) > breath * 0.2,
-    ),
-  );
-  // The controller drives the uniforms from the celestial clock, so reduced motion holds them.
+test("the star holds still: no breath, lean or shimmer, so a pause or reduced motion changes nothing", () => {
+  assert.equal("breath" in SOLAR_LOOK || "lean" in SOLAR_LOOK, false);
   const controller = createSolarBody({
     parent: new Group(),
     camera: new PerspectiveCamera(),
     position: new Vector3(0, 0, -60),
     profile: { tier: "high" },
   });
-  const uniforms = controller.root.getObjectByName("solar-glow").material.uniforms;
-  controller.update({ elapsedSeconds: 0 });
-  controller.update({ elapsedSeconds: 9 });
-  assert.equal(uniforms.uBreath.value, solarUnrest(9).breath);
-  assert.deepEqual(uniforms.uLean.value.toArray(), solarUnrest(9).lean);
-  const held = uniforms.uBreath.value;
-  controller.update({ elapsedSeconds: 15, reducedMotion: true });
-  assert.equal(uniforms.uBreath.value, held);
+  // Nothing of it runs on a clock: its shaders take no uniforms.
+  controller.root.traverse((o) => {
+    if (o.isMesh) assert.deepEqual(Object.keys(o.material.uniforms), [], o.name);
+  });
+  for (const state of [
+    { elapsedSeconds: 0 },
+    { elapsedSeconds: 9 },
+    { elapsedSeconds: 15, reducedMotion: true },
+  ])
+    assert.equal(controller.update(state), true);
   controller.dispose();
 });
 
@@ -1480,7 +1507,6 @@ test("every part of the star writes the star's layer mask, and the glow faces th
   assert.equal(disc.material.blendDst, 205, "the disc draws over");
   assert.equal(glow.material.blendDst, 201, "the glow adds light");
   assert.equal(glow.material.depthWrite, false);
-  assert.equal(glow.material.uniforms.uBreath, disc.material.uniforms.uBreath);
   // The glow's plane faces the lens.
   controller.update({ elapsedSeconds: 1 });
   camera.updateMatrixWorld();

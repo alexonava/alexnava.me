@@ -36,9 +36,9 @@ import { resolveSceneOpening } from "../scene/scene-modes.js";
   const EXIT_MS = 600;
   const WATCH_MS = 2000;
   const STALL_MS = 15000;
-  // The star's parts at full warmth: its painted disc and its glow out to `glow` radii, as
-  // the scene's star shows at the reveal (solar-body.js SOLAR_LOOK).
-  const STAR = Object.freeze({ glow: 2 });
+  // The star's parts at full warmth: its disc and its glow out to `glow` radii, as the
+  // scene's star shows at the reveal (solar-body.js SOLAR_LOOK).
+  const STAR = Object.freeze({ glow: 2.5 });
   // Each tier's tree size in bytes (build.mjs), as decoded bodies.
   const SIZES =
     typeof __BABEL_ARCHITECTURE_PREFETCH_BYTES__ !== "undefined"

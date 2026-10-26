@@ -87,7 +87,7 @@ _lazy_ marks a chunk loaded on demand.
 | `rendering.js`           | Renderer, lights, shadows, shader compilation                                                                                    |
 | `shader-programs.js`     | Captured-program shader readiness with bounded, cancellable polling                                                              |
 | `night-environment.js`   | The film sky captured as the scene's environment                                                                                 |
-| `postprocess.js`         | Composer, grade, bloom, ink contour, dissolve, the lens's heat and aberration (`LENS_FX`)                                        |
+| `postprocess.js`         | Composer, grade, bloom, ink contour, dissolve, the lens's heat, aberration and the star's flare (`LENS_FX`)                      |
 | `depth-layers.js`        | Depth-layer codes for the dissolve, and the star's mask                                                                          |
 | `film-light.js`          | Film light balance, shot moods, text guards and directional flash illumination                                                   |
 | `perf-marks.js`          | `babel:` marks and measures                                                                                                      |
@@ -130,7 +130,7 @@ _lazy_ marks a chunk loaded on demand.
 | `estate-sky.js`      | Film sky gradient, horizon band, the cloud field (`cloudFieldGLSL`), its reshaping (`CLOUD_RESHAPE`) and vortex (`CLOUD_VORTEX`)                                               |
 | `celestial-field.js` | Shared nebula frame and dust                                                                                                                                                   |
 | `starfield.js`       | Stars (`STAR_COUNTS`), hidden behind the cloud banks                                                                                                                           |
-| `solar-body.js`      | The painted star, its disc and glow, and their unrest (`SOLAR_LOOK`)                                                                                                           |
+| `solar-body.js`      | The star as a camera sees it, its clipped disc and tight glow (`SOLAR_LOOK`); its lens flare is postprocess.js `LENS_FX.flare`                                                 |
 | `hill-silhouette.js` | Baseline hill ring, the rings' and the massifs' materials, loading the massifs, ranges stand-in, far plain air (`HORIZON_AIR`), the ranges sinking past the fault (`SEA_SINK`) |
 | `mountain-build.js`  | _lazy_ Film mountain geometry: the massifs' placements (`RANGE_PLACEMENTS`), the backdrop rings, the five-ring fallback                                                        |
 | `lightning.js`       | The storm's lightning (`LIGHTNING`): its seeded schedule, the bolt, and the flash on the sky shell, the film's materials, the ground and the mist                              |

@@ -8,9 +8,9 @@ export const DEPTH_LAYER = Object.freeze({ sky: "0.0", mountains: "0.3333", grou
 // and its glow read about 0.01-0.17, still sky to the dissolve, and the grade leaves them out of
 // the cloud banks' cel step (postprocess.js).
 export const STAR_LAYER = 0.035;
-// Its parts' blending: the disc over the sky, the glow, prominences and
-// streak added premultiplied (their colour times their coverage, which may
-// pass 1), each adding its coverage, at most 1, times STAR_LAYER to the code.
+// Its parts' blending: the disc over the sky, the glow added premultiplied
+// (its colour times its coverage, which may pass 1), each adding its
+// coverage, at most 1, times STAR_LAYER to the code.
 // three constants: CustomBlending 5, OneFactor 201, SrcAlphaFactor 204,
 // OneMinusSrcAlphaFactor 205, ConstantAlphaFactor 213.
 export function starBlending(over = false) {
