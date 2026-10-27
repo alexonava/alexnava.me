@@ -78,16 +78,16 @@ The 512px lossy albedo tile is sRGB and is normalized in the shader by its measu
 
 ## The cel sky's plates
 
-`images/materials/cel-sky-<key>.webp` are RGBA WebPs of the film sky's own cel banks (estate-sky.js `cloudFieldGLSL`), lit in volume and baked once round the sky, four times as wide as tall: u is the azimuth over a full turn and v runs from 0.78 at the horizon to the zenith. `moon` is lit by the moon and is the plate for every shot without a sun of its own; `close-up`, `root-and-lantern` and `broken-coast` are each lit from that shot's sun (directed-shots.js `sun`). They are display-referred artwork, sampled as `NoColorSpace`; alpha stores real clear-sky windows. The build fingerprints each separately from the slate maps. The bake tools (`tools/sky-bake`, `bake-live.ps1`) are kept in the local review archive.
+`images/materials/cel-sky-<key>.webp` are RGBA WebPs of the film sky's own cel banks (estate-sky.js `cloudFieldGLSL`), lit in volume and baked once round the sky, four times as wide as tall: u is the azimuth over a full turn and v runs from 0.78 at the horizon to the zenith. `moon` is lit from the shared key's direction (the code keeps the night's name) and is the plate for every shot without a sun of its own; `close-up`, `root-and-lantern` and `broken-coast` are each lit from that shot's sun (directed-shots.js `sun`). They are display-referred artwork, sampled as `NoColorSpace`; alpha stores real clear-sky windows. The build fingerprints each separately from the slate maps. The bake tools (`tools/sky-bake`, `bake-live.ps1`) are kept in the local review archive.
 
-| File                            | Pixels    | Bytes   | Lit by                                    |
-| ------------------------------- | --------- | ------- | ----------------------------------------- |
-| `cel-sky-moon.webp`             | 4096×1024 | 445,888 | the moon (every shot without its own sun) |
-| `cel-sky-close-up.webp`         | 3072×768  | 271,714 | Close-up's sun                            |
-| `cel-sky-root-and-lantern.webp` | 3072×768  | 305,348 | Root and lantern's sun                    |
-| `cel-sky-broken-coast.webp`     | 3072×768  | 303,184 | The broken coast's sun                    |
+| File                            | Pixels    | Bytes   | Lit by                                          |
+| ------------------------------- | --------- | ------- | ----------------------------------------------- |
+| `cel-sky-moon.webp`             | 4096×1024 | 445,888 | the shared key (every shot without its own sun) |
+| `cel-sky-close-up.webp`         | 3072×768  | 271,714 | Close-up's sun                                  |
+| `cel-sky-root-and-lantern.webp` | 3072×768  | 305,348 | Root and lantern's sun                          |
+| `cel-sky-broken-coast.webp`     | 3072×768  | 303,184 | The broken coast's sun                          |
 
-The lazy [cloud-plate.js](../src/scene/cloud-plate.js) owner requests them only for the live high and balanced sky: the moon's first, then the suns' one at a time, each within a 640 KiB file limit, a 4,194,304-pixel decode limit and an 8 s abort deadline; all four stay within the owner's 2 MB sky budget. They repeat round the sky with mipmaps on the existing shell, which lends its uniform objects to the stars and the environment capture. A ready plate commits during hidden preparation or on the cut to its shot, and the environment is drawn again with it. Failure leaves the procedural sky and never delays the reveal. Disposal restores borrowed uniforms, frees the owned textures and closes their bitmaps.
+The lazy [cloud-plate.js](../src/scene/cloud-plate.js) owner requests them only for the live high and balanced sky: the shared one (`moon`) first, then the suns' one at a time, each within a 640 KiB file limit, a 4,194,304-pixel decode limit and an 8 s abort deadline; all four stay within the owner's 2 MB sky budget. They repeat round the sky with mipmaps on the existing shell, which lends its uniform objects to the stars and the environment capture. A ready plate commits during hidden preparation or on the cut to its shot, and the environment is drawn again with it. On the shell each plate's colour is mapped by its luminance to golden hour's, a dusk shade to a sunlit gold (estate-sky.js `GOLDEN_SKY` `cloudShade` and `cloudLit`). Failure leaves the procedural sky and never delays the reveal. Disposal restores borrowed uniforms, frees the owned textures and closes their bitmaps.
 
 ## The opening's paper
 

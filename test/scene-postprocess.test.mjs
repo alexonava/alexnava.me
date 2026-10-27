@@ -21,6 +21,7 @@ import {
   LAYER_STAGGER,
   SKY_INK,
   LENS_FX,
+  TEXT_KNEE,
   LENS_NEAR,
   lensSource,
   lensKeepRect,
@@ -1362,6 +1363,17 @@ test("the lens's heat, fringes and flare live in the final pass, in film, off th
   assert.equal((view.match(/return /g) || []).length, 1);
   // The text guard reaches LENS_FX.text of the smaller side.
   assert.ok(shader.includes(`lensBehind(slateText, vUv, ${LENS_FX.text[0]})`));
+  // The text's knee (TEXT_KNEE) holds the frame behind the name and intro under the light
+  // that keeps the text (#f7f1ea, about 0.89) at 5:1: its cap 0.138 at most, and below its knee
+  // the frame passes unchanged.
+  assert.ok(shader.includes(`lensBehind(slateText, vUv, ${TEXT_KNEE.reach})`));
+  assert.ok(TEXT_KNEE.knee < TEXT_KNEE.cap && (0.89 + 0.05) / (TEXT_KNEE.cap + 0.05) >= 5);
+  const k = TEXT_KNEE.knee,
+    span = TEXT_KNEE.cap - k;
+  for (const L of [0, 0.05, 0.12, 0.2, 0.5, 1, 4]) {
+    const T = L < k ? L : k + span * (1 - Math.exp(-(L - k) / span));
+    assert.ok(T <= TEXT_KNEE.cap && (L >= k || T === L));
+  }
   pipeline.dispose();
 });
 

@@ -1696,7 +1696,7 @@ const ROOT_LIGHTS = `
 float slateGate(vec3 L, vec3 C) {
   if (slateSky + slateKeyOcc + slateLampOcc <= 0.0) return 1.0;
   if (slateDirectional && dot(L, slateKeyView) > .9995) return 1.0 - slateKeyOcc;
-  if (C.b < .7*C.r) return 1.0 - slateLampOcc;
+  if (C.b < .4*C.r) return 1.0 - slateLampOcc;
   return 1.0 - ${glsl(OCCLUSION.fill)}*slateSky;
 }
 void RE_Direct_Slate(const in IncidentLight directLight, const in vec3 geometryPosition, const in vec3 geometryNormal, const in vec3 geometryViewDir, const in vec3 geometryClearcoatNormal, const in PhysicalMaterial material, inout ReflectedLight reflectedLight) {

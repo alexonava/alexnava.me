@@ -1453,7 +1453,10 @@ test("the film's golden hour: a low warm sun key many times the sky's light, the
   // The ground finds the sun by its direction before it calls a light warm (mud-ground.js), so
   // the warm sun never reads as the lantern.
   const [cr, cg, cb] = FILM_LIGHT.candle;
-  assert.ok(cr > cg && cg > cb && cb < 0.7 * cr, "a warm candle");
+  assert.ok(
+    cr > cg && cg > cb && cb < 0.4 * cr,
+    "a warm candle, warmer than the sun and the warm fill",
+  );
   const [sr, , sb] = FILM_LIGHT.sky;
   assert.ok(sb > sr, "a dusk-blue sky light");
 });

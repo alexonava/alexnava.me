@@ -1,6 +1,6 @@
 # alexnava.me
 
-Source for [alexnava.me](https://alexnava.me/), Alex Nava's website. The homepage opens on a title card and, on capable devices, a deferred Three.js night scene that tours a painted night sky, a twisted tree and a fault-line coast; the footer's Contact shows an email address and LinkedIn. The text and the title card stand alone when the scene cannot run.
+Source for [alexnava.me](https://alexnava.me/), Alex Nava's website. The homepage opens on a title card and, on capable devices, a deferred Three.js scene at golden hour that tours a painted evening sky, a twisted tree and a fault-line coast; the footer's Contact shows an email address and LinkedIn. The text and the title card stand alone when the scene cannot run.
 
 ## Work locally
 
