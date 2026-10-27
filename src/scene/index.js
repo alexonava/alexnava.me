@@ -1,7 +1,7 @@
 import "./quality.js";
 import { createSolarBody, SOLAR_RADIUS } from "./solar-body.js";
 import { LENS_FX, lensKeepRect, lensSource } from "./postprocess.js";
-import { openingStar, watchMeasure } from "./opening-star.js";
+import { openingFlame, openingStar, watchMeasure } from "./opening-star.js";
 import { measureShot, measureShotSteps } from "./directed-shots.js";
 import { createStarfield } from "./starfield.js";
 import { readTourInterval, createCameraTour, TOUR_IDLE, TOUR_TRANSITION } from "./camera-tour.js";
@@ -102,6 +102,9 @@ ColorManagement.enabled = false;
 // angle and its speed in radians per second, before a 0.95 easing.
 const ORBIT_START_ANGLE = 0.12 * Math.PI;
 const ORBIT_SPEED = 0.06;
+// The lantern's light as the loading line and the opening's doors show it: its radius about the
+// flame in world units, about the half-width of the lantern's glass.
+const LANTERN_GLOW = 0.35;
 
 (() => {
   const site = (window.BabelSite = window.BabelSite || {});
@@ -963,11 +966,17 @@ const ORBIT_SPEED = 0.06;
       // watch's stored outline puts it (opening-star.js), from the scene's start and again on
       // a resize or once the fonts load; then, once the scene's camera has fitted that shot
       // itself, where it does.
+      // A shot that looks at the lantern gives the line the lantern's flame instead (`kind`
+      // "lantern"), its light LANTERN_GLOW world units about the flame: Lantern study, which
+      // opens the film by chance, from the scene's start where the opening fit to the supplied
+      // lantern's stored outline puts it (opening-star.js openingFlame()), then the camera's.
       let openingCameraStar = false;
       const openingSun = new Vector3(),
         openingWatch = new Vector3(),
-        openingSource = [0, 0, 0, 0];
-      function reportLoaderStar(star) {
+        openingFoot = new Vector3(),
+        openingSource = [0, 0, 0, 0],
+        openingFlameSource = [0, 0, 0, 0];
+      function reportLoaderStar(star, kind) {
         const rect = renderer.domElement?.getBoundingClientRect?.();
         site.sceneLoader?.star?.(
           star && rect?.width && rect.height
@@ -977,12 +986,35 @@ const ORBIT_SPEED = 0.06;
                 radius: star[2] * rect.height,
                 width: rect.width,
                 height: rect.height,
+                ...(kind ? { kind } : {}),
               }
             : null,
         );
       }
       function predictLoaderStar() {
         if (openingCameraStar || canvasShown || !site.sceneLoader?.star) return;
+        // A tree opening: the lantern on the ground at its place on the estate, under the
+        // composition's height, as prop-scale.js seats it.
+        if (scene.cinematicSelection === "tree") {
+          const { x, z } = estateLantern();
+          environmentRoot.updateWorldMatrix(true, false);
+          reportLoaderStar(
+            openingFlame({
+              width: viewport.width,
+              height: viewport.height,
+              getSafeArea: (width, height) => cinematicArea || measureCinematicArea(width, height),
+              getGroundY: cinematicGroundY,
+              foot: environmentRoot.localToWorld(openingFoot.set(x, groundHeight(x, z), z)),
+              glow: LANTERN_GLOW,
+              tourPhase: cameraTour ? 0 : null,
+              selected: scene.cinematicSelection,
+              angle: scene.cinematicAngle,
+              out: openingFlameSource,
+            }),
+            "lantern",
+          );
+          return;
+        }
         // The watch's marker under the scene's composition height (environmentRoot),
         // which only lifts or lowers it.
         watchRoot.getWorldPosition(openingWatch);
@@ -1222,11 +1254,14 @@ const ORBIT_SPEED = 0.06;
         else lookTarget.set(0, lookAtHeight, 0);
         // The cloud vortex's eye sits where this lens sees the star, set on each cut and
         // each refit (a resize; estate-sky.js CLOUD_VORTEX), so it stays about the star.
+        if (!canvasShown) atmosphereSystem.commitSky();
         if (cinematicApplied && (cinematic.shot !== vortexShot || cinematic.frame !== vortexFit)) {
           // Each shot takes the maelstrom whole or not at all as it opens, by the sky's drift
           // clock (estate-sky.js CLOUD_VORTEX.life): it is never seen forming; a refit keeps it.
-          if (cinematic.shot !== vortexShot)
+          if (cinematic.shot !== vortexShot) {
+            atmosphereSystem.commitSky();
             vortexHere = vortexSeason && cloudVortexPresent(skyShell.material.uniforms.uTime.value);
+          }
           vortexShot = cinematic.shot;
           vortexFit = cinematic.frame;
           camera.updateMatrixWorld();
@@ -1301,10 +1336,21 @@ const ORBIT_SPEED = 0.06;
                   lensStar,
                 )
               : null;
-          // Until the reveal the loading line's star waits where this one will be.
-          if (star && !canvasShown) {
+          // Until the reveal the loading line's light waits where this shot shows its own: the
+          // lantern's flame in a shot that looks at it, else the star.
+          if (shot && !canvasShown) {
             openingCameraStar = true;
-            reportLoaderStar(star);
+            if (flame)
+              reportLoaderStar(
+                lensSource(
+                  camera,
+                  treeArchitecture.light.getWorldPosition(lensPoint),
+                  LANTERN_GLOW,
+                  openingFlameSource,
+                ),
+                "lantern",
+              );
+            else reportLoaderStar(star);
           }
           post.setLensSources?.({
             star,

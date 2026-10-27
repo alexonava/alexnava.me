@@ -444,7 +444,7 @@ test("The watch resolves its landscape variant only for short landscape viewport
   assert.equal(portrait.azimuth, -12);
   assert.ok(portrait.anchor[0] < 0.5);
   const monitor = resolveDirectedShot(watch, 1080, 1920);
-  assert.deepEqual(watch.tall, { anchor: [0.28, 0.54] });
+  assert.equal(watch.tall, undefined);
   assert.deepEqual({ ...monitor }, { ...watch, ...watch.portrait, ...watch.tall });
   assert.deepEqual(monitor.anchor, [0.28, 0.54]);
   assert.equal(

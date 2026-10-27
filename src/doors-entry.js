@@ -69,7 +69,14 @@ if (typeof scope.document === "undefined") {
       light: ({ star, warm }) =>
         worker.postMessage({
           type: "light",
-          star: star ? { x: star.x, y: star.y, radius: star.radius } : null,
+          star: star
+            ? {
+                x: star.x,
+                y: star.y,
+                radius: star.radius,
+                ...(star.kind === "lantern" ? { kind: "lantern" } : {}),
+              }
+            : null,
           warm,
         }),
       resize: (size, ratio) => worker.postMessage({ type: "resize", size, ratio }),

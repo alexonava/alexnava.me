@@ -8,7 +8,12 @@ import {
 } from "three";
 import { celestialTier, createCelestialClock, seededRandom } from "./solar-body.js";
 import { CELESTIAL_FIELD_GLSL, celestialClusterDirection } from "./celestial-field.js";
-import { CLOUD_TEXT_GLSL, CLOUD_VORTEX_GLSL, cloudFieldGLSL } from "./estate-sky.js";
+import {
+  CLOUD_PLATE_GLSL,
+  CLOUD_TEXT_GLSL,
+  CLOUD_VORTEX_GLSL,
+  cloudFieldGLSL,
+} from "./estate-sky.js";
 export const STAR_COUNTS = Object.freeze({ high: 4200, balanced: 2600, low: 1200 });
 // The smallest star sprite in device pixels (the faint stars are 1.25-1.9 CSS px).
 export const STAR_MIN_FOOTPRINT = 2;
@@ -95,6 +100,8 @@ export function createStarfield({
       uClouds: sky.uClouds ?? { value: 0 },
       uSkyRadius: { value: skyRadius },
       uCloudReshape: sky.uCloudReshape ?? { value: 0 },
+      uCloudMap: sky.uCloudMap ?? { value: null },
+      uCloudMix: sky.uCloudMix ?? { value: 0 },
       uVortex: sky.uVortex ?? { value: { x: 0, y: 0, z: 0, w: 0 } },
       slateText: sky.slateText ?? { value: { x: 2, y: 2, z: -1, w: -1 } },
       slateAspect: sky.slateAspect ?? { value: 1 },
@@ -109,6 +116,7 @@ export function createStarfield({
       varying vec3 vColor;
       ${CELESTIAL_FIELD_GLSL}
       ${CLOUD_TEXT_GLSL}
+      ${CLOUD_PLATE_GLSL}
       ${CLOUD_VORTEX_GLSL}
       // The sky's cloud cover at a shell direction, with the text guard where the
       // star lands on screen (estate-sky.js).

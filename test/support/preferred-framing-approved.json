@@ -1,0 +1,327 @@
+{
+  "source": "046ba230f9cdc273a76210a1272eb8e8417d2296",
+  "shots": [
+    {
+      "name": "The watch",
+      "fov": 44,
+      "height": 0.1,
+      "arc": 2,
+      "margin": 0.9,
+      "anchor": [0.45, 0.54],
+      "move": {
+        "zoom": [46, 36],
+        "dollyZoom": true,
+        "tilt": [0, 2.5],
+        "ease": 0.6
+      },
+      "region": [0.5, 1],
+      "targetHeight": 0.66,
+      "azimuth": -16,
+      "hold": 9,
+      "portrait": {
+        "azimuth": -12,
+        "anchor": [0.28, 0.54],
+        "margin": 0.88,
+        "focus": {
+          "width": 0.22,
+          "depth": [-0.3, 0.3]
+        },
+        "move": {
+          "zoom": [44, 38],
+          "dollyZoom": true,
+          "tilt": [0, 2.5],
+          "ease": 0.6
+        }
+      },
+      "tablet": {
+        "anchor": [0.31, 0.54]
+      },
+      "landscape": {
+        "move": null,
+        "region": [0.56, 1],
+        "anchor": [0.5, 0.62]
+      },
+      "compact": {
+        "move": null,
+        "region": [0.56, 1],
+        "anchor": [0.5, 0.62]
+      },
+      "squat": {
+        "move": null,
+        "anchor": [0.35, 0.54]
+      }
+    },
+    {
+      "name": "Portrait",
+      "portrait": {
+        "move": {
+          "dolly": [1.06, 0.94],
+          "crane": [0, 0.08],
+          "ease": 0.6
+        },
+        "margin": 0.97,
+        "tilt": null,
+        "anchor": [0.39, 0.66],
+        "height": 0.38,
+        "arc": 0.25,
+        "azimuth": -41.75
+      },
+      "tablet": {
+        "azimuth": -43.5,
+        "arc": 1,
+        "anchor": [0.6, 0.66],
+        "margin": 0.93,
+        "height": 0.12
+      },
+      "tall": {
+        "azimuth": -43.5,
+        "arc": 1,
+        "anchor": [0.6, 0.66],
+        "margin": 0.93,
+        "height": 0.12
+      },
+      "squat": {
+        "move": {
+          "dolly": [1.06, 0.94],
+          "crane": [0, 0.08],
+          "ease": 0.6
+        },
+        "margin": 0.93,
+        "tilt": null,
+        "azimuth": -43,
+        "arc": 1,
+        "anchor": [0.58, 0.66],
+        "height": 0.12
+      },
+      "move": {
+        "truck": [-0.07, 0.07],
+        "crane": [0, 0.13],
+        "dolly": [1.05, 0.92],
+        "ease": 0.6
+      },
+      "region": [0, 1],
+      "fov": 36,
+      "azimuth": -72,
+      "height": 0.12,
+      "arc": 4,
+      "hold": 9,
+      "margin": 0.82,
+      "anchor": [0.5, 0.42],
+      "tilt": [-1, 4],
+      "landscape": {
+        "move": null
+      }
+    },
+    {
+      "name": "Lantern study",
+      "move": {
+        "dolly": [1.2, 0.85],
+        "tilt": [-1.5, 0],
+        "ease": 0.6
+      },
+      "subject": "tree-lantern",
+      "region": [0, 1],
+      "fov": 34,
+      "azimuth": -125,
+      "height": 0.62,
+      "arc": 2,
+      "hold": 6,
+      "margin": 0.7,
+      "anchor": [0.56, 0.5],
+      "landscape": {
+        "move": null,
+        "azimuth": -115,
+        "anchor": [0.5, 0.5]
+      },
+      "portrait": {
+        "move": {
+          "dolly": [1.1, 0.9],
+          "tilt": [-1.5, 0],
+          "ease": 0.6
+        },
+        "azimuth": -115,
+        "anchor": [0.5, 0.5]
+      }
+    },
+    {
+      "name": "Close-up",
+      "move": {
+        "truck": [-0.1, 0.1],
+        "pan": [-2, 2],
+        "ease": 0.5
+      },
+      "region": [0.5, 0.78],
+      "fov": 32,
+      "azimuth": -155,
+      "height": 0.28,
+      "arc": 2,
+      "hold": 6,
+      "focus": {
+        "width": 0.32,
+        "depth": [-0.15, 0.2]
+      },
+      "margin": 0.8,
+      "anchor": [0.58, 0.45],
+      "portrait": {
+        "focus": {
+          "width": 0.26,
+          "depth": [-0.15, 0.2]
+        },
+        "anchor": [0.5, 0.4],
+        "move": {
+          "dolly": [1.1, 0.94],
+          "ease": 0.5
+        },
+        "margin": 0.92
+      },
+      "landscape": {
+        "move": null,
+        "margin": 0.83,
+        "height": 0.5,
+        "anchor": [0.5, 0.5]
+      },
+      "tall": {
+        "azimuth": -170.5,
+        "anchor": [0.6, 0.555],
+        "height": 0.46,
+        "margin": 0.96
+      }
+    },
+    {
+      "name": "Root and lantern",
+      "move": {
+        "dolly": [0.86, 1.05],
+        "crane": [0, 0.05],
+        "tilt": [-2, 1.5],
+        "ease": 0.6
+      },
+      "region": [0, 0.16],
+      "fov": 32,
+      "azimuth": -120,
+      "height": 0.14,
+      "arc": 1,
+      "hold": 6,
+      "focus": {
+        "width": 0.3,
+        "depth": [-0.1, 0.32]
+      },
+      "margin": 0.91,
+      "anchor": [0.52, 0.64],
+      "portrait": {
+        "focus": {
+          "width": 0.25,
+          "depth": [-0.1, 0.32]
+        },
+        "anchor": [0.55, 0.66],
+        "move": {
+          "dolly": [0.92, 1.06],
+          "ease": 0.6
+        }
+      },
+      "landscape": {
+        "move": null,
+        "azimuth": -115,
+        "anchor": [0.5, 0.5]
+      }
+    },
+    {
+      "region": [0.5, 1],
+      "arc": 0,
+      "hold": 7,
+      "landscape": {
+        "move": null
+      },
+      "name": "The broken coast",
+      "after": "Portrait",
+      "aim": [140, -8.75, 115],
+      "azimuth": -137.1,
+      "reach": 95.5,
+      "fov": 40,
+      "portrait": {
+        "aim": [120.3, -8.75, 115],
+        "azimuth": -127.8,
+        "reach": 82.2,
+        "fov": 76
+      },
+      "tablet": {
+        "aim": [140, -8.75, 115],
+        "azimuth": -137.1,
+        "reach": 95.5,
+        "fov": 40
+      },
+      "tall": {
+        "aim": [140, -8.75, 115],
+        "azimuth": -137.1,
+        "reach": 95.5,
+        "fov": 40
+      },
+      "squat": {
+        "aim": [140, -8.75, 115],
+        "azimuth": -137.1,
+        "reach": 95.5,
+        "fov": 40
+      },
+      "rise": 8.25,
+      "shadow": [85, 72],
+      "move": {
+        "dolly": [1.05, 0.95],
+        "ease": 0.6
+      }
+    },
+    {
+      "region": [0.5, 1],
+      "arc": 0,
+      "hold": 7,
+      "landscape": {
+        "move": null,
+        "azimuth": -55,
+        "reach": 42,
+        "rise": 15,
+        "fovMax": 48,
+        "shadow": [62, 70]
+      },
+      "name": "The falls",
+      "after": "Lantern study",
+      "frameFalls": true,
+      "aim": [80.5, -8, 82.3],
+      "portrait": {
+        "azimuth": -55,
+        "reach": 44,
+        "rise": 24,
+        "fovMax": 62,
+        "shadow": [62, 70]
+      },
+      "azimuth": -44,
+      "reach": 33,
+      "rise": 10.25,
+      "shadow": [83, 90],
+      "fov": 34,
+      "fovMax": 48,
+      "move": {
+        "dolly": [1.04, 0.95],
+        "ease": 0.5
+      }
+    },
+    {
+      "region": [0.5, 1],
+      "arc": 0,
+      "hold": 7,
+      "landscape": {
+        "move": null
+      },
+      "name": "Over the fault",
+      "after": "Root and lantern",
+      "aim": [90, -8.75, 90],
+      "azimuth": -125,
+      "reach": 45,
+      "rise": 23.25,
+      "shadow": [85, 72],
+      "fov": 58,
+      "move": {
+        "dolly": [1.06, 0.94],
+        "crane": [0.3, 0],
+        "ease": 0.6
+      }
+    }
+  ]
+}

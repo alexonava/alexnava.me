@@ -143,9 +143,10 @@
     window.setTimeout(go, FADE_MS + SETTLE_MS + 400);
   }
 
-  // The star through the paper: its CSS px and radius as the loading line has them, its
-  // warmth (0 to 1) and the load's progress, which lights the seam and fills the line's bar
-  // on the paper (styles.css .scene-doors::after), shown from the line's first word.
+  // The star through the paper (or, in a lantern opening, the lantern's flame: its `kind`):
+  // its CSS px and radius as the loading line has them, its warmth (0 to 1) and the load's
+  // progress, which lights the seam and fills the line's bar on the paper (styles.css
+  // .scene-doors::after), shown from the line's first word.
   const light = safe(({ star = null, warm = 0, progress = 0 } = {}) => {
     if (state !== "held") return;
     lit = { star, warm, progress };
@@ -154,6 +155,8 @@
     doors.style.setProperty("--doors-light", String(Math.round(level * 1000) / 1000));
     doors.classList.add("is-loading");
     const valid = star && [star.x, star.y, star.radius].every(Number.isFinite) && star.radius > 0;
+    // A lantern opening's light is the lantern glass's amber (styles.css .is-lantern).
+    if (valid) doors.classList.toggle("is-lantern", star.kind === "lantern");
     const heat = valid ? Math.min(1, Math.max(0, Number(warm) || 0)) : 0;
     const radius = valid ? Math.max(GLOW.min, GLOW.radii * star.radius) : 0;
     for (const glow of glows) {

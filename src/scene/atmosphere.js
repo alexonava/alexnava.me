@@ -18,10 +18,37 @@ export function createSceneAtmosphere({ parent, profile }) {
   let disposed = false;
   let skyTier = celestialTier(profile);
   let film = false;
+  let cloudOwner = null,
+    cloudPending = null;
+
+  function prepareClouds() {
+    if (
+      disposed ||
+      skyTier === "low" ||
+      cloudOwner ||
+      cloudPending ||
+      !skyMaterial?.uniforms.uCloudMap ||
+      typeof window === "undefined"
+    )
+      return;
+    cloudPending = import("./cloud-plate.js")
+      .then((module) => {
+        if (disposed || skyTier === "low") return;
+        cloudOwner = module.createCloudPlate({ uniforms: skyMaterial.uniforms });
+        cloudOwner.setEnabled(film);
+        return cloudOwner.prepare();
+      })
+      .catch(() => {})
+      .finally(() => {
+        cloudPending = null;
+      });
+  }
 
   function applySkyQuality() {
     const layers = skyMaterial?.uniforms.uNebulaLayers;
     if (layers) layers.value = film && skyTier !== "low" ? (skyTier === "balanced" ? 2 : 3) : 0;
+    cloudOwner?.setEnabled(film && skyTier !== "low");
+    prepareClouds();
   }
 
   // In film the stars and sun blend their colour as before but keep the alpha
@@ -55,6 +82,9 @@ export function createSceneAtmosphere({ parent, profile }) {
   return {
     lifecycleOrder: 30,
     root,
+    commitSky() {
+      return cloudOwner?.commit() ?? false;
+    },
     applyQuality(nextProfile = {}) {
       if (disposed) return false;
       skyTier = celestialTier(nextProfile);
@@ -64,6 +94,7 @@ export function createSceneAtmosphere({ parent, profile }) {
     dispose() {
       if (disposed) return false;
       disposed = true;
+      cloudOwner?.dispose();
       root.visible = false;
       if (skyMaterial?.uniforms.uNebulaLayers) skyMaterial.uniforms.uNebulaLayers.value = 0;
       skyMaterial = null;
@@ -75,6 +106,7 @@ export function createSceneAtmosphere({ parent, profile }) {
         skyMaterial.uniforms.uNebulaLayers.value = 0;
       }
       skyMaterial = material;
+      cloudOwner?.setTarget(material?.uniforms);
       applySkyQuality();
       return true;
     },

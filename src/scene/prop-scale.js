@@ -5,6 +5,9 @@ import { DOOR_HEIGHT as D } from "./mud-ground.js";
 // and seats both on the ground while active: the lantern on its foot, the
 // tree ESTATE.tree.sink below its lowest vertex (one toe), so its resting
 // roots enter the soil rather than hanging 0.3 above it.
+// The lantern, authored 2.48 units tall (lantern.js LANTERN_AUTHORING_HEIGHT), drawn a
+// hand-scale post lantern 0.3 doorways tall, not a garden fixture.
+export const LANTERN_SCALE = (0.3 * D) / 2.48;
 export function createPropScale({ groundRoot, groundHeight }) {
   let active = false,
     disposed = false,
@@ -64,8 +67,7 @@ export function createPropScale({ groundRoot, groundHeight }) {
     }
     if (l) {
       save(l, treeUndo);
-      // A hand-scale post lantern, not a garden fixture.
-      l.scale.setScalar((0.3 * D) / 2.48);
+      l.scale.setScalar(LANTERN_SCALE);
       ground(l);
     }
     for (const light of [tree.light, tree.fillLight])
@@ -78,7 +80,7 @@ export function createPropScale({ groundRoot, groundHeight }) {
         treeUndo.push(() => {
           light.distance = distance;
         });
-        const f = light === tree.light ? (0.3 * D) / 2.48 : (4.2 * D) / 22;
+        const f = light === tree.light ? LANTERN_SCALE : (4.2 * D) / 22;
         light.distance *= f;
         if (light === tree.fillLight) light.position.multiplyScalar(f);
       }

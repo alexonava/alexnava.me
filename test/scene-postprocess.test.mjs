@@ -456,9 +456,8 @@ test("film grading survives quality changes and restores the current profile wit
   pipeline.setFilmTreatment(true);
   pipeline.setTextProtection(true, 0.3);
   assert.equal(pipeline.composer.passes.length, 4);
-  // The owner restored the cel banding and ink contour on the default film look; the
-  // painted sky's ink is a brush's (SKY_INK).
-  assert.equal(g.uCelMix.value, 0.24);
+  // The cloud artwork keeps continuous shade and soft edges through quality changes.
+  assert.equal(g.uCelMix.value, 0);
   assert.equal(g.uInkMix.value, SKY_INK.mix);
   assert.deepEqual(g.uInkVary.value.toArray(), [SKY_INK.vary, SKY_INK.scale]);
   // A firmer film contrast over the soft highlight shoulder; the print film's split
@@ -478,7 +477,7 @@ test("film grading survives quality changes and restores the current profile wit
   assert.deepEqual(g.uPrint.value.toArray(), [FILM_LOOK.print.lift, FILM_LOOK.print.toe]);
   pipeline.setQualityProfile({ ...profile, postprocessBloom: false });
   assert.equal(pipeline.passes.bloom.enabled, false);
-  assert.equal(g.uCelMix.value, 0.24);
+  assert.equal(g.uCelMix.value, 0);
   assert.equal(v.uTextProtection.value, 1);
   // The mountains' moonlit relief is exempt from the cel step and ink in film only.
   assert.equal(g.uLayerRelief.value, 1);
@@ -490,13 +489,15 @@ test("film grading survives quality changes and restores the current profile wit
   pipeline.dispose();
 });
 
-test("in film the grade's cel step and ink are the sky's alone; everything else shades continuously", () => {
+test("film keeps continuous cloud shade while preserving the classic grade's layer exclusions", () => {
   const pipeline = createPipeline({ postprocessGrading: true });
   const shader = pipeline.passes.grading.material.fragmentShader,
     g = pipeline.passes.grading.uniforms;
   assert.equal(g.uLayerRelief.value, 0, "outside film the grade is unchanged");
   pipeline.setFilmTreatment(true);
   assert.equal(g.uLayerRelief.value, 1);
+  assert.equal(g.uCelMix.value, 0);
+  assert.equal(g.uInkMix.value, 0);
   // The ground and the star's mark (depth-layers.js STAR_LAYER, 0.0005-0.28
   // over the sky's 0) take no band.
   assert.match(
