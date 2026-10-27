@@ -73,9 +73,9 @@ vec3 filmBand(float a) { return vec3(.03,.036,.048)*exp(-pow((a-.03)*6.0,2.0)); 
 //   banks there burn off along their own contours and the sky about the name stays open.
 //   It works on the density, never the tone: the grade's cel step would turn a screen-space
 //   fade of tone into a hard ring about the text.
-// The uCloudReshape uniform scales both weights: 1 for the sky and the stars, 0 for the
-// environment's one capture (night-environment.js), so the ground's and the bark's
-// approved sky light and reflections keep the authored clouds' brightness.
+// The uCloudReshape uniform scales both weights: 1 for the sky, the stars and the
+// environment's capture (night-environment.js), which mirrors the sky as it stands; 0
+// leaves the authored banks.
 export const CLOUD_RESHAPE = Object.freeze({
   wedge: Object.freeze([99, 119, 176, 188]),
   radius: Object.freeze([0.85, 1.12]),
@@ -144,7 +144,7 @@ export const FLASH_REFERENCE = Object.freeze({
 // - `months`: the calendar months (1-12) it comes in, with the lightning: the maelstrom
 //   is spooky October's (the owner's call of 2026-10-13); out of season the scene sets
 //   uVortex.z below 0 (cloudVortexInSeason()) and the banks lie calm about the star.
-// Like the reshaping, uCloudReshape scales it (0 in the environment's capture), and
+// Like the reshaping, uCloudReshape scales it, and
 // behind the name and intro (cloudText) it takes nothing. `on`: 0 emits none of it.
 // Gentler since the owner's quiet cut of 2026-10-13 (twist 5, arm density 0.24 and
 // ring 0.32 before), so it frames the star without shouting; its ring nearly gone since
@@ -181,7 +181,7 @@ export const CLOUD_VORTEX = Object.freeze({
 //   whose guard moves density only);
 // - `streak`: faint bristle lines inside the banks, their colour lighter and darker by up
 //   to `amount` before the soft knee (high only);
-// uCloudReshape scales all of it (0 in the environment's capture). The reference banks
+// uCloudReshape scales all of it. The reference banks
 // take it too (the owner's call of 2026-10-14, "one film over all"): their shapes and
 // places stay as authored. `on`: 0 emits none of it.
 export const CLOUD_BRUSH = Object.freeze({
@@ -309,6 +309,11 @@ vd=vxK*cloudVortex(vxE,T); d+=vd; da+=vxK*cloudVortex(vxE+vec2(dot(vxL,vxT),dot(
   : "";
 
 export const CLOUD_PLATE_GLSL = "uniform sampler2D uCloudMap;uniform float uCloudMix;";
+// The cel sky's plate (cloud-plate.js): baked once round the sky, u = azimuth / 2pi, so
+// its light sits where the shot's sun or the moon does; it drifts on the clock as slowly
+// as the banks. Its light runs past the 8-bit plate's range (CLOUD_PLATE_LOOK.gain), and the
+// moonlit shoulders keep it through a raised knee (.cap), except behind the name and intro.
+export const CLOUD_PLATE_LOOK = Object.freeze({ gain: 2, cap: Object.freeze([1.2, 2.2]) });
 
 // The film's cloud field on the sky shell, as GLSL statements, shared with the stars,
 // which dim behind the banks (starfield.js). They expect `vec3 direction` (the shell
@@ -407,9 +412,9 @@ float cw=uCloudMix*uCloudReshape;
 vec4 cp=vec4(0.);
 if(cw>.001){
 float ca=dot(${B},${B})<1e-10?0.:atan(${B}.y,${B}.x);
-vec2 cu=vec2(fract(ca*.31830989+T*.00004),.78-asin(clamp(hzS,0.,1.))*.63661977);
-cp=texture2D(uCloudMap,cu);
-cp.a=clamp(cp.a+vd*.5,0.,1.)*smoothstep(0.,.045,min(cu.x,1.-cu.x))*horizonFade*uClouds*(1.-.18*cloudText);
+vec2 cu=vec2(fract(ca*.15915494+T*.00002),.78-asin(clamp(hzS,0.,1.))*.63661977);
+cp=texture2D(uCloudMap,cu);cp.rgb*=${glslFloat(CLOUD_PLATE_LOOK.gain)};
+cp.a=clamp(cp.a+vd*.5,0.,1.)*horizonFade*uClouds*(1.-.18*cloudText);
 cover=mix(cover,cp.a,cw);
 d=mix(d,.44+.36*cp.a,cw);
 }`;
@@ -641,6 +646,7 @@ cloudCol=mix(cloudCol,cloudCol*vec3(1.22,.98,.74)+vec3(.05,.03,0.),vxGlow*${glsl
 `
     : ""
 }vec3 kn=vec3(.64,.62,.66), cap=vec3(.88,.86,.91);
+if(uCloudMix*uCloudReshape>0.){kn=mix(vec3(${glslFloat(CLOUD_PLATE_LOOK.cap[0])}),kn,cloudText);cap=mix(vec3(${glslFloat(CLOUD_PLATE_LOOK.cap[1])}),cap,cloudText);}
 cloudCol=min(cloudCol,kn)+(cap-kn)*(1.-exp(-max(cloudCol-kn,0.)/(cap-kn)));
 ${FLASH_GLSL}
 col+=vec3(.027,.03,.036)*smoothstep(.36,.54,d)*horizonFade*uClouds;

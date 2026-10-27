@@ -76,11 +76,18 @@ The river and waterfall add no downloaded assets. Their geometry prepares in the
 
 The 512px lossy albedo tile is sRGB and is normalized in the shader by its measured linear RGB mean (`COAST_ALBEDO.mean`) before mixing with calibrated dark rock reflectance. It supplies the face, stacks and exposed shelf bedrock, returning to the slate ground inland. Its independent streamed-body limit is 96 KiB. The 256px lossless detail tile packs OpenGL normal X/Y in red/green (green is not inverted) and roughness in blue; the shader reconstructs positive normal Z. It is `NoColorSpace` data, with a 48 KiB streamed-body limit. Both use repeating mipmaps, an 8 s deadline and the same 6.56-unit tile, corresponding to the source's 2 m. The diffuse, normal and roughness sources are CC0 Poly Haven “Seaside Rock” by Dimitrios Savva ([Credits](CREDITS.md#coast-rock-detail)). `tools/bake-coast-albedo.py` produces the colour tile from the exact 1k diffuse source with its MD5 checked and reports the encoded tile's linear mean; it requires Pillow only for authoring. The data tile's independent 5-bit normal channels and 4-bit roughness channel are packed by `Assets/Materials/coast-detail-v1/make-coast-detail.py` in the private archive.
 
-## Moonlit clouds
+## The cel sky's plates
 
-`images/materials/moonlit-clouds-1774.webp` (342,980 bytes) is a 1774×887 RGBA WebP, generated from the owner's approved Midnight tree cover. The reference image and generation prompt are retained in the local review archive. It is display-referred artwork, so the sky samples it as `NoColorSpace`; alpha stores real clear-sky windows. The build fingerprints it separately from the slate maps.
+`images/materials/cel-sky-<key>.webp` are RGBA WebPs of the film sky's own cel banks (estate-sky.js `cloudFieldGLSL`), lit in volume and baked once round the sky, four times as wide as tall: u is the azimuth over a full turn and v runs from 0.78 at the horizon to the zenith. `moon` is lit by the moon and is the plate for every shot without a sun of its own; `close-up`, `root-and-lantern` and `broken-coast` are each lit from that shot's sun (directed-shots.js `sun`). They are display-referred artwork, sampled as `NoColorSpace`; alpha stores real clear-sky windows. The build fingerprints each separately from the slate maps. The bake tools (`tools/sky-bake`, `bake-live.ps1`) are kept in the local review archive.
 
-The lazy [cloud-plate.js](../src/scene/cloud-plate.js) owner requests it only for the live high and balanced sky, with a 384 KiB file limit, a 2,097,152-pixel decode limit and a 4 s abort deadline. It uses mipmaps on the existing shell and lends its uniform objects to the stars. A ready plate commits during hidden preparation or a tour cut. Failure leaves the procedural sky and never delays the reveal. Disposal restores borrowed uniforms, frees the owned texture and closes its bitmap. The environment capture excludes this plate.
+| File                            | Pixels   | Bytes   | Lit by                                    |
+| ------------------------------- | -------- | ------- | ----------------------------------------- |
+| `cel-sky-moon.webp`             | 3072×768 | 261,388 | the moon (every shot without its own sun) |
+| `cel-sky-close-up.webp`         | 2048×512 | 126,676 | Close-up's sun                            |
+| `cel-sky-root-and-lantern.webp` | 2048×512 | 139,096 | Root and lantern's sun                    |
+| `cel-sky-broken-coast.webp`     | 2048×512 | 138,348 | The broken coast's sun                    |
+
+The lazy [cloud-plate.js](../src/scene/cloud-plate.js) owner requests them only for the live high and balanced sky: the moon's first, then the suns' one at a time, each within a 640 KiB file limit, a 4,194,304-pixel decode limit and an 8 s abort deadline; all four stay within the owner's 2 MB sky budget. They repeat round the sky with mipmaps on the existing shell, which lends its uniform objects to the stars and the environment capture. A ready plate commits during hidden preparation or on the cut to its shot, and the environment is drawn again with it. Failure leaves the procedural sky and never delays the reveal. Disposal restores borrowed uniforms, frees the owned textures and closes their bitmaps.
 
 ## The opening's paper
 

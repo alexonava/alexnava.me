@@ -179,7 +179,7 @@ test("createCliff takes the supplied buffers only after its complete owner exist
     });
     assert.equal(owner.mesh.geometry, cliff);
     assert.equal(owner.mesh.getObjectByName("estate-stacks").geometry, stacks);
-    assert.equal(owner.mesh.material[0], borrowed);
+    assert.equal(owner.mesh.material, owner.material, "the shelf is the cliff's own stone");
     assert.equal(prepared.cliff, null);
     assert.equal(prepared.stacks, null);
     assert.equal(cliffFreed() + stacksFreed(), 0);

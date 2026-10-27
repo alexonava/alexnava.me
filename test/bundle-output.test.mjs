@@ -359,14 +359,14 @@ test("the scene requests only slate maps and the three maps in their lazy owners
     materials.every(
       (name) =>
         name.startsWith("slate-") ||
-        /^(?:coast-(?:detail-256|albedo-512)|moonlit-clouds-1774)\.webp$/.test(name),
+        /^(?:coast-(?:detail-256|albedo-512)|cel-sky-[\w-]+)\.webp$/.test(name),
     ),
     materials.join(", "),
   );
   const published = await readdir(path.join(distDir, "images", "materials"));
   assert.ok(
     published.every((name) =>
-      /^(?:slate-[\w-]+|coast-detail-256|coast-albedo-512|moonlit-clouds-1774)\.[a-f0-9]{8}\.webp$/.test(
+      /^(?:slate-[\w-]+|coast-detail-256|coast-albedo-512|cel-sky-[\w-]+)\.[a-f0-9]{8}\.webp$/.test(
         name,
       ),
     ),
@@ -377,7 +377,11 @@ test("the scene requests only slate maps and the three maps in their lazy owners
 for (const [file, budget, owner] of [
   ["coast-detail-256.webp", 48 * 1024, "scene.terrain-build."],
   ["coast-albedo-512.webp", 96 * 1024, "scene.terrain-build."],
-  ["moonlit-clouds-1774.webp", 384 * 1024, "scene.cloud-plate."],
+  ...["moon", "close-up", "root-and-lantern", "broken-coast"].map((key) => [
+    `cel-sky-${key}.webp`,
+    640 * 1024,
+    "scene.cloud-plate.",
+  ]),
 ])
   test(`${file} is fingerprinted and named only in its lazy owner`, async () => {
     const bytes = await readFile(path.join(projectRoot, "images", "materials", file)),

@@ -16,6 +16,11 @@ import {
   shotAnchor,
 } from "./directed-shots.js";
 
+// The shots' air (the owner's Artistic set, 2026-10-27): in film each shot's fog, as apply()
+// fits it, starts and ends these times farther out (index.js), so the far plain, the ranges
+// and the sea read clearer.
+export const SHOT_AIR = Object.freeze([1.8, 2]);
+
 // The bootstrap reads the page's layout from here too.
 export { isStackedLayout, PUSH_IN, LETTERBOX, letterboxShare };
 let preparationTasks, cameraPreparation;

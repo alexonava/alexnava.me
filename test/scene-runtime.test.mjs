@@ -1538,7 +1538,7 @@ test("each frame applies the shot's light, lens, bars and grain, holding the gra
   // The mood follows the shot on screen in film only.
   assert.ok(
     index.includes(
-      "const mood = shotLight(filmActive && cinematicApplied ? cinematic.shot : null); rendering.setShotLight?.(mood); if (LANTERN_MOOD.value !== mood.lantern) { LANTERN_MOOD.value = mood.lantern; treeArchitecture?.refreshLantern?.(); } COAST_MOOD.value = filmActive ? mood.coastStudy : 0; GLINT_MOOD.value = filmActive ? mood.glintText : 0; GRASS_MOOD.value = filmActive ? mood.grassInside : 0;",
+      "const mood = shotLight(filmActive && cinematicApplied ? cinematic.shot : null), look = shotLook(filmActive && cinematicApplied ? cinematic.shot : null); rendering.setShotLight?.(mood, look); applyShotTone(look); if (LANTERN_MOOD.value !== mood.lantern) { LANTERN_MOOD.value = mood.lantern; treeArchitecture?.refreshLantern?.(); } COAST_MOOD.value = filmActive ? mood.coastStudy : 0; GLINT_MOOD.value = filmActive ? mood.glintText : 0; GRASS_MOOD.value = filmActive ? mood.grassInside : 0;",
     ),
   );
   // The ground's pool knee about Contact follows it too, off out of film.

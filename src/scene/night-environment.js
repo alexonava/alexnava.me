@@ -180,17 +180,18 @@ export function createNightEnvironment(
       `uniform float envCapture;\nuniform vec3 envKeyDirection;\n${FILM_UNTONE_GLSL}\nvoid main()`,
     );
     // The cube's faces have no name or intro behind them: the clouds' text guard
-    // reads an empty box, not the live one the clone shares. The capture keeps
-    // the authored clouds without their reshaping (estate-sky.js CLOUD_RESHAPE),
-    // so the sky light and reflections the materials take keep their brightness,
-    // and never a lightning flash (lightning.js), even one lit as it is taken.
+    // reads an empty box, not the live one the clone shares. The capture keeps the
+    // sky as it stands, the cel plate on the shell included (cloud-plate.js), so water
+    // and wet ground mirror the banks above them; it is drawn again when a cut
+    // changes the plate (refresh()). Never a lightning flash (lightning.js), even one
+    // lit as it is taken.
     Object.assign(material.uniforms, {
       envCapture: { value: 1 },
       envKeyDirection: { value: key },
       slateText: { value: { x: 2, y: 2, z: -1, w: -1 } },
-      uCloudReshape: { value: 0 },
-      uCloudMap: { value: null },
-      uCloudMix: { value: 0 },
+      uCloudReshape: { value: 1 },
+      uCloudMap: sky.uniforms.uCloudMap ?? { value: null },
+      uCloudMix: sky.uniforms.uCloudMix ?? { value: 0 },
       uFlash: { value: new Vector4(0, 1, 0, 0) },
     });
     material.uniforms.uFilm.value = 1;
@@ -351,6 +352,17 @@ export function createNightEnvironment(
     capture() {
       if (target) return target.texture;
       if (!sky || status === "failed") return null;
+      return attempt();
+    },
+    // The key's world direction, toward it (a shot's own sun, or the moon): the glow
+    // about it follows on the next draw.
+    setKeyDirection(direction) {
+      key.set(direction.x, direction.y, direction.z).normalize();
+    },
+    // Draws the sky again where a change cannot show (a tour cut): the plate or the
+    // key turned. Returns the new texture, or null while none is captured yet.
+    refresh() {
+      if (!target || !sky || status === "failed") return null;
       return attempt();
     },
     // A restored context holds no target contents: draw the sky again.

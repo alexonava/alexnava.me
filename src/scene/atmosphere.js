@@ -82,8 +82,9 @@ export function createSceneAtmosphere({ parent, profile }) {
   return {
     lifecycleOrder: 30,
     root,
-    commitSky() {
-      return cloudOwner?.commit() ?? false;
+    // The plate for the shot on screen (cloud-plate.js): its own sun's, else the moon's.
+    commitSky(plate = "moon") {
+      return cloudOwner?.commit(plate) ?? false;
     },
     applyQuality(nextProfile = {}) {
       if (disposed) return false;

@@ -196,15 +196,15 @@ export const SEA = Object.freeze({
   }),
   mirror: 0.5,
   rough: 0.05,
-  body: Object.freeze([0.008, 0.012, 0.014]),
+  body: Object.freeze([0.006, 0.013, 0.026]),
   turbid: Object.freeze([0.03, 0.045, 0.042]),
   turbidReach: Object.freeze([2, 16]),
-  sky: 1.2,
+  sky: 1.6,
   f0: 0.02,
   knee: 0.5,
   horizon: 0.08,
   mask: 0.8,
-  glitter: Object.freeze({ gain: 0.75, alpha: 0.1, knee: 0.3, aa: 0.25, aaMax: 0.18 }),
+  glitter: Object.freeze({ gain: 2, alpha: 0.1, knee: 0.34, aa: 0.25, aaMax: 0.18 }),
   surf: Object.freeze({
     reach: 9,
     sets: Object.freeze([0.12, 0.44]),
@@ -215,7 +215,7 @@ export const SEA = Object.freeze({
     fade: 1.4,
     cover: 0.55,
     cell: 14,
-    albedo: 0.5,
+    albedo: 0.8,
     far: 0.45,
   }),
   rim: Object.freeze({ from: 0.55, slope: 0.0025 }),
@@ -1692,6 +1692,11 @@ c=mistOver(c,cameraPosition+md*min(ml,min(tc,td)));`
     : ""
 }}`;
 
+// The cliffs' stone (the owner's pick of 2026-10-27, bedrock at the coast): the shelf keeps
+// only `dust` of the plain's dust at its break, so the rock's own beds run to the rim, and the
+// stone is darker, `tone` of its albedo, its tops darker still (`top`).
+export const CLIFF_STONE = Object.freeze({ dust: 0.15, tone: 0.7, top: 0.8 });
+
 function cliffFragment(cliff, lib) {
   const [dark, pale] = cliff.rock;
   return `#define SEA_PI 3.1415927
@@ -1754,7 +1759,9 @@ alb*=(.94+.12*seaNoise(vec2(vC.x/8.,vRock.y/5.)))*(1.-.5*crack)*mix(1.,.94+.06*s
 // Stains washed down the face under its ledges.
 alb*=1.-.22*side*smoothstep(.55,.85,seaNoise(vec2(vC.x*1.4,vRock.y*.13)));
 // The shelf takes the plain's dust up to the break, so it meets the terrain without a seam; the stacks stand dark with spray.
-alb=mix(alb,${glslVec(...cliff.dust)}*(.85+.3*n3.x),top*smoothstep(.2,1.,-vC.z));
+alb=mix(alb,${glslVec(...cliff.dust)}*(.85+.3*n3.x),top*smoothstep(.2,1.,-vC.z)*${glsl(CLIFF_STONE.dust)});
+// ...darker, wetter-looking stone, its tops darkest (CLIFF_STONE).
+alb*=${glsl(CLIFF_STONE.tone)}*mix(1.,${glsl(CLIFF_STONE.top)},top);
 // The stacks stand in the swell: a weedy band the tides keep up to STACKS.weed
 // over the sea, their own rock above it, darker than the cliffs' (wet).
 float stack=step(1.5,vC.y),hs=vW.y-vSeaY+.7*seaNoise(vec2(vC.x*.6,vRock.y*.2+3.3));
@@ -1839,7 +1846,7 @@ export function createCliff({
       x: drop?.lip[0] ?? 0,
       y: drop?.lip[1] ?? 0,
       z: 0,
-      w: groundMaterial ? 0 : (drop?.lip[2] ?? 0),
+      w: drop?.lip[2] ?? 0,
     },
   };
   uniforms.cliffFlow = { value: { x: drop?.heading[0] ?? 1, y: drop?.heading[1] ?? 0 } };
@@ -1868,7 +1875,9 @@ vSlateClip=gl_Position;
       new BufferAttribute(new Float32Array(geometry.attributes.position.count * 2), 2),
     );
   if (!groundMaterial) geometry.clearGroups();
-  const mesh = new Mesh(geometry, groundMaterial ? [groundMaterial, material] : material),
+  // The shelf is drawn in the cliff's own stone (CLIFF_STONE), not the borrowed ground, which
+  // lit flat under the moon read as snow along the rim; it paints the river's last run itself.
+  const mesh = new Mesh(geometry, material),
     stacks = new Mesh(prepared?.stacks ?? stackGeometry(settings.stacks), material);
   mesh.name = "estate-cliff";
   stacks.name = "estate-stacks";
@@ -1971,7 +1980,15 @@ const COAST_LOOK = Object.freeze({
   hold: 7,
   // Landscape phones hold it still, as every shot: no room about the name for a move.
   landscape: Object.freeze({ move: null }),
-  light: Object.freeze({ key: 1, fill: 0.85, lantern: 1.2, coastStudy: 1 }),
+  // Lit as the owner's Artistic set (2026-10-27, v3), toward Graphics.
+  // The coast's flat clifftops take the high moon full on: a little less key and exposure
+  // than the tree's shots, so the stone stays dark and wet, never pale as snow.
+  light: Object.freeze({ key: 2, fill: 0.3, lantern: 1.2, coastStudy: 1 }),
+  look: Object.freeze({
+    tone: Object.freeze([1.1, 1.95, 0.3]),
+    ambient: 0.3,
+    hemisphere: 0.4,
+  }),
   ground: Object.freeze({
     mist: Object.freeze({ color: Object.freeze([0.27, 0.26, 0.29]), amount: 0.25 }),
     gloss: Object.freeze({ film: 0.32, gain: 1, cool: 0 }),
@@ -1991,6 +2008,10 @@ export const COAST_SHOTS = Object.freeze([
     name: "The broken coast",
     after: "Portrait",
     ...BROKEN_COAST_VIEW,
+    // Its own sun (the owner's pick of 2026-10-27): low over the sea past the stacks, its
+    // path on the water; the key comes from it and the cel sky is lit from there
+    // (rendering.js setShotSun(), cloud-plate.js).
+    sun: Object.freeze({ at: Object.freeze([0.52, 0.06, 0.85]), plate: "broken-coast" }),
     // On upright phones a wider bearing holds the offshore pillar and tilted
     // slab apart across open water, from beyond the tree (farther back it
     // stands in the frame); the lens is as narrow as both allow, 76 degrees
@@ -2000,13 +2021,27 @@ export const COAST_SHOTS = Object.freeze([
       azimuth: -127.8,
       reach: 82.2,
       fov: 76,
+      // Phones keep their aim (a turn right takes the near stack past the frame's left edge)
+      // and the night's exposure.
+      move: Object.freeze({
+        dolly: Object.freeze([1.05, 0.95]),
+        ease: 0.6,
+      }),
+      look: COAST_LOOK.look,
     }),
     tablet: BROKEN_COAST_VIEW,
     tall: BROKEN_COAST_VIEW,
     squat: BROKEN_COAST_VIEW,
     rise: 8.25,
     shadow: Object.freeze([85, 72]),
-    move: Object.freeze({ dolly: Object.freeze([1.05, 0.95]), ease: 0.6 }),
+    // Turned right to take in the river and its falls (the owner's ask of 2026-10-27, "pan a
+    // bit more to the right to capture the river"), and exposed for the sun behind the stacks.
+    move: Object.freeze({
+      dolly: Object.freeze([1.05, 0.95]),
+      pan: Object.freeze([18, 18]),
+      ease: 0.6,
+    }),
+    look: Object.freeze({ ...COAST_LOOK.look, tone: Object.freeze([1.8, 1.9, 0.3]) }),
   }),
   // Across the bay to the falls on the cliff wall, easing in toward them (from
   // within the sky's shell: the falls stand about 115 from the watch, so the
@@ -2052,6 +2087,9 @@ export const COAST_SHOTS = Object.freeze([
   Object.freeze({
     ...COAST_LOOK,
     name: "Over the fault",
+    // Its wide flat plain takes the moon full on: a softer key, so it stays mud, not snow.
+    light: Object.freeze({ ...COAST_LOOK.light, key: 1.4, fill: 0.35 }),
+    look: null,
     after: "Root and lantern",
     // The moon through a break in the cloud lights the fault and the falls; the
     // cloud's shadow lies on the clifftop beyond, under the name (mud-ground.js
@@ -2228,7 +2266,7 @@ export const FALLS = Object.freeze({
   depth: 1.64,
   drag: 0.25,
   spread: 0,
-  albedo: 0.7,
+  albedo: 0.8,
   plunge: 2.2,
   spray: Object.freeze([3.4, 0.7, 0.24, 0.42]),
   boil: Object.freeze([9, 2, 0.25]),

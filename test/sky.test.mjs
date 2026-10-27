@@ -1123,7 +1123,7 @@ test("the maelstrom comes now and then, and each shot has it whole or not at all
   const index = flat(source("src/scene/index.js"));
   assert.match(
     index,
-    /if \(cinematic\.shot !== vortexShot\) \{ atmosphereSystem\.commitSky\(\); vortexHere = vortexSeason && cloudVortexPresent\(skyShell\.material\.uniforms\.uTime\.value\); \} vortexShot = cinematic\.shot;/,
+    /if \(cinematic\.shot !== vortexShot\) \{ commitShotSky\(shotSun\);[^}]*?growthRoot\.visible = !filmActive \|\| Boolean\(cinematic\.shot\?\.growth\); vortexHere = vortexSeason && cloudVortexPresent\(skyShell\.material\.uniforms\.uTime\.value\); \} vortexShot = cinematic\.shot;/,
   );
   assert.match(
     index,

@@ -18,7 +18,7 @@ import {
   WebGLRenderer,
 } from "three";
 import { createNightEnvironment } from "./night-environment.js";
-import { FILM_LIGHT } from "./film-light.js";
+import { FILM_LIGHT, SHOT_KEY, SUN_KEY } from "./film-light.js";
 import { createPostprocessPipeline } from "./postprocess.js";
 import { disposeSceneRuntimeResources } from "./runtime.js";
 import { compilePrograms, linkedPrograms } from "./shader-programs.js";
@@ -136,7 +136,11 @@ export function createSceneRendering({
     filmLighting = false;
   const originalSunPosition = sunLight.position.clone(),
     originalSunTarget = sunLight.target.position.clone();
-  const sunOffset = originalSunPosition.clone().sub(originalSunTarget);
+  // The key's offset from its target: the moon's, or a shot's own sun's (setShotSun()).
+  const moonOffset = originalSunPosition.clone().sub(originalSunTarget),
+    sunOffset = moonOffset.clone();
+  let shotSun = "",
+    shotSunColor = null;
   const originalShadow = {
     left: sunLight.shadow.camera.left,
     right: sunLight.shadow.camera.right,
@@ -154,20 +158,22 @@ export function createSceneRendering({
   let baselineAmbientIntensity = ambientLight.intensity;
   // Film: the supplied maps already carry daylight, so the key drops and cools
   // while fill, sky and ambient rise to open eaves, brackets and shadow ground.
-  let shotMood = { key: 1, fill: 1 };
+  let shotMood = { key: 1, fill: 1, ambient: 1, hemisphere: 1 };
   function applyLightingTreatment() {
     sunLight.color.copy(baselineKeyColor);
     if (groundedLighting) sunLight.color.setHex(0xd9e2f2);
-    if (filmLighting) sunLight.color.setRGB(...FILM_LIGHT.moon);
+    if (filmLighting) sunLight.color.setRGB(...(shotSunColor ?? FILM_LIGHT.moon));
     const film = filmLighting ? FILM_LIGHT : null;
     sunLight.intensity =
       baselineKeyIntensity * (groundedLighting ? 0.8 : 1) * (film ? film.key * shotMood.key : 1);
     fillLight.intensity =
       baselineFillIntensity * (groundedLighting ? 1.5 : 1) * (film ? film.fill * shotMood.fill : 1);
-    hemisphereLight.intensity = baselineHemisphereIntensity * (film ? film.hemisphere : 1);
+    hemisphereLight.intensity =
+      baselineHemisphereIntensity * (film ? film.hemisphere * shotMood.hemisphere : 1);
     hemisphereLight.groundColor.copy(baselineGroundColor);
     if (filmLighting) hemisphereLight.groundColor.setHex(0x37404a);
-    ambientLight.intensity = baselineAmbientIntensity * (film ? film.ambient : 1);
+    ambientLight.intensity =
+      baselineAmbientIntensity * (film ? film.ambient * shotMood.ambient : 1);
     // Lit, relief-mapped earth shows acne bands at grazing moonlight; bias more.
     sunLight.shadow.bias = filmLighting ? -0.0016 : baselineShadowBias;
     sunLight.shadow.normalBias = filmLighting ? 0.09 : baselineNormalBias;
@@ -300,6 +306,15 @@ export function createSceneRendering({
     setEnvironmentSky(material, shellOpacity) {
       if (!disposed) environment.setSky(material, shellOpacity);
     },
+    // Draws the environment again after a cut changed the sky (its plate or key), so
+    // the mirrors take the new sky with the shot; the film's materials take the new texture.
+    refreshEnvironment() {
+      if (disposed) return false;
+      const texture = environment.refresh();
+      if (!texture) return false;
+      if (filmLighting) homeScene.environment = texture;
+      return true;
+    },
     focusFilmShadow(target, radius) {
       if (disposed || !filmLighting) return;
       // The extent never drops to the shot's own tight subject radius (about
@@ -322,13 +337,47 @@ export function createSceneRendering({
       shadow.updateProjectionMatrix();
       sunLight.shadow.needsUpdate = true;
     },
+    // A shot's own sun (directed-shots.js `sun`: `at`, its world direction, toward it):
+    // the key turns to come from it and warms (film-light.js SUN_KEY); null is the moon.
+    // Called on a cut; the shadow map redraws, and the environment is drawn again with
+    // the new key by refreshEnvironment(). Returns whether the key turned.
+    setShotSun(sun = null) {
+      const at = sun?.at ?? null,
+        id = at ? at.join(",") : "";
+      if (disposed || id === shotSun) return false;
+      shotSun = id;
+      if (at)
+        sunOffset
+          .set(...at)
+          .normalize()
+          .multiplyScalar(moonOffset.length());
+      else sunOffset.copy(moonOffset);
+      shotSunColor = at ? (sun.color ?? SUN_KEY.color) : null;
+      SHOT_KEY.babelKeyDir.value.copy(sunOffset).normalize();
+      environment.setKeyDirection(sunOffset);
+      applyLightingTreatment();
+      if (filmLighting) {
+        sunLight.position.copy(sunLight.target.position).add(sunOffset);
+        sunLight.updateMatrixWorld();
+      }
+      shadowKey = "";
+      sunLight.shadow.needsUpdate = true;
+      return true;
+    },
     // The shot's mood over the film balance (film-light.js); intensities only,
     // so a cut never recompiles or redraws the shadow map.
-    setShotLight(mood = null) {
-      const key = mood?.key ?? 1,
-        fill = mood?.fill ?? 1;
-      if (disposed || (key === shotMood.key && fill === shotMood.fill)) return false;
-      shotMood = { key, fill };
+    // A look's ambient and hemisphere shares (film-light.js shotLook()) scale the film's flat
+    // and sky light alike.
+    setShotLight(mood = null, look = null) {
+      const next = {
+        key: mood?.key ?? 1,
+        fill: mood?.fill ?? 1,
+        ambient: look?.ambient ?? 1,
+        hemisphere: look?.hemisphere ?? 1,
+      };
+      if (disposed || Object.keys(next).every((name) => next[name] === shotMood[name]))
+        return false;
+      shotMood = next;
       applyLightingTreatment();
       return true;
     },

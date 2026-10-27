@@ -350,8 +350,10 @@ test("the environment is the film sky shell's own shader, with the moon's glow, 
   assert.equal(material.uniforms.uClouds.value, 1);
   assert.equal(material.uniforms.uNebulaLayers.value, NIGHT_SKY.layers);
   assert.equal(material.uniforms.uTime.value, 0);
-  assert.equal(material.uniforms.uCloudMap.value, null);
-  assert.equal(material.uniforms.uCloudMix.value, 0);
+  // It mirrors the cel plate on the shell: the same uniforms, so a cut's plate change
+  // reaches it on refresh().
+  assert.equal(material.uniforms.uCloudMap, sky.uniforms.uCloudMap);
+  assert.equal(material.uniforms.uCloudMix, sky.uniforms.uCloudMix);
   assert.equal(sky.uniforms.uCloudMap.value, liveCloud);
   assert.equal(sky.uniforms.uCloudMix.value, 1);
   assert.equal(sky.uniforms.uFilm.value, 0);
@@ -360,9 +362,9 @@ test("the environment is the film sky shell's own shader, with the moon's glow, 
   sky.uniforms.slateText.value.x = 0;
   assert.notEqual(material.uniforms.slateText, sky.uniforms.slateText);
   assert.deepEqual(material.uniforms.slateText.value, { x: 2, y: 2, z: -1, w: -1 });
-  // It lights the scene with the authored clouds, without the sky's reshaping, so
-  // the materials' approved sky light and reflections keep their brightness.
-  assert.equal(material.uniforms.uCloudReshape.value, 0);
+  // It lights the scene with the sky as it stands, reshaping included, never turning
+  // the live shell's weight.
+  assert.equal(material.uniforms.uCloudReshape.value, 1);
   assert.notEqual(material.uniforms.uCloudReshape, sky.uniforms.uCloudReshape);
   assert.equal(sky.uniforms.uCloudReshape.value, 1);
   // The additions sit after the film sky, before the shell's opacity, which they divide out.

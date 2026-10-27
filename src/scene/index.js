@@ -14,6 +14,7 @@ import {
   isStackedLayout,
   layoutRect,
   loadPreparationTasks,
+  SHOT_AIR,
 } from "./cinematic.js";
 import {
   COAST_MOOD,
@@ -22,6 +23,8 @@ import {
   LANTERN_MOOD,
   STONE_MOOD,
   shotLight,
+  shotLook,
+  applyShotTone,
 } from "./film-light.js";
 import {
   configureGroundShading,
@@ -401,6 +404,34 @@ const LANTERN_GLOW = 0.35;
         profile: state.profile,
       });
       subsystemRegistry.register(solarBody);
+      // A shot's own sun (directed-shots.js `sun`: `at`, its world direction, and
+      // `plate`, its lit cel sky): the star stands in it, SHOT_SUN_REACH from the camera
+      // as the shot opens; the key turns to come from it and warms (rendering.js
+      // setShotSun()); the sky takes its plate (cloud-plate.js); the mist's lights follow,
+      // and the mirrors' environment is drawn again with all of it. null restores the moon
+      // and the star's own place (world.js SUN_POSITION).
+      const SHOT_SUN_REACH = 118;
+      let growthRoot = null;
+      const sunEye = new Vector3(),
+        sunAt = new Vector3();
+      let starShot = null;
+      function commitShotSky(sun) {
+        let changed = rendering.setShotSun(sun);
+        if (sun?.at) {
+          camera.updateMatrixWorld();
+          solarBody.root.position
+            .copy(camera.getWorldPosition(sunEye))
+            .addScaledVector(sunAt.set(...sun.at).normalize(), SHOT_SUN_REACH);
+          starShot = sun;
+        } else if (starShot) {
+          solarBody.root.position.set(...WORLD.SUN_POSITION);
+          starShot = null;
+        }
+        if (changed || sun?.at)
+          setMistLights(sun?.at ?? WORLD.SUN_DIRECTION, solarBody.root.position.toArray());
+        if (atmosphereSystem.commitSky(sun?.plate ?? "moon")) changed = true;
+        if (changed) rendering.refreshEnvironment();
+      }
       // The stars borrow the shell's uniforms, so they hide behind its cloud banks.
       const starfield = createStarfield({
         parent: atmosphereSystem.root,
@@ -1240,6 +1271,12 @@ const LANTERN_GLOW = 0.35;
                 invalidateContent();
               }),
           });
+        // The film's clearer air over the shot's fitted fog (cinematic.js SHOT_AIR); apply()
+        // fits the fog afresh on every frame it applies.
+        if (cinematicApplied && filmActive && homeScene.fog) {
+          homeScene.fog.near *= SHOT_AIR[0];
+          homeScene.fog.far *= SHOT_AIR[1];
+        }
         if (walking) walk.update(deltaSeconds, width, height);
         else if (!cinematicApplied) {
           camera.position.set(
@@ -1254,12 +1291,19 @@ const LANTERN_GLOW = 0.35;
         else lookTarget.set(0, lookAtHeight, 0);
         // The cloud vortex's eye sits where this lens sees the star, set on each cut and
         // each refit (a resize; estate-sky.js CLOUD_VORTEX), so it stays about the star.
-        if (!canvasShown) atmosphereSystem.commitSky();
+        // The shot on screen's own sun (directed-shots.js `sun`), or the moon: changed only
+        // here, where it cannot show (hidden preparation and cuts), by commitShotSky().
+        const shotSun = cinematicApplied ? (cinematic.shot?.sun ?? null) : null;
+        if (!canvasShown) commitShotSky(shotSun);
         if (cinematicApplied && (cinematic.shot !== vortexShot || cinematic.frame !== vortexFit)) {
           // Each shot takes the maelstrom whole or not at all as it opens, by the sky's drift
           // clock (estate-sky.js CLOUD_VORTEX.life): it is never seen forming; a refit keeps it.
           if (cinematic.shot !== vortexShot) {
-            atmosphereSystem.commitSky();
+            commitShotSky(shotSun);
+            // The plain's grass stands only in a shot that asks for it (directed-shots.js
+            // `growth`: Lantern study), as in the owner's Artistic set (2026-10-27).
+            growthRoot ??= homeScene.getObjectByName("estate-ground-growth") ?? null;
+            if (growthRoot) growthRoot.visible = !filmActive || Boolean(cinematic.shot?.growth);
             vortexHere = vortexSeason && cloudVortexPresent(skyShell.material.uniforms.uTime.value);
           }
           vortexShot = cinematic.shot;
@@ -1267,7 +1311,7 @@ const LANTERN_GLOW = 0.35;
           camera.updateMatrixWorld();
           cloudVortexCenter(
             camera.getWorldPosition(vortexEye),
-            WORLD.SUN_POSITION,
+            solarBody.root.position,
             WORLD.SKY_DOME_RADIUS,
             skyShell.material.uniforms.uVortex.value,
           );
@@ -1280,8 +1324,10 @@ const LANTERN_GLOW = 0.35;
         }
         // The shot's light mood.
         {
-          const mood = shotLight(filmActive && cinematicApplied ? cinematic.shot : null);
-          rendering.setShotLight?.(mood);
+          const mood = shotLight(filmActive && cinematicApplied ? cinematic.shot : null),
+            look = shotLook(filmActive && cinematicApplied ? cinematic.shot : null);
+          rendering.setShotLight?.(mood, look);
+          applyShotTone(look);
           if (LANTERN_MOOD.value !== mood.lantern) {
             LANTERN_MOOD.value = mood.lantern;
             treeArchitecture?.refreshLantern?.();

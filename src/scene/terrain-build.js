@@ -2540,12 +2540,42 @@ export function coastBedrockWeight(x, z) {
   );
 }
 
+// The plain's mud (the owner's picks of 2026-10-27: "smooth and minimal", "a more muted
+// ground", and "keep the ground color the sort of tan it looks like in artistic"): a dark tan
+// mud over the slate, keeping only its broad variation (`tone` linear, `amount` over the
+// slate's own colour); its relief flattens by `flat` in mud-ground.js, and its film, gloss
+// and puddles mirror the sky as before.
+export const PLAIN_MUD = Object.freeze({
+  tone: Object.freeze([0.055, 0.05, 0.046]),
+  amount: 0.9,
+  flat: 0.8,
+});
+// The coast's bedrock (2026-10-27, "near the falls is more bedrock"): its band runs `band`
+// [near, far] in from the fault, wider than the coast maps' own, and wherever the maps are
+// not on it is dark layered stone: beds along the fault (`bed` apart), each its own tone
+// about `tone`, crossed by two sets of joints. It keeps `film` less of the plain's wet
+// film and is `rough` and `dry` (mud-ground.js, by the SLATE_ROCK_* defines). The cliff
+// shelf is drawn in the cliff's own stone (ocean.js CLIFF_STONE).
+export const COAST_ROCK = Object.freeze({
+  band: Object.freeze([10, 40]),
+  tone: Object.freeze([0.07, 0.065, 0.062]),
+  bed: 1.6,
+  film: 0.85,
+  rough: 0.9,
+  dry: 0.8,
+});
+const PLAIN_MUD_GLSL = `
+{float mudBroad=slateNoise(vMudWorld.xz/23.), mudPatch=slateNoise(vMudWorld.xz/6.3);
+vec3 mudCol=${glslVec(...PLAIN_MUD.tone)}*(.86+.24*mudBroad)*(.93+.1*mudPatch);
+diffuseColor.rgb=mix(diffuseColor.rgb,mudCol,(1.-slateBedrock)*${glsl(PLAIN_MUD.amount)});}
+`;
+
 export function shadeCoastBedrock(shader, uniforms) {
   const edits = [
     [
       "fragmentShader",
       "|#define STANDARD",
-      "uniform sampler2D coastAlbedo, coastDetail;\nuniform float coastAlbedoOn, coastDetailOn;\n",
+      `uniform sampler2D coastAlbedo, coastDetail;\nuniform float coastAlbedoOn, coastDetailOn;\n#define SLATE_MUD_FLAT ${glsl(PLAIN_MUD.flat)}\n#define SLATE_ROCK_FILM ${glsl(COAST_ROCK.film)}\n#define SLATE_ROCK_ROUGH ${glsl(COAST_ROCK.rough)}\n#define SLATE_ROCK_DRY ${glsl(COAST_ROCK.dry)}\n`,
     ],
     [
       "fragmentShader",
@@ -2553,9 +2583,18 @@ export function shadeCoastBedrock(shader, uniforms) {
       `
 float slateBedrock = 0.;
 vec3 slateRockXY = vec3(0.);
+{float rockEdge=max(0.,seaCoast(vMudWorld.xz))+(slateNoise(vMudWorld.xz/${glsl(COAST_BEDROCK.cell)})-.5)*${glsl(COAST_BEDROCK.wobble)};
+slateBedrock=1.-smoothstep(${glsl(COAST_ROCK.band[0])},${glsl(COAST_ROCK.band[1])},rockEdge);
+float rockC=seaCoast(vMudWorld.xz)+(slateNoise(vMudWorld.xz/7.)-.5)*3.;
+float rockBed=floor(rockC/${glsl(COAST_ROCK.bed)}), rockStrata=fract(sin(rockBed*12.9898)*43758.5453);
+float rockBedEdge=1.-smoothstep(.0,.12,min(fract(rockC/${glsl(COAST_ROCK.bed)}),1.-fract(rockC/${glsl(COAST_ROCK.bed)})));
+vec2 rockJ=vMudWorld.xz+(vec2(slateNoise(vMudWorld.xz/3.),slateNoise(vMudWorld.xz/3.+7.))-.5)*1.4;
+float rockJoint=max(1.-smoothstep(.0,.07,abs(fract(dot(rockJ,vec2(.6,.8))/3.1)-.5)*2.),1.-smoothstep(.0,.06,abs(fract(dot(rockJ,vec2(-.8,.6))/4.7)-.5)*2.));
+vec3 rockTone=${glslVec(...COAST_ROCK.tone)}*(.6+.9*rockStrata)*(1.-.7*max(rockJoint,rockBedEdge*.8))*(.8+.4*slateNoise(vMudWorld.xz/1.1));
+diffuseColor.rgb=mix(diffuseColor.rgb,rockTone,slateBedrock);}
 if(coastAlbedoOn>.5||coastDetailOn>.5){
 float rockEdge=max(0.,seaCoast(vMudWorld.xz))+(slateNoise(vMudWorld.xz/${glsl(COAST_BEDROCK.cell)})-.5)*${glsl(COAST_BEDROCK.wobble)};
-slateBedrock=1.-smoothstep(${glsl(COAST_BEDROCK.near)},${glsl(COAST_BEDROCK.far)},rockEdge);
+slateBedrock=1.-smoothstep(${glsl(COAST_ROCK.band[0])},${glsl(COAST_ROCK.band[1])},rockEdge);
 if(slateBedrock>0.){
 // Both lookups (the cliff's tops use the first alone), blended by a noise.
 vec2 rockU=vMudWorld.xz/${glsl(COAST_ALBEDO.tile)},rockV=mat2(${COAST_BEDROCK.second.turn.map(glsl)})*rockU*${glsl(COAST_BEDROCK.second.scale)}+${glslVec(...COAST_BEDROCK.second.offset)};
@@ -2570,7 +2609,7 @@ if(coastDetailOn>.5){
 vec2 rockPx=fwidth(vMudWorld.xz);
 slateRockXY=vec3(mix(texture2D(coastDetail,rockU).rg*2.-1.,(texture2D(coastDetail,rockV).rg*2.-1.)*mat2(${COAST_BEDROCK.second.turn.map(glsl)}),rockW),
 (1.-smoothstep(.06,.24,max(rockPx.x,rockPx.y)))*${glsl(COAST_BEDROCK.relief)});
-}}}
+}}}${PLAIN_MUD_GLSL}
 #ifdef SLATE_CLOSE_SOIL
 slateSoilMask=1.-slateBedrock;
 #endif

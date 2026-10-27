@@ -98,6 +98,8 @@ export const MIST_DRIFT = Object.freeze({
   depthReach: Object.freeze([150, 300]),
   horizon: Object.freeze([0.02, 0.07]),
   shots: Object.freeze({}),
+  // A shot's share without its own (the owner's Artistic set, 2026-10-27: lighter).
+  share: 0.3,
 });
 
 const M = MIST_DRIFT;
@@ -158,7 +160,7 @@ export function setMistTier(tier) {
 
 // A shot's share (MIST_DRIFT.shots, 1 unlisted) while the film is on, 0 without.
 export function setMistShot(shotName, film = true) {
-  MIST_UNIFORMS.mistDrift.value.w = film && mistOn ? (M.shots[shotName] ?? 1) : 0;
+  MIST_UNIFORMS.mistDrift.value.w = film && mistOn ? (M.shots[shotName] ?? M.share) : 0;
 }
 
 // The drift clock, in seconds of drawn, unpaused frames, and the plain's datum.

@@ -1455,10 +1455,11 @@ test("Portrait takes the whole look on its plain (a moonlit clearing, low mist, 
     names((g) => g.clearing || g.shadow),
     ["Portrait"],
   );
-  // Only Portrait's plain stands water after the rain (the owner's pick of 2026-10-23).
+  // Water stands after the rain on Portrait's plain (the owner's pick of 2026-10-23) and,
+  // since the look leaned toward the Graphics concepts (2026-10-27), wherever the rain's gloss lies.
   assert.deepEqual(
     names((g) => g.pools),
-    ["Portrait"],
+    ["The watch", "Portrait", "Lantern study", "Root and lantern"],
   );
   // After the rain every wide shot takes the gloss and a light mist; the close
   // shot (Close-up) keeps the plain as it is.
@@ -1479,7 +1480,11 @@ test("Portrait takes the whole look on its plain (a moonlit clearing, low mist, 
     if (shot === portrait) continue;
     assert.equal(shade.w, 0, shot.name + ": no clearing");
     assert.deepEqual({ ...shadow }, { x: 0, y: 0 }, shot.name + ": the moon's shadow whole");
-    assert.equal(contacts.slatePools.value, 0, shot.name + ": no rain pools");
+    assert.equal(
+      contacts.slatePools.value,
+      shot.ground?.pools ?? 0,
+      shot.name + ": its own rain pools",
+    );
     const rain = shot.ground;
     if (!rain) {
       off();
@@ -1775,7 +1780,7 @@ test("the drifting mist lies below its ceiling on every film material, after its
   assert.equal(MIST_UNIFORMS.mistFrame.value.y, 0);
   setMistTier("high");
   setMistShot("The watch", true);
-  assert.equal(MIST_UNIFORMS.mistDrift.value.w, MIST_DRIFT.shots["The watch"] ?? 1);
+  assert.equal(MIST_UNIFORMS.mistDrift.value.w, MIST_DRIFT.shots["The watch"] ?? MIST_DRIFT.share);
   setMistShot("The watch", false);
   assert.equal(MIST_UNIFORMS.mistDrift.value.w, 0);
   const index = flatCode(source("src/scene/index.js"));
