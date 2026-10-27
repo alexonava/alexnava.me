@@ -753,6 +753,7 @@ const LANTERN_GLOW = 0.35;
       // visible stays hidden until its programs are ready.
       let canvasShown = false;
       let openingPrepared = false,
+        openingPresentation = null,
         openingFit = null,
         openingGeneration = 0,
         openingShaderStarted = false,
@@ -773,8 +774,9 @@ const LANTERN_GLOW = 0.35;
                 "foreground",
                 "rocks",
                 "shaders",
+                "presentation",
               ]
-            : ["subjects", "shaders"],
+            : ["subjects", "shaders", "presentation"],
         report(snapshot) {
           site.sceneLoader?.preparation?.(snapshot);
           if (qualityDebug) qualityDebug.opening = snapshot;
@@ -783,6 +785,15 @@ const LANTERN_GLOW = 0.35;
           failToTitle("opening", reason);
         },
       });
+      void loadPreparationTasks()
+        .then(({ createOpeningPresentation }) => {
+          if (runtimeDisposed || sceneFailed) return;
+          openingPresentation = createOpeningPresentation(renderer.getContext?.());
+          invalidateContent();
+        })
+        .catch((error) => {
+          if (!runtimeDisposed && !sceneFailed) failToTitle("opening", error);
+        });
       const openingProgress = () =>
         (site.sceneLoader?.state?.progress ?? 0) + (rendering.openingProgress ?? 0);
       const openingStart = [sceneNow(), !document.hidden && sceneVisible, openingProgress()];
@@ -791,13 +802,15 @@ const LANTERN_GLOW = 0.35;
         ++openingGeneration;
         openingFit = null;
         openingPrepared = openingShaderStarted = false;
-        openingGate.reopen("foreground", "shaders");
+        openingPresentation?.reset();
+        openingGate.reopen("foreground", "shaders", "presentation");
       };
       function stopOpeningPreparation() {
         clearTimeout(openingTimer);
         clearTimeout(lanternDeadline);
         openingTimer = lanternDeadline = null;
         openingGate.dispose();
+        openingPresentation?.dispose();
         rendering.openingPreparing = false;
       }
       let openingStarted = false;
@@ -1198,7 +1211,7 @@ const LANTERN_GLOW = 0.35;
         const tourPhase =
           cameraTour?.update({
             elapsedSeconds: elapsedTime,
-            ready: canvasShown,
+            ready: canvasShown && !site.sceneDoors?.closed,
             reducedMotion,
             held: walk?.holdsTour === true,
           }) ?? null;
@@ -1262,7 +1275,8 @@ const LANTERN_GLOW = 0.35;
           cinematic.apply({
             width,
             height,
-            elapsedSeconds: canvasShown ? Math.max(0, elapsedTime - revealTime) : 0,
+            elapsedSeconds:
+              canvasShown && !site.sceneDoors?.closed ? Math.max(0, elapsedTime - revealTime) : 0,
             reducedMotion,
             tourPhase: canvasShown ? tourPhase : 0,
             fallbackFov: cameraProfile.fov,
@@ -1481,7 +1495,10 @@ const LANTERN_GLOW = 0.35;
             openingFit = cinematic.frame;
             const generation = ++openingGeneration;
             openingPrepared = openingShaderStarted = false;
-            if (refit) openingGate.reopen("foreground", "shaders");
+            if (refit) {
+              openingPresentation?.reset();
+              openingGate.reopen("foreground", "shaders", "presentation");
+            }
             if (opening.view === "tree") {
               const frame = {
                 camera,
@@ -1547,12 +1564,22 @@ const LANTERN_GLOW = 0.35;
         }
         // Partial preparation can still carry linking terrain programs. Only the
         // complete opening draws hidden; later visible frames retain their path.
-        if (canvasShown || (openingGate.ready && !shaderWarmup.pending)) {
+        const presentingOpening =
+          openingGate.state.status === "preparing" &&
+          openingGate.state.stage === "presentation" &&
+          openingPresentation;
+        if (canvasShown || (presentingOpening && !shaderWarmup.pending)) {
           // Slate may still be loading at the reveal; keep the first visible
           // procedural surface detailed without painting an unused fallback.
           if (!canvasShown && cinematic.ready) groundTextures.ensureProcedural();
-          rendering.update();
-          if (!firstFrameDrawn) {
+          const renderStart = sceneNow();
+          const drawn = rendering.update();
+          if (!canvasShown && drawn !== false) {
+            if (openingPresentation.sample(timestamp, sceneNow() - renderStart))
+              settleOpening("presentation");
+            if (openingPresentation.failed) failToTitle("opening", "draw-unavailable");
+          }
+          if (!firstFrameDrawn && drawn !== false) {
             firstFrameDrawn = true;
             measureScene("first-frame", frameStart);
           }
@@ -1594,10 +1621,11 @@ const LANTERN_GLOW = 0.35;
           groundTextures.update?.({ revealed: true });
         }
         canvasShown = sceneShown;
+        if (canvasShown && site.sceneDoors?.closed) revealTime = elapsedTime;
         container?.classList.toggle("is-ready", sceneShown);
         // Until the reveal, the transparent canvas redraws only when invalidated
         // (status, model commit, resize) instead of animating through downloads.
-        frameScheduler?.setStill(!sceneShown);
+        frameScheduler?.setStill(!sceneShown && !presentingOpening);
         // A paused visitor keeps the first revealed frame.
         if (sceneShown) visitorHold?.reveal();
       }
@@ -1620,6 +1648,7 @@ const LANTERN_GLOW = 0.35;
       reducedMotionMQ.addEventListener("change", onReducedMotionChange);
       const onDocumentVisibilityChange = () => {
         if (!canvasShown) tickOpening();
+        if (!canvasShown) openingPresentation?.reset();
         if (document.hidden) return;
         qualityState.holdSampling();
         frameScheduler.resume();

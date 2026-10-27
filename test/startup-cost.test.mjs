@@ -1290,10 +1290,15 @@ test("the real frame draw waits for complete opening preparation, and lost or di
   );
   assert.ok(update, "exercise rendering's actual lost-context guard too");
   const calls = [],
-    openingGate = createOpeningPreparation({ stages: ["terrain", "foreground", "shaders"] }),
+    openingGate = createOpeningPreparation({
+      stages: ["terrain", "foreground", "shaders", "presentation"],
+    }),
     context = vm.createContext({
       canvasShown: false,
       openingGate,
+      openingPresentation: { sample: () => false },
+      timestamp: 0,
+      sceneNow: () => 0,
       shaderWarmup: { pending: 0 },
       cinematic: { ready: true },
       groundTextures: { ensureProcedural: () => calls.push("texture") },
@@ -1309,7 +1314,7 @@ test("the real frame draw waits for complete opening preparation, and lost or di
   context.rendering = {
     update: vm.runInContext(`(function({render=true}={}){${update[1]}})`, context),
   };
-  const frame = new vm.Script(entry.slice(begin, end));
+  const frame = new vm.Script("{" + entry.slice(begin, end) + "}");
   frame.runInContext(context);
   assert.deepEqual(calls, [], "partial preparation must never enter a driver draw");
   assert.equal(context.firstFrameDrawn, false, "waiting cannot claim a drawn frame");

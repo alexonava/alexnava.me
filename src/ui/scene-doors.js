@@ -4,12 +4,10 @@
 // the loading line under them, before the page knows whether the live scene will load, and
 // the stylesheet alone opens them after 4s, so a page whose scripts never run is never left
 // behind them. Evaluated early (app.js runs this before main.js), the script holds them:
-// the stylesheet's own opening moves out to an 11s backstop and pauses while the tab is
-// hidden, and the script opens them after 10s of visible time at the latest. They part
-// sooner at the scene's reveal and whenever the loading line retires (ui/scene-loader.js
-// end()), on every static path (main.js disableSceneHost()), and at once on a tap on the
-// paper, a key or keyboard focus, so nothing the visitor reaches for waits under it. Once
-// open they leave the page (hidden) after their opening.
+// the stylesheet's last-resort backstop moves beyond the functional loading deadline.
+// Only the scene's prepared reveal or a settled static fallback parts them. Early input
+// cannot bypass preparation; concealed content is temporarily inert. Once open they
+// leave the page (hidden) after their opening.
 //
 // On the live path the loading line's begin() upgrades them: the paper doors' own script
 // (src/doors-entry.js) draws the sheets as real paper over the stylesheet's, in a worker
@@ -23,30 +21,15 @@
   // a margin: past it the stylesheet is already opening them. Held, its backstop
   // (.scene-doors.is-held), after the script's own cap.
   const FAILSAFE_MS = 4000 - 150;
-  const BACKSTOP_MS = 11000;
-  const CAP_MS = 10000;
+  const BACKSTOP_MS = 35000;
+  const CAP_MS = 34000;
   const TICK_MS = 250;
   // Longer than the slowest opening.
   const LEAVE_MS = 2300;
-  // The canvas's fade-in at the reveal (styles.css .scene-canvas); then how long frames
-  // must run evenly (each under CALM_FRAME_MS) before the doors part, and the longest wait.
+  // The scene has already demonstrated even rendered frames before reveal.
+  // Wait only for its CSS opacity fade; hidden time cannot uncover the page.
   const FADE_MS = 480;
-  const CALM_MS = 200;
-  const CALM_FRAME_MS = 50;
-  const SETTLE_MS = 900;
-  // The stylesheet's glow: its radius in star radii, and its least radius in CSS px.
   const GLOW = Object.freeze({ radii: 7, min: 64 });
-  // Keys that only modify another: pressed alone, they leave the doors closed.
-  const MODIFIER_KEYS = new Set([
-    "Shift",
-    "Control",
-    "Alt",
-    "AltGraph",
-    "Meta",
-    "CapsLock",
-    "Fn",
-    "OS",
-  ]);
   const DOORS_URL = typeof __BABEL_DOORS_URL__ !== "undefined" ? __BABEL_DOORS_URL__ : "";
 
   let doors = null;
@@ -57,6 +40,7 @@
   let failure = null;
   let lit = {};
   const cleanups = [];
+  let revealAt = null;
 
   // The doors are decorative: they never throw into the loader, main.js or the scene.
   const safe =
@@ -90,12 +74,15 @@
   });
 
   function hide() {
+    release();
     doors.hidden = true;
     state = "gone";
     drop();
   }
 
   const part = safe(() => {
+    state = "open";
+    release();
     doors.classList.remove("is-paused");
     window.setTimeout(hide, LEAVE_MS);
     // A backstop already under way (the script was held up past it) finishes as it is; the
@@ -107,41 +94,17 @@
   }, hide);
 
   const open = safe((reason) => {
-    if (state !== "held") return;
-    state = "open";
-    release();
-    if (reason === "revealed") settle(part);
-    else part();
-  });
-
-  // At the reveal the scene fades in and does its first work (its lazy parts' builds and
-  // shader compiles) behind the closed doors. They part once frames have run evenly for a
-  // while, so the opening never stalls on that work, or after SETTLE_MS regardless.
-  function settle(then) {
-    let done = false;
-    const go = () => {
-      if (done) return;
-      done = true;
-      then();
-    };
-    const begin = now();
-    let last = 0;
-    let calm = 0;
-    const step = (at) => {
-      if (done) return;
-      const gap = last ? at - last : 0;
-      last = at;
-      calm = gap > 0 && gap < CALM_FRAME_MS ? calm + gap : 0;
-      if (calm >= CALM_MS || now() - begin >= FADE_MS + SETTLE_MS) return go();
-      window.requestAnimationFrame(step);
-    };
-    window.setTimeout(() => {
-      if (typeof window.requestAnimationFrame === "function") window.requestAnimationFrame(step);
-      else go();
+    if (!["held", "settling"].includes(state)) return;
+    if (!["revealed", "static", "stalled"].includes(reason)) return;
+    if (reason !== "revealed") return part();
+    if (state === "settling") return;
+    state = "settling";
+    revealAt = now() + FADE_MS;
+    const timer = window.setTimeout(() => {
+      if (!document.hidden && state === "settling") part();
     }, FADE_MS);
-    // Frames stop in a hidden tab: the doors then part when the timers say so.
-    window.setTimeout(go, FADE_MS + SETTLE_MS + 400);
-  }
+    cleanups.push(() => window.clearTimeout(timer));
+  });
 
   // The star through the paper (or, in a lantern opening, the lantern's flame: its `kind`):
   // its CSS px and radius as the loading line has them, its warmth (0 to 1) and the load's
@@ -224,40 +187,34 @@
     // cannot be read, the script counts the visible time since it ran.
     let visible = document.hidden ? 0 : now();
     let last = now();
-    const onVisibility = () => doors.classList.toggle("is-paused", document.hidden === true);
+    const onVisibility = () => {
+      doors.classList.toggle("is-paused", document.hidden === true);
+      if (!document.hidden && state === "settling" && now() >= revealAt) part();
+    };
     const tick = window.setInterval(() => {
       const at = now();
       if (!document.hidden) visible += at - last;
       last = at;
-      if ((clock() ?? visible) >= CAP_MS) open("cap");
+      if ((clock() ?? visible) >= CAP_MS) {
+        // Functional preparation normally settles by 30s. This independent
+        // escape also retires a stranded renderer before uncovering the title.
+        const host = document.getElementById("home-scene");
+        site.scene?.disposeHomeSceneRuntime?.();
+        if (host) host.hidden = true;
+        site.sceneLoader?.end?.("static");
+        open("static");
+      }
     }, TICK_MS);
     document.addEventListener("visibilitychange", onVisibility);
     onVisibility();
 
-    // Nothing waits under the paper: a tap on it (held doors take the pointer, styles.css),
-    // a key or keyboard focus parts them at once. A modifier alone or a browser shortcut
-    // does not, nor focus returning to the page itself. The tap is the click itself, which
-    // lands on the paper: parted on the press, a touch's click would be aimed afresh at the
-    // control under it.
-    const onInput = (event) => {
-      if (event?.type === "keydown") {
-        if (event.ctrlKey || event.metaKey || event.altKey || MODIFIER_KEYS.has(event.key)) return;
-      }
-      if (event?.type === "focusin") {
-        const target = event.target;
-        if (!target || target === document.body || target === document.documentElement) return;
-      }
-      open("input");
-    };
-    doors.addEventListener("click", onInput);
-    document.addEventListener("keydown", onInput, true);
-    document.addEventListener("focusin", onInput, true);
+    const content = Array.from(document.querySelectorAll?.(".skip-link, main, footer") ?? []);
+    const borrowed = content.map((element) => [element, element.inert]);
+    for (const element of content) element.inert = true;
     cleanups.push(
       () => window.clearInterval(tick),
       () => document.removeEventListener("visibilitychange", onVisibility),
-      () => doors.removeEventListener("click", onInput),
-      () => document.removeEventListener("keydown", onInput, true),
-      () => document.removeEventListener("focusin", onInput, true),
+      () => borrowed.forEach(([element, inert]) => (element.inert = inert)),
     );
   }
 
@@ -269,6 +226,9 @@
     upgrade,
     get state() {
       return state;
+    },
+    get closed() {
+      return state === "held" || state === "settling";
     },
     get drawing() {
       return paper && typeof paper === "object" ? "drawn" : paper || failure || "none";

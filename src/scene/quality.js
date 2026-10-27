@@ -3,39 +3,31 @@
   const scene = (site.scene = site.scene || {});
 
   const TIER_ORDER = ["low", "balanced", "high"];
+  const CAMERA_COMPOSITION = {
+    fov: 48.52,
+    heightBase: 21.9,
+    heightScrollDelta: 0.9,
+    lookAtBase: 11.68,
+    lookAtScrollDelta: 2.1,
+    orbitBase: 65.8,
+    orbitScale: 1.14,
+    orbitScrollDelta: 2.4,
+    orbitTrim: 0.144,
+  };
   const SCENE_COMPOSITION_PROFILES = {
     compact: {
-      camera: {
-        fov: 48.52,
-        heightBase: 21.9,
-        heightScrollDelta: 0.9,
-        lookAtBase: 11.68,
-        lookAtScrollDelta: 2.1,
-        orbitBase: 74.8,
-        orbitScale: 1.14,
-        orbitScrollDelta: 2.4,
-        orbitTrim: 0.144,
-      },
+      camera: { ...CAMERA_COMPOSITION, orbitBase: 74.8 },
       name: "compact",
       sceneOffsetY: -7.5,
     },
     desktop: {
-      camera: {
-        fov: 48.52,
-        heightBase: 21.9,
-        heightScrollDelta: 0.9,
-        lookAtBase: 11.68,
-        lookAtScrollDelta: 2.1,
-        orbitBase: 65.8,
-        orbitScale: 1.14,
-        orbitScrollDelta: 2.4,
-        orbitTrim: 0.144,
-      },
+      camera: CAMERA_COMPOSITION,
       name: "desktop",
       sceneOffsetY: -7.5,
     },
     portraitPhone: {
       camera: {
+        ...CAMERA_COMPOSITION,
         fov: 50.32,
         heightBase: 19.8,
         heightScrollDelta: 0.5,
@@ -49,11 +41,9 @@
       name: "portraitPhone",
       sceneOffsetY: -6.8,
     },
-    // Phone rotated to landscape (~844x390). Viewport is very short, so the
-    // camera pulls up and the look-at target lowers to keep the estate in the
-    // frame.
     landscapePhone: {
       camera: {
+        ...CAMERA_COMPOSITION,
         fov: 55.8,
         heightBase: 22.4,
         heightScrollDelta: 0.4,
@@ -62,16 +52,13 @@
         orbitBase: 63.2,
         orbitScale: 1.1,
         orbitScrollDelta: 1.9,
-        orbitTrim: 0.144,
       },
       name: "landscapePhone",
       sceneOffsetY: -7.2,
     },
-    // Tablet in portrait (iPad-class, ~810x1080). Wider than a phone but still
-    // touch-primary; framing sits between portraitPhone and compact.
     tabletPortrait: {
       camera: {
-        fov: 48.52,
+        ...CAMERA_COMPOSITION,
         heightBase: 21.2,
         heightScrollDelta: 0.7,
         lookAtBase: 12.38,

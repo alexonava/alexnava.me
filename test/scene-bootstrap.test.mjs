@@ -103,7 +103,7 @@ test("each frame runs the tour, the quality step, the capture skip, the crossfad
     "cinematic.apply(",
     "walk.update(deltaSeconds, width, height);",
     "subsystemRegistry.update(",
-    "if (canvasShown || (openingGate.ready && !shaderWarmup.pending)) {",
+    'openingGate.state.stage === "presentation"',
     "visitorHold?.frameRendered();",
   ];
   const order = anchors.map((anchor) => frame.indexOf(anchor));
@@ -156,7 +156,7 @@ test("the first frame and reveal wait for the complete opening and linked shader
   );
   assert.match(
     index,
-    /if \(canvasShown \|\| \(openingGate\.ready && !shaderWarmup\.pending\)\) \{ if \(!canvasShown && cinematic\.ready\) groundTextures\.ensureProcedural\(\); rendering\.update\(\); if \(!firstFrameDrawn\) \{ firstFrameDrawn = true; measureScene\("first-frame", frameStart\);/,
+    /openingGate\.state\.stage === "presentation"[^]*?const drawn = rendering\.update\(\);[^]*?openingPresentation\.sample\(timestamp, sceneNow\(\) - renderStart\)[^]*?settleOpening\("presentation"\);[^]*?if \(!firstFrameDrawn && drawn !== false\) \{ firstFrameDrawn = true; measureScene\("first-frame", frameStart\);/,
   );
   // Hidden preparation starts only once the cooperative fit has been applied.
   assert.match(index, /preparing: !canvasShown && cinematicApplied,/);
@@ -188,7 +188,7 @@ test("the first frame and reveal wait for the complete opening and linked shader
 test("the hidden canvas idles until the reveal, which marks it and lets the rocks load", () => {
   assert.match(
     index,
-    /container\?\.classList\.toggle\("is-ready", sceneShown\);[^]*?frameScheduler\?\.setStill\(!sceneShown\);/,
+    /container\?\.classList\.toggle\("is-ready", sceneShown\);[^]*?frameScheduler\?\.setStill\(!sceneShown && !presentingOpening,?\);/,
   );
   assert.match(
     index,

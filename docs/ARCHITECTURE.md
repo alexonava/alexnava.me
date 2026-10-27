@@ -79,23 +79,24 @@ _lazy_ marks a chunk loaded on demand.
 
 **Scene core (`src/scene/`, and the entry in `src/`)**
 
-| File                     | Role                                                                                                                                                                                             |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `../scene-entry.js`      | Scene entry: imports `perf-marks.js`, the shared modules and `index.js`, then records `babel:scene-entry` and `babel:scene-eval`                                                                 |
-| `index.js`               | Assembly, preparation and reveal, holds, commits, the text guard's boxes, `sceneDebug`                                                                                                           |
-| `runtime.js`             | Scheduler, cadence, holds, warm-ups, deferred steps, pixel-ratio watcher                                                                                                                         |
-| `opening-preparation.js` | Independent opening stage gate, visible-time deadlines and readiness reporting                                                                                                                   |
-| `subsystem.js`           | Subsystem registry and lifecycle                                                                                                                                                                 |
-| `rendering.js`           | Renderer, lights (a shot's mood, look, sun and fill: `setShotLight()`, `setShotSun()`, `setShotFill()`), shadows, the environment's redraw on a cut (`refreshEnvironment()`), shader compilation |
-| `shader-programs.js`     | Captured-program shader readiness with bounded, cancellable polling                                                                                                                              |
-| `night-environment.js`   | The film sky captured as the scene's environment                                                                                                                                                 |
-| `postprocess.js`         | Composer, grade, bloom, ink contour, dissolve, the lens's heat, aberration and the star's flare (`LENS_FX`)                                                                                      |
-| `depth-layers.js`        | Depth-layer codes for the dissolve, and the star's mask                                                                                                                                          |
-| `film-light.js`          | Film light balance (`FILM_LIGHT`, golden hour), shot moods and looks (`shotLook()`, `applyShotTone()`), the key's direction (`SHOT_KEY`), text guards and directional flash illumination         |
-| `perf-marks.js`          | `babel:` marks and measures                                                                                                                                                                      |
-| `helpers.js`             | Ground height and math on `BabelSite.scene`                                                                                                                                                      |
-| `palette.js`             | Ground palette                                                                                                                                                                                   |
-| `world.js`               | World constants                                                                                                                                                                                  |
+| File                      | Role                                                                                                                                                                                             |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `../scene-entry.js`       | Scene entry: imports `perf-marks.js`, the shared modules and `index.js`, then records `babel:scene-entry` and `babel:scene-eval`                                                                 |
+| `index.js`                | Assembly, preparation and reveal, holds, commits, the text guard's boxes, `sceneDebug`                                                                                                           |
+| `runtime.js`              | Scheduler, cadence, holds, warm-ups, deferred steps, pixel-ratio watcher                                                                                                                         |
+| `opening-presentation.js` | _lazy_ Fresh rendered-frame admission and nonblocking GPU completion before reveal                                                                                                               |
+| `opening-preparation.js`  | Independent opening stage gate, visible-time deadlines and readiness reporting                                                                                                                   |
+| `subsystem.js`            | Subsystem registry and lifecycle                                                                                                                                                                 |
+| `rendering.js`            | Renderer, lights (a shot's mood, look, sun and fill: `setShotLight()`, `setShotSun()`, `setShotFill()`), shadows, the environment's redraw on a cut (`refreshEnvironment()`), shader compilation |
+| `shader-programs.js`      | Captured-program shader readiness with bounded, cancellable polling                                                                                                                              |
+| `night-environment.js`    | The film sky captured as the scene's environment                                                                                                                                                 |
+| `postprocess.js`          | Composer, grade, bloom, ink contour, dissolve, the lens's heat, aberration and the star's flare (`LENS_FX`)                                                                                      |
+| `depth-layers.js`         | Depth-layer codes for the dissolve, and the star's mask                                                                                                                                          |
+| `film-light.js`           | Film light balance (`FILM_LIGHT`, golden hour), shot moods and looks (`shotLook()`, `applyShotTone()`), the key's direction (`SHOT_KEY`), text guards and directional flash illumination         |
+| `perf-marks.js`           | `babel:` marks and measures                                                                                                                                                                      |
+| `helpers.js`              | Ground height and math on `BabelSite.scene`                                                                                                                                                      |
+| `palette.js`              | Ground palette                                                                                                                                                                                   |
+| `world.js`                | World constants                                                                                                                                                                                  |
 
 **Camera (`src/scene/`)**
 
@@ -282,3 +283,22 @@ Every model, map, image, font and icon, with its size, and every byte and script
 `npm test` runs `node --test "test/*.test.mjs"`: Node's own runner, no framework. Files are grouped by domain: page and UI (`markup-accessibility`, `hero`, `contact`, `scene-loader`, `boot`, `webgl-probe`), scene wiring (`scene-bootstrap`, `scene-basics`, `scene-runtime`, `scene-quality`, `scene-postprocess`, `scene-visitor-pause`, `startup-cost`), camera (`cinematic`, `framing`, `coast-framing`, `camera-tour`, `opening-star`), subjects and surroundings (`architecture`, `architecture-preparation`, `architecture-assets`, `lantern`, `sky`, `night-environment`, `hill-silhouette`, `mountain-massifs`, `lightning`, `film-scene`, `ground`, `terrain-build`, `foreground-detail`, `soil-roughness`, `ocean`, `coast-detail`, `coast-geometry`, `coast-material`, `coast-waterfall`, `river-channel`, `rock-startup`, `coast-preparation`, `coast-handoff`), delivery (`build`, `bundle-output`, `hosting`, `smoke-pages`, `workflows`), and the docs (`docs`). `bundle-output` builds the site once into a temporary folder under `.tmp-preview-review/` and checks the real payload; two of its tests build small fixture projects there as well (the refused shared chunk, and a changed model's effect on the UI bundle).
 
 [test/support/](../test/support/) holds shared helpers, outside the test glob. Each of `code.mjs`, `css.mjs` and `html.mjs` has its own whitespace-normalizing `flat()` for its language, so source, style and markup checks survive formatting; `code.mjs` also reads source files, and `css.mjs` parses rules and media blocks and computes contrast. `glb.mjs` is a GLB reader that handles normalized integer attributes, byte strides and node transforms, `terrain.mjs` holds the plain-dune baseline the terrain tests compare against, `ground.mjs` the live scene's analytic ground for the framing fixtures, and `contact-dom.mjs` is the fake footer the contact and boot tests run contact.js over.
+
+### Opening presentation
+
+The functional opening includes a final `presentation` stage, after the final shaders.
+`opening-presentation.js`, delivered in the existing lazy preparation helper, observes only
+real completed scene draws at the final opening pose: at least 12 consecutive intervals
+within 35 ms, spanning at least 250 ms, with each submission within 25 ms. A WebGL2 fence
+must signal without a blocking wait; WebGL1 retains linked-program checks and the same
+fresh draw window. A slow stream never wins merely by waiting. Refit, context loss and
+visibility changes retire the window; disposal frees its owned fence, never querying a lost
+context. The existing visible-time stall and total preparation budgets still apply.
+
+The canvas and loader complete only after that admission. The paper waits for the canvas's
+480 ms fade, remaining closed in a hidden tab, then starts its existing opening. Its `closed`
+status holds the camera and tour at phase zero until the sheets begin parting. Early input
+cannot skip readiness; the skip link, main and footer temporarily borrow `inert`, restored
+exactly on reveal or static fallback. The doors' 34 s visible-time escape retires a stranded
+renderer before opening onto the title card; the held CSS backstop is 35 s. Neither replaces
+the functional 15 s stall / 30 s total preparation deadlines.

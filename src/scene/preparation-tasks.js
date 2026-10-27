@@ -1,3 +1,5 @@
+export { createOpeningPresentation } from "./opening-presentation.js";
+
 // Lazy builders keep their exact generator order while yielding between short
 // tasks. Priority work avoids nested timers' 4 ms clamp; visible refinement
 // retains its idle deadlines. No task advances a hidden or cancelled build.
