@@ -166,7 +166,7 @@ test("the first frame and reveal wait for the complete opening and linked shader
   );
   assert.match(
     index,
-    /if \(openingPrepared && !openingShaderStarted && !shaderWarmup\.pending\) \{ openingShaderStarted = true; const generation = openingGeneration; warmShaders\("opening"\)/,
+    /if \(openingPrepared && !openingShaderStarted && !shaderWarmup\.pending\) \{[^]*?openingShaderStarted = true; const generation = openingGeneration; warmShaders\("opening"\)/,
   );
   assert.match(
     index,
@@ -192,7 +192,7 @@ test("the hidden canvas idles until the reveal, which marks it and lets the rock
   );
   assert.match(
     index,
-    /if \(sceneShown && !canvasShown\) \{ markScene\("reveal"\); revealTime = elapsedTime; cameraTour\?\.reset\(\); stopOpeningPreparation\(\); rockScatter\.setRevealed\(\); groundTextures\.update\?\.\(\{ revealed: true \}\); \}/,
+    /if \(sceneShown && !canvasShown\) \{ markScene\("reveal"\); revealTime = elapsedTime; cameraTour\?\.reset\(\); stopOpeningPreparation\(\); rockScatter\.setRevealed\(\); atmosphereSystem\.setRevealed\(opening\.view === "watch"\); groundTextures\.update\?\.\(\{ revealed: true \}\); \}/,
   );
 });
 

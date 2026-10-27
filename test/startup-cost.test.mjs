@@ -20,12 +20,37 @@ import {
 import { markSceneEvaluated, measureScene, sceneNow } from "../src/scene/perf-marks.js";
 import { createSceneRendering } from "../src/scene/rendering.js";
 import { createShaderWarmup } from "../src/scene/runtime.js";
-import { compilePrograms } from "../src/scene/shader-programs.js";
+import { compilePrograms, linkedPrograms } from "../src/scene/shader-programs.js";
 import { createHillSilhouette } from "../src/scene/hill-silhouette.js";
 import { createOpeningPreparation } from "../src/scene/opening-preparation.js";
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 const linkedPoll = () => new Promise((resolve) => setTimeout(resolve, 25));
+test("a replaced environment's freed shader programs are never polled or link-queried", async () => {
+  let queried = 0;
+  const gl = {
+    isProgram: () => false,
+    getProgramParameter() {
+      queried++;
+      throw new Error("freed program");
+    },
+  };
+  const program = {
+    program: {},
+    isReady() {
+      queried++;
+      throw new Error("freed program");
+    },
+  };
+  const renderer = {
+    getContext: () => gl,
+    compile: () => new Set([{}]),
+    properties: { get: () => ({ programs: new Map([["old", program]]) }) },
+  };
+  assert.equal(await compilePrograms(renderer, {}, {}, null, () => true), false);
+  assert.equal(linkedPrograms(renderer, [program]), false);
+  assert.equal(queried, 0);
+});
 const source = (path) => readFile(new URL(`../src/${path}`, import.meta.url), "utf8");
 const materialsOf = (objects) => {
   const materials = new Set();

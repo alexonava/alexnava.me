@@ -132,6 +132,12 @@ export function createNightEnvironment(
       const poll = () => {
         try {
           if (!current(ticket) || performance.now() >= until) return finish(false);
+          const gl = renderer.getContext?.();
+          if (
+            gl?.isProgram &&
+            programs?.some((program) => !program?.program || !gl.isProgram(program.program))
+          )
+            return finish(false);
           if (programs?.every((program) => program.isReady())) return finish(true);
         } catch {
           return finish(false);
@@ -347,10 +353,18 @@ export function createNightEnvironment(
       sky = material?.isShaderMaterial ? material : null;
       if (Number.isFinite(opacity)) shell = opacity;
       const job = prepare();
-      preparing = job ? prepareCapture(job, generation).catch(() => null) : null;
+      if (job) {
+        const pending = prepareCapture(job, generation)
+          .catch(() => null)
+          .finally(() => {
+            if (preparing === pending) preparing = null;
+          });
+        preparing = pending;
+      } else preparing = null;
     },
     capture() {
       if (target) return target.texture;
+      if (preparing) return null;
       if (!sky || status === "failed") return null;
       return attempt();
     },

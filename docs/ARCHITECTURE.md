@@ -84,6 +84,7 @@ _lazy_ marks a chunk loaded on demand.
 | `../scene-entry.js`       | Scene entry: imports `perf-marks.js`, the shared modules and `index.js`, then records `babel:scene-entry` and `babel:scene-eval`                                                                 |
 | `index.js`                | Assembly, preparation and reveal, holds, commits, the text guard's boxes, `sceneDebug`                                                                                                           |
 | `runtime.js`              | Scheduler, cadence, holds, warm-ups, deferred steps, pixel-ratio watcher                                                                                                                         |
+| `opening-flame.js`        | _lazy_ Lantern outline and loader-light prediction, borrowing camera helpers from the entry                                                                                                      |
 | `opening-presentation.js` | _lazy_ Fresh rendered-frame admission and nonblocking GPU completion before reveal                                                                                                               |
 | `opening-preparation.js`  | Independent opening stage gate, visible-time deadlines and readiness reporting                                                                                                                   |
 | `subsystem.js`            | Subsystem registry and lifecycle                                                                                                                                                                 |
@@ -286,7 +287,7 @@ Every model, map, image, font and icon, with its size, and every byte and script
 
 ### Opening presentation
 
-The functional opening includes a final `presentation` stage, after the final shaders.
+The functional opening settles its sky plate or procedural fallback, then includes a final `presentation` stage after the final shaders. Its resource orchestration and lantern-light prediction use the existing lazy preparation chunk; the entry lends constructors to avoid a second scene-module chunk.
 `opening-presentation.js`, delivered in the existing lazy preparation helper, observes only
 real completed scene draws at the final opening pose: at least 12 consecutive intervals
 within 35 ms, spanning at least 250 ms, with each submission within 25 ms. A WebGL2 fence

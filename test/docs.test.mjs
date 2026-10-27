@@ -285,7 +285,7 @@ test("the byte tables in Assets match the files they list", () => {
   const sum = (files) => files.reduce((total, file) => total + sizes.get(file), 0);
   const models = (tier) => [...sizes.keys()].filter((file) => file.endsWith(`-${tier}.glb`));
   const slateTier = new Map(
-    ["## Slate maps", "## Coast detail"].flatMap((heading) => {
+    ["## Slate maps", "## Coast detail", "## The cel sky's plates"].flatMap((heading) => {
       const [table] = tables(section(markdown, heading)),
         tierColumn = table.header.indexOf("Tier");
       return table.rows.map((row) => [

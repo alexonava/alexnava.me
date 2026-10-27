@@ -10,7 +10,7 @@ import {
 } from "three";
 import { celestialTier } from "./solar-body.js";
 
-export function createSceneAtmosphere({ parent, profile }) {
+export function createSceneAtmosphere({ parent, profile, assetTier = profile?.tier ?? "high" }) {
   const root = new Group();
   parent.add(root);
 
@@ -30,11 +30,11 @@ export function createSceneAtmosphere({ parent, profile }) {
       !skyMaterial?.uniforms.uCloudMap ||
       typeof window === "undefined"
     )
-      return;
+      return cloudPending ?? cloudOwner?.prepare() ?? Promise.resolve(false);
     cloudPending = import("./cloud-plate.js")
       .then((module) => {
         if (disposed || skyTier === "low") return;
-        cloudOwner = module.createCloudPlate({ uniforms: skyMaterial.uniforms });
+        cloudOwner = module.createCloudPlate({ uniforms: skyMaterial.uniforms, tier: assetTier });
         cloudOwner.setEnabled(film);
         return cloudOwner.prepare();
       })
@@ -42,6 +42,7 @@ export function createSceneAtmosphere({ parent, profile }) {
       .finally(() => {
         cloudPending = null;
       });
+    return cloudPending;
   }
 
   function applySkyQuality() {
@@ -85,6 +86,13 @@ export function createSceneAtmosphere({ parent, profile }) {
     // The plate for the shot on screen (cloud-plate.js): its own sun's, else the moon's.
     commitSky(plate = "moon") {
       return cloudOwner?.commit(plate) ?? false;
+    },
+    async prepareOpening(plate = "moon") {
+      await prepareClouds();
+      return cloudOwner?.commit(plate) ?? false;
+    },
+    setRevealed(watchOpening = false) {
+      cloudOwner?.startBackground(watchOpening);
     },
     applyQuality(nextProfile = {}) {
       if (disposed) return false;

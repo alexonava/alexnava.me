@@ -1,3 +1,4 @@
+export { createOpeningFlame } from "./opening-flame.js";
 export { createOpeningPresentation } from "./opening-presentation.js";
 
 // Lazy builders keep their exact generator order while yielding between short

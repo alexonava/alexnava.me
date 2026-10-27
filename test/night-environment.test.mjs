@@ -66,6 +66,7 @@ test("the first environment capture waits for both sky and filter programs and c
   const sky = skyMaterial();
   const flush = () => new Promise((resolve) => setImmediate(resolve));
   environment.setSky(sky);
+  assert.equal(environment.capture(), null, "a film activation cannot race the pending capture");
   assert.equal(draws, 0);
   assert.equal(links.length, 1);
   links[0].resolve();

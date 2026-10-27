@@ -21,6 +21,7 @@ export function createOpeningPresentation(gl = null) {
     gpuReady = !gl?.fenceSync;
   };
   return {
+    prepare: prepareOpeningResources,
     get ready() {
       return ready;
     },
@@ -71,4 +72,22 @@ export function createOpeningPresentation(gl = null) {
       disposed = true;
     },
   };
+}
+
+// The opening's resource orchestration belongs to this already lazy owner.
+// A failed optional sky resolves to the procedural sky; terrain remains required.
+export function prepareOpeningResources(frame, owners, settle) {
+  const { atmosphere, rendering, filmScene, groundTextures, rockScatter, groundContacts } = owners;
+  const sky = atmosphere.prepareOpening(frame.plate).then((changed) => {
+    if (changed) rendering.refreshEnvironment();
+    settle("sky");
+  });
+  if (!frame.tree) return sky.then(() => true);
+  const terrain = filmScene.prepareOpening(frame);
+  const maps = groundTextures.prepareOpening().then(() => settle("materials"));
+  const rocks = rockScatter.prepareOpening().then(() => {
+    if (rockScatter.committed) groundContacts.slateRockContact.value = 1;
+    settle("rocks");
+  });
+  return Promise.all([terrain, maps, rocks, sky]).then(([ready]) => ready);
 }

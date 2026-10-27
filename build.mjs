@@ -207,12 +207,15 @@ async function materialAssetManifest() {
   }
   // The sky's plates (cloud-plate.js CLOUD_PLATES): the moonlit one and one per shot's sun.
   const cloudPlateUrls = {};
-  for (const key of CLOUD_PLATE_KEYS) {
-    const name = `cel-sky-${key}.webp`,
-      bytes = await readFile(join(__dirname, "images", "materials", name)),
-      hashedName = name.replace(".webp", `.${sha8(bytes)}.webp`);
-    files.push({ hashedName, bytes });
-    cloudPlateUrls[key] = `/images/materials/${hashedName}`;
+  for (const tier of ["high", "balanced"]) {
+    cloudPlateUrls[tier] = {};
+    for (const key of CLOUD_PLATE_KEYS) {
+      const name = `cel-sky-${key}${tier === "balanced" ? "-balanced" : ""}.webp`,
+        bytes = await readFile(join(__dirname, "images", "materials", name)),
+        hashedName = name.replace(".webp", `.${sha8(bytes)}.webp`);
+      files.push({ hashedName, bytes });
+      cloudPlateUrls[tier][key] = `/images/materials/${hashedName}`;
+    }
   }
   return { urls, files, ...coast, cloudPlateUrls };
 }

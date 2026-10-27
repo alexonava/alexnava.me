@@ -5,7 +5,10 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { createCameraTour } from "../src/scene/camera-tour.js";
 import { DIRECTED_SHOTS } from "../src/scene/directed-shots.js";
-import { createOpeningPresentation } from "../src/scene/opening-presentation.js";
+import {
+  createOpeningPresentation,
+  prepareOpeningResources,
+} from "../src/scene/opening-presentation.js";
 import { createOpeningPreparation } from "../src/scene/opening-preparation.js";
 
 const source = readFileSync(new URL("../src/scene/index.js", import.meta.url), "utf8");
@@ -130,15 +133,38 @@ function harness({
       },
     },
     qualityDebug: {},
-    loadPreparationTasks: async () => ({
-      createOpeningPresentation: realPresentation
-        ? createOpeningPresentation
-        : () => ({
-            sample: () => true,
-            reset() {},
-            dispose() {},
-          }),
+    // A fitted camera has already loaded this shared helper; keep its import
+    // resolved while the resource owners below remain independently async.
+    loadPreparationTasks: () => ({
+      then(callback) {
+        callback({
+          createOpeningFlame: () => () => null,
+          createOpeningPresentation: realPresentation
+            ? createOpeningPresentation
+            : () => ({
+                prepare: prepareOpeningResources,
+                sample: () => true,
+                reset() {},
+                dispose() {},
+              }),
+        });
+        return { catch() {} };
+      },
     }),
+    predictLoaderStar() {},
+    openingFlame: null,
+    environmentDirty: false,
+    BufferAttribute: null,
+    BufferGeometry: null,
+    Mesh: null,
+    Object3D: null,
+    PerspectiveCamera: null,
+    Vector3: null,
+    createCinematicCamera: null,
+    DIRECTED_SHOTS: null,
+    resolveDirectedShot: null,
+    lensSource: null,
+    LANTERN_SCALE: null,
     firstFrameDrawn: true,
     frameStart: 0,
     get timestamp() {
@@ -197,11 +223,13 @@ function harness({
     renderer: { extensions: { has: () => parallel } },
     rendering: {
       openingPreparing: true,
+      refreshEnvironment() {},
       programsLinked: () => linked,
       update() {
         draws++;
       },
     },
+    atmosphereSystem: { prepareOpening: async () => false, setRevealed() {} },
     invalidateContent() {
       invalidations++;
     },

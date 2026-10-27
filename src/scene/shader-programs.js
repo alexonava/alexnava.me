@@ -12,7 +12,9 @@ export function linkedPrograms(renderer, programs, valid = () => true) {
         current() &&
         program?.diagnostics?.runnable !== false &&
         (!gl?.getProgramParameter ||
-          (program?.program && gl.getProgramParameter(program.program, gl.LINK_STATUS) === true)),
+          (program?.program &&
+            (!gl.isProgram || gl.isProgram(program.program)) &&
+            gl.getProgramParameter(program.program, gl.LINK_STATUS) === true)),
     )
   );
 }
@@ -40,6 +42,12 @@ export function compilePrograms(renderer, objects, camera, targetScene, valid, t
     (function poll() {
       try {
         if (!current()) return resolve(false);
+        const gl = renderer.getContext?.();
+        if (
+          gl?.isProgram &&
+          programs.some((program) => !program?.program || !gl.isProgram(program.program))
+        )
+          return resolve(false);
         if (programs.every((program) => program?.isReady())) {
           // Completion alone includes failed links; production disables Three's
           // lazy diagnostics. Query success only after parallel work finishes.

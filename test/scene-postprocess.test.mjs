@@ -937,6 +937,10 @@ test("a lost context cancels remaining preparation from an earlier generation", 
   const fresh = pipeline.compile();
   assert.notEqual(old, fresh);
   assert.equal(await old, false);
+  // Cancellation can settle before the fresh task gets its turn. Await the
+  // observable compile boundary, rather than assuming a timer ordering.
+  for (let n = 0; calls.length < 2 && n < 100; n++)
+    await new Promise((resolve) => setTimeout(resolve, 1));
   assert.equal(calls.length, 2, "the invalidated work adds no canvas preparation");
   settle[1]();
   await linkPoll();

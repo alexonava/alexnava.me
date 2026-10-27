@@ -222,3 +222,9 @@ shader preparation. [scene-doors](../test/scene-doors.test.mjs) checks that earl
 old ten-second deadline cannot expose unfinished work, hidden reveal waits, and borrowed
 focus eligibility is restored on success and fallback. These CPU tests do not establish
 native frame rate or physical iPhone/Android behavior.
+
+The sky regressions cover delayed background scheduling, startup-tier pinning, upcoming-shot
+order, no duplicate set on quality changes, per-request timeout isolation, ignored-abort
+late decodes, malformed image sizes and both tier budgets. The aggregate complete-scene
+asset test counts all four sky images for the visitor's pinned tier, including every
+optional coastal map; separate script budgets remain unchanged.

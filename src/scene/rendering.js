@@ -319,7 +319,13 @@ export function createSceneRendering({
     },
     // The sky shell whose film sky the environment captures (index.js).
     setEnvironmentSky(material, shellOpacity) {
-      if (!disposed) environment.setSky(material, shellOpacity);
+      if (disposed) return;
+      environment.setSky(material, shellOpacity);
+      environment.ready.then((texture) => {
+        if (disposed || !texture || environment.texture !== texture) return;
+        if (filmLighting) homeScene.environment = texture;
+        onInvalidate?.();
+      });
     },
     // Draws the environment again after a cut changed the sky (its plate or key), so
     // the mirrors take the new sky with the shot; the film's materials take the new texture.
