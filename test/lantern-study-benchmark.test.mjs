@@ -4,8 +4,9 @@ import { readFileSync } from "node:fs";
 import { DIRECTED_SHOTS, resolveDirectedShot } from "../src/scene/directed-shots.js";
 
 // The owner's accepted opener is a fixed benchmark while the other seven
-// compositions change. This fixture is the approved a9820518 preset, including
-// the shared ground profile and every viewport override, rather than a new fit.
+// compositions change. This fixture is the preset the owner locked on 2026-10-27 (the
+// Artistic set's light, the wetter ground and the wider phone frame over a9820518's),
+// including the shared ground profile and every viewport override, rather than a new fit.
 const approved = JSON.parse(
   readFileSync(new URL("./support/lantern-study-approved.json", import.meta.url), "utf8"),
 );

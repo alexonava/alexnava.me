@@ -278,9 +278,11 @@ for (const tier of ["high", "balanced"])
           distances["Lantern study"] < distances["Root and lantern"] * 0.65,
           `${tier} ${width} lantern study repeated the roots view`,
         );
+        // Upright frames fit it wider, the root arching over the lantern in frame too (the owner's ask
+        // of 2026-10-27), so upright frames hold the lantern at a little over a third of their height.
         assert.ok(
-          sizes["Lantern study"] > 0.55,
-          `${tier} ${width} lantern is not the clear subject`,
+          sizes["Lantern study"] > (height > width ? 0.35 : 0.55),
+          `${tier} ${width} lantern is not the clear subject (${sizes["Lantern study"].toFixed(2)})`,
         );
       }
     } finally {

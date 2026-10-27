@@ -333,7 +333,7 @@ for (const tier of ["high", "balanced"])
         camera.updateMatrixWorld();
         estate.updateWorldMatrix(true, true);
         assert.equal(controller.shot.hold, 7);
-        assert.deepEqual(controller.shot.move, base.move);
+        assert.deepEqual(controller.shot.move, base.portrait.move ?? base.move);
         assert.ok(Math.hypot(camera.position.x, camera.position.z) < 122);
         const bounds = forms.map((points) => {
           const b = { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity };

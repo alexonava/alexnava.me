@@ -473,7 +473,8 @@ test("CSS asset URLs and bytes are portable across checkout line endings", async
     }
     await writeFile(path.join(fixture, "images", "materials", "coast-detail-256.webp"), binary);
     await writeFile(path.join(fixture, "images", "materials", "coast-albedo-512.webp"), binary);
-    await writeFile(path.join(fixture, "images", "materials", "moonlit-clouds-1774.webp"), binary);
+    for (const key of ["moon", "close-up", "root-and-lantern", "broken-coast"])
+      await writeFile(path.join(fixture, "images", "materials", `cel-sky-${key}.webp`), binary);
     for (const map of ["detail", "height"]) {
       await writeFile(path.join(fixture, "images", "paper", `paper-${map}.webp`), binary);
     }

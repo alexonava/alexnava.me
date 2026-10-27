@@ -66,7 +66,7 @@ export function isFingerprintedSource(file) {
   return (
     /^fonts\/[^/]+\.woff2$/.test(path) ||
     /^images\/architecture\/[^/]+\.glb$/.test(path) ||
-    /^images\/materials\/(?:slate-[^/]+|coast-detail-256|coast-albedo-512|moonlit-clouds-1774)\.webp$/.test(
+    /^images\/materials\/(?:slate-[^/]+|coast-detail-256|coast-albedo-512|cel-sky-[\w-]+)\.webp$/.test(
       path,
     ) ||
     /^images\/paper\/paper-(?:detail|height)\.webp$/.test(path)
@@ -169,6 +169,8 @@ async function fontAssetManifest() {
 
 // The film slate's maps (images/materials/slate-*.webp) are hashed too:
 // { source name: hashed URL }, which the scene entry reads (stone-detail.js).
+// The sky's plates, by key (src/scene/cloud-plate.js CLOUD_PLATES restates them).
+const CLOUD_PLATE_KEYS = ["moon", "close-up", "root-and-lantern", "broken-coast"];
 const SLATE_MAPS = [
   "color-1024",
   "normal-1024",
@@ -203,11 +205,16 @@ async function materialAssetManifest() {
     files.push({ hashedName, bytes });
     coast[key] = `/images/materials/${hashedName}`;
   }
-  const cloudName = "moonlit-clouds-1774.webp";
-  const cloudBytes = await readFile(join(__dirname, "images", "materials", cloudName));
-  const cloudHashedName = cloudName.replace(".webp", `.${sha8(cloudBytes)}.webp`);
-  files.push({ hashedName: cloudHashedName, bytes: cloudBytes });
-  return { urls, files, ...coast, cloudPlateUrl: `/images/materials/${cloudHashedName}` };
+  // The sky's plates (cloud-plate.js CLOUD_PLATES): the moonlit one and one per shot's sun.
+  const cloudPlateUrls = {};
+  for (const key of CLOUD_PLATE_KEYS) {
+    const name = `cel-sky-${key}.webp`,
+      bytes = await readFile(join(__dirname, "images", "materials", name)),
+      hashedName = name.replace(".webp", `.${sha8(bytes)}.webp`);
+    files.push({ hashedName, bytes });
+    cloudPlateUrls[key] = `/images/materials/${hashedName}`;
+  }
+  return { urls, files, ...coast, cloudPlateUrls };
 }
 
 // The opening's paper (images/paper/paper-*.webp, a CC0 scan's detail and height) is
@@ -330,8 +337,8 @@ async function buildScriptBundle(
           __BABEL_COAST_ALBEDO_URL__: JSON.stringify(
             (materials ?? (await materialAssetManifest())).coastAlbedoUrl,
           ),
-          __BABEL_CLOUD_PLATE_URL__: JSON.stringify(
-            (materials ?? (await materialAssetManifest())).cloudPlateUrl,
+          __BABEL_CLOUD_PLATE_URLS__: JSON.stringify(
+            JSON.stringify((materials ?? (await materialAssetManifest())).cloudPlateUrls),
           ),
         }
       : {

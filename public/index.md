@@ -9,7 +9,7 @@ dateModified: 2026-10-15
 
 A little about me and what I’m working on.
 
-The live backdrop opens beneath the tree with Lantern study or under the night sky with The watch, by chance, then tours eight views of the tree, night sky and coast. Devices using the static page keep the night-sky title card.
+The live backdrop opens beneath the tree with Lantern study or under the evening sky with The watch, by chance, then tours eight views of the tree, sky and coast at golden hour. Devices using the static page keep the night-sky title card.
 
 ## Contact
 

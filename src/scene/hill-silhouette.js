@@ -142,10 +142,7 @@ const smooth01 = (a, b, x) => {
 // (createHillSilhouette()): rgb the key's colour times its intensity, w the
 // hemisphere's and the ambient's intensities; the film's balance until then.
 export const MOUNTAIN_LIGHT = {
-  value: new Vector4(
-    ...FILM_LIGHT.moon.map((c) => c * FILM_LIGHT.key),
-    FILM_LIGHT.hemisphere + FILM_LIGHT.ambient,
-  ),
+  value: new Vector4(...FILM_LIGHT.moon.map((c) => c * FILM_LIGHT.rangeKey), FILM_LIGHT.rangeSky),
 };
 // JS mirror of the shader's bare rock body (tests), at `distance` units in the
 // film's own light: its luma as a share of the sky's behind it (a horizon sky
@@ -720,14 +717,19 @@ export function createHillSilhouette({
   mesh.matrixAutoUpdate = false;
   mesh.updateMatrix();
   // The ranges' moonlight from the scene's own lights (MOUNTAIN_LIGHT), before each draw.
+  // The scene's key and sky light as they stand (the shot's mood included), at the ranges'
+  // own strengths (FILM_LIGHT.rangeKey and rangeSky over the film's), so their haze still
+  // orders them by distance below the sky at golden hour.
+  const keyShare = FILM_LIGHT.rangeKey / FILM_LIGHT.key,
+    skyShare = FILM_LIGHT.rangeSky / (FILM_LIGHT.hemisphere + FILM_LIGHT.ambient);
   const lightRanges = () => {
     const { sun, hemisphere, ambient } = rendering?.lights ?? {};
     if (sun)
       MOUNTAIN_LIGHT.value.set(
-        sun.color.r * sun.intensity,
-        sun.color.g * sun.intensity,
-        sun.color.b * sun.intensity,
-        (hemisphere?.intensity ?? 0) + (ambient?.intensity ?? 0),
+        sun.color.r * sun.intensity * keyShare,
+        sun.color.g * sun.intensity * keyShare,
+        sun.color.b * sun.intensity * keyShare,
+        ((hemisphere?.intensity ?? 0) + (ambient?.intensity ?? 0)) * skyShare,
       );
   };
   mesh.onBeforeRender = lightRanges;

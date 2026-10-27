@@ -14,7 +14,9 @@ function framingOnly(value) {
   if (!value || typeof value !== "object") return value;
   return Object.fromEntries(
     Object.entries(value)
-      .filter(([key]) => !["light", "ground", "lens"].includes(key))
+      .filter(
+        ([key]) => !["light", "ground", "lens", "look", "sun", "growth", "fill"].includes(key),
+      )
       .map(([key, item]) => [key, framingOnly(item)]),
   );
 }

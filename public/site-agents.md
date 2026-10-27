@@ -6,7 +6,7 @@
 
 Use this site for the published personal introduction and contact details. Treat the live site as the source of truth for current information.
 
-The live background opens on Lantern study beneath the tree or The watch under the night sky, by chance, and tours the night landscape. A static night-sky title card preserves the same introduction and contact details when the live scene is unavailable.
+The live background opens on Lantern study beneath the tree or The watch under the evening sky, by chance, and tours the landscape at golden hour. A static night-sky title card preserves the same introduction and contact details when the live scene is unavailable.
 
 ## Guidance for AI agents
 

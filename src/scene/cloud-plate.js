@@ -3,14 +3,24 @@ import {
   LinearFilter,
   LinearMipmapLinearFilter,
   NoColorSpace,
+  RepeatWrapping,
   Texture,
 } from "three";
 
-export const CLOUD_PLATE_LIMITS = Object.freeze({ bytes: 393216, pixels: 2097152, timeout: 4000 });
-const cloudUrl =
-  typeof __BABEL_CLOUD_PLATE_URL__ === "string"
-    ? __BABEL_CLOUD_PLATE_URL__
-    : "/images/materials/moonlit-clouds-1774.webp";
+// The sky's plates: the cel sky's own banks, lit in volume and baked all the way round
+// (u = azimuth / 2pi), one lit by the moon and one for each shot that shows its own sun
+// (directed-shots.js `sun.plate`). The moon's loads first; the suns' follow in the
+// background, each only ever shown from a cut.
+export const CLOUD_PLATES = Object.freeze(["moon", "close-up", "root-and-lantern", "broken-coast"]);
+export const CLOUD_PLATE_LIMITS = Object.freeze({
+  bytes: 640 * 1024,
+  pixels: 4096 * 1024,
+  timeout: 8000,
+});
+const defaultUrls =
+  typeof __BABEL_CLOUD_PLATE_URLS__ === "string"
+    ? JSON.parse(__BABEL_CLOUD_PLATE_URLS__)
+    : Object.fromEntries(CLOUD_PLATES.map((key) => [key, `/images/materials/cel-sky-${key}.webp`]));
 
 function release(texture) {
   if (!texture) return;
@@ -42,29 +52,31 @@ export async function loadCloudPlateTexture(
   // The artistic sky is display-referred, like filmSky(), outside the surface tone curve.
   texture.colorSpace = NoColorSpace;
   texture.flipY = false;
-  texture.wrapS = texture.wrapT = ClampToEdgeWrapping;
+  // All the way round: it wraps at its seam; never past the zenith or the horizon.
+  texture.wrapS = RepeatWrapping;
+  texture.wrapT = ClampToEdgeWrapping;
   texture.magFilter = LinearFilter;
   texture.minFilter = LinearMipmapLinearFilter;
   texture.needsUpdate = true;
   return texture;
 }
 
-// Optional artwork: preparation never blocks the scene. A decoded plate waits for
-// the hidden preparation frames or the next tour cut, so a late response cannot pop
-// into a moving shot. Only this owner frees the texture and its decoded bitmap.
+// Optional artwork: preparation never blocks the scene. A decoded plate waits for the
+// hidden preparation frames or the next tour cut, so a late response cannot pop into a
+// moving shot. Only this owner frees the textures and their decoded bitmaps.
 export function createCloudPlate({
   uniforms,
   load = loadCloudPlateTexture,
-  url = cloudUrl,
+  urls = defaultUrls,
   scheduleTimeout = setTimeout,
   cancelTimeout = clearTimeout,
 } = {}) {
   let target = null,
     borrowed = null,
-    texture = null,
     pending = null,
     abort = null,
-    timer = null;
+    shown = null;
+  const textures = new Map();
   let state = "idle",
     enabled = true,
     disposed = false;
@@ -74,6 +86,7 @@ export function createCloudPlate({
       target.uCloudMix.value = borrowed.mix;
     }
     target = borrowed = null;
+    shown = null;
   }
   function setTarget(next) {
     restore();
@@ -83,38 +96,54 @@ export function createCloudPlate({
     target.uCloudMix.value = 0;
     return true;
   }
+  // One plate, within its own timeout.
+  function loadOne(key) {
+    return new Promise((resolve) => {
+      const timer = scheduleTimeout(() => abort.abort(), CLOUD_PLATE_LIMITS.timeout);
+      Promise.resolve()
+        .then(() => load(urls[key], abort.signal))
+        .then((texture) => {
+          if (disposed || abort.signal.aborted) release(texture);
+          else textures.set(key, texture);
+        })
+        .catch(() => {})
+        .finally(() => {
+          cancelTimeout(timer);
+          resolve(textures.has(key));
+        });
+    });
+  }
   setTarget(uniforms);
   return {
     setTarget,
     get status() {
       return disposed ? "disposed" : target?.uCloudMix.value > 0 ? "active" : state;
     },
+    // The plates loaded so far.
+    get loaded() {
+      return [...textures.keys()];
+    },
+    // The key of the plate on the sky (null while none is).
+    get shown() {
+      return shown;
+    },
     prepare() {
       if (pending) return pending;
       if (disposed || state !== "idle") return Promise.resolve(!disposed && state === "ready");
       state = "loading";
       abort = new AbortController();
-      timer = scheduleTimeout(() => abort.abort(), CLOUD_PLATE_LIMITS.timeout);
-      pending = Promise.resolve()
-        .then(() => load(url, abort.signal))
-        .then((value) => {
-          if (disposed || abort.signal.aborted) {
-            release(value);
-            if (!disposed) state = "failed";
-            return false;
-          }
-          texture = value;
-          state = "ready";
-          return true;
-        })
-        .catch(() => {
-          if (!disposed) state = "failed";
-          return false;
-        })
-        .finally(() => {
-          if (timer !== null) cancelTimeout(timer);
-          timer = pending = null;
-        });
+      // The moon's plate settles the status; the suns' load after it, one at a time.
+      pending = loadOne("moon").then((ok) => {
+        if (disposed) return false;
+        state = ok ? "ready" : "failed";
+        pending = null;
+        if (ok)
+          CLOUD_PLATES.filter((key) => key !== "moon" && urls[key]).reduce(
+            (chain, key) => chain.then(() => !disposed && !abort.signal.aborted && loadOne(key)),
+            Promise.resolve(),
+          );
+        return ok;
+      });
       return pending;
     },
     setEnabled(value) {
@@ -122,23 +151,28 @@ export function createCloudPlate({
       if (!enabled && target) {
         target.uCloudMix.value = 0;
         target.uCloudMap.value = borrowed.plate;
+        shown = null;
       }
     },
-    commit() {
-      if (disposed || !enabled || !target || !texture || target.uCloudMix.value === 1) return false;
+    // Puts `key`'s plate on the sky (the moon's while a sun's has not loaded). Called only
+    // where a change cannot show: hidden preparation and tour cuts. Returns whether it changed.
+    commit(key = "moon") {
+      if (disposed || !enabled || !target) return false;
+      const want = textures.has(key) ? key : "moon";
+      const texture = textures.get(want);
+      if (!texture || (shown === want && target.uCloudMix.value === 1)) return false;
       target.uCloudMap.value = texture;
       target.uCloudMix.value = 1;
+      shown = want;
       return true;
     },
     dispose() {
       if (disposed) return false;
       disposed = true;
       abort?.abort();
-      if (timer !== null) cancelTimeout(timer);
-      timer = null;
       restore();
-      release(texture);
-      texture = null;
+      for (const texture of textures.values()) release(texture);
+      textures.clear();
       return true;
     },
   };

@@ -145,6 +145,8 @@ test("scene bundle stays under the deferred-payload budget", async () => {
   let bytes = 0;
   for (const name of loaded.keys()) bytes += (await stat(path.join(scriptsDir, name))).size;
   const kb = bytes / 1024;
+  // 838 kB since each sun shot shows its own sun and the cel sky's lit plates (the owner's call
+  // of 2026-10-27: the per-shot sun on the cut, the plate set and the shot looks, about 2.4 kB);
   // 835 kB since a lantern opening's light lines up from the scene's start: the supplied
   // lantern's stored outline (opening-lantern.js) and its fit (opening-star.js openingFlame())
   // are about 3.3 kB of it (the owner's call of 2026-10-26); 831 kB since the fault's own shots
@@ -152,8 +154,8 @@ test("scene bundle stays under the deferred-payload budget", async () => {
   // the entry keeps their hooks); 830 kB since the loading line's star lines up with the
   // opening shot's: The watch's stored outline (opening-outline.js) is about 10 kB of it.
   assert.ok(
-    kb < 835,
-    `scene bundle (${[...loaded.keys()].join(" + ")}) is ${kb.toFixed(3)} kB; budget is 835 kB`,
+    kb < 838,
+    `scene bundle (${[...loaded.keys()].join(" + ")}) is ${kb.toFixed(3)} kB; budget is 838 kB`,
   );
 });
 
@@ -359,14 +361,14 @@ test("the scene requests only slate maps and the three maps in their lazy owners
     materials.every(
       (name) =>
         name.startsWith("slate-") ||
-        /^(?:coast-(?:detail-256|albedo-512)|moonlit-clouds-1774)\.webp$/.test(name),
+        /^(?:coast-(?:detail-256|albedo-512)|cel-sky-[\w-]+)\.webp$/.test(name),
     ),
     materials.join(", "),
   );
   const published = await readdir(path.join(distDir, "images", "materials"));
   assert.ok(
     published.every((name) =>
-      /^(?:slate-[\w-]+|coast-detail-256|coast-albedo-512|moonlit-clouds-1774)\.[a-f0-9]{8}\.webp$/.test(
+      /^(?:slate-[\w-]+|coast-detail-256|coast-albedo-512|cel-sky-[\w-]+)\.[a-f0-9]{8}\.webp$/.test(
         name,
       ),
     ),
@@ -377,7 +379,11 @@ test("the scene requests only slate maps and the three maps in their lazy owners
 for (const [file, budget, owner] of [
   ["coast-detail-256.webp", 48 * 1024, "scene.terrain-build."],
   ["coast-albedo-512.webp", 96 * 1024, "scene.terrain-build."],
-  ["moonlit-clouds-1774.webp", 384 * 1024, "scene.cloud-plate."],
+  ...["moon", "close-up", "root-and-lantern", "broken-coast"].map((key) => [
+    `cel-sky-${key}.webp`,
+    640 * 1024,
+    "scene.cloud-plate.",
+  ]),
 ])
   test(`${file} is fingerprinted and named only in its lazy owner`, async () => {
     const bytes = await readFile(path.join(projectRoot, "images", "materials", file)),

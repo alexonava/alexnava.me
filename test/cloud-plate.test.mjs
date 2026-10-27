@@ -3,6 +3,7 @@ import test from "node:test";
 import { readFile } from "node:fs/promises";
 import { Group, PerspectiveCamera, Texture, NoColorSpace, LinearMipmapLinearFilter } from "three";
 import {
+  CLOUD_PLATES,
   CLOUD_PLATE_LIMITS,
   createCloudPlate,
   loadCloudPlateTexture,
@@ -11,6 +12,8 @@ import { cloudFieldGLSL, createEstateSkyMaterial } from "../src/scene/estate-sky
 import { createStarfield } from "../src/scene/starfield.js";
 
 const uniforms = () => ({ uCloudMap: { value: null }, uCloudMix: { value: 0 } });
+// The moon's plate alone, for the owner's single-plate lifecycle.
+const moonOnly = { moon: "/moon.webp" };
 const deferred = () => {
   let resolve, reject;
   const promise = new Promise((a, b) => {
@@ -33,6 +36,7 @@ test("cloud preparation is deduplicated and waits for a cut, including quality c
   let calls = 0;
   const owner = createCloudPlate({
     uniforms: target,
+    urls: moonOnly,
     load: () => {
       calls++;
       return pending.promise;
@@ -72,7 +76,11 @@ test("sky replacement restores borrowed uniforms and never frees a borrowed text
     owned = ownedTexture();
   first.uCloudMap.value = borrowed.texture;
   first.uCloudMix.value = 0.25;
-  const owner = createCloudPlate({ uniforms: first, load: async () => owned.texture });
+  const owner = createCloudPlate({
+    uniforms: first,
+    urls: moonOnly,
+    load: async () => owned.texture,
+  });
   await owner.prepare();
   owner.commit();
   assert.equal(owner.setTarget(second), true);
@@ -89,6 +97,49 @@ test("sky replacement restores borrowed uniforms and never frees a borrowed text
   borrowed.texture.image.close();
 });
 
+test("the moon's plate settles preparation; each shot's sun plate follows and shows only from a cut", async () => {
+  const target = uniforms(),
+    owned = Object.fromEntries(CLOUD_PLATES.map((key) => [key, ownedTexture()])),
+    gates = Object.fromEntries(CLOUD_PLATES.map((key) => [key, deferred()])),
+    order = [];
+  const urls = Object.fromEntries(CLOUD_PLATES.map((key) => [key, `/${key}.webp`]));
+  const owner = createCloudPlate({
+    uniforms: target,
+    urls,
+    load: (url) => {
+      const key = url.slice(1, -5);
+      order.push(key);
+      return gates[key].promise.then(() => owned[key].texture);
+    },
+  });
+  const preparing = owner.prepare();
+  await Promise.resolve();
+  assert.deepEqual(order, ["moon"], "the moon's plate first, alone");
+  gates.moon.resolve();
+  assert.equal(await preparing, true);
+  assert.equal(owner.status, "ready");
+  // A sun shot cut before its plate arrives shows the moon's.
+  assert.equal(owner.commit("close-up"), true);
+  assert.equal(owner.shown, "moon");
+  assert.equal(target.uCloudMap.value, owned.moon.texture);
+  for (const key of CLOUD_PLATES.slice(1)) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(order.at(-1), key, "one at a time, in order");
+    gates[key].resolve();
+  }
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(owner.loaded, CLOUD_PLATES);
+  assert.equal(target.uCloudMap.value, owned.moon.texture, "a loaded plate waits for its cut");
+  assert.equal(owner.commit("close-up"), true);
+  assert.equal(owner.shown, "close-up");
+  assert.equal(target.uCloudMap.value, owned["close-up"].texture);
+  assert.equal(owner.commit("close-up"), false);
+  assert.equal(owner.commit("unknown"), true, "an unknown plate is the moon's");
+  assert.equal(owner.shown, "moon");
+  owner.dispose();
+  for (const key of CLOUD_PLATES) assert.deepEqual(owned[key].counts, { disposed: 1, closed: 1 });
+});
+
 test("a decode completing after cancellation is released without rebinding the sky", async () => {
   const pending = deferred(),
     target = uniforms(),
@@ -96,6 +147,7 @@ test("a decode completing after cancellation is released without rebinding the s
   let signal;
   const owner = createCloudPlate({
     uniforms: target,
+    urls: moonOnly,
     load: (_url, next) => {
       signal = next;
       return pending.promise;
@@ -120,6 +172,7 @@ test("failure and the bounded timeout retain the procedural fallback without ret
   const target = uniforms();
   const owner = createCloudPlate({
     uniforms: target,
+    urls: moonOnly,
     scheduleTimeout(task, ms) {
       expire = task;
       delay = ms;
@@ -137,7 +190,7 @@ test("failure and the bounded timeout retain the procedural fallback without ret
   });
   const preparing = owner.prepare();
   await Promise.resolve();
-  assert.equal(delay, 4000);
+  assert.equal(delay, CLOUD_PLATE_LIMITS.timeout);
   expire();
   assert.equal(await preparing, false);
   assert.equal(owner.status, "failed");
@@ -192,7 +245,7 @@ test("the decoder bounds bytes and pixels, preserves alpha orientation, and clos
   await assert.rejects(
     loadCloudPlateTexture("/too-large", controller.signal, {
       fetchImpl,
-      decode: async () => ({ width: 2049, height: 1024, close: () => closed++ }),
+      decode: async () => ({ width: 4097, height: 1024, close: () => closed++ }),
     }),
   );
   assert.equal(closed, 2);
@@ -211,7 +264,11 @@ test("the stars borrow the actual plate and clock and never dispose either", asy
     camera: new PerspectiveCamera(),
     sky: sky.uniforms,
   });
-  const owner = createCloudPlate({ uniforms: sky.uniforms, load: async () => owned.texture });
+  const owner = createCloudPlate({
+    uniforms: sky.uniforms,
+    urls: moonOnly,
+    load: async () => owned.texture,
+  });
   await owner.prepare();
   owner.commit();
   for (const key of ["uCloudMap", "uCloudMix", "uCloudReshape"])
@@ -224,12 +281,11 @@ test("the stars borrow the actual plate and clock and never dispose either", asy
   assert.deepEqual(owned.counts, { disposed: 1, closed: 1 });
 });
 
-test("the emitted cloud mask stays bounded and vanishes at the longitude seam and horizon", () => {
+test("the emitted cloud mask stays bounded and vanishes at the horizon, with no seam to fade", () => {
   const expression = cloudFieldGLSL()
     .match(/cp\.a=([^;]+);/)[1]
     .replaceAll("cp.a", "alpha")
     .replaceAll("vd", "storm")
-    .replaceAll("cu.x", "u")
     .replaceAll("min(", "Math.min(");
   const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
   const smoothstep = (a, b, x) => {
@@ -247,15 +303,16 @@ test("the emitted cloud mask stays bounded and vanishes at the longitude seam an
     "smoothstep",
     `return ${expression}`,
   );
+  assert.doesNotMatch(expression, /u|cu.x/, "the plate wraps all the way round");
   for (const alpha of [-0.2, 0, 0.2, 0.7, 1, 1.2])
     for (const storm of [-1, -0.2, 0, 0.5, 1])
-      for (const u of [0, 0.01, 0.1, 0.5, 0.9, 0.99, 1])
+      for (const u of [0, 0.5, 1])
         for (const horizon of [0, 0.5, 1])
           for (const clouds of [0, 0.5, 1])
             for (const text of [0, 0.5, 1]) {
               const value = mask(alpha, storm, u, horizon, clouds, text, clamp, smoothstep);
               assert.ok(Number.isFinite(value) && value >= 0 && value <= 1);
-              if (u === 0 || u === 1 || horizon === 0 || clouds === 0) assert.equal(value, 0);
+              if (horizon === 0 || clouds === 0) assert.equal(value, 0);
             }
 });
 
@@ -313,24 +370,31 @@ test("the emitted plate projection is finite at the zenith and across long-runni
       }
 });
 
-test("the shipped plate has a real alpha channel and stays within its delivery and decode budgets", async () => {
-  const data = await readFile(
-    new URL("../images/materials/moonlit-clouds-1774.webp", import.meta.url),
-  );
-  assert.ok(data.byteLength <= CLOUD_PLATE_LIMITS.bytes);
-  assert.equal(data.toString("ascii", 0, 4), "RIFF");
-  assert.equal(data.toString("ascii", 8, 12), "WEBP");
-  assert.equal(data.readUInt32LE(4) + 8, data.byteLength);
-  let extended;
-  for (let offset = 12; offset + 8 <= data.length;) {
-    const size = data.readUInt32LE(offset + 4);
-    if (data.toString("ascii", offset, offset + 4) === "VP8X")
-      extended = data.subarray(offset + 8, offset + 8 + size);
-    offset += 8 + size + (size % 2);
+test("the shipped plates have a real alpha channel and stay within their delivery and decode budgets", async () => {
+  let total = 0;
+  for (const key of CLOUD_PLATES) {
+    const data = await readFile(
+      new URL(`../images/materials/cel-sky-${key}.webp`, import.meta.url),
+    );
+    total += data.byteLength;
+    assert.ok(data.byteLength <= CLOUD_PLATE_LIMITS.bytes, key);
+    assert.equal(data.toString("ascii", 0, 4), "RIFF");
+    assert.equal(data.toString("ascii", 8, 12), "WEBP");
+    assert.equal(data.readUInt32LE(4) + 8, data.byteLength);
+    let extended;
+    for (let offset = 12; offset + 8 <= data.length;) {
+      const size = data.readUInt32LE(offset + 4);
+      if (data.toString("ascii", offset, offset + 4) === "VP8X")
+        extended = data.subarray(offset + 8, offset + 8 + size);
+      offset += 8 + size + (size % 2);
+    }
+    assert.ok(extended && extended[0] & 16, `${key}: RGBA, not a painted black background`);
+    const width = extended.readUIntLE(4, 3) + 1,
+      height = extended.readUIntLE(7, 3) + 1;
+    // Once round the sky: four times as wide as tall.
+    assert.equal(width, height * 4, key);
+    assert.ok(width * height <= CLOUD_PLATE_LIMITS.pixels, key);
   }
-  assert.ok(extended && extended[0] & 16, "RGBA, not a painted black background");
-  const width = extended.readUIntLE(4, 3) + 1,
-    height = extended.readUIntLE(7, 3) + 1;
-  assert.deepEqual([width, height], [1774, 887]);
-  assert.ok(width * height <= CLOUD_PLATE_LIMITS.pixels);
+  // The owner's sky budget of 2026-10-27: about 2 MB for all of them.
+  assert.ok(total <= 2 * 1024 * 1024, `${total} bytes`);
 });

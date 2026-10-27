@@ -380,27 +380,12 @@ test("the cliffs cover the terrain's drop with their shelf, fall below the sea, 
   assert.equal(freed, 2);
 });
 
-test("the cliff shelf shares the ground material, UV phase and neutral root attributes without owning borrowed resources", () => {
-  const maps = Array.from({ length: 10 }, () => new Texture()),
-    [color, normal, nextColor, nextNormal, procedural, detail, grit, relief, nextGrit, nextRelief] =
-      maps,
-    freed = new Map(maps.map((map) => [map, 0])),
-    ground = new MeshStandardMaterial({ color: 0x5c5048 }),
-    view = rendering(),
-    ambient = { color: new Color(0.2, 0.3, 0.4), intensity: 0.8 };
+test("the cliff shelf is the cliff's own stone, keeps the ground's UV phase and neutral root attributes, and never owns the ground", () => {
+  const ground = new MeshStandardMaterial({ color: 0x5c5048 }),
+    view = rendering();
   let groundFreed = 0;
   ground.addEventListener("dispose", () => groundFreed++);
-  for (const map of maps) map.addEventListener("dispose", () => freed.set(map, freed.get(map) + 1));
-  color.wrapS = color.wrapT = normal.wrapS = normal.wrapT = RepeatWrapping;
-  color.repeat.setScalar(384 / SLATE_TILING.tile);
-  normal.repeat.copy(color.repeat);
-  color.colorSpace = SRGBColorSpace;
-  ground.map = color;
-  ground.normalMap = normal;
-  ground.normalScale.set(0.45, 0.45);
-  ground.userData.slateRoot = shadeSlateGround;
-  configureGroundShading(ground, true, { detail, grit, relief, contacts: createSlateContacts() });
-  view.lights.ambient = ambient;
+  configureGroundShading(ground, true, { contacts: createSlateContacts() });
   const cliff = createCliff({
       lib,
       clock: dripClock({ value: 0 }),
@@ -413,76 +398,31 @@ test("the cliff shelf shares the ground material, UV phase and neutral root attr
     { position, uv, aCliff, slateRoot, slateShade, slatePool, slateRiverSurface } =
       geometry.attributes,
     ownResources = [geometry, cliff.mesh.children[0].geometry, cliff.material],
-    ownFreed = new Map(ownResources.map((resource) => [resource, 0])),
-    version = cliff.material.version;
+    ownFreed = new Map(ownResources.map((resource) => [resource, 0]));
   for (const resource of ownResources)
     resource.addEventListener("dispose", () => ownFreed.set(resource, ownFreed.get(resource) + 1));
   let disposed = false;
-  const sameMaterial = () => {
-    assert.deepEqual(cliff.mesh.material, [ground, cliff.material]);
-    assert.equal(
-      cliff.mesh.material[0],
-      ground,
-      "the shelf takes the actual ground material, not a copy",
-    );
-    assert.equal(
-      cliff.mesh.children[0].material,
-      cliff.material,
-      "the stacks keep the custom cliff lighting",
-    );
-    assert.notEqual(cliff.material, ground);
-    assert.equal(cliff.material.version, version);
-  };
-  const compileShelf = () => {
-    const shader = {
-      uniforms: {},
-      vertexShader: ShaderLib.physical.vertexShader,
-      fragmentShader: ShaderLib.physical.fragmentShader,
-    };
-    cliff.mesh.material[0].onBeforeCompile(shader);
-    return shader;
-  };
   try {
-    sameMaterial();
+    // The shelf is drawn in the cliff's stone (CLIFF_STONE): the borrowed ground, lit flat
+    // under the moon, read as snow along the rim (the owner's look of 2026-10-27).
+    assert.equal(cliff.mesh.material, cliff.material);
+    assert.equal(cliff.mesh.children[0].material, cliff.material);
+    assert.notEqual(cliff.material, ground);
+    assert.ok(
+      cliff.material.uniforms.cliffRiver.value.w > 0,
+      "the rock paints the river's last run",
+    );
     assert.equal(slateRiverSurface.itemSize, 2);
     assert.equal(slateRiverSurface.count, position.count);
-    assert.ok(
-      slateRiverSurface.array.every((value) => value === 0),
-      "the borrowed shelf keeps neutral river-cap attributes",
-    );
-    assert.equal(
-      cliff.material.uniforms.cliffRiver.value.w,
-      0,
-      "the borrowed river is not painted again on the rock bevel",
-    );
+    assert.ok(slateRiverSurface.array.every((value) => value === 0));
     const shelfCount = (geometry.userData.coastGeometry.columns - 1) * CLIFF.shelfRows * 6;
-    assert.deepEqual(
-      geometry.groups,
-      [
-        { start: 0, count: shelfCount, materialIndex: 0 },
-        { start: shelfCount, count: geometry.index.count - shelfCount, materialIndex: 1 },
-      ],
-      "two contiguous draw groups cover the shelf and exposed rock exactly once",
-    );
-    for (let i = 0; i < geometry.index.count; i += 3) {
+    for (let i = 0; i < shelfCount; i += 3) {
       const vertices = [0, 1, 2].map((j) => geometry.index.getX(i + j));
-      if (i < shelfCount)
-        assert.ok(
-          vertices.every((v) => aCliff.getY(v) === 0),
-          "the ground material stays on the shelf",
-        );
-      else
-        assert.ok(
-          vertices.some(
-            (v) => aCliff.getY(v) > 0 || v >= geometry.userData.coastGeometry.baseVertices,
-          ),
-          "the lip, face and added broken rock retain their own material",
-        );
+      assert.ok(
+        vertices.every((v) => aCliff.getY(v) === 0),
+        "the shelf lies first, flat",
+      );
     }
-    assert.equal(uv.itemSize, 2);
-    assert.equal(slateRoot.itemSize, 4);
-    assert.equal(slateShade.itemSize, 3);
-    assert.equal(slatePool.itemSize, 1);
     for (const attribute of [uv, slateRoot, slateShade, slatePool])
       assert.equal(attribute.count, position.count);
     for (let i = 0; i < position.count; i++) {
@@ -492,67 +432,10 @@ test("the cliff shelf shares the ground material, UV phase and neutral root attr
         [slateRoot.getX(i), slateRoot.getY(i), slateRoot.getZ(i), slateRoot.getW(i)],
         [0, 0, 0, 1],
       );
-      assert.deepEqual(
-        [slateShade.getX(i), slateShade.getY(i), slateShade.getZ(i), slatePool.getX(i)],
-        [0, 0, 0, 0],
-      );
     }
-    const initial = compileShelf();
-    assert.equal(initial.uniforms.slateGrit.value, grit);
-    assert.equal(initial.uniforms.slateRelief.value, relief);
-    assert.ok(
-      initial.vertexShader.includes("attribute vec4 slateRoot;"),
-      "the shelf supports the ground's real root program",
-    );
-    ground.map = nextColor;
-    ground.normalMap = nextNormal;
-    ground.color = new Color(0x665248);
-    ground.normalScale = new Vector2(0.31, 0.42);
-    ground.roughness = 0.72;
-    configureGroundShading(ground, true, {
-      detail,
-      grit: nextGrit,
-      relief: nextRelief,
-      contacts: createSlateContacts(),
-    });
-    ground.needsUpdate = true;
-    sameMaterial();
-    assert.equal(cliff.mesh.material[0].map, nextColor);
-    assert.equal(cliff.mesh.material[0].normalMap, nextNormal);
-    assert.equal(cliff.mesh.material[0].normalScale, ground.normalScale);
-    assert.equal(cliff.mesh.material[0].color, ground.color);
-    assert.equal(cliff.mesh.material[0].roughness, 0.72);
-    const replacement = compileShelf();
-    assert.equal(replacement.uniforms.slateGrit.value, nextGrit);
-    assert.equal(replacement.uniforms.slateRelief.value, nextRelief);
-    ambient.intensity = 1.7;
-    cliff.mesh.children[0].onBeforeRender();
-    assert.deepEqual(
-      cliff.material.uniforms.seaAmbient.value.toArray(),
-      ambient.color.clone().multiplyScalar(1.7).toArray(),
-    );
-    ground.map = procedural;
-    ground.normalMap = null;
-    configureGroundShading(ground, false);
-    sameMaterial();
-    assert.equal(cliff.mesh.material[0].map, procedural);
-    assert.equal(cliff.mesh.material[0].normalMap, null);
-    assert.equal(
-      compileShelf().fragmentShader,
-      ShaderLib.physical.fragmentShader,
-      "fallback uses the ground's own current shader",
-    );
-    assert.ok(
-      [...freed.values()].every((count) => count === 0),
-      "profile and map replacement never release borrowed textures",
-    );
     cliff.dispose();
     disposed = true;
     assert.equal(groundFreed, 0, "the ground material remains owned by the ground");
-    assert.ok(
-      [...freed.values()].every((count) => count === 0),
-      "cliff disposal leaves every borrowed texture alive",
-    );
     assert.ok(
       [...ownFreed.values()].every((count) => count === 1),
       "only the derived geometry and cliff material are released, once each",
@@ -560,7 +443,6 @@ test("the cliff shelf shares the ground material, UV phase and neutral root attr
   } finally {
     if (!disposed) cliff.dispose();
     ground.dispose();
-    maps.forEach((map) => map.dispose());
   }
 });
 

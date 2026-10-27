@@ -24,10 +24,8 @@ export const ROCK_TYPES = Object.freeze({
 
 // [id, anchor, world angle atan2(z, x) in degrees, distance, type, height].
 // A: by the watch's terrace (below The watch's frame, which looks up). G: a distant silhouette
-// in the fog. C: behind Root and lantern and Portrait. D: behind the lantern, to the right,
-// in Lantern study on landscape phones (desktops look past it, from -125). F: the right side of Portrait. E: at the lantern's foot.
-// N: beyond the tree's north root, right of the trunk in Portrait, behind the
-// lantern.
+// in the fog. E: at the lantern's foot. The big rocks about the tree (C, D, F and N, 12 to 17
+// out) are gone, so the plain about it lies calm (the owner's ask of 2026-10-27).
 export const ROCK_CLUSTERS = Object.freeze(
   [
     ["A1", "watch", -145.6, 21.2, "lichen", 3.4],
@@ -35,18 +33,9 @@ export const ROCK_CLUSTERS = Object.freeze(
     ["A3", "watch", -133.9, 21.9, "weathered", 0.55],
     ["A4", "watch", -153.4, 21.9, "lichen", 0.4],
     ["G1", "watch", -163.8, 64.6, "weathered", 5.0],
-    ["C1", "tree", 15, 13.0, "weathered", 3.8],
-    ["C2", "tree", 5, 14.5, "lichen", 0.7],
-    ["C3", "tree", 25, 11.8, "weathered", 0.45],
-    ["D1", "tree", 110, 12.0, "lichen", 2.4],
-    ["F1", "tree", 170, 15.0, "lichen", 3.9],
-    ["F2", "tree", 166, 17.0, "weathered", 0.6],
-    ["F3", "tree", 160, 13.8, "lichen", 0.35],
     ["E1", "lantern", 125, 2.1, "weathered", 0.5],
     ["E2", "lantern", 140, 2.7, "lichen", 0.32],
     ["E3", "lantern", 150, 1.8, "weathered", 0.22],
-    ["N1", "tree", 126, 13.2, "weathered", 1.9],
-    ["N2", "tree", 138, 12.4, "lichen", 0.85],
   ].map(Object.freeze),
 );
 // Rocks at least this tall get one pebble each, 1.2-2.6 of their radius out.

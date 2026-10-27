@@ -34,9 +34,13 @@ const GIANT = Object.freeze({
 // catches the sky (Portrait's gloss, but untinted, so the plain keeps main's
 // warmth) and a light, warm grey mist lies on the ranges' feet, so the plain
 // meets them softly (mud-ground.js SLATE_LOOK).
+// After the rain, wetter since the owner pushed the look toward the Graphics concepts
+// (2026-10-27): more of the film and water standing in the low spots,
+// so the lantern, the sun and the sky lie in the ground (film 0.32, no pools before; film 0.5 and pools 0.6 at the first look).
 const AFTER_RAIN = Object.freeze({
   mist: Object.freeze({ color: Object.freeze([0.27, 0.26, 0.29]), amount: 0.45 }),
-  gloss: Object.freeze({ film: 0.32, gain: 1, cool: 0 }),
+  gloss: Object.freeze({ film: 0.65, gain: 1, cool: 0 }),
+  pools: 0.8,
 });
 // Portrait on upright and squat screens: the tree on the lower third, open sky above it, at
 // its own size (no tilt) and pushed in without the sideways truck. The tall frame reaches
@@ -100,7 +104,8 @@ export const DIRECTED_SHOTS = {
       move: { zoom: [46, 36], dollyZoom: true, tilt: GIANT_MOVE.tilt, ease: 0.6 },
       // One night (the owner's pick of 2026-10-12): the key and fill dimmed; far fires stay
       // out of the shot (far-fires.js FAR_FIRES.shots).
-      light: { key: 0.4, fill: 0.45 },
+      // Lit as the owner's Artistic set (2026-10-27, v3), toward Graphics.
+      light: { key: 2.2, fill: 0.35 },
       region: [0.5, 1],
       targetHeight: 0.66,
       azimuth: -16,
@@ -136,7 +141,9 @@ export const DIRECTED_SHOTS = {
       squat: { ...PORTRAIT_UPRIGHT, ...PORTRAIT_WIDE, azimuth: -43, anchor: [0.58, 0.66] },
       // One night (2026-10-12): the lantern a little stronger at the trunk's
       // foot, leading into Lantern study.
-      light: { fill: 0.85, lantern: 1.2 },
+      // Lit as the owner's Artistic set (2026-10-27, v3), toward Graphics.
+      light: { key: 2.6, fill: 0.3, lantern: 1.2 },
+      look: { tone: [1.6, 2, 0.3], ambient: 0.3, hemisphere: 0.4 },
       move: { truck: [-0.07, 0.07], crane: [0, 0.13], dolly: [1.05, 0.92], ease: 0.6 },
       // Low (0.12), so the plain ahead is foreshortened under the ranges, and
       // calmed: the near slate burned down, its texture and glints quietened
@@ -173,7 +180,7 @@ export const DIRECTED_SHOTS = {
           shade: [0, 22, 70],
         },
         mist: { color: [0.23, 0.26, 0.335], amount: 0.8 },
-        gloss: { film: 0.32, gain: 1, cool: 0 },
+        gloss: { film: 0.65, gain: 1, cool: 0 },
         shadow: [12, 30],
         // After the rain water stands on the plain in its low spots (the owner's ask of
         // 2026-10-23, "more reflection on the dirt", B Rain pools; mud-ground.js SLATE_LOOK.pools).
@@ -184,6 +191,8 @@ export const DIRECTED_SHOTS = {
     },
     {
       name: "Lantern study",
+      // Its grass stands (index.js): the other shots leave the plain bare.
+      growth: true,
       // Lantern-led, its bark's glints off the text: the lantern's glint on a
       // wet root beside the name at the end of the push-in (4.67:1 at
       // 1920x1080) passes the ground's knee (film-light.js GLINT). Its grass
@@ -199,9 +208,10 @@ export const DIRECTED_SHOTS = {
       // SLATE_LIGHT.poolKnee). One night (2026-10-12): less of the frontal fill,
       // so the lantern models the scene and the moon's backlight separates the
       // trunk; the lantern at the tree shots' one level, 1.4.
+      // Lit as the owner's Artistic set (2026-10-27, v3), toward Graphics.
       light: {
-        key: 0.55,
-        fill: 0.5,
+        key: 2.2,
+        fill: 0.35,
         lantern: 1.4,
         grassInside: 1,
         glintText: 1,
@@ -229,10 +239,13 @@ export const DIRECTED_SHOTS = {
       anchor: [0.56, 0.5],
       ground: AFTER_RAIN,
       landscape: { move: null, azimuth: -115, anchor: [0.5, 0.5] },
+      // Phones fit it wider and aim up and right, so the lantern and the root arching over
+      // it both stand in the frame (the owner's ask of 2026-10-27).
       portrait: {
         move: { dolly: [1.1, 0.9], tilt: [-1.5, 0], ease: 0.6 },
         azimuth: -115,
-        anchor: [0.5, 0.5],
+        margin: 0.5,
+        anchor: [0.62, 0.62],
       },
     },
     {
@@ -240,7 +253,18 @@ export const DIRECTED_SHOTS = {
       // One night (2026-10-12): a pure backlight, less frontal fill. Its twigs'
       // glints off the intro (glintText): a one-pixel sparkle behind it set the
       // small window's intro at 5.25:1 (599x499, the re-review of 2026-10-15).
-      light: { fill: 0.7, glintText: 1 },
+      // Lit as the owner's Artistic set (2026-10-27, v3), toward Graphics. The sun behind the crown;
+      // the limbs are lit from the front by the fill.
+      light: { key: 2.8, fill: 2.9, glintText: 1 },
+      look: { tone: [1.9, 1.95, 0.3], ambient: 0.7, hemisphere: 0.9 },
+      // Its own sun (the owner's pick of 2026-10-27, "use the sun instead"): low behind the
+      // crown's right, the key coming from it, the cel sky lit from there (rendering.js
+      // setShotSun(), cloud-plate.js).
+      sun: { at: [0.9, 0.35, 0.16], plate: "close-up" },
+      // The low sun catches the branches from the lens's side (the owner's reference of
+      // 2026-10-27): a warm fill from the upper left, over the film's cool one (rendering.js
+      // setShotFill()).
+      fill: { at: [-0.41, 0.27, -0.87], color: [1, 0.72, 0.44], gain: 4.5 },
       // No lens blur: the clouds behind the crown read sharp (sky first, below). A tracking
       // pan (the owner's pick of 2026-10-12): the camera slides to its left while the lens
       // turns to hold the crown, so the limbs slide across the clouds behind it.
@@ -292,7 +316,10 @@ export const DIRECTED_SHOTS = {
       // moon, sparkled under the intro (4.21:1 at 1440x900, phase 24.1 of the
       // move).
       // One night (2026-10-12): less of the frontal fill, as in Lantern study.
-      light: { key: 0.6, fill: 0.6, lantern: 1.4, grassInside: 1, glintText: 1 },
+      // Lit as the owner's Artistic set (2026-10-27, v3), toward Graphics.
+      light: { key: 2.2, fill: 0.35, lantern: 1.4, grassInside: 1, glintText: 1 },
+      // Its own sun (2026-10-27): setting over the river behind the trunk.
+      sun: { at: [0.699, 0.085, 0.71], plate: "root-and-lantern" },
       lens: { blur: 6, near: 0.35 },
       // Round from the -115° axis, so the trunk stands right of centre and
       // the lantern on the right third, the plain behind the name; the aim

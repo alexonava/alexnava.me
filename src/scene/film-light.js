@@ -6,11 +6,20 @@ import { Matrix4, Vector2, Vector3, Vector4 } from "three";
 // hemisphere and the ambient are what the sky leaves in them. A candle in the
 // lantern (candle: its colour, architecture.js) is the one warm light.
 export const FILM_LIGHT = Object.freeze({
-  key: 2.4,
-  fill: 0.3,
-  hemisphere: 0.4,
-  ambient: 0.15,
-  moon: Object.freeze([0.62, 0.74, 1]),
+  key: 4.1,
+  fill: 0.42,
+  hemisphere: 0.8,
+  ambient: 0.24,
+  // Golden hour (2026-10-27): the key is the low sun's warm light (0.62, 0.74, 1 at night),
+  // the sky's light a dusk blue over the brown ground's bounce, the air a warm dusk haze.
+  moon: Object.freeze([1, 0.76, 0.48]),
+  sky: Object.freeze([0.42, 0.48, 0.72]),
+  ground: Object.freeze([0.42, 0.3, 0.2]),
+  haze: Object.freeze([0.4, 0.34, 0.36]),
+  // The ranges keep the night's brightness of key (2.4 of the moon's, 2.2 of this warmer light) and sky light (0.55) in the low sun's
+  // colour, so their haze still orders them by distance below the sky (hill-silhouette.js).
+  rangeKey: 2.2,
+  rangeSky: 0.55,
   candle: Object.freeze([1, 0.58, 0.24]),
 });
 
@@ -71,6 +80,37 @@ export const SHOT_LIGHT_DEFAULT = Object.freeze({
 export function shotLight(shot) {
   return { ...SHOT_LIGHT_DEFAULT, ...(shot?.light ?? {}) };
 }
+
+// A shot's `look` over the film's grade and sky light, set on the cut (index.js):
+// `tone` [exposure (times filmExposure()), contrast, mid] for the grading pass's uTone,
+// and `ambient` and `hemisphere`, shares of the film's flat and sky light (rendering.js
+// setShotLight()). The default is the night of the owner's Artistic set (2026-10-27, v3):
+// brighter and harder than the film's own curve, toward the Graphics concepts' deeper blacks.
+// Without a shot (the walk, the orbit) the grade is the film's own.
+export const SHOT_LOOK_DEFAULT = Object.freeze({
+  tone: Object.freeze([1.3, 1.85, 0.3]),
+  ambient: 0.35,
+  hemisphere: 0.45,
+});
+const FILM_TONE_BASE = Object.freeze([filmExposure(), FILM_TONE.contrast, FILM_TONE.mid]);
+export function shotLook(shot) {
+  if (!shot) return null;
+  return { ...SHOT_LOOK_DEFAULT, ...(shot.look ?? {}) };
+}
+// Sets the grading pass's uTone for a look (null: the film's own curve).
+export function applyShotTone(look) {
+  const tone = look?.tone,
+    value = FILM_TONE_UNIFORM.value;
+  if (tone) value.set(FILM_TONE_BASE[0] * tone[0], tone[1], tone[2], value.w);
+  else value.set(...FILM_TONE_BASE, value.w);
+}
+
+// A shot's own sun (directed-shots.js `sun`): the key turns to come from it and warms
+// to its colour on the cut (rendering.js setShotSun()), and the materials that tell the
+// key from their other lights read its world direction, toward it, here (mud-ground.js).
+// Without a sun it is the moon's (index.js directionalPosition, restated by MOON_LIGHTS).
+export const SUN_KEY = Object.freeze({ color: Object.freeze([1, 0.76, 0.48]) });
+export const SHOT_KEY = { babelKeyDir: { value: new Vector3(32, 28, 14).normalize() } };
 
 // A mutable lantern share the tree's practical multiplies (architecture.js).
 export const LANTERN_MOOD = { value: 1 };

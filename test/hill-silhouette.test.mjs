@@ -38,6 +38,7 @@ import {
   sectorsInView,
   showRanges,
 } from "../src/scene/mountain-build.js";
+import { FILM_LIGHT } from "../src/scene/film-light.js";
 import { FILM_SKY_GLSL } from "../src/scene/estate-sky.js";
 import { createStarfield } from "../src/scene/starfield.js";
 
@@ -504,12 +505,16 @@ test("the rock body stays ordered by distance, below the sky and with a readable
     /\*sL\*\(1\.-\.1\*gully|bodyLuma|tL-/,
     "no light in units of the sky",
   );
-  // The scene's key (a shot's mood with it) and the sky's light, kept each draw.
+  // The scene's key (a shot's mood with it) and the sky's light, kept each draw, at the
+  // ranges' own strengths (FILM_LIGHT.rangeKey and rangeSky over the film's).
   assert.equal(material.uniforms.uLight, MOUNTAIN_LIGHT);
   const before = MOUNTAIN_LIGHT.value.clone();
   try {
     hill.mesh.onBeforeRender();
-    assert.deepEqual(MOUNTAIN_LIGHT.value.toArray(), [1, 1.2, 1.6, 0.5]);
+    const key = FILM_LIGHT.rangeKey / FILM_LIGHT.key,
+      sky = FILM_LIGHT.rangeSky / (FILM_LIGHT.hemisphere + FILM_LIGHT.ambient);
+    const close = (v, w) => v.every((x, i) => Math.abs(x - w[i]) < 1e-9);
+    assert.ok(close(MOUNTAIN_LIGHT.value.toArray(), [1 * key, 1.2 * key, 1.6 * key, 0.5 * sky]));
   } finally {
     MOUNTAIN_LIGHT.value.copy(before);
   }

@@ -1,5 +1,5 @@
 import { DEPTH_LAYER } from "./depth-layers.js";
-import { FLASH_GROUND, FLASH_UNIFORMS } from "./film-light.js";
+import { FLASH_GROUND, FLASH_UNIFORMS, SHOT_KEY } from "./film-light.js";
 import { HORIZON_AIR, RANGE_MIST, TERRAIN_HORIZON } from "./hill-silhouette.js";
 import { ESTATE, estateLantern, estatePoint } from "./estate-layout.js";
 import { MIST_PARS, MIST_UNIFORMS, mistOn } from "./drifting-mist.js";
@@ -1243,10 +1243,6 @@ const RIVER_BED_GLSL = `${RIVER_GLSL}float slateRiverBed(float r){return r<1.?${
 `;
 // The river's water level (slateRiverR is its normalised radius, found once).
 const RIVER_LEVEL = `mix(-slateRiverBed(slateRiverR)*${glslNumber(SLATE_RIVER_BED.shore)}-(slateH-.5)*${glslNumber(SLATE_RIVER_BED.texel)},-1.,smoothstep(${SLATE_RIVER_BED.reach.map(glslNumber)},slateRiverR))`;
-const unitGlsl = (values) => {
-  const length = Math.hypot(...values);
-  return glslVec(values.map((value) => +(value / length).toFixed(4)));
-};
 const LUMA = "vec3(.2126,.7152,.0722)";
 // The plain's edge: from [0] to [1] units out along either axis (its square)
 // the slate meets the far plain's air, and a shot's look meets the ranges'.
@@ -1371,8 +1367,10 @@ vec3 slatePoolKnee(const in IncidentLight light, const in vec3 normal, const in 
 }
 void RE_Direct_Moonlit(const in IncidentLight directLight, const in vec3 geometryPosition, const in vec3 geometryNormal, const in vec3 geometryViewDir, const in vec3 geometryClearcoatNormal, const in PhysicalMaterial material, inout ReflectedLight reflectedLight) {
   IncidentLight slateL = directLight;
-  bool slateWarm = directLight.color.b < .7*directLight.color.r;
-  bool slateKey = slateDirectional && !slateWarm && dot(directLight.direction, normalize(mat3(viewMatrix)*${unitGlsl(MOON_LIGHTS.key)})) > .9999;
+  // The key by its direction first: a low sun is nearly as warm as the lantern (film-light.js
+  // FILM_LIGHT); the candle alone has blue under 0.4 of its red (the warm fill's is 0.44).
+  bool slateKey = slateDirectional && dot(directLight.direction, normalize(mat3(viewMatrix)*babelKeyDir)) > .9999;
+  bool slateWarm = !slateKey && directLight.color.b < .4*directLight.color.r;
   #ifdef USE_ENVMAP
   if (!slateWarm) slateL.color *= slateKey ? ${glslNumber(LIGHT.key)} : ${glslNumber(LIGHT.fill)};
   #endif
@@ -1395,6 +1393,9 @@ void RE_Direct_Moonlit(const in IncidentLight directLight, const in vec3 geometr
 const WATER_BEFORE_LIGHTS = `slateGlossSet();
       slateWaterN = normalize(mix(mix(normal, nonPerturbedNormal, ${glslNumber(WATER.level)}), mat3(viewMatrix)[1], slatePuddle)+slateWaterTilt);
       slateWetFilm = (mix(${glslNumber(WATER.film[0])}, slateGloss.x, slateGlossW)*(1.0-slateDry)+${glslNumber(WATER.film[1])}*slateWet)*mix(${glslNumber(WATER.patch[1])}, 1.0, smoothstep(.3, .7, slateNoise(vMudWorld.xz/${glslNumber(WATER.patch[0])})))*(1.0-slatePuddle)*(1.0-slateWaterFar(length(vViewPosition)))*(1.0-${glslNumber(1 - SLATE_WET.close.film)}*slateMatte);
+      #ifdef SLATE_MUD_FLAT
+      slateWetFilm *= 1.0-slateBedrock*SLATE_ROCK_FILM;
+      #endif
       #include <lights_fragment_begin>`;
 // After the light maps: the ambient's share and the night sky's light, and the
 // sky the water mirrors, at the film's or a puddle's roughness, each brighter by
@@ -1462,7 +1463,7 @@ export function configureGroundShading(
     (useWet && material.userData.slateRoot ? "+root" : "");
   material.onBeforeCompile = (shader) => {
     if (!useWet) return;
-    Object.assign(shader.uniforms, uniforms, FLASH_GROUND, FLASH_UNIFORMS);
+    Object.assign(shader.uniforms, uniforms, FLASH_GROUND, FLASH_UNIFORMS, SHOT_KEY);
     // The drifting mist (drifting-mist.js), last, over the slate's own air and look.
     if (mistOn) Object.assign(shader.uniforms, MIST_UNIFORMS);
     // The dune field varies over 100+ world units; the film terrain's 3-unit
@@ -1486,6 +1487,7 @@ uniform vec4 slateCalmAt;
 uniform float slateRockContact, slateContactGain, slateAspect;
 uniform vec3 babelFlashKey;
 uniform vec4 babelFlash, babelFlashLight, babelFlashSky;
+uniform vec3 babelKeyDir;
 #define SLATE_TEXT_KNEE ${glslNumber(WATER.text[1])}
 uniform vec4 slateText, slateAbout;
 ${authored ? "uniform sampler2D slateDetail;\n" + SOIL_SAMPLE : ""}${close ? "#define SLATE_CLOSE_SOIL\nuniform sampler2D slateGrit, slateRelief, slateSoilRoughness;\nuniform float slateSoilRoughnessOn;\n" : ""}${RIVER_BED_GLSL}float slateHash(vec2 p){vec3 q=fract(p.xyx*.1031);q+=dot(q,q.yzx+33.33);return fract((q.x+q.y)*q.z);}
@@ -1571,6 +1573,10 @@ ${SLATE_TEXT_GLSL}${LOOK_GLSL}${mistOn ? `uniform mat4 projectionMatrix;\n${MIST
       float slateAo = 0.0;
       for (int i = 0; i < ${SLATE_CONTACTS}; i++) slateAo = max(slateAo, (1.0-smoothstep(.55, 1.35, length(vMudWorld.xz-slateContacts[i].xy)/max(slateContacts[i].z, .001)))*slateContacts[i].w*(i < 2 ? 1.0 : slateRockContact));
       diffuseColor.rgb *= 1.0 - slateAo*slateContactGain;
+      #ifdef SLATE_MUD_FLAT
+      // The coast's bedrock (terrain-build.js COAST_ROCK) is matte stone, not the plain's damp film.
+      roughnessFactor = mix(roughnessFactor, SLATE_ROCK_ROUGH, slateBedrock); slateWet *= 1.0-slateBedrock*SLATE_ROCK_DRY;
+      #endif
       `
           : ""
       }
@@ -1597,6 +1603,10 @@ ${SLATE_TEXT_GLSL}${LOOK_GLSL}${mistOn ? `uniform mat4 projectionMatrix;\n${MIST
       #endif
       vec3 mapN = vec3((mix(slateNA.xy, slateNB.xy*slateTurnB, slateW)/length(vec2(slateW,1.-slateW))*normalScale+(slateH-slateHx)*slateTurnD*(${glslNumber(DETAIL.strength)}*slateNear))${close ? `*(1.-${glslNumber(CLOSE.calm)}*slateCN)` : ""}*(1.-${glslNumber(SLATE_BANKS.silt.calm)}*slateSilt)*(1.-${glslNumber(SLATE_PUDDLES.flatten)}*slatePuddle), mix(slateNA.z, slateNB.z, slateW));
       normal = normalize(tbn*mapN);${close ? CLOSE_NORMAL : ""}
+      #ifdef SLATE_MUD_FLAT
+      // The plain's smooth mud (terrain-build.js PLAIN_MUD): little of the slate's relief.
+      normal = normalize(mix(normal, nonPerturbedNormal, SLATE_MUD_FLAT));
+      #endif
       #endif`,
       );
     // The film ground's own lights, the sky's light and the water's mirror

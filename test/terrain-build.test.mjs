@@ -1040,7 +1040,7 @@ test("the lazy ground shading extends only the slate's program, under its own ke
       /if \(slateDirectional && dot\(L, slateKeyView\) > \.9995\) return 1\.0 - slateKeyOcc;/,
     );
     assert.ok(
-      fragment.includes("if (C.b < .7*C.r) return 1.0 - slateLampOcc;") &&
+      fragment.includes("if (C.b < .4*C.r) return 1.0 - slateLampOcc;") &&
         fragment.includes(
           `slateLampOcc = clamp(max(vSlateShade.z, ${SLATE_SOIL.occlusion.lantern}*slateCrease), 0.0, 1.0)*slateGuard;`,
         ),

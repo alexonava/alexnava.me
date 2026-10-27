@@ -241,6 +241,11 @@ export const DISSOLVE_SOFT = Object.freeze({
 // this many radii of its blur, unless the shot's lens sets its own (`near`).
 export const LENS_NEAR = 1.5;
 
+// The text's knee (golden hour, 2026-10-27): behind the name and intro, out to `reach` of the
+// screen's smaller side, the finished frame's light (linear luminance) passes `knee` softly
+// toward `cap`, so no sunlit sky, cloud, ground or water behind them reads brighter than the
+// light text keeps 5:1 over (#f7f1ea, about 0.89: 0.138 at most). Darker frames pass unchanged.
+export const TEXT_KNEE = Object.freeze({ knee: 0.12, cap: 0.138, reach: 0.14 });
 // The lens (the owner's pick of the Eye breakdown, 2026-10-09), all of it in the
 // final pass, in film only; each part switches off with its `on`.
 export const LENS_FX = Object.freeze({
@@ -712,6 +717,16 @@ void main() {
     }
   }
 
+  if (uLayered > 0.5) {
+    // The text's knee (TEXT_KNEE), on the frame as shown.
+    float behind = lensBehind(slateText, vUv, ${lensNumber(TEXT_KNEE.reach)});
+    if (behind > 0.0) {
+      float L = dot(pow(max(color, 0.0), vec3(2.2)), vec3(.2126, .7152, .0722));
+      float k = ${lensNumber(TEXT_KNEE.knee)}, span = ${lensNumber(TEXT_KNEE.cap - TEXT_KNEE.knee)};
+      float T = L < k ? L : k + span * (1.0 - exp(-(L - k) / span));
+      color *= mix(1.0, pow(T / max(L, 1e-5), 1.0 / 2.2), behind);
+    }
+  }
   float textShade = smoothstep(1.0 - uTextBottom - .12, 1.0 - uTextBottom + .10, vUv.y);
   color *= 1.0 - .28 * protection * textShade;
   // Widescreen bars: uBars of the height at the top and the bottom.

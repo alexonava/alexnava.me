@@ -1,16 +1,24 @@
 {
   "name": "Lantern study",
+  "growth": true,
   "light": {
-    "key": 0.55,
-    "fill": 0.5,
+    "key": 2.2,
+    "fill": 0.35,
     "lantern": 1.4,
     "grassInside": 1,
     "glintText": 1,
     "stoneText": 1,
     "poolAbout": 1
   },
-  "lens": { "blur": 8, "near": 0.35 },
-  "move": { "dolly": [1.2, 0.85], "tilt": [-1.5, 0], "ease": 0.6 },
+  "lens": {
+    "blur": 8,
+    "near": 0.35
+  },
+  "move": {
+    "dolly": [1.2, 0.85],
+    "tilt": [-1.5, 0],
+    "ease": 0.6
+  },
   "subject": "tree-lantern",
   "region": [0, 1],
   "fov": 34,
@@ -21,13 +29,30 @@
   "margin": 0.7,
   "anchor": [0.56, 0.5],
   "ground": {
-    "mist": { "color": [0.27, 0.26, 0.29], "amount": 0.45 },
-    "gloss": { "film": 0.32, "gain": 1, "cool": 0 }
+    "mist": {
+      "color": [0.27, 0.26, 0.29],
+      "amount": 0.45
+    },
+    "gloss": {
+      "film": 0.65,
+      "gain": 1,
+      "cool": 0
+    },
+    "pools": 0.8
   },
-  "landscape": { "move": null, "azimuth": -115, "anchor": [0.5, 0.5] },
-  "portrait": {
-    "move": { "dolly": [1.1, 0.9], "tilt": [-1.5, 0], "ease": 0.6 },
+  "landscape": {
+    "move": null,
     "azimuth": -115,
     "anchor": [0.5, 0.5]
+  },
+  "portrait": {
+    "move": {
+      "dolly": [1.1, 0.9],
+      "tilt": [-1.5, 0],
+      "ease": 0.6
+    },
+    "azimuth": -115,
+    "margin": 0.5,
+    "anchor": [0.62, 0.62]
   }
 }
