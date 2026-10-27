@@ -575,7 +575,15 @@ body.scene-walk-hidden > :not(.scene-shell) {
   .site-footer__links {
     flex-direction: column;
     align-items: flex-start;
+    justify-self: start;
     gap: 26px;
+  }
+
+  /* Fit the soft shade to the links, not a stretched grid column. Its wider
+     shoulders keep the first email line legible over the sunlit shelf. */
+  .site-footer__links::before {
+    width: calc(100% + 180px);
+    height: calc(100% + 120px);
   }
 
   .site-footer__contact:not([hidden]) + .site-footer__links {
