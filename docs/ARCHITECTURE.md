@@ -303,3 +303,25 @@ cannot skip readiness; the skip link, main and footer temporarily borrow `inert`
 exactly on reveal or static fallback. The doors' 34 s visible-time escape retires a stranded
 renderer before opening onto the title card; the held CSS backstop is 35 s. Neither replaces
 the functional 15 s stall / 30 s total preparation deadlines.
+
+### Adaptive frame pacing
+
+Auto quality evaluates a 30-render interval window after a 15-sample warm-up,
+excluding 750 ms after uploads, resize, resume or restoration and three transition
+samples. Forty-five sustained samples over 20 ms request relief, longer than the averaging window so one isolated hitch cannot trigger a step. High first requests
+balanced per-frame settings; balanced then requests DPR 1 and 0.85 while retaining
+its material profile. Models, terrain maps and sky images keep the startup asset tier.
+The cap travels on the queued profile: a resize cannot publish it ahead of its cut.
+A running tour or walk never accepts a step mid-shot, even after 30 s; hidden
+preparation can accept it after shader preparation, retiring its opening draw window
+and preparing the current pose again. Paused/still recovery retains a bounded escape.
+Recovery remains display-floor-aware, at least 300 healthy samples and 10 s per rung,
+with doubling back-off and two oscillations at most. Explicit quality overrides stay
+fixed. The underlying governor's default options retain their previous behavior for
+other callers; the live state opts into the faster window and two resolution rungs.
+
+Initial environment preparation is singular: film activation cannot launch another
+capture while its sky/filter programs are preparing. Ready captures bind only while
+still current and owned. A changed hidden sky records a dirty reflection and refreshes
+it only after outstanding scene shader warm-ups settle, before the final opening
+warm-up. Freed programs are rejected before either readiness or link-status queries.

@@ -40,7 +40,7 @@ test("a watch or tree that cannot commit fails to the title card once the camera
   assert.match(index, /if \(committed\) warmShaders\("lantern"\);/);
 });
 
-test("models and maps keep the startup tier, and quality is sampled only after the reveal", () => {
+test("models and maps keep the startup tier, and quality samples only completed presentation or revealed frames", () => {
   assert.match(index, /const assetTier = qualityState\.initialTier;/);
   assert.match(index, /architectureAssets\.setQuality\(state\.profile, true, \{ assetTier \}\);/);
   assert.match(
@@ -51,10 +51,13 @@ test("models and maps keep the startup tier, and quality is sampled only after t
     flat(source("src/scene/textures.js")),
     /applyQuality\(profile, context\) \{ filmMaps\.applyQuality\(profile, context\); \}/,
   );
-  assert.match(index, /const revealed = canvasShown && cinematic\.ready;/);
   assert.match(
     index,
-    /revealed && !reducedMotion && !adaptiveSteps\.pending \? qualityState\.sampleRevealed\?\.\(/,
+    /const revealed = \(canvasShown \|\| openingGate\.state\.stage === "presentation"\) && cinematic\.ready;/,
+  );
+  assert.match(
+    index,
+    /revealed && !reducedMotion && !shaderWarmup\.pending && !adaptiveSteps\.pending \? qualityState\.sampleRevealed\?\.\(/,
   );
   // A step links its programs when sampled and lands on a tour cut, where the
   // crossfade's kept frame hides it; the one-off transition frames go unsampled.
@@ -65,7 +68,7 @@ test("models and maps keep the startup tier, and quality is sampled only after t
   assert.match(index, /if \(sampledProfile\) adaptiveSteps\.queue\(sampledProfile, nowMs\);/);
   assert.match(
     index,
-    /const adaptiveProfile = adaptiveSteps\.take\(\{ cut: transition\.cut, running: liveView\.running, nowMs \}\); if \(adaptiveProfile\) applyActiveQualityProfile\(adaptiveProfile, "adaptive"\);/,
+    /const adaptiveProfile = adaptiveSteps\.take\(\{ cut: transition\.cut, running: liveView\.running && canvasShown && !site\.sceneDoors\?\.closed, nowMs \}\); if \(adaptiveProfile\) applyActiveQualityProfile\(adaptiveProfile, "adaptive"\);/,
   );
   assert.match(index, /if \(transition\.capture\) qualityState\.skipSamples\?\.\(3\);/);
 });
@@ -103,7 +106,7 @@ test("each frame runs the tour, the quality step, the capture skip, the crossfad
     "cinematic.apply(",
     "walk.update(deltaSeconds, width, height);",
     "subsystemRegistry.update(",
-    'openingGate.state.stage === "presentation"',
+    "if (canvasShown || (presentingOpening && !shaderWarmup.pending)) {",
     "visitorHold?.frameRendered();",
   ];
   const order = anchors.map((anchor) => frame.indexOf(anchor));

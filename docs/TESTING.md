@@ -228,3 +228,9 @@ order, no duplicate set on quality changes, per-request timeout isolation, ignor
 late decodes, malformed image sizes and both tier budgets. The aggregate complete-scene
 asset test counts all four sky images for the visitor's pinned tier, including every
 optional coastal map; separate script budgets remain unchanged.
+
+Adaptive regressions cover gradual resolution relief, conservative recovery, unchanged
+fixed overrides, resize before a queued cut, stalled preparation and the prohibition
+on forcing a mid-shot quality change after the former 30 s timeout. Native browser
+checks must observe actual scene draws: browser rAF rate and debug counters alone are
+not frame-pacing or completed shader-link evidence.

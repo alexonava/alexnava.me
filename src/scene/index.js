@@ -365,6 +365,7 @@ const LANTERN_GLOW = 0.35;
         );
         // Built and loaded content follows the pinned asset tier (context).
         subsystemRegistry.applyQuality(state.profile, { pixelRatio, assetTier });
+        if (reason === "adaptive" && !canvasShown) retireOpening();
         updateSceneDebug({
           assetTier,
           // "low" while a resolution-only step holds the current profile at DPR 1.
@@ -1225,10 +1226,11 @@ const LANTERN_GLOW = 0.35;
         // Samples are rAF intervals, not render cost; take them only while the
         // revealed scene animates continuously, outside a post-event hold, and
         // not while a step waits for its cut.
-        const revealed = canvasShown && cinematic.ready;
+        const revealed =
+          (canvasShown || openingGate.state.stage === "presentation") && cinematic.ready;
         const nowMs = 1000 * elapsedTime;
         const sampledProfile =
-          revealed && !reducedMotion && !adaptiveSteps.pending
+          revealed && !reducedMotion && !shaderWarmup.pending && !adaptiveSteps.pending
             ? qualityState.sampleRevealed?.({
                 frameMs: 1000 * sampleDeltaSeconds,
                 nowMs,
@@ -1258,7 +1260,7 @@ const LANTERN_GLOW = 0.35;
         // its one-off work.
         const adaptiveProfile = adaptiveSteps.take({
           cut: transition.cut,
-          running: liveView.running,
+          running: liveView.running && canvasShown && !site.sceneDoors?.closed,
           nowMs,
         });
         if (adaptiveProfile) applyActiveQualityProfile(adaptiveProfile, "adaptive");

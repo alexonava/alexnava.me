@@ -366,7 +366,7 @@
   const DISPLAY_FLOOR_MAX_MS = 17.5;
   // Frames after a resize, resume, context restore, pause release or asset
   // commit carry uploads and shader compiles, so they are not sampled.
-  const SAMPLE_HOLD_MS = 3000;
+  const SAMPLE_HOLD_MS = 750;
 
   function createSceneQualityGovernor({
     initialTier = "high",
@@ -376,10 +376,13 @@
     recoveryFrames = 300,
     recoveryDelayMs = 10000,
     maxOscillations = 2,
+    downgradeFrames = 120,
+    resolutionSteps = 1,
   } = {}) {
     const stableInitialTier = normalizeTier(initialTier, "high");
     const fixedTier = normalizeTier(overrideTier, null);
     let currentTier = fixedTier || stableInitialTier;
+    let resolutionLevel = currentTier === "low" ? 1 : 0;
     let highFrameStreak = 0;
     let recoveryFrameStreak = 0;
     let lastChangeMs = 0;
@@ -420,12 +423,15 @@
       getTier() {
         return currentTier;
       },
+      getResolutionLevel() {
+        return resolutionLevel;
+      },
       isFixed() {
         return Boolean(fixedTier);
       },
       // floorTier bounds downgrades; the scene raises it once revealed.
       sample(frameTimeMs, nowMs = 0, floorTier = "low") {
-        if (!(frameTimeMs >= 0)) return null;
+        if (!Number.isFinite(frameTimeMs) || frameTimeMs < 0) return null;
 
         samples.push(frameTimeMs);
         sampleSum += frameTimeMs;
@@ -456,8 +462,16 @@
         recoveryFrameStreak =
           canRecover && average <= recoveryThreshold() ? recoveryFrameStreak + 1 : 0;
 
-        if (highFrameStreak >= 120 && indexForTier(currentTier) > indexForTier(floorTier)) {
-          currentTier = nextLowerTier(currentTier);
+        if (
+          highFrameStreak >= downgradeFrames &&
+          (indexForTier(currentTier) > indexForTier(floorTier) ||
+            (currentTier === "low" && floorTier === "low" && resolutionLevel < resolutionSteps))
+        ) {
+          if (currentTier === "low") resolutionLevel++;
+          else {
+            currentTier = nextLowerTier(currentTier);
+            resolutionLevel = currentTier === "low" ? 1 : 0;
+          }
           if (recovered) oscillations += 1;
           recovered = false;
           lastChangeMs = nowMs;
@@ -469,7 +483,11 @@
           recoveryFrameStreak >= recoveryFrames * backoff &&
           nowMs - lastChangeMs >= recoveryDelayMs * backoff
         ) {
-          currentTier = nextHigherTier(currentTier, stableInitialTier);
+          if (currentTier === "low" && resolutionLevel > 1) resolutionLevel--;
+          else {
+            currentTier = nextHigherTier(currentTier, stableInitialTier);
+            resolutionLevel = 0;
+          }
           recovered = true;
           lastChangeMs = nowMs;
           resetCounters();
@@ -502,10 +520,13 @@
     const governor = createSceneQualityGovernor({
       initialTier,
       overrideTier: controls.overrideTier,
+      downsampleFrames: 30,
+      warmupFrames: 15,
+      downgradeFrames: 45,
+      resolutionSteps: 2,
     });
     // A revealed scene never steps its visuals down to low. The governor's low
-    // step keeps the current profile and lowers only the pixel ratio to 1.
-    let resolutionRelief = false;
+    // steps preserve material settings and request DPR 1, then 0.85.
     let sampleResumeAt = null;
     let skippedSamples = 0;
 
@@ -524,8 +545,7 @@
         return governor.getTier();
       },
       resolveDprCap(profile) {
-        const cap = resolveEffectiveDprCap(profile, { touchPrimary });
-        return resolutionRelief ? Math.min(cap, 1) : cap;
+        return resolveEffectiveDprCap(profile, { touchPrimary });
       },
       // Skips samples for SAMPLE_HOLD_MS from the next sampled frame.
       holdSampling() {
@@ -538,8 +558,8 @@
       },
       // Samples the revealed scene. timestamp is the rAF clock the hold runs
       // on; nowMs is the scene clock the governor's delays run on. Returns the
-      // profile to apply after a step (the current one for a resolution-only
-      // step), else null.
+      // profile to publish on a cut, with its requested cap carried on the
+      // profile itself, else null.
       sampleRevealed({ frameMs, nowMs, timestamp, profile }) {
         sampleResumeAt ??= timestamp + SAMPLE_HOLD_MS;
         if (timestamp < sampleResumeAt) return null;
@@ -549,8 +569,11 @@
         }
         const nextTier = governor.sample(frameMs, nowMs, "low");
         if (!nextTier) return null;
-        resolutionRelief = nextTier === "low";
-        return resolutionRelief ? profile : cloneProfile(nextTier);
+        // The requested cap travels with the queued profile. Until its cut,
+        // resizing keeps the active profile's cap rather than leaking a step.
+        return nextTier === "low"
+          ? { ...profile, dprCap: governor.getResolutionLevel() > 1 ? 0.85 : 1 }
+          : cloneProfile(nextTier);
       },
     };
   }

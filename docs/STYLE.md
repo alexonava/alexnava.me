@@ -145,3 +145,8 @@ The rules for visual, motion and typographic changes. Read them before changing 
 - No new lights or render passes for an effect. Texture downloads for detail are welcome within the asset budgets (the owner's word of 2026-10-17, "go ahead with downloads"), with third-party sources credited. The lens's bars, background focus, moving grain, heat haze, aberration and the star's flare live in the existing final pass; the flame's streak is a thin additive billboard and the far fires one additive point draw; the lightning's glow is the sky shell's and its bolt one small procedural mesh. The film's environment is one prefiltered capture at the film's start (again only on a cut that changes the sky's plate or key, or after a lost context), not a pass.
 - Changes that would pop mid-shot land on a tour cut.
 - Recheck desktop and portrait frames, motion extremes and reduced motion after any visual change.
+
+- On sustained GPU pressure the automatic scene may reduce its rendering resolution
+  to one, then 0.85 device pixels per CSS pixel to protect smooth motion. Page text
+  remains native CSS text. Resolution changes appear only while concealed or on a
+  tour cut, never during an exposed move; healthy devices keep their existing clarity.
