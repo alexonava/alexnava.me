@@ -140,7 +140,9 @@ export function createSceneRendering({
   const moonOffset = originalSunPosition.clone().sub(originalSunTarget),
     sunOffset = moonOffset.clone();
   let shotSun = "",
-    shotSunColor = null;
+    shotSunColor = null,
+    shotFill = null;
+  const originalFillPosition = fillLight.position.clone();
   const originalShadow = {
     left: sunLight.shadow.camera.left,
     right: sunLight.shadow.camera.right,
@@ -149,7 +151,10 @@ export function createSceneRendering({
   };
   let shadowKey = "";
   const baselineKeyColor = sunLight.color.clone();
-  const baselineGroundColor = hemisphereLight.groundColor.clone();
+  const baselineGroundColor = hemisphereLight.groundColor.clone(),
+    baselineSkyColor = hemisphereLight.color.clone(),
+    baselineFillColor = fillLight.color.clone(),
+    baselineFogColor = homeScene.fog?.color.clone();
   const baselineShadowBias = sunLight.shadow.bias,
     baselineNormalBias = sunLight.shadow.normalBias;
   let baselineKeyIntensity = sunLight.intensity;
@@ -167,11 +172,21 @@ export function createSceneRendering({
     sunLight.intensity =
       baselineKeyIntensity * (groundedLighting ? 0.8 : 1) * (film ? film.key * shotMood.key : 1);
     fillLight.intensity =
-      baselineFillIntensity * (groundedLighting ? 1.5 : 1) * (film ? film.fill * shotMood.fill : 1);
+      baselineFillIntensity *
+      (groundedLighting ? 1.5 : 1) *
+      (film ? film.fill * shotMood.fill * (shotFill?.gain ?? 1) : 1);
     hemisphereLight.intensity =
       baselineHemisphereIntensity * (film ? film.hemisphere * shotMood.hemisphere : 1);
     hemisphereLight.groundColor.copy(baselineGroundColor);
-    if (filmLighting) hemisphereLight.groundColor.setHex(0x37404a);
+    hemisphereLight.color.copy(baselineSkyColor);
+    fillLight.color.copy(baselineFillColor);
+    homeScene.fog?.color.copy(baselineFogColor);
+    if (filmLighting) {
+      hemisphereLight.groundColor.setRGB(...FILM_LIGHT.ground);
+      hemisphereLight.color.setRGB(...FILM_LIGHT.sky);
+      fillLight.color.setRGB(...(shotFill?.color ?? FILM_LIGHT.sky));
+      homeScene.fog?.color.setRGB(...FILM_LIGHT.haze);
+    }
     ambientLight.intensity =
       baselineAmbientIntensity * (film ? film.ambient * shotMood.ambient : 1);
     // Lit, relief-mapped earth shows acne bands at grazing moonlight; bias more.
@@ -362,6 +377,22 @@ export function createSceneRendering({
       }
       shadowKey = "";
       sunLight.shadow.needsUpdate = true;
+      return true;
+    },
+    // A shot's own fill (directed-shots.js `fill`: `at`, its world direction, toward it,
+    // `color` and `gain` over the film's): Close-up's low sun catching the branches from the
+    // lens's side. null restores the cool fill. Called on a cut. Returns whether it changed.
+    setShotFill(fill = null) {
+      if (disposed || fill === shotFill) return false;
+      shotFill = fill;
+      if (fill?.at)
+        fillLight.position
+          .set(...fill.at)
+          .normalize()
+          .multiplyScalar(originalFillPosition.length());
+      else fillLight.position.copy(originalFillPosition);
+      fillLight.updateMatrixWorld();
+      applyLightingTreatment();
       return true;
     },
     // The shot's mood over the film balance (film-light.js); intensities only,

@@ -882,8 +882,9 @@ test("each ground shading has its own program cache key; the slate's shading nee
   );
   assert.match(
     fragment,
-    /bool slateKey = slateDirectional && !slateWarm && dot\(directLight\.direction,/,
+    /bool slateKey = slateDirectional && dot\(directLight\.direction,[^;]*;\s*bool slateWarm = !slateKey && directLight\.color\.b < \.7\*directLight\.color\.r;/,
   );
+  // The key is found by its direction first: the low sun is as warm as the lantern.
   assert.match(fragment, /if \(!slateWarm\) slateL\.color \*= slateKey \? [\d.]+ : [\d.]+;/);
   assert.match(fragment, /#ifdef USE_ENVMAP\s*irradiance \*= [\d.]+;\s*iblIrradiance \*= [\d.]+;/);
   assert.ok(

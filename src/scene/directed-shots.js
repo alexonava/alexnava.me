@@ -261,6 +261,10 @@ export const DIRECTED_SHOTS = {
       // crown's right, the key coming from it, the cel sky lit from there (rendering.js
       // setShotSun(), cloud-plate.js).
       sun: { at: [0.9, 0.35, 0.16], plate: "close-up" },
+      // The low sun catches the branches from the lens's side (the owner's reference of
+      // 2026-10-27): a warm fill from the upper left, over the film's cool one (rendering.js
+      // setShotFill()).
+      fill: { at: [-0.41, 0.27, -0.87], color: [1, 0.72, 0.44], gain: 4.5 },
       // No lens blur: the clouds behind the crown read sharp (sky first, below). A tracking
       // pan (the owner's pick of 2026-10-12): the camera slides to its left while the lens
       // turns to hold the crown, so the limbs slide across the clouds behind it.

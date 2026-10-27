@@ -1430,24 +1430,32 @@ test("a shot's light mood scales only the film key and fill, without redrawing t
   assert.equal(rendering.setShotLight({ key: 2 }), false, "a disposed rig ignores moods");
 });
 
-test("the film's moonlight: a cool moon key many times the sky's light, a candle the one warm light", () => {
+test("the film's golden hour: a low warm sun key many times the sky's light, the ranges at the night's strength", () => {
   assert.ok(Object.isFrozen(FILM_LIGHT));
   assert.deepEqual(FILM_LIGHT, {
-    key: 2.4,
-    fill: 0.3,
-    hemisphere: 0.4,
-    ambient: 0.15,
-    moon: [0.62, 0.74, 1],
+    key: 4.1,
+    fill: 0.42,
+    hemisphere: 0.8,
+    ambient: 0.24,
+    moon: [1, 0.76, 0.48],
+    sky: [0.42, 0.48, 0.72],
+    ground: [0.42, 0.3, 0.2],
+    haze: [0.4, 0.34, 0.36],
+    rangeKey: 2.2,
+    rangeSky: 0.55,
     candle: [1, 0.58, 0.24],
   });
   assert.ok(
     FILM_LIGHT.key > 5 * Math.max(FILM_LIGHT.fill, FILM_LIGHT.hemisphere, FILM_LIGHT.ambient),
   );
   const [r, g, b] = FILM_LIGHT.moon;
-  assert.ok(b >= g && g > r, "a cool moon");
-  // The ground finds the lantern by its warm colour (mud-ground.js: b < .7 r).
+  assert.ok(r > g && g > b, "a warm low sun");
+  // The ground finds the sun by its direction before it calls a light warm (mud-ground.js), so
+  // the warm sun never reads as the lantern.
   const [cr, cg, cb] = FILM_LIGHT.candle;
   assert.ok(cr > cg && cg > cb && cb < 0.7 * cr, "a warm candle");
+  const [sr, , sb] = FILM_LIGHT.sky;
+  assert.ok(sb > sr, "a dusk-blue sky light");
 });
 
 test("a shot's light mood merges over the neutral default and never shares it", () => {
@@ -1538,7 +1546,7 @@ test("each frame applies the shot's light, lens, bars and grain, holding the gra
   // The mood follows the shot on screen in film only.
   assert.ok(
     index.includes(
-      "const mood = shotLight(filmActive && cinematicApplied ? cinematic.shot : null), look = shotLook(filmActive && cinematicApplied ? cinematic.shot : null); rendering.setShotLight?.(mood, look); applyShotTone(look); if (LANTERN_MOOD.value !== mood.lantern) { LANTERN_MOOD.value = mood.lantern; treeArchitecture?.refreshLantern?.(); } COAST_MOOD.value = filmActive ? mood.coastStudy : 0; GLINT_MOOD.value = filmActive ? mood.glintText : 0; GRASS_MOOD.value = filmActive ? mood.grassInside : 0;",
+      "const mood = shotLight(filmActive && cinematicApplied ? cinematic.shot : null), look = shotLook(filmActive && cinematicApplied ? cinematic.shot : null); rendering.setShotLight?.(mood, look); rendering.setShotFill?.(filmActive && cinematicApplied ? (cinematic.shot?.fill ?? null) : null); applyShotTone(look); if (LANTERN_MOOD.value !== mood.lantern) { LANTERN_MOOD.value = mood.lantern; treeArchitecture?.refreshLantern?.(); } COAST_MOOD.value = filmActive ? mood.coastStudy : 0; GLINT_MOOD.value = filmActive ? mood.glintText : 0; GRASS_MOOD.value = filmActive ? mood.grassInside : 0;",
     ),
   );
   // The ground's pool knee about Contact follows it too, off out of film.

@@ -2,42 +2,32 @@ import { BackSide, Color, ShaderMaterial, Vector4 } from "three";
 import { CELESTIAL_FIELD_GLSL } from "./celestial-field.js";
 import { DEPTH_LAYER } from "./depth-layers.js";
 
-// Night down to the horizon (the owner's pick of 2026-10-24, A): the clear sky's own glow
-// toward the horizon (filmSky) crossed the grade's first cel threshold some 9 degrees up,
-// and the cel step drew it as one flat band under a ruled line across the frame. From
-// `from` degrees, fully by `to`, the glow's luma rolls off softly from `knee` toward `cap`,
-// under that threshold, so the clear low sky stays in the upper sky's deep band and its banks
-// step against it as the upper ones do; below `from` (mostly behind the ranges) the glow is as
-// it was. filmNight(c, a, w) applies it by weight w: the shell takes it everywhere but over
-// the reference banks above their low part (CLOUD_RESHAPE.wedgeDome's knee), so The watch's
-// usual frames keep every pixel; the ranges haze toward it in full, so they never stand paler
-// than the night behind them. `on`: 0 emits none of it.
-export const SKY_GLOW = Object.freeze({
-  on: 1,
-  knee: 0.152,
-  cap: 0.19,
-  from: 1.5,
-  to: 3.5,
+// Golden hour (the owner's pick of 2026-10-27, "golden hour between" night and a bright day):
+// the sky as the frame shows it, an amber glow at the horizon (`horizon`) through a dusk blue
+// (`mid`, from 0 to 0.3 of altitude's sine) to a deep blue overhead (`zenith`, from 0.25 to
+// 0.95), deep enough that the light text keeps 5:1 over it. The clouds' moonlit tones turn to
+// a dusk shade (`cloudShade`) and a sunlit gold (`cloudLit`) across `cloudRamp` of their
+// luminance. The shell shows its colour times its opacity (0.52), so the sky is given over it.
+export const GOLDEN_SKY = Object.freeze({
+  horizon: Object.freeze([0.8, 0.52, 0.34]),
+  mid: Object.freeze([0.24, 0.26, 0.4]),
+  zenith: Object.freeze([0.05, 0.08, 0.2]),
+  cloudShade: Object.freeze([0.2, 0.22, 0.34]),
+  cloudLit: Object.freeze([1, 0.76, 0.52]),
+  cloudRamp: Object.freeze([0.08, 0.7]),
+  shell: 0.52,
 });
-const glowSpan = (SKY_GLOW.cap - SKY_GLOW.knee).toFixed(6),
-  glowKnee = SKY_GLOW.knee.toFixed(6);
-const SKY_GLOW_GLSL = `
-vec3 filmNight(vec3 c, float a, float w) {
-${
-  SKY_GLOW.on
-    ? `float l=dot(c,vec3(.299,.587,.114)),t=l<${glowKnee}?l:${glowKnee}+${glowSpan}*(1.-exp(-(l-${glowKnee})/${glowSpan}));
-return c*mix(1.,t/l,w*smoothstep(${Math.sin((SKY_GLOW.from * Math.PI) / 180).toFixed(6)},${Math.sin((SKY_GLOW.to * Math.PI) / 180).toFixed(6)},a));`
-    : "return c;"
-}
-}`;
-// The film gradient and horizon band by shell altitude, shared with the mountains,
-// which haze toward the sky behind them (hill-silhouette.js).
+const goldenVec = (v) => `vec3(${v.map((c) => (c / GOLDEN_SKY.shell).toFixed(4)).join(",")})`;
+// The film gradient by shell altitude, shared with the mountains, which haze toward the sky
+// behind them (hill-silhouette.js). At golden hour the night's horizon band and its glow cap
+// (SKY_GLOW) take nothing: the glow is the sky's own.
 export const FILM_SKY_GLSL = `
 vec3 filmSky(float a) {
-vec3 c=mix(vec3(.30,.36,.49),vec3(.11,.14,.21),smoothstep(-.02,.28,a));
-return mix(c,vec3(.045,.065,.13),smoothstep(.24,.9,a));
+vec3 c=mix(${goldenVec(GOLDEN_SKY.horizon)},${goldenVec(GOLDEN_SKY.mid)},smoothstep(-.02,.3,a));
+return mix(c,${goldenVec(GOLDEN_SKY.zenith)},smoothstep(.25,.95,a));
 }
-vec3 filmBand(float a) { return vec3(.03,.036,.048)*exp(-pow((a-.03)*6.0,2.0)); }${SKY_GLOW_GLSL}`;
+vec3 filmBand(float a) { return vec3(0.); }
+vec3 filmNight(vec3 c, float a, float w) { return c; }`;
 
 // The reference banks: The watch's upper left at 1600x900 (the frame's 1100x440 top-left
 // crop), broad, swirling, layered and moonlit, where the authored bank (bankUV) lifts the
@@ -313,7 +303,7 @@ export const CLOUD_PLATE_GLSL = "uniform sampler2D uCloudMap;uniform float uClou
 // its light sits where the shot's sun or the moon does; it drifts on the clock as slowly
 // as the banks. Its light runs past the 8-bit plate's range (CLOUD_PLATE_LOOK.gain), and the
 // moonlit shoulders keep it through a raised knee (.cap), except behind the name and intro.
-export const CLOUD_PLATE_LOOK = Object.freeze({ gain: 2.4, cap: Object.freeze([1.4, 2.6]) });
+export const CLOUD_PLATE_LOOK = Object.freeze({ gain: 2.4, cap: Object.freeze([3, 4]) });
 
 // The film's cloud field on the sky shell, as GLSL statements, shared with the stars,
 // which dim behind the banks (starfield.js). They expect `vec3 direction` (the shell
@@ -639,6 +629,7 @@ cloudCol+=vec3(.07,.07,.09)*smoothstep(.5,1.,lit)*(1.-thick)*cover;
 cloudCol*=(1.0+.4*smoothstep(.55,.85,altitude))*(.86+.26*smoothstep(-.35,.45,direction.z))
 *(1.0-.14*thin)*(1.0-.3*max(gapG,eaveG));
 cloudCol=mix(cloudCol,cp.rgb,cw);
+{float dl=dot(cloudCol,vec3(.299,.587,.114));cloudCol=mix(${goldenVec(GOLDEN_SKY.cloudShade)},${goldenVec(GOLDEN_SKY.cloudLit)},smoothstep(${glslFloat(GOLDEN_SKY.cloudRamp[0])},${glslFloat(GOLDEN_SKY.cloudRamp[1])},dl));}
 ${
   vortexOn
     ? `if(vxW>0.&&uVortex.z>=0.){float vxGlow=vxW*(1.-cloudText)*exp(-vxRho/${glslFloat(VX.warm[1])})*smoothstep(.45,1.,lit);

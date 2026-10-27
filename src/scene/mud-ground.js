@@ -1367,8 +1367,9 @@ vec3 slatePoolKnee(const in IncidentLight light, const in vec3 normal, const in 
 }
 void RE_Direct_Moonlit(const in IncidentLight directLight, const in vec3 geometryPosition, const in vec3 geometryNormal, const in vec3 geometryViewDir, const in vec3 geometryClearcoatNormal, const in PhysicalMaterial material, inout ReflectedLight reflectedLight) {
   IncidentLight slateL = directLight;
-  bool slateWarm = directLight.color.b < .7*directLight.color.r;
-  bool slateKey = slateDirectional && !slateWarm && dot(directLight.direction, normalize(mat3(viewMatrix)*babelKeyDir)) > .9999;
+  // The key by its direction first: a low sun is as warm as the lantern (film-light.js FILM_LIGHT).
+  bool slateKey = slateDirectional && dot(directLight.direction, normalize(mat3(viewMatrix)*babelKeyDir)) > .9999;
+  bool slateWarm = !slateKey && directLight.color.b < .7*directLight.color.r;
   #ifdef USE_ENVMAP
   if (!slateWarm) slateL.color *= slateKey ? ${glslNumber(LIGHT.key)} : ${glslNumber(LIGHT.fill)};
   #endif

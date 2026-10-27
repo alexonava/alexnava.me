@@ -441,6 +441,8 @@ const LANTERN_GLOW = 0.35;
         skyRadius: WORLD.SKY_DOME_RADIUS,
       });
       subsystemRegistry.register(starfield);
+      // Golden hour: no stars yet (film-light.js FILM_LIGHT).
+      starfield.root.visible = false;
       // The film storm's lightning (lightning.js): flashes in the shell's banks,
       // now and then a far bolt beside the stars, and the flash on the lights,
       // on its own clock and only in film. Created before the first warm-up,
@@ -1327,6 +1329,9 @@ const LANTERN_GLOW = 0.35;
           const mood = shotLight(filmActive && cinematicApplied ? cinematic.shot : null),
             look = shotLook(filmActive && cinematicApplied ? cinematic.shot : null);
           rendering.setShotLight?.(mood, look);
+          rendering.setShotFill?.(
+            filmActive && cinematicApplied ? (cinematic.shot?.fill ?? null) : null,
+          );
           applyShotTone(look);
           if (LANTERN_MOOD.value !== mood.lantern) {
             LANTERN_MOOD.value = mood.lantern;

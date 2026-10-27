@@ -2089,7 +2089,8 @@ export const COAST_SHOTS = Object.freeze([
     name: "Over the fault",
     // Its wide flat plain takes the moon full on: a softer key, so it stays mud, not snow.
     light: Object.freeze({ ...COAST_LOOK.light, key: 1.4, fill: 0.35 }),
-    look: null,
+    // A little under the night's exposure: the sunlit clifftop lies behind the name.
+    look: Object.freeze({ ...COAST_LOOK.look, tone: Object.freeze([0.9, 1.95, 0.3]) }),
     after: "Root and lantern",
     // The moon through a break in the cloud lights the fault and the falls; the
     // cloud's shadow lies on the clifftop beyond, under the name (mud-ground.js

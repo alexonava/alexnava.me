@@ -5,11 +5,11 @@ The rules for visual, motion and typographic changes. Read them before changing 
 ## Principles
 
 - Calm by design: quiet on load, clear on click. Atmospheric, never generic dark UI or visual noise.
-- A motion picture with a soft moonlit sky. Every shot reads as a frame of film (`FILM_LOOK` in [postprocess.js](../src/scene/postprocess.js)): warm halation around the brightest lights, a cool print toe, fine midtone grain and a slight weave. The cloud banks have rounded billows, blue-grey shadow, pale lavender shoulders and fine wisps, with open night between them.
-- One gallery: every shot belongs to the same night, with photographic materials and light beneath the layered cloud sky. Effects frame the scene quietly and preserve its natural surface detail.
+- A motion picture at golden hour (the owner's pick of 2026-10-27, between night and a bright day). Every shot reads as a frame of film (`FILM_LOOK` in [postprocess.js](../src/scene/postprocess.js)): warm halation around the brightest lights, a cool print toe, fine midtone grain and a slight weave. The cel cloud banks are large and irregular, lit in volume: sunlit gold on their lit side, a dusk blue in shade, over a sky that runs from an amber horizon to a deep blue overhead (`GOLDEN_SKY` in [estate-sky.js](../src/scene/estate-sky.js)), deep enough that the light text keeps 5:1.
+- One gallery: every shot belongs to the same evening, with photographic materials and light beneath the layered cloud sky. Effects frame the scene quietly and preserve its natural surface detail.
 - Depth comes from gradients, light and procedural texture, not UI chrome.
 - Keep the current alignment and composition unless a task calls for a layout change.
-- The sky is an artistic night backdrop with continuous cloud shade. Subjects, mountains, ground, cliffs and water aim for photorealism, retaining their local colour, roughness and normal detail. Motivated light comes from the moon, sky, candle lantern and their bounce. Physical surfaces pass through `FILM_TONE` in [film-light.js](../src/scene/film-light.js); the sky and star keep their display-referred colours. Film grain and halation finish the whole frame.
+- The sky is an artistic golden-hour backdrop with continuous cloud shade, and no stars yet. Subjects, mountains, ground, cliffs and water aim for photorealism, retaining their local colour, roughness and normal detail: the plain a soft pastel-brown mud, wet after rain, the coast dark layered stone. Motivated light comes from the low sun (each sun shot has its own; the rest share one key), the dusk sky, the candle lantern and their bounce. Physical surfaces pass through `FILM_TONE` in [film-light.js](../src/scene/film-light.js); the sky and star keep their display-referred colours. Film grain and halation finish the whole frame.
 
 ## Palette and type
 

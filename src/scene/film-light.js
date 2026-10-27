@@ -6,11 +6,20 @@ import { Matrix4, Vector2, Vector3, Vector4 } from "three";
 // hemisphere and the ambient are what the sky leaves in them. A candle in the
 // lantern (candle: its colour, architecture.js) is the one warm light.
 export const FILM_LIGHT = Object.freeze({
-  key: 2.4,
-  fill: 0.3,
-  hemisphere: 0.4,
-  ambient: 0.15,
-  moon: Object.freeze([0.62, 0.74, 1]),
+  key: 4.1,
+  fill: 0.42,
+  hemisphere: 0.8,
+  ambient: 0.24,
+  // Golden hour (2026-10-27): the key is the low sun's warm light (0.62, 0.74, 1 at night),
+  // the sky's light a dusk blue over the brown ground's bounce, the air a warm dusk haze.
+  moon: Object.freeze([1, 0.76, 0.48]),
+  sky: Object.freeze([0.42, 0.48, 0.72]),
+  ground: Object.freeze([0.42, 0.3, 0.2]),
+  haze: Object.freeze([0.4, 0.34, 0.36]),
+  // The ranges keep the night's brightness of key (2.4 of the moon's, 2.2 of this warmer light) and sky light (0.55) in the low sun's
+  // colour, so their haze still orders them by distance below the sky (hill-silhouette.js).
+  rangeKey: 2.2,
+  rangeSky: 0.55,
   candle: Object.freeze([1, 0.58, 0.24]),
 });
 
@@ -100,7 +109,7 @@ export function applyShotTone(look) {
 // to its colour on the cut (rendering.js setShotSun()), and the materials that tell the
 // key from their other lights read its world direction, toward it, here (mud-ground.js).
 // Without a sun it is the moon's (index.js directionalPosition, restated by MOON_LIGHTS).
-export const SUN_KEY = Object.freeze({ color: Object.freeze([0.95, 0.86, 0.78]) });
+export const SUN_KEY = Object.freeze({ color: Object.freeze([1, 0.76, 0.48]) });
 export const SHOT_KEY = { babelKeyDir: { value: new Vector3(32, 28, 14).normalize() } };
 
 // A mutable lantern share the tree's practical multiplies (architecture.js).

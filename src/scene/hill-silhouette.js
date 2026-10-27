@@ -142,10 +142,7 @@ const smooth01 = (a, b, x) => {
 // (createHillSilhouette()): rgb the key's colour times its intensity, w the
 // hemisphere's and the ambient's intensities; the film's balance until then.
 export const MOUNTAIN_LIGHT = {
-  value: new Vector4(
-    ...FILM_LIGHT.moon.map((c) => c * FILM_LIGHT.key),
-    FILM_LIGHT.hemisphere + FILM_LIGHT.ambient,
-  ),
+  value: new Vector4(...FILM_LIGHT.moon.map((c) => c * FILM_LIGHT.rangeKey), FILM_LIGHT.rangeSky),
 };
 // JS mirror of the shader's bare rock body (tests), at `distance` units in the
 // film's own light: its luma as a share of the sky's behind it (a horizon sky

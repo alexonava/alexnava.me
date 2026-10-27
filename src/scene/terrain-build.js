@@ -2541,12 +2541,12 @@ export function coastBedrockWeight(x, z) {
 }
 
 // The plain's mud (the owner's picks of 2026-10-27: "smooth and minimal", "a more muted
-// ground", and "keep the ground color the sort of tan it looks like in artistic"): a dark tan
-// mud over the slate, keeping only its broad variation (`tone` linear, `amount` over the
+// ground", "keep the ground color the sort of tan it looks like in artistic", and "a little
+// browner, like a brown pastel", then "a little browner too"): a soft, warm brown mud over the slate, keeping only its broad variation (`tone` linear, `amount` over the
 // slate's own colour); its relief flattens by `flat` in mud-ground.js, and its film, gloss
 // and puddles mirror the sky as before.
 export const PLAIN_MUD = Object.freeze({
-  tone: Object.freeze([0.055, 0.05, 0.046]),
+  tone: Object.freeze([0.1, 0.066, 0.04]),
   amount: 0.9,
   flat: 0.8,
 });

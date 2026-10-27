@@ -53,7 +53,7 @@ import {
   cloudVortexReach,
   createEstateSkyMaterial,
   FILM_SKY_GLSL,
-  SKY_GLOW,
+  GOLDEN_SKY,
 } from "../src/scene/estate-sky.js";
 import { celestialClusterDirection, NEBULA_FRAME } from "../src/scene/celestial-field.js";
 import { createFilmScene } from "../src/scene/film-scene.js";
@@ -1532,71 +1532,19 @@ test("the cloud artwork keeps its own soft detail without procedural brush edges
   );
 });
 
-test("the clear sky stays night down to the ranges, but not over the reference banks above their low part", async () => {
-  // filmNight (SKY_GLOW) rolls the glow's luma off under the grade's first cel threshold, so
-  // the cel step draws no ruled band across the low sky (the owner's pick of 2026-10-24).
-  const glsl = FILM_SKY_GLSL.match(/vec3 filmNight\(vec3 c, float a, float w\) \{([\s\S]*?)\n\}/);
-  assert.ok(glsl, "filmNight");
-  const body = glsl[1]
-    .replace(/vec3\(\.299,\.587,\.114\)/, "Y")
-    .replace(/float l=/, "let l=")
-    .replace(/,t=/, ";let t=");
-  const night = new Function(
-    "c",
-    "a",
-    "w",
-    "dot",
-    "exp",
-    "mix",
-    "smoothstep",
-    "Y",
-    body.replace(/return c\*mix\(1\.,t\/l,(.+)\);/s, "return c*mix(1,t/l,$1);"),
-  );
-  const smoothstep = (e0, e1, x) => {
-    const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)));
-    return t * t * (3 - 2 * t);
-  };
-  const mix = (x, y, a) => x * (1 - a) + y * a;
-  const luma = (s) =>
-    night(s, Math.sin((20 * Math.PI) / 180), 1, (x, y) => x * y, Math.exp, mix, smoothstep, 1);
-  for (let l = 0.01; l < 0.4; l += 0.01)
-    assert.ok(luma(l) < SKY_GLOW.cap + 1e-9 && luma(l) <= l + 1e-12);
-  assert.equal(luma(0.1), 0.1, "under the knee it is the gradient's own");
-  const below = night(
-    0.3,
-    Math.sin(((SKY_GLOW.from - 0.5) * Math.PI) / 180),
-    1,
-    (x, y) => x * y,
-    Math.exp,
-    mix,
-    smoothstep,
-    1,
-  );
-  assert.equal(below, 0.3, "below `from` (behind the ranges) the glow is as it was");
-  assert.equal(
-    night(0.3, 0.5, 0, (x, y) => x * y, Math.exp, mix, smoothstep, 1),
-    0.3,
-    "weight 0: untouched",
-  );
-  const shader = flat(
-    createEstateSkyMaterial({
-      skyTopColor: 0,
-      skyBottomColor: 0,
-      skyGlowColor: 0,
-      sunDirection: null,
-      sunColor: 0,
-      shellOpacity: 0.52,
-    }).fragmentShader,
-  );
-  // The shell weighs it by the reference banks' protection above their low part and by
-  // uCloudReshape (0 in the environment's capture, whose sky light stays as approved).
-  assert.match(
-    shader,
-    /col=filmNight\(col,altitude,uCloudReshape\*\(1\.-smoothstep\(99\.0,119\.0,cloudAz\)/,
-  );
-  // The ranges haze toward the same night.
-  assert.match(
-    flat(source("src/scene/hill-silhouette.js")),
-    /vec3 s0=\(filmNight\(filmSky\(a\),a,1\.\)\+filmBand\(a\)\)\*uSky\.y/,
-  );
+test("golden hour: an amber horizon under a dusk blue, deep enough overhead for the light text", () => {
+  const { horizon, mid, zenith, cloudShade, cloudLit, shell } = GOLDEN_SKY;
+  const luma = ([r, g, b]) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  // Warm at the horizon, blue above it, darkening upward.
+  assert.ok(horizon[0] > horizon[2] && zenith[2] > zenith[0] && mid[2] > mid[0]);
+  assert.ok(luma(horizon) > luma(mid) && luma(mid) > luma(zenith));
+  // The text (#f7f1ea, about 0.89 relative luminance) keeps 5:1 over the sky above the
+  // horizon's glow: its shown colour, display-referred, at most about 0.13 there.
+  const lin = (v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+  for (const c of [mid, zenith]) assert.ok((0.89 + 0.05) / (luma(c.map(lin)) + 0.05) >= 5, `${c}`);
+  // Sunlit cloud gold, its shade a dusk blue; all given over the shell's opacity.
+  assert.ok(cloudLit[0] > cloudLit[2] && cloudShade[2] > cloudShade[0]);
+  assert.equal(shell, 0.52);
+  assert.ok(FILM_SKY_GLSL.includes("vec3 filmNight(vec3 c, float a, float w) { return c; }"));
+  assert.ok(FILM_SKY_GLSL.includes("vec3 filmBand(float a) { return vec3(0.); }"));
 });
