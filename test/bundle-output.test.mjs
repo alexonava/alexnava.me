@@ -145,6 +145,8 @@ test("scene bundle stays under the deferred-payload budget", async () => {
   let bytes = 0;
   for (const name of loaded.keys()) bytes += (await stat(path.join(scriptsDir, name))).size;
   const kb = bytes / 1024;
+  // 838 kB since each sun shot shows its own sun and the cel sky's lit plates (the owner's call
+  // of 2026-10-27: the per-shot sun on the cut, the plate set and the shot looks, about 2.4 kB);
   // 835 kB since a lantern opening's light lines up from the scene's start: the supplied
   // lantern's stored outline (opening-lantern.js) and its fit (opening-star.js openingFlame())
   // are about 3.3 kB of it (the owner's call of 2026-10-26); 831 kB since the fault's own shots
@@ -152,8 +154,8 @@ test("scene bundle stays under the deferred-payload budget", async () => {
   // the entry keeps their hooks); 830 kB since the loading line's star lines up with the
   // opening shot's: The watch's stored outline (opening-outline.js) is about 10 kB of it.
   assert.ok(
-    kb < 835,
-    `scene bundle (${[...loaded.keys()].join(" + ")}) is ${kb.toFixed(3)} kB; budget is 835 kB`,
+    kb < 838,
+    `scene bundle (${[...loaded.keys()].join(" + ")}) is ${kb.toFixed(3)} kB; budget is 838 kB`,
   );
 });
 

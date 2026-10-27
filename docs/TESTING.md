@@ -164,7 +164,7 @@ Enforced budgets and windows:
 | Limit                                                                                              | Held by                                                               |
 | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
 | UI bundle under 34 KiB                                                                             | bundle-output                                                         |
-| Scene entry and its static chunks under 835 KiB                                                    | bundle-output                                                         |
+| Scene entry and its static chunks under 838 KiB                                                    | bundle-output                                                         |
 | Cliff and stack meshes together at most 45,000 triangles on high and 25,000 on balanced            | coast-geometry                                                        |
 | The walk's lazy chunk under 16 KiB                                                                 | bundle-output                                                         |
 | Complete scene within 7.25 MiB (high) and 3.5 MiB (balanced); each model within the loader's limit | bundle-output, `ARCHITECTURE_ASSET_BUDGETS` in architecture-assets.js |

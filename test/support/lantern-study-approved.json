@@ -34,11 +34,11 @@
       "amount": 0.45
     },
     "gloss": {
-      "film": 0.5,
+      "film": 0.65,
       "gain": 1,
       "cool": 0
     },
-    "pools": 0.6
+    "pools": 0.8
   },
   "landscape": {
     "move": null,

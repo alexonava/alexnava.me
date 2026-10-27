@@ -313,7 +313,7 @@ export const CLOUD_PLATE_GLSL = "uniform sampler2D uCloudMap;uniform float uClou
 // its light sits where the shot's sun or the moon does; it drifts on the clock as slowly
 // as the banks. Its light runs past the 8-bit plate's range (CLOUD_PLATE_LOOK.gain), and the
 // moonlit shoulders keep it through a raised knee (.cap), except behind the name and intro.
-export const CLOUD_PLATE_LOOK = Object.freeze({ gain: 2, cap: Object.freeze([1.2, 2.2]) });
+export const CLOUD_PLATE_LOOK = Object.freeze({ gain: 2.4, cap: Object.freeze([1.4, 2.6]) });
 
 // The film's cloud field on the sky shell, as GLSL statements, shared with the stars,
 // which dim behind the banks (starfield.js). They expect `vec3 direction` (the shell

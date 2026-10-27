@@ -36,11 +36,11 @@ const GIANT = Object.freeze({
 // meets them softly (mud-ground.js SLATE_LOOK).
 // After the rain, wetter since the owner pushed the look toward the Graphics concepts
 // (2026-10-27): more of the film and water standing in the low spots,
-// so the lantern, the sun and the sky lie in the ground (film 0.32, no pools before).
+// so the lantern, the sun and the sky lie in the ground (film 0.32, no pools before; film 0.5 and pools 0.6 at the first look).
 const AFTER_RAIN = Object.freeze({
   mist: Object.freeze({ color: Object.freeze([0.27, 0.26, 0.29]), amount: 0.45 }),
-  gloss: Object.freeze({ film: 0.5, gain: 1, cool: 0 }),
-  pools: 0.6,
+  gloss: Object.freeze({ film: 0.65, gain: 1, cool: 0 }),
+  pools: 0.8,
 });
 // Portrait on upright and squat screens: the tree on the lower third, open sky above it, at
 // its own size (no tilt) and pushed in without the sideways truck. The tall frame reaches
@@ -180,7 +180,7 @@ export const DIRECTED_SHOTS = {
           shade: [0, 22, 70],
         },
         mist: { color: [0.23, 0.26, 0.335], amount: 0.8 },
-        gloss: { film: 0.5, gain: 1, cool: 0 },
+        gloss: { film: 0.65, gain: 1, cool: 0 },
         shadow: [12, 30],
         // After the rain water stands on the plain in its low spots (the owner's ask of
         // 2026-10-23, "more reflection on the dirt", B Rain pools; mud-ground.js SLATE_LOOK.pools).
