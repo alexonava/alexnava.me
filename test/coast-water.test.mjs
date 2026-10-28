@@ -367,11 +367,12 @@ test("the joined waterfall's per-stream aeration stays bounded, monotone and con
     for (let bend = -1; bend <= 1; bend += 0.2)
       for (let across = 0; across <= 1; across += 0.1) {
         let previous = 0;
-        for (let v = 0.8; v <= 1.4; v += 0.005) {
+        for (let v = 0.8; v <= 1.6; v += 0.005) {
           const value = white(v, bend, across, smoothstep);
           assert.ok(value >= previous - 1e-12 && value >= 0 && value <= 1);
-          if (v <= 0.835) assert.equal(value, 0, "the joined head remains its river");
-          if (v >= 1.33) assert.equal(value, 1, "the lower current aerates fully");
+          // It whitens a little way down the drop, never at the brink (Alex's pick of 2026-10-28).
+          if (v <= 1.01) assert.equal(value, 0, "the joined head remains its river");
+          if (v >= 1.57) assert.equal(value, 1, "the lower current aerates fully");
           previous = value;
         }
       }

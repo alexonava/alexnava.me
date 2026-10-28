@@ -2811,8 +2811,10 @@ float runFoam=max(rp.z,${glsl(rapids.brink[1])}*crest*(.7+.3*rp.z));
 if(coastStudy>.5)runFoam=rp.z;
 // Adjacent streams aerate at slightly different depths, keeping the head
 // joined while white water gathers gradually into broader current clusters.
-white=smoothstep(.92+.045*bend.x-.04*smoothstep(.2,.5,a),1.26+.065*bend.x,v);
-float headFoam=max(smoothstep(.5,.9,streak)*.4*smoothstep(.835,.87,v),runFoam);
+// It whitens a little way down the drop, never at the brink (Alex's pick of 2026-10-28, D): from
+// above, the river runs on over the edge rather than ending in a white strip.
+white=smoothstep(1.1+.045*bend.x-.04*smoothstep(.2,.5,a),1.5+.065*bend.x,v);
+float headFoam=max(smoothstep(.5,.9,streak)*.4*smoothstep(.835,.87,v),runFoam)*.35;
 if(coastStudy>.5)headFoam=runFoam;
 float foam=mix(headFoam,mix(.03,1.,d),white)*mix(1.,smoothstep(.02,.45,edge),fall);
 // Near the plunge, broken pockets of aerated water interrupt long ribbons
@@ -2865,6 +2867,8 @@ lit=mix(runLight*${glsl(rapids.albedo)}*runDiffuse,lit,white);
 water=mix(water,lit*.12,white);
 if(coastStudy>.5)water=mix(water,lit*.28,white);
 vec3 c=mix(water,lit,foam*(1.-${glsl(SEA.text)}*b));
+// Its sides turn away into shade, so the sheet reads rounded, not cut from paper.
+c*=mix(.4,1.,1.-smoothstep(.55,1.,a));
 ${landMist(lib)}
 gl_FragColor=vec4(c,${SEA_SHARED.layer});
 }`;

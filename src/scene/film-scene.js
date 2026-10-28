@@ -28,6 +28,8 @@ export function createFilmScene({
     settled = null,
     pending = null,
     prelink = null,
+    landed = false,
+    failed = false,
     undo = [];
   const releasePrelink = () => prelink?.then((handle) => handle?.release());
   const originalGeometry = ground.geometry;
@@ -41,6 +43,14 @@ export function createFilmScene({
     },
     get openingState() {
       return settled?.openingState ?? null;
+    },
+    // Whether the film's own ground has landed (its first commit), or will not: until one
+    // is true the tour holds its cut to a ground shot (index.js).
+    get landed() {
+      return landed;
+    },
+    get failed() {
+      return failed;
     },
     // The tree opening's ground maps are final: its shaded program starts linking now
     // (terrain-build.js prelinkSlateGround()), beside the terrain's build.
@@ -107,13 +117,21 @@ export function createFilmScene({
             });
             // Its own link has taken the prelinked program from Three's cache.
             releasePrelink();
-            if (settled) return settled;
+            if (settled) {
+              Promise.resolve(settled.ready).then((ok) => {
+                landed = ok === true;
+                failed ||= ok === false;
+              });
+              return settled;
+            }
             if (active) ground.geometry = terrain;
+            landed = true;
             invalidate();
           })
           .catch(() => {
             terrain?.dispose();
             terrain = settled = null;
+            failed = true;
           }); // Keep the borrowed procedural ground on failure.
         const sunColor = skyMaterial.uniforms.sunColor.value.clone(),
           transparent = skyMaterial.transparent;

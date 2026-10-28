@@ -9,7 +9,18 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { compactShaderSource } from "../tools/shader-compact.mjs";
 import { compilePrograms } from "../src/scene/shader-programs.js";
-import { coastDistance, coastLand, RAPIDS, rapidsGlsl, SEA, SHORE } from "../src/scene/ocean.js";
+import {
+  cliffGeometry,
+  coastDistance,
+  coastGeometrySettings,
+  coastLand,
+  fallsNotch,
+  RAPIDS,
+  rapidsGlsl,
+  riverFalls,
+  SEA,
+  SHORE,
+} from "../src/scene/ocean.js";
 import {
   BoxGeometry,
   BufferGeometry,
@@ -111,6 +122,7 @@ import {
   TREE_SINK,
   TRUNK,
   TUFTS,
+  tuckUnderShelf,
   valleyGap,
   zoneDistance,
 } from "../src/scene/terrain-build.js";
@@ -4316,4 +4328,71 @@ test("a tree opening links the slate's shaded program early on a stand-in it rel
   assert.equal(disposed, 1, "released once");
   rendering.renderer.extensions.has = () => false;
   assert.equal(prelinkSlateGround(ground, rendering), null, "a serial driver links on its draw");
+});
+
+test("the ground settles under the cliff's shelf beside the falls, and its water keeps its height", () => {
+  const terrain = createEarthGeometry(groundBase()),
+    drop = riverFalls(RIVER_LINE),
+    cliff = cliffGeometry(
+      terrain.userData.riverCoastHeight,
+      coastGeometrySettings("high").cliff,
+      190,
+      fallsNotch(drop),
+    );
+  const p = terrain.attributes.position.array,
+    index = terrain.index.array,
+    first = terrain.userData.riverBedIndexCount,
+    capVertices = new Set(index.subarray(first)),
+    bedVertices = new Set(index.subarray(0, first)),
+    before = Float32Array.from(p);
+  const steps = tuckUnderShelf(terrain, cliff);
+  let next;
+  do next = steps.next();
+  while (!next.done);
+  assert.ok(next.value > 0, "the river's banks rose through the shelf beside the falls");
+  // The highest cliff surface over a point, by brute force near the falls' lip.
+  const cp = cliff.attributes.position.array,
+    ci = cliff.index.array,
+    [lx, lz] = drop.lip,
+    near = [];
+  for (let t = 0; t < ci.length; t += 3) {
+    const tri = [ci[t], ci[t + 1], ci[t + 2]].map((v) => [cp[v * 3], cp[v * 3 + 2], cp[v * 3 + 1]]);
+    if (tri.some(([x, z]) => Math.hypot(x - lx, z - lz) < 16)) near.push(tri);
+  }
+  const top = (x, z) => {
+    let best = -Infinity;
+    for (const [a, b, c] of near) {
+      const det = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1]);
+      if (Math.abs(det) < 1e-12) continue;
+      const u = ((b[1] - c[1]) * (x - c[0]) + (c[0] - b[0]) * (z - c[1])) / det,
+        w = ((c[1] - a[1]) * (x - c[0]) + (a[0] - c[0]) * (z - c[1])) / det;
+      if (u >= -1e-6 && w >= -1e-6 && u + w <= 1 + 1e-6)
+        best = Math.max(best, u * a[2] + w * b[2] + (1 - u - w) * c[2]);
+    }
+    return best;
+  };
+  let checked = 0;
+  for (let v = 0; v < p.length / 3; v++) {
+    const x = p[v * 3],
+      z = -p[v * 3 + 1];
+    if (Math.hypot(x - lx, z - lz) > 14) continue;
+    if (capVertices.has(v)) {
+      assert.equal(p[v * 3 + 2], before[v * 3 + 2], "the water's cap is untouched");
+      continue;
+    }
+    const y = top(x, z);
+    if (y === -Infinity || !bedVertices.has(v)) continue;
+    checked++;
+    assert.ok(
+      p[v * 3 + 2] <= y - 0.059,
+      `ground at ${x.toFixed(2)}, ${z.toFixed(2)} clears the shelf`,
+    );
+  }
+  assert.ok(checked > 50, `${checked} bed vertices under the shelf near the falls`);
+  // Away from the coast nothing moves.
+  for (let v = 0; v < p.length / 3; v++)
+    if (coastDistance(p[v * 3], -p[v * 3 + 1]) < -SHORE.shelf - 3)
+      assert.equal(p[v * 3 + 2], before[v * 3 + 2]);
+  terrain.dispose();
+  cliff.dispose();
 });

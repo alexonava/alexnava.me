@@ -381,10 +381,10 @@ test("the walk holds the tour, drives the camera between its cuts, and lands con
   // Content that lands only unseen takes the walk's cuts as the tour's while it holds.
   assert.match(
     index,
-    /const liveView = \{ get running\(\) \{ return walk\?\.holdsTour === true \|\| cameraTour\?\.running === true; \}, get transition\(\) \{ return walk\?\.transition \?\? cameraTour\?\.transition \?\? TOUR_IDLE; \} \};/,
+    /const liveView = \{ get running\(\) \{ return walk\?\.holdsTour === true \|\| cameraTour\?\.running === true; \}, get transition\(\) \{ return walk\?\.transition \?\? cameraTour\?\.transition \?\? TOUR_IDLE; \}, get waiting\(\) \{ return walk\?\.holdsTour !== true && cameraTour\?\.waiting === true; \} \};/,
   );
   assert.match(index, /createHillSilhouette\(\{[^}]*tour: liveView,/);
-  assert.match(index, /held: walk\?\.holdsTour === true \}\)/);
+  assert.match(index, /held: walk\?\.holdsTour === true, cutReady:/);
   assert.match(
     index,
     /rockScatter\.take\(\{ cut: transition\.cut, running: liveView\.running, nowMs \}\)/,
@@ -423,6 +423,26 @@ test("the walk holds the tour, drives the camera between its cuts, and lands con
   assert.match(
     index,
     /reducedMotion = Boolean\(event\?\.matches\); if \(reducedMotion\) walk\?\.exit\(\{ immediate: true \}\);/,
+  );
+});
+
+test("a cut to a tree shot waits for the film's own ground, which may land while the tour waits", () => {
+  // After a Watch opening a slower device built the ground after the cut to Portrait, which
+  // then showed the placeholder ground (Alex's report of 2026-10-28).
+  assert.match(index, /const GROUND_WAIT_S = 20;/);
+  assert.match(
+    index,
+    /const groundPending = filmActive && filmScene\?\.active === true && !filmScene\.landed && !filmScene\.failed && cameraTour\?\.nextShot\?\.subject === "tree";/,
+  );
+  assert.match(index, /cutReady: !groundPending \|\| cameraTour\.waited >= GROUND_WAIT_S \}\)/);
+  const terrain = flat(source("src/scene/terrain-build.js"));
+  assert.match(
+    terrain,
+    /return \(\) => !tour\?\.running \|\| tour\.transition\.cut \|\| tour\.waiting === true \|\| early\(\);/,
+  );
+  assert.match(
+    terrain,
+    /!tour\?\.running \|\| tour\.transition\.cut \|\| tour\.waiting === true \|\| \(parallel && early\(\)\)/,
   );
 });
 
