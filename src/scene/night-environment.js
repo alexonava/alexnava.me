@@ -1,3 +1,4 @@
+import { shaderWaitBudget } from "./shader-programs.js";
 import {
   BackSide,
   HalfFloatType,
@@ -119,7 +120,7 @@ export function createNightEnvironment(
     return new Promise((resolve) => {
       let timer = null;
       let settled = false;
-      const until = performance.now() + prepareTimeoutMs;
+      const budget = shaderWaitBudget(prepareTimeoutMs);
       const finish = (ready = false) => {
         if (settled) return;
         settled = true;
@@ -131,7 +132,10 @@ export function createNightEnvironment(
       waiting.add(cancel);
       const poll = () => {
         try {
-          if (!current(ticket) || performance.now() >= until) return finish(false);
+          if (!current(ticket)) return finish(false);
+          const waiting = budget();
+          if (waiting < 0) return finish(false);
+          if (!waiting) return (timer = setTimeout(poll, 100));
           const gl = renderer.getContext?.();
           if (gl?.getProgramParameter && programs?.some((program) => !program?.program))
             return finish(false);

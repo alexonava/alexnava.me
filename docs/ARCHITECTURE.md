@@ -218,6 +218,8 @@ entering the walk; no physical pixels or camera poses change.
 Shader readiness follows the retained Three program wrappers and their cleared
 handle fields on destruction. It polls asynchronous completion before link status;
 it never calls `gl.isProgram`, whose driver synchronization can stall startup.
+Shader waits pause their queries and visible-time budgets while the document is
+hidden, so a background tab does not retire still-linking GPU resources.
 
 - **Subsystems.** Each scene part registers with a registry ([subsystem.js](../src/scene/subsystem.js)) as an object with optional `applyQuality`, `resize`, `update` and `dispose` hooks; a missing hook is a no-op. Hooks run in `lifecycleOrder`. Disposal runs in reverse registration order, continues past a failing subsystem and rethrows the first error. A throw during initialization disposes what was registered, and nothing registers after disposal.
 - **Borrowed resources.** A subsystem that derives from another's geometry, materials or programs restores the originals before freeing its own: the film terrain over the procedural ground, the lantern mount over the stand-in lantern, and the slate's shader hooks over the materials they extend. Quality changes and failed or stale loads keep a usable fallback.

@@ -21,7 +21,7 @@ import {
 import { markSceneEvaluated, measureScene, sceneNow } from "../src/scene/perf-marks.js";
 import { createSceneRendering } from "../src/scene/rendering.js";
 import { createShaderWarmup } from "../src/scene/runtime.js";
-import { compilePrograms, linkedPrograms } from "../src/scene/shader-programs.js";
+import { compilePrograms, linkedPrograms, shaderWaitBudget } from "../src/scene/shader-programs.js";
 import { createHillSilhouette } from "../src/scene/hill-silhouette.js";
 import { createOpeningPreparation } from "../src/scene/opening-preparation.js";
 
@@ -83,6 +83,50 @@ test("shader admission checks asynchronous completion before link status without
   assert.equal(links, 1);
   assert.equal(linkedPrograms(renderer, [program]), true);
 });
+test("shader timeouts count visible preparation and never query a hidden program", async () => {
+  let now = 0;
+  const document = { hidden: false },
+    budget = shaderWaitBudget(1000, () => now, document);
+  now = 200;
+  assert.equal(budget(), 1);
+  document.hidden = true;
+  assert.equal(budget(), 0);
+  now = 10000;
+  assert.equal(budget(), 0);
+  document.hidden = false;
+  assert.equal(budget(), 1);
+  now += 799;
+  assert.equal(budget(), 1);
+  now++;
+  assert.equal(budget(), -1);
+
+  const previous = globalThis.document;
+  try {
+    globalThis.document = { hidden: true };
+    let queried = 0;
+    const program = {
+      program: {},
+      isReady: () => {
+        queried++;
+        return true;
+      },
+    };
+    const renderer = {
+      compile: () => new Set([{}]),
+      properties: { get: () => ({ currentProgram: program }) },
+    };
+    const pending = compilePrograms(renderer, {}, {}, null, () => true, 5);
+    await linkedPoll();
+    assert.equal(queried, 0, "hidden time neither queries nor expires preparation");
+    globalThis.document.hidden = false;
+    assert.equal(await pending, true);
+    assert.ok(queried > 0);
+  } finally {
+    if (previous === undefined) delete globalThis.document;
+    else globalThis.document = previous;
+  }
+});
+
 const source = (path) => readFile(new URL(`../src/${path}`, import.meta.url), "utf8");
 const materialsOf = (objects) => {
   const materials = new Set();

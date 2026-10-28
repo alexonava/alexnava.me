@@ -22,6 +22,22 @@ export function linkedPrograms(renderer, programs, valid = () => true) {
   );
 }
 
+// Background suspension is not a shader failure. Do not query or retire a
+// still-linking program just because a hidden tab cannot submit GPU work.
+export function shaderWaitBudget(timeoutMs, clock = Date.now, document = globalThis.document) {
+  let remaining = timeoutMs,
+    previous = clock(),
+    visible = document?.hidden !== true;
+  return () => {
+    const now = clock(),
+      shown = document?.hidden !== true;
+    if (visible) remaining -= Math.max(0, now - previous);
+    previous = now;
+    visible = shown;
+    return remaining <= 0 ? -1 : shown ? 1 : 0;
+  };
+}
+
 export function compilePrograms(renderer, objects, camera, targetScene, valid, timeoutMs = 2000) {
   let programs;
   const current = () => valid() && !renderer.getContext?.()?.isContextLost?.();
@@ -41,10 +57,13 @@ export function compilePrograms(renderer, objects, camera, targetScene, valid, t
     return Promise.resolve(false);
   }
   return new Promise((resolve) => {
-    const deadline = Date.now() + timeoutMs;
+    const budget = shaderWaitBudget(timeoutMs);
     (function poll() {
       try {
         if (!current()) return resolve(false);
+        const waiting = budget();
+        if (waiting < 0) return resolve(false);
+        if (!waiting) return setTimeout(poll, 100);
         const gl = renderer.getContext?.();
         if (gl?.getProgramParameter && programs.some((program) => !program?.program))
           return resolve(false);
@@ -56,8 +75,7 @@ export function compilePrograms(renderer, objects, camera, targetScene, valid, t
       } catch {
         return resolve(false);
       }
-      if (Date.now() >= deadline) resolve(false);
-      else setTimeout(poll, 10);
+      setTimeout(poll, 10);
     })();
   });
 }
