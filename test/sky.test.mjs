@@ -1123,7 +1123,7 @@ test("the maelstrom comes now and then, and each shot has it whole or not at all
   const index = flat(source("src/scene/index.js"));
   assert.match(
     index,
-    /if \(cinematic\.shot !== vortexShot\) \{ commitShotSky\(shotSun\);[^}]*?growthRoot\.visible = !filmActive \|\| Boolean\(cinematic\.shot\?\.growth\); vortexHere = vortexSeason && cloudVortexPresent\(skyShell\.material\.uniforms\.uTime\.value\); \} vortexShot = cinematic\.shot;/,
+    /if \(cinematic\.shot !== vortexShot\) \{ commitShotSky\(shotSun\);[^}]*?growthRoot\.visible = !filmActive \|\| Boolean\(cinematic\.shot\?\.growth\); vortexHere = vortexSeason && !state\.profile\.lean && cloudVortexPresent\(skyShell\.material\.uniforms\.uTime\.value\); \} vortexShot = cinematic\.shot;/,
   );
   assert.match(
     index,
@@ -1368,7 +1368,7 @@ test("the maelstrom is spooky October's, with the lightning, by one date the sce
     index,
     /skyShell\.material\.depthWrite = false; skyShell\.material\.uniforms\.uVortex\.value\.z = -1;/,
   );
-  assert.match(index, /vortexHere = vortexSeason && cloudVortexPresent\(/);
+  assert.match(index, /vortexHere = vortexSeason && !state\.profile\.lean && cloudVortexPresent\(/);
   assert.equal(index.match(/vortexHere = (?!false;)/g).length, 1, "no other shot takes it");
   assert.match(index, /createLightning\(\{[^}]*date: sceneDate,? \}\)/);
 });

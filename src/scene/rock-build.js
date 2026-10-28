@@ -195,7 +195,8 @@ export function writeRockContacts(contacts, rocks) {
 const NONE = Object.freeze([]);
 
 // Loads the two stones and builds one InstancedMesh per stone with no
-// instances. Their programs link through compile(); take() then commits the
+// instances. Their programs link through compile(root), theirs alone (a whole-scene link
+// would also catch the ground just before its shaded switch); take() then commits the
 // instances on a tour cut, under the dissolve's kept frame. With textGuard
 // (the ground's text boxes, mud-ground.js createSlateContacts()) the stones
 // take the shot's lamplight knee behind the name and intro (architecture.js
@@ -243,7 +244,7 @@ export function createRocks(
       // Linking needs the meshes visible for this one synchronous traversal.
       root.visible = true;
       try {
-        return compile();
+        return compile(root);
       } finally {
         sync();
       }

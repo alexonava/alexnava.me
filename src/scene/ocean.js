@@ -2439,8 +2439,9 @@ export function rapidsFrame(drop) {
 // the weight; and p+"Rapids"(q, ra, r, t, fp): the surface's slope along +ra
 // and across +q, its white water and its mirror's blur, r river radii from its
 // middle at time t, fp units a pixel. Both the ground and the falls' run take
-// the same copy, so their patterns meet at the shelf's edge.
-export function rapidsGlsl(p, frame, rapids = RAPIDS, coastProfile = null) {
+// the same copy, so their patterns meet at the shelf's edge. The lace's cell loop
+// runs to `loop` (1; the ground's uniform slateLoop, mud-ground.js SLATE_LOOP).
+export function rapidsGlsl(p, frame, rapids = RAPIDS, coastProfile = null, loop = "1") {
   const L = rapidsScale(rapids),
     R = rapids.reach,
     [SA, ST, TA, TQ] = rapids.streak,
@@ -2480,7 +2481,7 @@ float churn=mix(${glsl(rapids.white[0])},${glsl(rapids.white[1])},k*k)+${glsl(ra
 // where its cells fall under a few pixels it gives way to its mean.
 vec2 lc=vec2(q*${glsl(LA)},T*${glsl(LT)});lc+=.35*${p}F(lc*.45+3.,0.).yz*${glsl(1 / FLOW_RMS)};
 vec2 li=floor(lc),lf=fract(lc);float f1=8.,f2=8.;
-for(int j=-1;j<=1;j++)for(int i=-1;i<=1;i++){vec2 c=vec2(float(i),float(j)),o=c+vec2(${p}H(li+c),${p}H(li+c+17.3))*.8+.1-lf;float d=dot(o,o);if(d<f1){f2=f1;f1=d;}else if(d<f2)f2=d;}
+for(int j=-1;j<=${loop};j++)for(int i=-1;i<=${loop};i++){vec2 c=vec2(float(i),float(j)),o=c+vec2(${p}H(li+c),${p}H(li+c+17.3))*.8+.1-lf;float d=dot(o,o);if(d<f1){f2=f1;f1=d;}else if(d<f2)f2=d;}
 float cell=min(${glsl(1 / LA)},sp/${glsl(LT)})/fp,lace=(1.-smoothstep(0.,mix(.08,.3,clamp(churn,0.,1.))+1./max(cell,.5),sqrt(f2)-sqrt(f1)))*smoothstep(.15,.6,churn+.3*${p}F(lc*.4+41.,0.).x);
 // White streaks drawn out along the flow where it churns, whiter toward the brink.
 float streakFoam=mix(.22,smoothstep(.05,.7,s.x),smoothstep(1.5,3.,min(${glsl(1 / SA)},sp/${glsl(ST)})/fp));

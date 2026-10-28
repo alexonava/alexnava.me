@@ -27,7 +27,9 @@ export function createFilmScene({
     terrain = null,
     settled = null,
     pending = null,
+    prelink = null,
     undo = [];
+  const releasePrelink = () => prelink?.then((handle) => handle?.release());
   const originalGeometry = ground.geometry;
   return {
     lifecycleOrder: 18,
@@ -39,6 +41,16 @@ export function createFilmScene({
     },
     get openingState() {
       return settled?.openingState ?? null;
+    },
+    // The tree opening's ground maps are final: its shaded program starts linking now
+    // (terrain-build.js prelinkSlateGround()), beside the terrain's build.
+    prelinkGround() {
+      if (disposed || !active || settled || prelink) return;
+      prelink = loadTerrain()
+        .then(({ prelinkSlateGround }) =>
+          disposed || settled ? null : (prelinkSlateGround?.(ground, rendering) ?? null),
+        )
+        .catch(() => null);
     },
     async prepareOpening(frame) {
       const height = await pending;
@@ -93,6 +105,8 @@ export function createFilmScene({
               originalGeometry,
               active,
             });
+            // Its own link has taken the prelinked program from Three's cache.
+            releasePrelink();
             if (settled) return settled;
             if (active) ground.geometry = terrain;
             invalidate();
@@ -141,6 +155,7 @@ export function createFilmScene({
       if (disposed) return false;
       this.setActive(false);
       disposed = true;
+      releasePrelink();
       terrain?.dispose();
       terrain = null;
       return true;

@@ -116,6 +116,9 @@ const ORBIT_SPEED = 0.06;
 // The lantern's light as the loading line and the opening's doors show it: its radius about the
 // flame in world units, about the half-width of the lantern's glass.
 const LANTERN_GLOW = 0.35;
+// The hidden opening steps down before it shows when even its fastest frame interval is
+// slower than this (25 fps; opening-presentation.js frameMs).
+const OPENING_FRAME_MS = 40;
 
 (() => {
   const site = (window.BabelSite = window.BabelSite || {});
@@ -396,7 +399,9 @@ const LANTERN_GLOW = 0.35;
         new SphereGeometry(WORLD.SKY_DOME_RADIUS, skyWidthSegments, skyHeightSegments),
         createEstateSkyMaterial(skyConfig, groundContacts),
       );
-      skyShell.renderOrder = -1;
+      // Last of the opaque layer, at the far plane (estate-sky.js): the ground, tree and
+      // water cover most of the frame, so the cloud field shades only the open sky.
+      skyShell.renderOrder = 1000;
       skyShell.material.depthWrite = false;
       // Until a shot takes it, and always out of season, the maelstrom's reach stays
       // below 0: none of it (estate-sky.js).
@@ -484,13 +489,13 @@ const LANTERN_GLOW = 0.35;
       setMistLights(WORLD.SUN_DIRECTION, WORLD.SUN_POSITION);
       subsystemRegistry.register({
         applyQuality(profile) {
-          setMistTier(profile?.tier);
+          setMistTier(profile?.lean ? "lean" : profile?.tier);
         },
         update(frame) {
           advanceMist(frame);
         },
       });
-      setMistTier(state.profile?.tier);
+      setMistTier(state.profile?.lean ? "lean" : state.profile?.tier);
       const environmentSystem = createSceneEnvironment({
         groundHeight,
         parent: sceneRoot,
@@ -598,10 +603,11 @@ const LANTERN_GLOW = 0.35;
               surface: GROUND_SURFACE_MATERIAL,
             });
             if (qualityDebug) qualityDebug.groundTreatment = filmActive ? "slate" : "baseline";
+            // The lean path's ground has no close soil (its largest program).
             configureGroundShading(material, filmActive, {
               detail: detailMap,
-              grit: gritMap,
-              relief: reliefMap,
+              grit: state.profile.lean ? null : gritMap,
+              relief: state.profile.lean ? null : reliefMap,
               contacts: groundContacts,
             });
             warmGround?.();
@@ -671,7 +677,7 @@ const LANTERN_GLOW = 0.35;
         terrain: () => filmScene.ready,
         tier: assetTier,
         anisotropy: chooseAnisotropy(6),
-        compile: () => rendering.compileShaders(),
+        compile: (objects) => rendering.compileShaders(2000, objects, objects),
         contacts: groundContacts.slateContacts.value,
         textGuard: groundContacts,
         onStatus: (status) => {
@@ -1252,8 +1258,7 @@ const LANTERN_GLOW = 0.35;
         // Samples are rAF intervals, not render cost; take them only while the
         // revealed scene animates continuously, outside a post-event hold, and
         // not while a step waits for its cut.
-        const revealed =
-          (canvasShown || openingGate.state.stage === "presentation") && cinematic.ready;
+        const revealed = canvasShown && cinematic.ready;
         const nowMs = 1000 * elapsedTime;
         const sampledProfile =
           revealed && !reducedMotion && !shaderWarmup.pending && !adaptiveSteps.pending
@@ -1385,7 +1390,10 @@ const LANTERN_GLOW = 0.35;
             // `growth`: Lantern study), as in the owner's Artistic set (2026-10-27).
             growthRoot ??= homeScene.getObjectByName("estate-ground-growth") ?? null;
             if (growthRoot) growthRoot.visible = !filmActive || Boolean(cinematic.shot?.growth);
-            vortexHere = vortexSeason && cloudVortexPresent(skyShell.material.uniforms.uTime.value);
+            vortexHere =
+              vortexSeason &&
+              !state.profile.lean &&
+              cloudVortexPresent(skyShell.material.uniforms.uTime.value);
           }
           vortexShot = cinematic.shot;
           vortexFit = cinematic.frame;
@@ -1427,8 +1435,9 @@ const LANTERN_GLOW = 0.35;
         // The shot's lens and the film's bars and grain follow the shot on screen;
         // the bars ease out under the dissolve into the walk and back in after it.
         const post = rendering.postprocessPipeline;
+        // The lean path keeps every shot sharp: no lens blur (quality.js).
         post.setLens?.(
-          cinematicApplied ? cinematic.shot?.lens : null,
+          cinematicApplied && !state.profile.lean ? cinematic.shot?.lens : null,
           camera,
           lookTarget,
           cinematicGroundY(lookTarget.x, lookTarget.z),
@@ -1619,8 +1628,15 @@ const LANTERN_GLOW = 0.35;
                 !webglContextAvailable
               )
                 return;
-              if (!ready && renderer.extensions?.has?.("KHR_parallel_shader_compile"))
-                return failToTitle("shaders", "programs-unavailable");
+              // Programs still linking past the budget (a slow driver on a first visit)
+              // keep linking; the next frame waits on them again, inside the opening's
+              // own deadlines, rather than giving the scene up. A failed link does not.
+              if (!ready && renderer.extensions?.has?.("KHR_parallel_shader_compile")) {
+                if (!rendering.programsPending?.())
+                  return failToTitle("shaders", "programs-unavailable");
+                openingShaderStarted = false;
+                return invalidateContent();
+              }
               // WebGL1 without parallel linking prepares through a real hidden
               // draw. It uses the same final materials and camera as reveal.
               if (!ready) {
@@ -1650,8 +1666,24 @@ const LANTERN_GLOW = 0.35;
           const renderStart = sceneNow();
           const drawn = rendering.update();
           if (!canvasShown && drawn !== false) {
-            if (openingPresentation.sample(timestamp, sceneNow() - renderStart))
-              settleOpening("presentation");
+            if (openingPresentation.sample(timestamp, sceneNow() - renderStart)) {
+              // Frames slower than OPENING_FRAME_MS step the resolution (or tier) down while
+              // the paper still covers them, and the opening measures again; at the floor
+              // the scene opens as it draws.
+              const step =
+                openingPresentation.frameMs > OPENING_FRAME_MS
+                  ? qualityState.stepDown?.({ nowMs: 1000 * elapsedTime, profile: state.profile })
+                  : null;
+              if (qualityDebug)
+                (qualityDebug.openingSteps ??= []).push({
+                  gaps: openingPresentation.gaps?.map(Math.round),
+                  step: step ? `${step.tier}@${step.dprCap ?? "-"}` : null,
+                });
+              if (step) {
+                applyActiveQualityProfile(step, "opening");
+                openingPresentation.reset();
+              } else settleOpening("presentation");
+            }
             if (openingPresentation.failed) failToTitle("opening", "draw-unavailable");
           }
           if (!firstFrameDrawn && drawn !== false) {

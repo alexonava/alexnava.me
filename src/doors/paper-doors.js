@@ -69,6 +69,8 @@ const PAPER = Object.freeze({
 // pace (24 cost the lantern opening about 4% of its time to the reveal), enough for a
 // flicker no quicker than candle() (below).
 const FLICKER_FPS = 15;
+// The loading star's redraws come at most this often (light()).
+const LIGHT_MS = 250;
 // The opening, on the stylesheet's timing (styles.css .scene-doors): its length, how far
 // each half travels (window widths), its outward turn (degrees), its lift toward the camera
 // (px), the bend's gain on its acceleration, and how far the focus pulls past the paper
@@ -488,6 +490,8 @@ export async function createPaperDoors(
   let star = null;
   let warm = 0;
   let pending = 0;
+  let lightTimer = null;
+  let lastLight = 0;
   let opening = null;
   let lost = false;
   let disposed = false;
@@ -602,6 +606,8 @@ export async function createPaperDoors(
   return {
     // The star's (or a lantern opening's flame's) place and warmth from the loading line
     // (ui/scene-doors.js light()).
+    // It redraws at most every LIGHT_MS for it: the scene reports the star on each of its
+    // hidden opening frames, which must not share the GPU with a redraw of the paper.
     light(next) {
       const valid =
         next?.star && [next.star.x, next.star.y, next.star.radius].every(Number.isFinite);
@@ -609,7 +615,13 @@ export async function createPaperDoors(
         ? { x: next.star.x, y: next.star.y, radius: next.star.radius, kind: next.star.kind }
         : null;
       warm = valid ? Math.min(1, Math.max(0, Number(next.warm) || 0)) : 0;
-      schedule();
+      if (lightTimer) return;
+      const wait = Math.max(0, lastLight + LIGHT_MS - Date.now());
+      lightTimer = setTimeout(() => {
+        lightTimer = null;
+        lastLight = Date.now();
+        schedule();
+      }, wait);
     },
     resize(next, nextRatio) {
       resize(next, nextRatio);
@@ -661,6 +673,7 @@ export async function createPaperDoors(
     },
     dispose() {
       disposed = true;
+      clearTimeout(lightTimer);
       if (pending) cancel(pending);
       if (flickering) cancel(flickering);
       canvas.removeEventListener?.("webglcontextlost", onLostContext);

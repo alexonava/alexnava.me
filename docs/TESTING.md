@@ -164,8 +164,8 @@ Enforced budgets and windows:
 
 | Limit                                                                                              | Held by                                                               |
 | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| UI bundle under 34 KiB                                                                             | bundle-output                                                         |
-| Scene entry and its static chunks under 838 KiB                                                    | bundle-output                                                         |
+| UI bundle under 36 KiB                                                                             | bundle-output                                                         |
+| Scene entry and its static chunks under 844 KiB                                                    | bundle-output                                                         |
 | Cliff and stack meshes together at most 45,000 triangles on high and 25,000 on balanced            | coast-geometry                                                        |
 | The walk's lazy chunk under 16 KiB                                                                 | bundle-output                                                         |
 | Complete scene within 7.25 MiB (high) and 3.5 MiB (balanced); each model within the loader's limit | bundle-output, `ARCHITECTURE_ASSET_BUDGETS` in architecture-assets.js |
@@ -214,13 +214,19 @@ The selected coast-camera regression data in `test/support/preferred-coast-signa
 
 ### Opening presentation regressions
 
-[opening-presentation](../test/opening-presentation.test.mjs) checks fresh real-draw admission,
-stable 30 Hz, upload stalls, invalid timing, nonblocking GPU completion, context loss and
-owned-fence disposal. [opening-integration](../test/opening-integration.test.mjs) executes the
-bootstrap's actual draw and reveal blocks, including a real presentation window after final
-shader preparation. [scene-doors](../test/scene-doors.test.mjs) checks that early input and the
-old ten-second deadline cannot expose unfinished work, hidden reveal waits, and borrowed
-focus eligibility is restored on success and fallback. These CPU tests do not establish
+[opening-presentation](../test/opening-presentation.test.mjs) checks admission on the first
+real draws whatever their pace, the fastest interval as the profile's measure (a stall or a
+skipped frame never reads as a slow GPU), invalid timing, nonblocking GPU completion, context
+loss and owned-fence disposal. [opening-integration](../test/opening-integration.test.mjs)
+executes the bootstrap's actual draw and reveal blocks, including the reveal on the first
+presented frames after final shader preparation and the hidden step down from slow ones.
+[scene-doors](../test/scene-doors.test.mjs) checks that a tap, a key or keyboard focus parts held
+doors at once (a modifier alone, a shortcut or focus returning to the page does not), the 10 s
+visible-time cap, hidden reveal waits, and that borrowed focus eligibility is restored.
+[scene-quality](../test/scene-quality.test.mjs) and [webgl-probe](../test/webgl-probe.test.mjs)
+check the lean path from the GPU's class and the pixel budgets;
+[terrain-build](../test/terrain-build.test.mjs) the ground's early link and its loops' uniform
+bound. These CPU tests do not establish
 native frame rate or physical iPhone/Android behavior.
 
 The sky regressions cover delayed background scheduling, startup-tier pinning, upcoming-shot

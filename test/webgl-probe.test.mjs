@@ -185,3 +185,61 @@ test("the worker entry probes OffscreenCanvas with the same software and cleanup
   assert.equal(result.softwareRenderer, true);
   assert.equal(result.maxTextureSize, 8192);
 });
+
+test("the probe classes the GPU from its renderer string, so a laptop takes the lean path", () => {
+  const classOf = (renderer) => {
+    let result;
+    const worker = {
+      WebGLRenderingContext() {},
+      OffscreenCanvas: class OffscreenCanvas {
+        getContext() {
+          return {
+            MAX_TEXTURE_SIZE: 1,
+            RENDERER: 2,
+            getParameter: (key) => (key === 1 ? 8192 : renderer),
+            getExtension: (name) => (name === "WEBGL_lose_context" ? { loseContext() {} } : null),
+          };
+        }
+      },
+      postMessage(value) {
+        result = value;
+      },
+    };
+    const context = vm.createContext(worker);
+    vm.runInContext(source, context);
+    vm.runInContext(workerSource.replace(/^import[^\n]+\n/m, ""), context);
+    return result.gpuClass;
+  };
+  for (const renderer of [
+    "ANGLE (Intel, Intel(R) UHD Graphics 620 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "ANGLE (AMD, AMD Radeon(TM) Graphics (0x000013C0) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "ANGLE (AMD, AMD Radeon 780M Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "ANGLE (Qualcomm, Adreno (TM) 690 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "Apple M1",
+    "ANGLE (NVIDIA, NVIDIA GeForce MX450 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+  ])
+    assert.equal(classOf(renderer), "integrated", renderer);
+  for (const renderer of [
+    "ANGLE (NVIDIA, NVIDIA GeForce RTX 5070 Ti (0x00002C05) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "ANGLE (AMD, AMD Radeon RX 7800 XT Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "ANGLE (Intel, Intel(R) Arc(TM) A770 Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "Apple M3 Max",
+  ])
+    assert.equal(classOf(renderer), "discrete", renderer);
+  assert.equal(classOf(""), "unknown", "a hidden renderer string decides nothing");
+});
+
+test("a worker's GPU class passes through only as a known value", async () => {
+  for (const [sent, kept] of [
+    ["integrated", "integrated"],
+    ["discrete", "discrete"],
+    ["laptop", "unknown"],
+    [undefined, "unknown"],
+  ]) {
+    const h = harness();
+    const prepared = h.shared.prepareWebGLCapabilities();
+    h.created[0].onmessage({ data: { ...capabilities, gpuClass: sent } });
+    assert.equal((await prepared).gpuClass, kept, String(sent));
+  }
+});

@@ -1158,7 +1158,17 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
           if (!ready || !valid()) return false;
           return prepareTarget(screen, null);
         })
-        .catch(() => false);
+        .catch(() => false)
+        .then((ready) => {
+          // A link still running past its poll is asked about again, never remembered
+          // as failed: the opening retries its warm-up (scene/index.js). A failed one
+          // stays coalesced until context recovery.
+          const linking = renderer.info?.programs?.some(
+            (program) => program?.isReady?.() === false,
+          );
+          if (!ready && linking && valid()) compilePromise = null;
+          return ready;
+        });
       return compilePromise;
     },
     cancelTransition,

@@ -77,7 +77,7 @@ test("a watch or tree that cannot commit fails to the title card once the camera
   assert.match(index, /if \(committed\) warmShaders\("lantern"\);/);
 });
 
-test("models and maps keep the startup tier, and quality samples only completed presentation or revealed frames", () => {
+test("models and maps keep the startup tier, and quality samples only revealed frames (the opening measures its own)", () => {
   assert.match(index, /const assetTier = qualityState\.initialTier;/);
   assert.match(index, /architectureAssets\.setQuality\(state\.profile, true, \{ assetTier \}\);/);
   assert.match(
@@ -88,10 +88,7 @@ test("models and maps keep the startup tier, and quality samples only completed 
     flat(source("src/scene/textures.js")),
     /applyQuality\(profile, context\) \{ filmMaps\.applyQuality\(profile, context\); \}/,
   );
-  assert.match(
-    index,
-    /const revealed = \(canvasShown \|\| openingGate\.state\.stage === "presentation"\) && cinematic\.ready;/,
-  );
+  assert.match(index, /const revealed = canvasShown && cinematic\.ready;/);
   assert.match(
     index,
     /revealed && !reducedMotion && !shaderWarmup\.pending && !adaptiveSteps\.pending \? qualityState\.sampleRevealed\?\.\(/,
@@ -278,7 +275,7 @@ test("the ground shading has one call site, which takes the tint and shading fro
   assert.equal((index.match(/configureGroundShading\(/g) || []).length, 1);
   assert.match(
     index,
-    /const surface = filmGroundSurface\(\{ film: filmActive, surface: GROUND_SURFACE_MATERIAL \}\);[^]*?configureGroundShading\(material, filmActive, \{\s*detail: detailMap,\s*grit: gritMap,\s*relief: reliefMap,\s*contacts: groundContacts,?\s*\}\);[^]*?material\.roughness = surface\.roughness; material\.metalness = surface\.metalness; material\.color\.setHex\(surface\.color\);/,
+    /const surface = filmGroundSurface\(\{ film: filmActive, surface: GROUND_SURFACE_MATERIAL \}\);[^]*?configureGroundShading\(material, filmActive, \{\s*detail: detailMap,\s*grit: state\.profile\.lean \? null : gritMap,\s*relief: state\.profile\.lean \? null : reliefMap,\s*contacts: groundContacts,?\s*\}\);[^]*?material\.roughness = surface\.roughness; material\.metalness = surface\.metalness; material\.color\.setHex\(surface\.color\);/,
   );
 });
 

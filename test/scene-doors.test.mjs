@@ -260,36 +260,60 @@ test("a prepared reveal waits only for the canvas fade, and never opens while hi
   );
 });
 
-test("early input and the former ten-second cap cannot uncover an unfinished scene", () => {
-  const h = createHarness();
-  h.touch();
-  h.fire("keydown", { type: "keydown", key: "Tab" });
-  h.fire("focusin", { type: "focusin", target: { tag: "a" } });
-  h.sceneDoors.open("input");
-  h.advance(12000);
-  assert.equal(h.sceneDoors.state, "held");
-  assert.equal(h.sceneDoors.closed, true);
-  assert.ok(h.content.every((node) => node.inert));
-  h.sceneDoors.open("static");
-  assert.match(h.classes, /\bis-open\b/);
-  assert.deepEqual(
-    h.content.map((node) => node.inert),
-    [false, true, false],
-  );
+test("a tap on the paper, a key or keyboard focus parts held doors at once", () => {
+  for (const [what, act] of [
+    ["tap", (h) => h.touch()],
+    ["key", (h) => h.fire("keydown", { type: "keydown", key: "Tab" })],
+    ["focus", (h) => h.fire("focusin", { type: "focusin", target: { tag: "a" } })],
+  ]) {
+    const h = createHarness();
+    act(h);
+    assert.match(h.classes, /\bis-open\b/, what);
+    assert.equal(h.sceneDoors.state, "open", what);
+    for (const type of ["doors:click", "keydown", "focusin"]) {
+      assert.equal(h.listening(type), false, `${what}: the ${type} listener is released`);
+    }
+    h.advance(2300);
+    assert.equal(h.doors.hidden, true, what);
+  }
 });
 
-test("the last-resort cap excludes hidden time and falls back after the scene's deadline", () => {
+test("a modifier alone, a browser shortcut or focus coming back to the page keeps them shut", () => {
   const h = createHarness();
-  h.advance(12000);
+  h.fire("keydown", { type: "keydown", key: "Shift" });
+  h.fire("keydown", { type: "keydown", key: "Meta" });
+  h.fire("keydown", { type: "keydown", key: "r", ctrlKey: true });
+  h.fire("keydown", { type: "keydown", key: "Tab", altKey: true });
+  h.fire("focusin", { type: "focusin", target: h.body });
+  assert.doesNotMatch(h.classes, /\bis-open\b/);
+  assert.equal(h.sceneDoors.state, "held");
+});
+
+test("the cap opens held doors after 10s of visible time; hidden time pauses it", () => {
+  const h = createHarness();
+  h.advance(4000);
   h.setHidden(true);
+  assert.match(h.classes, /\bis-paused\b/);
   h.advance(30000);
   assert.doesNotMatch(h.classes, /\bis-open\b/);
   h.setHidden(false);
-  h.advance(21000);
+  assert.doesNotMatch(h.classes, /\bis-paused\b/);
+  h.advance(5750);
   assert.doesNotMatch(h.classes, /\bis-open\b/);
-  h.advance(1250);
+  h.advance(500);
   assert.match(h.classes, /\bis-open\b/);
-  assert.equal(h.sceneDoors.closed, false);
+});
+
+test("the cap reads the stylesheet's own clock, so it always comes before the backstop", () => {
+  const h = createHarness();
+  // The page was hidden for most of the load: the script's own count would be far
+  // behind, but the stylesheet's clock (paused while hidden) says 9.8s of visible time.
+  h.setClock(9800);
+  h.advance(250);
+  assert.doesNotMatch(h.classes, /\bis-open\b/);
+  h.setClock(10050);
+  h.advance(250);
+  assert.match(h.classes, /\bis-open\b/);
 });
 
 test("a backstop already under way finishes as it is, and the drawing gives way to it", () => {

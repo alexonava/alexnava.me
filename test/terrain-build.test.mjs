@@ -78,6 +78,7 @@ import {
   POOL_FIELD,
   poolField,
   PUDDLE_MIRROR,
+  prelinkSlateGround,
   PUDDLE_ZONES,
   reliefNoise,
   ROOT_COVER,
@@ -128,6 +129,7 @@ import { ESTATE, estateLantern, estatePoint } from "../src/scene/estate-layout.j
 import {
   configureGroundShading,
   DOOR_HEIGHT,
+  SLATE_LOOP,
   SLATE_PUDDLES,
   SLATE_STREAMS,
   riverLine,
@@ -3469,8 +3471,11 @@ test("the rapids quicken the river's last stretch toward the falls: streaks, sta
   material.onBeforeCompile(shader);
   assert.equal(shadeSlatePuddles(shader), true);
   const fragment = shader.fragmentShader;
-  // The rapids' own copy (ocean.js rapidsGlsl()), the falls' run takes the same.
-  assert.ok(fragment.includes(rapidsGlsl("slateRp", RAPIDS_AT, RAPIDS, "slateCoastStudy")));
+  // The rapids' own copy (ocean.js rapidsGlsl()), the falls' run takes the same; the
+  // ground's lace loops to its uniform bound (mud-ground.js SLATE_LOOP).
+  assert.ok(
+    fragment.includes(rapidsGlsl("slateRp", RAPIDS_AT, RAPIDS, "slateCoastStudy", "slateLoop")),
+  );
   // Their froth joins the stream's before the froth's roughness and the mirror give way to it.
   const call = fragment.indexOf(
       "slateRpP = slateRpRapids(slateRpU.y, slateRpA, slateRpR, slateFlow, slateRpFP)",
@@ -4248,4 +4253,67 @@ test("the lantern on moving water is a column of glints off the ripples, its mir
   assert.ok(along / across < 1.6 && LANTERN_GLINT.slope > 0.03 && LANTERN_GLINT.slope < 0.15);
   assert.ok(LANTERN_GLINT.size > 0.05 && LANTERN_GLINT.size < 0.5);
   material.dispose();
+});
+
+test("the ground's math-only loops run to a uniform bound of 1, so FXC keeps them as loops", () => {
+  const shader = PHYSICAL(),
+    material = new MeshStandardMaterial(),
+    map = { isTexture: true };
+  configureGroundShading(material, true, { detail: map, grit: map, relief: map });
+  material.onBeforeCompile(shader);
+  shadeSlateGround(shader);
+  const fragment = shader.fragmentShader;
+  assert.equal(shader.uniforms.slateLoop, SLATE_LOOP.slateLoop);
+  assert.equal(SLATE_LOOP.slateLoop.value, 1);
+  assert.equal(count(fragment, "uniform int slateLoop;"), 1);
+  assert.match(fragment, /for\(int r=0;r<\d+\*slateLoop;r\+\+\)/, "the river's runs");
+  // The crumbs', the stream's and the rapids' lace cells: none left at a constant bound.
+  assert.equal(count(fragment, "j <= slateLoop; j++) for (int i = -1; i <= slateLoop;"), 2);
+  assert.equal(count(fragment, "j<=slateLoop;j++)for(int i=-1;i<=slateLoop;"), 1);
+  assert.doesNotMatch(fragment, /for ?\(int j ?= ?-1; ?j ?<= ?1; ?j\+\+\)/);
+});
+
+test("a tree opening links the slate's shaded program early on a stand-in it releases", () => {
+  const material = new MeshStandardMaterial(),
+    ground = new Mesh(new BoxGeometry(), material),
+    compiled = [],
+    targets = [];
+  let disposed = 0;
+  const rendering = {
+    renderer: {
+      compile() {},
+      extensions: { has: (name) => name === "KHR_parallel_shader_compile" },
+      getContext: () => ({ isContextLost: () => false }),
+      getRenderTarget: () => "canvas",
+      setRenderTarget: (target) => targets.push(target),
+    },
+    composer: { readBuffer: "scene target" },
+    camera: new PerspectiveCamera(),
+    homeScene: new Group(),
+    compilePrograms(renderer, object, camera, scene, valid) {
+      compiled.push({ key: object.material.customProgramCacheKey(), valid: valid() });
+      object.material.addEventListener("dispose", () => disposed++);
+      return Promise.resolve(true);
+    },
+  };
+  assert.equal(prelinkSlateGround(ground, rendering), null, "a ground without the slate");
+  configureGroundShading(material, true, { detail: { isTexture: true } });
+  const handle = prelinkSlateGround(ground, rendering);
+  assert.deepEqual(compiled, [{ key: "moonlit-slate-v3+root", valid: true }]);
+  assert.deepEqual(targets, ["scene target", "canvas"], "against the scene pass's target");
+  assert.equal(material.userData.slateRoot, undefined, "the ground itself is untouched");
+  // The stand-in builds the same source as the ground will once its shading lands.
+  const stand = PHYSICAL(),
+    landed = PHYSICAL();
+  material.userData.slateRoot = shadeSlateGround;
+  material.onBeforeCompile(landed);
+  delete material.userData.slateRoot;
+  material.onBeforeCompile(stand);
+  shadeSlateGround(stand);
+  assert.equal(stand.fragmentShader, landed.fragmentShader);
+  handle.release();
+  handle.release();
+  assert.equal(disposed, 1, "released once");
+  rendering.renderer.extensions.has = () => false;
+  assert.equal(prelinkSlateGround(ground, rendering), null, "a serial driver links on its draw");
 });

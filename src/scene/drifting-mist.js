@@ -151,10 +151,11 @@ export function setMistLights(moon, star) {
 }
 
 // The march per tier: high and balanced; none below.
+// The lean path (quality.js) marches one step of one octave: the drift still moves.
 export function setMistTier(tier) {
   const f = MIST_UNIFORMS.mistFrame.value,
-    k = tier === "balanced" ? 1 : 0;
-  f.y = tier === "low" ? 0 : M.steps[k];
+    k = tier === "high" ? 0 : 1;
+  f.y = tier === "low" ? 0 : tier === "lean" ? 1 : M.steps[k];
   f.z = M.octaves[k];
 }
 
