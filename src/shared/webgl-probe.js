@@ -21,6 +21,17 @@
 
   const SOFTWARE_RENDERER_PATTERN =
     /swiftshader|llvmpipe|software (?:rasterizer|renderer)|microsoft basic render driver/i;
+  // GPUs built into the processor, by their renderer string: Intel's UHD, HD and Iris
+  // (not Arc), AMD's "Radeon(TM) Graphics", Vega and 7xxM/8xxM parts, Qualcomm's Adreno,
+  // Arm's Mali and Apple's base M-series chips, with NVIDIA's entry MX parts, which are no
+  // faster. Their pixel throughput is a fraction of a full discrete card's, so the scene
+  // takes its lean path on them (quality.js).
+  const INTEGRATED_GPU_PATTERN =
+    /\bintel\b.*\b(?:uhd|hd graphics|iris)\b|radeon(?:\(tm\))?\s+(?:graphics|vega|\d{3}m\b)|\badreno\b|\bmali\b|\bapple (?:gpu|m\d+)(?! (?:pro|max|ultra))|\bgeforce mx\d/i;
+  function gpuClassOf(renderer) {
+    if (!renderer) return "unknown";
+    return INTEGRATED_GPU_PATTERN.test(renderer) ? "integrated" : "discrete";
+  }
   let cachedCapabilities = null;
   let preparation = null;
 
@@ -110,9 +121,11 @@
         return cachedCapabilities;
       }
 
+      const renderer = readRenderer(gl);
       cachedCapabilities = Object.freeze({
         available: true,
-        softwareRenderer: SOFTWARE_RENDERER_PATTERN.test(readRenderer(gl)),
+        softwareRenderer: SOFTWARE_RENDERER_PATTERN.test(renderer),
+        gpuClass: gpuClassOf(renderer),
         ...readTextureLimits(gl),
       });
       return cachedCapabilities;
@@ -160,6 +173,9 @@
           cachedCapabilities = Object.freeze({
             available: true,
             softwareRenderer: capabilities.softwareRenderer,
+            gpuClass: ["integrated", "discrete"].includes(capabilities.gpuClass)
+              ? capabilities.gpuClass
+              : "unknown",
             maxTextureSize: capabilities.maxTextureSize,
             maxAnisotropy: Math.round(capabilities.maxAnisotropy),
           });

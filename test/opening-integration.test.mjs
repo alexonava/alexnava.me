@@ -7,6 +7,7 @@ import { createCameraTour } from "../src/scene/camera-tour.js";
 import { DIRECTED_SHOTS } from "../src/scene/directed-shots.js";
 import {
   createOpeningPresentation,
+  OPENING_FRAMES,
   prepareOpeningResources,
 } from "../src/scene/opening-presentation.js";
 import { createOpeningPreparation } from "../src/scene/opening-preparation.js";
@@ -133,6 +134,7 @@ function harness({
       },
     },
     qualityDebug: {},
+    OPENING_FRAME_MS: 40,
     // A fitted camera has already loaded this shared helper; keep its import
     // resolved while the resource owners below remain independently async.
     loadPreparationTasks: () => ({
@@ -309,33 +311,54 @@ test("the scene requires the UI's actual shared opening factory before initializ
   assert.ok(source.indexOf(bridge) < source.indexOf("if (!container || !supportsWebGL())"));
 });
 
-test("the actual bootstrap waits for rendered presentation after every shader has settled", async () => {
+test("the actual bootstrap reveals on its first presented frames once every shader has settled", async () => {
   const h = harness({ realPresentation: true });
+  h.owner.step();
+  await h.prepare();
+  h.owner.step();
+  assert.equal(h.owner.state.canvasShown, false, "no draw before the final shaders");
+  await h.warm();
+  h.owner.step();
+  assert.equal(h.owner.state.canvasShown, false);
+  assert.equal(h.owner.state.gate.stage, "presentation");
+  // As soon as it can draw (the owner's call of 2026-10-27): a long frame among them
+  // neither restarts the window nor holds the reveal.
+  for (let n = 2; n < OPENING_FRAMES; n++) {
+    h.env.elapsedTime += n === 2 ? 0.2 : 1 / 60;
+    h.owner.step();
+    assert.equal(h.owner.state.canvasShown, false);
+  }
+  h.env.elapsedTime += 1 / 60;
+  h.owner.step();
+  assert.equal(h.owner.state.canvasShown, true);
+  assert.deepEqual(h.marks, ["reveal"]);
+  h.owner.dispose();
+});
+
+test("slow hidden opening frames step the quality down before the reveal, then it opens as it draws", async () => {
+  const h = harness({ realPresentation: true });
+  const applied = [];
+  let available = 1;
+  h.env.qualityState.stepDown = ({ profile }) =>
+    available-- > 0 ? { ...profile, tier: "balanced" } : null;
+  h.env.applyActiveQualityProfile = (profile, reason) => applied.push([profile.tier, reason]);
   h.owner.step();
   await h.prepare();
   h.owner.step();
   await h.warm();
   h.owner.step();
+  for (let n = 1; n < OPENING_FRAMES; n++) {
+    h.env.elapsedTime += 1 / 15;
+    h.owner.step();
+  }
+  assert.deepEqual(applied, [["balanced", "opening"]], "one step, still hidden");
   assert.equal(h.owner.state.canvasShown, false);
-  assert.equal(h.owner.state.gate.stage, "presentation");
-  for (let n = 1; n <= 8; n++) {
-    h.env.elapsedTime = n / 60;
+  for (let n = 0; n < OPENING_FRAMES; n++) {
+    h.env.elapsedTime += 1 / 15;
     h.owner.step();
   }
-  assert.equal(h.owner.state.canvasShown, false);
-  h.env.elapsedTime += 0.2;
-  h.owner.step();
-  for (let n = 0; n < 12; n++) {
-    h.env.elapsedTime += 1 / 60;
-    h.owner.step();
-  }
-  assert.equal(h.owner.state.canvasShown, false, "a long frame restarts the window");
-  for (let n = 0; n < 9; n++) {
-    h.env.elapsedTime += 1 / 60;
-    h.owner.step();
-  }
-  assert.equal(h.owner.state.canvasShown, true);
-  assert.deepEqual(h.marks, ["reveal"]);
+  assert.equal(h.owner.state.canvasShown, true, "at the floor it opens as it draws");
+  assert.deepEqual(applied, [["balanced", "opening"]]);
   h.owner.dispose();
 });
 

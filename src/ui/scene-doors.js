@@ -4,10 +4,14 @@
 // the loading line under them, before the page knows whether the live scene will load, and
 // the stylesheet alone opens them after 4s, so a page whose scripts never run is never left
 // behind them. Evaluated early (app.js runs this before main.js), the script holds them:
-// the stylesheet's last-resort backstop moves beyond the functional loading deadline.
-// Only the scene's prepared reveal or a settled static fallback parts them. Early input
-// cannot bypass preparation; concealed content is temporarily inert. Once open they
-// leave the page (hidden) after their opening.
+// the stylesheet's own opening moves out to an 11s backstop and pauses while the tab is
+// hidden, and the script opens them after 10s of visible time at the latest. They part at
+// the scene's reveal (which comes as soon as it draws, scene/opening-presentation.js), on
+// every static path, when the loading line retires, and at once on a tap on the paper, a
+// key or keyboard focus (the owner's call of 2026-10-27), so nothing the visitor reaches for
+// waits under it: a scene still preparing then fades in over the title card. Concealed
+// content is inert while they are closed. Once open they leave the page (hidden) after
+// their opening.
 //
 // On the live path the loading line's begin() upgrades them: the paper doors' own script
 // (src/doors-entry.js) draws the sheets as real paper over the stylesheet's, in a worker
@@ -21,15 +25,26 @@
   // a margin: past it the stylesheet is already opening them. Held, its backstop
   // (.scene-doors.is-held), after the script's own cap.
   const FAILSAFE_MS = 4000 - 150;
-  const BACKSTOP_MS = 35000;
-  const CAP_MS = 34000;
+  const BACKSTOP_MS = 11000;
+  const CAP_MS = 10000;
   const TICK_MS = 250;
   // Longer than the slowest opening.
   const LEAVE_MS = 2300;
-  // The scene has already demonstrated even rendered frames before reveal.
-  // Wait only for its CSS opacity fade; hidden time cannot uncover the page.
+  // The scene reveals on its first drawn frames (scene/opening-presentation.js): the
+  // doors wait only for its CSS opacity fade; hidden time cannot uncover the page.
   const FADE_MS = 480;
   const GLOW = Object.freeze({ radii: 7, min: 64 });
+  // Keys that only modify another: pressed alone, they leave the doors closed.
+  const MODIFIER_KEYS = new Set([
+    "Shift",
+    "Control",
+    "Alt",
+    "AltGraph",
+    "Meta",
+    "CapsLock",
+    "Fn",
+    "OS",
+  ]);
   const DOORS_URL = typeof __BABEL_DOORS_URL__ !== "undefined" ? __BABEL_DOORS_URL__ : "";
 
   let doors = null;
@@ -95,7 +110,7 @@
 
   const open = safe((reason) => {
     if (!["held", "settling"].includes(state)) return;
-    if (!["revealed", "static", "stalled"].includes(reason)) return;
+    if (!["revealed", "static", "stalled", "cap", "input"].includes(reason)) return;
     if (reason !== "revealed") return part();
     if (state === "settling") return;
     state = "settling";
@@ -195,18 +210,30 @@
       const at = now();
       if (!document.hidden) visible += at - last;
       last = at;
-      if ((clock() ?? visible) >= CAP_MS) {
-        // Functional preparation normally settles by 30s. This independent
-        // escape also retires a stranded renderer before uncovering the title.
-        const host = document.getElementById("home-scene");
-        site.scene?.disposeHomeSceneRuntime?.();
-        if (host) host.hidden = true;
-        site.sceneLoader?.end?.("static");
-        open("static");
-      }
+      // The scene keeps preparing under the title card; its own deadlines retire it.
+      if ((clock() ?? visible) >= CAP_MS) open("cap");
     }, TICK_MS);
     document.addEventListener("visibilitychange", onVisibility);
     onVisibility();
+
+    // Nothing waits under the paper: a tap on it (held doors take the pointer, styles.css),
+    // a key or keyboard focus parts them at once. A modifier alone or a browser shortcut
+    // does not, nor focus returning to the page itself. The tap is the click itself, which
+    // lands on the paper: parted on the press, a touch's click would be aimed afresh at the
+    // control under it.
+    const onInput = (event) => {
+      if (event?.type === "keydown") {
+        if (event.ctrlKey || event.metaKey || event.altKey || MODIFIER_KEYS.has(event.key)) return;
+      }
+      if (event?.type === "focusin") {
+        const target = event.target;
+        if (!target || target === document.body || target === document.documentElement) return;
+      }
+      open("input");
+    };
+    doors.addEventListener("click", onInput);
+    document.addEventListener("keydown", onInput, true);
+    document.addEventListener("focusin", onInput, true);
 
     const content = Array.from(document.querySelectorAll?.(".skip-link, main, footer") ?? []);
     const borrowed = content.map((element) => [element, element.inert]);
@@ -214,6 +241,9 @@
     cleanups.push(
       () => window.clearInterval(tick),
       () => document.removeEventListener("visibilitychange", onVisibility),
+      () => doors.removeEventListener("click", onInput),
+      () => document.removeEventListener("keydown", onInput, true),
+      () => document.removeEventListener("focusin", onInput, true),
       () => borrowed.forEach(([element, inert]) => (element.inert = inert)),
     );
   }

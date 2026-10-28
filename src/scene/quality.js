@@ -161,6 +161,16 @@
     },
   };
 
+  // The lean path (an integrated GPU on a desktop or laptop, the owner's call of 2026-10-27:
+  // "colour and motion before quality"): balanced's materials at DPR 1 with its own cuts
+  // (profile.lean, read by the scene's owners), at most LEAN_PIXELS drawn pixels, and
+  // resolution steps down to LEAN_STEPS' last. High draws at most HIGH_PIXELS, so a 4K
+  // monitor never shades eight million multisampled pixels.
+  const LEAN_PIXELS = 2.1e6;
+  const HIGH_PIXELS = 3.7e6;
+  const LEAN_STEPS = Object.freeze([0.85, 0.7, 0.6]);
+  const STEPS = Object.freeze([1, 0.85]);
+
   function normalizeTier(value, fallback = null) {
     if (typeof value !== "string") return fallback;
     const normalized = value.toLowerCase().trim();
@@ -171,12 +181,15 @@
   // The scene never renders the low tier: main.js and the scene keep the
   // static title card there, and a revealed scene's low step only lowers the
   // pixel ratio (createSceneQualityState). A low request reads balanced.
-  function cloneProfile(tier) {
+  function cloneProfile(tier, lean = false) {
     const name = tier === "low" ? "balanced" : tier;
     const profile = SCENE_QUALITY_PROFILES[name] || SCENE_QUALITY_PROFILES.high;
+    const isLean = lean && name === "balanced";
     return {
       tier: name,
-      dprCap: profile.dprCap,
+      lean: isLean,
+      dprCap: isLean ? 1 : profile.dprCap,
+      pixelBudget: isLean ? LEAN_PIXELS : name === "high" ? HIGH_PIXELS : 0,
       anisotropy: { ...profile.anisotropy },
       textures: { ...profile.textures },
       geometry: { ...profile.geometry },
@@ -269,6 +282,7 @@
     return {
       maxAnisotropy: Math.max(1, Math.round(Number(capabilities.maxAnisotropy) || 1)),
       maxTextureSize,
+      gpuClass: capabilities.gpuClass ?? "unknown",
     };
   }
 
@@ -281,6 +295,7 @@
     saveData = false,
   }) {
     if (controls?.overrideTier) return controls.overrideTier;
+    if (isLean({ controls, caps, touchPrimary })) return "balanced";
 
     // Respect metered connections and explicit data-saver settings before
     // spending on the full asset load.
@@ -310,6 +325,11 @@
     if (shortSide > 0 && shortSide < 340) return "balanced";
 
     return "high";
+  }
+
+  // An integrated GPU on a desktop or laptop (touch devices keep their own path).
+  function isLean({ controls, caps = {}, touchPrimary = false }) {
+    return !controls?.overrideTier && !touchPrimary && caps?.gpuClass === "integrated";
   }
 
   function detectTouchPrimary() {
@@ -342,9 +362,13 @@
   // its square: uncapped, a 3x phone would shade nine pixels per CSS pixel.
   // Apple hides deviceMemory, so phones can't be classified by memory; touch-
   // primary devices stop at 1.25 on every tier instead.
-  function resolveEffectiveDprCap(profile, { touchPrimary = false } = {}) {
+  function resolveEffectiveDprCap(profile, { touchPrimary = false, viewport = null } = {}) {
     const baseCap = profile && typeof profile.dprCap === "number" ? profile.dprCap : 1;
-    return touchPrimary ? Math.min(baseCap, 1.25) : baseCap;
+    const cap = touchPrimary ? Math.min(baseCap, 1.25) : baseCap;
+    const area = (viewport?.width || 0) * (viewport?.height || 0);
+    // The pixel budget bounds the drawn area, never below DPR 0.5.
+    if (!(profile?.pixelBudget > 0) || area <= 0) return cap;
+    return Math.min(cap, Math.max(0.5, Math.sqrt(profile.pixelBudget / area)));
   }
 
   function indexForTier(tier) {
@@ -413,7 +437,31 @@
       return floor <= DISPLAY_FLOOR_MAX_MS ? Math.max(15, 1.1 * floor) : 0;
     }
 
+    // One step down, as a sustained slow streak takes it: a tier, or below balanced a
+    // resolution level. Returns the new tier, or null at the floor.
+    function stepDown(nowMs, floorTier) {
+      if (!(
+        indexForTier(currentTier) > indexForTier(floorTier) ||
+        (currentTier === "low" && floorTier === "low" && resolutionLevel < resolutionSteps)
+      ))
+        return null;
+      if (currentTier === "low") resolutionLevel++;
+      else {
+        currentTier = nextLowerTier(currentTier);
+        resolutionLevel = currentTier === "low" ? 1 : 0;
+      }
+      if (recovered) oscillations += 1;
+      recovered = false;
+      lastChangeMs = nowMs;
+      resetCounters();
+      return currentTier;
+    }
+
     return {
+      // The opening's own measure of hidden frames asks for a step before the reveal.
+      stepDown(nowMs = 0, floorTier = "low") {
+        return fixedTier ? null : stepDown(nowMs, floorTier);
+      },
       getAverageFrameTime() {
         return samples.length ? sampleSum / samples.length : 0;
       },
@@ -462,21 +510,9 @@
         recoveryFrameStreak =
           canRecover && average <= recoveryThreshold() ? recoveryFrameStreak + 1 : 0;
 
-        if (
-          highFrameStreak >= downgradeFrames &&
-          (indexForTier(currentTier) > indexForTier(floorTier) ||
-            (currentTier === "low" && floorTier === "low" && resolutionLevel < resolutionSteps))
-        ) {
-          if (currentTier === "low") resolutionLevel++;
-          else {
-            currentTier = nextLowerTier(currentTier);
-            resolutionLevel = currentTier === "low" ? 1 : 0;
-          }
-          if (recovered) oscillations += 1;
-          recovered = false;
-          lastChangeMs = nowMs;
-          resetCounters();
-          return currentTier;
+        if (highFrameStreak >= downgradeFrames) {
+          const stepped = stepDown(nowMs, floorTier);
+          if (stepped) return stepped;
         }
 
         if (
@@ -517,16 +553,24 @@
       touchPrimary,
       saveData,
     });
+    const lean = isLean({ controls, caps: resolvedCaps, touchPrimary });
+    const steps = lean ? LEAN_STEPS : STEPS;
     const governor = createSceneQualityGovernor({
       initialTier,
       overrideTier: controls.overrideTier,
       downsampleFrames: 30,
       warmupFrames: 15,
       downgradeFrames: 45,
-      resolutionSteps: 2,
+      resolutionSteps: steps.length,
     });
+    // A governor tier as a profile; below balanced, the current profile at its step's cap.
+    const stepProfile = (nextTier, profile) =>
+      nextTier === "low"
+        ? { ...profile, dprCap: steps[Math.min(steps.length, governor.getResolutionLevel()) - 1] }
+        : cloneProfile(nextTier, lean);
     // A revealed scene never steps its visuals down to low. The governor's low
-    // steps preserve material settings and request DPR 1, then 0.85.
+    // steps preserve material settings and request each step's cap in turn (STEPS: DPR 1,
+    // then 0.85; the lean path's LEAN_STEPS: 0.85, 0.7, then 0.6).
     let sampleResumeAt = null;
     let skippedSamples = 0;
 
@@ -535,17 +579,24 @@
       controls,
       governor,
       initialTier,
+      lean,
       navigatorInfo,
       saveData,
       touchPrimary,
       getProfile(tier = governor.getTier()) {
-        return cloneProfile(tier);
+        return cloneProfile(tier, lean);
       },
       getTier() {
         return governor.getTier();
       },
-      resolveDprCap(profile) {
-        return resolveEffectiveDprCap(profile, { touchPrimary });
+      resolveDprCap(profile, viewport = { width: window.innerWidth, height: window.innerHeight }) {
+        return resolveEffectiveDprCap(profile, { touchPrimary, viewport });
+      },
+      // One step down now, for the hidden opening's slow frames: the profile to apply,
+      // or null at the floor.
+      stepDown({ nowMs = 0, profile }) {
+        const nextTier = governor.stepDown(nowMs, "low");
+        return nextTier ? stepProfile(nextTier, profile) : null;
       },
       // Skips samples for SAMPLE_HOLD_MS from the next sampled frame.
       holdSampling() {
@@ -571,9 +622,7 @@
         if (!nextTier) return null;
         // The requested cap travels with the queued profile. Until its cut,
         // resizing keeps the active profile's cap rather than leaking a step.
-        return nextTier === "low"
-          ? { ...profile, dprCap: governor.getResolutionLevel() > 1 ? 0.85 : 1 }
-          : cloneProfile(nextTier);
+        return stepProfile(nextTier, profile);
       },
     };
   }

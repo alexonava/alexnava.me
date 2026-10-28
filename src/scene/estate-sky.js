@@ -574,6 +574,9 @@ vec4 p = modelMatrix * vec4(position, 1.0);
 vWorldPosition = p.xyz;
 gl_Position = projectionMatrix * viewMatrix * p;
 vCloudClip = gl_Position;
+// At the far plane: drawn after everything opaque (index.js), it shades only the pixels
+// nothing nearer covers, and never hazes over the ranges or the sea beyond its radius.
+gl_Position.z = gl_Position.w;
 }`,
     fragmentShader: `
 uniform vec3 topColor, bottomColor, glowColor, sunDirection, sunColor;

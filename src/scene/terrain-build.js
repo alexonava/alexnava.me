@@ -2109,7 +2109,7 @@ vec2 slateRipples(vec2 p, float fp) {
   vec2 g = s*q/max(r, .001)/sqrt(1.0+2.0*r)*(1.0-smoothstep(${glsl(DRIP_RIPPLES.life - 0.6)}, ${glsl(DRIP_RIPPLES.life)}, a));
   return g*min(1.0, ${glsl(DRIP_RIPPLES.maxTilt)}/max(length(g), 1e-5));
 }
-${RAPIDS_AT ? rapidsGlsl("slateRp", RAPIDS_AT, RAPIDS, "slateCoastStudy") : ""}
+${RAPIDS_AT ? rapidsGlsl("slateRp", RAPIDS_AT, RAPIDS, "slateCoastStudy", "slateLoop") : ""}
 `;
 // The flame's colours and glass light; its core's luminance, and the core's once the gain is clipped at white.
 const MF = MIRROR_FLAME,
@@ -2357,7 +2357,7 @@ if (slateStreamQ.x > 0.0) {
   slateLC += ${glsl(SF.warp)}*vec2(slateNoise(slateLC*.45+3.0), slateNoise(slateLC*.45+9.0))*2.0;
   vec2 slateLI = floor(slateLC), slateLF = fract(slateLC);
   float slateF1 = 8.0, slateF2 = 8.0;
-  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+  for (int j = -1; j <= slateLoop; j++) for (int i = -1; i <= slateLoop; i++) {
     vec2 slateLG = vec2(float(i), float(j)), slateLO = slateLG+vec2(slateHash(slateLI+slateLG), slateHash(slateLI+slateLG+17.3))*.8+.1-slateLF;
     float slateLD = dot(slateLO, slateLO);
     if (slateLD < slateF1) { slateF2 = slateF1; slateF1 = slateLD; } else if (slateLD < slateF2) slateF2 = slateLD;
@@ -4329,6 +4329,70 @@ function streamAlong(x, z, line = STREAM_LINES[0]) {
   return along;
 }
 
+// A tree opening links the slate's shaded program (its "+root" key: the scene's longest link,
+// seconds on a first visit) on a detached stand-in as soon as the ground's maps and the scene's
+// lights are final, so it links beside the terrain's build rather than after it. settleRoots()
+// then takes the same program from Three's cache; release() frees the stand-in once it has.
+// Null where the ground takes no root shading or programs cannot link in parallel.
+export function prelinkSlateGround(ground, rendering) {
+  const renderer = rendering?.renderer,
+    material = ground?.material;
+  if (
+    !material ||
+    typeof rendering.compilePrograms !== "function" ||
+    typeof renderer?.compile !== "function" ||
+    renderer.extensions?.has?.("KHR_parallel_shader_compile") !== true ||
+    renderer.getContext?.()?.isContextLost?.()
+  )
+    return null;
+  // The shading's uniforms only bind values; the program's source is the same.
+  const coastRock = {
+      coastStudy: { value: 0 },
+      coastAlbedo: { value: null },
+      coastAlbedoOn: { value: 0 },
+      coastDetail: { value: null },
+      coastDetailOn: { value: 0 },
+    },
+    shade = (shader) => shadeSlateGround(shader, coastRock);
+  material.userData.slateRoot = shade;
+  const key = material.customProgramCacheKey?.();
+  delete material.userData.slateRoot;
+  if (typeof key !== "string" || !key.endsWith("+root")) return null;
+  const stand = new Mesh(
+    ground.geometry,
+    Object.assign(material.clone(), {
+      customProgramCacheKey: () => key,
+      onBeforeCompile(shader, target) {
+        material.onBeforeCompile(shader, target);
+        shade(shader);
+      },
+    }),
+  );
+  let live = true;
+  const previous = renderer.getRenderTarget?.() ?? null;
+  try {
+    renderer.setRenderTarget?.(rendering.composer?.readBuffer ?? null);
+    rendering.compilePrograms(
+      renderer,
+      stand,
+      rendering.camera,
+      rendering.homeScene,
+      () => live && !renderer.getContext?.()?.isContextLost?.(),
+    );
+  } catch {
+    // The terrain's own link (settleRoots()) remains.
+  } finally {
+    renderer.setRenderTarget?.(previous);
+  }
+  return {
+    release() {
+      if (!live) return;
+      live = false;
+      stand.material.dispose();
+    },
+  };
+}
+
 // Prepare the film terrain's tufts, shore and shading, then land them together
 // over film-scene.js's borrowed geometry. The returned sampler's ready promise
 // settles at its first commit; setActive(false) withdraws the tuple, and its
@@ -4534,6 +4598,7 @@ export function settleRoots(
     probe = null,
     linking = false,
     linked = "",
+    linkingState = "",
     clocked = false,
     lamp = null,
     sought = -Infinity,
@@ -4879,6 +4944,7 @@ export function settleRoots(
     const state = programState(),
       key = shadedKey();
     release();
+    linkingState = state;
     // Only a slate that takes the shading has a new program, and only where
     // programs link in parallel; otherwise the switch's draw links it.
     parallel =
@@ -4990,8 +5056,12 @@ export function settleRoots(
       (hiddenOpening() || !container || container.classList?.contains("is-ready"))
     )
       link();
-    if (linked && allowed()) {
-      if (linked === programState()) return commit();
+    // A hidden opening commits while the program still links: nothing draws the ground
+    // before the opening's own shader warm-up, which waits for it, and the terrain's
+    // details build meanwhile.
+    const ready = linked || (linking && hiddenOpening() ? linkingState : "");
+    if (ready && allowed()) {
+      if (ready === programState()) return commit();
       linked = "";
     }
     checking = true;
@@ -5405,10 +5475,15 @@ function* riverSurfaceSteps(geometry, sample, landHeight, EARTH) {
     }
     if (i % 32 === 0) yield;
   }
-  // A small spatial index samples only the solid bed, never the upper cap.
+  // A small spatial index samples only the solid bed, never the upper cap. A lookup walks
+  // its cell's triangles in order, though only those whose box (grown far past the test's
+  // tolerance) reaches the point's unit square, listed per square on first use: the same
+  // first triangle as a walk of the whole cell, in a fraction of the tests.
   const buckets = new Map(),
+    squares = new Map(),
     cell = 3,
-    cellKey = (x, z) => `${Math.floor(x / cell)}:${Math.floor(z / cell)}`;
+    grown = 0.01,
+    cellKey = (x, z) => (Math.floor(x / cell) + 32768) * 65536 + Math.floor(z / cell) + 32768;
   for (let i = 0; i < indices.length; i += 3) {
     const tri = indices.slice(i, i + 3),
       xs = tri.map((v) => p[v * 3]),
@@ -5419,17 +5494,43 @@ function* riverSurfaceSteps(geometry, sample, landHeight, EARTH) {
         z <= Math.floor(Math.max(...zs) / cell);
         z++
       ) {
-        const id = `${x}:${z}`;
+        const id = (x + 32768) * 65536 + z + 32768;
         if (!buckets.has(id)) buckets.set(id, []);
         buckets.get(id).push(...tri);
       }
     if (i % 768 === 0) yield;
   }
-  const bed = (x, z) => {
-    const bucket = buckets.get(cellKey(x, z));
-    if (!bucket) return NaN;
+  const square = (key, bucket, fx, fz) => {
+    let lists = squares.get(key);
+    if (!lists) squares.set(key, (lists = new Map()));
+    const id = (fx + 32768) * 65536 + fz + 32768;
+    let list = lists.get(id);
+    if (list) return list;
+    list = [];
     for (let i = 0; i < bucket.length; i += 3) {
-      const [a, b, c] = bucket.slice(i, i + 3),
+      const a = bucket[i] * 3,
+        b = bucket[i + 1] * 3,
+        c = bucket[i + 2] * 3;
+      if (
+        Math.max(p[a], p[b], p[c]) + grown >= fx &&
+        Math.min(p[a], p[b], p[c]) - grown <= fx + 1 &&
+        Math.max(-p[a + 1], -p[b + 1], -p[c + 1]) + grown >= fz &&
+        Math.min(-p[a + 1], -p[b + 1], -p[c + 1]) - grown <= fz + 1
+      )
+        list.push(bucket[i], bucket[i + 1], bucket[i + 2]);
+    }
+    lists.set(id, list);
+    return list;
+  };
+  const bed = (x, z) => {
+    const key = cellKey(x, z),
+      cellTriangles = buckets.get(key);
+    if (!cellTriangles) return NaN;
+    const bucket = square(key, cellTriangles, Math.floor(x), Math.floor(z));
+    for (let i = 0; i < bucket.length; i += 3) {
+      const a = bucket[i],
+        b = bucket[i + 1],
+        c = bucket[i + 2],
         ax = p[a * 3],
         az = -p[a * 3 + 1],
         bx = p[b * 3],

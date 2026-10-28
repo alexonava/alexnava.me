@@ -622,7 +622,7 @@ test("the sky draws the flash in the banks, off the crop and the text, never in 
   assert.ok(!ground.includes("babelFillAim"), "the slate's fill keeps its fixed direction");
   assert.ok(
     ground.includes(
-      "Object.assign(shader.uniforms, uniforms, FLASH_GROUND, FLASH_UNIFORMS, SHOT_KEY);",
+      "Object.assign(shader.uniforms, uniforms, FLASH_GROUND, FLASH_UNIFORMS, SHOT_KEY, SLATE_LOOP);",
     ),
   );
   assert.ok(ground.includes("if (babelFlashLight.w > 0.0)"));

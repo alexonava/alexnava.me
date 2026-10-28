@@ -514,7 +514,7 @@ test("the river's water lies only below its shore, as the terrain carves it, and
   // only where they show (near the lens, a cell over a few pixels).
   assert.match(
     soil.fragment,
-    /if \(slateKW > 0\.\) \{\s*float slateKS = 0\.;\s*for \(int j = -1; j <= 1; j\+\+\)/,
+    /if \(slateKW > 0\.\) \{\s*float slateKS = 0\.;\s*for \(int j = -1; j <= slateLoop; j\+\+\)/,
   );
   const crumbHeight = Number.isInteger(SLATE_CLOSE.crumb.height)
     ? SLATE_CLOSE.crumb.height.toFixed(1)

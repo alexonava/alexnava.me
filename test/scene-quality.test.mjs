@@ -994,3 +994,112 @@ test("composition profiles reframe portrait phones toward the estate", async () 
   assert.ok(portrait.camera.lookAtBase > desktop.camera.lookAtBase);
   assert.ok(portrait.sceneOffsetY > compact.sceneOffsetY);
 });
+
+test("an integrated GPU on a mouse-and-keyboard machine takes the lean path", async () => {
+  const scene = await loadQuality(createContext());
+  const caps = { maxTextureSize: 8192, maxAnisotropy: 16, gpuClass: "integrated" };
+  const controls = scene.readSceneQualityControls("");
+  const navigatorInfo = { deviceMemory: 8, hardwareConcurrency: 16 };
+  const viewport = { width: 1536, height: 864 };
+  for (const [gpuClass, touchPrimary, tier] of [
+    ["integrated", false, "balanced"],
+    ["discrete", false, "high"],
+    ["unknown", false, "high"],
+  ])
+    assert.equal(
+      scene.selectSceneQualityTier({
+        controls,
+        navigatorInfo,
+        viewport,
+        caps: { ...caps, gpuClass },
+        touchPrimary,
+      }),
+      tier,
+      gpuClass,
+    );
+  const state = scene.createSceneQualityState({
+    caps,
+    touchPrimary: false,
+    viewport,
+    navigatorInfo,
+  });
+  assert.equal(state.lean, true);
+  assert.equal(state.initialTier, "balanced");
+  const profile = state.getProfile();
+  assert.equal(profile.lean, true, "the scene's owners read the lean cuts from the profile");
+  assert.equal(profile.dprCap, 1);
+  // Its resolution steps go further than the others' (0.85, 0.7, then 0.6).
+  const caps1 = [];
+  for (let step = state.stepDown({ profile }); step; step = state.stepDown({ profile: step }))
+    caps1.push(step.dprCap);
+  assert.deepEqual(caps1, [0.85, 0.7, 0.6]);
+  const touch = scene.createSceneQualityState({
+    caps,
+    touchPrimary: true,
+    viewport,
+    navigatorInfo,
+  });
+  assert.equal(touch.lean, false, "touch devices keep their own path");
+  const forced = scene.createSceneQualityState({
+    caps,
+    touchPrimary: false,
+    viewport,
+    navigatorInfo,
+    search: "?quality=high",
+  });
+  assert.equal(forced.lean, false, "an explicit tier wins");
+  assert.equal(forced.initialTier, "high");
+});
+
+test("pixel budgets bound the lean path and high's drawn area, never below DPR 0.5", async () => {
+  const scene = await loadQuality(createContext());
+  const state = scene.createSceneQualityState({
+    caps: { maxTextureSize: 8192, maxAnisotropy: 16, gpuClass: "integrated" },
+    touchPrimary: false,
+    viewport: { width: 1536, height: 864 },
+  });
+  const lean = state.getProfile();
+  assert.equal(lean.pixelBudget, 2.1e6);
+  assert.equal(
+    state.resolveDprCap(lean, { width: 1536, height: 864 }),
+    1,
+    "a laptop's window fits",
+  );
+  const wide = state.resolveDprCap(lean, { width: 2560, height: 1440 });
+  assert.ok(Math.abs(2560 * 1440 * wide * wide - 2.1e6) < 1, "a large monitor draws its budget");
+  assert.equal(state.resolveDprCap(lean, { width: 7680, height: 4320 }), 0.5);
+  const high = scene.getSceneQualityProfile("high");
+  assert.equal(scene.resolveEffectiveDprCap(high, { viewport: { width: 1440, height: 900 } }), 1.5);
+  const fourK = scene.resolveEffectiveDprCap(high, { viewport: { width: 3840, height: 2160 } });
+  assert.ok(Math.abs(3840 * 2160 * fourK * fourK - 3.7e6) < 1, "4K never shades 8 MP on high");
+  assert.equal(
+    scene.resolveEffectiveDprCap(scene.getSceneQualityProfile("balanced"), {
+      viewport: { width: 3840, height: 2160 },
+    }),
+    1.25,
+    "balanced off the lean path keeps its cap",
+  );
+});
+
+test("the opening's hidden step goes one governor step at a time and stops at the floor", async () => {
+  const scene = await loadQuality(createContext());
+  const state = scene.createSceneQualityState({
+    caps: { maxTextureSize: 8192, maxAnisotropy: 16, gpuClass: "discrete" },
+    touchPrimary: false,
+    viewport: { width: 1440, height: 900 },
+  });
+  let profile = state.getProfile();
+  assert.equal(profile.tier, "high");
+  const taken = [];
+  for (let step = state.stepDown({ profile }); step; step = state.stepDown({ profile })) {
+    profile = step;
+    taken.push(`${step.tier}@${step.dprCap}`);
+  }
+  assert.deepEqual(taken, ["balanced@1.25", "balanced@1", "balanced@0.85"]);
+  const fixed = scene.createSceneQualityState({
+    caps: { maxTextureSize: 8192, maxAnisotropy: 16 },
+    touchPrimary: false,
+    search: "?quality=high",
+  });
+  assert.equal(fixed.stepDown({ profile: fixed.getProfile() }), null, "a fixed tier never steps");
+});

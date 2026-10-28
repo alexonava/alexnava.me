@@ -104,12 +104,15 @@ import { createOpeningPreparation } from "./scene/opening-preparation.js";
   // opening through scene-modes.js resolveSceneOpening(), which keeps this choice. Its default,
   // for an address with neither, is Lantern study.
   const WATCH_OPENING = Object.freeze({ view: "watch", angle: 0 });
-  function chooseOpening(random = Math.random) {
+  // A laptop's integrated GPU (quality.js's lean path) always opens on The watch, the sky
+  // alone, which shows in about two seconds; Lantern study's ground takes it far longer to
+  // build (the owner's call of 2026-10-27, "Always The watch").
+  function chooseOpening(random = Math.random, { lean = false } = {}) {
     const scene = (site.scene = site.scene || {});
     if (scene.cinematicSelection != null) return;
     const query = new URLSearchParams(window.location?.search || "");
     if (query.has("view") || query.has("angle")) return;
-    const opening = random() < 0.5 ? resolveSceneOpening("") : WATCH_OPENING;
+    const opening = lean || random() >= 0.5 ? WATCH_OPENING : resolveSceneOpening("");
     scene.cinematicSelection = opening.view;
     scene.cinematicAngle = opening.angle;
   }
@@ -292,15 +295,16 @@ import { createOpeningPreparation } from "./scene/opening-preparation.js";
     });
   }
 
-  // The scene's startup tier, from the probe the capability gate already ran
-  // (quality.js is in this bundle), or null when the probe left the limits
-  // unknown: the scene then probes and decides itself.
-  function readStartupTier(capabilities) {
+  // The scene's startup tier and whether it takes the lean path, from the probe the
+  // capability gate already ran (quality.js is in this bundle); a null tier when the probe
+  // left the limits unknown: the scene then probes and decides itself.
+  function readStartupQuality(capabilities) {
     const scene = site.scene || {};
     try {
       const caps = scene.qualityCapsFromProbe?.(capabilities);
       if (!caps || typeof scene.createSceneQualityState !== "function") return null;
-      return scene.createSceneQualityState({ caps }).initialTier || null;
+      const state = scene.createSceneQualityState({ caps });
+      return { tier: state.initialTier || null, lean: state.lean === true };
     } catch {
       return null;
     }
@@ -402,7 +406,9 @@ import { createOpeningPreparation } from "./scene/opening-preparation.js";
       try {
         const starting = !sceneInitialized;
         if (starting) {
-          chooseOpening();
+          chooseOpening(Math.random, {
+            lean: readStartupQuality(site.shared?.getWebGLCapabilities?.())?.lean,
+          });
           startOpeningBudget();
           site.sceneLoader?.begin?.({ tier: sceneStartupTier });
           site.sceneLoader?.stage?.("bundle");
@@ -450,7 +456,8 @@ import { createOpeningPreparation } from "./scene/opening-preparation.js";
 
         // The low tier keeps the static title card (?quality=low included): the
         // scene bundle is never requested.
-        const startupTier = latestControls?.overrideTier || readStartupTier(capabilities);
+        const startup = readStartupQuality(capabilities);
+        const startupTier = latestControls?.overrideTier || startup?.tier || null;
         if (startupTier === "low") {
           disableSceneHost();
           return false;
@@ -458,7 +465,7 @@ import { createOpeningPreparation } from "./scene/opening-preparation.js";
 
         // Only the live path shows the title card's loading line.
         sceneStartupTier = startupTier;
-        chooseOpening();
+        chooseOpening(Math.random, { lean: startup?.lean });
         site.sceneLoader?.begin?.({ tier: startupTier });
         const sceneScript = loadScriptOnce(getSceneScriptUrl(), getSceneModulePreloads());
         // Issued after the bundle request, which keeps its head start.

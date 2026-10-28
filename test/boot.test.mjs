@@ -1289,6 +1289,36 @@ test("selected tree openings prefetch tree then lantern, while explicit Watch ke
   }
 });
 
+test("a laptop's integrated GPU always opens on The watch, never rolling; an address still pins its view", async () => {
+  const laptop =
+    "ANGLE (AMD, AMD Radeon(TM) Graphics (0x000013C0) Direct3D11 vs_5_0 ps_5_0, D3D11)";
+  const never = () => {
+    throw new Error("the lean path does not roll");
+  };
+  const harness = createContext({
+    ...CAPABLE,
+    sceneLoader: true,
+    random: never,
+    softwareRenderer: laptop,
+  });
+  await loadMainWithQuality(harness.context);
+  await harness.context.window.BabelSite.ensureSceneReady();
+  const [begin] = harness.loaderCalls.filter(({ method }) => method === "begin");
+  assert.deepEqual(begin.opening, ["watch", 0]);
+  assert.equal(begin.tier, "balanced", "the lean path's tier");
+  const pinned = createContext({
+    ...CAPABLE,
+    sceneLoader: true,
+    random: never,
+    softwareRenderer: laptop,
+    search: "?view=tree&angle=2",
+  });
+  await loadMainWithQuality(pinned.context);
+  await pinned.context.window.BabelSite.ensureSceneReady();
+  const [pin] = pinned.loaderCalls.filter(({ method }) => method === "begin");
+  assert.deepEqual(pin.opening, [null, null], "the address's view, resolved by the scene");
+});
+
 test("a visit naming no view or angle opens on Lantern study or The watch by chance, rolled once before the loading line begins", async () => {
   // Rolled below 0.5, Lantern study: its tree and lantern come early, ahead of the rest.
   for (const [random, opening, roles, priority] of [

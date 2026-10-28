@@ -1041,7 +1041,7 @@ const CLOSE_PRE = `
       // nearest grain by a smooth minimum, and its slope per world unit.
       if (slateKW > 0.) {
         float slateKS = 0.;
-        for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+        for (int j = -1; j <= slateLoop; j++) for (int i = -1; i <= slateLoop; i++) {
           vec2 slateKG = vec2(float(i), float(j));
           vec3 slateKH = fract(vec3(slateKI+slateKG, slateKI.x+slateKG.x)*vec3(.1031, .103, .0973));
           slateKH += dot(slateKH, slateKH.yzx+33.33);
@@ -1157,6 +1157,11 @@ const STREAM_LEVEL = `mix(-slateStreamBed(slateStreamR,slateStreamQ.w,clamp(2.*s
 // half-widths, its segments and boxes in constant arrays walked by loops, so a
 // long course compiles about as fast as a short one.
 const RIVER_GROUP = 8;
+// The ground's math-only loops (the river's runs, the crumbs' and the laces' cells) run to
+// slateLoop, a uniform that is always 1: Windows' shader compiler (FXC, under ANGLE) then keeps
+// each as a loop rather than unrolling every inlined copy. The same iterations and the same
+// math, about a quarter off the ground's first link, the longest of a first visit.
+export const SLATE_LOOP = Object.freeze({ slateLoop: Object.freeze({ value: 1 }) });
 export function riverGlsl(line = RIVER_LINE, river = SLATE_RIVER, bed = SLATE_RIVER_BED) {
   const { width, wobble } = river,
     even = line.every(([, , , w, c]) => w === width && c === 0),
@@ -1187,7 +1192,7 @@ const vec4 slateRiverA[${seg[0].length}]=vec4[](${seg[0].join(",")});
 const vec4 slateRiverB[${seg[0].length}]=vec4[](${seg[1].join(",")});
 vec4 slateRiver(vec2 p,out vec2 dir){dir=vec2(1.,0.);
 float b=1e9,s=0.,g=0.,c=1e9;
-for(int r=0;r<${all.length};r++){vec4 q=slateRiverBox[r];if(p.x>q.x&&p.x<q.y&&p.y>q.z&&p.y<q.w){ivec2 u=slateRiverSpan[r];for(int k=u.x;k<u.y;k++){vec4 A=slateRiverA[k],B=slateRiverB[k];vec2 pa=p-A.xy,ba=A.zw;float l=dot(ba,ba),h=clamp(dot(pa,ba)/l,0.,1.),e=length(pa-ba*h),d=e*${n(width)}/(B.y+h*B.z);if(d<b){l=sqrt(l);b=d;s=B.x+h*l;g=B.w+h*l*(${n(2 * width)}/(2.*B.y+B.z)-1.);dir=ba/l;c=pa.x*ba.y-pa.y*ba.x<0.?e:-e;}}}}
+for(int r=0;r<${all.length}*slateLoop;r++){vec4 q=slateRiverBox[r];if(p.x>q.x&&p.x<q.y&&p.y>q.z&&p.y<q.w){ivec2 u=slateRiverSpan[r];for(int k=u.x;k<u.y;k++){vec4 A=slateRiverA[k],B=slateRiverB[k];vec2 pa=p-A.xy,ba=A.zw;float l=dot(ba,ba),h=clamp(dot(pa,ba)/l,0.,1.),e=length(pa-ba*h),d=e*${n(width)}/(B.y+h*B.z);if(d<b){l=sqrt(l);b=d;s=B.x+h*l;g=B.w+h*l*(${n(2 * width)}/(2.*B.y+B.z)-1.);dir=ba/l;c=pa.x*ba.y-pa.y*ba.x<0.?e:-e;}}}}
 return vec4(b/(${n(width)}*(1.+${n(wobble[0])}*sin(.9*(s+g)+1.3)+${n(wobble[1])}*sin(2.3*(s+g)+.4))),s,c,abs(c));}
 `;
   }
@@ -1463,7 +1468,7 @@ export function configureGroundShading(
     (useWet && material.userData.slateRoot ? "+root" : "");
   material.onBeforeCompile = (shader) => {
     if (!useWet) return;
-    Object.assign(shader.uniforms, uniforms, FLASH_GROUND, FLASH_UNIFORMS, SHOT_KEY);
+    Object.assign(shader.uniforms, uniforms, FLASH_GROUND, FLASH_UNIFORMS, SHOT_KEY, SLATE_LOOP);
     // The drifting mist (drifting-mist.js), last, over the slate's own air and look.
     if (mistOn) Object.assign(shader.uniforms, MIST_UNIFORMS);
     // The dune field varies over 100+ world units; the film terrain's 3-unit
@@ -1490,6 +1495,7 @@ uniform vec4 babelFlash, babelFlashLight, babelFlashSky;
 uniform vec3 babelKeyDir;
 #define SLATE_TEXT_KNEE ${glslNumber(WATER.text[1])}
 uniform vec4 slateText, slateAbout;
+uniform int slateLoop;
 ${authored ? "uniform sampler2D slateDetail;\n" + SOIL_SAMPLE : ""}${close ? "#define SLATE_CLOSE_SOIL\nuniform sampler2D slateGrit, slateRelief, slateSoilRoughness;\nuniform float slateSoilRoughnessOn;\n" : ""}${RIVER_BED_GLSL}float slateHash(vec2 p){vec3 q=fract(p.xyx*.1031);q+=dot(q,q.yzx+33.33);return fract((q.x+q.y)*q.z);}
 float slateNoise(vec2 p){vec2 i=floor(p),f=fract(p);f*=f*(3.-2.*f);return mix(mix(slateHash(i),slateHash(i+vec2(1,0)),f.x),mix(slateHash(i+vec2(0,1)),slateHash(i+1.),f.x),f.y);}
 ${STREAM_GLSL}

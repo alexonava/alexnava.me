@@ -231,11 +231,11 @@ export function createSceneRendering({
   // Three's color compile does not prepare the separate shadow-depth programs.
   // Borrow only the caster geometry; these probes never draw or enter the live
   // graph. Keep the depth materials until disposal so their program leases hold
-  // the warmed variants for WebGLShadowMap's first use.
-  function prepareShadowPrograms(valid, timeoutMs) {
+  // the warmed variants for WebGLShadowMap's first use. Of root's casters (the scene's).
+  function prepareShadowPrograms(valid, timeoutMs, root = homeScene) {
     if (!renderer.shadowMap.enabled || !sunLight.castShadow) return Promise.resolve(true);
     const probes = new Group();
-    homeScene.traverseVisible((object) => {
+    root.traverseVisible((object) => {
       if (!object.castShadow || !object.isMesh) return;
       for (const source of [object.material].flat()) {
         if (!source || source.visible === false) continue;
@@ -280,6 +280,10 @@ export function createSceneRendering({
   const rendering = {
     camera,
     compilePrograms,
+    // Whether any program still links (KHR_parallel_shader_compile's nonblocking status).
+    programsPending() {
+      return renderer.info.programs?.some((program) => program?.isReady?.() === false) ?? false;
+    },
     programsLinked() {
       const generation = compileGeneration;
       return linkedPrograms(
@@ -449,8 +453,14 @@ export function createSceneRendering({
     // frame. Without that extension the draw would link anyway (and Three warns
     // per call), so it is skipped; the crossfade's own programs and the visible
     // maps are prepared either way. Always settles: true once linked, false if
-    // skipped, rejected or still pending after timeoutMs.
-    compileShaders(timeoutMs = 2000, objects = homeScene) {
+    // skipped, rejected or still pending after timeoutMs. Shadow depths are prepared for
+    // shadowRoot's casters: the scene's for a whole-scene link, none for a scoped one
+    // unless named (the rocks name their own).
+    compileShaders(
+      timeoutMs = 2000,
+      objects = homeScene,
+      shadowRoot = objects === homeScene ? homeScene : null,
+    ) {
       if (disposed || renderer.getContext?.()?.isContextLost?.()) return Promise.resolve(false);
       const postprocessReady = postprocessPipeline.compile?.();
       uploadTextures(objects);
@@ -465,7 +475,7 @@ export function createSceneRendering({
       try {
         renderer.setRenderTarget?.(composer.readBuffer ?? null);
         pending = compilePrograms(renderer, objects, camera, homeScene, valid, timeoutMs);
-        shadows = objects === homeScene ? prepareShadowPrograms(valid, timeoutMs) : true;
+        shadows = shadowRoot ? prepareShadowPrograms(valid, timeoutMs, shadowRoot) : true;
       } catch {
         return Promise.resolve(false);
       } finally {

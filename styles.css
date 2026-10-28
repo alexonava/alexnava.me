@@ -916,7 +916,7 @@ body.scene-walk-hidden > :not(.scene-shell) {
    take over from these; these remain the first paint, the static paths' doors and the
    stand-in wherever the drawing fails.
    Without scripts the halves' own keyframes open them after 4s; a running script holds
-   them (is-held) to a 35s backstop past the functional loading deadline, pauses that while the tab is hidden
+   them (is-held) to an 11s backstop past its 10s cap, pauses that while the tab is hidden
    (is-paused), and opens them sooner (is-open) with keyframes of their own: a transition
    would not start where the backstop's animation is replaced. Every opening animates
    transform alone, so the compositor runs it. */
@@ -1008,7 +1008,7 @@ body.scene-walk-hidden > :not(.scene-shell) {
 }
 
 .scene-doors.is-held .scene-doors__leaf {
-  animation-delay: 35000ms;
+  animation-delay: 11000ms;
 }
 
 .scene-doors.is-paused .scene-doors__leaf {

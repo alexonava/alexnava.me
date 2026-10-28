@@ -60,18 +60,36 @@ const randomFor = (x, z, salt) => {
   return () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296;
 };
 const between = (random, a, b) => a + (b - a) * random();
+// Separating axes: both polygons' edge normals. Their projections fold in place (placement
+// runs this hundreds of thousands of times); a NaN one never separates, as with Math.max().
 function polygonsOverlap(a, b) {
-  for (const polygon of [a, b])
+  for (let side = 0; side < 2; side++) {
+    const polygon = side ? b : a;
     for (let k = 0; k < polygon.length; k++) {
       const p = polygon[k],
         q = polygon[(k + 1) % polygon.length],
         nx = p[1] - q[1],
         nz = q[0] - p[0];
-      const ap = a.map(([x, z]) => x * nx + z * nz),
-        bp = b.map(([x, z]) => x * nx + z * nz);
-      if (Math.max(...ap) < Math.min(...bp) - 1e-9 || Math.max(...bp) < Math.min(...ap) - 1e-9)
-        return false;
+      let aMin = Infinity,
+        aMax = -Infinity,
+        bMin = Infinity,
+        bMax = -Infinity,
+        nan = false;
+      for (let i = 0; i < a.length; i++) {
+        const d = a[i][0] * nx + a[i][1] * nz;
+        if (d < aMin) aMin = d;
+        if (d > aMax) aMax = d;
+        if (d !== d) nan = true;
+      }
+      for (let i = 0; i < b.length; i++) {
+        const d = b[i][0] * nx + b[i][1] * nz;
+        if (d < bMin) bMin = d;
+        if (d > bMax) bMax = d;
+        if (d !== d) nan = true;
+      }
+      if (!nan && (aMax < bMin - 1e-9 || bMax < aMin - 1e-9)) return false;
     }
+  }
   return true;
 }
 

@@ -113,10 +113,13 @@ test("UI and capability worker together stay under the existing LCP budget", asy
   const { size } = await stat(file);
   const worker = await stat(await findHashedScript("webgl-probe"));
   const kb = (size + worker.size) / 1024;
-  // 34 kB since the opening's doors (scene-doors.js), its preparation and its opener's chance
-  // (main.js, scene-modes.js, opening-preparation.js) and the lantern opening's light met (the
-  // owner's call of 2026-10-26); 30 kB before.
-  assert.ok(kb < 34, `app and worker total ${kb.toFixed(1)} kB; budget is 34 kB`);
+  // 36 kB since a laptop's opening is chosen from its GPU (webgl-probe.js gpuClass, quality.js's
+  // lean path and pixel budgets) and held doors part on a tap, key or focus again, about 1.9 kB
+  // (the owner's call of 2026-10-27, "go for performance"); 34 kB since the opening's doors
+  // (scene-doors.js), its preparation and its opener's chance (main.js, scene-modes.js,
+  // opening-preparation.js) and the lantern opening's light met (the owner's call of
+  // 2026-10-26); 30 kB before.
+  assert.ok(kb < 36, `app and worker total ${kb.toFixed(1)} kB; budget is 36 kB`);
 });
 
 test("the cold WebGL probe is a separate same-origin worker named by the UI", async () => {
@@ -145,7 +148,9 @@ test("scene bundle stays under the deferred-payload budget", async () => {
   let bytes = 0;
   for (const name of loaded.keys()) bytes += (await stat(path.join(scriptsDir, name))).size;
   const kb = bytes / 1024;
-  // 838 kB since each sun shot shows its own sun and the cel sky's lit plates (the owner's call
+  // 844 kB since a laptop opens fast (the owner's call of 2026-10-27: the lean path, the
+  // opening that reveals as it draws and steps down hidden, the ground's early link, about
+  // 1.2 kB); 838 kB since each sun shot shows its own sun and the cel sky's lit plates (the owner's call
   // of 2026-10-27: the per-shot sun on the cut, the plate set and the shot looks, about 2.4 kB);
   // 835 kB since a lantern opening's light lines up from the scene's start: the supplied
   // lantern's stored outline (opening-lantern.js) and its fit (opening-star.js openingFlame())
@@ -154,8 +159,8 @@ test("scene bundle stays under the deferred-payload budget", async () => {
   // the entry keeps their hooks); 830 kB since the loading line's star lines up with the
   // opening shot's: The watch's stored outline (opening-outline.js) is about 10 kB of it.
   assert.ok(
-    kb < 838,
-    `scene bundle (${[...loaded.keys()].join(" + ")}) is ${kb.toFixed(3)} kB; budget is 838 kB`,
+    kb < 844,
+    `scene bundle (${[...loaded.keys()].join(" + ")}) is ${kb.toFixed(3)} kB; budget is 844 kB`,
   );
 });
 

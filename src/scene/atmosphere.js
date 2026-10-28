@@ -16,7 +16,8 @@ export function createSceneAtmosphere({ parent, profile, assetTier = profile?.ti
 
   let skyMaterial = null;
   let disposed = false;
-  let skyTier = celestialTier(profile);
+  let skyTier = celestialTier(profile),
+    lean = Boolean(profile?.lean);
   let film = false;
   let cloudOwner = null,
     cloudPending = null;
@@ -47,7 +48,9 @@ export function createSceneAtmosphere({ parent, profile, assetTier = profile?.ti
 
   function applySkyQuality() {
     const layers = skyMaterial?.uniforms.uNebulaLayers;
-    if (layers) layers.value = film && skyTier !== "low" ? (skyTier === "balanced" ? 2 : 3) : 0;
+    // The lean path (quality.js) draws one nebula layer.
+    if (layers)
+      layers.value = film && skyTier !== "low" ? (lean ? 1 : skyTier === "balanced" ? 2 : 3) : 0;
     cloudOwner?.setEnabled(film && skyTier !== "low");
     prepareClouds();
   }
@@ -97,6 +100,7 @@ export function createSceneAtmosphere({ parent, profile, assetTier = profile?.ti
     applyQuality(nextProfile = {}) {
       if (disposed) return false;
       skyTier = celestialTier(nextProfile);
+      lean = Boolean(nextProfile?.lean);
       applySkyQuality();
       return true;
     },

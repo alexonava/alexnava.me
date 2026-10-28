@@ -198,12 +198,16 @@ test("the actual ground and falls borrow identical profile fields and one flow c
     height: filmHeight(() => 0, true),
   });
   try {
-    const groundCode = rapidsGlsl("slateRp", RAPIDS_AT, RAPIDS, "slateCoastStudy"),
+    const groundCode = rapidsGlsl("slateRp", RAPIDS_AT, RAPIDS, "slateCoastStudy", "slateLoop"),
       fallsCode = rapidsGlsl("fallsRp", frame, RAPIDS, "coastStudy");
     assert.ok(shader.fragmentShader.includes(groundCode));
     assert.ok(falls.material.fragmentShader.includes(fallsCode));
+    // The same code, but that the ground's lace loops to its uniform bound (always 1).
     assert.equal(
-      groundCode.replaceAll("slateRp", "probe").replaceAll("slateCoastStudy", "coastProbe"),
+      groundCode
+        .replaceAll("slateRp", "probe")
+        .replaceAll("slateCoastStudy", "coastProbe")
+        .replaceAll("slateLoop", "1"),
       fallsCode.replaceAll("fallsRp", "probe").replaceAll("coastStudy", "coastProbe"),
     );
     assert.equal(shader.uniforms.slateCoastStudy, mood);
