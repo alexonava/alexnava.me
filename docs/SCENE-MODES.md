@@ -153,3 +153,6 @@ materials; downloaded assets remain pinned to the initial tier. Explicit `qualit
 overrides remain fixed. Hidden presentation renders can request relief before
 reveal; each accepted change resets final preparation and its fresh draw window.
 The tour and first-shot move start only when the paper actually begins parting.
+A pending quality step also waits while a visible shot is paused: stopping the
+camera never turns it into a concealed publication opportunity. Resuming keeps
+that shot intact until the next prepared cut.

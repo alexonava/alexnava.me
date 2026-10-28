@@ -1260,7 +1260,7 @@ const LANTERN_GLOW = 0.35;
         // its one-off work.
         const adaptiveProfile = adaptiveSteps.take({
           cut: transition.cut,
-          running: liveView.running && canvasShown && !site.sceneDoors?.closed,
+          running: canvasShown && !site.sceneDoors?.closed,
           nowMs,
         });
         if (adaptiveProfile) applyActiveQualityProfile(adaptiveProfile, "adaptive");

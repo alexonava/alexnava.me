@@ -4,10 +4,47 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { flat, source } from "./support/code.mjs";
+import { createDeferredQualityStep } from "../src/scene/runtime.js";
 
 const index = flat(source("src/scene/index.js"));
 // The text between two anchors of the flattened bootstrap.
 const between = (from, to) => index.slice(index.indexOf(from), to ? index.indexOf(to) : undefined);
+
+test("the actual quality dispatch keeps a paused visible shot intact until its cut", async () => {
+  const argument = index.match(/const adaptiveProfile = adaptiveSteps\.take\((\{[^]*?\})\);/)[1];
+  const dispatch = new Function(
+    "canvasShown",
+    "site",
+    "liveView",
+    "transition",
+    "nowMs",
+    `return (${argument});`,
+  );
+  const profile = { tier: "balanced", dprCap: 0.85 };
+  const step = createDeferredQualityStep({ prepare: () => true });
+  step.queue(profile, 0);
+  await Promise.resolve();
+  const args = (visible, closed, cut) =>
+    dispatch(visible, { sceneDoors: { closed } }, { running: false }, { cut }, 60000);
+  assert.equal(
+    step.take(args(true, false, false)),
+    null,
+    "a pause cannot bypass the cut even after the old timeout",
+  );
+  assert.equal(step.take(args(true, false, true)), profile);
+  for (const [visible, closed] of [
+    [false, false],
+    [true, true],
+  ]) {
+    step.queue(profile, 0);
+    await Promise.resolve();
+    assert.equal(
+      step.take(args(visible, closed, false)),
+      profile,
+      "concealed preparation still accepts resolution relief",
+    );
+  }
+});
 
 test("a watch or tree that cannot commit fails to the title card once the camera knows; the lantern is optional", () => {
   const onStatus = between("onStatus(status) {", "subsystemRegistry.register(architectureAssets);");
@@ -68,7 +105,7 @@ test("models and maps keep the startup tier, and quality samples only completed 
   assert.match(index, /if \(sampledProfile\) adaptiveSteps\.queue\(sampledProfile, nowMs\);/);
   assert.match(
     index,
-    /const adaptiveProfile = adaptiveSteps\.take\(\{ cut: transition\.cut, running: liveView\.running && canvasShown && !site\.sceneDoors\?\.closed, nowMs \}\); if \(adaptiveProfile\) applyActiveQualityProfile\(adaptiveProfile, "adaptive"\);/,
+    /const adaptiveProfile = adaptiveSteps\.take\(\{ cut: transition\.cut, running: canvasShown && !site\.sceneDoors\?\.closed, nowMs \}\); if \(adaptiveProfile\) applyActiveQualityProfile\(adaptiveProfile, "adaptive"\);/,
   );
   assert.match(index, /if \(transition\.capture\) qualityState\.skipSamples\?\.\(3\);/);
 });
