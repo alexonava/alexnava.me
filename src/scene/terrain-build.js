@@ -6117,6 +6117,76 @@ function inSlices(
   );
 }
 
+// The cliff's shelf (ocean.js cliffGeometry()) lies a little above the ground along the fault,
+// its height sampled at its own coarse vertices. Between them the ground's finer detail, the
+// river's banks beside the falls, rose through it in ragged pale patches (Alex's report of
+// 2026-10-28). Settle every bed vertex under the shelf to `margin` beneath its top surface;
+// the water's cap (its own vertices) keeps its height.
+export function* tuckUnderShelf(geometry, cliff, margin = 0.06) {
+  if (!cliff?.index) return 0;
+  const cp = cliff.attributes.position.array,
+    ci = cliff.index.array,
+    bins = new Map(),
+    cell = 1,
+    key = (x, z) => (Math.floor(x / cell) + 32768) * 65536 + Math.floor(z / cell) + 32768;
+  for (let t = 0; t < ci.length; t += 3) {
+    const a = ci[t] * 3,
+      b = ci[t + 1] * 3,
+      c = ci[t + 2] * 3;
+    for (
+      let x = Math.floor(Math.min(cp[a], cp[b], cp[c]) / cell);
+      x <= Math.floor(Math.max(cp[a], cp[b], cp[c]) / cell);
+      x++
+    )
+      for (
+        let z = Math.floor(Math.min(cp[a + 2], cp[b + 2], cp[c + 2]) / cell);
+        z <= Math.floor(Math.max(cp[a + 2], cp[b + 2], cp[c + 2]) / cell);
+        z++
+      ) {
+        const id = (x + 32768) * 65536 + z + 32768;
+        if (!bins.has(id)) bins.set(id, []);
+        bins.get(id).push(a, b, c);
+      }
+    if (t % 3000 === 0) yield;
+  }
+  // The highest cliff surface over (x, z), or -Infinity where it has none.
+  const top = (x, z) => {
+    const list = bins.get(key(x, z)) ?? [];
+    let best = -Infinity;
+    for (let i = 0; i < list.length; i += 3) {
+      const a = list[i],
+        b = list[i + 1],
+        c = list[i + 2],
+        det = (cp[b + 2] - cp[c + 2]) * (cp[a] - cp[c]) + (cp[c] - cp[b]) * (cp[a + 2] - cp[c + 2]);
+      if (Math.abs(det) < 1e-12) continue;
+      const u = ((cp[b + 2] - cp[c + 2]) * (x - cp[c]) + (cp[c] - cp[b]) * (z - cp[c + 2])) / det,
+        v = ((cp[c + 2] - cp[a + 2]) * (x - cp[c]) + (cp[a] - cp[c]) * (z - cp[c + 2])) / det;
+      if (u < -1e-6 || v < -1e-6 || u + v > 1 + 1e-6) continue;
+      best = Math.max(best, u * cp[a + 1] + v * cp[b + 1] + (1 - u - v) * cp[c + 1]);
+    }
+    return best;
+  };
+  const p = geometry.attributes.position.array,
+    index = geometry.index.array,
+    bed = new Set();
+  for (let i = 0; i < (geometry.userData.riverBedIndexCount ?? index.length); i++)
+    bed.add(index[i]);
+  let settled = 0,
+    n = 0;
+  for (const v of bed) {
+    // The ground's positions are (x, -z, height) before its turn into the estate's frame.
+    const y = top(p[v * 3], -p[v * 3 + 1]);
+    if (y > -Infinity && p[v * 3 + 2] > y - margin) {
+      p[v * 3 + 2] = y - margin;
+      settled++;
+    }
+    if (++n % 4000 === 0) yield;
+  }
+  if (settled) geometry.attributes.position.needsUpdate = true;
+  geometry.userData.tuckedUnderShelf = settled;
+  return settled;
+}
+
 // The film terrain. Given the scene's rendering, it builds in slices
 // (inSlices()) and resolves only where the new ground cannot show mid-shot
 // (unseen()); without it (tests), it builds at once. cancelled: the film scene
@@ -6144,6 +6214,7 @@ function* preparedEarthSteps(groundHeight, EARTH, rendering) {
       tier,
       riverFalls(RIVER_LINE),
     );
+    yield* tuckUnderShelf(geometry, prepared.cliff);
     prepared.tier = tier;
     geometry.userData.coastGeometry = prepared;
     geometry.addEventListener("dispose", release);
