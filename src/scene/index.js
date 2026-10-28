@@ -1,8 +1,13 @@
 import "./quality.js";
 import { createSolarBody, SOLAR_RADIUS } from "./solar-body.js";
 import { LENS_FX, lensKeepRect, lensSource } from "./postprocess.js";
-import { openingFlame, openingStar, watchMeasure } from "./opening-star.js";
-import { measureShot, measureShotSteps } from "./directed-shots.js";
+import { openingStar, watchMeasure } from "./opening-star.js";
+import {
+  DIRECTED_SHOTS,
+  resolveDirectedShot,
+  measureShot,
+  measureShotSteps,
+} from "./directed-shots.js";
 import { createStarfield } from "./starfield.js";
 import { readTourInterval, createCameraTour, TOUR_IDLE, TOUR_TRANSITION } from "./camera-tour.js";
 import { createFilmScene } from "./film-scene.js";
@@ -39,8 +44,11 @@ import { createHillSilhouette } from "./hill-silhouette.js";
 import { createLightning } from "./lightning.js";
 import { createFarFires } from "./far-fires.js";
 import { markScene, measureScene, sceneNow } from "./perf-marks.js";
-import { createPropScale } from "./prop-scale.js";
+import { createPropScale, LANTERN_SCALE } from "./prop-scale.js";
 import {
+  BufferAttribute,
+  BufferGeometry,
+  PerspectiveCamera,
   CanvasTexture,
   CircleGeometry,
   ColorManagement,
@@ -357,6 +365,7 @@ const LANTERN_GLOW = 0.35;
         );
         // Built and loaded content follows the pinned asset tier (context).
         subsystemRegistry.applyQuality(state.profile, { pixelRatio, assetTier });
+        if (reason === "adaptive" && !canvasShown) retireOpening();
         updateSceneDebug({
           assetTier,
           // "low" while a resolution-only step holds the current profile at DPR 1.
@@ -370,6 +379,7 @@ const LANTERN_GLOW = 0.35;
       const atmosphereSystem = createSceneAtmosphere({
         parent: homeScene,
         profile: state.profile,
+        assetTier,
       });
       subsystemRegistry.register(atmosphereSystem);
       applyActiveQualityProfile(qualityState.getProfile(), "initial");
@@ -414,7 +424,8 @@ const LANTERN_GLOW = 0.35;
       let growthRoot = null;
       const sunEye = new Vector3(),
         sunAt = new Vector3();
-      let starShot = null;
+      let starShot = null,
+        environmentDirty = false;
       function commitShotSky(sun) {
         let changed = rendering.setShotSun(sun);
         if (sun?.at) {
@@ -430,7 +441,10 @@ const LANTERN_GLOW = 0.35;
         if (changed || sun?.at)
           setMistLights(sun?.at ?? WORLD.SUN_DIRECTION, solarBody.root.position.toArray());
         if (atmosphereSystem.commitSky(sun?.plate ?? "moon")) changed = true;
-        if (changed) rendering.refreshEnvironment();
+        if (changed) {
+          if (canvasShown) rendering.refreshEnvironment();
+          else environmentDirty = true;
+        }
       }
       // The stars borrow the shell's uniforms, so they hide behind its cloud banks.
       const starfield = createStarfield({
@@ -485,6 +499,7 @@ const LANTERN_GLOW = 0.35;
       subsystemRegistry.register(environmentSystem);
       const filmDetailReady = environmentSystem.prepareFilmDetail().catch(() => null);
       const environmentRoot = environmentSystem.root;
+      environmentRoot.visible = opening.view !== "watch";
       const circleGeometry = new CircleGeometry(
           WORLD.GROUND_RADIUS,
           circleSegments,
@@ -751,8 +766,10 @@ const LANTERN_GLOW = 0.35;
       // blocking first draw. Until the canvas is first shown nothing draws while
       // one is pending; afterwards a committed model that replaces nothing
       // visible stays hidden until its programs are ready.
+      let openingFlame = null;
       let canvasShown = false;
       let openingPrepared = false,
+        openingPresentation = null,
         openingFit = null,
         openingGeneration = 0,
         openingShaderStarted = false,
@@ -772,9 +789,11 @@ const LANTERN_GLOW = 0.35;
                 "details",
                 "foreground",
                 "rocks",
+                "sky",
                 "shaders",
+                "presentation",
               ]
-            : ["subjects", "shaders"],
+            : ["subjects", "sky", "shaders", "presentation"],
         report(snapshot) {
           site.sceneLoader?.preparation?.(snapshot);
           if (qualityDebug) qualityDebug.opening = snapshot;
@@ -783,6 +802,31 @@ const LANTERN_GLOW = 0.35;
           failToTitle("opening", reason);
         },
       });
+      void loadPreparationTasks()
+        .then(({ createOpeningPresentation, createOpeningFlame, retireShaderMaterial }) => {
+          if (runtimeDisposed || sceneFailed) return;
+          if (retireShaderMaterial)
+            rendering.retireMaterial = (material) => retireShaderMaterial(renderer, material);
+          openingPresentation = createOpeningPresentation(renderer.getContext?.());
+          openingFlame = createOpeningFlame({
+            BufferAttribute,
+            BufferGeometry,
+            Mesh,
+            Object3D,
+            PerspectiveCamera,
+            Vector3,
+            createCinematicCamera,
+            DIRECTED_SHOTS,
+            resolveDirectedShot,
+            lensSource,
+            LANTERN_SCALE,
+          });
+          predictLoaderStar();
+          invalidateContent();
+        })
+        .catch((error) => {
+          if (!runtimeDisposed && !sceneFailed) failToTitle("opening", error);
+        });
       const openingProgress = () =>
         (site.sceneLoader?.state?.progress ?? 0) + (rendering.openingProgress ?? 0);
       const openingStart = [sceneNow(), !document.hidden && sceneVisible, openingProgress()];
@@ -791,13 +835,15 @@ const LANTERN_GLOW = 0.35;
         ++openingGeneration;
         openingFit = null;
         openingPrepared = openingShaderStarted = false;
-        openingGate.reopen("foreground", "shaders");
+        openingPresentation?.reset();
+        openingGate.reopen("foreground", "shaders", "presentation");
       };
       function stopOpeningPreparation() {
         clearTimeout(openingTimer);
         clearTimeout(lanternDeadline);
         openingTimer = lanternDeadline = null;
         openingGate.dispose();
+        openingPresentation?.dispose();
         rendering.openingPreparing = false;
       }
       let openingStarted = false;
@@ -821,10 +867,33 @@ const LANTERN_GLOW = 0.35;
         if (prepared?.failed) failToTitle("terrain", "unavailable");
         openingTimer = window.setTimeout(observeOpening, 200);
       }
-      const shaderWarmup = createShaderWarmup({ compile: () => rendering.compileShaders() });
+      let openingBackgroundStarted = false;
+      const deferredWarmups = new Map();
+      const shaderWarmup = createShaderWarmup({
+        compile() {
+          if (
+            !canvasShown &&
+            !openingBackgroundStarted &&
+            (!openingPrepared || opening.view === "watch")
+          )
+            return rendering.compileShaders(2000, atmosphereSystem.root);
+          const visible = environmentRoot.visible;
+          environmentRoot.visible = true;
+          try {
+            return rendering.compileShaders();
+          } finally {
+            environmentRoot.visible = visible;
+          }
+        },
+      });
       // A detail change before the reveal links the ground's new program.
       warmGround = () => canvasShown || warmShaders("ground");
       function warmShaders(label, subject = null) {
+        if (runtimeDisposed) return Promise.resolve(false);
+        if (!canvasShown && !openingBackgroundStarted && !["scene", "opening"].includes(label)) {
+          deferredWarmups.set(label, subject);
+          return Promise.resolve(false);
+        }
         const start = sceneNow();
         return new Promise((resolve) =>
           shaderWarmup.warm(subject, (ready) => {
@@ -1029,6 +1098,7 @@ const LANTERN_GLOW = 0.35;
         // A tree opening: the lantern on the ground at its place on the estate, under the
         // composition's height, as prop-scale.js seats it.
         if (scene.cinematicSelection === "tree") {
+          if (!openingFlame) return;
           const { x, z } = estateLantern();
           environmentRoot.updateWorldMatrix(true, false);
           reportLoaderStar(
@@ -1182,10 +1252,11 @@ const LANTERN_GLOW = 0.35;
         // Samples are rAF intervals, not render cost; take them only while the
         // revealed scene animates continuously, outside a post-event hold, and
         // not while a step waits for its cut.
-        const revealed = canvasShown && cinematic.ready;
+        const revealed =
+          (canvasShown || openingGate.state.stage === "presentation") && cinematic.ready;
         const nowMs = 1000 * elapsedTime;
         const sampledProfile =
-          revealed && !reducedMotion && !adaptiveSteps.pending
+          revealed && !reducedMotion && !shaderWarmup.pending && !adaptiveSteps.pending
             ? qualityState.sampleRevealed?.({
                 frameMs: 1000 * sampleDeltaSeconds,
                 nowMs,
@@ -1198,7 +1269,7 @@ const LANTERN_GLOW = 0.35;
         const tourPhase =
           cameraTour?.update({
             elapsedSeconds: elapsedTime,
-            ready: canvasShown,
+            ready: canvasShown && !site.sceneDoors?.closed,
             reducedMotion,
             held: walk?.holdsTour === true,
           }) ?? null;
@@ -1215,7 +1286,7 @@ const LANTERN_GLOW = 0.35;
         // its one-off work.
         const adaptiveProfile = adaptiveSteps.take({
           cut: transition.cut,
-          running: liveView.running,
+          running: canvasShown && !site.sceneDoors?.closed,
           nowMs,
         });
         if (adaptiveProfile) applyActiveQualityProfile(adaptiveProfile, "adaptive");
@@ -1262,7 +1333,8 @@ const LANTERN_GLOW = 0.35;
           cinematic.apply({
             width,
             height,
-            elapsedSeconds: canvasShown ? Math.max(0, elapsedTime - revealTime) : 0,
+            elapsedSeconds:
+              canvasShown && !site.sceneDoors?.closed ? Math.max(0, elapsedTime - revealTime) : 0,
             reducedMotion,
             tourPhase: canvasShown ? tourPhase : 0,
             fallbackFov: cameraProfile.fov,
@@ -1291,6 +1363,13 @@ const LANTERN_GLOW = 0.35;
         if (cinematicApplied) lookTarget.copy(cinematic.target);
         else if (walking) lookTarget.copy(walk.focus);
         else lookTarget.set(0, lookAtHeight, 0);
+        // The watch looks wholly into the sky on every layout. Its physical
+        // set returns on the incoming cut (or when entering the walk).
+        const showEnvironment = walking || !filmActive || cinematic.current !== "watch";
+        if (environmentRoot.visible !== showEnvironment) {
+          environmentRoot.visible = showEnvironment;
+          rendering.invalidateShadows();
+        }
         // The cloud vortex's eye sits where this lens sees the star, set on each cut and
         // each refit (a resize; estate-sky.js CLOUD_VORTEX), so it stays about the star.
         // The shot on screen's own sun (directed-shots.js `sun`), or the moon: changed only
@@ -1477,46 +1556,59 @@ const LANTERN_GLOW = 0.35;
             architectureStatus.lantern === "fallback";
           if (lanternSettled) settleOpening("lantern");
           const refit = openingFit && openingFit !== cinematic.frame;
-          if (lanternSettled && (!openingFit || refit)) {
+          if (lanternSettled && openingPresentation && (!openingFit || refit)) {
             openingFit = cinematic.frame;
             const generation = ++openingGeneration;
             openingPrepared = openingShaderStarted = false;
-            if (refit) openingGate.reopen("foreground", "shaders");
-            if (opening.view === "tree") {
-              const frame = {
-                camera,
-                viewport: { ...viewport },
-                shot: cinematic.shot?.name,
-                profile: state.profile,
-                nextShot: cameraTour?.nextShot?.name,
-              };
-              const terrain = filmScene.prepareOpening(frame);
-              const maps = groundTextures.prepareOpening().then(() => settleOpening("materials"));
-              const rocks = rockScatter.prepareOpening().then(() => {
-                if (rockScatter.committed) groundContacts.slateRockContact.value = 1;
-                settleOpening("rocks");
+            if (refit) {
+              openingPresentation?.reset();
+              openingGate.reopen("foreground", "shaders", "presentation");
+            }
+            const frame = {
+              camera,
+              viewport: { ...viewport },
+              shot: cinematic.shot?.name,
+              profile: state.profile,
+              nextShot: cameraTour?.nextShot?.name,
+              tree: opening.view === "tree",
+              plate: cinematic.shot?.sun?.plate,
+            };
+            openingPresentation
+              .prepare(
+                frame,
+                {
+                  atmosphere: atmosphereSystem,
+                  rendering: { refreshEnvironment: () => (environmentDirty = true) },
+                  filmScene,
+                  groundTextures,
+                  rockScatter,
+                  groundContacts,
+                },
+                settleOpening,
+              )
+              .then((ready) => {
+                if (
+                  runtimeDisposed ||
+                  sceneFailed ||
+                  generation !== openingGeneration ||
+                  !webglContextAvailable
+                )
+                  return;
+                if (!ready) return failToTitle("terrain", "unavailable");
+                for (const stage of ["terrain", "details", "foreground"]) settleOpening(stage);
+                openingPrepared = true;
+                invalidateContent();
+              })
+              .catch((error) => {
+                if (!runtimeDisposed && !sceneFailed && generation === openingGeneration)
+                  failToTitle("opening", error);
               });
-              Promise.all([terrain, maps, rocks])
-                .then(([ready]) => {
-                  if (
-                    runtimeDisposed ||
-                    sceneFailed ||
-                    generation !== openingGeneration ||
-                    !webglContextAvailable
-                  )
-                    return;
-                  if (!ready) return failToTitle("terrain", "unavailable");
-                  for (const stage of ["terrain", "details", "foreground"]) settleOpening(stage);
-                  openingPrepared = true;
-                  invalidateContent();
-                })
-                .catch((error) => {
-                  if (!runtimeDisposed && !sceneFailed && generation === openingGeneration)
-                    failToTitle("opening", error);
-                });
-            } else openingPrepared = true;
           }
           if (openingPrepared && !openingShaderStarted && !shaderWarmup.pending) {
+            if (environmentDirty) {
+              rendering.refreshEnvironment();
+              environmentDirty = false;
+            }
             openingShaderStarted = true;
             const generation = openingGeneration;
             warmShaders("opening").then((ready) => {
@@ -1547,12 +1639,22 @@ const LANTERN_GLOW = 0.35;
         }
         // Partial preparation can still carry linking terrain programs. Only the
         // complete opening draws hidden; later visible frames retain their path.
-        if (canvasShown || (openingGate.ready && !shaderWarmup.pending)) {
+        const presentingOpening =
+          openingGate.state.status === "preparing" &&
+          openingGate.state.stage === "presentation" &&
+          openingPresentation;
+        if (canvasShown || (presentingOpening && !shaderWarmup.pending)) {
           // Slate may still be loading at the reveal; keep the first visible
           // procedural surface detailed without painting an unused fallback.
           if (!canvasShown && cinematic.ready) groundTextures.ensureProcedural();
-          rendering.update();
-          if (!firstFrameDrawn) {
+          const renderStart = sceneNow();
+          const drawn = rendering.update();
+          if (!canvasShown && drawn !== false) {
+            if (openingPresentation.sample(timestamp, sceneNow() - renderStart))
+              settleOpening("presentation");
+            if (openingPresentation.failed) failToTitle("opening", "draw-unavailable");
+          }
+          if (!firstFrameDrawn && drawn !== false) {
             firstFrameDrawn = true;
             measureScene("first-frame", frameStart);
           }
@@ -1589,15 +1691,20 @@ const LANTERN_GLOW = 0.35;
           // Close openings already settled their rocks and material maps. Other
           // openings retain the deferred path; later data publishes at cuts.
           rockScatter.setRevealed();
+          atmosphereSystem.setRevealed(opening.view === "watch");
           // A visitor already holding the scene may receive no following frame.
           // Start optional data here; its decode requests one refinement frame.
           groundTextures.update?.({ revealed: true });
+          openingBackgroundStarted = true;
+          for (const [label, subject] of deferredWarmups) warmShaders(label, subject);
+          deferredWarmups.clear();
         }
         canvasShown = sceneShown;
+        if (canvasShown && site.sceneDoors?.closed) revealTime = elapsedTime;
         container?.classList.toggle("is-ready", sceneShown);
         // Until the reveal, the transparent canvas redraws only when invalidated
         // (status, model commit, resize) instead of animating through downloads.
-        frameScheduler?.setStill(!sceneShown);
+        frameScheduler?.setStill(!sceneShown && !presentingOpening);
         // A paused visitor keeps the first revealed frame.
         if (sceneShown) visitorHold?.reveal();
       }
@@ -1620,6 +1727,7 @@ const LANTERN_GLOW = 0.35;
       reducedMotionMQ.addEventListener("change", onReducedMotionChange);
       const onDocumentVisibilityChange = () => {
         if (!canvasShown) tickOpening();
+        if (!canvasShown) openingPresentation?.reset();
         if (document.hidden) return;
         qualityState.holdSampling();
         frameScheduler.resume();
@@ -1708,6 +1816,7 @@ const LANTERN_GLOW = 0.35;
       scene.disposeHomeSceneRuntime = function disposeHomeSceneRuntime() {
         if (runtimeDisposed) return false;
         runtimeDisposed = true;
+        deferredWarmups.clear();
         stopOpeningPreparation();
         sceneReadyMarked = false;
         container.classList?.remove("is-ready");
@@ -1733,6 +1842,11 @@ const LANTERN_GLOW = 0.35;
         scene.disposeHomeSceneRuntime = () => false;
         return disposedResources;
       };
+      // A tree opening needs the physical ground. Begin its detached, sliced
+      // work alongside the initial sky capture, rather than waiting for the
+      // sky-only Watch assembly to release it. Admission still waits for all
+      // opening owners and final scene draws.
+      if (opening.view === "tree") filmScene.setActive(true);
       warmShaders("scene");
       observeOpening();
       frameScheduler.start();

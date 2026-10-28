@@ -5,6 +5,10 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { createCameraTour } from "../src/scene/camera-tour.js";
 import { DIRECTED_SHOTS } from "../src/scene/directed-shots.js";
+import {
+  createOpeningPresentation,
+  prepareOpeningResources,
+} from "../src/scene/opening-presentation.js";
 import { createOpeningPreparation } from "../src/scene/opening-preparation.js";
 
 const source = readFileSync(new URL("../src/scene/index.js", import.meta.url), "utf8");
@@ -48,6 +52,10 @@ const readiness = source.slice(
     readinessStart,
   ),
 );
+const draw = between(
+  "// Partial preparation can still carry linking terrain programs.",
+  "visitorHold?.frameRendered();",
+);
 const reveal = between("const sceneShown =", "// Until the reveal, the transparent canvas");
 const tour = between("const tourPhase =", "const tourTransition =");
 const apply =
@@ -68,6 +76,7 @@ function harness({
   initialProgress = 0,
   setupSeconds = 0,
   earlyFrame = false,
+  realPresentation = false,
 } = {}) {
   const cohorts = [],
     warms = [],
@@ -124,6 +133,44 @@ function harness({
       },
     },
     qualityDebug: {},
+    // A fitted camera has already loaded this shared helper; keep its import
+    // resolved while the resource owners below remain independently async.
+    loadPreparationTasks: () => ({
+      then(callback) {
+        callback({
+          createOpeningFlame: () => () => null,
+          createOpeningPresentation: realPresentation
+            ? createOpeningPresentation
+            : () => ({
+                prepare: prepareOpeningResources,
+                sample: () => true,
+                reset() {},
+                dispose() {},
+              }),
+        });
+        return { catch() {} };
+      },
+    }),
+    predictLoaderStar() {},
+    openingFlame: null,
+    environmentDirty: false,
+    BufferAttribute: null,
+    BufferGeometry: null,
+    Mesh: null,
+    Object3D: null,
+    PerspectiveCamera: null,
+    Vector3: null,
+    createCinematicCamera: null,
+    DIRECTED_SHOTS: null,
+    resolveDirectedShot: null,
+    lensSource: null,
+    LANTERN_SCALE: null,
+    firstFrameDrawn: true,
+    frameStart: 0,
+    get timestamp() {
+      return this.elapsedTime * 1000;
+    },
+    measureScene() {},
     runtimeDisposed: false,
     sceneFailed: false,
     webglContextAvailable: true,
@@ -168,7 +215,7 @@ function harness({
         return next.promise;
       },
     },
-    groundTextures: { prepareOpening: () => maps.promise, update() {} },
+    groundTextures: { prepareOpening: () => maps.promise, ensureProcedural() {}, update() {} },
     rockScatter: { committed: true, prepareOpening: () => rocks.promise, setRevealed() {} },
     groundContacts: { slateRockContact: { value: 0 } },
     lanternMount: { committed: true },
@@ -176,11 +223,13 @@ function harness({
     renderer: { extensions: { has: () => parallel } },
     rendering: {
       openingPreparing: true,
+      refreshEnvironment() {},
       programsLinked: () => linked,
       update() {
         draws++;
       },
     },
+    atmosphereSystem: { prepareOpening: async () => false, setRevealed() {} },
     invalidateContent() {
       invalidations++;
     },
@@ -206,7 +255,7 @@ function harness({
     elapsedTime = setupSeconds;
     ${begin}
     return {
-      step() { const {width,height}=viewport; ${tour} const cinematicApplied = ${apply} ${readiness} ${reveal} },
+      step() { const {width,height}=viewport; ${tour} const cinematicApplied = ${apply} ${readiness} ${draw} ${reveal} },
       lose() { ${callback("onContextLost")} },
       restore() { ${callback("onContextRestored")} },
       observe() { observeOpening(); },
@@ -258,6 +307,36 @@ test("the scene requires the UI's actual shared opening factory before initializ
   for (const site of [{}, { shared: {} }, { shared: { createOpeningPreparation: false } }])
     assert.equal(resolve(site), false, "a missing bridge declines before any renderer is built");
   assert.ok(source.indexOf(bridge) < source.indexOf("if (!container || !supportsWebGL())"));
+});
+
+test("the actual bootstrap waits for rendered presentation after every shader has settled", async () => {
+  const h = harness({ realPresentation: true });
+  h.owner.step();
+  await h.prepare();
+  h.owner.step();
+  await h.warm();
+  h.owner.step();
+  assert.equal(h.owner.state.canvasShown, false);
+  assert.equal(h.owner.state.gate.stage, "presentation");
+  for (let n = 1; n <= 8; n++) {
+    h.env.elapsedTime = n / 60;
+    h.owner.step();
+  }
+  assert.equal(h.owner.state.canvasShown, false);
+  h.env.elapsedTime += 0.2;
+  h.owner.step();
+  for (let n = 0; n < 12; n++) {
+    h.env.elapsedTime += 1 / 60;
+    h.owner.step();
+  }
+  assert.equal(h.owner.state.canvasShown, false, "a long frame restarts the window");
+  for (let n = 0; n < 9; n++) {
+    h.env.elapsedTime += 1 / 60;
+    h.owner.step();
+  }
+  assert.equal(h.owner.state.canvasShown, true);
+  assert.deepEqual(h.marks, ["reveal"]);
+  h.owner.dispose();
 });
 
 test("the actual bootstrap consumes the remaining entry budget once, including an expired zero", () => {
@@ -462,7 +541,7 @@ test("a ready but unrevealed opening records hidden time before a refit reopens 
   await h.prepare();
   h.owner.step();
   await h.warm();
-  assert.equal(h.owner.state.gate.status, "ready");
+  assert.equal(h.owner.state.gate.stage, "presentation");
   h.env.elapsedTime = 1.1;
   h.env.document.hidden = true;
   h.owner.observe();
@@ -560,7 +639,7 @@ test("final shader settlement while hidden excludes the suspended interval on bo
         h.owner.observe();
         h.env.elapsedTime = 614.9;
         await h.warm(0, parallel);
-        assert.equal(h.owner.state.gate.status, "ready");
+        assert.equal(h.owner.state.gate.stage, "presentation");
         assert.equal(h.owner.state.gate.elapsed, 14900);
         assert.equal(h.owner.state.canvasShown, false);
         h.env.document.hidden = false;

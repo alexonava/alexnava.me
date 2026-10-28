@@ -80,14 +80,31 @@ The 512px lossy albedo tile is sRGB and is normalized in the shader by its measu
 
 `images/materials/cel-sky-<key>.webp` are RGBA WebPs of the film sky's own cel banks (estate-sky.js `cloudFieldGLSL`), lit in volume and baked once round the sky, four times as wide as tall: u is the azimuth over a full turn and v runs from 0.78 at the horizon to the zenith. `moon` is lit from the shared key's direction (the code keeps the night's name) and is the plate for every shot without a sun of its own; `close-up`, `root-and-lantern` and `broken-coast` are each lit from that shot's sun (directed-shots.js `sun`). They are display-referred artwork, sampled as `NoColorSpace`; alpha stores real clear-sky windows. The build fingerprints each separately from the slate maps. The bake tools (`tools/sky-bake`, `bake-live.ps1`) are kept in the local review archive.
 
-| File                            | Pixels    | Bytes   | Lit by                                          |
-| ------------------------------- | --------- | ------- | ----------------------------------------------- |
-| `cel-sky-moon.webp`             | 4096×1024 | 445,888 | the shared key (every shot without its own sun) |
-| `cel-sky-close-up.webp`         | 3072×768  | 271,714 | Close-up's sun                                  |
-| `cel-sky-root-and-lantern.webp` | 3072×768  | 305,348 | Root and lantern's sun                          |
-| `cel-sky-broken-coast.webp`     | 3072×768  | 303,184 | The broken coast's sun                          |
+| File                                     | Pixels    |   Bytes | Tier     | Lit by           |
+| ---------------------------------------- | --------- | ------: | -------- | ---------------- |
+| `cel-sky-moon.webp`                      | 4096×1024 | 445,888 | high     | shared key       |
+| `cel-sky-close-up.webp`                  | 3072×768  | 271,714 | high     | Close-up         |
+| `cel-sky-root-and-lantern.webp`          | 3072×768  | 305,348 | high     | Root and lantern |
+| `cel-sky-broken-coast.webp`              | 3072×768  | 303,184 | high     | The broken coast |
+| `cel-sky-moon-balanced.webp`             | 2048×512  | 163,032 | balanced | shared key       |
+| `cel-sky-close-up-balanced.webp`         | 2048×512  | 173,928 | balanced | Close-up         |
+| `cel-sky-root-and-lantern-balanced.webp` | 2048×512  | 188,036 | balanced | Root and lantern |
+| `cel-sky-broken-coast-balanced.webp`     | 2048×512  | 186,516 | balanced | The broken coast |
 
-The lazy [cloud-plate.js](../src/scene/cloud-plate.js) owner requests them only for the live high and balanced sky: the shared one (`moon`) first, then the suns' one at a time, each within a 640 KiB file limit, a 4,194,304-pixel decode limit and an 8 s abort deadline; all four stay within the owner's 2 MB sky budget. They repeat round the sky with mipmaps on the existing shell, which lends its uniform objects to the stars and the environment capture. A ready plate commits during hidden preparation or on the cut to its shot, and the environment is drawn again with it. On the shell each plate's colour is mapped by its luminance to golden hour's, a dusk shade to a sunlit gold (estate-sky.js `GOLDEN_SKY` `cloudShade` and `cloudLit`). Failure leaves the procedural sky and never delays the reveal. Disposal restores borrowed uniforms, frees the owned textures and closes their bitmaps.
+The balanced set is derived from the same own artwork using a LANCZOS resize and WebP
+quality 88, method 6, exact alpha. Its 711,512 bytes save 614,622 bytes against the high
+set; no third-party image or license is added. Original high images remain byte-identical.
+
+The lazy [cloud-plate.js](../src/scene/cloud-plate.js) owner pins the startup asset tier.
+The opening's shared plate settles before final shader preparation, with an 8 s deadline;
+failure settles to the procedural sky. Only after reveal do the other three load, one at
+a time in upcoming-tour order. A request's timeout never aborts another plate. High uses
+a 640 KiB file and 4,194,304-pixel limit; balanced uses 224 KiB and 1,048,576 pixels.
+The high set stays within 2 MiB and balanced within 768 KiB. Both sets use mipmaps and
+NoColorSpace. Quality changes reuse the pinned set without another download. Each ready
+plate and its environment reflection publish only while hidden or on a tour cut.
+Disposal restores borrowed uniforms, aborts owned requests, frees textures and closes
+bitmaps; late decodes are freed without rebinding.
 
 ## The opening's paper
 
@@ -148,15 +165,15 @@ Runtime assets are committed in their delivered form. Local authoring helpers al
 
 ## Budgets
 
-| Budget                                                                                           | Limit                                              | Now              | Enforced by                                                                               |
-| ------------------------------------------------------------------------------------------------ | -------------------------------------------------- | ---------------- | ----------------------------------------------------------------------------------------- |
-| Any one model, high                                                                              | 6 MiB (6,291,456)                                  | 2,028,412 (tree) | The loader (`ARCHITECTURE_ASSET_BUDGETS`) and `bundle-output`                             |
-| Any one model, balanced                                                                          | 3 MiB (3,145,728)                                  | 896,532 (tree)   | The same                                                                                  |
-| Complete scene, high: seven models, five slate maps, soil roughness and both optional coast maps | 7.25 MiB (7,602,176)                               | 4,791,452        | `bundle-output`: complete-scene budget, including all optional maps                       |
-| Complete scene, balanced                                                                         | 3.5 MiB (3,670,016)                                | 2,271,022        | The same                                                                                  |
-| UI bundle and capability worker (`app.HASH.js` + `webgl-probe.HASH.js`)                          | under 34 KiB                                       |                  | `bundle-output`: "UI and capability worker together stay under the existing LCP budget"   |
-| Scene entry and the chunks it imports statically                                                 | under 838 KiB, exactly two files                   |                  | `bundle-output`: "scene bundle stays under the deferred-payload budget"                   |
-| `public/og.png`                                                                                  | opaque, exactly 1200×630, at most 300 KB (300,000) | 298,049          | `hosting`: "the share image is an opaque 1200x630 PNG of at most 300 KB, as its tags say" |
+| Budget                                                                                                            | Limit                                              | Now              | Enforced by                                                                               |
+| ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | ---------------- | ----------------------------------------------------------------------------------------- |
+| Any one model, high                                                                                               | 6 MiB (6,291,456)                                  | 2,028,412 (tree) | The loader (`ARCHITECTURE_ASSET_BUDGETS`) and `bundle-output`                             |
+| Any one model, balanced                                                                                           | 3 MiB (3,145,728)                                  | 896,532 (tree)   | The same                                                                                  |
+| Complete scene, high: seven models, five slate maps, soil roughness, both optional coast maps and four sky plates | 7.25 MiB (7,602,176)                               | 6,117,586        | `bundle-output`: complete-scene budget, including all optional maps                       |
+| Complete scene, balanced                                                                                          | 3.5 MiB (3,670,016)                                | 2,982,534        | The same                                                                                  |
+| UI bundle and capability worker (`app.HASH.js` + `webgl-probe.HASH.js`)                                           | under 34 KiB                                       |                  | `bundle-output`: "UI and capability worker together stay under the existing LCP budget"   |
+| Scene entry and the chunks it imports statically                                                                  | under 838 KiB, exactly two files                   |                  | `bundle-output`: "scene bundle stays under the deferred-payload budget"                   |
+| `public/og.png`                                                                                                   | opaque, exactly 1200×630, at most 300 KB (300,000) | 298,049          | `hosting`: "the share image is an opaque 1200x630 PNG of at most 300 KB, as its tags say" |
 
 The cliff and stack meshes together are capped at 45,000 triangles on high and 25,000 on balanced (`coastGeometrySettings`, `test/coast-geometry.test.mjs`). Their default geometry totals 41,360 and 20,000 triangles; with the river's actual falls notch it totals 41,322 and 19,962. The three buttresses and sparse rubble stay merged into the existing cliff groups rather than adding meshes or passes. The live terrain prepares these same cliff and stack buffers cooperatively in its existing idle slices before handing them to the coastal owner; fixed byte baselines hold the output equal to the synchronous builders. This changes preparation scheduling, not the geometry, shaders, asset downloads or draw groups.
 

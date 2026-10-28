@@ -80,7 +80,9 @@ function createHarness({
   };
   doors.classList = new FakeClassList(() => log.push(`class ${doors.classList.value}`));
 
+  const content = [{ inert: false }, { inert: true }, { inert: false }];
   const document = {
+    querySelectorAll: () => content,
     hidden: false,
     body: { tag: "body" },
     documentElement: { tag: "html" },
@@ -141,6 +143,7 @@ function createHarness({
 
   return {
     doors,
+    content,
     glows,
     properties,
     scripts,
@@ -238,101 +241,55 @@ test("a static path opens the doors at once and they leave the page", () => {
   assert.equal(h.timerCount, 0, "the cap's interval is released");
 });
 
-test("at the reveal the doors wait out the canvas's fade and then even frames", () => {
+test("a prepared reveal waits only for the canvas fade, and never opens while hidden", () => {
   const h = createHarness();
+  assert.ok(h.content.every((node) => node.inert));
   h.sceneDoors.open("revealed");
+  assert.equal(h.sceneDoors.closed, true);
+  h.advance(479);
   assert.doesNotMatch(h.classes, /\bis-open\b/);
-  h.advance(480);
-  // A long frame (the scene's work) restarts the wait.
-  h.frames(8, 16);
-  h.frames(1, 300);
-  h.frames(10, 16);
-  assert.doesNotMatch(h.classes, /\bis-open\b/);
-  h.frames(4, 16);
-  assert.match(h.classes, /\bis-open\b/);
-});
-
-test("the reveal's wait for even frames ends at its limit", () => {
-  const h = createHarness();
-  h.sceneDoors.open("revealed");
-  h.advance(480);
-  // Frames that never settle: every other one is long. 900ms after the fade, the doors
-  // part anyway.
-  for (let i = 0; i < 8; i++) {
-    h.frames(1, 16);
-    h.frames(1, 90);
-  }
-  assert.doesNotMatch(h.classes, /\bis-open\b/);
-  for (let i = 0; i < 2; i++) {
-    h.frames(1, 16);
-    h.frames(1, 90);
-  }
-  assert.match(h.classes, /\bis-open\b/);
-});
-
-test("without frames (a hidden tab) the reveal's doors still part on the timers", () => {
-  const h = createHarness();
-  h.sceneDoors.open("revealed");
-  h.advance(480 + 900 + 399);
-  assert.doesNotMatch(h.classes, /\bis-open\b/);
-  h.advance(1);
-  assert.match(h.classes, /\bis-open\b/);
-});
-
-test("a tap on the paper, a key or keyboard focus parts held doors at once", () => {
-  for (const [what, act] of [
-    ["tap", (h) => h.touch()],
-    ["key", (h) => h.fire("keydown", { type: "keydown", key: "Tab" })],
-    ["focus", (h) => h.fire("focusin", { type: "focusin", target: { tag: "a" } })],
-  ]) {
-    const h = createHarness();
-    act(h);
-    assert.match(h.classes, /\bis-open\b/, what);
-    assert.equal(h.sceneDoors.state, "open", what);
-    for (const type of ["doors:click", "keydown", "focusin"]) {
-      assert.equal(h.listening(type), false, `${what}: the ${type} listener is released`);
-    }
-    h.advance(2300);
-    assert.equal(h.doors.hidden, true, what);
-  }
-});
-
-test("a modifier alone, a browser shortcut or focus coming back to the page keeps them shut", () => {
-  const h = createHarness();
-  h.fire("keydown", { type: "keydown", key: "Shift" });
-  h.fire("keydown", { type: "keydown", key: "Meta" });
-  h.fire("keydown", { type: "keydown", key: "r", ctrlKey: true });
-  h.fire("keydown", { type: "keydown", key: "Tab", altKey: true });
-  h.fire("focusin", { type: "focusin", target: h.body });
-  assert.doesNotMatch(h.classes, /\bis-open\b/);
-  assert.equal(h.sceneDoors.state, "held");
-});
-
-test("the cap opens held doors after 10s of visible time; hidden time pauses it", () => {
-  const h = createHarness();
-  h.advance(4000);
   h.setHidden(true);
-  assert.match(h.classes, /\bis-paused\b/);
+  h.advance(10000);
+  assert.doesNotMatch(h.classes, /\bis-open\b/);
+  h.setHidden(false);
+  assert.match(h.classes, /\bis-open\b/);
+  assert.equal(h.sceneDoors.closed, false);
+  assert.deepEqual(
+    h.content.map((node) => node.inert),
+    [false, true, false],
+  );
+});
+
+test("early input and the former ten-second cap cannot uncover an unfinished scene", () => {
+  const h = createHarness();
+  h.touch();
+  h.fire("keydown", { type: "keydown", key: "Tab" });
+  h.fire("focusin", { type: "focusin", target: { tag: "a" } });
+  h.sceneDoors.open("input");
+  h.advance(12000);
+  assert.equal(h.sceneDoors.state, "held");
+  assert.equal(h.sceneDoors.closed, true);
+  assert.ok(h.content.every((node) => node.inert));
+  h.sceneDoors.open("static");
+  assert.match(h.classes, /\bis-open\b/);
+  assert.deepEqual(
+    h.content.map((node) => node.inert),
+    [false, true, false],
+  );
+});
+
+test("the last-resort cap excludes hidden time and falls back after the scene's deadline", () => {
+  const h = createHarness();
+  h.advance(12000);
+  h.setHidden(true);
   h.advance(30000);
   assert.doesNotMatch(h.classes, /\bis-open\b/);
   h.setHidden(false);
-  assert.doesNotMatch(h.classes, /\bis-paused\b/);
-  h.advance(5750);
+  h.advance(21000);
   assert.doesNotMatch(h.classes, /\bis-open\b/);
-  h.advance(500);
+  h.advance(1250);
   assert.match(h.classes, /\bis-open\b/);
-});
-
-test("the cap reads the stylesheet's own clock, so it always comes before the backstop", () => {
-  const h = createHarness();
-  // The page was hidden for most of the load: the script's own count would be far
-  // behind, but the stylesheet's clock (paused while hidden) says 9.8s of visible time.
-  h.setClock(9800);
-  h.advance(250);
-  assert.doesNotMatch(h.classes, /\bis-open\b/);
-  h.setClock(10050);
-  h.advance(250);
-  assert.match(h.classes, /\bis-open\b/);
+  assert.equal(h.sceneDoors.closed, false);
 });
 
 test("a backstop already under way finishes as it is, and the drawing gives way to it", () => {
@@ -346,7 +303,7 @@ test("a backstop already under way finishes as it is, and the drawing gives way 
   h.advance(600);
   assert.match(h.classes, /\bis-drawn-only\b/);
   // The script was held up past the stylesheet's backstop (11s on its clock).
-  h.setClock(11400);
+  h.setClock(35400);
   h.sceneDoors.open("static");
   assert.doesNotMatch(h.classes, /\bis-open\b/, "no second opening over the first");
   assert.doesNotMatch(h.classes, /\bis-drawn\b/, "the stylesheet's halves show");

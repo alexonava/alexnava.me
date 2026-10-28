@@ -6,6 +6,7 @@ import {
   BoxGeometry,
   BufferGeometry,
   CanvasTexture,
+  Group,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
@@ -20,12 +21,248 @@ import {
 import { markSceneEvaluated, measureScene, sceneNow } from "../src/scene/perf-marks.js";
 import { createSceneRendering } from "../src/scene/rendering.js";
 import { createShaderWarmup } from "../src/scene/runtime.js";
-import { compilePrograms } from "../src/scene/shader-programs.js";
+import { compilePrograms, linkedPrograms, shaderWaitBudget } from "../src/scene/shader-programs.js";
 import { createHillSilhouette } from "../src/scene/hill-silhouette.js";
+import { retireShaderMaterial } from "../src/scene/preparation-tasks.js";
 import { createOpeningPreparation } from "../src/scene/opening-preparation.js";
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 const linkedPoll = () => new Promise((resolve) => setTimeout(resolve, 25));
+test("a replaced environment's freed shader programs are never polled or link-queried", async () => {
+  let queried = 0;
+  const gl = {
+    isProgram: () => assert.fail("no synchronous driver identity queries"),
+    getProgramParameter() {
+      queried++;
+      throw new Error("freed program");
+    },
+  };
+  const program = {
+    // Three r160's destroy() clears this field after deleting its GL handle.
+    program: undefined,
+    isReady() {
+      queried++;
+      throw new Error("freed program");
+    },
+  };
+  const renderer = {
+    getContext: () => gl,
+    compile: () => new Set([{}]),
+    properties: { get: () => ({ programs: new Map([["old", program]]) }) },
+  };
+  assert.equal(await compilePrograms(renderer, {}, {}, null, () => true), false);
+  assert.equal(linkedPrograms(renderer, [program]), false);
+  assert.equal(queried, 0);
+});
+
+test("shader admission checks asynchronous completion before link status without driver identity queries", async () => {
+  let ready = false,
+    links = 0;
+  const program = { program: {}, isReady: () => ready };
+  const gl = {
+    LINK_STATUS: 35714,
+    isProgram: () => assert.fail("identity checks would synchronize the driver"),
+    getProgramParameter(handle, parameter) {
+      assert.equal(ready, true, "never force an unfinished link");
+      assert.equal(handle, program.program);
+      assert.equal(parameter, this.LINK_STATUS);
+      links++;
+      return true;
+    },
+  };
+  const renderer = {
+    getContext: () => gl,
+    compile: () => new Set([{}]),
+    properties: { get: () => ({ currentProgram: program }) },
+  };
+  assert.equal(linkedPrograms(renderer, [program]), false);
+  const pending = compilePrograms(renderer, {}, {}, null, () => true);
+  await linkedPoll();
+  assert.equal(links, 0);
+  ready = true;
+  assert.equal(await pending, true);
+  assert.equal(links, 1);
+  assert.equal(linkedPrograms(renderer, [program]), true);
+});
+test("task-based shader batches are submitted before nonblocking readiness checks", async () => {
+  let submitted = false;
+  const program = {
+    program: {},
+    isReady: () => {
+      assert.equal(submitted, true);
+      return true;
+    },
+  };
+  const gl = {
+    flush: () => {
+      submitted = true;
+    },
+    getProgramParameter: () => true,
+  };
+  const renderer = {
+    getContext: () => gl,
+    compile: () => new Set([{}]),
+    properties: { get: () => ({ currentProgram: program }) },
+  };
+  assert.equal(await compilePrograms(renderer, {}, {}, null, () => true), true);
+  assert.equal(submitted, true);
+});
+
+test("shader timeouts count visible preparation and never query a hidden program", async () => {
+  let now = 0;
+  const document = { hidden: false },
+    budget = shaderWaitBudget(1000, () => now, document);
+  now = 200;
+  assert.equal(budget(), 1);
+  document.hidden = true;
+  assert.equal(budget(), 0);
+  now = 10000;
+  assert.equal(budget(), 0);
+  document.hidden = false;
+  assert.equal(budget(), 1);
+  now += 799;
+  assert.equal(budget(), 1);
+  now++;
+  assert.equal(budget(), -1);
+
+  const previous = globalThis.document;
+  try {
+    globalThis.document = { hidden: true };
+    let queried = 0;
+    const program = {
+      program: {},
+      isReady: () => {
+        queried++;
+        return true;
+      },
+    };
+    const renderer = {
+      compile: () => new Set([{}]),
+      properties: { get: () => ({ currentProgram: program }) },
+    };
+    const pending = compilePrograms(renderer, {}, {}, null, () => true, 5);
+    await linkedPoll();
+    assert.equal(queried, 0, "hidden time neither queries nor expires preparation");
+    globalThis.document.hidden = false;
+    assert.equal(await pending, true);
+    assert.ok(queried > 0);
+  } finally {
+    if (previous === undefined) delete globalThis.document;
+    else globalThis.document = previous;
+  }
+});
+
+test("the actual terrain release transfers its timed-out probe to driver-safe retirement", async () => {
+  const text = await source("scene/terrain-build.js"),
+    start = text.indexOf("const release = () => {", text.indexOf("Releasing a probe invalidates")),
+    end = text.indexOf("// The sea,", start);
+  assert.ok(start > 0 && end > start);
+  let finishReadiness,
+    ready = false,
+    freed = 0;
+  const tasks = [],
+    material = { dispose: () => freed++ };
+  const program = { program: {}, isReady: () => ready };
+  const renderer = { properties: { get: () => ({ currentProgram: program }) } };
+  let retirement;
+  const rendering = {
+    retireMaterial: (m) => {
+      assert.equal(m, material);
+      retirement = retireShaderMaterial(renderer, m, { schedule: (f) => tasks.push(f) });
+      return retirement;
+    },
+  };
+  const stale = { material, userData: { settled: new Promise((r) => (finishReadiness = r)) } };
+  const run = new Function(
+    "probe",
+    "rendering",
+    `${text.slice(start, end)}release();return () => probe;`,
+  );
+  const probe = run(stale, rendering);
+  assert.equal(probe(), null, "old admission polling immediately loses its generation");
+  assert.equal(retirement, undefined, "wait until the old poll has actually stopped");
+  finishReadiness(false);
+  await flush();
+  assert.ok(retirement);
+  assert.equal(freed, 0, "false readiness is not GPU completion");
+  ready = true;
+  tasks.shift()();
+  await retirement;
+  assert.equal(freed, 1);
+});
+
+test("retired probe material survives a readiness timeout until the actual driver link settles", async () => {
+  let ready = false,
+    freed = 0,
+    now = 0,
+    reads = 0;
+  const tasks = [],
+    program = {
+      program: {},
+      isReady: () => {
+        reads++;
+        return ready;
+      },
+    };
+  const properties = { get: () => ({ programs: new Map([["ground", program]]) }) };
+  const renderer = { properties, getContext: () => ({ isContextLost: () => false }) };
+  const material = { dispose: () => freed++ };
+  const pending = retireShaderMaterial(renderer, material, {
+    now: () => now,
+    schedule: (f) => tasks.push(f),
+  });
+  now = 2500;
+  tasks.shift()();
+  assert.equal(freed, 0, "the two-second admission timeout cannot delete a still-linking program");
+  ready = true;
+  tasks.shift()();
+  await pending;
+  assert.equal(freed, 1);
+  assert.ok(reads >= 3);
+  assert.equal(tasks.length, 0);
+});
+
+test("probe retirement observes hidden time, lost generations, and a genuinely stalled driver", async () => {
+  for (const outcome of ["hidden", "context replaced", "stalled"]) {
+    const tasks = [],
+      document = { hidden: outcome === "hidden" };
+    let now = 0,
+      freed = 0,
+      queried = 0;
+    const program = {
+      program: {},
+      isReady: () => {
+        queried++;
+        return false;
+      },
+    };
+    const renderer = {
+      properties: { get: () => ({ currentProgram: program }) },
+      getContext: () => ({ isContextLost: () => false }),
+    };
+    const pending = retireShaderMaterial(
+      renderer,
+      { dispose: () => freed++ },
+      { now: () => now, document, schedule: (f) => tasks.push(f) },
+    );
+    if (outcome === "hidden") {
+      now = 30000;
+      tasks.shift()();
+      assert.equal(freed, 0);
+      assert.equal(queried, 0);
+      document.hidden = false;
+      program.program = undefined;
+    } else if (outcome === "context replaced") renderer.properties = {};
+    else now = 15000;
+    const before = queried;
+    tasks.shift()();
+    await pending;
+    assert.equal(freed, 1);
+    assert.equal(queried, before);
+    assert.equal(tasks.length, 0);
+  }
+});
+
 const source = (path) => readFile(new URL(`../src/${path}`, import.meta.url), "utf8");
 const materialsOf = (objects) => {
   const materials = new Set();
@@ -287,6 +524,105 @@ test("shader warm-up compiles against the composer's scene target and always set
   disposed.rendering.dispose();
   assert.equal(await disposed.rendering.compileShaders(), false);
   assert.equal(disposed.calls.length, 0);
+});
+
+test("an opening scope uploads only its maps and compiles against the scene lights without unrelated depth programs", async () => {
+  const uploads = [],
+    compiles = [];
+  const { rendering } = createRendering({
+    initTexture: (texture) => uploads.push(texture.name),
+    compile(objects, camera, lightingScene) {
+      compiles.push({ objects, camera, lightingScene });
+      return materialsOf(objects);
+    },
+  });
+  const sky = new Group();
+  const geometry = new BoxGeometry();
+  const skyMap = Object.assign(new Texture({}), { name: "sky" });
+  const groundMap = Object.assign(new Texture({}), { name: "ground" });
+  const skyMaterial = new MeshBasicMaterial({ map: skyMap });
+  const groundMaterial = new MeshStandardMaterial({ map: groundMap });
+  const ground = new Mesh(geometry, groundMaterial);
+  ground.castShadow = true;
+  sky.add(new Mesh(geometry, skyMaterial));
+  rendering.homeScene.add(sky, ground);
+  rendering.renderer.shadowMap.enabled = rendering.lights.sun.castShadow = true;
+  assert.equal(await rendering.compileShaders(2000, sky), true);
+  assert.deepEqual(uploads, ["sky"], "unrelated physical maps wait for their cohort");
+  assert.equal(compiles.length, 1, "unrelated shadow casters are not warmed for the sky");
+  assert.equal(compiles[0].objects, sky);
+  assert.equal(compiles[0].camera, rendering.camera);
+  assert.equal(
+    compiles[0].lightingScene,
+    rendering.homeScene,
+    "scoped materials retain real scene lighting",
+  );
+  assert.equal(rendering.renderer.shadowMap.enabled, true);
+  assert.equal(await rendering.compileShaders(), true);
+  assert.ok(uploads.includes("ground"), "the full preparation still uploads the physical set");
+  assert.equal(compiles[1].objects, rendering.homeScene);
+  rendering.dispose();
+  geometry.dispose();
+  skyMaterial.dispose();
+  groundMaterial.dispose();
+  skyMap.dispose();
+  groundMap.dispose();
+});
+
+test("a tree opening begins its sliced physical preparation alongside the sky, while Watch leaves it deferred", async () => {
+  const index = await source("scene/index.js"),
+    start = index.indexOf('if (opening.view === "tree") filmScene.setActive(true);'),
+    end = index.indexOf("observeOpening();", start);
+  assert.ok(start > 0 && end > start);
+  const begin = new Function("opening", "filmScene", "warmShaders", index.slice(start, end));
+  for (const view of ["tree", "watch"]) {
+    const calls = [];
+    begin({ view }, { setActive: (active) => calls.push(["terrain", active]) }, (label) =>
+      calls.push(["shaders", label]),
+    );
+    assert.deepEqual(
+      calls,
+      view === "tree"
+        ? [
+            ["terrain", true],
+            ["shaders", "scene"],
+          ]
+        : [["shaders", "scene"]],
+    );
+  }
+});
+
+test("the sky-only Watch culls the physical set only until its next shot or the walk", async () => {
+  const index = await source("scene/index.js");
+  const start = index.indexOf("const showEnvironment =");
+  const end = index.indexOf("// The cloud vortex", start);
+  assert.ok(start > 0 && end > start);
+  const update = new Function(
+    "walking",
+    "filmActive",
+    "cinematic",
+    "environmentRoot",
+    "rendering",
+    index.slice(start, end),
+  );
+  const environmentRoot = { visible: true };
+  let invalidations = 0;
+  const rendering = { invalidateShadows: () => invalidations++ };
+  const state = (walking, film, shot) =>
+    update(walking, film, { current: shot }, environmentRoot, rendering);
+  state(false, true, "watch");
+  assert.equal(environmentRoot.visible, false);
+  state(false, true, "watch");
+  assert.equal(invalidations, 1, "a continuing shot never requests redundant shadows");
+  state(false, true, "portrait");
+  assert.equal(environmentRoot.visible, true);
+  assert.equal(invalidations, 2, "the incoming physical shot restores its set and shadows");
+  state(false, true, "watch");
+  state(true, true, "watch");
+  assert.equal(environmentRoot.visible, true, "walking always restores the physical set");
+  state(false, true, "watch");
+  state(false, false, "watch");
+  assert.equal(environmentRoot.visible, true, "non-film views keep the complete environment");
 });
 
 test("shader warm-up uploads visible maps; a quality step links its shadow variant", async () => {
@@ -797,7 +1133,7 @@ test("shader warm-ups compile in their own task, hide waiting subjects and alway
   assert.equal(subject.visible, true);
 });
 
-async function mountainWarmupHarness(outcome) {
+async function mountainWarmupHarness(outcome, { shown = true } = {}) {
   const index = await source("scene/index.js");
   // Execute the real integration callbacks with the real hill and warm-up
   // owners; no WebGL context or whole-scene fixture is needed for this race.
@@ -806,7 +1142,7 @@ async function mountainWarmupHarness(outcome) {
     index.indexOf("hillSilhouette.applyQuality(state.profile);"),
   );
   const warmup = index.slice(
-    index.indexOf("const shaderWarmup = createShaderWarmup("),
+    index.indexOf("let openingBackgroundStarted = false;"),
     index.indexOf("const lanternMount = createLanternMount("),
   );
   assert.ok(hill && warmup);
@@ -817,7 +1153,11 @@ async function mountainWarmupHarness(outcome) {
   const context = {
     WORLD: { SKY_DOME_RADIUS: 130, SUN_POSITION: [0, 0, -1] },
     assetTier: null,
-    canvasShown: false,
+    canvasShown: shown,
+    openingPrepared: true,
+    opening: { view: "tree" },
+    environmentRoot: { visible: false },
+    atmosphereSystem: { root: {} },
     createHillSilhouette: (options) =>
       createHillSilhouette({
         ...options,
@@ -841,8 +1181,8 @@ async function mountainWarmupHarness(outcome) {
     measureScene() {},
     qualityDebug: {},
     rendering: {
-      compileShaders() {
-        const compile = { shown: integration.hillSilhouette.mesh.visible };
+      compileShaders(timeout, scope) {
+        const compile = { shown: integration.hillSilhouette.mesh.visible, scope };
         compiles.push(compile);
         return new Promise((resolve) => {
           compile.finish = resolve;
@@ -855,13 +1195,54 @@ async function mountainWarmupHarness(outcome) {
     skyConfig: { shellOpacity: 0.5 },
     state: { profile: { tier: "balanced" } },
   };
-  vm.runInNewContext(
+  vm.createContext(context);
+  vm.runInContext(
     `${hill}\n${warmup}\nglobalThis.integration = { hillSilhouette, shaderWarmup, warmShaders };`,
     context,
   );
   integration = context.integration;
-  return { ...integration, context, tasks, compiles, invalidated, finish: () => finish() };
+  return {
+    ...integration,
+    context,
+    tasks,
+    compiles,
+    invalidated,
+    finish: () => finish(),
+    releaseBackground() {
+      context.canvasShown = true;
+      const start = index.indexOf("openingBackgroundStarted = true;");
+      const end =
+        index.indexOf("deferredWarmups.clear();", start) + "deferredWarmups.clear();".length;
+      vm.runInContext(index.slice(start, end), context);
+    },
+  };
 }
+
+test("opening preparation warms the sky first and releases queued subjects only after reveal", async () => {
+  const h = await mountainWarmupHarness("ready", { shown: false });
+  h.context.openingPrepared = false;
+  const subject = { visible: true };
+  assert.equal(await h.warmShaders("tree", subject), false);
+  assert.equal(await h.warmShaders("ground"), false);
+  assert.equal(h.shaderWarmup.pending, 0, "unprepared ground never delays the opening sky");
+  assert.equal(h.tasks.length, 0);
+  const sky = h.warmShaders("scene");
+  h.tasks.shift()();
+  assert.equal(h.compiles[0].scope, h.context.atmosphereSystem.root);
+  h.compiles[0].finish(true);
+  await sky;
+  h.releaseBackground();
+  assert.equal(h.shaderWarmup.pending, 2);
+  for (const task of h.tasks.splice(0)) task();
+  assert.ok(
+    h.compiles.slice(1).every((x) => x.scope === undefined),
+    "later work prepares the complete physical set",
+  );
+  h.compiles.slice(1).forEach((x) => x.finish(true));
+  await flush();
+  assert.equal(h.shaderWarmup.pending, 0);
+  h.hillSilhouette.dispose();
+});
 
 test("a mountain commit after initial warm-ups stays hidden until its own programs settle", async () => {
   for (const outcome of ["ready", "fallback"])
@@ -1290,10 +1671,15 @@ test("the real frame draw waits for complete opening preparation, and lost or di
   );
   assert.ok(update, "exercise rendering's actual lost-context guard too");
   const calls = [],
-    openingGate = createOpeningPreparation({ stages: ["terrain", "foreground", "shaders"] }),
+    openingGate = createOpeningPreparation({
+      stages: ["terrain", "foreground", "shaders", "presentation"],
+    }),
     context = vm.createContext({
       canvasShown: false,
       openingGate,
+      openingPresentation: { sample: () => false },
+      timestamp: 0,
+      sceneNow: () => 0,
       shaderWarmup: { pending: 0 },
       cinematic: { ready: true },
       groundTextures: { ensureProcedural: () => calls.push("texture") },
@@ -1309,7 +1695,7 @@ test("the real frame draw waits for complete opening preparation, and lost or di
   context.rendering = {
     update: vm.runInContext(`(function({render=true}={}){${update[1]}})`, context),
   };
-  const frame = new vm.Script(entry.slice(begin, end));
+  const frame = new vm.Script("{" + entry.slice(begin, end) + "}");
   frame.runInContext(context);
   assert.deepEqual(calls, [], "partial preparation must never enter a driver draw");
   assert.equal(context.firstFrameDrawn, false, "waiting cannot claim a drawn frame");

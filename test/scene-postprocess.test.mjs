@@ -804,6 +804,37 @@ test("a CSS resize or a lost context ends a crossfade; the same size keeps it", 
   pipeline.dispose();
 });
 
+test("context loss retires compositor storage while preserving reusable targets and uniforms", () => {
+  const { capture, pipeline, frame } = createRecordedPipeline(GRADING_ONLY);
+  const kept = capture()[1][1];
+  const { bloom, vignetteGrain } = pipeline.passes;
+  const targets = new Set([
+    pipeline.composer.renderTarget1,
+    pipeline.composer.renderTarget2,
+    kept,
+    bloom.renderTargetBright,
+    ...bloom.renderTargetsHorizontal,
+    ...bloom.renderTargetsVertical,
+  ]);
+  const retired = [];
+  for (const target of targets) target.addEventListener("dispose", () => retired.push(target));
+  pipeline.invalidatePrograms();
+  assert.equal(retired.length, 0, "ordinary program invalidation keeps GPU storage");
+  pipeline.cancelTransition();
+  pipeline.invalidatePrograms({ contextLost: true });
+  assert.equal(retired.length, targets.size);
+  assert.equal(new Set(retired).size, targets.size, "each owned target is retired once");
+  assert.equal(
+    vignetteGrain.uniforms.tPrev.value,
+    kept.texture,
+    "texture identities remain reusable",
+  );
+  assert.ok(targets.has(pipeline.composer.readBuffer));
+  assert.ok(targets.has(pipeline.composer.writeBuffer));
+  assert.doesNotThrow(frame, "fresh draws can allocate these targets in the restored context");
+  pipeline.dispose();
+});
+
 test("the phone text band follows each pixel's dissolve instead of switching at the cut", () => {
   const { capture, pipeline } = createRecordedPipeline(GRADING_ONLY);
   const v = pipeline.passes.vignetteGrain.uniforms;
@@ -937,6 +968,10 @@ test("a lost context cancels remaining preparation from an earlier generation", 
   const fresh = pipeline.compile();
   assert.notEqual(old, fresh);
   assert.equal(await old, false);
+  // Cancellation can settle before the fresh task gets its turn. Await the
+  // observable compile boundary, rather than assuming a timer ordering.
+  for (let n = 0; calls.length < 2 && n < 100; n++)
+    await new Promise((resolve) => setTimeout(resolve, 1));
   assert.equal(calls.length, 2, "the invalidated work adds no canvas preparation");
   settle[1]();
   await linkPoll();

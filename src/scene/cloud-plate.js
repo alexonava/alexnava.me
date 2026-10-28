@@ -17,10 +17,25 @@ export const CLOUD_PLATE_LIMITS = Object.freeze({
   pixels: 4096 * 1024,
   timeout: 8000,
 });
+export const CLOUD_PLATE_BALANCED_LIMITS = Object.freeze({
+  bytes: 224 * 1024,
+  pixels: 2048 * 512,
+  timeout: 8000,
+});
 const defaultUrls =
   typeof __BABEL_CLOUD_PLATE_URLS__ === "string"
     ? JSON.parse(__BABEL_CLOUD_PLATE_URLS__)
-    : Object.fromEntries(CLOUD_PLATES.map((key) => [key, `/images/materials/cel-sky-${key}.webp`]));
+    : Object.fromEntries(
+        ["high", "balanced"].map((tier) => [
+          tier,
+          Object.fromEntries(
+            CLOUD_PLATES.map((key) => [
+              key,
+              `/images/materials/cel-sky-${key}${tier === "balanced" ? "-balanced" : ""}.webp`,
+            ]),
+          ),
+        ]),
+      );
 
 function release(texture) {
   if (!texture) return;
@@ -31,20 +46,31 @@ function release(texture) {
 export async function loadCloudPlateTexture(
   url,
   signal,
-  { fetchImpl = globalThis.fetch, decode = globalThis.createImageBitmap } = {},
+  {
+    fetchImpl = globalThis.fetch,
+    decode = globalThis.createImageBitmap,
+    limits = CLOUD_PLATE_LIMITS,
+  } = {},
 ) {
   const response = await fetchImpl(url, { signal });
-  if (!response.ok || Number(response.headers.get("content-length")) > CLOUD_PLATE_LIMITS.bytes)
+  if (!response.ok || Number(response.headers.get("content-length")) > limits.bytes)
     throw new Error("Cloud plate unavailable or over budget");
   const bytes = await response.arrayBuffer();
-  if (!bytes.byteLength || bytes.byteLength > CLOUD_PLATE_LIMITS.bytes)
+  if (!bytes.byteLength || bytes.byteLength > limits.bytes)
     throw new Error("Cloud plate byte budget");
   const image = await decode(new Blob([bytes], { type: "image/webp" }), {
     imageOrientation: "from-image",
     premultiplyAlpha: "none",
     colorSpaceConversion: "none",
   });
-  if (signal.aborted || image.width * image.height > CLOUD_PLATE_LIMITS.pixels) {
+  if (
+    signal.aborted ||
+    !Number.isInteger(image.width) ||
+    !Number.isInteger(image.height) ||
+    image.width <= 0 ||
+    image.height <= 0 ||
+    image.width * image.height > limits.pixels
+  ) {
     image.close();
     throw new Error("Cloud plate cancelled or over pixel budget");
   }
@@ -66,7 +92,11 @@ export async function loadCloudPlateTexture(
 // moving shot. Only this owner frees the textures and their decoded bitmaps.
 export function createCloudPlate({
   uniforms,
-  load = loadCloudPlateTexture,
+  tier = "high",
+  load = (url, signal) =>
+    loadCloudPlateTexture(url, signal, {
+      limits: tier === "balanced" ? CLOUD_PLATE_BALANCED_LIMITS : CLOUD_PLATE_LIMITS,
+    }),
   urls = defaultUrls,
   scheduleTimeout = setTimeout,
   cancelTimeout = clearTimeout,
@@ -74,9 +104,11 @@ export function createCloudPlate({
   let target = null,
     borrowed = null,
     pending = null,
-    abort = null,
+    background = null,
     shown = null;
   const textures = new Map();
+  const requests = new Set();
+  const selectedUrls = urls[tier] ?? urls;
   let state = "idle",
     enabled = true,
     disposed = false;
@@ -99,17 +131,29 @@ export function createCloudPlate({
   // One plate, within its own timeout.
   function loadOne(key) {
     return new Promise((resolve) => {
-      const timer = scheduleTimeout(() => abort.abort(), CLOUD_PLATE_LIMITS.timeout);
+      const abort = new AbortController();
+      requests.add(abort);
+      let timer = null,
+        finished = false;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        cancelTimeout(timer);
+        requests.delete(abort);
+        resolve(textures.has(key));
+      };
+      abort.signal.addEventListener("abort", finish, { once: true });
+      timer = scheduleTimeout(() => abort.abort(), CLOUD_PLATE_LIMITS.timeout);
       Promise.resolve()
-        .then(() => load(urls[key], abort.signal))
+        .then(() => load(selectedUrls[key], abort.signal))
         .then((texture) => {
           if (disposed || abort.signal.aborted) release(texture);
           else textures.set(key, texture);
         })
         .catch(() => {})
         .finally(() => {
-          cancelTimeout(timer);
-          resolve(textures.has(key));
+          abort.signal.removeEventListener("abort", finish);
+          finish();
         });
     });
   }
@@ -131,20 +175,25 @@ export function createCloudPlate({
       if (pending) return pending;
       if (disposed || state !== "idle") return Promise.resolve(!disposed && state === "ready");
       state = "loading";
-      abort = new AbortController();
-      // The moon's plate settles the status; the suns' load after it, one at a time.
+      // Only the opening's shared plate belongs to the preparation path.
       pending = loadOne("moon").then((ok) => {
         if (disposed) return false;
         state = ok ? "ready" : "failed";
         pending = null;
-        if (ok)
-          CLOUD_PLATES.filter((key) => key !== "moon" && urls[key]).reduce(
-            (chain, key) => chain.then(() => !disposed && !abort.signal.aborted && loadOne(key)),
-            Promise.resolve(),
-          );
         return ok;
       });
       return pending;
+    },
+    startBackground(watchOpening = false) {
+      if (disposed) return Promise.resolve();
+      const order = watchOpening
+        ? ["broken-coast", "close-up", "root-and-lantern"]
+        : CLOUD_PLATES.slice(1);
+      return (background ||= (pending ?? Promise.resolve()).then(() =>
+        order
+          .filter((key) => selectedUrls[key])
+          .reduce((chain, key) => chain.then(() => !disposed && loadOne(key)), Promise.resolve()),
+      ));
     },
     setEnabled(value) {
       enabled = Boolean(value);
@@ -169,7 +218,7 @@ export function createCloudPlate({
     dispose() {
       if (disposed) return false;
       disposed = true;
-      abort?.abort();
+      for (const request of requests) request.abort();
       restore();
       for (const texture of textures.values()) release(texture);
       textures.clear();

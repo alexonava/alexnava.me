@@ -472,7 +472,8 @@ export function createDeferredQualityStep({ prepare = () => true, maxWaitMs = 30
     },
     take({ cut = false, running = false, nowMs = 0 } = {}) {
       if (profile === null) return null;
-      if (running && !(cut && ready) && nowMs - queuedAt < maxWaitMs) return null;
+      if (running && !(cut && ready)) return null;
+      if (!ready && nowMs - queuedAt < maxWaitMs) return null;
       const next = profile;
       profile = null;
       return next;

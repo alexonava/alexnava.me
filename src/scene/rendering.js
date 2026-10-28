@@ -81,7 +81,13 @@ export function createSceneRendering({
     compileGeneration += 1;
     // The kept crossfade frame and the linked programs go with the context.
     postprocessPipeline.cancelTransition?.();
-    postprocessPipeline.invalidatePrograms?.();
+    postprocessPipeline.invalidatePrograms?.({ contextLost: true });
+    environment.contextLost();
+    homeScene.environment = null;
+    sunLight.shadow.map?.dispose();
+    sunLight.shadow.map = null;
+    sunLight.shadow.mapPass?.dispose();
+    sunLight.shadow.mapPass = null;
     onContextLost?.(event);
   };
   const handleContextRestored = (event) => {
@@ -201,9 +207,9 @@ export function createSceneRendering({
     compileGeneration = 0;
   let disposeResult = null;
 
-  // Uploads every visible map before a shot first shows its subject, so a
+  // Uploads the scope's visible maps before a shot first shows its subject, so a
   // cut never uploads mid-crossfade; uploaded maps only rebind.
-  function uploadTextures() {
+  function uploadTextures(objects = homeScene) {
     if (typeof renderer.initTexture !== "function") return;
     const materials = new Set();
     const upload = (value) => {
@@ -212,7 +218,7 @@ export function createSceneRendering({
         renderer.initTexture(value);
       }
     };
-    homeScene.traverseVisible((object) => {
+    objects.traverseVisible((object) => {
       for (const material of [object.material].flat()) {
         if (!material || materials.has(material)) continue;
         materials.add(material);
@@ -319,7 +325,13 @@ export function createSceneRendering({
     },
     // The sky shell whose film sky the environment captures (index.js).
     setEnvironmentSky(material, shellOpacity) {
-      if (!disposed) environment.setSky(material, shellOpacity);
+      if (disposed) return;
+      environment.setSky(material, shellOpacity);
+      environment.ready.then((texture) => {
+        if (disposed || !texture || environment.texture !== texture) return;
+        if (filmLighting) homeScene.environment = texture;
+        onInvalidate?.();
+      });
     },
     // Draws the environment again after a cut changed the sky (its plate or key), so
     // the mirrors take the new sky with the shot; the film's materials take the new texture.
@@ -438,10 +450,10 @@ export function createSceneRendering({
     // per call), so it is skipped; the crossfade's own programs and the visible
     // maps are prepared either way. Always settles: true once linked, false if
     // skipped, rejected or still pending after timeoutMs.
-    compileShaders(timeoutMs = 2000) {
+    compileShaders(timeoutMs = 2000, objects = homeScene) {
       if (disposed || renderer.getContext?.()?.isContextLost?.()) return Promise.resolve(false);
       const postprocessReady = postprocessPipeline.compile?.();
-      uploadTextures();
+      uploadTextures(objects);
       if (typeof renderer.compile !== "function") return Promise.resolve(false);
       if (renderer.extensions?.has?.("KHR_parallel_shader_compile") !== true)
         return Promise.resolve(false);
@@ -452,8 +464,8 @@ export function createSceneRendering({
       let shadows;
       try {
         renderer.setRenderTarget?.(composer.readBuffer ?? null);
-        pending = compilePrograms(renderer, homeScene, camera, null, valid, timeoutMs);
-        shadows = prepareShadowPrograms(valid, timeoutMs);
+        pending = compilePrograms(renderer, objects, camera, homeScene, valid, timeoutMs);
+        shadows = objects === homeScene ? prepareShadowPrograms(valid, timeoutMs) : true;
       } catch {
         return Promise.resolve(false);
       } finally {

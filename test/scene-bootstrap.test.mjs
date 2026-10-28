@@ -4,10 +4,47 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { flat, source } from "./support/code.mjs";
+import { createDeferredQualityStep } from "../src/scene/runtime.js";
 
 const index = flat(source("src/scene/index.js"));
 // The text between two anchors of the flattened bootstrap.
 const between = (from, to) => index.slice(index.indexOf(from), to ? index.indexOf(to) : undefined);
+
+test("the actual quality dispatch keeps a paused visible shot intact until its cut", async () => {
+  const argument = index.match(/const adaptiveProfile = adaptiveSteps\.take\((\{[^]*?\})\);/)[1];
+  const dispatch = new Function(
+    "canvasShown",
+    "site",
+    "liveView",
+    "transition",
+    "nowMs",
+    `return (${argument});`,
+  );
+  const profile = { tier: "balanced", dprCap: 0.85 };
+  const step = createDeferredQualityStep({ prepare: () => true });
+  step.queue(profile, 0);
+  await Promise.resolve();
+  const args = (visible, closed, cut) =>
+    dispatch(visible, { sceneDoors: { closed } }, { running: false }, { cut }, 60000);
+  assert.equal(
+    step.take(args(true, false, false)),
+    null,
+    "a pause cannot bypass the cut even after the old timeout",
+  );
+  assert.equal(step.take(args(true, false, true)), profile);
+  for (const [visible, closed] of [
+    [false, false],
+    [true, true],
+  ]) {
+    step.queue(profile, 0);
+    await Promise.resolve();
+    assert.equal(
+      step.take(args(visible, closed, false)),
+      profile,
+      "concealed preparation still accepts resolution relief",
+    );
+  }
+});
 
 test("a watch or tree that cannot commit fails to the title card once the camera knows; the lantern is optional", () => {
   const onStatus = between("onStatus(status) {", "subsystemRegistry.register(architectureAssets);");
@@ -40,7 +77,7 @@ test("a watch or tree that cannot commit fails to the title card once the camera
   assert.match(index, /if \(committed\) warmShaders\("lantern"\);/);
 });
 
-test("models and maps keep the startup tier, and quality is sampled only after the reveal", () => {
+test("models and maps keep the startup tier, and quality samples only completed presentation or revealed frames", () => {
   assert.match(index, /const assetTier = qualityState\.initialTier;/);
   assert.match(index, /architectureAssets\.setQuality\(state\.profile, true, \{ assetTier \}\);/);
   assert.match(
@@ -51,10 +88,13 @@ test("models and maps keep the startup tier, and quality is sampled only after t
     flat(source("src/scene/textures.js")),
     /applyQuality\(profile, context\) \{ filmMaps\.applyQuality\(profile, context\); \}/,
   );
-  assert.match(index, /const revealed = canvasShown && cinematic\.ready;/);
   assert.match(
     index,
-    /revealed && !reducedMotion && !adaptiveSteps\.pending \? qualityState\.sampleRevealed\?\.\(/,
+    /const revealed = \(canvasShown \|\| openingGate\.state\.stage === "presentation"\) && cinematic\.ready;/,
+  );
+  assert.match(
+    index,
+    /revealed && !reducedMotion && !shaderWarmup\.pending && !adaptiveSteps\.pending \? qualityState\.sampleRevealed\?\.\(/,
   );
   // A step links its programs when sampled and lands on a tour cut, where the
   // crossfade's kept frame hides it; the one-off transition frames go unsampled.
@@ -65,7 +105,7 @@ test("models and maps keep the startup tier, and quality is sampled only after t
   assert.match(index, /if \(sampledProfile\) adaptiveSteps\.queue\(sampledProfile, nowMs\);/);
   assert.match(
     index,
-    /const adaptiveProfile = adaptiveSteps\.take\(\{ cut: transition\.cut, running: liveView\.running, nowMs \}\); if \(adaptiveProfile\) applyActiveQualityProfile\(adaptiveProfile, "adaptive"\);/,
+    /const adaptiveProfile = adaptiveSteps\.take\(\{ cut: transition\.cut, running: canvasShown && !site\.sceneDoors\?\.closed, nowMs \}\); if \(adaptiveProfile\) applyActiveQualityProfile\(adaptiveProfile, "adaptive"\);/,
   );
   assert.match(index, /if \(transition\.capture\) qualityState\.skipSamples\?\.\(3\);/);
 });
@@ -103,7 +143,7 @@ test("each frame runs the tour, the quality step, the capture skip, the crossfad
     "cinematic.apply(",
     "walk.update(deltaSeconds, width, height);",
     "subsystemRegistry.update(",
-    "if (canvasShown || (openingGate.ready && !shaderWarmup.pending)) {",
+    "if (canvasShown || (presentingOpening && !shaderWarmup.pending)) {",
     "visitorHold?.frameRendered();",
   ];
   const order = anchors.map((anchor) => frame.indexOf(anchor));
@@ -152,11 +192,11 @@ test("the visitor pause stops the tour and holds rendering; content changes stil
 test("the first frame and reveal wait for the complete opening and linked shaders", () => {
   assert.match(
     index,
-    /const shaderWarmup = createShaderWarmup\(\{ compile: \(\) => rendering\.compileShaders\(\) \}\);/,
+    /const shaderWarmup = createShaderWarmup\(\{ compile\(\) \{[^]*?rendering\.compileShaders\(2000, atmosphereSystem\.root\);[^]*?finally \{ environmentRoot\.visible = visible; \}/,
   );
   assert.match(
     index,
-    /if \(canvasShown \|\| \(openingGate\.ready && !shaderWarmup\.pending\)\) \{ if \(!canvasShown && cinematic\.ready\) groundTextures\.ensureProcedural\(\); rendering\.update\(\); if \(!firstFrameDrawn\) \{ firstFrameDrawn = true; measureScene\("first-frame", frameStart\);/,
+    /openingGate\.state\.stage === "presentation"[^]*?const drawn = rendering\.update\(\);[^]*?openingPresentation\.sample\(timestamp, sceneNow\(\) - renderStart\)[^]*?settleOpening\("presentation"\);[^]*?if \(!firstFrameDrawn && drawn !== false\) \{ firstFrameDrawn = true; measureScene\("first-frame", frameStart\);/,
   );
   // Hidden preparation starts only once the cooperative fit has been applied.
   assert.match(index, /preparing: !canvasShown && cinematicApplied,/);
@@ -166,7 +206,7 @@ test("the first frame and reveal wait for the complete opening and linked shader
   );
   assert.match(
     index,
-    /if \(openingPrepared && !openingShaderStarted && !shaderWarmup\.pending\) \{ openingShaderStarted = true; const generation = openingGeneration; warmShaders\("opening"\)/,
+    /if \(openingPrepared && !openingShaderStarted && !shaderWarmup\.pending\) \{[^]*?openingShaderStarted = true; const generation = openingGeneration; warmShaders\("opening"\)/,
   );
   assert.match(
     index,
@@ -188,11 +228,11 @@ test("the first frame and reveal wait for the complete opening and linked shader
 test("the hidden canvas idles until the reveal, which marks it and lets the rocks load", () => {
   assert.match(
     index,
-    /container\?\.classList\.toggle\("is-ready", sceneShown\);[^]*?frameScheduler\?\.setStill\(!sceneShown\);/,
+    /container\?\.classList\.toggle\("is-ready", sceneShown\);[^]*?frameScheduler\?\.setStill\(!sceneShown && !presentingOpening,?\);/,
   );
   assert.match(
     index,
-    /if \(sceneShown && !canvasShown\) \{ markScene\("reveal"\); revealTime = elapsedTime; cameraTour\?\.reset\(\); stopOpeningPreparation\(\); rockScatter\.setRevealed\(\); groundTextures\.update\?\.\(\{ revealed: true \}\); \}/,
+    /if \(sceneShown && !canvasShown\) \{ markScene\("reveal"\); revealTime = elapsedTime; cameraTour\?\.reset\(\); stopOpeningPreparation\(\); rockScatter\.setRevealed\(\); atmosphereSystem\.setRevealed\(opening\.view === "watch"\); groundTextures\.update\?\.\(\{ revealed: true \}\); openingBackgroundStarted = true;[^]*?deferredWarmups\.clear\(\); \}/,
   );
 });
 

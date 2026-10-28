@@ -5,6 +5,7 @@ import { Group, PerspectiveCamera, Texture, NoColorSpace, LinearMipmapLinearFilt
 import {
   CLOUD_PLATES,
   CLOUD_PLATE_LIMITS,
+  CLOUD_PLATE_BALANCED_LIMITS,
   createCloudPlate,
   loadCloudPlateTexture,
 } from "../src/scene/cloud-plate.js";
@@ -97,6 +98,100 @@ test("sky replacement restores borrowed uniforms and never frees a borrowed text
   borrowed.texture.image.close();
 });
 
+test("the startup asset tier pins one sky set through quality changes and prioritizes the upcoming tour", async () => {
+  const calls = [],
+    owned = [];
+  const urls = Object.fromEntries(
+    ["high", "balanced"].map((tier) => [
+      tier,
+      Object.fromEntries(CLOUD_PLATES.map((key) => [key, `/${tier}/${key}`])),
+    ]),
+  );
+  const owner = createCloudPlate({
+    uniforms: uniforms(),
+    tier: "balanced",
+    urls,
+    load: async (url) => {
+      calls.push(url);
+      const t = ownedTexture();
+      owned.push(t);
+      return t.texture;
+    },
+  });
+  await owner.prepare();
+  assert.deepEqual(calls, ["/balanced/moon"]);
+  owner.setEnabled(false);
+  owner.setEnabled(true);
+  await owner.prepare();
+  await owner.startBackground(true);
+  assert.deepEqual(
+    calls,
+    ["moon", "broken-coast", "close-up", "root-and-lantern"].map((key) => `/balanced/${key}`),
+  );
+  await owner.startBackground();
+  assert.equal(calls.length, 4);
+  owner.dispose();
+  for (const t of owned) assert.deepEqual(t.counts, { disposed: 1, closed: 1 });
+});
+
+test("one stalled optional plate settles promptly and cannot poison later shots", async () => {
+  const timers = [],
+    pending = deferred(),
+    late = ownedTexture(),
+    calls = [],
+    rest = [];
+  const owner = createCloudPlate({
+    uniforms: uniforms(),
+    urls: Object.fromEntries(CLOUD_PLATES.map((key) => [key, key])),
+    scheduleTimeout(fn) {
+      timers.push(fn);
+      return timers.length;
+    },
+    cancelTimeout() {},
+    load: (key, signal) => {
+      calls.push(key);
+      if (key === "moon") return pending.promise; // a decoder that ignores abort
+      assert.equal(signal.aborted, false, "each plate owns its cancellation");
+      const t = ownedTexture();
+      rest.push(t);
+      return Promise.resolve(t.texture);
+    },
+  });
+  const initial = owner.prepare();
+  await Promise.resolve();
+  timers[0]();
+  assert.equal(await initial, false);
+  await owner.startBackground();
+  assert.deepEqual(calls, CLOUD_PLATES);
+  pending.resolve(late.texture);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(late.counts, { disposed: 1, closed: 1 });
+  assert.equal(owner.loaded.includes("moon"), false);
+  owner.dispose();
+  for (const t of rest) assert.deepEqual(t.counts, { disposed: 1, closed: 1 });
+});
+
+test("balanced decoding rejects oversized and malformed images and closes them", async () => {
+  const controller = new AbortController();
+  for (const [width, height] of [
+    [4096, 1024],
+    [0, 512],
+    [NaN, 512],
+    [2048, -1],
+    [2048, 512.5],
+  ]) {
+    let closed = 0;
+    await assert.rejects(
+      loadCloudPlateTexture("/bad", controller.signal, {
+        limits: CLOUD_PLATE_BALANCED_LIMITS,
+        fetchImpl: async () => new Response(new Uint8Array([1])),
+        decode: async () => ({ width, height, close: () => closed++ }),
+      }),
+    );
+    assert.equal(closed, 1);
+  }
+});
+
 test("the moon's plate settles preparation; each shot's sun plate follows and shows only from a cut", async () => {
   const target = uniforms(),
     owned = Object.fromEntries(CLOUD_PLATES.map((key) => [key, ownedTexture()])),
@@ -118,6 +213,10 @@ test("the moon's plate settles preparation; each shot's sun plate follows and sh
   gates.moon.resolve();
   assert.equal(await preparing, true);
   assert.equal(owner.status, "ready");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(order, ["moon"], "later shots wait until the real reveal");
+  const background = owner.startBackground();
+  assert.equal(owner.startBackground(), background, "background work is deduplicated");
   // A sun shot cut before its plate arrives shows the moon's.
   assert.equal(owner.commit("close-up"), true);
   assert.equal(owner.shown, "moon");
@@ -159,6 +258,7 @@ test("a decode completing after cancellation is released without rebinding the s
   assert.equal(signal.aborted, true);
   pending.resolve(owned.texture);
   assert.equal(await preparing, false);
+  await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(owner.status, "disposed");
   assert.equal(target.uCloudMix.value, 0);
   assert.deepEqual(owned.counts, { disposed: 1, closed: 1 });
@@ -371,30 +471,36 @@ test("the emitted plate projection is finite at the zenith and across long-runni
 });
 
 test("the shipped plates have a real alpha channel and stay within their delivery and decode budgets", async () => {
-  let total = 0;
-  for (const key of CLOUD_PLATES) {
-    const data = await readFile(
-      new URL(`../images/materials/cel-sky-${key}.webp`, import.meta.url),
-    );
-    total += data.byteLength;
-    assert.ok(data.byteLength <= CLOUD_PLATE_LIMITS.bytes, key);
-    assert.equal(data.toString("ascii", 0, 4), "RIFF");
-    assert.equal(data.toString("ascii", 8, 12), "WEBP");
-    assert.equal(data.readUInt32LE(4) + 8, data.byteLength);
-    let extended;
-    for (let offset = 12; offset + 8 <= data.length;) {
-      const size = data.readUInt32LE(offset + 4);
-      if (data.toString("ascii", offset, offset + 4) === "VP8X")
-        extended = data.subarray(offset + 8, offset + 8 + size);
-      offset += 8 + size + (size % 2);
+  for (const tier of ["high", "balanced"]) {
+    const limits = tier === "balanced" ? CLOUD_PLATE_BALANCED_LIMITS : CLOUD_PLATE_LIMITS;
+    let total = 0;
+    for (const key of CLOUD_PLATES) {
+      const data = await readFile(
+        new URL(
+          `../images/materials/cel-sky-${key}${tier === "balanced" ? "-balanced" : ""}.webp`,
+          import.meta.url,
+        ),
+      );
+      total += data.byteLength;
+      assert.ok(data.byteLength <= limits.bytes, key);
+      assert.equal(data.toString("ascii", 0, 4), "RIFF");
+      assert.equal(data.toString("ascii", 8, 12), "WEBP");
+      assert.equal(data.readUInt32LE(4) + 8, data.byteLength);
+      let extended;
+      for (let offset = 12; offset + 8 <= data.length;) {
+        const size = data.readUInt32LE(offset + 4);
+        if (data.toString("ascii", offset, offset + 4) === "VP8X")
+          extended = data.subarray(offset + 8, offset + 8 + size);
+        offset += 8 + size + (size % 2);
+      }
+      assert.ok(extended && extended[0] & 16, `${key}: RGBA, not a painted black background`);
+      const width = extended.readUIntLE(4, 3) + 1,
+        height = extended.readUIntLE(7, 3) + 1;
+      // Once round the sky: four times as wide as tall.
+      assert.equal(width, height * 4, key);
+      assert.ok(width * height <= limits.pixels, key);
     }
-    assert.ok(extended && extended[0] & 16, `${key}: RGBA, not a painted black background`);
-    const width = extended.readUIntLE(4, 3) + 1,
-      height = extended.readUIntLE(7, 3) + 1;
-    // Once round the sky: four times as wide as tall.
-    assert.equal(width, height * 4, key);
-    assert.ok(width * height <= CLOUD_PLATE_LIMITS.pixels, key);
+    // The owner's sky budget of 2026-10-27: about 2 MB for all of them.
+    assert.ok(total <= (tier === "balanced" ? 768 * 1024 : 2 * 1024 * 1024), `${total} bytes`);
   }
-  // The owner's sky budget of 2026-10-27: about 2 MB for all of them.
-  assert.ok(total <= 2 * 1024 * 1024, `${total} bytes`);
 });

@@ -1100,10 +1100,21 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
     },
     // A lost context takes its programs with it: the next warm-up links the
     // crossfade's programs again instead of the first dissolve after recovery.
-    invalidatePrograms() {
+    invalidatePrograms({ contextLost = false } = {}) {
       if (disposed) return;
       compileGeneration += 1;
       compilePromise = null;
+      if (contextLost)
+        for (const target of new Set([
+          composer.renderTarget1,
+          composer.renderTarget2,
+          prevTarget,
+          renderPass.sampledTarget,
+          bloomPass.renderTargetBright,
+          ...bloomPass.renderTargetsHorizontal,
+          ...bloomPass.renderTargetsVertical,
+        ]))
+          target?.dispose();
     },
     // Prepare every compositor program, including the high tier's bloom and
     // scene-copy variants, without drawing or waiting on a first-use link.

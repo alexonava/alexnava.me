@@ -4608,12 +4608,17 @@ export function settleRoots(
     if (drip) [DRIP.value[0], DRIP.value[1], DRIP.value[2]] = drip;
     drift?.geometry.userData.update(RIPPLE_TIME.value);
   }
-  // The bounded captured-program poll settles before its stand-in's material
-  // is freed. Releasing a probe also invalidates every old polling generation.
+  // Releasing a probe invalidates the old bounded readiness poll. A timeout
+  // need not finish the driver's link: retire its owned material only after
+  // that work settles, keeping shared geometry and maps borrowed.
   const release = () => {
     const stale = probe;
     probe = null;
-    stale?.userData.settled.then(() => stale.material.dispose());
+    stale?.userData.settled.then(() =>
+      rendering.retireMaterial
+        ? rendering.retireMaterial(stale.material)
+        : stale.material.dispose(),
+    );
   };
   // The sea, the cliffs and the falls (ocean.js) meet the terrain's fault: their
   // programs link with the slate's shading (link()) and they land with it

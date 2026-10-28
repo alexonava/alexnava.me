@@ -82,13 +82,24 @@ test("a deferred quality step lands on the first tour cut after its programs are
   steps.queue(balanced, 3000);
   assert.equal(
     steps.take({ cut: false, running: false, nowMs: 3001 }),
-    balanced,
-    "no tour, no wait",
+    null,
+    "hidden preparation also waits for the queued shader work",
   );
+  prepares[3].resolve(true);
+  await flush();
+  assert.equal(steps.take({ cut: false, running: false, nowMs: 3002 }), balanced);
 
   steps.queue(high, 4000);
   assert.equal(steps.take({ cut: false, running: true, nowMs: 33999 }), null);
-  assert.equal(steps.take({ cut: false, running: true, nowMs: 34000 }), high, "30 s at most");
+  assert.equal(
+    steps.take({ cut: false, running: true, nowMs: 34000 }),
+    null,
+    "a deadline cannot force a visible mid-shot change",
+  );
+  prepares[4].resolve(true);
+  await flush();
+  assert.equal(steps.take({ cut: false, running: true, nowMs: 35000 }), null);
+  assert.equal(steps.take({ cut: true, running: true, nowMs: 35001 }), high);
 
   const throwing = createDeferredQualityStep({
     prepare() {

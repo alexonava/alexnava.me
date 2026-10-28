@@ -147,3 +147,12 @@ Size the window first: the scene's size picks the shot's [variant](#viewport-var
 - `sceneDebug.rocks.status` is `ready` or `fallback`.
 
 Then advance a fixed number of frames before capturing. The flame, the cloud drift and the lightning run on scene time; the lightning's schedule is seeded, and a capture can force a flash to peak at a phase ([lightning.js](../src/scene/lightning.js) `LIGHTNING.forceAt`, empty in use). The drips keep their own clock, the `performance.now()` time between drawn ground frames ([terrain-build.js](../src/scene/terrain-build.js) `dripClock`). A deterministic capture therefore drives both the frame clock and `performance.now()` itself.
+
+Automatic per-frame quality may reach DPR 1 or 0.85 while retaining balanced
+materials; downloaded assets remain pinned to the initial tier. Explicit `quality`
+overrides remain fixed. Hidden presentation renders can request relief before
+reveal; each accepted change resets final preparation and its fresh draw window.
+The tour and first-shot move start only when the paper actually begins parting.
+A pending quality step also waits while a visible shot is paused: stopping the
+camera never turns it into a concealed publication opportunity. Resuming keeps
+that shot intact until the next prepared cut.

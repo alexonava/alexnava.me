@@ -596,6 +596,54 @@ function driveRevealed(state, clock, frameMs, count, profile) {
   return { steps, profile: current };
 }
 
+test("one isolated hitch cannot lower quality, and fixed state ignores sustained pressure", async () => {
+  const scene = await loadQuality(createContext());
+  const options = {
+    navigatorInfo: { hardwareConcurrency: 8 },
+    caps: { maxTextureSize: 8192, maxAnisotropy: 16 },
+    viewport: { width: 390, height: 844 },
+    touchPrimary: true,
+    saveData: false,
+  };
+  const state = scene.createSceneQualityState(options),
+    clock = { now: 0 },
+    profile = state.getProfile();
+  assert.deepEqual(driveRevealed(state, clock, 1000 / 60, 500, profile).steps, []);
+  assert.deepEqual(driveRevealed(state, clock, 250, 1, profile).steps, []);
+  assert.deepEqual(
+    driveRevealed(state, clock, 1000 / 60, 180, profile).steps,
+    [],
+    "an outlier ages out before the pressure streak",
+  );
+  for (const frameMs of [Infinity, NaN, -1]) assert.equal(state.governor.sample(frameMs), null);
+  const fixed = scene.createSceneQualityState({ ...options, search: "?quality=balanced" });
+  assert.deepEqual(driveRevealed(fixed, { now: 0 }, 80, 2000, fixed.getProfile()).steps, []);
+});
+
+test("a proposed resolution step cannot leak into resize before its publication", async () => {
+  const scene = await loadQuality(createContext());
+  const state = scene.createSceneQualityState({
+    navigatorInfo: { hardwareConcurrency: 8 },
+    caps: { maxTextureSize: 8192, maxAnisotropy: 16 },
+    viewport: { width: 390, height: 844 },
+    touchPrimary: true,
+    saveData: false,
+  });
+  const active = state.getProfile();
+  let proposed;
+  for (let at = 0; at < 10000 && !proposed; at += 40)
+    proposed = state.sampleRevealed({ frameMs: 40, nowMs: at, timestamp: at, profile: active });
+  assert.ok(proposed);
+  assert.notEqual(proposed, active);
+  assert.equal(state.resolveDprCap(proposed), 1);
+  assert.equal(state.resolveDprCap(active), 1.25, "resizing still uses the active cap");
+  assert.equal(
+    state.resolveDprCap(state.getProfile("balanced")),
+    1.25,
+    "base profiles stay unmodified",
+  );
+});
+
 test("a revealed scene's low step lowers only the pixel ratio, and recovery restores it", async () => {
   const scene = await loadQuality(createContext());
   const options = {
@@ -614,12 +662,19 @@ test("a revealed scene's low step lowers only the pixel ratio, and recovery rest
   assert.equal(phone.resolveDprCap(start), 1.25);
 
   const pressure = driveRevealed(phone, clock, 40, 600, start);
-  assert.deepEqual(pressure.steps, [{ tier: "balanced", dprCap: 1, governor: "low" }]);
-  assert.equal(pressure.profile, start, "the visuals keep the current profile");
-  assert.equal(phone.resolveDprCap(phone.getProfile("balanced")), 1, "a resize keeps the relief");
+  assert.deepEqual(pressure.steps, [
+    { tier: "balanced", dprCap: 1, governor: "low" },
+    { tier: "balanced", dprCap: 0.85, governor: "low" },
+  ]);
+  assert.equal(pressure.profile.tier, start.tier, "the material profile stays balanced");
+  assert.equal(phone.resolveDprCap(start), 1.25, "a queued step cannot alter the active cap");
+  assert.equal(phone.resolveDprCap(pressure.profile), 0.85, "a resize keeps the committed relief");
 
   const recovered = driveRevealed(phone, clock, 1000 / 60, 1200, pressure.profile);
-  assert.deepEqual(recovered.steps, [{ tier: "balanced", dprCap: 1.25, governor: "balanced" }]);
+  assert.deepEqual(recovered.steps, [
+    { tier: "balanced", dprCap: 1, governor: "low" },
+    { tier: "balanced", dprCap: 1.25, governor: "balanced" },
+  ]);
 
   const desktop = scene.createSceneQualityState({
     ...options,
@@ -630,11 +685,12 @@ test("a revealed scene's low step lowers only the pixel ratio, and recovery rest
   assert.deepEqual(sustained.steps, [
     { tier: "balanced", dprCap: 1.25, governor: "balanced" },
     { tier: "balanced", dprCap: 1, governor: "low" },
+    { tier: "balanced", dprCap: 0.85, governor: "low" },
   ]);
   assert.equal(sustained.profile.tier, "balanced", "the revealed visuals never descend to low");
 });
 
-test("revealed sampling waits three seconds after the first frame and after each hold", async () => {
+test("revealed sampling excludes a short upload window after the first frame and each hold", async () => {
   const scene = await loadQuality(createContext());
   const state = scene.createSceneQualityState({
     navigatorInfo: { deviceMemory: 8, hardwareConcurrency: 8 },
@@ -653,9 +709,8 @@ test("revealed sampling waits three seconds after the first frame and after each
     }
     return null;
   };
-  // 3 s held, then a 60-sample window, 60 warm-up samples and a 120-frame streak.
-  const unheld = 240 * 40;
-  assert.equal(firstStep(0), 3000 + unheld - 40);
+  // 750 ms held, then 30 samples, 15 warm-up samples and a 45-frame streak.
+  assert.equal(firstStep(0), 760 + 89 * 40);
 
   const held = scene.createSceneQualityState({
     navigatorInfo: { deviceMemory: 8, hardwareConcurrency: 8 },
@@ -671,8 +726,8 @@ test("revealed sampling waits three seconds after the first frame and after each
     held.sampleRevealed({ frameMs: 40 + timestamp / 1000, nowMs: timestamp, timestamp, profile });
     if (held.governor.getAverageFrameTime() !== before) sampled += 1;
   }
-  // Sampled from 3000 ms until the hold at 4000 ms; the next 3 s are skipped.
-  assert.equal(sampled, 25);
+  // 81 samples before the hold, then 31 after its fresh 750 ms exclusion.
+  assert.equal(sampled, 112);
 });
 
 test("skipped samples leave the governor untouched for exactly that many frames", async () => {
@@ -692,7 +747,7 @@ test("skipped samples leave the governor untouched for exactly that many frames"
     const before = state.governor.getAverageFrameTime();
     state.sampleRevealed({ frameMs: 40 + timestamp / 1000, nowMs: timestamp, timestamp, profile });
     const unchanged = state.governor.getAverageFrameTime() === before;
-    if (timestamp >= 3000 && unchanged) skipped.push(timestamp);
+    if (timestamp >= 760 && unchanged) skipped.push(timestamp);
   }
   assert.deepEqual(skipped, [3400, 3440, 3480]);
 });
@@ -787,12 +842,12 @@ test("adaptive quality steps change cost settings without refetching models or t
     }
   };
   for (let index = 0; index < 900; index += 1) frame(40);
-  for (let index = 0; index < 1500; index += 1) frame(1000 / 60);
+  for (let index = 0; index < 2400; index += 1) frame(1000 / 60);
 
   assert.deepEqual(
     steps,
-    ["balanced@1.25", "balanced@1", "balanced@1.25", "high@1.5"],
-    "pressure steps down to balanced, then to 1x shading; headroom recovers both",
+    ["balanced@1.25", "balanced@1", "balanced@0.85", "balanced@1", "balanced@1.25", "high@1.5"],
+    "pressure steps down through both resolution rungs; sustained headroom recovers each",
   );
   assert.equal(requests.length, settled, "no model or terrain map is downloaded again");
   assert.ok(requests.every(({ signal }) => !signal.aborted));

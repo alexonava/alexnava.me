@@ -1,3 +1,4 @@
+import { shaderWaitBudget } from "./shader-programs.js";
 import {
   BackSide,
   HalfFloatType,
@@ -119,7 +120,7 @@ export function createNightEnvironment(
     return new Promise((resolve) => {
       let timer = null;
       let settled = false;
-      const until = performance.now() + prepareTimeoutMs;
+      const budget = shaderWaitBudget(prepareTimeoutMs);
       const finish = (ready = false) => {
         if (settled) return;
         settled = true;
@@ -131,7 +132,13 @@ export function createNightEnvironment(
       waiting.add(cancel);
       const poll = () => {
         try {
-          if (!current(ticket) || performance.now() >= until) return finish(false);
+          if (!current(ticket)) return finish(false);
+          const waiting = budget();
+          if (waiting < 0) return finish(false);
+          if (!waiting) return (timer = setTimeout(poll, 100));
+          const gl = renderer.getContext?.();
+          if (gl?.getProgramParameter && programs?.some((program) => !program?.program))
+            return finish(false);
           if (programs?.every((program) => program.isReady())) return finish(true);
         } catch {
           return finish(false);
@@ -152,6 +159,7 @@ export function createNightEnvironment(
       const programs = [...materials].map(
         (material) => renderer.properties.get(material).currentProgram,
       );
+      renderer.getContext?.()?.flush?.();
       const ready = awaitPrograms(ticket, programs);
       return { ready, settled: ready.then(() => {}) };
     }
@@ -347,10 +355,18 @@ export function createNightEnvironment(
       sky = material?.isShaderMaterial ? material : null;
       if (Number.isFinite(opacity)) shell = opacity;
       const job = prepare();
-      preparing = job ? prepareCapture(job, generation).catch(() => null) : null;
+      if (job) {
+        const pending = prepareCapture(job, generation)
+          .catch(() => null)
+          .finally(() => {
+            if (preparing === pending) preparing = null;
+          });
+        preparing = pending;
+      } else preparing = null;
     },
     capture() {
       if (target) return target.texture;
+      if (preparing) return null;
       if (!sky || status === "failed") return null;
       return attempt();
     },
@@ -364,6 +380,18 @@ export function createNightEnvironment(
     refresh() {
       if (!target || !sky || status === "failed") return null;
       return attempt();
+    },
+    // Retire this generation while GL is still lost. Disposing its targets
+    // after restoration would invoke Three's old-context disposal listeners.
+    contextLost() {
+      if (disposed) return;
+      generation += 1;
+      cancelPreparation();
+      preparing = null;
+      target?.dispose();
+      target = null;
+      release();
+      status = "none";
     },
     // A restored context holds no target contents: draw the sky again.
     restore() {

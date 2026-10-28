@@ -7,7 +7,15 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { Group, Object3D, PerspectiveCamera, Vector3 } from "three";
+import {
+  BufferAttribute,
+  BufferGeometry,
+  Group,
+  Mesh,
+  Object3D,
+  PerspectiveCamera,
+  Vector3,
+} from "three";
 import { bakeLanternOutline } from "../tools/bake-lantern-outline.mjs";
 import { flat, source } from "./support/code.mjs";
 import { glbAsset, modelBytes } from "./support/glb.mjs";
@@ -19,7 +27,8 @@ import { createLanternArchitecture, LANTERN_AUTHORING_HEIGHT } from "../src/scen
 import { LANTERN_RESOLUTION, OPENING_LANTERN } from "../src/scene/opening-lantern.js";
 import { OPENING_OUTLINES } from "../src/scene/opening-outline.js";
 import { OUTLINE_RESOLUTION, outlineKey } from "../src/scene/opening-outline-key.js";
-import { openingFlame, openingStar, watchMeasure } from "../src/scene/opening-star.js";
+import { openingStar, watchMeasure } from "../src/scene/opening-star.js";
+import { createOpeningFlame } from "../src/scene/opening-flame.js";
 import { lensSource } from "../src/scene/postprocess.js";
 import { LANTERN_SCALE } from "../src/scene/prop-scale.js";
 import { SOLAR_RADIUS } from "../src/scene/solar-body.js";
@@ -27,6 +36,19 @@ import { SOLAR_RADIUS } from "../src/scene/solar-body.js";
 // world.js SUN_POSITION (index.js places the star there; framing.test holds it).
 const SUN = new Vector3(-72.25, 50, -11.9);
 const TIERS = ["high", "balanced"];
+const openingFlame = createOpeningFlame({
+  BufferAttribute,
+  BufferGeometry,
+  Mesh,
+  Object3D,
+  PerspectiveCamera,
+  Vector3,
+  createCinematicCamera,
+  DIRECTED_SHOTS,
+  resolveDirectedShot,
+  lensSource,
+  LANTERN_SCALE,
+});
 
 const near = (a, b, eps, label) => assert.ok(Math.abs(a - b) < eps, `${label}: ${a} != ${b}`);
 
@@ -424,7 +446,7 @@ test("the scene predicts a tree opening's flame on the lantern's ground point fr
   const index = flat(source("src/scene/index.js"));
   assert.match(
     index,
-    /if \(scene\.cinematicSelection === "tree"\) \{ const \{ x, z \} = estateLantern\(\); environmentRoot\.updateWorldMatrix\(true, false\); reportLoaderStar\(openingFlame\(\{ width: viewport\.width, height: viewport\.height, getSafeArea: \(width, height\) => cinematicArea \|\| measureCinematicArea\(width, height\), getGroundY: cinematicGroundY, foot: environmentRoot\.localToWorld\(openingFoot\.set\(x, groundHeight\(x, z\), z\)\), glow: LANTERN_GLOW, tourPhase: cameraTour \? 0 : null, selected: scene\.cinematicSelection, angle: scene\.cinematicAngle, out: openingFlameSource \}\), "lantern"\); return; \}/,
+    /if \(scene\.cinematicSelection === "tree"\) \{ if \(!openingFlame\) return; const \{ x, z \} = estateLantern\(\); environmentRoot\.updateWorldMatrix\(true, false\); reportLoaderStar\(openingFlame\(\{ width: viewport\.width, height: viewport\.height, getSafeArea: \(width, height\) => cinematicArea \|\| measureCinematicArea\(width, height\), getGroundY: cinematicGroundY, foot: environmentRoot\.localToWorld\(openingFoot\.set\(x, groundHeight\(x, z\), z\)\), glow: LANTERN_GLOW, tourPhase: cameraTour \? 0 : null, selected: scene\.cinematicSelection, angle: scene\.cinematicAngle, out: openingFlameSource \}\), "lantern"\); return; \}/,
   );
   // The lantern drawn at the prop scale, its flame at the glass's half-width.
   assert.match(flat(source("src/scene/prop-scale.js")), /l\.scale\.setScalar\(LANTERN_SCALE\);/);

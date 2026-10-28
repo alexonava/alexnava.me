@@ -379,10 +379,9 @@ test("the scene requests only slate maps and the three maps in their lazy owners
 for (const [file, budget, owner] of [
   ["coast-detail-256.webp", 48 * 1024, "scene.terrain-build."],
   ["coast-albedo-512.webp", 96 * 1024, "scene.terrain-build."],
-  ...["moon", "close-up", "root-and-lantern", "broken-coast"].map((key) => [
-    `cel-sky-${key}.webp`,
-    640 * 1024,
-    "scene.cloud-plate.",
+  ...["moon", "close-up", "root-and-lantern", "broken-coast"].flatMap((key) => [
+    [`cel-sky-${key}.webp`, 640 * 1024, "scene.cloud-plate."],
+    [`cel-sky-${key}-balanced.webp`, 224 * 1024, "scene.cloud-plate."],
   ]),
 ])
   test(`${file} is fingerprinted and named only in its lazy owner`, async () => {
@@ -749,7 +748,14 @@ test("the complete scene fits 7.25 MiB on high and 3.5 MiB on balanced, and each
       );
       total += size;
     }
-    for (const file of [...slateMaps(tier), "coast-detail-256.webp", "coast-albedo-512.webp"])
+    for (const file of [
+      ...slateMaps(tier),
+      "coast-detail-256.webp",
+      "coast-albedo-512.webp",
+      ...["moon", "close-up", "root-and-lantern", "broken-coast"].map(
+        (key) => `cel-sky-${key}${tier === "balanced" ? "-balanced" : ""}.webp`,
+      ),
+    ])
       total += (await stat(path.join(projectRoot, "images", "materials", file))).size;
     assert.ok(total <= budget, `${tier} complete scene is ${total} bytes; budget ${budget}`);
   }
