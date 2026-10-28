@@ -389,6 +389,29 @@ test("an opening scope uploads only its maps and compiles against the scene ligh
   groundMap.dispose();
 });
 
+test("a tree opening begins its sliced physical preparation alongside the sky, while Watch leaves it deferred", async () => {
+  const index = await source("scene/index.js"),
+    start = index.indexOf('if (opening.view === "tree") filmScene.setActive(true);'),
+    end = index.indexOf("observeOpening();", start);
+  assert.ok(start > 0 && end > start);
+  const begin = new Function("opening", "filmScene", "warmShaders", index.slice(start, end));
+  for (const view of ["tree", "watch"]) {
+    const calls = [];
+    begin({ view }, { setActive: (active) => calls.push(["terrain", active]) }, (label) =>
+      calls.push(["shaders", label]),
+    );
+    assert.deepEqual(
+      calls,
+      view === "tree"
+        ? [
+            ["terrain", true],
+            ["shaders", "scene"],
+          ]
+        : [["shaders", "scene"]],
+    );
+  }
+});
+
 test("the sky-only Watch culls the physical set only until its next shot or the walk", async () => {
   const index = await source("scene/index.js");
   const start = index.indexOf("const showEnvironment =");

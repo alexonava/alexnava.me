@@ -205,7 +205,9 @@ while GL is still lost. This removes the old renderer's disposal listeners befor
 its new context exists. Compositor target and texture identities remain reusable;
 the environment capture and shadow map are recreated on restoration, with decoded
 assets retained. Ordinary program invalidation does not release live targets.
-The opening warms only its sky and compositor initially. Mandatory owner preparation
+A tree opening starts its sliced physical ground alongside the initial sky capture;
+the Watch assembly never holds that independent preparation. The opening warms
+only its sky and compositor initially. Mandatory owner preparation
 coalesces intermediate warmups; its final opening compile covers the complete tree
 cohort, or only the sky for The watch. Background subjects then warm after reveal,
 before their first cut. A scoped compile retains the full scene's lighting while

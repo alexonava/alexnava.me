@@ -1840,6 +1840,11 @@ const LANTERN_GLOW = 0.35;
         scene.disposeHomeSceneRuntime = () => false;
         return disposedResources;
       };
+      // A tree opening needs the physical ground. Begin its detached, sliced
+      // work alongside the initial sky capture, rather than waiting for the
+      // sky-only Watch assembly to release it. Admission still waits for all
+      // opening owners and final scene draws.
+      if (opening.view === "tree") filmScene.setActive(true);
       warmShaders("scene");
       observeOpening();
       frameScheduler.start();

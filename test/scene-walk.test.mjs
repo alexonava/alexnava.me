@@ -420,6 +420,8 @@ function wireSceneWalk(rig) {
     cinematic: { ready: true },
     runtimeDisposed: false,
     deferredWarmups: new Map([["pending-ground", {}]]),
+    opening: { view: "watch" },
+    filmScene: { setActive: noop },
     webglContextAvailable: true,
     sceneFailed: false,
     stopOpeningPreparation: () => openingStops++,
