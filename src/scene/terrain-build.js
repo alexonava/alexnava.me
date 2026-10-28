@@ -2740,11 +2740,12 @@ function fading(rendering, hidden = true) {
 }
 // Whether a change to the ground can land now without showing mid-shot: before
 // the reveal or during the canvas's fade-in over the title card, on a tour cut
-// under the dissolve's kept frame, or on any frame while the tour is not
-// running.
+// under the dissolve's kept frame, while the tour waits on a shot's last frame for
+// this very ground (The watch, which shows none; index.js GROUND_WAIT_S), or on
+// any frame while the tour is not running.
 function unseen(rendering, tour) {
   const early = fading(rendering);
-  return () => !tour?.running || tour.transition.cut || early();
+  return () => !tour?.running || tour.transition.cut || tour.waiting === true || early();
 }
 // Whether the canvas is still hidden or within `ms` of the reveal, early in
 // its fade-in, while it is still mostly transparent over the title card.
@@ -4584,7 +4585,11 @@ export function settleRoots(
     (openingPreparing || rendering.openingPreparing === true) &&
     !renderer?.domElement?.parentNode?.classList?.contains("is-ready");
   const allowed = () =>
-    hiddenOpening() || !tour?.running || tour.transition.cut || (parallel && early());
+    hiddenOpening() ||
+    !tour?.running ||
+    tour.transition.cut ||
+    tour.waiting === true ||
+    (parallel && early());
   const clock = dripClock(RIPPLE_TIME, motionHeld()),
     keyWorld = new Vector3(),
     keyTarget = new Vector3();

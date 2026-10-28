@@ -58,7 +58,8 @@ const draw = between(
   "visitorHold?.frameRendered();",
 );
 const reveal = between("const sceneShown =", "// Until the reveal, the transparent canvas");
-const tour = between("const tourPhase =", "const tourTransition =");
+// From the ground wait (GROUND_WAIT_S) through the tour's update.
+const tour = between("const groundPending =", "const tourTransition =");
 const apply =
   between("cinematic.apply({", "});", source.indexOf("function updateSceneFrame")) + "});";
 const deferred = () => {
@@ -135,6 +136,8 @@ function harness({
     },
     qualityDebug: {},
     OPENING_FRAME_MS: 40,
+    GROUND_WAIT_S: 20,
+    filmActive: false,
     // A fitted camera has already loaded this shared helper; keep its import
     // resolved while the resource owners below remain independently async.
     loadPreparationTasks: () => ({

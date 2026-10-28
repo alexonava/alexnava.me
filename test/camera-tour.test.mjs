@@ -787,3 +787,31 @@ test("the fault's shots join the tour when the sea lands, frame themselves from 
   assert.equal(f.tour.state.total, tourNames.length, "they leave with the sea");
   f.dispose();
 });
+
+test("a cut the next shot cannot take yet waits on the outgoing shot's last frame, counted, then cuts", () => {
+  const f = setup(TOUR_PER_SHOT);
+  try {
+    f.render(0, { cutReady: false });
+    let cutEarly = false;
+    for (let k = 1; k <= 14 * 20; k++) {
+      const phase = f.render(k / 20, { cutReady: false });
+      if (f.transition.capture || f.transition.cut) cutEarly = true;
+      if (k / 20 > 9.1) {
+        assert.equal(phase, 1, "its last frame");
+        assert.equal(f.tour.waiting, true);
+      }
+    }
+    assert.equal(cutEarly, false, "no capture or cut while the next shot cannot show");
+    assert.equal(f.name, "The watch");
+    close(f.tour.waited, 5, 0.06);
+    f.render(14.05);
+    assert.equal(f.transition.capture, true, "ready: the capture frame comes at once");
+    f.render(14.1);
+    assert.equal(f.transition.cut, true);
+    assert.equal(f.name, "Portrait");
+    assert.equal(f.tour.waiting, false);
+    assert.equal(f.tour.waited, 0, "the next shot starts its own count");
+  } finally {
+    f.dispose();
+  }
+});

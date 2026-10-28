@@ -694,3 +694,49 @@ test("environment owns composition and its disposal", () => {
   assert.equal(environment.applyQuality(highProfile), false);
   assert.equal(parent.children.includes(environment.root), true);
 });
+
+test("the film's ground reports when it has landed, or that it never will", async () => {
+  const make = (loadTerrain) => {
+    const ground = new Mesh(new BoxGeometry(), new MeshStandardMaterial());
+    const controller = createFilmScene({
+      ground,
+      groundHeight: () => 0,
+      skyMaterial: { uniforms: { sunColor: { value: new Color() } } },
+      rendering: { setFilmTreatment() {} },
+      atmosphere: { setFilmTreatment() {} },
+      loadTerrain,
+    });
+    return { ground, controller };
+  };
+  let land;
+  const height = Object.assign(() => 0, {
+    ready: new Promise((resolve) => (land = resolve)),
+    setActive() {},
+  });
+  const ok = make(async () => ({
+    createEarthGeometry: async () => new BoxGeometry(),
+    settleRoots: () => height,
+  }));
+  ok.controller.setActive(true);
+  await ok.controller.ready;
+  assert.equal(ok.controller.landed, false, "built, not yet landed: the tour still waits");
+  land(true);
+  await tick();
+  assert.equal(ok.controller.landed, true);
+  assert.equal(ok.controller.failed, false);
+  const broken = make(async () => ({
+    createEarthGeometry: async () => {
+      throw new Error("terrain unavailable");
+    },
+    settleRoots: () => height,
+  }));
+  broken.controller.setActive(true);
+  await broken.controller.ready;
+  assert.equal(broken.controller.landed, false);
+  assert.equal(broken.controller.failed, true, "a failed ground never holds the tour");
+  for (const { ground, controller } of [ok, broken]) {
+    controller.dispose();
+    ground.geometry.dispose();
+    ground.material.dispose();
+  }
+});

@@ -119,6 +119,10 @@ const LANTERN_GLOW = 0.35;
 // The hidden opening steps down before it shows when even its fastest frame interval is
 // slower than this (25 fps; opening-presentation.js frameMs).
 const OPENING_FRAME_MS = 40;
+// A cut to one of the tree's shots waits, on the outgoing shot's last frame, until the film's
+// own ground has landed (film-scene.js landed), at most this long: after a Watch opening a
+// slower phone or laptop would otherwise cut to Portrait over the placeholder ground.
+const GROUND_WAIT_S = 20;
 
 (() => {
   const site = (window.BabelSite = window.BabelSite || {});
@@ -348,6 +352,12 @@ const OPENING_FRAME_MS = 40;
         },
         get transition() {
           return walk?.transition ?? cameraTour?.transition ?? TOUR_IDLE;
+        },
+        // The tour stays on a shot's last frame until the next can show; the film's ground
+        // may land meanwhile (terrain-build.js unseen()). The shot it waits on in practice is
+        // The watch, which shows no ground.
+        get waiting() {
+          return walk?.holdsTour !== true && cameraTour?.waiting === true;
         },
       };
       const shotOnScreen = () => (walk?.drives ? null : cinematic.shot);
@@ -1270,13 +1280,21 @@ const OPENING_FRAME_MS = 40;
               })
             : null;
         if (sampledProfile) adaptiveSteps.queue(sampledProfile, nowMs);
-        // The walk holds the tour: its shot and hold stay put.
+        // The walk holds the tour: its shot and hold stay put. A cut to a tree shot waits for
+        // the film's own ground (GROUND_WAIT_S).
+        const groundPending =
+          filmActive &&
+          filmScene?.active === true &&
+          !filmScene.landed &&
+          !filmScene.failed &&
+          cameraTour?.nextShot?.subject === "tree";
         const tourPhase =
           cameraTour?.update({
             elapsedSeconds: elapsedTime,
             ready: canvasShown && !site.sceneDoors?.closed,
             reducedMotion,
             held: walk?.holdsTour === true,
+            cutReady: !groundPending || cameraTour.waited >= GROUND_WAIT_S,
           }) ?? null;
         const tourTransition = cameraTour?.transition ?? TOUR_IDLE;
         const transition = walk ? walk.step(elapsedTime, tourTransition) : tourTransition;

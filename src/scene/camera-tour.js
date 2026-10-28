@@ -100,7 +100,11 @@ export function createCameraTour({
     dissolving = false,
     dissolveSeconds = 0,
     zoom = 0,
-    prepared = false;
+    prepared = false,
+    // A shot whose hold has run out while the next shot cannot show yet (update's
+    // cutReady) stays on its last frame; waited counts that time.
+    waiting = false,
+    waited = 0;
   const running = () => !disposed && ready && !paused && !reduced && !held;
   // A shot outside the tour (a URL's) is followed by the tour's first.
   function findNext(accept) {
@@ -116,7 +120,8 @@ export function createCameraTour({
   }
   function advance() {
     findNext(({ subject, angle }) => camera.setPreviewShot(subject, angle));
-    elapsed = 0;
+    elapsed = waited = 0;
+    waiting = false;
     prepared = false;
     invalidate();
   }
@@ -186,11 +191,20 @@ export function createCameraTour({
         total: views.length,
       };
     },
+    // Whether the shot on screen has run its hold and stays on its last frame until the next
+    // can show (cutReady); `waited` is how long, in seconds.
+    get waiting() {
+      return waiting;
+    },
+    get waited() {
+      return waited;
+    },
     update({
       elapsedSeconds,
       reducedMotion = false,
       held: holding = false,
       ready: allowed = true,
+      cutReady = true,
     }) {
       if (disposed) return null;
       reduced = reducedMotion;
@@ -198,7 +212,7 @@ export function createCameraTour({
       ready = allowed && camera.ready && camera.isAvailable(camera.current);
       const active = running();
       cut = false;
-      if (!active) capturing = dissolving = false;
+      if (!active) capturing = dissolving = waiting = false;
       else {
         if (capturing) {
           advance();
@@ -209,7 +223,13 @@ export function createCameraTour({
         if (wasActive) elapsed += Math.max(0, elapsedSeconds - lastTime);
         if (dissolving && elapsed >= dissolveSeconds) dissolving = false;
         const seconds = hold();
-        if (!cut && !dissolving && elapsed >= seconds) {
+        waiting = false;
+        if (!cut && !dissolving && elapsed >= seconds && !cutReady) {
+          // The next shot cannot show yet: hold this one's last frame.
+          waited += elapsed - seconds;
+          elapsed = seconds;
+          waiting = true;
+        } else if (!cut && !dissolving && elapsed >= seconds) {
           elapsed = seconds;
           capturing = true;
           dissolveSeconds = dissolve();
