@@ -23,6 +23,7 @@ import { createSceneRendering } from "../src/scene/rendering.js";
 import { createShaderWarmup } from "../src/scene/runtime.js";
 import { compilePrograms, linkedPrograms, shaderWaitBudget } from "../src/scene/shader-programs.js";
 import { createHillSilhouette } from "../src/scene/hill-silhouette.js";
+import { retireShaderMaterial } from "../src/scene/preparation-tasks.js";
 import { createOpeningPreparation } from "../src/scene/opening-preparation.js";
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
@@ -83,6 +84,30 @@ test("shader admission checks asynchronous completion before link status without
   assert.equal(links, 1);
   assert.equal(linkedPrograms(renderer, [program]), true);
 });
+test("task-based shader batches are submitted before nonblocking readiness checks", async () => {
+  let submitted = false;
+  const program = {
+    program: {},
+    isReady: () => {
+      assert.equal(submitted, true);
+      return true;
+    },
+  };
+  const gl = {
+    flush: () => {
+      submitted = true;
+    },
+    getProgramParameter: () => true,
+  };
+  const renderer = {
+    getContext: () => gl,
+    compile: () => new Set([{}]),
+    properties: { get: () => ({ currentProgram: program }) },
+  };
+  assert.equal(await compilePrograms(renderer, {}, {}, null, () => true), true);
+  assert.equal(submitted, true);
+});
+
 test("shader timeouts count visible preparation and never query a hidden program", async () => {
   let now = 0;
   const document = { hidden: false },
@@ -124,6 +149,117 @@ test("shader timeouts count visible preparation and never query a hidden program
   } finally {
     if (previous === undefined) delete globalThis.document;
     else globalThis.document = previous;
+  }
+});
+
+test("the actual terrain release transfers its timed-out probe to driver-safe retirement", async () => {
+  const text = await source("scene/terrain-build.js"),
+    start = text.indexOf("const release = () => {", text.indexOf("Releasing a probe invalidates")),
+    end = text.indexOf("// The sea,", start);
+  assert.ok(start > 0 && end > start);
+  let finishReadiness,
+    ready = false,
+    freed = 0;
+  const tasks = [],
+    material = { dispose: () => freed++ };
+  const program = { program: {}, isReady: () => ready };
+  const renderer = { properties: { get: () => ({ currentProgram: program }) } };
+  let retirement;
+  const rendering = {
+    retireMaterial: (m) => {
+      assert.equal(m, material);
+      retirement = retireShaderMaterial(renderer, m, { schedule: (f) => tasks.push(f) });
+      return retirement;
+    },
+  };
+  const stale = { material, userData: { settled: new Promise((r) => (finishReadiness = r)) } };
+  const run = new Function(
+    "probe",
+    "rendering",
+    `${text.slice(start, end)}release();return () => probe;`,
+  );
+  const probe = run(stale, rendering);
+  assert.equal(probe(), null, "old admission polling immediately loses its generation");
+  assert.equal(retirement, undefined, "wait until the old poll has actually stopped");
+  finishReadiness(false);
+  await flush();
+  assert.ok(retirement);
+  assert.equal(freed, 0, "false readiness is not GPU completion");
+  ready = true;
+  tasks.shift()();
+  await retirement;
+  assert.equal(freed, 1);
+});
+
+test("retired probe material survives a readiness timeout until the actual driver link settles", async () => {
+  let ready = false,
+    freed = 0,
+    now = 0,
+    reads = 0;
+  const tasks = [],
+    program = {
+      program: {},
+      isReady: () => {
+        reads++;
+        return ready;
+      },
+    };
+  const properties = { get: () => ({ programs: new Map([["ground", program]]) }) };
+  const renderer = { properties, getContext: () => ({ isContextLost: () => false }) };
+  const material = { dispose: () => freed++ };
+  const pending = retireShaderMaterial(renderer, material, {
+    now: () => now,
+    schedule: (f) => tasks.push(f),
+  });
+  now = 2500;
+  tasks.shift()();
+  assert.equal(freed, 0, "the two-second admission timeout cannot delete a still-linking program");
+  ready = true;
+  tasks.shift()();
+  await pending;
+  assert.equal(freed, 1);
+  assert.ok(reads >= 3);
+  assert.equal(tasks.length, 0);
+});
+
+test("probe retirement observes hidden time, lost generations, and a genuinely stalled driver", async () => {
+  for (const outcome of ["hidden", "context replaced", "stalled"]) {
+    const tasks = [],
+      document = { hidden: outcome === "hidden" };
+    let now = 0,
+      freed = 0,
+      queried = 0;
+    const program = {
+      program: {},
+      isReady: () => {
+        queried++;
+        return false;
+      },
+    };
+    const renderer = {
+      properties: { get: () => ({ currentProgram: program }) },
+      getContext: () => ({ isContextLost: () => false }),
+    };
+    const pending = retireShaderMaterial(
+      renderer,
+      { dispose: () => freed++ },
+      { now: () => now, document, schedule: (f) => tasks.push(f) },
+    );
+    if (outcome === "hidden") {
+      now = 30000;
+      tasks.shift()();
+      assert.equal(freed, 0);
+      assert.equal(queried, 0);
+      document.hidden = false;
+      program.program = undefined;
+    } else if (outcome === "context replaced") renderer.properties = {};
+    else now = 15000;
+    const before = queried;
+    tasks.shift()();
+    await pending;
+    assert.equal(freed, 1);
+    assert.equal(queried, before);
+    assert.equal(tasks.length, 0);
   }
 });
 

@@ -220,6 +220,16 @@ handle fields on destruction. It polls asynchronous completion before link statu
 it never calls `gl.isProgram`, whose driver synchronization can stall startup.
 Shader waits pause their queries and visible-time budgets while the document is
 hidden, so a background tab does not retire still-linking GPU resources.
+Task-based compile batches explicitly flush before readiness polling: they have
+no animation-frame boundary to submit commands ([WebGL guidance](https://developer.mozilla.org/en-US/docs/Web/API/WebGL_API/WebGL_best_practices#flush_when_expecting_results)).
+
+A replaced ground-shader probe transfers its owned material to the lazy preparation
+owner after its bounded admission poll stops. GPU compilation may outlive that
+poll: the material stays alive until actual asynchronous completion, context
+retirement, or a 15-second visible cleanup bound. Borrowed maps and terrain buffers
+are retained by their original owners. This avoids deleting a program while the
+background compiler is still using it, without holding the loading UI past its
+existing deadline or leaving a raw Three material-property poll active.
 
 - **Subsystems.** Each scene part registers with a registry ([subsystem.js](../src/scene/subsystem.js)) as an object with optional `applyQuality`, `resize`, `update` and `dispose` hooks; a missing hook is a no-op. Hooks run in `lifecycleOrder`. Disposal runs in reverse registration order, continues past a failing subsystem and rethrows the first error. A throw during initialization disposes what was registered, and nothing registers after disposal.
 - **Borrowed resources.** A subsystem that derives from another's geometry, materials or programs restores the originals before freeing its own: the film terrain over the procedural ground, the lantern mount over the stand-in lantern, and the slate's shader hooks over the materials they extend. Quality changes and failed or stale loads keep a usable fallback.

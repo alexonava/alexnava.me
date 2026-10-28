@@ -53,6 +53,9 @@ export function compilePrograms(renderer, objects, camera, targetScene, valid, t
         }),
       ),
     ];
+    // Compilation runs in tasks, outside a frame boundary. Submit the batch
+    // before polling its nonblocking completion status.
+    renderer.getContext?.()?.flush?.();
   } catch {
     return Promise.resolve(false);
   }

@@ -159,6 +159,7 @@ export function createNightEnvironment(
       const programs = [...materials].map(
         (material) => renderer.properties.get(material).currentProgram,
       );
+      renderer.getContext?.()?.flush?.();
       const ready = awaitPrograms(ticket, programs);
       return { ready, settled: ready.then(() => {}) };
     }

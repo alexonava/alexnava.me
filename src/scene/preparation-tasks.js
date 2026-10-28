@@ -249,3 +249,57 @@ export function queueTourShot(camera, subject, angle, frame, host = globalThis) 
     else tourPreparations.delete(camera);
   });
 }
+
+// A readiness timeout does not finish the driver's link. Keep an owned probe's
+// material alive until that work settles, or its context disappears. Never free
+// its borrowed maps or geometry. The last-resort bound handles a stalled driver.
+export function retireShaderMaterial(
+  renderer,
+  material,
+  { timeoutMs = 15000, now = Date.now, schedule = setTimeout, document = globalThis.document } = {},
+) {
+  const properties = renderer.properties,
+    record = properties?.get?.(material),
+    programs = [
+      ...new Set(
+        record?.programs
+          ? record.programs.values()
+          : record?.currentProgram
+            ? [record.currentProgram]
+            : [],
+      ),
+    ],
+    started = now();
+  let remaining = timeoutMs,
+    previous = started,
+    wasVisible = document?.hidden !== true;
+  const budget = () => {
+    const at = now(),
+      visible = document?.hidden !== true;
+    if (wasVisible) remaining -= Math.max(0, at - previous);
+    previous = at;
+    wasVisible = visible;
+    return remaining <= 0 ? -1 : visible ? 1 : 0;
+  };
+  return new Promise((resolve) => {
+    const finish = () => {
+      material.dispose();
+      resolve();
+    };
+    (function poll() {
+      try {
+        if (renderer.properties !== properties || renderer.getContext?.()?.isContextLost?.())
+          return finish();
+        const visible = budget();
+        if (
+          visible < 0 ||
+          (visible && programs.every((p) => !p?.program || p.isReady?.() !== false))
+        )
+          return finish();
+      } catch {
+        return finish();
+      }
+      schedule(poll, 100);
+    })();
+  });
+}

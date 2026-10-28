@@ -803,8 +803,10 @@ const LANTERN_GLOW = 0.35;
         },
       });
       void loadPreparationTasks()
-        .then(({ createOpeningPresentation, createOpeningFlame }) => {
+        .then(({ createOpeningPresentation, createOpeningFlame, retireShaderMaterial }) => {
           if (runtimeDisposed || sceneFailed) return;
+          if (retireShaderMaterial)
+            rendering.retireMaterial = (material) => retireShaderMaterial(renderer, material);
           openingPresentation = createOpeningPresentation(renderer.getContext?.());
           openingFlame = createOpeningFlame({
             BufferAttribute,
