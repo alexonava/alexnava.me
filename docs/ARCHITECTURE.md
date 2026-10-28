@@ -200,6 +200,12 @@ The lazy foreground owner borrows camera fitting, grass material and placement p
 
 ## Scene lifecycle
 
+On graphics-context loss, retire owned environment, compositor and shadow targets
+while GL is still lost. This removes the old renderer's disposal listeners before
+its new context exists. Compositor target and texture identities remain reusable;
+the environment capture and shadow map are recreated on restoration, with decoded
+assets retained. Ordinary program invalidation does not release live targets.
+
 - **Subsystems.** Each scene part registers with a registry ([subsystem.js](../src/scene/subsystem.js)) as an object with optional `applyQuality`, `resize`, `update` and `dispose` hooks; a missing hook is a no-op. Hooks run in `lifecycleOrder`. Disposal runs in reverse registration order, continues past a failing subsystem and rethrows the first error. A throw during initialization disposes what was registered, and nothing registers after disposal.
 - **Borrowed resources.** A subsystem that derives from another's geometry, materials or programs restores the originals before freeing its own: the film terrain over the procedural ground, the lantern mount over the stand-in lantern, and the slate's shader hooks over the materials they extend. Quality changes and failed or stale loads keep a usable fallback.
 - **Shared uniforms.** Some uniform objects are lent rather than copied, so one write reaches every material that reads them; a borrower never frees or replaces them ([Contracts](CONTRACTS.md#shared-uniform-objects)). index.js creates the slate's contacts and text boxes (`groundContacts`, mud-ground.js `createSlateContacts()`) before the sky shell and shares them with the ground, the rocks, the bark (`textGuard`), the sky shell and, through the shell, the stars. The starfield borrows the shell's `uTime`, `uFilm`, `uClouds`, `uNebulaLayers`, `uCloudReshape`, `uVortex`, `slateText` and `slateAspect`; disposing the stars leaves the sky and its uniforms intact. drifting-mist.js lends its `MIST_UNIFORMS` (with the ground's text boxes, `lendMistText()`) to every material the mist reaches.

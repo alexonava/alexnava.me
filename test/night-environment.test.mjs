@@ -561,3 +561,76 @@ test("a restored context draws the sky again, with or without the film", () => {
   assert.equal(rendering.homeScene.environment.restored, 2);
   rendering.dispose();
 });
+
+test("context loss retires the old environment before a fresh GPU generation can dispose it", () => {
+  let lost = false;
+  const events = [],
+    meshes = [];
+  const renderer = { getContext: () => ({ isContextLost: () => lost }) };
+  const environment = createNightEnvironment(renderer, {
+    createGenerator: () => ({
+      fromScene(scene) {
+        assert.equal(lost, false);
+        const mesh = scene.children[0];
+        meshes.push(mesh);
+        for (const [kind, resource] of [
+          ["material", mesh.material],
+          ["geometry", mesh.geometry],
+        ])
+          resource.addEventListener("dispose", () => events.push([kind, lost]));
+        return { texture: new Texture(), dispose: () => events.push(["target", lost]) };
+      },
+      dispose() {},
+    }),
+  });
+  const sky = skyMaterial();
+  let borrowedDisposals = 0;
+  sky.addEventListener("dispose", () => borrowedDisposals++);
+  environment.setSky(sky);
+  const original = environment.capture();
+  lost = true;
+  environment.contextLost();
+  environment.contextLost();
+  assert.equal(environment.texture, null);
+  assert.equal(environment.capture(), null, "lost graphics cannot draw a replacement");
+  assert.deepEqual(events, [
+    ["target", true],
+    ["material", true],
+    ["geometry", true],
+  ]);
+  lost = false;
+  const restored = environment.restore();
+  assert.notEqual(restored, original);
+  assert.notEqual(meshes[0].geometry, meshes[1].geometry);
+  assert.equal(events.length, 3, "restoring cannot dispose old-context objects");
+  assert.equal(borrowedDisposals, 0);
+  environment.dispose();
+  assert.equal(borrowedDisposals, 0, "the supplied sky remains borrowed");
+  sky.dispose();
+});
+
+test("the loss handler retires owned targets and withdraws stale environment bindings", () => {
+  const { rendering, listeners } = filmRendering();
+  const events = [];
+  rendering.environment.capture = () => ({ isTexture: true });
+  rendering.environment.contextLost = () => events.push("environment");
+  rendering.postprocessPipeline.invalidatePrograms = (options) => {
+    assert.equal(options.contextLost, true);
+    events.push("compositor");
+  };
+  rendering.lights.sun.shadow.map = { dispose: () => events.push("shadow") };
+  rendering.lights.sun.shadow.mapPass = { dispose: () => events.push("shadow-filter") };
+  rendering.setFilmTreatment(true);
+  listeners.webglcontextlost({ preventDefault: () => events.push("prevent-default") });
+  assert.deepEqual(events, [
+    "prevent-default",
+    "compositor",
+    "environment",
+    "shadow",
+    "shadow-filter",
+  ]);
+  assert.equal(rendering.homeScene.environment, null);
+  assert.equal(rendering.lights.sun.shadow.map, null);
+  assert.equal(rendering.lights.sun.shadow.mapPass, null);
+  rendering.dispose();
+});

@@ -379,6 +379,18 @@ export function createNightEnvironment(
       if (!target || !sky || status === "failed") return null;
       return attempt();
     },
+    // Retire this generation while GL is still lost. Disposing its targets
+    // after restoration would invoke Three's old-context disposal listeners.
+    contextLost() {
+      if (disposed) return;
+      generation += 1;
+      cancelPreparation();
+      preparing = null;
+      target?.dispose();
+      target = null;
+      release();
+      status = "none";
+    },
     // A restored context holds no target contents: draw the sky again.
     restore() {
       generation += 1;

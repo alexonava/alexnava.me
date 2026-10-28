@@ -804,6 +804,37 @@ test("a CSS resize or a lost context ends a crossfade; the same size keeps it", 
   pipeline.dispose();
 });
 
+test("context loss retires compositor storage while preserving reusable targets and uniforms", () => {
+  const { capture, pipeline, frame } = createRecordedPipeline(GRADING_ONLY);
+  const kept = capture()[1][1];
+  const { bloom, vignetteGrain } = pipeline.passes;
+  const targets = new Set([
+    pipeline.composer.renderTarget1,
+    pipeline.composer.renderTarget2,
+    kept,
+    bloom.renderTargetBright,
+    ...bloom.renderTargetsHorizontal,
+    ...bloom.renderTargetsVertical,
+  ]);
+  const retired = [];
+  for (const target of targets) target.addEventListener("dispose", () => retired.push(target));
+  pipeline.invalidatePrograms();
+  assert.equal(retired.length, 0, "ordinary program invalidation keeps GPU storage");
+  pipeline.cancelTransition();
+  pipeline.invalidatePrograms({ contextLost: true });
+  assert.equal(retired.length, targets.size);
+  assert.equal(new Set(retired).size, targets.size, "each owned target is retired once");
+  assert.equal(
+    vignetteGrain.uniforms.tPrev.value,
+    kept.texture,
+    "texture identities remain reusable",
+  );
+  assert.ok(targets.has(pipeline.composer.readBuffer));
+  assert.ok(targets.has(pipeline.composer.writeBuffer));
+  assert.doesNotThrow(frame, "fresh draws can allocate these targets in the restored context");
+  pipeline.dispose();
+});
+
 test("the phone text band follows each pixel's dissolve instead of switching at the cut", () => {
   const { capture, pipeline } = createRecordedPipeline(GRADING_ONLY);
   const v = pipeline.passes.vignetteGrain.uniforms;
