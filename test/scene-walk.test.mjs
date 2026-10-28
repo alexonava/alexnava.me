@@ -419,6 +419,7 @@ function wireSceneWalk(rig) {
     canvasShown: true,
     cinematic: { ready: true },
     runtimeDisposed: false,
+    deferredWarmups: new Map([["pending-ground", {}]]),
     webglContextAvailable: true,
     sceneFailed: false,
     stopOpeningPreparation: () => openingStops++,
@@ -454,6 +455,7 @@ function wireSceneWalk(rig) {
     dispose: () => {
       const result = context.scene.disposeHomeSceneRuntime();
       assert.equal(openingStops, 1, "scene teardown retires opening work exactly once");
+      assert.equal(context.deferredWarmups.size, 0, "queued background preparation is retired");
       return result;
     },
   };

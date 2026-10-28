@@ -205,6 +205,17 @@ while GL is still lost. This removes the old renderer's disposal listeners befor
 its new context exists. Compositor target and texture identities remain reusable;
 the environment capture and shadow map are recreated on restoration, with decoded
 assets retained. Ordinary program invalidation does not release live targets.
+The opening warms only its sky and compositor initially. Mandatory owner preparation
+coalesces intermediate warmups; its final opening compile covers the complete tree
+cohort, or only the sky for The watch. Background subjects then warm after reveal,
+before their first cut. A scoped compile retains the full scene's lighting while
+uploading only its own visible maps. The watch looks wholly above the physical set:
+that parent is culled for its sky-only draws and restored at the next cut or on
+entering the walk; no physical pixels or camera poses change.
+
+Shader readiness follows the retained Three program wrappers and their cleared
+handle fields on destruction. It polls asynchronous completion before link status;
+it never calls `gl.isProgram`, whose driver synchronization can stall startup.
 
 - **Subsystems.** Each scene part registers with a registry ([subsystem.js](../src/scene/subsystem.js)) as an object with optional `applyQuality`, `resize`, `update` and `dispose` hooks; a missing hook is a no-op. Hooks run in `lifecycleOrder`. Disposal runs in reverse registration order, continues past a failing subsystem and rethrows the first error. A throw during initialization disposes what was registered, and nothing registers after disposal.
 - **Borrowed resources.** A subsystem that derives from another's geometry, materials or programs restores the originals before freeing its own: the film terrain over the procedural ground, the lantern mount over the stand-in lantern, and the slate's shader hooks over the materials they extend. Quality changes and failed or stale loads keep a usable fallback.

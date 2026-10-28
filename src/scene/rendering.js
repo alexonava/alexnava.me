@@ -207,9 +207,9 @@ export function createSceneRendering({
     compileGeneration = 0;
   let disposeResult = null;
 
-  // Uploads every visible map before a shot first shows its subject, so a
+  // Uploads the scope's visible maps before a shot first shows its subject, so a
   // cut never uploads mid-crossfade; uploaded maps only rebind.
-  function uploadTextures() {
+  function uploadTextures(objects = homeScene) {
     if (typeof renderer.initTexture !== "function") return;
     const materials = new Set();
     const upload = (value) => {
@@ -218,7 +218,7 @@ export function createSceneRendering({
         renderer.initTexture(value);
       }
     };
-    homeScene.traverseVisible((object) => {
+    objects.traverseVisible((object) => {
       for (const material of [object.material].flat()) {
         if (!material || materials.has(material)) continue;
         materials.add(material);
@@ -450,10 +450,10 @@ export function createSceneRendering({
     // per call), so it is skipped; the crossfade's own programs and the visible
     // maps are prepared either way. Always settles: true once linked, false if
     // skipped, rejected or still pending after timeoutMs.
-    compileShaders(timeoutMs = 2000) {
+    compileShaders(timeoutMs = 2000, objects = homeScene) {
       if (disposed || renderer.getContext?.()?.isContextLost?.()) return Promise.resolve(false);
       const postprocessReady = postprocessPipeline.compile?.();
-      uploadTextures();
+      uploadTextures(objects);
       if (typeof renderer.compile !== "function") return Promise.resolve(false);
       if (renderer.extensions?.has?.("KHR_parallel_shader_compile") !== true)
         return Promise.resolve(false);
@@ -464,8 +464,8 @@ export function createSceneRendering({
       let shadows;
       try {
         renderer.setRenderTarget?.(composer.readBuffer ?? null);
-        pending = compilePrograms(renderer, homeScene, camera, null, valid, timeoutMs);
-        shadows = prepareShadowPrograms(valid, timeoutMs);
+        pending = compilePrograms(renderer, objects, camera, homeScene, valid, timeoutMs);
+        shadows = objects === homeScene ? prepareShadowPrograms(valid, timeoutMs) : true;
       } catch {
         return Promise.resolve(false);
       } finally {

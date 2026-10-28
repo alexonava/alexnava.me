@@ -1,6 +1,9 @@
 // Three r160's compileAsync polls mutable material properties after disposal.
 // Capture every retained variant while material keys are current, and stop before
-// querying a freed/lost generation. A stalled driver never holds reveal open.
+// querying a freed/lost generation. Three clears a destroyed wrapper's program
+// field; checking that JS field avoids synchronous gl.isProgram driver queries.
+// Link status is read only after nonblocking completion. A stalled driver never
+// holds reveal open.
 export function linkedPrograms(renderer, programs, valid = () => true) {
   const gl = renderer.getContext?.();
   const current = () => valid() && !gl?.isContextLost?.();
@@ -11,10 +14,10 @@ export function linkedPrograms(renderer, programs, valid = () => true) {
         program &&
         current() &&
         program?.diagnostics?.runnable !== false &&
+        (!gl?.getProgramParameter || program.program) &&
+        program.isReady?.() !== false &&
         (!gl?.getProgramParameter ||
-          (program?.program &&
-            (!gl.isProgram || gl.isProgram(program.program)) &&
-            gl.getProgramParameter(program.program, gl.LINK_STATUS) === true)),
+          gl.getProgramParameter(program.program, gl.LINK_STATUS) === true),
     )
   );
 }
@@ -43,10 +46,7 @@ export function compilePrograms(renderer, objects, camera, targetScene, valid, t
       try {
         if (!current()) return resolve(false);
         const gl = renderer.getContext?.();
-        if (
-          gl?.isProgram &&
-          programs.some((program) => !program?.program || !gl.isProgram(program.program))
-        )
+        if (gl?.getProgramParameter && programs.some((program) => !program?.program))
           return resolve(false);
         if (programs.every((program) => program?.isReady())) {
           // Completion alone includes failed links; production disables Three's

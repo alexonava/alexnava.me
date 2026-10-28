@@ -499,6 +499,7 @@ const LANTERN_GLOW = 0.35;
       subsystemRegistry.register(environmentSystem);
       const filmDetailReady = environmentSystem.prepareFilmDetail().catch(() => null);
       const environmentRoot = environmentSystem.root;
+      environmentRoot.visible = opening.view !== "watch";
       const circleGeometry = new CircleGeometry(
           WORLD.GROUND_RADIUS,
           circleSegments,
@@ -864,10 +865,33 @@ const LANTERN_GLOW = 0.35;
         if (prepared?.failed) failToTitle("terrain", "unavailable");
         openingTimer = window.setTimeout(observeOpening, 200);
       }
-      const shaderWarmup = createShaderWarmup({ compile: () => rendering.compileShaders() });
+      let openingBackgroundStarted = false;
+      const deferredWarmups = new Map();
+      const shaderWarmup = createShaderWarmup({
+        compile() {
+          if (
+            !canvasShown &&
+            !openingBackgroundStarted &&
+            (!openingPrepared || opening.view === "watch")
+          )
+            return rendering.compileShaders(2000, atmosphereSystem.root);
+          const visible = environmentRoot.visible;
+          environmentRoot.visible = true;
+          try {
+            return rendering.compileShaders();
+          } finally {
+            environmentRoot.visible = visible;
+          }
+        },
+      });
       // A detail change before the reveal links the ground's new program.
       warmGround = () => canvasShown || warmShaders("ground");
       function warmShaders(label, subject = null) {
+        if (runtimeDisposed) return Promise.resolve(false);
+        if (!canvasShown && !openingBackgroundStarted && !["scene", "opening"].includes(label)) {
+          deferredWarmups.set(label, subject);
+          return Promise.resolve(false);
+        }
         const start = sceneNow();
         return new Promise((resolve) =>
           shaderWarmup.warm(subject, (ready) => {
@@ -1337,6 +1361,13 @@ const LANTERN_GLOW = 0.35;
         if (cinematicApplied) lookTarget.copy(cinematic.target);
         else if (walking) lookTarget.copy(walk.focus);
         else lookTarget.set(0, lookAtHeight, 0);
+        // The watch looks wholly into the sky on every layout. Its physical
+        // set returns on the incoming cut (or when entering the walk).
+        const showEnvironment = walking || !filmActive || cinematic.current !== "watch";
+        if (environmentRoot.visible !== showEnvironment) {
+          environmentRoot.visible = showEnvironment;
+          rendering.invalidateShadows();
+        }
         // The cloud vortex's eye sits where this lens sees the star, set on each cut and
         // each refit (a resize; estate-sky.js CLOUD_VORTEX), so it stays about the star.
         // The shot on screen's own sun (directed-shots.js `sun`), or the moon: changed only
@@ -1662,6 +1693,9 @@ const LANTERN_GLOW = 0.35;
           // A visitor already holding the scene may receive no following frame.
           // Start optional data here; its decode requests one refinement frame.
           groundTextures.update?.({ revealed: true });
+          openingBackgroundStarted = true;
+          for (const [label, subject] of deferredWarmups) warmShaders(label, subject);
+          deferredWarmups.clear();
         }
         canvasShown = sceneShown;
         if (canvasShown && site.sceneDoors?.closed) revealTime = elapsedTime;
@@ -1780,6 +1814,7 @@ const LANTERN_GLOW = 0.35;
       scene.disposeHomeSceneRuntime = function disposeHomeSceneRuntime() {
         if (runtimeDisposed) return false;
         runtimeDisposed = true;
+        deferredWarmups.clear();
         stopOpeningPreparation();
         sceneReadyMarked = false;
         container.classList?.remove("is-ready");

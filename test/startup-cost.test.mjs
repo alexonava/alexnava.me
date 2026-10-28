@@ -6,6 +6,7 @@ import {
   BoxGeometry,
   BufferGeometry,
   CanvasTexture,
+  Group,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
@@ -29,14 +30,15 @@ const linkedPoll = () => new Promise((resolve) => setTimeout(resolve, 25));
 test("a replaced environment's freed shader programs are never polled or link-queried", async () => {
   let queried = 0;
   const gl = {
-    isProgram: () => false,
+    isProgram: () => assert.fail("no synchronous driver identity queries"),
     getProgramParameter() {
       queried++;
       throw new Error("freed program");
     },
   };
   const program = {
-    program: {},
+    // Three r160's destroy() clears this field after deleting its GL handle.
+    program: undefined,
     isReady() {
       queried++;
       throw new Error("freed program");
@@ -50,6 +52,36 @@ test("a replaced environment's freed shader programs are never polled or link-qu
   assert.equal(await compilePrograms(renderer, {}, {}, null, () => true), false);
   assert.equal(linkedPrograms(renderer, [program]), false);
   assert.equal(queried, 0);
+});
+
+test("shader admission checks asynchronous completion before link status without driver identity queries", async () => {
+  let ready = false,
+    links = 0;
+  const program = { program: {}, isReady: () => ready };
+  const gl = {
+    LINK_STATUS: 35714,
+    isProgram: () => assert.fail("identity checks would synchronize the driver"),
+    getProgramParameter(handle, parameter) {
+      assert.equal(ready, true, "never force an unfinished link");
+      assert.equal(handle, program.program);
+      assert.equal(parameter, this.LINK_STATUS);
+      links++;
+      return true;
+    },
+  };
+  const renderer = {
+    getContext: () => gl,
+    compile: () => new Set([{}]),
+    properties: { get: () => ({ currentProgram: program }) },
+  };
+  assert.equal(linkedPrograms(renderer, [program]), false);
+  const pending = compilePrograms(renderer, {}, {}, null, () => true);
+  await linkedPoll();
+  assert.equal(links, 0);
+  ready = true;
+  assert.equal(await pending, true);
+  assert.equal(links, 1);
+  assert.equal(linkedPrograms(renderer, [program]), true);
 });
 const source = (path) => readFile(new URL(`../src/${path}`, import.meta.url), "utf8");
 const materialsOf = (objects) => {
@@ -312,6 +344,82 @@ test("shader warm-up compiles against the composer's scene target and always set
   disposed.rendering.dispose();
   assert.equal(await disposed.rendering.compileShaders(), false);
   assert.equal(disposed.calls.length, 0);
+});
+
+test("an opening scope uploads only its maps and compiles against the scene lights without unrelated depth programs", async () => {
+  const uploads = [],
+    compiles = [];
+  const { rendering } = createRendering({
+    initTexture: (texture) => uploads.push(texture.name),
+    compile(objects, camera, lightingScene) {
+      compiles.push({ objects, camera, lightingScene });
+      return materialsOf(objects);
+    },
+  });
+  const sky = new Group();
+  const geometry = new BoxGeometry();
+  const skyMap = Object.assign(new Texture({}), { name: "sky" });
+  const groundMap = Object.assign(new Texture({}), { name: "ground" });
+  const skyMaterial = new MeshBasicMaterial({ map: skyMap });
+  const groundMaterial = new MeshStandardMaterial({ map: groundMap });
+  const ground = new Mesh(geometry, groundMaterial);
+  ground.castShadow = true;
+  sky.add(new Mesh(geometry, skyMaterial));
+  rendering.homeScene.add(sky, ground);
+  rendering.renderer.shadowMap.enabled = rendering.lights.sun.castShadow = true;
+  assert.equal(await rendering.compileShaders(2000, sky), true);
+  assert.deepEqual(uploads, ["sky"], "unrelated physical maps wait for their cohort");
+  assert.equal(compiles.length, 1, "unrelated shadow casters are not warmed for the sky");
+  assert.equal(compiles[0].objects, sky);
+  assert.equal(compiles[0].camera, rendering.camera);
+  assert.equal(
+    compiles[0].lightingScene,
+    rendering.homeScene,
+    "scoped materials retain real scene lighting",
+  );
+  assert.equal(rendering.renderer.shadowMap.enabled, true);
+  assert.equal(await rendering.compileShaders(), true);
+  assert.ok(uploads.includes("ground"), "the full preparation still uploads the physical set");
+  assert.equal(compiles[1].objects, rendering.homeScene);
+  rendering.dispose();
+  geometry.dispose();
+  skyMaterial.dispose();
+  groundMaterial.dispose();
+  skyMap.dispose();
+  groundMap.dispose();
+});
+
+test("the sky-only Watch culls the physical set only until its next shot or the walk", async () => {
+  const index = await source("scene/index.js");
+  const start = index.indexOf("const showEnvironment =");
+  const end = index.indexOf("// The cloud vortex", start);
+  assert.ok(start > 0 && end > start);
+  const update = new Function(
+    "walking",
+    "filmActive",
+    "cinematic",
+    "environmentRoot",
+    "rendering",
+    index.slice(start, end),
+  );
+  const environmentRoot = { visible: true };
+  let invalidations = 0;
+  const rendering = { invalidateShadows: () => invalidations++ };
+  const state = (walking, film, shot) =>
+    update(walking, film, { current: shot }, environmentRoot, rendering);
+  state(false, true, "watch");
+  assert.equal(environmentRoot.visible, false);
+  state(false, true, "watch");
+  assert.equal(invalidations, 1, "a continuing shot never requests redundant shadows");
+  state(false, true, "portrait");
+  assert.equal(environmentRoot.visible, true);
+  assert.equal(invalidations, 2, "the incoming physical shot restores its set and shadows");
+  state(false, true, "watch");
+  state(true, true, "watch");
+  assert.equal(environmentRoot.visible, true, "walking always restores the physical set");
+  state(false, true, "watch");
+  state(false, false, "watch");
+  assert.equal(environmentRoot.visible, true, "non-film views keep the complete environment");
 });
 
 test("shader warm-up uploads visible maps; a quality step links its shadow variant", async () => {
@@ -822,7 +930,7 @@ test("shader warm-ups compile in their own task, hide waiting subjects and alway
   assert.equal(subject.visible, true);
 });
 
-async function mountainWarmupHarness(outcome) {
+async function mountainWarmupHarness(outcome, { shown = true } = {}) {
   const index = await source("scene/index.js");
   // Execute the real integration callbacks with the real hill and warm-up
   // owners; no WebGL context or whole-scene fixture is needed for this race.
@@ -831,7 +939,7 @@ async function mountainWarmupHarness(outcome) {
     index.indexOf("hillSilhouette.applyQuality(state.profile);"),
   );
   const warmup = index.slice(
-    index.indexOf("const shaderWarmup = createShaderWarmup("),
+    index.indexOf("let openingBackgroundStarted = false;"),
     index.indexOf("const lanternMount = createLanternMount("),
   );
   assert.ok(hill && warmup);
@@ -842,7 +950,11 @@ async function mountainWarmupHarness(outcome) {
   const context = {
     WORLD: { SKY_DOME_RADIUS: 130, SUN_POSITION: [0, 0, -1] },
     assetTier: null,
-    canvasShown: false,
+    canvasShown: shown,
+    openingPrepared: true,
+    opening: { view: "tree" },
+    environmentRoot: { visible: false },
+    atmosphereSystem: { root: {} },
     createHillSilhouette: (options) =>
       createHillSilhouette({
         ...options,
@@ -866,8 +978,8 @@ async function mountainWarmupHarness(outcome) {
     measureScene() {},
     qualityDebug: {},
     rendering: {
-      compileShaders() {
-        const compile = { shown: integration.hillSilhouette.mesh.visible };
+      compileShaders(timeout, scope) {
+        const compile = { shown: integration.hillSilhouette.mesh.visible, scope };
         compiles.push(compile);
         return new Promise((resolve) => {
           compile.finish = resolve;
@@ -880,13 +992,54 @@ async function mountainWarmupHarness(outcome) {
     skyConfig: { shellOpacity: 0.5 },
     state: { profile: { tier: "balanced" } },
   };
-  vm.runInNewContext(
+  vm.createContext(context);
+  vm.runInContext(
     `${hill}\n${warmup}\nglobalThis.integration = { hillSilhouette, shaderWarmup, warmShaders };`,
     context,
   );
   integration = context.integration;
-  return { ...integration, context, tasks, compiles, invalidated, finish: () => finish() };
+  return {
+    ...integration,
+    context,
+    tasks,
+    compiles,
+    invalidated,
+    finish: () => finish(),
+    releaseBackground() {
+      context.canvasShown = true;
+      const start = index.indexOf("openingBackgroundStarted = true;");
+      const end =
+        index.indexOf("deferredWarmups.clear();", start) + "deferredWarmups.clear();".length;
+      vm.runInContext(index.slice(start, end), context);
+    },
+  };
 }
+
+test("opening preparation warms the sky first and releases queued subjects only after reveal", async () => {
+  const h = await mountainWarmupHarness("ready", { shown: false });
+  h.context.openingPrepared = false;
+  const subject = { visible: true };
+  assert.equal(await h.warmShaders("tree", subject), false);
+  assert.equal(await h.warmShaders("ground"), false);
+  assert.equal(h.shaderWarmup.pending, 0, "unprepared ground never delays the opening sky");
+  assert.equal(h.tasks.length, 0);
+  const sky = h.warmShaders("scene");
+  h.tasks.shift()();
+  assert.equal(h.compiles[0].scope, h.context.atmosphereSystem.root);
+  h.compiles[0].finish(true);
+  await sky;
+  h.releaseBackground();
+  assert.equal(h.shaderWarmup.pending, 2);
+  for (const task of h.tasks.splice(0)) task();
+  assert.ok(
+    h.compiles.slice(1).every((x) => x.scope === undefined),
+    "later work prepares the complete physical set",
+  );
+  h.compiles.slice(1).forEach((x) => x.finish(true));
+  await flush();
+  assert.equal(h.shaderWarmup.pending, 0);
+  h.hillSilhouette.dispose();
+});
 
 test("a mountain commit after initial warm-ups stays hidden until its own programs settle", async () => {
   for (const outcome of ["ready", "fallback"])

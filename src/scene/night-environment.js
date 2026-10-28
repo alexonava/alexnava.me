@@ -133,10 +133,7 @@ export function createNightEnvironment(
         try {
           if (!current(ticket) || performance.now() >= until) return finish(false);
           const gl = renderer.getContext?.();
-          if (
-            gl?.isProgram &&
-            programs?.some((program) => !program?.program || !gl.isProgram(program.program))
-          )
+          if (gl?.getProgramParameter && programs?.some((program) => !program?.program))
             return finish(false);
           if (programs?.every((program) => program.isReady())) return finish(true);
         } catch {
