@@ -11,7 +11,7 @@ const index = flat(source("src/scene/index.js"));
 const between = (from, to) => index.slice(index.indexOf(from), to ? index.indexOf(to) : undefined);
 
 test("the actual quality dispatch keeps a paused visible shot intact until its cut", async () => {
-  const argument = index.match(/const adaptiveProfile = adaptiveSteps\.take\((\{[^]*?\})\);/)[1];
+  const argument = index.match(/const queuedProfile = adaptiveSteps\.take\((\{[^]*?\})\);/)[1];
   const dispatch = new Function(
     "canvasShown",
     "site",
@@ -102,7 +102,13 @@ test("models and maps keep the startup tier, and quality samples only revealed f
   assert.match(index, /if \(sampledProfile\) adaptiveSteps\.queue\(sampledProfile, nowMs\);/);
   assert.match(
     index,
-    /const adaptiveProfile = adaptiveSteps\.take\(\{ cut: transition\.cut, running: canvasShown && !site\.sceneDoors\?\.closed, nowMs \}\); if \(adaptiveProfile\) applyActiveQualityProfile\(adaptiveProfile, "adaptive"\);/,
+    /const queuedProfile = adaptiveSteps\.take\(\{ cut: transition\.cut, running: canvasShown && !site\.sceneDoors\?\.closed, nowMs \}\);/,
+  );
+  // Each shot keeps its own level (shot-levels.js): the incoming shot's, entered on its cut (and
+  // at the reveal), stands in for a step queued on the outgoing shot.
+  assert.match(
+    index,
+    /if \(canvasShown && shotKey !== enteredShot && \(transition\.cut \|\| enteredShot === null\)\) \{ enteredShot = shotKey; shotProfile = shotLevels\.enter\(shotKey, \{ nowMs, profile: state\.profile \}\); \} const adaptiveProfile = shotProfile \?\? queuedProfile; if \(adaptiveProfile\) applyActiveQualityProfile\(adaptiveProfile, "adaptive"\);/,
   );
   assert.match(index, /if \(transition\.capture\) qualityState\.skipSamples\?\.\(3\);/);
 });
@@ -216,7 +222,8 @@ test("the first frame and reveal wait for the complete opening and linked shader
   assert.match(index, /warmShaders\("tree", replacement\.root\);/);
   // A ground program that changes before the reveal links through compileAsync.
   assert.equal(
-    (index.match(/contacts: groundContacts \}\); warmGround\?\.\(\);/g) || []).length,
+    (index.match(/contacts: groundContacts, lite: liteGround \}\); warmGround\?\.\(\);/g) || [])
+      .length,
     1,
   );
   assert.match(index, /warmGround = \(\) => canvasShown \|\| warmShaders\("ground"\);/);
@@ -275,7 +282,7 @@ test("the ground shading has one call site, which takes the tint and shading fro
   assert.equal((index.match(/configureGroundShading\(/g) || []).length, 1);
   assert.match(
     index,
-    /const surface = filmGroundSurface\(\{ film: filmActive, surface: GROUND_SURFACE_MATERIAL \}\);[^]*?configureGroundShading\(material, filmActive, \{\s*detail: detailMap,\s*grit: state\.profile\.lean \? null : gritMap,\s*relief: state\.profile\.lean \? null : reliefMap,\s*contacts: groundContacts,?\s*\}\);[^]*?material\.roughness = surface\.roughness; material\.metalness = surface\.metalness; material\.color\.setHex\(surface\.color\);/,
+    /const surface = filmGroundSurface\(\{ film: filmActive, surface: GROUND_SURFACE_MATERIAL \}\);[^]*?configureGroundShading\(material, filmActive, \{\s*detail: detailMap,\s*grit: liteGround \? null : gritMap,\s*relief: liteGround \? null : reliefMap,\s*contacts: groundContacts,\s*lite: liteGround,?\s*\}\);[^]*?material\.roughness = surface\.roughness; material\.metalness = surface\.metalness; material\.color\.setHex\(surface\.color\);/,
   );
 });
 

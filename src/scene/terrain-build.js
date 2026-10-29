@@ -2126,6 +2126,10 @@ const M = PUDDLE_MIRROR,
   );
 const MIRROR = `#ifdef USE_FOG
 float slateWater = slatePuddle*slateZoneW;
+#ifdef SLATE_LITE
+// The lite ground's still pools (rain pools, the lantern's puddle) keep their wet darkening, not a mirror.
+if (slateRiverR >= 1.1 && slateStreamQ.x <= 0.0) slateWater = 0.0;
+#endif
 if (slateWater > 0.0) {
   // The water's own normal, for the mirror and its Fresnel only (the bottom keeps the soil's): level as it deepens, a still micro-undulation near the lens, and the drips.
   float slateDeep = smoothstep(-.01, .05, slateLevel)*(1.0-slateDry)*slateZoneW;
@@ -2299,12 +2303,14 @@ ${
   // The flame's glints: each ripple face turned to throw its light toward the eye (LANTERN_GLINT), a column of
   // broken glints below the lantern on the moving water (off the level plane the image takes, slateP); finer than
   // the pixel, wider and dimmer.
+  #ifndef SLATE_LITE
   if (slateRough > 0.0 && dot(slateLamp, slateLamp) > 0.0) {
     vec3 slateLD = slateLampW-slateP;
     float slateLL = max(length(slateLD), .01), slateA0 = ${glsl(LANTERN_GLINT.size)}/slateLL, slateA2 = slateA0*slateA0+${glsl(+(2 * LANTERN_GLINT.slope * LANTERN_GLINT.slope).toFixed(5))}*(1.0-slateGR);
     float slateGC = dot(reflect(-slateV, slateNG), slateLD/slateLL), slateGF = ${glsl(M.f0)}+${glsl(1 - M.f0)}*pow(1.0-saturate(dot(slateNG, slateV)), 5.0);
     slateRefl += slateLamp*${glsl(LANTERN_GLINT.gain)}*slateGF*sqrt(slateA0*slateA0/slateA2)*exp(-(1.0-slateGC)/slateA2)*slateRough*slateDeep;
   }
+  #endif
   reflectedLight.directDiffuse *= 1.0-slateF*slateWater;
   reflectedLight.indirectDiffuse *= 1.0-slateF*slateWater;
   reflectedLight.directSpecular *= mix(1.0, ${glsl(M.ggxKeep)}, slateLanternPuddle);
@@ -2353,6 +2359,10 @@ if (slateStreamQ.x > 0.0) {
   // The lace: the borders of cells drifting with the current, thicker and closer where it churns. Where its cells fall
   // under about two pixels it gives way to a faint share of its churn, so it never aliases nor washes a far stream
   // pale; out in the river the plume thins as it spreads (SF.plume of it toward the river's middle).
+  #ifdef SLATE_LITE
+  // The lite ground (phones and laptops, mud-ground.js) takes the lace's far share throughout.
+  slateFoam = ${glsl(SF.far)}*slateChurn*${glsl(SF.cover)}*smoothstep(.45, .95, slateStreamQ.x)*slatePuddle;
+  #else
   vec2 slateLC = slateSU*${glslVec(...SF.lace)};
   slateLC += ${glsl(SF.warp)}*vec2(slateNoise(slateLC*.45+3.0), slateNoise(slateLC*.45+9.0))*2.0;
   vec2 slateLI = floor(slateLC), slateLF = fract(slateLC);
@@ -2364,6 +2374,7 @@ if (slateStreamQ.x > 0.0) {
   }
   float slateLW = length(fwidth(slateLC)), slateLace = (1.0-smoothstep(0.0, mix(${glsl(SF.edge[0])}, ${glsl(SF.edge[1])}, slateChurn)+slateLW, sqrt(slateF2)-sqrt(slateF1)))*smoothstep(${glsl(SF.clump[0])}, ${glsl(SF.clump[1])}, slateChurn)*smoothstep(.35, .65, slateNoise(slateLC*${glsl(+(1 / SF.broken).toFixed(3))}+41.0));
   slateFoam = mix(slateLace, ${glsl(SF.far)}*slateChurn, clamp(slateLW*2.0-1.0, 0.0, 1.0))*${glsl(SF.cover)}*smoothstep(.45, .95, slateStreamQ.x)*slatePuddle;
+  #endif
   slateFoam = max(slateFoam, ${glsl(SF.cover * 0.6)}*slateRing*smoothstep(.35, .75, slateSN));
   slateFoam *= mix(${glsl(SF.plume)}, 1.0, slateShoal)*mix(1.0, ${glsl(STREAMS.calm.foam)}, slateStreamCalm);
   // Lit froth is diffuse, past the reflections' text knee: behind the text it thins (mud-ground.js slateBehindText()).

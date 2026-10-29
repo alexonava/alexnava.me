@@ -468,6 +468,10 @@ test("the river's water lies only below its shore, as the terrain carves it, and
   assert.equal(plain.fragment.match(/slateRiver\(vMudWorld\.xz/g).length, 1, "found once");
   assert.doesNotMatch(plain.fragment, /slateGrit|slateRelief/, "no close soil without its maps");
   assert.ok(!plain.key.includes("+soil"));
+  assert.ok(!plain.key.includes("+lite") && !plain.fragment.includes("#define SLATE_LITE"));
+  // The lite ground (phones and laptops) is a program of its own.
+  const lite = compile({ lite: true });
+  assert.ok(lite.key.includes("+lite") && lite.fragment.includes("#define SLATE_LITE"));
   // With its grit and relief maps the close soil fades in near the lens, and its relief fades
   // where a texel shrinks under a pixel and under water.
   const grit = { isTexture: true },
@@ -1571,17 +1575,27 @@ test("the look's shading changes nothing until a shot asks for it", () => {
   const { texels, taps } = SLATE_WATER.shadow;
   assert.ok(texels >= 6 && texels <= 24 && taps >= 8 && taps <= 16);
   assert.ok(
+    fragment.includes("float slateShadowWater = 0.0; #ifdef USE_SHADOWMAP #ifdef SLATE_LITE"),
+  );
+  assert.ok(
     fragment.includes(
-      "float slateShadowWater = 0.0; #ifdef USE_SHADOWMAP float slateShadow(sampler2D map,vec2 size,float bias,float radius,vec4 coord){float s=getShadow(map,size,bias,radius,coord);if(slateShadowWater>0.){vec3 c=coord.xyz/coord.w;c.z+=bias;if(c.z<=1.){",
+      "#else float slateShadow(sampler2D map,vec2 size,float bias,float radius,vec4 coord){float s=getShadow(map,size,bias,radius,coord);if(slateShadowWater>0.){vec3 c=coord.xyz/coord.w;c.z+=bias;if(c.z<=1.){",
     ),
   );
+  // The lite ground (phones and laptops) filters the key's shadow over one bilinear texel.
+  assert.ok(
+    fragment.includes(
+      "float slateShadow(sampler2D map,vec2 size,float bias,float radius,vec4 coord){float s=slateLiteShadow(map,size,bias,coord);",
+    ),
+  );
+  assert.equal(fragment.split("texture2DCompare(map,b").length - 1, 4, "four taps");
   assert.ok(fragment.includes(`for(int i=0;i<${taps};i++){`));
   assert.ok(
     fragment.includes(
       `*${texels.toFixed(1)}/size,0.,1.),c.z);}s=mix(s,(s+b)/${(taps + 1).toFixed(1)},slateShadowWater);}}return slateShadowFade.y>0.?`,
     ),
   );
-  assert.match(fragment, /:s;} #define getShadow slateShadow #endif/);
+  assert.match(fragment, /:s;} #endif #define getShadow slateShadow #endif/);
   // The film's share and the water's reach and sky change only under a gloss.
   assert.ok(fragment.includes("slateWetFilm = (mix(0.12, slateGloss.x, slateGlossW)"));
   assert.ok(

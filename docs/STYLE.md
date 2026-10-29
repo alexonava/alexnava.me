@@ -156,6 +156,15 @@ The rules for visual, motion and typographic changes. Read them before changing 
   GPU the scene takes its lean path: balanced's materials at one device pixel per CSS
   pixel, at most 2.1 million drawn pixels, with resolution steps to 0.85, 0.7 and 0.6.
   It keeps the grade, the palette, the grain, the clouds' drift, the water, the flame and
-  every camera move; it gives up the lens's background blur, the maelstrom, the close
-  soil, all but one of the nebula's layers and all but one step of the mist. High draws
-  at most 3.7 million pixels. The opening shows as soon as the scene can draw.
+  every camera move; it gives up the maelstrom, all but one of the nebula's layers and
+  all but one step of the mist. High draws at most 3.7 million pixels. The opening shows
+  as soon as the scene can draw.
+- Phones and laptops (the balanced startup tier, the lean path included) keep every shot
+  sharp and the ground lighter (the owner's picks of 2026-10-28, "Grain only" and
+  "Simplify further", for 60 fps at a sharper resolution): no lens blur and no colour
+  fringe, only the vignette and the grain; no close soil; the moon's shadow filtered over
+  one texel, so its edges are a little crisper; still pools (the rain's and the lantern's
+  puddle) darken wet but keep no mirror, while the river and the streams keep theirs, with
+  no lantern glints on their ripples; the stream's foam keeps its body without its lace;
+  the drifting mist marches in one step.
+  Desktops on the high tier keep all of it.

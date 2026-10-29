@@ -98,6 +98,8 @@ function createContext({
   // Model requests answer at once instead of staying in flight.
   respond = false,
   reducedMotion = false,
+  // A touch screen: the page's "(pointer: coarse)" query matches.
+  touch = false,
   saveData = false,
   // Records the title card's loading line calls (src/ui/scene-loader.js).
   sceneLoader = false,
@@ -159,6 +161,7 @@ function createContext({
       if (query === "(prefers-reduced-data: reduce)") return dataQuery;
       if (query === "(prefers-reduced-motion: reduce)") return motionQuery;
       if (query === "(forced-colors: active)") return forcedColorsQuery;
+      if (query === "(pointer: coarse)") return createMutableChangeTarget(touch);
       return createMutableChangeTarget(false);
     },
     requestIdleCallback(callback) {
@@ -1311,6 +1314,28 @@ test("a laptop's integrated GPU always opens on The watch, never rolling; an add
     sceneLoader: true,
     random: never,
     softwareRenderer: laptop,
+    search: "?view=tree&angle=2",
+  });
+  await loadMainWithQuality(pinned.context);
+  await pinned.context.window.BabelSite.ensureSceneReady();
+  const [pin] = pinned.loaderCalls.filter(({ method }) => method === "begin");
+  assert.deepEqual(pin.opening, [null, null], "the address's view, resolved by the scene");
+});
+
+test("a phone or tablet (a touch screen) always opens on The watch, never rolling; an address still pins its view", async () => {
+  const never = () => {
+    throw new Error("a touch screen does not roll");
+  };
+  const harness = createContext({ ...CAPABLE, sceneLoader: true, random: never, touch: true });
+  await loadMainWithQuality(harness.context);
+  await harness.context.window.BabelSite.ensureSceneReady();
+  const [begin] = harness.loaderCalls.filter(({ method }) => method === "begin");
+  assert.deepEqual(begin.opening, ["watch", 0]);
+  const pinned = createContext({
+    ...CAPABLE,
+    sceneLoader: true,
+    random: never,
+    touch: true,
     search: "?view=tree&angle=2",
   });
   await loadMainWithQuality(pinned.context);

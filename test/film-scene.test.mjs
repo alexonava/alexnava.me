@@ -139,15 +139,14 @@ test("the default film slate binds its seamless maps and shared detail map at th
   );
   slate.applyQuality({ tier: "balanced" });
   assert.ok(pending.slice(0, 5).every(({ signal }) => signal.aborted));
-  // Both tiers share the one 512 detail map; the close soil's maps follow the tier.
+  // Both tiers share the one 512 detail map; the close soil's maps load on high alone
+  // (phones and laptops take the lite ground, which has no close soil).
   assert.deepEqual(
     pending.slice(5).map(({ url }) => url),
     [
       "/images/materials/slate-color-512.webp",
       "/images/materials/slate-normal-512.webp",
       "/images/materials/slate-detail-512.webp",
-      "/images/materials/slate-grit-512.webp",
-      "/images/materials/slate-relief-512.webp",
     ],
   );
   pending.forEach((r, i) => {
@@ -157,19 +156,13 @@ test("the default film slate binds its seamless maps and shared detail map at th
   await tick();
   await tick();
   assert.equal(published.length, 1);
-  assert.equal(closed.length, 10);
+  assert.equal(closed.length, 8);
   // The seamless v2 tile repeats every 22 world units (the classic ground's
   // tile), so 384 / 22 across the film terrain, without mirroring.
   close(FILM_GROUND_PRESETS.slate.tile, 22);
-  assert.notEqual(bound.gritMap.colorSpace, SRGBColorSpace, "the grit holds linear albedo detail");
-  assert.notEqual(bound.reliefMap.colorSpace, SRGBColorSpace, "the relief holds linear height");
-  for (const map of [
-    bound.colorMap,
-    bound.normalMap,
-    bound.detailMap,
-    bound.gritMap,
-    bound.reliefMap,
-  ]) {
+  assert.equal(bound.gritMap, null, "balanced binds no grit");
+  assert.equal(bound.reliefMap, null, "balanced binds no relief");
+  for (const map of [bound.colorMap, bound.normalMap, bound.detailMap]) {
     close(map.repeat.x, 384 / 22);
     close(map.repeat.y, 384 / 22);
     assert.equal(map.wrapS, RepeatWrapping);
@@ -184,19 +177,13 @@ test("the default film slate binds its seamless maps and shared detail map at th
   assert.equal(bound.bumpMap, null);
   assert.equal(bound.filmTiled, true, "index.js keeps the film tiling as published");
   let disposals = 0;
-  for (const m of [
-    bound.colorMap,
-    bound.normalMap,
-    bound.detailMap,
-    bound.gritMap,
-    bound.reliefMap,
-  ])
+  for (const m of [bound.colorMap, bound.normalMap, bound.detailMap])
     m.addEventListener("dispose", () => {
       assert.equal(bound, null, "bindings are restored before the maps are freed");
       disposals++;
     });
   slate.setActive(false);
-  assert.equal(disposals, 5);
+  assert.equal(disposals, 3);
   slate.dispose();
   assert.equal(slate.dispose(), false);
 });
