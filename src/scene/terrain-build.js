@@ -2763,6 +2763,10 @@ function earlyFade(rendering, ms) {
 // the fade-in (the canvas under half opaque): later in the fade it showed as
 // a pop on shots that open at the tree.
 export const SHADING_EARLY = 150;
+// How long the shaded program's link is waited on before the switch's draw takes what
+// remains of it: past its slowest measured compile on an integrated GPU (about 5 s), and
+// inside the tour's hold for the ground (index.js GROUND_WAIT_S).
+export const LINK_WAIT_MS = 12000;
 
 // The estate tufts (estate-ground-detail.js) on the film terrain: a blade
 // where a root covers the soil, in the trunk's deep cavity (sky occlusion
@@ -4330,6 +4334,25 @@ function streamAlong(x, z, line = STREAM_LINES[0]) {
   return along;
 }
 
+// The ground draws only with its ancestors shown, and The watch hides the environment and with
+// it the lantern's light. A program linked meanwhile would key no point light, and the cut's
+// first draw would link the right one in one blocking compile (seconds on a first visit). So
+// links of the ground's programs, and the state checks that accept them, run with the
+// ground's chain shown: they key the lights the ground will draw with.
+export function withChainShown(object, run) {
+  const hidden = [];
+  for (let node = object?.parent; node; node = node.parent)
+    if (!node.visible) {
+      hidden.push(node);
+      node.visible = true;
+    }
+  try {
+    return run();
+  } finally {
+    for (const node of hidden) node.visible = false;
+  }
+}
+
 // A tree opening links the slate's shaded program (its "+root" key: the scene's longest link,
 // seconds on a first visit) on a detached stand-in as soon as the ground's maps and the scene's
 // lights are final, so it links beside the terrain's build rather than after it. settleRoots()
@@ -4373,12 +4396,14 @@ export function prelinkSlateGround(ground, rendering) {
   const previous = renderer.getRenderTarget?.() ?? null;
   try {
     renderer.setRenderTarget?.(rendering.composer?.readBuffer ?? null);
-    rendering.compilePrograms(
-      renderer,
-      stand,
-      rendering.camera,
-      rendering.homeScene,
-      () => live && !renderer.getContext?.()?.isContextLost?.(),
+    withChainShown(ground, () =>
+      rendering.compilePrograms(
+        renderer,
+        stand,
+        rendering.camera,
+        rendering.homeScene,
+        () => live && !renderer.getContext?.()?.isContextLost?.(),
+      ),
     );
   } catch {
     // The terrain's own link (settleRoots()) remains.
@@ -4937,12 +4962,14 @@ export function settleRoots(
     return key;
   };
   // Everything that enters the shaded program's key: the slate's key and
-  // state, and the scene's visible lights and shadows.
+  // state, and the lights and shadows visible where the ground draws.
   const programState = () => {
     let state = `${shadedKey()}|${material.version}|${Boolean(renderer?.shadowMap?.enabled)}`;
-    scene?.traverseVisible((object) => {
-      if (object.isLight) state += `|${object.type}${object.castShadow ? "+" : ""}`;
-    });
+    withChainShown(ground, () =>
+      scene?.traverseVisible((object) => {
+        if (object.isLight) state += `|${object.type}${object.castShadow ? "+" : ""}`;
+      }),
+    );
     return state;
   };
   function link() {
@@ -4975,8 +5002,7 @@ export function settleRoots(
     );
     // Against a composer target, whose program keys the scene pass uses
     // (rendering.compileShaders()), with the scene's lights and fog.
-    const previous = renderer.getRenderTarget?.() ?? null,
-      properties = renderer.properties;
+    const properties = renderer.properties;
     const valid = () =>
       live &&
       probe === stand &&
@@ -4985,13 +5011,18 @@ export function settleRoots(
     stand.userData.valid = valid;
     probe = stand;
     linking = true;
-    let pending = null;
     // The shore's programs link beside the stand-in's, before the shore lands.
     const waiting = shore.filter(({ mesh }) => !mesh.parent).map(({ mesh }) => mesh),
       batch = waiting.length ? new Group().add(stand, ...waiting) : stand;
+    // The poll waits up to LINK_WAIT_MS of visible time: accepting a link still compiling
+    // would leave the rest of the compile to the switch's draw, which blocks for it.
+    const previous = renderer.getRenderTarget?.() ?? null;
+    let pending = null;
     try {
       renderer.setRenderTarget?.(rendering.composer?.readBuffer ?? null);
-      pending = rendering.compilePrograms(renderer, batch, rendering.camera, scene, valid);
+      pending = withChainShown(ground, () =>
+        rendering.compilePrograms(renderer, batch, rendering.camera, scene, valid, LINK_WAIT_MS),
+      );
     } catch {
       pending = null;
     } finally {
@@ -4999,7 +5030,7 @@ export function settleRoots(
       if (batch !== stand) batch.remove(...batch.children);
     }
     stand.userData.settled = Promise.resolve(pending).catch(() => {});
-    // A link still pending after two seconds is left to the switch's draw.
+    // A link still pending after LINK_WAIT_MS is left to the switch's draw.
     stand.userData.settled.then(() => {
       if (probe !== stand) return;
       linking = false;
