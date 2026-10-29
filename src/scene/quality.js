@@ -474,6 +474,24 @@
       getResolutionLevel() {
         return resolutionLevel;
       },
+      // Where the governor stands: its tier and, below balanced, its resolution step.
+      getLevel() {
+        return { tier: currentTier, resolutionLevel };
+      },
+      // Moves to a level a shot has kept (shot-levels.js), starting its window afresh: the
+      // new shot's frames are its own, after a warm-up. Climbing back is then the shots'
+      // own (one step after a visit that kept up), so the governor's recovery stops.
+      setLevel({ tier, resolutionLevel: level }, nowMs = 0) {
+        if (fixedTier) return;
+        oscillations = maxOscillations;
+        currentTier = normalizeTier(tier, currentTier);
+        resolutionLevel = Math.max(0, Math.min(resolutionSteps, Math.floor(level) || 0));
+        samples.length = 0;
+        sampleSum = 0;
+        sampleCount = 0;
+        lastChangeMs = nowMs;
+        resetCounters();
+      },
       isFixed() {
         return Boolean(fixedTier);
       },
@@ -573,7 +591,6 @@
     // then 0.85; the lean path's LEAN_STEPS: 0.85, 0.7, then 0.6).
     let sampleResumeAt = null;
     let skippedSamples = 0;
-
     return {
       caps: resolvedCaps,
       controls,
@@ -597,6 +614,12 @@
       stepDown({ nowMs = 0, profile }) {
         const nextTier = governor.stepDown(nowMs, "low");
         return nextTier ? stepProfile(nextTier, profile) : null;
+      },
+      // Takes a level a shot has kept (shot-levels.js) now: the profile to apply at this cut.
+      takeLevel(level, { nowMs = 0, profile } = {}) {
+        governor.setLevel(level, nowMs);
+        sampleResumeAt = null;
+        return stepProfile(level.tier, profile);
       },
       // Skips samples for SAMPLE_HOLD_MS from the next sampled frame.
       holdSampling() {
