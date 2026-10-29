@@ -180,6 +180,9 @@ const GROUND_WAIT_S = 20;
     // Downloaded models and terrain maps keep the startup tier. Adaptive steps
     // change only per-frame cost (DPR, shadows, post).
     const assetTier = qualityState.initialTier;
+    // The lite ground and lens (phones and laptops): fixed by the startup tier, so a desktop
+    // stepping down at runtime keeps its own ground and links nothing new.
+    const liteGround = assetTier !== "high";
     function updateSceneDebug(extra = {}) {
       if (!qualityDebug) return;
       Object.assign(qualityDebug, {
@@ -613,12 +616,14 @@ const GROUND_WAIT_S = 20;
               surface: GROUND_SURFACE_MATERIAL,
             });
             if (qualityDebug) qualityDebug.groundTreatment = filmActive ? "slate" : "baseline";
-            // The lean path's ground has no close soil (its largest program).
+            // Phones and laptops (the balanced startup tier, the lean path's too) take the lite
+            // ground: no close soil, the cheaper shadow filter and simpler water (mud-ground.js).
             configureGroundShading(material, filmActive, {
               detail: detailMap,
-              grit: state.profile.lean ? null : gritMap,
-              relief: state.profile.lean ? null : reliefMap,
+              grit: liteGround ? null : gritMap,
+              relief: liteGround ? null : reliefMap,
               contacts: groundContacts,
+              lite: liteGround,
             });
             warmGround?.();
             for (const texture of [colorMap, normalMap, roughnessMap, bumpMap].filter(Boolean)) {
@@ -1453,9 +1458,10 @@ const GROUND_WAIT_S = 20;
         // The shot's lens and the film's bars and grain follow the shot on screen;
         // the bars ease out under the dissolve into the walk and back in after it.
         const post = rendering.postprocessPipeline;
-        // The lean path keeps every shot sharp: no lens blur (quality.js).
+        // Phones and laptops keep every shot sharp: no lens blur (the owner's pick of 2026-10-28,
+        // "Grain only"; the lean path's since 2026-10-27).
         post.setLens?.(
-          cinematicApplied && !state.profile.lean ? cinematic.shot?.lens : null,
+          cinematicApplied && !liteGround ? cinematic.shot?.lens : null,
           camera,
           lookTarget,
           cinematicGroundY(lookTarget.x, lookTarget.z),

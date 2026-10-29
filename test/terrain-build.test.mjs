@@ -1126,7 +1126,8 @@ test("the lazy ground shading extends only the slate's program, under its own ke
     assert.match(fragment, /slatePuddle = mix\(slatePuddle, smoothstep\([^;]*\), slateZoneW\);/);
     assert.match(
       fragment,
-      /float slateWater = slatePuddle\*slateZoneW;\nif \(slateWater > 0\.0\) \{/,
+      /float slateWater = slatePuddle\*slateZoneW;\n#ifdef SLATE_LITE\n[^\n]*\nif \(slateRiverR >= 1\.1 && slateStreamQ\.x <= 0\.0\) slateWater = 0\.0;\n#endif\nif \(slateWater > 0\.0\) \{/,
+      "the lite ground's still pools keep no mirror",
     );
     assert.match(
       fragment,

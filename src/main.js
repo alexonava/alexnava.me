@@ -106,13 +106,15 @@ import { createOpeningPreparation } from "./scene/opening-preparation.js";
   const WATCH_OPENING = Object.freeze({ view: "watch", angle: 0 });
   // A laptop's integrated GPU (quality.js's lean path) always opens on The watch, the sky
   // alone, which shows in about two seconds; Lantern study's ground takes it far longer to
-  // build (the owner's call of 2026-10-27, "Always The watch").
-  function chooseOpening(random = Math.random, { lean = false } = {}) {
+  // build (the owner's call of 2026-10-27, "Always The watch"). So does a phone or tablet
+  // (a touch screen): 8 s for Lantern study on a fast phone, 27 s on a mid-range one
+  // (the owner's call of 2026-10-28, "Always The watch").
+  function chooseOpening(random = Math.random, { lean = false, touch = false } = {}) {
     const scene = (site.scene = site.scene || {});
     if (scene.cinematicSelection != null) return;
     const query = new URLSearchParams(window.location?.search || "");
     if (query.has("view") || query.has("angle")) return;
-    const opening = lean || random() >= 0.5 ? WATCH_OPENING : resolveSceneOpening("");
+    const opening = lean || touch || random() >= 0.5 ? WATCH_OPENING : resolveSceneOpening("");
     scene.cinematicSelection = opening.view;
     scene.cinematicAngle = opening.angle;
   }
@@ -304,7 +306,11 @@ import { createOpeningPreparation } from "./scene/opening-preparation.js";
       const caps = scene.qualityCapsFromProbe?.(capabilities);
       if (!caps || typeof scene.createSceneQualityState !== "function") return null;
       const state = scene.createSceneQualityState({ caps });
-      return { tier: state.initialTier || null, lean: state.lean === true };
+      return {
+        tier: state.initialTier || null,
+        lean: state.lean === true,
+        touch: state.touchPrimary === true,
+      };
     } catch {
       return null;
     }
@@ -406,9 +412,8 @@ import { createOpeningPreparation } from "./scene/opening-preparation.js";
       try {
         const starting = !sceneInitialized;
         if (starting) {
-          chooseOpening(Math.random, {
-            lean: readStartupQuality(site.shared?.getWebGLCapabilities?.())?.lean,
-          });
+          const startup = readStartupQuality(site.shared?.getWebGLCapabilities?.());
+          chooseOpening(Math.random, { lean: startup?.lean, touch: startup?.touch });
           startOpeningBudget();
           site.sceneLoader?.begin?.({ tier: sceneStartupTier });
           site.sceneLoader?.stage?.("bundle");
@@ -465,7 +470,7 @@ import { createOpeningPreparation } from "./scene/opening-preparation.js";
 
         // Only the live path shows the title card's loading line.
         sceneStartupTier = startupTier;
-        chooseOpening(Math.random, { lean: startup?.lean });
+        chooseOpening(Math.random, { lean: startup?.lean, touch: startup?.touch });
         site.sceneLoader?.begin?.({ tier: startupTier });
         const sceneScript = loadScriptOnce(getSceneScriptUrl(), getSceneModulePreloads());
         // Issued after the bundle request, which keeps its head start.

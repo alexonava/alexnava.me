@@ -216,7 +216,8 @@ test("the first frame and reveal wait for the complete opening and linked shader
   assert.match(index, /warmShaders\("tree", replacement\.root\);/);
   // A ground program that changes before the reveal links through compileAsync.
   assert.equal(
-    (index.match(/contacts: groundContacts \}\); warmGround\?\.\(\);/g) || []).length,
+    (index.match(/contacts: groundContacts, lite: liteGround \}\); warmGround\?\.\(\);/g) || [])
+      .length,
     1,
   );
   assert.match(index, /warmGround = \(\) => canvasShown \|\| warmShaders\("ground"\);/);
@@ -275,7 +276,7 @@ test("the ground shading has one call site, which takes the tint and shading fro
   assert.equal((index.match(/configureGroundShading\(/g) || []).length, 1);
   assert.match(
     index,
-    /const surface = filmGroundSurface\(\{ film: filmActive, surface: GROUND_SURFACE_MATERIAL \}\);[^]*?configureGroundShading\(material, filmActive, \{\s*detail: detailMap,\s*grit: state\.profile\.lean \? null : gritMap,\s*relief: state\.profile\.lean \? null : reliefMap,\s*contacts: groundContacts,?\s*\}\);[^]*?material\.roughness = surface\.roughness; material\.metalness = surface\.metalness; material\.color\.setHex\(surface\.color\);/,
+    /const surface = filmGroundSurface\(\{ film: filmActive, surface: GROUND_SURFACE_MATERIAL \}\);[^]*?configureGroundShading\(material, filmActive, \{\s*detail: detailMap,\s*grit: liteGround \? null : gritMap,\s*relief: liteGround \? null : reliefMap,\s*contacts: groundContacts,\s*lite: liteGround,?\s*\}\);[^]*?material\.roughness = surface\.roughness; material\.metalness = surface\.metalness; material\.color\.setHex\(surface\.color\);/,
   );
 });
 

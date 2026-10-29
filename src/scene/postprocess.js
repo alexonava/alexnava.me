@@ -1024,9 +1024,11 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
     vignetteGrainPass.uniforms.uVignetteStrength.value = settings.vignetteStrength ?? 0.08;
     vignetteGrainPass.uniforms.uGrainEnabled.value = grainEnabled ? 1 : 0;
     vignetteGrainPass.uniforms.uGrainStrength.value = settings.grainStrength ?? 0.022;
+    // The colour fringe only on the high tier: phones and laptops keep grain and the
+    // vignette alone (the owner's pick of 2026-10-28, "Grain only"), its two taps saved.
     finalUniforms.uLens.value.set(
       film && LENS_FX.heat.on ? 1 : 0,
-      film && LENS_FX.aberration.on ? 1 : 0,
+      film && LENS_FX.aberration.on && profile.tier === "high" ? 1 : 0,
       film && LENS_FX.flare.on ? 1 : 0,
       LENS_FX.heat.octaves[profile.tier] ?? LENS_FX.heat.octaves.high,
     );
