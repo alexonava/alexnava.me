@@ -1550,8 +1550,12 @@ test("successful slate maps avoid full procedural painting until a real film res
         `/images/materials/slate-color-${size}.webp`,
         `/images/materials/slate-normal-${size}.webp`,
         "/images/materials/slate-detail-512.webp",
-        `/images/materials/slate-grit-${size}.webp`,
-        `/images/materials/slate-relief-${size}.webp`,
+        ...(tier === "high"
+          ? [
+              `/images/materials/slate-grit-${size}.webp`,
+              `/images/materials/slate-relief-${size}.webp`,
+            ]
+          : []),
       ],
     );
     requests.forEach(({ url, resolve }) => resolve({ ok: true, blob: async () => ({ url }) }));

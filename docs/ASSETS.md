@@ -59,7 +59,7 @@ The tree is required: without it the scene returns to the title card. A Lantern 
 | `slate-detail-512.webp`         |  24,542 | 512  | both     |
 | `slate-soil-roughness-512.webp` |   3,042 | 512  | both     |
 
-The grit and relief maps are the close soil near the lens (mud-ground.js `SLATE_CLOSE`): greyscale albedo detail and height from CC0 PolyHaven "Dirt" ([Credits](CREDITS.md)), made by `Assets/Materials/dirt-close-v1/scripts/make-dirt-close.py`.
+The grit and relief maps are the close soil near the lens (mud-ground.js `SLATE_CLOSE`), which only the high tier draws: phones and laptops take the lite ground and never request them (filmic-earth.js `kindsFor`). They are greyscale albedo detail and height from CC0 PolyHaven "Dirt" ([Credits](CREDITS.md)), made by `Assets/Materials/dirt-close-v1/scripts/make-dirt-close.py`.
 
 The independent optional `slate-soil-roughness-512.webp` is 3,042 bytes, shared by both tiers. It is grayscale linear data (`NoColorSpace`), prepared before a close tree opening, or requested after other reveals, with a 12 KiB streamed-body limit and an eight-second deadline. Its owner stages it until a cut or a still frame; failure preserves all five required ground maps. The shader subtracts its encoded mean, 0.9450162550982307, before adding its close-range variation to exposed soil, leaving water and coastal bedrock alone. `tools/bake-soil-roughness.py` verifies the original 16-bit Dirt source SHA-256, normalizes before filtering and produces the 512px WebP at quality 78/method 6. The tile adds about 1.33 MiB of decoded RGBA mip storage. Adaptive quality retains the same asset; disposal restores its binding before freeing the texture and bitmap.
 

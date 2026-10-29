@@ -150,8 +150,8 @@ export function setMistLights(moon, star) {
   [s.x, s.y, s.z] = star;
 }
 
-// The march per tier: high and balanced; none below.
-// The lean path (quality.js) marches one step of one octave: the drift still moves.
+// The march per tier: high and balanced; none below. Phones and laptops (the lite
+// startup, index.js; "lean" here) march one step of one octave: the drift still moves.
 export function setMistTier(tier) {
   const f = MIST_UNIFORMS.mistFrame.value,
     k = tier === "high" ? 0 : 1;
