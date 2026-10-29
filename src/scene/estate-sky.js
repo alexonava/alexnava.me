@@ -312,6 +312,9 @@ export const CLOUD_PLATE_LOOK = Object.freeze({ gain: 2.4, cap: Object.freeze([3
 // uClouds and uCloudReshape uniforms in scope, and leave the bank density `d` (`da`
 // offset toward the sun), the weather terms, the reshaping's weights `open` and `bend`
 // and `cover`, the bank's opacity before the sky's .94 mix. `time` names the drift clock uniform.
+// Where the plate stands in whole (uCloudMix and uCloudReshape both 1), cover, d and the
+// cloud's colour are the plate's alone, so the banks' noise is skipped (fieldOff), except
+// in the vortex, whose glow still reads the field's light (da).
 export function cloudFieldGLSL(time = "uTime") {
   return `float T=${time};
 float lift=max(altitude,0.0)+.24;
@@ -343,7 +346,8 @@ L*=inversesqrt(dot(L,L)+.2);
 vec2 qa=q;
 vec2 NP[9]; float NV[9];
 NP[0]=q*.5+vec2(7.3,1.9);
-int nc=uNebulaLayers>2.5?9:(uNebulaLayers>1.5?7:5);
+bool fieldOff=uCloudMix*uCloudReshape>=1.${vortexOn ? "&&!(vxW>0.&&uVortex.z>=0.)" : ""};
+int nc=fieldOff?0:(uNebulaLayers>2.5?9:(uNebulaLayers>1.5?7:5));
 for(int k=0;k<9;k++){
 if(k>=nc) break;
 if(k==1){
@@ -367,6 +371,7 @@ wo+=bend*${glslFloat(swirl)}*vec2(cos(turn),sin(turn));
 q+=wo; p+=wo;
 }
 }
+if(fieldOff){NV[0]=.5;NV[1]=.5;NV[2]=.5;NV[3]=.5;NV[4]=.5;NV[5]=.5;NV[6]=.5;NV[7]=.5;NV[8]=.5;}
 float n0=NV[1], n1=NV[2], a0=NV[3], a1=NV[4];
 float d=n0*.62+n1*.38, da=a0*.62+a1*.38, fineD=0.;
 if(uNebulaLayers>1.5){

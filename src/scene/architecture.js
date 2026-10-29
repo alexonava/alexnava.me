@@ -92,9 +92,14 @@ export const ROOT_MOSS = Object.freeze({
 const ROOT_MOSS_GLSL = `float babelHash(vec3 p){p=fract(p*.3183099+.1);p*=17.;return fract(p.x*p.y*p.z*(p.x+p.y+p.z));}
 float babelNoise(vec3 x){vec3 i=floor(x),f=fract(x);f=f*f*(3.-2.*f);return mix(mix(mix(babelHash(i),babelHash(i+vec3(1,0,0)),f.x),mix(babelHash(i+vec3(0,1,0)),babelHash(i+vec3(1,1,0)),f.x),f.y),mix(mix(babelHash(i+vec3(0,0,1)),babelHash(i+vec3(1,0,1)),f.x),mix(babelHash(i+vec3(0,1,1)),babelHash(i+vec3(1,1,1)),f.x),f.y),f.z);}`;
 const f2 = (v) => v.toFixed(3);
-const ROOT_MOSS_MAP = `float babelMossFine = babelNoise(babelLocal*${f2(ROOT_MOSS.scale[1])});
-float babelMoss = babelFilm*smoothstep(${f2(ROOT_MOSS.band[0])}, ${f2(ROOT_MOSS.band[1])}, babelLocal.y)*(1.0-smoothstep(${f2(ROOT_MOSS.band[2])}, ${f2(ROOT_MOSS.band[3])}, babelLocal.y))*smoothstep(${f2(ROOT_MOSS.up[0])}, ${f2(ROOT_MOSS.up[1])}, normalize(babelLocalN).y)*smoothstep(${f2(ROOT_MOSS.patch[0])}, ${f2(ROOT_MOSS.patch[1])}, .7*babelNoise(babelLocal*${f2(ROOT_MOSS.scale[0])})+.3*babelMossFine);
-diffuseColor.rgb = mix(diffuseColor.rgb, vec3(${ROOT_MOSS.tone.map(f2).join(", ")})*(.65+.7*babelMossFine), babelMoss*${f2(ROOT_MOSS.cover)});`;
+// The moss's noise runs only in its band up the trunk: elsewhere it is 0 and leaves the bark as it is.
+const ROOT_MOSS_MAP = `float babelMossBand = babelFilm*smoothstep(${f2(ROOT_MOSS.band[0])}, ${f2(ROOT_MOSS.band[1])}, babelLocal.y)*(1.0-smoothstep(${f2(ROOT_MOSS.band[2])}, ${f2(ROOT_MOSS.band[3])}, babelLocal.y));
+float babelMoss = 0.0;
+if (babelMossBand > 0.0) {
+float babelMossFine = babelNoise(babelLocal*${f2(ROOT_MOSS.scale[1])});
+babelMoss = babelMossBand*smoothstep(${f2(ROOT_MOSS.up[0])}, ${f2(ROOT_MOSS.up[1])}, normalize(babelLocalN).y)*smoothstep(${f2(ROOT_MOSS.patch[0])}, ${f2(ROOT_MOSS.patch[1])}, .7*babelNoise(babelLocal*${f2(ROOT_MOSS.scale[0])})+.3*babelMossFine);
+diffuseColor.rgb = mix(diffuseColor.rgb, vec3(${ROOT_MOSS.tone.map(f2).join(", ")})*(.65+.7*babelMossFine), babelMoss*${f2(ROOT_MOSS.cover)});
+}`;
 
 // How each film material takes the night sky (night-environment.js) once the
 // film sets it as the scene's environment: [the share of the flat ambient and
@@ -291,6 +296,8 @@ export function materialFor(asset, anisotropy, role, textGuard = null) {
   try {
     material.color?.setHex(profile.color ?? 0xffffff);
     material.metalness = 0;
+    // Metalness 0 reads nothing from a metalness map: dropping it saves its sample.
+    material.metalnessMap = null;
     material.roughness = profile.roughness ?? 0.94;
     material.emissive.setHex(profile.emissive ?? 0);
     material.emissiveIntensity = 0;

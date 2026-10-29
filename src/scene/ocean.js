@@ -342,14 +342,16 @@ if(coastStudy>.5){k.y=1.1;plumeHeight*=.6;plumeSize*=.65;}
 vec3 O=(cameraPosition-vec3(seaPlume.x,y0+plumeHeight,seaPlume.y))*k,D=(p-cameraPosition)*k;
 float L=length(D);D/=max(L,1e-4);
 float t0=-dot(O,D),s=plumeSize,e=exp(-(dot(O,O)-t0*t0)/(s*s));
+if(e<=0.)return 0.;
 vec3 m=cameraPosition+(p-cameraPosition)*clamp(t0/max(L,1e-4),0.,1.);
 float bill=.35+1.3*seaFoam(vec2(m.x+m.z,m.y*1.6)/(.45*s)+seaTime*vec2(.15,-.5));
 if(coastStudy>.5)bill*=mix(.7,1.,1.-smoothstep(y0+1.,y0+4.,p.y));
 return 1.-exp(-${glsl(falls.spray[2])}*e*bill*.886*s*(sprayErf((L-t0)/s)+sprayErf(t0/s))*(.8+.2*sin(seaTime*.9)));
 }`;
-// The spray over c at p (b: behind the text), lit as white water is.
+// The spray over c at p (b: behind the text), lit as white water is; its light
+// is computed only where a ray meets the spray (a ray far from it carries none).
 const sprayOver = (falls, p, y0) =>
-  `seaSun=1.;c=mix(c,${glsl(falls.spray[3])}*seaLight(vec3(0.,1.,0.),babelFlash.x*(1.-b)),seaSpray(${p},${y0})*(1.-${glsl(SEA.text)}*b));`;
+  `seaSun=1.;{float sprayA=seaSpray(${p},${y0});if(sprayA>0.)c=mix(c,${glsl(falls.spray[3])}*seaLight(vec3(0.,1.,0.),babelFlash.x*(1.-b)),sprayA*(1.-${glsl(SEA.text)}*b));}`;
 // The moon's shadow on the coast: its key's own shadow map (rendering.js, lent
 // per draw by lighting()), in which the cliffs and the stacks cast. bias: the
 // depth a lit surface may stand behind its stored depth (a share of the map's
@@ -584,9 +586,11 @@ k=max(k,sf*(.85+.15*sin(seaTime*1.3+P.x*.2+P.z*.13)));
 // The balanced tier, and white water under the pixel, take its mean.
 // Against the rock it lies solid; elsewhere the swell's patches thin it a little.
 k*=.86+.14*smoothstep(.25,.75,n);
-vec2 fq=mat2(.8,.6,-.6,.8)*(P.xz/1.6+seaTime*vec2(.12,-.08));
+// (No lace, as on the balanced tier: the mix below takes k alone, so its noise is skipped.)
+float far=clamp(fp*1.2-.6,0.,1.),lace=0.,fw=.18+fp*.6;
+if(seaLace>0.){vec2 fq=mat2(.8,.6,-.6,.8)*(P.xz/1.6+seaTime*vec2(.12,-.08));
 fq+=vec2(.4*sin(fq.y*.6+seaTime*.17),.3*sin(fq.x*.4-seaTime*.12));
-float far=clamp(fp*1.2-.6,0.,1.),lace=.65*seaFoam(fq)+.35*seaFoam(fq*2.7+3.1),fw=.18+fp*.6;
+lace=.65*seaFoam(fq)+.35*seaFoam(fq*2.7+3.1);}
 float foam=mix(k,smoothstep(1.-k-fw,1.-k+fw,lace)*smoothstep(0.,.02,k),seaLace*(1.-far));
 foam=mix(foam,max(${glsl(surf.far)}*(1.-smoothstep(0.,${glsl(surf.reach)},z))*shore*(.6+.8*swash),.45*sf),far);
 if(coastStudy>.5)foam=max(foam,.8*landing);

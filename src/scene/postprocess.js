@@ -531,6 +531,8 @@ vec4 lensBlur(sampler2D map, vec2 uv, float radius, float nearCap, vec3 ground) 
   if (centre.a > 0.5) {
     float depth = max(dot(ground, vec3(uv, 1.0)), 0.0);
     radius *= (depth > 1.0 ? min(depth - 1.0, nearCap) : 1.0 - depth) * step(centre.a, 0.8);
+    // The subject (and ground at the focus) is sharp: every tap would read the centre.
+    if (radius <= 0.0) return centre;
   }
   vec3 sum = centre.rgb;
   float weight = 1.0;

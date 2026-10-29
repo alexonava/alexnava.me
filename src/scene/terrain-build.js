@@ -2583,18 +2583,18 @@ export function shadeCoastBedrock(shader, uniforms) {
       `
 float slateBedrock = 0.;
 vec3 slateRockXY = vec3(0.);
+// The rock's own tone (and below, its scans) only where it lies: elsewhere slateBedrock is 0.
 {float rockEdge=max(0.,seaCoast(vMudWorld.xz))+(slateNoise(vMudWorld.xz/${glsl(COAST_BEDROCK.cell)})-.5)*${glsl(COAST_BEDROCK.wobble)};
 slateBedrock=1.-smoothstep(${glsl(COAST_ROCK.band[0])},${glsl(COAST_ROCK.band[1])},rockEdge);
+if(slateBedrock>0.){
 float rockC=seaCoast(vMudWorld.xz)+(slateNoise(vMudWorld.xz/7.)-.5)*3.;
 float rockBed=floor(rockC/${glsl(COAST_ROCK.bed)}), rockStrata=fract(sin(rockBed*12.9898)*43758.5453);
 float rockBedEdge=1.-smoothstep(.0,.12,min(fract(rockC/${glsl(COAST_ROCK.bed)}),1.-fract(rockC/${glsl(COAST_ROCK.bed)})));
 vec2 rockJ=vMudWorld.xz+(vec2(slateNoise(vMudWorld.xz/3.),slateNoise(vMudWorld.xz/3.+7.))-.5)*1.4;
 float rockJoint=max(1.-smoothstep(.0,.07,abs(fract(dot(rockJ,vec2(.6,.8))/3.1)-.5)*2.),1.-smoothstep(.0,.06,abs(fract(dot(rockJ,vec2(-.8,.6))/4.7)-.5)*2.));
 vec3 rockTone=${glslVec(...COAST_ROCK.tone)}*(.6+.9*rockStrata)*(1.-.7*max(rockJoint,rockBedEdge*.8))*(.8+.4*slateNoise(vMudWorld.xz/1.1));
-diffuseColor.rgb=mix(diffuseColor.rgb,rockTone,slateBedrock);}
+diffuseColor.rgb=mix(diffuseColor.rgb,rockTone,slateBedrock);}}
 if(coastAlbedoOn>.5||coastDetailOn>.5){
-float rockEdge=max(0.,seaCoast(vMudWorld.xz))+(slateNoise(vMudWorld.xz/${glsl(COAST_BEDROCK.cell)})-.5)*${glsl(COAST_BEDROCK.wobble)};
-slateBedrock=1.-smoothstep(${glsl(COAST_ROCK.band[0])},${glsl(COAST_ROCK.band[1])},rockEdge);
 if(slateBedrock>0.){
 // Both lookups (the cliff's tops use the first alone), blended by a noise.
 vec2 rockU=vMudWorld.xz/${glsl(COAST_ALBEDO.tile)},rockV=mat2(${COAST_BEDROCK.second.turn.map(glsl)})*rockU*${glsl(COAST_BEDROCK.second.scale)}+${glslVec(...COAST_BEDROCK.second.offset)};
