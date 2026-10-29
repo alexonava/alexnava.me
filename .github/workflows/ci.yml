@@ -129,7 +129,7 @@ jobs:
 
       - name: Install pinned Wrangler
         if: steps.cloudflare.outputs.ready == 'true'
-        run: npm install --global --ignore-scripts --no-audit --no-fund wrangler@4.151.3
+        run: npm install --global --ignore-scripts --no-audit --no-fund wrangler@4.153.0
 
       - name: Validate preview deploy credentials
         if: steps.cloudflare.outputs.ready == 'true'

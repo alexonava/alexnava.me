@@ -420,7 +420,9 @@ test("the bare tree takes no procedural film extras and the rocks darken above t
   assert.ok(WET_BARK.mudRoughness < WET_BARK.roughness);
   // Damp moss on the roots' sky-facing tops above the mud, in film only,
   // matte; the rocks take none.
-  assert.ok(treeShader.fragmentShader.includes("float babelMoss = babelFilm*"));
+  assert.ok(treeShader.fragmentShader.includes("float babelMossBand = babelFilm*"));
+  // Its noise runs only within its band up the trunk.
+  assert.ok(treeShader.fragmentShader.includes("if (babelMossBand > 0.0) {"));
   assert.ok(treeShader.fragmentShader.includes(")*(.65+.7*babelMossFine)"));
   assert.ok(
     treeShader.fragmentShader.includes(

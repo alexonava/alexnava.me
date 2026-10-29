@@ -525,25 +525,39 @@ varying vec2 vUv;
 // the focus's distance over the plain's depth there, affine in uv), at most
 // nearCap radii nearer the lens (the shot's lens.near); the subject never. Only taps from the same layer
 // or a farther one count, so the subject never bleeds into the sky.
+// Composer and kept-frame textures have no mipmaps. Explicit level zero keeps
+// their filtering unchanged and permits the per-pixel sharp-subject shortcut
+// without implicit derivatives inside divergent control flow (ANGLE/D3D11).
+vec4 lensSample(sampler2D map, vec2 uv) {
+#ifdef LENS_LOD0
+  return texture2DLodEXT(map, uv, 0.0);
+#else
+  return texture2D(map, uv);
+#endif
+}
 vec4 lensBlur(sampler2D map, vec2 uv, float radius, float nearCap, vec3 ground) {
-  vec4 centre = texture2D(map, uv);
+  vec4 centre = lensSample(map, uv);
   if (radius <= 0.0) return centre;
   if (centre.a > 0.5) {
     float depth = max(dot(ground, vec3(uv, 1.0)), 0.0);
     radius *= (depth > 1.0 ? min(depth - 1.0, nearCap) : 1.0 - depth) * step(centre.a, 0.8);
+    // The subject (and ground at the focus) is sharp: every tap would read the centre.
+#ifdef LENS_LOD0
+    if (radius <= 0.0) return centre;
+#endif
   }
   vec3 sum = centre.rgb;
   float weight = 1.0;
   for (int i = 1; i < 13; i++) {
     float r = sqrt(float(i) / 12.0) * radius, a = float(i) * 2.39996;
-    vec4 tap = texture2D(map, uv + vec2(cos(a), sin(a)) * r * uCssTexel);
+    vec4 tap = lensSample(map, uv + vec2(cos(a), sin(a)) * r * uCssTexel);
     float w = step(tap.a, centre.a + 0.1);
     sum += tap.rgb * w;
     weight += w;
   }
   // The subject stays sharp, its anti-aliased edges too: the nearest layer
   // over a 1px cross decides.
-  float near = max(max(centre.a, texture2D(map, uv + vec2(uCssTexel.x, 0.0)).a), max(texture2D(map, uv - vec2(uCssTexel.x, 0.0)).a, max(texture2D(map, uv + vec2(0.0, uCssTexel.y)).a, texture2D(map, uv - vec2(0.0, uCssTexel.y)).a)));
+  float near = max(max(centre.a, lensSample(map, uv + vec2(uCssTexel.x, 0.0)).a), max(lensSample(map, uv - vec2(uCssTexel.x, 0.0)).a, max(lensSample(map, uv + vec2(0.0, uCssTexel.y)).a, lensSample(map, uv - vec2(0.0, uCssTexel.y)).a)));
   return vec4(mix(sum / weight, centre.rgb, step(0.8, near)), centre.a);
 }
 
@@ -860,6 +874,14 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
   // ShaderPass clones its uniforms: the tone curve's is the shared one.
   gradingPass.uniforms.uTone = FILM_TONE_UNIFORM;
   const vignetteGrainPass = new ShaderPass(VIGNETTE_GRAIN_SHADER);
+  // WebGL2 has explicit LOD; WebGL1 requests its optional equivalent. Without
+  // that extension lensSample keeps the original full-loop sampling path.
+  vignetteGrainPass.material.extensions.shaderTextureLOD = true;
+  if (
+    renderer.capabilities?.isWebGL2 === true ||
+    renderer.extensions?.has?.("EXT_shader_texture_lod") === true
+  )
+    vignetteGrainPass.material.defines.LENS_LOD0 = 1;
   // Bloom adds light, not depth: in film its composite keeps the layer codes.
   Object.assign(bloomPass.blendMaterial, {
     blendSrc: SrcAlphaFactor,
@@ -1022,9 +1044,11 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
     vignetteGrainPass.uniforms.uVignetteStrength.value = settings.vignetteStrength ?? 0.08;
     vignetteGrainPass.uniforms.uGrainEnabled.value = grainEnabled ? 1 : 0;
     vignetteGrainPass.uniforms.uGrainStrength.value = settings.grainStrength ?? 0.022;
+    // The colour fringe only on the high tier: phones and laptops keep grain and the
+    // vignette alone (the owner's pick of 2026-10-28, "Grain only"), its two taps saved.
     finalUniforms.uLens.value.set(
       film && LENS_FX.heat.on ? 1 : 0,
-      film && LENS_FX.aberration.on ? 1 : 0,
+      film && LENS_FX.aberration.on && profile.tier === "high" ? 1 : 0,
       film && LENS_FX.flare.on ? 1 : 0,
       LENS_FX.heat.octaves[profile.tier] ?? LENS_FX.heat.octaves.high,
     );

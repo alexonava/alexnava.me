@@ -89,6 +89,7 @@ import {
   POOL_FIELD,
   poolField,
   PUDDLE_MIRROR,
+  LINK_WAIT_MS,
   prelinkSlateGround,
   PUDDLE_ZONES,
   reliefNoise,
@@ -1125,7 +1126,8 @@ test("the lazy ground shading extends only the slate's program, under its own ke
     assert.match(fragment, /slatePuddle = mix\(slatePuddle, smoothstep\([^;]*\), slateZoneW\);/);
     assert.match(
       fragment,
-      /float slateWater = slatePuddle\*slateZoneW;\nif \(slateWater > 0\.0\) \{/,
+      /float slateWater = slatePuddle\*slateZoneW;\n#ifdef SLATE_LITE\n[^\n]*\nif \(slateRiverR >= 1\.1 && slateStreamQ\.x <= 0\.0\) slateWater = 0\.0;\n#endif\nif \(slateWater > 0\.0\) \{/,
+      "the lite ground's still pools keep no mirror",
     );
     assert.match(
       fragment,
@@ -2142,7 +2144,11 @@ test("root shader timeout leaves the cut available and never retains a raw mater
   try {
     settleRoots(r.terrain, r.ground, r.rendering, r.base, () => {}, tour);
     const link = r.links[0];
-    r.advance(1999);
+    // A link still compiling at the old 2 s bound is waited on: its draw would block.
+    r.advance(2000);
+    await clock.step();
+    assert.equal(r.material.customProgramCacheKey(), "moonlit-slate-v3", "still linking at 2 s");
+    r.advance(LINK_WAIT_MS - 2001);
     await clock.step();
     assert.equal(r.material.customProgramCacheKey(), "moonlit-slate-v3", "still linking");
     r.advance(1);
@@ -2150,7 +2156,7 @@ test("root shader timeout leaves the cut available and never retains a raw mater
     assert.equal(
       r.material.customProgramCacheKey(),
       "moonlit-slate-v3+root",
-      "the 2 s bound settles",
+      "the LINK_WAIT_MS bound settles",
     );
     assert.equal(link.ready, false, "the driver never reported readiness");
     assert.equal(link.polls.length, 0, "no underlying poll survives the readiness timeout");
@@ -2158,6 +2164,50 @@ test("root shader timeout leaves the cut available and never retains a raw mater
     r.ground.onAfterRender();
     await clock.step();
     assert.equal(link.freed, 1, "the never-ready material is still released after the draw");
+  } finally {
+    r.terrain.dispose();
+    r.links.forEach((link) => link.poll());
+    await idle.flush();
+    r.tufts.dispose();
+    r.material.dispose();
+    clock.restore();
+    idle.restore();
+  }
+});
+
+test("under a hidden environment the ground links with the lights it will draw with", async () => {
+  // The watch hides the environment, and with it the lantern's light. A link made meanwhile
+  // must key that light, or the cut's first draw links the ground again in one blocking compile.
+  const r = linkRig({ revealed: true }),
+    clock = frames(),
+    idle = idleTasks(),
+    environment = new Group(),
+    lamp = new PointLight(),
+    shown = [];
+  r.root.remove(r.ground);
+  environment.add(r.ground, lamp);
+  r.root.add(environment);
+  environment.visible = false;
+  const compile = r.rendering.renderer.compile;
+  r.rendering.renderer.compile = function (...args) {
+    shown.push(environment.visible);
+    return compile.apply(this, args);
+  };
+  try {
+    settleRoots(r.terrain, r.ground, r.rendering, r.base, () => {}, {
+      running: true,
+      transition: { cut: false },
+      waiting: true,
+    });
+    r.links[0].finish();
+    await clock.step(2);
+    assert.deepEqual(shown, [true], "the stand-in links with the environment and its light shown");
+    assert.equal(environment.visible, false, "the environment stays hidden");
+    assert.equal(
+      r.material.customProgramCacheKey(),
+      "moonlit-slate-v3+root",
+      "the hold commits the linked program",
+    );
   } finally {
     r.terrain.dispose();
     r.links.forEach((link) => link.poll());

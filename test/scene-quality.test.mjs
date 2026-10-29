@@ -7,6 +7,7 @@ import vm from "node:vm";
 import { Group } from "three";
 import { createArchitectureAssetController } from "../src/scene/architecture-assets.js";
 import { createEarthDetail } from "../src/scene/filmic-earth.js";
+import { createShotLevels } from "../src/scene/shot-levels.js";
 import { createSceneSubsystemRegistry } from "../src/scene/subsystem.js";
 
 const testDir = path.dirname(fileURLToPath(import.meta.url));
@@ -688,6 +689,86 @@ test("a revealed scene's low step lowers only the pixel ratio, and recovery rest
     { tier: "balanced", dprCap: 0.85, governor: "low" },
   ]);
   assert.equal(sustained.profile.tier, "balanced", "the revealed visuals never descend to low");
+});
+
+test("each shot keeps its own resolution: a heavy shot's step lowers that shot alone", async () => {
+  const scene = await loadQuality(createContext());
+  const phone = scene.createSceneQualityState({
+    navigatorInfo: { hardwareConcurrency: 8 },
+    caps: { maxTextureSize: 8192, maxAnisotropy: 16 },
+    viewport: { width: 390, height: 844 },
+    touchPrimary: true,
+    saveData: false,
+  });
+  const clock = { now: 0 };
+  const start = phone.getProfile();
+  const shots = createShotLevels(phone);
+  const enter = (key, profile) => shots.enter(key, { nowMs: clock.now, profile });
+  // A visit's frames, fed to the governor and to the shot's own count, as index.js does.
+  const visit = (frameMs, count, profile) => {
+    for (let i = 0; i < count; i += 1) shots.sample(frameMs);
+    return driveRevealed(phone, clock, frameMs, count, profile);
+  };
+  // The shot on screen at the reveal: nothing changes.
+  assert.equal(enter("tree:1", start), null);
+  // Lantern study under pressure steps down once (1.25 to 1), queued for a cut.
+  const heavy = visit(40, 150, start);
+  assert.deepEqual(heavy.steps, [{ tier: "balanced", dprCap: 1, governor: "low" }]);
+  // A shot not yet seen starts at the level the tour holds (the queued step applies at its
+  // cut); Lantern study keeps its step.
+  assert.equal(enter("tree:2", start), null);
+  assert.deepEqual({ ...shots.levelOf("tree:1") }, { tier: "low", resolutionLevel: 1 });
+  // Close-up keeps up at 60 fps for its visit: it climbs a step for its next visit.
+  assert.deepEqual(visit(1000 / 60, 600, heavy.profile).steps, []);
+  assert.equal(enter("tree:1", heavy.profile), null, "Lantern study keeps its own step");
+  assert.deepEqual({ ...shots.levelOf("tree:2") }, { tier: "balanced", resolutionLevel: 0 });
+  visit(40, 30, heavy.profile);
+  const climbed = enter("tree:2", heavy.profile);
+  assert.equal(phone.resolveDprCap(climbed), 1.25, "Close-up back at full resolution");
+  // A climb that fails steps back down and holds there: no further climbs for that shot.
+  const failed = visit(40, 150, climbed);
+  assert.deepEqual(failed.steps, [{ tier: "balanced", dprCap: 1, governor: "low" }]);
+  enter("tree:1", failed.profile);
+  assert.deepEqual({ ...shots.levelOf("tree:2") }, { tier: "low", resolutionLevel: 1 });
+  enter("tree:2", failed.profile);
+  visit(1000 / 60, 600, failed.profile);
+  enter("tree:1", failed.profile);
+  assert.deepEqual(
+    { ...shots.levelOf("tree:2") },
+    { tier: "low", resolutionLevel: 1 },
+    "a failed climb holds",
+  );
+  // A pinned quality keeps one level everywhere.
+  const pinned = scene.createSceneQualityState({
+    navigatorInfo: { hardwareConcurrency: 8 },
+    caps: { maxTextureSize: 8192, maxAnisotropy: 16 },
+    viewport: { width: 390, height: 844 },
+    touchPrimary: true,
+    saveData: false,
+    search: "?quality=balanced",
+  });
+  assert.equal(createShotLevels(pinned).enter("tree:1", { profile: pinned.getProfile() }), null);
+});
+
+test("a desktop's step from high holds for every shot; below it each shot keeps its own", async () => {
+  const scene = await loadQuality(createContext());
+  const desktop = scene.createSceneQualityState({
+    navigatorInfo: { deviceMemory: 8, hardwareConcurrency: 8 },
+    viewport: { width: 1440, height: 900 },
+    caps: { maxTextureSize: 8192, maxAnisotropy: 8 },
+    touchPrimary: false,
+    saveData: false,
+  });
+  const clock = { now: 0 };
+  const start = desktop.getProfile();
+  assert.equal(desktop.initialTier, "high");
+  const shots = createShotLevels(desktop);
+  assert.equal(shots.enter("tree:1", { nowMs: 0, profile: start }), null);
+  const stepped = driveRevealed(desktop, clock, 40, 150, start);
+  assert.deepEqual(stepped.steps, [{ tier: "balanced", dprCap: 1.25, governor: "balanced" }]);
+  // The next shot stays balanced (no return to high per shot).
+  assert.equal(shots.enter("tree:2", { nowMs: clock.now, profile: stepped.profile }), null);
+  assert.equal(desktop.getTier(), "balanced");
 });
 
 test("revealed sampling excludes a short upload window after the first frame and each hold", async () => {

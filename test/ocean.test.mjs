@@ -546,8 +546,9 @@ test("the moon's shadow on the coast: the rock casts it, and the cliffs, the sta
     assert.ok(fragment.includes("seaKeyColor*max(dot(n,seaKey),0.)*seaSun"));
     assert.ok(fragment.includes("return seaKeyColor*seaSun*(a2/"));
     assert.ok(fragment.includes(`smoothstep(0.,${COAST_SHADOW.edge},min(e.x,e.y))`));
-    // The spray is lit in the open, never in the surface's shadow.
-    assert.ok(fragment.includes("seaSun=1.;c=mix(c,"));
+    // The spray is lit in the open, never in the surface's shadow (and only where a ray meets it).
+    assert.ok(fragment.includes("seaSun=1.;{float sprayA=seaSpray("));
+    assert.ok(fragment.includes("if(sprayA>0.)c=mix(c,"));
   }
   assert.ok(cliff.material.fragmentShader.includes("seaSun=seaShadow(vW,n);"));
   assert.ok(falls.material.fragmentShader.includes("vec3 shadowPoint=vW,shadowNormal=n;"));

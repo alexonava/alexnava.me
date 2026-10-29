@@ -1259,19 +1259,22 @@ const PLAIN_EDGE = `smoothstep(${glslNumber(155)}, ${glslNumber(190)}, max(abs(v
 // its share eased in as the text knee's is) the lighter swathes and blotches ease
 // to the soil's own tone and only the darker ones stay: in Close-up and, on
 // landscape phones, Masonry study, the plain's lit blotches behind the small label
-// read 4.49:1 at 1080x1920 and 4.89:1 at 844x390.
+// read 4.49:1 at 1080x1920 and 4.89:1 at 844x390. Nearer than either's fade-in
+// (slateFarF 0) the albedo keeps its own tone, so neither is computed there.
 const FAR_ABOUT =
   "float slateFarA=slateBehindAbout(vSlateClip.xy/vSlateClip.w*.5+.5);slateFarA*=2.-slateFarA;";
 const FAR_MAP = `
-      {float slateFarD=length(vViewPosition),slateFarF=smoothstep(${FAR.swathes.near.map(glslNumber)},slateFarD)*(1.-${PLAIN_EDGE});vec2 slateFarP=vMudWorld.xz;${FAR_ABOUT}
+      {float slateFarD=length(vViewPosition),slateFarF=smoothstep(${FAR.swathes.near.map(glslNumber)},slateFarD)*(1.-${PLAIN_EDGE});
+      if(slateFarF>0.){vec2 slateFarP=vMudWorld.xz;${FAR_ABOUT}
       float slateFarS=${FAR_SWATHE};float slateFarH=slateNoise(slateFarP/${glslNumber(FAR.swathes.hueCell)}+${glslNumber(FAR.swathes.hueOffset)});
       vec3 slateFarC=(${glslNumber(1 - FAR.swathes.amount)}+${glslNumber(2 * FAR.swathes.amount)}*slateFarS)*mix(${glslVec(FAR.swathes.cool)},${glslVec(FAR.swathes.warm)},slateFarH);
-      sampledDiffuseColor.rgb*=mix(vec3(1.),min(slateFarC,mix(slateFarC,vec3(1.),slateFarA)),slateFarF);}
-      {float slateFarD=length(vViewPosition),slateFarF=smoothstep(${FAR.near.map(glslNumber)},slateFarD)*(1.-${PLAIN_EDGE});vec3 slateFarW=vec3(.2126,.7152,.0722);float slateFarM=dot(slateMean,slateFarW);${FAR_ABOUT}
+      sampledDiffuseColor.rgb*=mix(vec3(1.),min(slateFarC,mix(slateFarC,vec3(1.),slateFarA)),slateFarF);}}
+      {float slateFarD=length(vViewPosition),slateFarF=smoothstep(${FAR.near.map(glslNumber)},slateFarD)*(1.-${PLAIN_EDGE});
+      if(slateFarF>0.){vec3 slateFarW=vec3(.2126,.7152,.0722);float slateFarM=dot(slateMean,slateFarW);${FAR_ABOUT}
       vec3 slateFarT1=${FAR_TILE[0]},slateFarT2=${FAR_TILE[1]};
       float slateFarL=${glslNumber(FAR.tile[0].weight)}*dot(slateFarT1,slateFarW)/slateFarM+${glslNumber(FAR.tile[1].weight)}*dot(slateFarT2,slateFarW)/slateFarM;
       float slateFarC=clamp(pow(slateFarL,${glslNumber(FAR.gain)}),${FAR.range.map(glslNumber)});
-      sampledDiffuseColor.rgb*=mix(1.,min(slateFarC,mix(slateFarC,1.,slateFarA)),slateFarF);}`;
+      sampledDiffuseColor.rgb*=mix(1.,min(slateFarC,mix(slateFarC,1.,slateFarA)),slateFarF);}}`;
 // The shot's look (SLATE_LOOK, slateCalmFor()): its uniforms and helpers.
 // slateGlossSet(), before the lights: the gloss away from the name, the intro
 // and Contact (slateGlossT) and, in wetter and drier patches, its share there
@@ -1300,10 +1303,22 @@ const SHADOW_SOFT = SLATE_WATER.shadow;
 const SHADOW_WATER = SHADOW_SOFT.texels
   ? `if(slateShadowWater>0.){vec3 c=coord.xyz/coord.w;c.z+=bias;if(c.z<=1.){float b=0.;for(int i=0;i<${SHADOW_SOFT.taps};i++){float t=float(i)+.5;b+=texture2DCompare(map,clamp(c.xy+vec2(cos(t*2.39996),sin(t*2.39996))*sqrt(t/${glslNumber(SHADOW_SOFT.taps)})*${glslNumber(SHADOW_SOFT.texels)}/size,0.,1.),c.z);}s=mix(s,(s+b)/${glslNumber(SHADOW_SOFT.taps + 1)},slateShadowWater);}}`
   : "";
+// The lite ground (SLATE_LITE: phones and laptops) filters the key's shadow over one bilinear
+// texel (4 taps) rather than three's 3x3 soft footprint (16), its edges a little crisper, and
+// keeps no softer edge on the moving water.
+const LITE_SHADOW = `float slateLiteShadow(sampler2D map,vec2 size,float bias,vec4 coord){vec3 c=coord.xyz/coord.w;c.z+=bias;
+if(c.x<0.||c.x>1.||c.y<0.||c.y>1.||c.z>1.)return 1.;
+vec2 t=c.xy*size-.5,f=fract(t),b=(floor(t)+.5)/size,d=1./size;
+return mix(mix(texture2DCompare(map,b,c.z),texture2DCompare(map,b+vec2(d.x,0.),c.z),f.x),mix(texture2DCompare(map,b+vec2(0.,d.y),c.z),texture2DCompare(map,b+d,c.z),f.x),f.y);}`;
 const LOOK_SHADOW = `#include <shadowmap_pars_fragment>
 float slateShadowWater = 0.0;
 #ifdef USE_SHADOWMAP
+#ifdef SLATE_LITE
+${LITE_SHADOW}
+float slateShadow(sampler2D map,vec2 size,float bias,float radius,vec4 coord){float s=slateLiteShadow(map,size,bias,coord);return slateShadowFade.y>0.?mix(1.,s,1.-smoothstep(slateShadowFade.x,slateShadowFade.y,length(vMudWorld.xz-slateCalmAt.xy))):s;}
+#else
 float slateShadow(sampler2D map,vec2 size,float bias,float radius,vec4 coord){float s=getShadow(map,size,bias,radius,coord);${SHADOW_WATER}return slateShadowFade.y>0.?mix(1.,s,1.-smoothstep(slateShadowFade.x,slateShadowFade.y,length(vMudWorld.xz-slateCalmAt.xy))):s;}
+#endif
 #define getShadow slateShadow
 #endif`;
 // Last: the clearing (its light, and its shade near the lens) and the mist,
@@ -1446,12 +1461,17 @@ export function filmGroundSurface({ film = false, surface }) {
 export function configureGroundShading(
   material,
   film = false,
-  { detail = null, grit = null, relief = null, contacts = null } = {},
+  { detail = null, grit = null, relief = null, contacts = null, lite = false } = {},
 ) {
   const useWet = Boolean(film);
   const authored = Boolean(useWet && detail);
   // The close soil comes with the authored maps' grit and relief (SLATE_CLOSE).
   const close = Boolean(authored && grit && relief);
+  // The lite ground (phones and laptops, the balanced startup tier; the owner's pick of
+  // 2026-10-28, "Simplify further"): its own program, "+lite", with a lighter shadow filter
+  // (LITE_SHADOW) and, in the root shading (terrain-build.js), no mirror in still pools, no
+  // lantern glints and the stream foam's far share for its lace.
+  const liteKey = useWet && lite;
   if (authored) (material.extensions ??= {}).shaderTextureLOD = true;
   const uniforms = contacts ?? createSlateContacts();
   if (authored) uniforms.slateDetail.value = detail;
@@ -1465,6 +1485,7 @@ export function configureGroundShading(
   material.customProgramCacheKey = () =>
     (useWet ? (authored ? "moonlit-slate-v3" : "moonlit-slate-v3-p") : "ground-baseline") +
     (close ? "+soil" : "") +
+    (liteKey ? "+lite" : "") +
     (useWet && material.userData.slateRoot ? "+root" : "");
   material.onBeforeCompile = (shader) => {
     if (!useWet) return;
@@ -1496,7 +1517,7 @@ uniform vec3 babelKeyDir;
 #define SLATE_TEXT_KNEE ${glslNumber(WATER.text[1])}
 uniform vec4 slateText, slateAbout;
 uniform int slateLoop;
-${authored ? "uniform sampler2D slateDetail;\n" + SOIL_SAMPLE : ""}${close ? "#define SLATE_CLOSE_SOIL\nuniform sampler2D slateGrit, slateRelief, slateSoilRoughness;\nuniform float slateSoilRoughnessOn;\n" : ""}${RIVER_BED_GLSL}float slateHash(vec2 p){vec3 q=fract(p.xyx*.1031);q+=dot(q,q.yzx+33.33);return fract((q.x+q.y)*q.z);}
+${liteKey ? "#define SLATE_LITE\n" : ""}${authored ? "uniform sampler2D slateDetail;\n" + SOIL_SAMPLE : ""}${close ? "#define SLATE_CLOSE_SOIL\nuniform sampler2D slateGrit, slateRelief, slateSoilRoughness;\nuniform float slateSoilRoughnessOn;\n" : ""}${RIVER_BED_GLSL}float slateHash(vec2 p){vec3 q=fract(p.xyx*.1031);q+=dot(q,q.yzx+33.33);return fract((q.x+q.y)*q.z);}
 float slateNoise(vec2 p){vec2 i=floor(p),f=fract(p);f*=f*(3.-2.*f);return mix(mix(slateHash(i),slateHash(i+vec2(1,0)),f.x),mix(slateHash(i+vec2(0,1)),slateHash(i+1.),f.x),f.y);}
 ${STREAM_GLSL}
 ${SLATE_TEXT_GLSL}${LOOK_GLSL}${mistOn ? `uniform mat4 projectionMatrix;\n${MIST_PARS}` : ""}`
