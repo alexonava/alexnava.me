@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   AdditiveBlending,
   CustomBlending,
+  LinearFilter,
   OneFactor,
   PerspectiveCamera,
   SrcAlphaFactor,
@@ -744,6 +745,53 @@ test("a tour capture keeps grading's output with no added draw, and the cut mixe
     "grading alone drops the final pass again",
   );
   pipeline.dispose();
+});
+
+test("the lens reads non-mipmapped frame targets at level zero before its per-pixel shortcut", () => {
+  const { capture, pipeline } = createRecordedPipeline({ postprocessGrading: true });
+  const material = pipeline.passes.vignetteGrain.material;
+  assert.equal(material.extensions.shaderTextureLOD, true);
+  const kept = capture()[1][1];
+  for (const target of [pipeline.composer.renderTarget1, pipeline.composer.renderTarget2, kept]) {
+    assert.equal(target.texture.generateMipmaps, false);
+    assert.equal(target.texture.minFilter, LinearFilter);
+    assert.equal(target.texture.magFilter, LinearFilter);
+  }
+  const shader = material.fragmentShader;
+  const sample = shader.slice(shader.indexOf("vec4 lensSample("), shader.indexOf("vec4 lensBlur("));
+  const blur = shader.slice(shader.indexOf("vec4 lensBlur("), shader.indexOf("float hash("));
+  assert.match(sample, /#ifdef LENS_LOD0\s+return texture2DLodEXT\(map, uv, 0\.0\);/);
+  assert.match(sample, /#else\s+return texture2D\(map, uv\);/);
+  assert.doesNotMatch(
+    blur,
+    /texture2D(?:LodEXT)?\(/,
+    "no implicit derivatives in the shortcut's reads",
+  );
+  assert.match(blur, /#ifdef LENS_LOD0\s+if \(radius <= 0\.0\) return centre;\s+#endif/);
+  assert.equal(
+    (blur.match(/lensSample\(/g) || []).length,
+    6,
+    "center, disc tap and four edge reads use the same sampler",
+  );
+  assert.equal(pipeline.composer.passes.length, 4);
+  pipeline.dispose();
+});
+
+test("explicit lens LOD is selected only with core or extension support", () => {
+  for (const [webgl2, extension, expected] of [
+    [true, false, 1],
+    [false, true, 1],
+    [false, false, undefined],
+  ]) {
+    const renderer = createRendererMock();
+    renderer.capabilities = { isWebGL2: webgl2 };
+    renderer.extensions = { has: (name) => extension && name === "EXT_shader_texture_lod" };
+    const pipeline = createPostprocessPipeline(renderer, {}, {}, GRADING_ONLY, {
+      matchMedia: createMatchMedia(),
+    });
+    assert.equal(pipeline.passes.vignetteGrain.material.defines.LENS_LOD0, expected);
+    pipeline.dispose();
+  }
 });
 
 test("grading alone adds the final pass only for a crossfade; a capture that never drew cuts hard", () => {
@@ -1646,7 +1694,7 @@ test("the shot's lens blurs only in film, the bars cut the frame and the grain s
   // cross decides, not the edge pixel's own blended code.
   assert.match(
     shader,
-    /float near = max\(max\(centre\.a, texture2D\(map, uv \+ vec2\(uCssTexel\.x, 0\.0\)\)\.a\)/,
+    /float near = max\(max\(centre\.a, lensSample\(map, uv \+ vec2\(uCssTexel\.x, 0\.0\)\)\.a\)/,
   );
   assert.match(shader, /mix\(sum \/ weight, centre\.rgb, step\(0\.8, near\)\)/);
   pipeline.dispose();
