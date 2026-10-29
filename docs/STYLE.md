@@ -165,5 +165,6 @@ The rules for visual, motion and typographic changes. Read them before changing 
   fringe, only the vignette and the grain; no close soil; the moon's shadow filtered over
   one texel, so its edges are a little crisper; still pools (the rain's and the lantern's
   puddle) darken wet but keep no mirror, while the river and the streams keep theirs, with
-  no lantern glints on their ripples; the stream's foam keeps its body without its lace.
+  no lantern glints on their ripples; the stream's foam keeps its body without its lace;
+  the drifting mist marches in one step.
   Desktops on the high tier keep all of it.

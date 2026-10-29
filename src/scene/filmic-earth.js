@@ -11,14 +11,18 @@ export const EARTH = Object.freeze({ width: 384, subdivisions: 128 });
 
 // The film terrain's map set, "slate": the seamless slate v2 tile, repeated
 // every 22 units at the classic ground's normal strength, with no roughness
-// map, plus a 512 detail map shared by both tiers and the close soil's grit and
-// relief maps at the tier's size (mud-ground.js samples these at their own
-// scales).
+// map, plus a 512 detail map shared by both tiers and, on high, the close soil's grit
+// and relief maps (mud-ground.js samples these at their own scales). Phones and laptops
+// (balanced) take the lite ground, which has no close soil, so they load neither.
+const SLATE_KINDS = Object.freeze(["color", "normal", "detail", "grit", "relief"]),
+  SOIL_KINDS = Object.freeze(["grit", "relief"]);
 export const FILM_GROUND_PRESETS = Object.freeze({
   slate: Object.freeze({
-    kinds: Object.freeze(["color", "normal", "detail", "grit", "relief"]),
+    kinds: SLATE_KINDS,
     urlFor: slateMaterialUrl,
     sizeFor: (kind, size) => (kind === "detail" ? 512 : size),
+    kindsFor: (tier) =>
+      tier === "high" ? SLATE_KINDS : SLATE_KINDS.filter((kind) => !SOIL_KINDS.includes(kind)),
     tile: SLATE_TILING.tile,
     wrap: RepeatWrapping,
     normalScale: GROUND_DETAIL_SETTINGS.normalScale,
@@ -78,12 +82,14 @@ export function createEarthDetail({
     kinds: preset.kinds,
     urlFor: preset.urlFor,
     sizeFor: preset.sizeFor,
+    kindsFor: preset.kindsFor,
     apply(sources) {
       const next = {};
       try {
         for (const kind of preset.kinds) {
-          const source = sources[kind],
-            canvas = createCanvas();
+          const source = sources[kind];
+          if (!source) continue;
+          const canvas = createCanvas();
           canvas.width = source.width;
           canvas.height = source.height;
           const ctx = canvas.getContext("2d");

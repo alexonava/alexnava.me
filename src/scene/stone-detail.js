@@ -30,6 +30,8 @@ export function createStoneDetailController({
   urlFor,
   // Pixel size of one kind at the tier's size: a shared map keeps its own.
   sizeFor = (kind, size) => size,
+  // The kinds a tier loads (all of them unless a preset says otherwise).
+  kindsFor = () => kinds,
 }) {
   let disposed = false;
   let revision = 0;
@@ -58,11 +60,12 @@ export function createStoneDetailController({
 
     const controller = new AbortController();
     pending = controller;
-    const size = tier === "high" ? 1024 : 512;
+    const size = tier === "high" ? 1024 : 512,
+      tierKinds = kindsFor(tier);
     report({ status: "loading", tier });
     void (async () => {
       const results = await Promise.allSettled(
-        kinds.map(async (kind) => {
+        tierKinds.map(async (kind) => {
           try {
             return await loadImage(urlFor(kind, sizeFor(kind, size)), {
               signal: controller.signal,
@@ -86,14 +89,15 @@ export function createStoneDetailController({
         if (
           images.some(
             (image, i) =>
-              image.width !== sizeFor(kinds[i], size) || image.height !== sizeFor(kinds[i], size),
+              image.width !== sizeFor(tierKinds[i], size) ||
+              image.height !== sizeFor(tierKinds[i], size),
           )
         ) {
           report({ status: "fallback", tier });
           return;
         }
         try {
-          apply({ ...Object.fromEntries(kinds.map((kind, i) => [kind, images[i]])), tier });
+          apply({ ...Object.fromEntries(tierKinds.map((kind, i) => [kind, images[i]])), tier });
           rendered = true;
           report({ status: "ready", tier });
         } catch {

@@ -510,13 +510,13 @@ const GROUND_WAIT_S = 20;
       setMistLights(WORLD.SUN_DIRECTION, WORLD.SUN_POSITION);
       subsystemRegistry.register({
         applyQuality(profile) {
-          setMistTier(profile?.lean ? "lean" : profile?.tier);
+          setMistTier(profile?.lean || liteGround ? "lean" : profile?.tier);
         },
         update(frame) {
           advanceMist(frame);
         },
       });
-      setMistTier(state.profile?.lean ? "lean" : state.profile?.tier);
+      setMistTier(state.profile?.lean || liteGround ? "lean" : state.profile?.tier);
       const environmentSystem = createSceneEnvironment({
         groundHeight,
         parent: sceneRoot,
