@@ -81,7 +81,9 @@ import {
   cloudVortexPresent,
   createEstateSkyMaterial,
 } from "./estate-sky.js";
+import { createPerfReadout } from "./perf-readout.js";
 import { createSceneRendering } from "./rendering.js";
+import { createShotLevels } from "./shot-levels.js";
 import {
   createDeferredQualityStep,
   createPixelRatioWatcher,
@@ -177,6 +179,12 @@ const GROUND_WAIT_S = 20;
     // ?sceneDebug=1: a plain status object for captures and checks
     // (docs/SCENE-MODES.md). It has no controls of its own.
     const qualityDebug = qualityControls.debug ? (window.BabelSite.sceneDebug = {}) : null;
+    // ?perf=1: the frame rate, shot, resolution and governor level in the window's corner.
+    const perfReadout = /^(1|true)$/.test(new URLSearchParams(window.location?.search).get("perf"))
+      ? createPerfReadout(document.body)
+      : null;
+    // Each shot's own level (shot-levels.js), entered on each cut.
+    const shotLevels = createShotLevels(qualityState);
     // Downloaded models and terrain maps keep the startup tier. Adaptive steps
     // change only per-frame cost (DPR, shadows, post).
     const assetTier = qualityState.initialTier;
@@ -1247,6 +1255,8 @@ const GROUND_WAIT_S = 20;
         footerLinksObserver?.observe(links);
       let debugRenderWindowStart = null;
       let firstFrameDrawn = false;
+      // The shot whose level the governor holds (shot-levels.js).
+      let enteredShot = null;
       // Governor steps link their programs at once and apply on a tour cut.
       const adaptiveSteps = createDeferredQualityStep({
         prepare: (profile) => rendering.prepareQuality(profile),
@@ -1312,11 +1322,21 @@ const GROUND_WAIT_S = 20;
         // Each step changes the tier or, below balanced, only the pixel ratio. A
         // running tour takes it on a cut, where the crossfade's kept frame hides
         // its one-off work.
-        const adaptiveProfile = adaptiveSteps.take({
+        const queuedProfile = adaptiveSteps.take({
           cut: transition.cut,
           running: canvasShown && !site.sceneDoors?.closed,
           nowMs,
         });
+        // Each shot keeps its own level (shot-levels.js): at a cut the incoming shot
+        // takes its own, and a step queued on the outgoing shot stays that shot's, for its
+        // next visit. The shot on screen at the reveal is the first entered.
+        const shotKey = `${cinematic.current}:${cinematic.angle}`;
+        let shotProfile = null;
+        if (canvasShown && shotKey !== enteredShot && (transition.cut || enteredShot === null)) {
+          enteredShot = shotKey;
+          shotProfile = shotLevels.enter(shotKey, { nowMs, profile: state.profile });
+        }
+        const adaptiveProfile = shotProfile ?? queuedProfile;
         if (adaptiveProfile) applyActiveQualityProfile(adaptiveProfile, "adaptive");
         lanternMount.take({
           revealed: canvasShown,
@@ -1716,6 +1736,16 @@ const GROUND_WAIT_S = 20;
           }
         }
         visitorHold?.frameRendered();
+        if (perfReadout) {
+          const level = qualityState.governor.getLevel();
+          perfReadout.frame(timestamp, {
+            shot: cinematic.shot?.name,
+            pixelRatio: renderer.getPixelRatio(),
+            width: renderer.domElement.width,
+            height: renderer.domElement.height,
+            level: `${level.tier}${level.resolutionLevel ? ` step ${level.resolutionLevel}` : ""}`,
+          });
+        }
         if (qualityDebug) {
           // Linked programs: a first crossfade or quality step should add none.
           qualityDebug.programs = renderer.info?.programs?.length ?? null;
@@ -1872,6 +1902,7 @@ const GROUND_WAIT_S = 20;
       scene.disposeHomeSceneRuntime = function disposeHomeSceneRuntime() {
         if (runtimeDisposed) return false;
         runtimeDisposed = true;
+        perfReadout?.dispose();
         deferredWarmups.clear();
         stopOpeningPreparation();
         sceneReadyMarked = false;

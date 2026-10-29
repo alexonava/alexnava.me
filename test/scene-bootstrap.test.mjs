@@ -11,7 +11,7 @@ const index = flat(source("src/scene/index.js"));
 const between = (from, to) => index.slice(index.indexOf(from), to ? index.indexOf(to) : undefined);
 
 test("the actual quality dispatch keeps a paused visible shot intact until its cut", async () => {
-  const argument = index.match(/const adaptiveProfile = adaptiveSteps\.take\((\{[^]*?\})\);/)[1];
+  const argument = index.match(/const queuedProfile = adaptiveSteps\.take\((\{[^]*?\})\);/)[1];
   const dispatch = new Function(
     "canvasShown",
     "site",
@@ -102,7 +102,13 @@ test("models and maps keep the startup tier, and quality samples only revealed f
   assert.match(index, /if \(sampledProfile\) adaptiveSteps\.queue\(sampledProfile, nowMs\);/);
   assert.match(
     index,
-    /const adaptiveProfile = adaptiveSteps\.take\(\{ cut: transition\.cut, running: canvasShown && !site\.sceneDoors\?\.closed, nowMs \}\); if \(adaptiveProfile\) applyActiveQualityProfile\(adaptiveProfile, "adaptive"\);/,
+    /const queuedProfile = adaptiveSteps\.take\(\{ cut: transition\.cut, running: canvasShown && !site\.sceneDoors\?\.closed, nowMs \}\);/,
+  );
+  // Each shot keeps its own level (shot-levels.js): the incoming shot's, entered on its cut (and
+  // at the reveal), stands in for a step queued on the outgoing shot.
+  assert.match(
+    index,
+    /if \(canvasShown && shotKey !== enteredShot && \(transition\.cut \|\| enteredShot === null\)\) \{ enteredShot = shotKey; shotProfile = shotLevels\.enter\(shotKey, \{ nowMs, profile: state\.profile \}\); \} const adaptiveProfile = shotProfile \?\? queuedProfile; if \(adaptiveProfile\) applyActiveQualityProfile\(adaptiveProfile, "adaptive"\);/,
   );
   assert.match(index, /if \(transition\.capture\) qualityState\.skipSamples\?\.\(3\);/);
 });

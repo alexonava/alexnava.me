@@ -445,6 +445,7 @@ function wireSceneWalk(rig) {
     resizeController: owner,
     frameScheduler: owner,
     subsystemRegistry: { disposed: false, dispose: () => rig.walk.dispose() },
+    perfReadout: null,
   };
   const index = source("src/scene/index.js");
   const start = index.indexOf("const finePointer =");
