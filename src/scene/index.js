@@ -1295,6 +1295,9 @@ const GROUND_WAIT_S = 20;
               })
             : null;
         if (sampledProfile) adaptiveSteps.queue(sampledProfile, nowMs);
+        // The shot's own visit: whether it kept up (shot-levels.js).
+        if (revealed && !reducedMotion && !shaderWarmup.pending)
+          shotLevels.sample(1000 * sampleDeltaSeconds);
         // The walk holds the tour: its shot and hold stay put. A cut to a tree shot waits for
         // the film's own ground (GROUND_WAIT_S).
         const groundPending =

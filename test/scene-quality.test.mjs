@@ -704,23 +704,40 @@ test("each shot keeps its own resolution: a heavy shot's step lowers that shot a
   const start = phone.getProfile();
   const shots = createShotLevels(phone);
   const enter = (key, profile) => shots.enter(key, { nowMs: clock.now, profile });
-  // The shot on screen at the reveal takes the best level: nothing changes.
+  // A visit's frames, fed to the governor and to the shot's own count, as index.js does.
+  const visit = (frameMs, count, profile) => {
+    for (let i = 0; i < count; i += 1) shots.sample(frameMs);
+    return driveRevealed(phone, clock, frameMs, count, profile);
+  };
+  // The shot on screen at the reveal: nothing changes.
   assert.equal(enter("tree:1", start), null);
-  // Lantern study under pressure steps down once (1.25 to 1).
-  const heavy = driveRevealed(phone, clock, 40, 150, start);
+  // Lantern study under pressure steps down once (1.25 to 1), queued for a cut.
+  const heavy = visit(40, 150, start);
   assert.deepEqual(heavy.steps, [{ tier: "balanced", dprCap: 1, governor: "low" }]);
-  // At the cut, a shot not yet seen returns to full resolution; Lantern study keeps its step.
-  const light = enter("tree:2", heavy.profile);
-  assert.equal(phone.resolveDprCap(light), 1.25);
+  // A shot not yet seen starts at the level the tour holds (the queued step applies at its
+  // cut); Lantern study keeps its step.
+  assert.equal(enter("tree:2", start), null);
   assert.deepEqual({ ...shots.levelOf("tree:1") }, { tier: "low", resolutionLevel: 1 });
-  // A light shot at 60 fps takes no step and keeps its own level.
-  assert.deepEqual(driveRevealed(phone, clock, 1000 / 60, 600, light).steps, []);
-  // Back to Lantern study: its own step again, from the cut.
-  const again = enter("tree:1", light);
-  assert.equal(phone.resolveDprCap(again), 1);
+  // Close-up keeps up at 60 fps for its visit: it climbs a step for its next visit.
+  assert.deepEqual(visit(1000 / 60, 600, heavy.profile).steps, []);
+  assert.equal(enter("tree:1", heavy.profile), null, "Lantern study keeps its own step");
   assert.deepEqual({ ...shots.levelOf("tree:2") }, { tier: "balanced", resolutionLevel: 0 });
-  // And a cut to a shot at the level already held changes nothing.
-  assert.equal(enter("tree:1", again), null);
+  visit(40, 30, heavy.profile);
+  const climbed = enter("tree:2", heavy.profile);
+  assert.equal(phone.resolveDprCap(climbed), 1.25, "Close-up back at full resolution");
+  // A climb that fails steps back down and holds there: no further climbs for that shot.
+  const failed = visit(40, 150, climbed);
+  assert.deepEqual(failed.steps, [{ tier: "balanced", dprCap: 1, governor: "low" }]);
+  enter("tree:1", failed.profile);
+  assert.deepEqual({ ...shots.levelOf("tree:2") }, { tier: "low", resolutionLevel: 1 });
+  enter("tree:2", failed.profile);
+  visit(1000 / 60, 600, failed.profile);
+  enter("tree:1", failed.profile);
+  assert.deepEqual(
+    { ...shots.levelOf("tree:2") },
+    { tier: "low", resolutionLevel: 1 },
+    "a failed climb holds",
+  );
   // A pinned quality keeps one level everywhere.
   const pinned = scene.createSceneQualityState({
     navigatorInfo: { hardwareConcurrency: 8 },

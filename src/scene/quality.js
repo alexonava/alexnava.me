@@ -479,9 +479,11 @@
         return { tier: currentTier, resolutionLevel };
       },
       // Moves to a level a shot has kept (shot-levels.js), starting its window afresh: the
-      // new shot's frames are its own, after a warm-up.
+      // new shot's frames are its own, after a warm-up. Climbing back is then the shots'
+      // own (one step after a visit that kept up), so the governor's recovery stops.
       setLevel({ tier, resolutionLevel: level }, nowMs = 0) {
         if (fixedTier) return;
+        oscillations = maxOscillations;
         currentTier = normalizeTier(tier, currentTier);
         resolutionLevel = Math.max(0, Math.min(resolutionSteps, Math.floor(level) || 0));
         samples.length = 0;
