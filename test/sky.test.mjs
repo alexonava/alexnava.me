@@ -1379,7 +1379,7 @@ test("the bootstrap hands the stars the sky shell's uniforms and radius", () => 
   // and its banks' text guard borrows the ground's text boxes, made just before it.
   assert.match(
     index,
-    /const groundContacts = createSlateContacts\(estateContacts\(\)\); const skyShell = new Mesh\(new SphereGeometry\(WORLD\.SKY_DOME_RADIUS, skyWidthSegments, skyHeightSegments\), createEstateSkyMaterial\(skyConfig, groundContacts\)\);/,
+    /const groundContacts = createSlateContacts\(estateContacts\(\)\);[^]*?const skyShell = new Mesh\(new SphereGeometry\(WORLD\.SKY_DOME_RADIUS, skyWidthSegments, skyHeightSegments\), createEstateSkyMaterial\(skyConfig, groundContacts\)\);/,
   );
   assert.equal(index.match(/createSlateContacts\(/g).length, 1);
   assert.doesNotMatch(index, /skyShell\.position/);

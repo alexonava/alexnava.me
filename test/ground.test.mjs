@@ -34,6 +34,7 @@ import {
   SLATE_CONTACTS,
   slateCalmFor,
   SLATE_LOOK,
+  SLATE_NOISE_CELLS,
   SLATE_WATER,
   streamLines,
 } from "../src/scene/mud-ground.js";
@@ -472,6 +473,14 @@ test("the river's water lies only below its shore, as the terrain carves it, and
   // The lite ground (phones and laptops) is a program of its own.
   const lite = compile({ lite: true });
   assert.ok(lite.key.includes("+lite") && lite.fragment.includes("#define SLATE_LITE"));
+  // Its value noise is one read of the baked map (noise-map.js), and it takes no drifting mist.
+  assert.ok(
+    lite.fragment.includes(
+      `float slateNoise(vec2 p){return texture2D(slateNoiseMap,p*${1 / SLATE_NOISE_CELLS}).r;}`,
+    ),
+  );
+  assert.ok(!lite.fragment.includes("gl_FragColor.rgb = mistGround("));
+  assert.ok(plain.fragment.includes("float slateNoise(vec2 p){vec2 i=floor(p)"));
   // With its grit and relief maps the close soil fades in near the lens, and its relief fades
   // where a texel shrinks under a pixel and under water.
   const grit = { isTexture: true },
@@ -1582,13 +1591,12 @@ test("the look's shading changes nothing until a shot asks for it", () => {
       "#else float slateShadow(sampler2D map,vec2 size,float bias,float radius,vec4 coord){float s=getShadow(map,size,bias,radius,coord);if(slateShadowWater>0.){vec3 c=coord.xyz/coord.w;c.z+=bias;if(c.z<=1.){",
     ),
   );
-  // The lite ground (phones and laptops) filters the key's shadow over one bilinear texel.
+  // The lite ground (phones and laptops) reads the key's shadow in one tap.
   assert.ok(
     fragment.includes(
-      "float slateShadow(sampler2D map,vec2 size,float bias,float radius,vec4 coord){float s=slateLiteShadow(map,size,bias,coord);",
+      "float slateShadow(sampler2D map,vec2 size,float bias,float radius,vec4 coord){vec3 c=coord.xyz/coord.w;c.z+=bias;float s=c.x<0.||c.x>1.||c.y<0.||c.y>1.||c.z>1.?1.:texture2DCompare(map,c.xy,c.z);return",
     ),
   );
-  assert.equal(fragment.split("texture2DCompare(map,b").length - 1, 4, "four taps");
   assert.ok(fragment.includes(`for(int i=0;i<${taps};i++){`));
   assert.ok(
     fragment.includes(

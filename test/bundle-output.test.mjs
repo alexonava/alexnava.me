@@ -164,13 +164,14 @@ test("scene bundle stays under the deferred-payload budget", async () => {
   );
 });
 
-test("model and task preparation, optional effects and the walk are the only lazy chunks, and Three.js ships once", async () => {
+test("model and task preparation, optional effects, the lite ground's noise and the walk are the only lazy chunks, and Three.js ships once", async () => {
   const { entry, loaded, lazy } = await sceneScripts();
   assert.deepEqual(lazy.map((name) => name.replace(/\.[a-f0-9]{8}\.js$/, "")).sort(), [
     "scene.architecture-prepare",
     "scene.cloud-plate",
     "scene.lantern-flame",
     "scene.mountain-build",
+    "scene.noise-map",
     "scene.preparation-tasks",
     "scene.rock-build",
     "scene.terrain-build",

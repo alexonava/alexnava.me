@@ -831,8 +831,18 @@ ${SLATE_TEXT_GLSL}`;
 export const SLATE_CONTACTS = 18;
 // The set also holds the detail map's slot: a program reused from the cache
 // keeps its first uniform objects, so a new detail map must fill the same one.
+// The lite ground's value noise, baked (SLATE_LITE; the owner's ask of 2026-10-29, "make the
+// necessary ground cuts"; noise-map.js, a lazy chunk): slateNoise() over a wrapping lattice,
+// read with linear filtering. One texture read stands in for four
+// hashes in each of the ground's thirty-odd noise calls; the same kind of noise, laid out afresh.
+// Its lattice's cells across (noise-map.js NOISE_MAP.cells, which a test keeps equal).
+export const SLATE_NOISE_CELLS = 32;
+const LITE_NOISE = `uniform sampler2D slateNoiseMap;
+float slateNoise(vec2 p){return texture2D(slateNoiseMap,p*${glslNumber(1 / SLATE_NOISE_CELLS)}).r;}`;
 export function createSlateContacts(values = new Float32Array(SLATE_CONTACTS * 4)) {
   return {
+    // The lite ground's baked noise (bakeSlateNoise()), set by index.js on the lite startup.
+    slateNoiseMap: { value: null },
     slateContacts: { value: values },
     slateRockContact: { value: 0 },
     slateContactGain: { value: 1 },
@@ -1303,19 +1313,16 @@ const SHADOW_SOFT = SLATE_WATER.shadow;
 const SHADOW_WATER = SHADOW_SOFT.texels
   ? `if(slateShadowWater>0.){vec3 c=coord.xyz/coord.w;c.z+=bias;if(c.z<=1.){float b=0.;for(int i=0;i<${SHADOW_SOFT.taps};i++){float t=float(i)+.5;b+=texture2DCompare(map,clamp(c.xy+vec2(cos(t*2.39996),sin(t*2.39996))*sqrt(t/${glslNumber(SHADOW_SOFT.taps)})*${glslNumber(SHADOW_SOFT.texels)}/size,0.,1.),c.z);}s=mix(s,(s+b)/${glslNumber(SHADOW_SOFT.taps + 1)},slateShadowWater);}}`
   : "";
-// The lite ground (SLATE_LITE: phones and laptops) filters the key's shadow over one bilinear
-// texel (4 taps) rather than three's 3x3 soft footprint (16), its edges a little crisper, and
-// keeps no softer edge on the moving water.
-const LITE_SHADOW = `float slateLiteShadow(sampler2D map,vec2 size,float bias,vec4 coord){vec3 c=coord.xyz/coord.w;c.z+=bias;
-if(c.x<0.||c.x>1.||c.y<0.||c.y>1.||c.z>1.)return 1.;
-vec2 t=c.xy*size-.5,f=fract(t),b=(floor(t)+.5)/size,d=1./size;
-return mix(mix(texture2DCompare(map,b,c.z),texture2DCompare(map,b+vec2(d.x,0.),c.z),f.x),mix(texture2DCompare(map,b+vec2(0.,d.y),c.z),texture2DCompare(map,b+d,c.z),f.x),f.y);}`;
+// The lite ground (SLATE_LITE: phones and laptops) reads the key's shadow in one tap rather
+// than three's 3x3 soft footprint (16 taps), its edges crisper (at a phone's resolution, much as
+// before), and keeps no softer edge on the moving water.
+const LITE_SHADOW =
+  "vec3 c=coord.xyz/coord.w;c.z+=bias;float s=c.x<0.||c.x>1.||c.y<0.||c.y>1.||c.z>1.?1.:texture2DCompare(map,c.xy,c.z);";
 const LOOK_SHADOW = `#include <shadowmap_pars_fragment>
 float slateShadowWater = 0.0;
 #ifdef USE_SHADOWMAP
 #ifdef SLATE_LITE
-${LITE_SHADOW}
-float slateShadow(sampler2D map,vec2 size,float bias,float radius,vec4 coord){float s=slateLiteShadow(map,size,bias,coord);return slateShadowFade.y>0.?mix(1.,s,1.-smoothstep(slateShadowFade.x,slateShadowFade.y,length(vMudWorld.xz-slateCalmAt.xy))):s;}
+float slateShadow(sampler2D map,vec2 size,float bias,float radius,vec4 coord){${LITE_SHADOW}return slateShadowFade.y>0.?mix(1.,s,1.-smoothstep(slateShadowFade.x,slateShadowFade.y,length(vMudWorld.xz-slateCalmAt.xy))):s;}
 #else
 float slateShadow(sampler2D map,vec2 size,float bias,float radius,vec4 coord){float s=getShadow(map,size,bias,radius,coord);${SHADOW_WATER}return slateShadowFade.y>0.?mix(1.,s,1.-smoothstep(slateShadowFade.x,slateShadowFade.y,length(vMudWorld.xz-slateCalmAt.xy))):s;}
 #endif
@@ -1518,7 +1525,7 @@ uniform vec3 babelKeyDir;
 uniform vec4 slateText, slateAbout;
 uniform int slateLoop;
 ${liteKey ? "#define SLATE_LITE\n" : ""}${authored ? "uniform sampler2D slateDetail;\n" + SOIL_SAMPLE : ""}${close ? "#define SLATE_CLOSE_SOIL\nuniform sampler2D slateGrit, slateRelief, slateSoilRoughness;\nuniform float slateSoilRoughnessOn;\n" : ""}${RIVER_BED_GLSL}float slateHash(vec2 p){vec3 q=fract(p.xyx*.1031);q+=dot(q,q.yzx+33.33);return fract((q.x+q.y)*q.z);}
-float slateNoise(vec2 p){vec2 i=floor(p),f=fract(p);f*=f*(3.-2.*f);return mix(mix(slateHash(i),slateHash(i+vec2(1,0)),f.x),mix(slateHash(i+vec2(0,1)),slateHash(i+1.),f.x),f.y);}
+${liteKey ? LITE_NOISE : "float slateNoise(vec2 p){vec2 i=floor(p),f=fract(p);f*=f*(3.-2.*f);return mix(mix(slateHash(i),slateHash(i+vec2(1,0)),f.x),mix(slateHash(i+vec2(0,1)),slateHash(i+1.),f.x),f.y);}"}
 ${STREAM_GLSL}
 ${SLATE_TEXT_GLSL}${LOOK_GLSL}${mistOn ? `uniform mat4 projectionMatrix;\n${MIST_PARS}` : ""}`
         : "") +
@@ -1690,7 +1697,7 @@ ${SLATE_TEXT_GLSL}${LOOK_GLSL}${mistOn ? `uniform mat4 projectionMatrix;\n${MIST
       vec3 earthAir = ${TERRAIN_HORIZON}*${glslNumber(HORIZON_AIR.ground)};
       earthHorizon *= smoothstep(1.0, 1.15, dot(gl_FragColor.rgb, ${LUMA})/dot(earthAir, ${LUMA}));
       gl_FragColor.rgb = mix(gl_FragColor.rgb, earthAir, earthHorizon);
-      #endif${LOOK_AFTER}${useWet && mistOn ? "\n      gl_FragColor.rgb = mistGround(gl_FragColor.rgb, vMudWorld);" : ""}
+      #endif${LOOK_AFTER}${useWet && mistOn && !liteKey ? "\n      gl_FragColor.rgb = mistGround(gl_FragColor.rgb, vMudWorld);" : ""}
       gl_FragColor.a = ${DEPTH_LAYER.ground};
     `,
         );
