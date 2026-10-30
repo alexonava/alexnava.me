@@ -6,6 +6,7 @@ import { createHash } from "node:crypto";
 import { access, readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { isFingerprintedSource } from "../build.mjs";
 
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -294,6 +295,7 @@ test("static headers separate immutable fingerprints from revalidated stable ass
     "/images/materials/slate-:map.:hash.webp",
     "/images/materials/coast-detail-256.:hash.webp",
     "/images/materials/coast-albedo-512.:hash.webp",
+    "/images/materials/cel-sky-:plate.:hash.webp",
   ]) {
     assert.match(
       headers,
@@ -388,9 +390,9 @@ test("Pages header rules resolve one cache policy for stable and fingerprinted p
     assert.equal(headersFor(pathname).get("content-type"), "text/plain; charset=utf-8", pathname);
   }
 
-  // The build publishes the architecture models, the film slate's maps and the
-  // opening's paper only as name.HASH.ext, which are immutable; any other image
-  // would keep a revalidated plain URL.
+  // The build publishes the architecture models, the film slate's maps, the sky's
+  // plates and the opening's paper only as name.HASH.ext (isFingerprintedSource),
+  // which are immutable; any other image would keep a revalidated plain URL.
   let fingerprintable = 0;
   const images = path.join(projectRoot, "images");
   for (const entry of await readdir(images, { recursive: true, withFileTypes: true })) {
@@ -401,10 +403,7 @@ test("Pages header rules resolve one cache policy for stable and fingerprinted p
       .join("/");
     const stable = `/images/${relative}`;
     const hashed = stable.replace(/\.(\w+)$/, `.${hash}.$1`);
-    const hashedByBuild =
-      /^(?:architecture\/[^/]+\.glb|materials\/(?:slate-[^/]+|coast-detail-256|coast-albedo-512)\.webp|paper\/paper-(?:detail|height)\.webp)$/.test(
-        relative,
-      );
+    const hashedByBuild = isFingerprintedSource(`images/${relative}`);
     fingerprintable += hashedByBuild;
     assert.equal(cacheControl(stable), revalidated, stable);
     assert.equal(cacheControl(hashed), hashedByBuild ? immutable : revalidated, hashed);
@@ -412,8 +411,8 @@ test("Pages header rules resolve one cache policy for stable and fingerprinted p
   }
   assert.equal(
     fingerprintable,
-    28,
-    "14 models, 9 slate maps, optional soil roughness, 2 optional coast maps and 2 paper maps",
+    36,
+    "14 models, 9 slate maps, optional soil roughness, 2 optional coast maps, 8 sky plates and 2 paper maps",
   );
 });
 

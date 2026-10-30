@@ -1109,8 +1109,8 @@ const GROUND_WAIT_S = 20;
       // a resize or once the fonts load; then, once the scene's camera has fitted that shot
       // itself, where it does.
       // A shot that looks at the lantern gives the line the lantern's flame instead (`kind`
-      // "lantern"), its light LANTERN_GLOW world units about the flame: Lantern study, which
-      // opens the film by chance, from the scene's start where the opening fit to the supplied
+      // "lantern"), its light LANTERN_GLOW world units about the flame: Lantern study, when an
+      // address or a script opens the film there, from the scene's start where the opening fit to the supplied
       // lantern's stored outline puts it (opening-star.js openingFlame()), then the camera's.
       let openingCameraStar = false;
       const openingSun = new Vector3(),

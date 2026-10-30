@@ -97,26 +97,23 @@ import { createOpeningPreparation } from "./scene/opening-preparation.js";
     return false;
   }
 
-  // The film opens on Lantern study or The watch, by chance (the owner's pick of 2026-10-26,
-  // "Watch or Lantern by chance"), unless the address names a view or an angle or a script has
-  // chosen a subject. Chosen once, before the loading line begins and the models are requested,
-  // so the line and its light, the early requests and the scene agree: each resolves the
-  // opening through scene-modes.js resolveSceneOpening(), which keeps this choice. Its default,
-  // for an address with neither, is Lantern study.
+  // The film opens on The watch, the sky alone, which shows in about two seconds on any
+  // device, unless the address names a view or an angle or a script has chosen a subject.
+  // Lantern study's ground takes far longer to build: about 8 s on a desktop, 8 s on a fast
+  // phone and 27 s on a mid-range one (the owner's calls: laptops 2026-10-27, phones and
+  // tablets 2026-10-28, desktops 2026-10-29, "Always The watch"; it was chosen by chance
+  // before). Chosen once, before the loading line begins and the models are requested, so
+  // the line and its light, the early requests and the scene agree: each resolves the
+  // opening through scene-modes.js resolveSceneOpening(), which keeps this choice. Its
+  // default, for an address with neither, is Lantern study.
   const WATCH_OPENING = Object.freeze({ view: "watch", angle: 0 });
-  // A laptop's integrated GPU (quality.js's lean path) always opens on The watch, the sky
-  // alone, which shows in about two seconds; Lantern study's ground takes it far longer to
-  // build (the owner's call of 2026-10-27, "Always The watch"). So does a phone or tablet
-  // (a touch screen): 8 s for Lantern study on a fast phone, 27 s on a mid-range one
-  // (the owner's call of 2026-10-28, "Always The watch").
-  function chooseOpening(random = Math.random, { lean = false, touch = false } = {}) {
+  function chooseOpening() {
     const scene = (site.scene = site.scene || {});
     if (scene.cinematicSelection != null) return;
     const query = new URLSearchParams(window.location?.search || "");
     if (query.has("view") || query.has("angle")) return;
-    const opening = lean || touch || random() >= 0.5 ? WATCH_OPENING : resolveSceneOpening("");
-    scene.cinematicSelection = opening.view;
-    scene.cinematicAngle = opening.angle;
+    scene.cinematicSelection = WATCH_OPENING.view;
+    scene.cinematicAngle = WATCH_OPENING.angle;
   }
 
   function getSceneScriptUrl() {
@@ -412,8 +409,7 @@ import { createOpeningPreparation } from "./scene/opening-preparation.js";
       try {
         const starting = !sceneInitialized;
         if (starting) {
-          const startup = readStartupQuality(site.shared?.getWebGLCapabilities?.());
-          chooseOpening(Math.random, { lean: startup?.lean, touch: startup?.touch });
+          chooseOpening();
           startOpeningBudget();
           site.sceneLoader?.begin?.({ tier: sceneStartupTier });
           site.sceneLoader?.stage?.("bundle");
@@ -470,7 +466,7 @@ import { createOpeningPreparation } from "./scene/opening-preparation.js";
 
         // Only the live path shows the title card's loading line.
         sceneStartupTier = startupTier;
-        chooseOpening(Math.random, { lean: startup?.lean, touch: startup?.touch });
+        chooseOpening();
         site.sceneLoader?.begin?.({ tier: startupTier });
         const sceneScript = loadScriptOnce(getSceneScriptUrl(), getSceneModulePreloads());
         // Issued after the bundle request, which keeps its head start.

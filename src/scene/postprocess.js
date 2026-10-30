@@ -400,11 +400,11 @@ vec4 lensView(sampler2D map, vec2 uv, vec2 v, float blur, float nearCap, vec3 gr
   vec4 texel = lensBlur(map, q, blur, nearCap, ground);
   if (uLens.y > 0.0) {
     vec2 s = lensFringe(v, star) * (uLens.y * open);
-    vec4 centre = blur > 0.0 ? texture2D(map, q) : texel;
+    vec4 centre = blur > 0.0 ? lensSample(map, q) : texel;
     // Blurred sky and ranges keep their focus: only sharp layers fringe there.
     float sharp = blur > 0.0 ? step(0.5, centre.a) : 1.0;
-    texel.r += (texture2D(map, q + s).r - centre.r) * sharp;
-    texel.b += (texture2D(map, q - s).b - centre.b) * sharp;
+    texel.r += (lensSample(map, q + s).r - centre.r) * sharp;
+    texel.b += (lensSample(map, q - s).b - centre.b) * sharp;
   }
   return texel;
 }
@@ -528,6 +528,9 @@ varying vec2 vUv;
 // Composer and kept-frame textures have no mipmaps. Explicit level zero keeps
 // their filtering unchanged and permits the per-pixel sharp-subject shortcut
 // without implicit derivatives inside divergent control flow (ANGLE/D3D11).
+// Every read in this pass goes through it: with an implicit derivative inside,
+// D3D flattens the cut's branch and every frame paid for its taps (1.7 of the
+// pass's 2.6 ms on an integrated GPU at phone size).
 vec4 lensSample(sampler2D map, vec2 uv) {
 #ifdef LENS_LOD0
   return texture2DLodEXT(map, uv, 0.0);
@@ -584,8 +587,8 @@ float brushTurn(vec2 uv) {
 }
 float layerCode(sampler2D map, vec2 uv) {
   vec2 x = vec2(uCodeTexel.x, 0.0), y = vec2(0.0, uCodeTexel.y);
-  return max(max(texture2D(map, uv).a, max(texture2D(map, uv - x).a, texture2D(map, uv + x).a)),
-    max(texture2D(map, uv - y).a, texture2D(map, uv + y).a));
+  return max(max(lensSample(map, uv).a, max(lensSample(map, uv - x).a, lensSample(map, uv + x).a)),
+    max(lensSample(map, uv - y).a, lensSample(map, uv + y).a));
 }
 ${
   DISSOLVE_SOFT.on
@@ -594,7 +597,7 @@ ${
   subject = step(0.9, own);
   for (int i = 1; i <= ${DISSOLVE_SOFT.taps}; i++) {
     float r = sqrt(float(i) / ${lensNumber(DISSOLVE_SOFT.taps)}) * ${lensNumber(DISSOLVE_SOFT.radius)}, a = float(i) * 2.39996;
-    float code = texture2D(map, uv + vec2(cos(a) / aspect, sin(a)) * r).a;
+    float code = lensSample(map, uv + vec2(cos(a) / aspect, sin(a)) * r).a;
     sum += code;
     subject += step(0.9, code);
   }
@@ -610,7 +613,7 @@ ${
 // points a radius r out, in that frame's UV) decides when it turns, over the layer's window.
 float starTurn(sampler2D other, vec2 c, float r, vec2 aspect) {
   vec2 dx = vec2(r / aspect.x, 0.0), dy = vec2(0.0, r);
-  float code = max(texture2D(other, c).a, max(max(texture2D(other, c + dx).a, texture2D(other, c - dx).a), max(texture2D(other, c + dy).a, texture2D(other, c - dy).a)));
+  float code = max(lensSample(other, c).a, max(max(lensSample(other, c + dx).a, lensSample(other, c - dx).a), max(lensSample(other, c + dy).a, lensSample(other, c - dy).a)));
   float start = 3.0 * uStagger.x * clamp(code, 0.0, 1.0);
   return smoothstep(start, start + uStagger.y, uProgress);
 }
@@ -627,7 +630,7 @@ vec3 starSky(vec2 uv, vec2 c, float r, vec2 aspect, vec3 own) {
   for (int i = 0; i < 8; i++) {
     float a = float(i) * 0.785398;
     vec2 dir = vec2(cos(a), sin(a)), p = c + dir * r * ${lensNumber(DISSOLVE_SOFT.ring)} / aspect;
-    vec4 tap = texture2D(tPrev, p);
+    vec4 tap = lensSample(tPrev, p);
     float along = dot(dir, ray), near = mix(exp(4.0 * (along - 1.0)), 1.0, even);
     float k = near * (1.0 - smoothstep(0.02, 0.05, tap.a)) * step(0.0, p.x) * step(p.x, 1.0) * step(0.0, p.y) * step(p.y, 1.0);
     sum += tap.rgb * k;
@@ -640,7 +643,7 @@ vec3 starSky(vec2 uv, vec2 c, float r, vec2 aspect, vec3 own) {
   }
 void main() {
   float guard = uLayered > 0.5 ? max(lensBehind(slateText, vUv, ${lensNumber(LENS_FX.text[0])}), lensBehind(slateAbout, vUv, ${lensNumber(LENS_FX.text[1])})) : 0.0;
-  vec4 texel = uLayered > 0.5 ? lensView(tDiffuse, vUv, vUv, uBlur, uBlurNear, uGround, uStar, uFlame, uKeep, guard) : texture2D(tDiffuse, vUv);
+  vec4 texel = uLayered > 0.5 ? lensView(tDiffuse, vUv, vUv, uBlur, uBlurNear, uGround, uStar, uFlame, uKeep, guard) : lensSample(tDiffuse, vUv);
   // The kept frame pushes in about its origin: here it shows its own pixel prevUv,
   // so its lens (heat, fringes and kept rect) is placed in its own UV and
   // stays on its own star and flame.
@@ -665,7 +668,7 @@ void main() {
       }
     }
     w = smoothstep(start, start + span, uProgress);
-    vec4 prevTexel = uLayered > 0.5 ? lensView(tPrev, prevUv, prevUv, uBlurPrev, uBlurNearPrev, uGroundPrev, uStarPrev, uFlamePrev, uKeepPrev, guard) : texture2D(tPrev, prevUv);${
+    vec4 prevTexel = uLayered > 0.5 ? lensView(tPrev, prevUv, prevUv, uBlurPrev, uBlurNearPrev, uGroundPrev, uStarPrev, uFlamePrev, uKeepPrev, guard) : lensSample(tPrev, prevUv);${
       DISSOLVE_SOFT.on
         ? /* glsl */ `
     // The incoming subject washes in on one long weight, its gaps with it (DISSOLVE_SOFT.wash).
@@ -681,7 +684,7 @@ void main() {
       // its disc turns (starTurn), so it never shows through that layer early.
       vec2 aspect = lensAspect();
       if (uStarPrev.w > 0.0) {
-        float foot = (1.0 - smoothstep(${lensNumber(DISSOLVE_SOFT.foot[0])}, ${lensNumber(DISSOLVE_SOFT.foot[1])}, length((prevUv - uStarPrev.xy) * aspect) / uStarPrev.z)) * (1.0 - smoothstep(0.25, 0.3, texture2D(tPrev, prevUv).a));
+        float foot = (1.0 - smoothstep(${lensNumber(DISSOLVE_SOFT.foot[0])}, ${lensNumber(DISSOLVE_SOFT.foot[1])}, length((prevUv - uStarPrev.xy) * aspect) / uStarPrev.z)) * (1.0 - smoothstep(0.25, 0.3, lensSample(tPrev, prevUv).a));
         turnPrev = smoothstep(0.0, ${lensNumber(DISSOLVE_SOFT.fade)}, uProgress);
         if (foot > 0.0) {
           prevTexel.rgb = mix(prevTexel.rgb, starSky(prevUv, uStarPrev.xy, uStarPrev.z, aspect, prevTexel.rgb), foot * turnPrev);
@@ -690,7 +693,7 @@ void main() {
         }
       }
       if (uStar.w > 0.0) {
-        float foot = (1.0 - smoothstep(${lensNumber(DISSOLVE_SOFT.foot[0])}, ${lensNumber(DISSOLVE_SOFT.foot[1])}, length((vUv - uStar.xy) * aspect) / uStar.z)) * (1.0 - smoothstep(0.25, 0.3, texture2D(tDiffuse, vUv).a));
+        float foot = (1.0 - smoothstep(${lensNumber(DISSOLVE_SOFT.foot[0])}, ${lensNumber(DISSOLVE_SOFT.foot[1])}, length((vUv - uStar.xy) * aspect) / uStar.z)) * (1.0 - smoothstep(0.25, 0.3, lensSample(tDiffuse, vUv).a));
         turnNow = starTurn(tPrev, uPrevOrigin + (uStar.xy - uPrevOrigin) * uPrevScale, uStar.z * uPrevScale, aspect);
         w = mix(w, turnNow, foot);
       }
