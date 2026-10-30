@@ -123,6 +123,11 @@
   ! Cache-Control
   Cache-Control: public, max-age=31536000, immutable
 
+# The sky's plates (cel-sky-<shot>[-balanced]), fingerprinted the same way.
+/images/materials/cel-sky-:plate.:hash.webp
+  ! Cache-Control
+  Cache-Control: public, max-age=31536000, immutable
+
 # The opening's paper (its detail and height maps), fingerprinted the same way.
 /images/paper/paper-:map.:hash.webp
   ! Cache-Control

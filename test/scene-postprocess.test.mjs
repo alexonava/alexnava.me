@@ -773,6 +773,12 @@ test("the lens reads non-mipmapped frame targets at level zero before its per-pi
     6,
     "center, disc tap and four edge reads use the same sampler",
   );
+  // The cut's branch too: one implicit-derivative read and D3D flattens it into every frame.
+  assert.equal(
+    (shader.match(/texture2D\(/g) || []).length,
+    1,
+    "only lensSample's fallback reads without an explicit level",
+  );
   assert.equal(pipeline.composer.passes.length, 4);
   pipeline.dispose();
 });
@@ -1263,10 +1269,10 @@ test("the final pass decodes each frame's layer from a 5-tap cross and mixes by 
   const shader = pipeline.passes.vignetteGrain.material.fragmentShader;
   const start = shader.indexOf("float layerCode(");
   const layerCode = shader.slice(start, shader.indexOf("\n}\n", start) + 2);
-  assert.equal((layerCode.match(/texture2D\(map, /g) || []).length, 5);
-  assert.match(layerCode, /texture2D\(map, uv\)\.a/);
+  assert.equal((layerCode.match(/lensSample\(map, /g) || []).length, 5);
+  assert.match(layerCode, /lensSample\(map, uv\)\.a/);
   for (const tap of ["uv - x", "uv + x", "uv - y", "uv + y"])
-    assert.ok(layerCode.includes(`texture2D(map, ${tap}).a`), tap);
+    assert.ok(layerCode.includes(`lensSample(map, ${tap}).a`), tap);
   assert.match(layerCode, /vec2 x = vec2\(uCodeTexel\.x, 0\.0\), y = vec2\(0\.0, uCodeTexel\.y\);/);
   // Each frame's code, softened (DISSOLVE_SOFT): the cross's maximum averaged with a disc
   // of taps `radius` of the frame's height across, so a silhouette turns over that width,
@@ -1327,22 +1333,22 @@ test("the final pass decodes each frame's layer from a 5-tap cross and mixes by 
     turn,
     /float start = 3\.0 \* uStagger\.x \* clamp\(code, 0\.0, 1\.0\);\s*return smoothstep\(start, start \+ uStagger\.y, uProgress\);/,
   );
-  assert.equal((turn.match(/texture2D\(other, /g) || []).length, 5);
+  assert.equal((turn.match(/lensSample\(other, /g) || []).length, 5);
   assert.match(
     shader,
     /turnNow = starTurn\(tPrev, uPrevOrigin \+ \(uStar\.xy - uPrevOrigin\) \* uPrevScale, uStar\.z \* uPrevScale, aspect\);\s*w = mix\(w, turnNow, foot\);/,
   );
-  assert.match(shader, /\(1\.0 - smoothstep\(0\.25, 0\.3, texture2D\(tPrev, prevUv\)\.a\)\)/);
-  assert.match(shader, /\(1\.0 - smoothstep\(0\.25, 0\.3, texture2D\(tDiffuse, vUv\)\.a\)\)/);
+  assert.match(shader, /\(1\.0 - smoothstep\(0\.25, 0\.3, lensSample\(tPrev, prevUv\)\.a\)\)/);
+  assert.match(shader, /\(1\.0 - smoothstep\(0\.25, 0\.3, lensSample\(tDiffuse, vUv\)\.a\)\)/);
   // In film the kept frame dissolves through the outgoing shot's lens: its focus,
   // and its heat, fringes and kept rect (LENS_FX).
   assert.match(
     shader,
-    /w = smoothstep\(start, start \+ span, uProgress\);\s*vec4 prevTexel = uLayered > 0\.5 \? lensView\(tPrev, prevUv, prevUv, uBlurPrev, uBlurNearPrev, uGroundPrev, uStarPrev, uFlamePrev, uKeepPrev, guard\) : texture2D\(tPrev, prevUv\);[\s\S]*?texel = mix\(prevTexel, texel, w\);\s*protection = mix\(uTextProtectionFrom, uTextProtection, w\);/,
+    /w = smoothstep\(start, start \+ span, uProgress\);\s*vec4 prevTexel = uLayered > 0\.5 \? lensView\(tPrev, prevUv, prevUv, uBlurPrev, uBlurNearPrev, uGroundPrev, uStarPrev, uFlamePrev, uKeepPrev, guard\) : lensSample\(tPrev, prevUv\);[\s\S]*?texel = mix\(prevTexel, texel, w\);\s*protection = mix\(uTextProtectionFrom, uTextProtection, w\);/,
   );
   assert.match(
     shader,
-    /vec4 texel = uLayered > 0\.5 \? lensView\(tDiffuse, vUv, vUv, uBlur, uBlurNear, uGround, uStar, uFlame, uKeep, guard\) : texture2D\(tDiffuse, vUv\);/,
+    /vec4 texel = uLayered > 0\.5 \? lensView\(tDiffuse, vUv, vUv, uBlur, uBlurNear, uGround, uStar, uFlame, uKeep, guard\) : lensSample\(tDiffuse, vUv\);/,
   );
   assert.match(
     shader,
