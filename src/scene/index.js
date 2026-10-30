@@ -416,6 +416,17 @@ const GROUND_WAIT_S = 20;
       // slot: uniforms, so rocks arriving or shadows switching never recompile.
       // Its text boxes also guard the sky's cloud banks (and the stars behind them).
       const groundContacts = createSlateContacts(estateContacts());
+      // The lite ground reads its value noise from a baked map (noise-map.js, a lazy chunk),
+      // which lands during The watch, the opening of every lite startup.
+      if (liteGround)
+        import("./noise-map.js")
+          .then(({ createSlateNoiseMap }) => {
+            if (runtimeDisposed) return;
+            const noise = createSlateNoiseMap();
+            groundContacts.slateNoiseMap.value = noise;
+            subsystemRegistry.register({ dispose: () => noise.dispose() });
+          })
+          .catch(() => {});
       const skyShell = new Mesh(
         new SphereGeometry(WORLD.SKY_DOME_RADIUS, skyWidthSegments, skyHeightSegments),
         createEstateSkyMaterial(skyConfig, groundContacts),

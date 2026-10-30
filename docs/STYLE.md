@@ -162,9 +162,10 @@ The rules for visual, motion and typographic changes. Read them before changing 
 - Phones and laptops (the balanced startup tier, the lean path included) keep every shot
   sharp and the ground lighter (the owner's picks of 2026-10-28, "Grain only" and
   "Simplify further", for 60 fps at a sharper resolution): no lens blur and no colour
-  fringe, only the vignette and the grain; no close soil; the moon's shadow filtered over
-  one texel, so its edges are a little crisper; still pools (the rain's and the lantern's
+  fringe, only the vignette and the grain; no close soil; the moon's shadow read in one
+  tap, so its edges are crisper ("make the necessary ground cuts", 2026-10-29); still pools (the rain's and the lantern's
   puddle) darken wet but keep no mirror, while the river and the streams keep theirs, with
   no lantern glints on their ripples; the stream's foam keeps its body without its lace;
-  the drifting mist marches in one step.
+  the drifting mist marches in one step and leaves the ground; the ground's noise comes
+  from a baked map, the same kind of noise laid out afresh.
   Desktops on the high tier keep all of it.
