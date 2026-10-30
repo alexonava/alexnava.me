@@ -225,8 +225,8 @@ import { resolveSceneOpening } from "../scene/scene-modes.js";
     const starParts = starEl ? Array.from(starEl.children) : [];
     if (run.exit) window.clearTimeout(run.exit);
     // UI boot and the renderer resolve public links and script selection alike: main.js
-    // chooseOpening() has set The watch or Lantern study by chance unless the address names a
-    // view or an angle. A tree opening waits for the tree too.
+    // chooseOpening() has set The watch unless the address names a view or an angle
+    // (or a script chose first). A tree opening waits for the tree too.
     const opening = resolveSceneOpening(window.location?.search || "", {
       view: site.scene?.cinematicSelection,
       angle: site.scene?.cinematicAngle,

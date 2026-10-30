@@ -91,9 +91,6 @@ function createContext({
   modulePreloads,
   prefetch = false,
   prefetchLantern = false,
-  // main.js chooseOpening()'s roll for an address without a view or an angle: below 0.5
-  // Lantern study, else The watch; a function is called for each roll.
-  random = 0.25,
   selection,
   // Model requests answer at once instead of staying in flight.
   respond = false,
@@ -329,9 +326,6 @@ function createContext({
     navigator,
     console: logger,
     URLSearchParams,
-    Math: Object.assign(Object.create(Math), {
-      random: typeof random === "function" ? random : () => random,
-    }),
     resolveSceneOpening,
     createOpeningPreparation,
     requestAnimationFrame: window.requestAnimationFrame,
@@ -1247,7 +1241,11 @@ test("the live scene prioritizes its startup tree after requesting the bundle", 
     [{ search: "?quality=balanced" }, "balanced"],
     [{ reducedMotion: true, search: "?quality=high" }, "high"],
   ]) {
-    const harness = createContext({ ...CAPABLE, ...options });
+    const harness = createContext({
+      ...CAPABLE,
+      selection: { view: "tree", angle: 1 },
+      ...options,
+    });
     await loadMainWithQuality(harness.context);
 
     assert.equal(await harness.context.window.BabelSite.ensureSceneReady(), true);
@@ -1270,7 +1268,7 @@ test("the live scene prioritizes its startup tree after requesting the bundle", 
 
 test("selected tree openings prefetch tree then lantern, while explicit Watch keeps background priority", async () => {
   for (const [options, roles, priority] of [
-    [{ search: "" }, ["tree", "lantern"], "high"],
+    [{ search: "" }, ["tree"], "low"],
     [{ search: "?view=tree&angle=2" }, ["tree", "lantern"], "high"],
     [{ search: "?view=watch" }, ["tree"], "low"],
     [{ search: "?view=unknown" }, ["tree"], "low"],
@@ -1292,16 +1290,12 @@ test("selected tree openings prefetch tree then lantern, while explicit Watch ke
   }
 });
 
-test("a laptop's integrated GPU always opens on The watch, never rolling; an address still pins its view", async () => {
+test("a laptop's integrated GPU always opens on The watch; an address still pins its view", async () => {
   const laptop =
     "ANGLE (AMD, AMD Radeon(TM) Graphics (0x000013C0) Direct3D11 vs_5_0 ps_5_0, D3D11)";
-  const never = () => {
-    throw new Error("the lean path does not roll");
-  };
   const harness = createContext({
     ...CAPABLE,
     sceneLoader: true,
-    random: never,
     softwareRenderer: laptop,
   });
   await loadMainWithQuality(harness.context);
@@ -1312,7 +1306,6 @@ test("a laptop's integrated GPU always opens on The watch, never rolling; an add
   const pinned = createContext({
     ...CAPABLE,
     sceneLoader: true,
-    random: never,
     softwareRenderer: laptop,
     search: "?view=tree&angle=2",
   });
@@ -1322,11 +1315,8 @@ test("a laptop's integrated GPU always opens on The watch, never rolling; an add
   assert.deepEqual(pin.opening, [null, null], "the address's view, resolved by the scene");
 });
 
-test("a phone or tablet (a touch screen) always opens on The watch, never rolling; an address still pins its view", async () => {
-  const never = () => {
-    throw new Error("a touch screen does not roll");
-  };
-  const harness = createContext({ ...CAPABLE, sceneLoader: true, random: never, touch: true });
+test("a phone or tablet (a touch screen) always opens on The watch; an address still pins its view", async () => {
+  const harness = createContext({ ...CAPABLE, sceneLoader: true, touch: true });
   await loadMainWithQuality(harness.context);
   await harness.context.window.BabelSite.ensureSceneReady();
   const [begin] = harness.loaderCalls.filter(({ method }) => method === "begin");
@@ -1334,7 +1324,6 @@ test("a phone or tablet (a touch screen) always opens on The watch, never rollin
   const pinned = createContext({
     ...CAPABLE,
     sceneLoader: true,
-    random: never,
     touch: true,
     search: "?view=tree&angle=2",
   });
@@ -1344,44 +1333,30 @@ test("a phone or tablet (a touch screen) always opens on The watch, never rollin
   assert.deepEqual(pin.opening, [null, null], "the address's view, resolved by the scene");
 });
 
-test("a visit naming no view or angle opens on Lantern study or The watch by chance, rolled once before the loading line begins", async () => {
-  // Rolled below 0.5, Lantern study: its tree and lantern come early, ahead of the rest.
-  for (const [random, opening, roles, priority] of [
-    [0.25, ["tree", 1], ["tree", "lantern"], "high"],
-    [0.75, ["watch", 0], ["tree"], "low"],
-  ]) {
-    const harness = createContext({ ...CAPABLE, prefetchLantern: true, sceneLoader: true, random });
-    await loadMainWithQuality(harness.context);
-    await harness.context.window.BabelSite.ensureSceneReady();
-    const begins = harness.loaderCalls.filter(({ method }) => method === "begin");
-    assert.equal(begins.length, 1);
-    assert.deepEqual(begins[0].opening, opening, `rolled ${random}`);
-    assert.deepEqual(
-      harness.fetches.map(({ url }) => /\/(tree|lantern)-/.exec(url)[1]),
-      roles,
-    );
-    assert.ok(harness.fetches.every(({ options: init }) => init.priority === priority));
-    const { cinematicSelection, cinematicAngle } = harness.context.window.BabelSite.scene;
-    assert.deepEqual([cinematicSelection, cinematicAngle], opening, "the scene keeps it");
-  }
-  // One roll a visit, however often the scene is asked for.
-  let rolls = 0;
-  const once = createContext({ ...CAPABLE, sceneLoader: true, random: () => (rolls++, 0.75) });
-  await loadMainWithQuality(once.context);
-  await once.context.window.BabelSite.ensureSceneReady();
-  await once.context.window.BabelSite.ensureSceneReady();
-  assert.equal(rolls, 1);
-  // An address naming a view or an angle, or a script's selection, is never rolled.
-  const never = () => {
-    throw new Error("an opening the address or a script names is not rolled");
-  };
+test("a visit naming no view or angle opens on The watch on every device, chosen before the loading line begins", async () => {
+  // A desktop (no touch, a discrete GPU) too: its tree comes early at background priority.
+  const harness = createContext({ ...CAPABLE, prefetchLantern: true, sceneLoader: true });
+  await loadMainWithQuality(harness.context);
+  await harness.context.window.BabelSite.ensureSceneReady();
+  await harness.context.window.BabelSite.ensureSceneReady();
+  const begins = harness.loaderCalls.filter(({ method }) => method === "begin");
+  assert.equal(begins.length, 1);
+  assert.deepEqual(begins[0].opening, ["watch", 0]);
+  assert.deepEqual(
+    harness.fetches.map(({ url }) => /\/(tree|lantern)-/.exec(url)[1]),
+    ["tree"],
+  );
+  assert.ok(harness.fetches.every(({ options: init }) => init.priority === "low"));
+  const { cinematicSelection, cinematicAngle } = harness.context.window.BabelSite.scene;
+  assert.deepEqual([cinematicSelection, cinematicAngle], ["watch", 0], "the scene keeps it");
+  // An address naming a view or an angle, or a script's selection, keeps its own.
   for (const options of [
     { search: "?view=tree&angle=2" },
     { search: "?view=watch" },
     { search: "?angle=1" },
     { selection: { view: "tree", angle: 3 } },
   ]) {
-    const harness = createContext({ ...CAPABLE, sceneLoader: true, random: never, ...options });
+    const harness = createContext({ ...CAPABLE, sceneLoader: true, ...options });
     await loadMainWithQuality(harness.context);
     await harness.context.window.BabelSite.ensureSceneReady();
     const [begin] = harness.loaderCalls.filter(({ method }) => method === "begin");
@@ -1452,7 +1427,12 @@ test("a failed scene bundle or initialization releases both early opening models
     { logger: { warn() {} }, scriptOutcomes: ["error", "load"] },
     { initResult: false },
   ]) {
-    const harness = createContext({ ...CAPABLE, prefetchLantern: true, ...options });
+    const harness = createContext({
+      ...CAPABLE,
+      prefetchLantern: true,
+      selection: { view: "tree", angle: 1 },
+      ...options,
+    });
     await loadMainWithQuality(harness.context);
 
     assert.equal(await harness.context.window.BabelSite.ensureSceneReady(), false);
@@ -1523,6 +1503,7 @@ test("stalled entry or shared-chunk downloads fail without a loader and cannot i
         h = createContext({
           ...CAPABLE,
           prefetchLantern: true,
+          selection: { view: "tree", angle: 1 },
           sceneLoader,
           modulePreloads,
           scriptOutcomes: ["pending"],

@@ -56,8 +56,8 @@ export function createOpeningFlame({
     return lanternStandIn;
   }
 
-  // Where the opening shot, when it frames the whole lantern alone (Lantern study, which opens the
-  // film by chance: main.js chooseOpening()), will show the lantern's flame in a width x height
+  // Where the opening shot, when it frames the whole lantern alone (Lantern study, when an address or
+  // a script opens the film there; main.js chooseOpening() opens on The watch), will show the lantern's flame in a width x height
   // canvas before the scene has the models: a cinematic camera of its own fitted to the supplied
   // lantern's stored outline as the scene's camera fits the lantern (the same safe area and ground,
   // the lantern standing on `foot`, its ground point in the world, drawn at prop-scale.js
