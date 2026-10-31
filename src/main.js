@@ -131,11 +131,11 @@ import { createOpeningPreparation } from "./scene/opening-preparation.js";
       : [];
   }
 
-  // src/shared/webgl-probe.js is bundled into both the UI and scene entries so
-  // the pre-download gate here and the in-scene check (`scene.supportsWebGL`)
-  // share one implementation. Skipping the scene-bundle download on static
-  // preference/capability paths is the reason this check happens in the UI
-  // bundle.
+  // src/shared/webgl-probe.js is bundled into the UI entry alone; the in-scene
+  // check (`scene.supportsWebGL`) reads it from BabelSite.shared, so the
+  // pre-download gate here and the scene share one implementation. Skipping
+  // the scene-bundle download on static preference/capability paths is the
+  // reason this check happens in the UI bundle.
 
   // The title card stays. A loading line already shown (ui/scene-loader.js)
   // retires below 100%, and the opening's doors (ui/scene-doors.js) part onto it.
