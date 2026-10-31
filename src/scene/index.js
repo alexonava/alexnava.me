@@ -8,7 +8,6 @@ import {
   measureShot,
   measureShotSteps,
 } from "./directed-shots.js";
-import { createStarfield } from "./starfield.js";
 import { readTourInterval, createCameraTour, TOUR_IDLE, TOUR_TRANSITION } from "./camera-tour.js";
 import { createFilmScene } from "./film-scene.js";
 import { resolveSceneOpening } from "./scene-modes.js";
@@ -414,7 +413,7 @@ const GROUND_WAIT_S = 20;
       const vortexSeason = cloudVortexInSeason(sceneDate);
       // The slate's contact darkening (tree roots, lantern, rocks) and detail map
       // slot: uniforms, so rocks arriving or shadows switching never recompile.
-      // Its text boxes also guard the sky's cloud banks (and the stars behind them).
+      // Its text boxes also guard the sky's cloud banks.
       const groundContacts = createSlateContacts(estateContacts());
       // The lite ground reads its value noise from a baked map (noise-map.js, a lazy chunk),
       // which lands during The watch, the opening of every lite startup.
@@ -448,7 +447,6 @@ const GROUND_WAIT_S = 20;
         parent: atmosphereSystem.root,
         camera,
         position: new Vector3(...WORLD.SUN_POSITION),
-        profile: state.profile,
       });
       subsystemRegistry.register(solarBody);
       // A shot's own sun (directed-shots.js `sun`: `at`, its world direction, and
@@ -483,19 +481,8 @@ const GROUND_WAIT_S = 20;
           else environmentDirty = true;
         }
       }
-      // The stars borrow the shell's uniforms, so they hide behind its cloud banks.
-      const starfield = createStarfield({
-        parent: atmosphereSystem.root,
-        camera,
-        profile: state.profile,
-        sky: skyShell.material.uniforms,
-        skyRadius: WORLD.SKY_DOME_RADIUS,
-      });
-      subsystemRegistry.register(starfield);
-      // Golden hour: no stars yet (film-light.js FILM_LIGHT).
-      starfield.root.visible = false;
       // The film storm's lightning (lightning.js): flashes in the shell's banks,
-      // now and then a far bolt beside the stars, and the flash on the lights,
+      // now and then a far bolt in the sky, and the flash on the lights,
       // on its own clock and only in film. Created before the first warm-up,
       // which links the bolt's program.
       const lightning = createLightning({
@@ -521,13 +508,13 @@ const GROUND_WAIT_S = 20;
       setMistLights(WORLD.SUN_DIRECTION, WORLD.SUN_POSITION);
       subsystemRegistry.register({
         applyQuality(profile) {
-          setMistTier(profile?.lean || liteGround ? "lean" : profile?.tier);
+          setMistTier(liteGround ? "lean" : profile?.tier);
         },
         update(frame) {
           advanceMist(frame);
         },
       });
-      setMistTier(state.profile?.lean || liteGround ? "lean" : state.profile?.tier);
+      setMistTier(liteGround ? "lean" : state.profile?.tier);
       const environmentSystem = createSceneEnvironment({
         groundHeight,
         parent: sceneRoot,
@@ -595,8 +582,9 @@ const GROUND_WAIT_S = 20;
         box(groundContacts.slateAbout.value, [".site-footer .site-footer__label"]);
       }
       subsystemRegistry.register({
-        applyQuality(profile) {
-          groundContacts.slateContactGain.value = profile?.shadows?.enabled ? 0.6 : 1;
+        applyQuality() {
+          // Every tier draws shadows.
+          groundContacts.slateContactGain.value = 0.6;
         },
       });
       const groundTextures = createGroundTextures({
@@ -703,7 +691,6 @@ const GROUND_WAIT_S = 20;
             warmShaders("mountains", hillSilhouette.mesh);
         },
       });
-      hillSilhouette.applyQuality(state.profile);
       environmentRoot.add(hillSilhouette.mesh);
       subsystemRegistry.register(hillSilhouette);
       // The film's scattered rocks: loaded once the film is on and the tree has
@@ -943,8 +930,6 @@ const GROUND_WAIT_S = 20;
           shaderWarmup.warm(subject, (ready) => {
             measureScene(`shaders:${label}`, start);
             if (qualityDebug) (qualityDebug.shaders ||= {})[label] = ready ? "ready" : "unwarmed";
-            // warm() restores visibility; retain a quality change made while linking.
-            if (subject === hillSilhouette.mesh) hillSilhouette.applyQuality(state.profile);
             rendering.invalidateShadows();
             invalidateContent();
             resolve(ready);
@@ -978,7 +963,6 @@ const GROUND_WAIT_S = 20;
           await new Promise((resolve) => window.setTimeout(resolve, 0));
           return asset;
         },
-        includeLantern: true,
         onLanternReady: (asset) => lanternMount.stage(asset),
         // The watch waits on the sky's own programs and capture and the film's detail
         // (they link and build while the tree downloads), so its synchronous commit
@@ -1272,10 +1256,9 @@ const GROUND_WAIT_S = 20;
       let firstFrameDrawn = false;
       // The shot whose level the governor holds (shot-levels.js).
       let enteredShot = null;
-      // Governor steps link their programs at once and apply on a tour cut.
-      const adaptiveSteps = createDeferredQualityStep({
-        prepare: (profile) => rendering.prepareQuality(profile),
-      });
+      // Governor steps apply on a tour cut. Every step keeps the shadows and the fill
+      // light, so none changes a program key and none links ahead.
+      const adaptiveSteps = createDeferredQualityStep();
       // The lens's sources on screen (postprocess.js lensSource()) and its kept rect
       // (lensKeepRect()), reused each frame.
       const lensPoint = new Vector3(),

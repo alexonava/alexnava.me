@@ -48,8 +48,6 @@ import {
   ROOT_LATTICE,
   rootCovered,
   rootOcclusion,
-  scatterBanks,
-  scatterLitter,
   streamRadius,
   terrainHeight,
   TREE_FOOTING,
@@ -57,6 +55,7 @@ import {
   zoneDistance,
 } from "../src/scene/terrain-build.js";
 import { glbAsset, modelBytes } from "./support/glb.mjs";
+import { drain, scatterBanks, scatterLitter } from "./support/steps.mjs";
 
 const helpers = {
   createCinematicCamera,
@@ -376,7 +375,7 @@ test("legacy fine grit uses the same burial helper while hero stones, clods, lea
   );
   const color = { r: 0.36, g: 0.31, b: 0.28 },
     seated = scatterLitter(flat, color),
-    reference = referenceModule.scatterLitter(flat, color);
+    reference = drain(referenceModule.litterSteps(flat, color));
   try {
     const p = seated.attributes.position,
       old = reference.attributes.position,
@@ -423,7 +422,7 @@ test("legacy fine grit uses the same burial helper while hero stones, clods, lea
     // The rounded bank gravel calls the shared dome emitter separately and
     // retains its positions, colours and counts when burial is disabled.
     const banks = scatterBanks(flat, color),
-      oldBanks = referenceModule.scatterBanks(flat, color);
+      oldBanks = drain(referenceModule.bankSteps(flat, color));
     try {
       assert.equal(digest(banks), digest(oldBanks));
       assert.deepEqual(banks.userData, oldBanks.userData);
@@ -546,7 +545,7 @@ test("actual terrain buffers and the relocated river stay unchanged while rich p
   }
 });
 
-test("idle preparation invalidates a held frame, commits only at a safe frame, and recovers from low", async () => {
+test("idle preparation invalidates a held frame and commits only at a safe frame", async () => {
   let invalidations = 0;
   const field = await fieldFor([tile(2, 0), tile(2, 1)], { invalidate: () => invalidations++ });
   const frame = {
@@ -568,11 +567,7 @@ test("idle preparation invalidates a held frame, commits only at a safe frame, a
     assert.equal(field.state.visibleBatches, 0, "new work waits for a cut");
     field.update({ ...frame, cut: true });
     assert.ok(field.state.visibleBatches > 0);
-    field.update({ ...frame, profile: { tier: "low" } });
-    assert.equal(field.group.visible, false);
-    field.update(frame);
     assert.equal(field.group.visible, true);
-    assert.ok(field.state.visibleBatches > 0);
     field.update({ ...frame, profile: { tier: "balanced" }, still: true });
     assert.ok(
       field.state.visibleBatches <= 6 &&
@@ -779,7 +774,7 @@ test("moving finite fields retain draw, triangle and resident limits through qua
   }
 });
 
-test("idle work pauses at low and disposal cancels queued generation without invalidation", async () => {
+test("disposal cancels queued idle generation without invalidation", async () => {
   const saved = globalThis.requestIdleCallback,
     callbacks = [];
   globalThis.requestIdleCallback = (callback) => callbacks.push(callback);
@@ -787,17 +782,6 @@ test("idle work pauses at low and disposal cancels queued generation without inv
   const field = await fieldFor([tile(2, 0), tile(2, 1)], { invalidate: () => invalidations++ });
   const frame = { camera: lens(), still: true, profile: { tier: "high" } };
   try {
-    field.update(frame);
-    await new Promise((resolve) => setImmediate(resolve));
-    assert.equal(callbacks.length, 1);
-    field.update({ ...frame, profile: { tier: "low" } });
-    while (callbacks.length) {
-      callbacks.shift()({ didTimeout: false, timeRemaining: () => 20 });
-      await Promise.resolve();
-    }
-    await new Promise((resolve) => setImmediate(resolve));
-    assert.equal(field.state.preparedChunks, 0);
-    assert.equal(field.group.children.length, 0);
     field.update(frame);
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(callbacks.length, 1);

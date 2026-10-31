@@ -10,7 +10,6 @@ import {
   loadCloudPlateTexture,
 } from "../src/scene/cloud-plate.js";
 import { cloudFieldGLSL, createEstateSkyMaterial } from "../src/scene/estate-sky.js";
-import { createStarfield } from "../src/scene/starfield.js";
 
 const uniforms = () => ({ uCloudMap: { value: null }, uCloudMix: { value: 0 } });
 // The moon's plate alone, for the owner's single-plate lifecycle.
@@ -354,31 +353,6 @@ test("the decoder bounds bytes and pixels, preserves alpha orientation, and clos
     loadCloudPlateTexture("/cancelled", controller.signal, { fetchImpl, decode }),
   );
   assert.equal(closed, 3, "a late bitmap is closed even when its request ignored abort");
-});
-
-test("the stars borrow the actual plate and clock and never dispose either", async () => {
-  const sky = createEstateSkyMaterial({ shellOpacity: 0.52 }),
-    owned = ownedTexture();
-  const stars = createStarfield({
-    parent: new Group(),
-    camera: new PerspectiveCamera(),
-    sky: sky.uniforms,
-  });
-  const owner = createCloudPlate({
-    uniforms: sky.uniforms,
-    urls: moonOnly,
-    load: async () => owned.texture,
-  });
-  await owner.prepare();
-  owner.commit();
-  for (const key of ["uCloudMap", "uCloudMix", "uCloudReshape"])
-    assert.equal(stars.root.material.uniforms[key], sky.uniforms[key]);
-  assert.equal(stars.root.material.uniforms.uSkyTime, sky.uniforms.uTime);
-  stars.dispose();
-  assert.deepEqual(owned.counts, { disposed: 0, closed: 0 });
-  owner.dispose();
-  sky.dispose();
-  assert.deepEqual(owned.counts, { disposed: 1, closed: 1 });
 });
 
 test("the emitted cloud mask stays bounded and vanishes at the horizon, with no seam to fade", () => {

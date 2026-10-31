@@ -596,8 +596,6 @@ test("ground-detail quality changes trim a shared geometry and restore original 
   assert.ok(share > GROWTH.balanced - 0.05 && share < GROWTH.balanced + 0.05, `${share}`);
   assert.equal(mesh.geometry.drawRange.count % 6, 0);
   assert.equal(mesh.visible, true);
-  detail.applyQuality({ tier: "low" });
-  assert.equal(mesh.visible, false);
   detail.applyQuality(profile);
   assert.deepEqual(mesh.geometry.attributes.position.array, original);
   assert.equal(mesh.visible, true);
@@ -625,8 +623,8 @@ test("environment creates growth only after film activation and owns its lifecyc
   assert.equal(mesh.visible, false);
   environment.setFilmTreatment(true);
   assert.equal(environment.root.children.length, 1);
-  environment.applyQuality({ tier: "low" });
-  assert.equal(mesh.visible, false);
+  environment.applyQuality({ tier: "balanced" });
+  assert.ok(mesh.visible);
   environment.dispose();
   assert.equal(mesh.parent, null);
   assert.equal(environment.setFilmTreatment(true), false);

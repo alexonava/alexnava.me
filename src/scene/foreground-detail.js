@@ -980,10 +980,10 @@ export async function prepareForegroundDetail(options) {
       .catch(() => {});
   }
   async function work() {
-    if (busy || disposed || !active || tier === "low" || state.failed) return;
+    if (busy || disposed || !active || state.failed) return;
     busy = true;
     try {
-      while (queued.size && !disposed && active && tier !== "low") {
+      while (queued.size && !disposed && active) {
         const key = queued.values().next().value;
         queued.delete(key);
         state.pendingChunks = queued.size + 1;
@@ -1008,9 +1008,9 @@ export async function prepareForegroundDetail(options) {
           continue;
         }
         const bytes = geometry.userData.foreground.bytes;
-        if (disposed || cancelled() || tier === "low" || !evict(bytes)) {
+        if (disposed || cancelled() || !evict(bytes)) {
           geometry.dispose();
-          if (resolveOpening && !disposed && tier !== "low") {
+          if (resolveOpening && !disposed) {
             state.failed = true;
             queued.clear();
             group.visible = false;
@@ -1153,11 +1153,11 @@ export async function prepareForegroundDetail(options) {
     },
     setActive(value) {
       active = Boolean(value);
-      group.visible = active && tier !== "low" && !state.failed;
+      group.visible = active && !state.failed;
     },
     applyQuality(profile = {}) {
       tier = profile.tier ?? "high";
-      group.visible = active && tier !== "low" && !state.failed;
+      group.visible = active && !state.failed;
       material.userData.foregroundScale.value = tier === "balanced" ? 0.7 : 1;
       evict();
     },
@@ -1166,7 +1166,7 @@ export async function prepareForegroundDetail(options) {
       if (disposed) return;
       if (frame.profile?.tier && frame.profile.tier !== tier)
         controller.applyQuality(frame.profile);
-      if (!active || tier === "low" || !frame.camera || state.failed) return;
+      if (!active || !frame.camera || state.failed) return;
       if (frame.preparing && opening && openingKey(frame, root) !== openingSignature)
         void controller.prepareOpening(frame);
       if (frame.revealed) completeCoverage();

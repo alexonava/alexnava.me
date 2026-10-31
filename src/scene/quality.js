@@ -496,8 +496,6 @@
       governor,
       initialTier,
       lean,
-      navigatorInfo,
-      saveData,
       touchPrimary,
       getProfile(tier = governor.getTier()) {
         return cloneProfile(tier, lean);
@@ -572,7 +570,6 @@
     return cloneCompositionProfile("desktop");
   }
 
-  scene.SCENE_QUALITY_PROFILES = SCENE_QUALITY_PROFILES;
   scene.createSceneQualityGovernor = createSceneQualityGovernor;
   scene.createSceneQualityState = createSceneQualityState;
   scene.getSceneCompositionProfile = getSceneCompositionProfile;

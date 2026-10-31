@@ -622,19 +622,12 @@ test("the sky-only Watch culls the physical set only until its next shot or the 
   assert.equal(environmentRoot.visible, true, "non-film views keep the complete environment");
 });
 
-test("shader warm-up uploads visible maps; a quality step links its shadow variant", async () => {
+test("shader warm-up uploads visible, loaded, non-target maps, once each", async () => {
   const uploaded = [];
-  const compiled = [];
-  let rendering = null;
-  const setup = createRendering({
+  const { rendering } = createRendering({
     initTexture: (texture) => uploaded.push(texture.name),
-    compile(scene) {
-      const { fill, sun } = rendering.lights;
-      compiled.push([rendering.renderer.shadowMap.enabled, sun.castShadow, fill.visible]);
-      return materialsOf(scene);
-    },
+    compile: (scene) => materialsOf(scene),
   });
-  rendering = setup.rendering;
   const named = (texture, name) => Object.assign(texture, { name });
   const geometry = new BoxGeometry();
   const shared = new MeshStandardMaterial({
@@ -656,39 +649,7 @@ test("shader warm-up uploads visible maps; a quality step links its shadow varia
 
   assert.equal(await rendering.compileShaders(), true);
   assert.deepEqual(uploaded, ["map", "uniform"], "visible, loaded, non-target maps, once each");
-
-  const { fill, sun } = rendering.lights;
-  const balanced = { shadows: { enabled: false }, lighting: { extraDirectional: true } };
-  const high = { shadows: { enabled: true }, lighting: { extraDirectional: true } };
-  assert.equal(await rendering.prepareQuality(balanced), true);
-  assert.equal(compiled.length, 1, "a step that keeps program keys links nothing");
-  assert.equal(await rendering.prepareQuality(high), true);
-  assert.deepEqual(compiled.at(-1), [true, true, true], "the shadowed variant links ahead");
-  assert.deepEqual(
-    [rendering.renderer.shadowMap.enabled, sun.castShadow, fill.visible],
-    [undefined, false, true],
-    "and the drawn state is restored",
-  );
-  rendering.applyQuality({
-    shadows: { enabled: true, mapSize: 1024 },
-    lighting: {
-      ambientIntensity: 0.2,
-      directionalIntensity: 2,
-      extraDirectional: true,
-      fogFar: 150,
-      fogNear: 60,
-      hemisphereIntensity: 0.7,
-    },
-  });
-  const low = { shadows: { enabled: false }, lighting: { extraDirectional: false } };
-  assert.equal(await rendering.prepareQuality(low), true);
-  assert.deepEqual(compiled.at(-1), [false, false, false]);
-  assert.deepEqual(
-    [rendering.renderer.shadowMap.enabled, sun.castShadow, fill.visible],
-    [true, true, true],
-  );
   rendering.dispose();
-  assert.equal(await rendering.prepareQuality(balanced), true);
 });
 
 test("shader completion rejects an unsuccessful native link even with diagnostics disabled", async () => {
@@ -889,45 +850,6 @@ test("the first draw waits for compositor and caster depth programs without chan
   assert.equal(disposed, 1, "the retained warm-up program lease is freed once");
   material.dispose();
   geometry.dispose();
-});
-
-test("a quality step returns materials to their drawn programs and waits for its own", async () => {
-  // compile() moves every material to the step's variant, which links in the
-  // background; a draw with it would block until it has.
-  let linking = true;
-  const current = new WeakMap();
-  const { rendering } = createRendering({
-    properties: { get: (material) => ({ currentProgram: current.get(material) }) },
-    compile(scene) {
-      scene.traverse(({ material }) => {
-        if (material) current.set(material, { isReady: () => !linking });
-      });
-      return materialsOf(scene);
-    },
-  });
-  const geometry = new BoxGeometry();
-  const lit = new MeshStandardMaterial();
-  const unlit = new ShaderMaterial();
-  rendering.homeScene.add(new Mesh(geometry, lit), new Mesh(geometry, unlit));
-  const versions = [lit.version, unlit.version];
-  const high = { shadows: { enabled: true }, lighting: { extraDirectional: true } };
-  let settled = null;
-  rendering.prepareQuality(high).then((ready) => (settled = ready));
-  assert.ok(unlit.version > versions[1], "an unlit material leaves the linking variant");
-  assert.ok(lit.version > versions[0]);
-  current.set(lit, { isReady: () => true });
-  current.set(unlit, { isReady: () => true });
-  await new Promise((resolve) => setTimeout(resolve, 40));
-  assert.equal(settled, null, "the step waits for its own programs, not the restored ones");
-  linking = false;
-  await new Promise((resolve) => setTimeout(resolve, 40));
-  assert.equal(settled, true);
-  rendering.dispose();
-
-  // Without parallel compilation nothing links ahead; the cut frame links it.
-  const serial = createRendering({ extensions: { has: () => false } });
-  assert.equal(await serial.rendering.prepareQuality(high), false);
-  assert.deepEqual(serial.calls, [["post"]]);
 });
 
 test("shader warm-up snapshots every retained side and geometry variant, once per program", async () => {
@@ -1136,7 +1058,7 @@ async function mountainWarmupHarness(outcome, { shown = true } = {}) {
   // owners; no WebGL context or whole-scene fixture is needed for this race.
   const hill = index.slice(
     index.indexOf("const hillSilhouette = createHillSilhouette("),
-    index.indexOf("hillSilhouette.applyQuality(state.profile);"),
+    index.indexOf("environmentRoot.add(hillSilhouette.mesh);"),
   );
   const warmup = index.slice(
     index.indexOf("let openingBackgroundStarted = false;"),
@@ -1242,55 +1164,38 @@ test("opening preparation warms the sky first and releases queued subjects only 
 });
 
 test("a mountain commit after initial warm-ups stays hidden until its own programs settle", async () => {
-  for (const outcome of ["ready", "fallback"])
-    for (const lowDuringWait of [false, true]) {
-      const h = await mountainWarmupHarness(outcome);
-      h.warmShaders("scene");
-      h.tasks.shift()();
-      h.compiles[0].finish(true);
-      await flush();
-      assert.equal(h.shaderWarmup.pending, 0, "all earlier preparation has already finished");
-      h.hillSilhouette.setFilmTreatment(true);
-      await flush();
-      assert.equal(h.context.qualityDebug.mountains, "loading");
-      assert.equal(h.shaderWarmup.pending, 0, "loading alone cannot start an empty warm-up");
-      h.finish();
-      await h.hillSilhouette.ready;
-      assert.equal(h.context.qualityDebug.mountains, outcome);
-      assert.equal(
-        h.shaderWarmup.pending,
-        1,
-        "the late committed subject gets its own readiness gate",
-      );
-      assert.equal(h.hillSilhouette.mesh.visible, false, "no first draw with unlinked materials");
-      if (lowDuringWait) {
-        h.context.state.profile = { tier: "low" };
-        h.hillSilhouette.applyQuality(h.context.state.profile);
-      }
-      h.tasks.shift()();
-      assert.equal(
-        h.compiles[1].shown,
-        true,
-        "the new subject is shown for synchronous compilation",
-      );
-      assert.equal(h.hillSilhouette.mesh.visible, false, "and hidden again while programs link");
-      assert.equal(h.shaderWarmup.pending, 1);
-      h.compiles[1].finish(true);
-      await flush();
-      assert.equal(h.shaderWarmup.pending, 0);
-      assert.equal(
-        h.hillSilhouette.mesh.visible,
-        !lowDuringWait,
-        "settling retains the current quality",
-      );
-      assert.equal(
-        h.invalidated.at(-1),
-        !lowDuringWait,
-        "quality applies before the redraw request",
-      );
-      assert.equal(h.context.qualityDebug.shaders.mountains, "ready");
-      h.hillSilhouette.dispose();
-    }
+  for (const outcome of ["ready", "fallback"]) {
+    const h = await mountainWarmupHarness(outcome);
+    h.warmShaders("scene");
+    h.tasks.shift()();
+    h.compiles[0].finish(true);
+    await flush();
+    assert.equal(h.shaderWarmup.pending, 0, "all earlier preparation has already finished");
+    h.hillSilhouette.setFilmTreatment(true);
+    await flush();
+    assert.equal(h.context.qualityDebug.mountains, "loading");
+    assert.equal(h.shaderWarmup.pending, 0, "loading alone cannot start an empty warm-up");
+    h.finish();
+    await h.hillSilhouette.ready;
+    assert.equal(h.context.qualityDebug.mountains, outcome);
+    assert.equal(
+      h.shaderWarmup.pending,
+      1,
+      "the late committed subject gets its own readiness gate",
+    );
+    assert.equal(h.hillSilhouette.mesh.visible, false, "no first draw with unlinked materials");
+    h.tasks.shift()();
+    assert.equal(h.compiles[1].shown, true, "the new subject is shown for synchronous compilation");
+    assert.equal(h.hillSilhouette.mesh.visible, false, "and hidden again while programs link");
+    assert.equal(h.shaderWarmup.pending, 1);
+    h.compiles[1].finish(true);
+    await flush();
+    assert.equal(h.shaderWarmup.pending, 0);
+    assert.equal(h.hillSilhouette.mesh.visible, true, "settling shows the ranges");
+    assert.equal(h.invalidated.at(-1), true, "shown before the redraw request");
+    assert.equal(h.context.qualityDebug.shaders.mountains, "ready");
+    h.hillSilhouette.dispose();
+  }
 });
 
 test("a late mountain result after teardown cannot start another warm-up", async () => {

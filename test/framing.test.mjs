@@ -46,14 +46,8 @@ import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 import { MASSIF_SNOW, MASSIFS, SNOW, snowReach } from "../src/scene/hill-silhouette.js";
 import { SOLAR_GLOW_RADIUS } from "../src/scene/solar-body.js";
-import {
-  createMountainGeometry,
-  createRangeGeometry,
-  mountainCrests,
-  MOUNTAINS,
-  RANGE_BACKDROP,
-  RANGE_SKY,
-} from "../src/scene/mountain-build.js";
+import { MOUNTAINS, RANGE_BACKDROP, RANGE_SKY } from "../src/scene/mountain-build.js";
+import { createMountainGeometry, createRangeGeometry, mountainCrests } from "./support/steps.mjs";
 
 // The live scene's level plain and terraces.
 const ground = sceneGround;

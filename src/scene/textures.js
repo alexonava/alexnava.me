@@ -331,7 +331,6 @@ import { measureScene, sceneNow } from "./perf-marks.js";
     }
     const filmMaps = createEarthDetail({
       profile,
-      disabled: false,
       anisotropy: aniso,
       publishSoilRoughness:
         typeof onSoilRoughnessChange === "function"

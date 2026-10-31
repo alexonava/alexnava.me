@@ -1245,7 +1245,6 @@ const fixtureUrl = (kind, size) => `/images/materials/stone-${kind}-${size}.webp
 
 function harness({
   tier = "high",
-  disabled = false,
   failApply = false,
   kinds = ["color", "roughness"],
   urlFor = fixtureUrl,
@@ -1256,7 +1255,6 @@ function harness({
     statuses = [];
   const controller = createStoneDetailController({
     profile: { tier },
-    disabled,
     kinds,
     urlFor,
     apply(sources) {
@@ -1292,8 +1290,9 @@ function harness({
   return { controller, requests, applied, resets, statuses, image };
 }
 
-test("stone detail makes no requests for low tier or explicit procedural comparison", () => {
-  for (const options of [{ tier: "low" }, { tier: "high", disabled: true }, { tier: "unknown" }]) {
+// filmic-earth.js turns the detail off with a low profile.
+test("stone detail makes no requests below its tiers", () => {
+  for (const options of [{ tier: "low" }, { tier: "unknown" }]) {
     const h = harness(options);
     assert.equal(h.requests.length, 0);
     assert.equal(h.statuses.at(-1).status, "procedural");
@@ -1788,8 +1787,8 @@ test("the drifting mist lies below its ceiling on every film material, after its
     assert.ok(Math.abs(z) <= MIST_DRIFT.boilSwing + 1e-9, `${t}`);
     assert.ok(Math.abs(mistDriftAt(t + 1).z - z) <= MIST_DRIFT.boil + 1e-9, `${t}`);
   }
-  // Balanced marches fewer steps and one octave; low draws none; a shot's share, and
-  // none outside the film.
+  // Balanced marches fewer steps and one octave, the lite startups one step; a shot's
+  // share, and none outside the film.
   setMistTier("high");
   assert.deepEqual(
     [MIST_UNIFORMS.mistFrame.value.y, MIST_UNIFORMS.mistFrame.value.z],
@@ -1799,8 +1798,8 @@ test("the drifting mist lies below its ceiling on every film material, after its
   assert.ok(
     MIST_UNIFORMS.mistFrame.value.y < MIST_DRIFT.steps[0] && MIST_UNIFORMS.mistFrame.value.z === 1,
   );
-  setMistTier("low");
-  assert.equal(MIST_UNIFORMS.mistFrame.value.y, 0);
+  setMistTier("lean");
+  assert.equal(MIST_UNIFORMS.mistFrame.value.y, 1);
   setMistTier("high");
   setMistShot("The watch", true);
   assert.equal(MIST_UNIFORMS.mistDrift.value.w, MIST_DRIFT.shots["The watch"] ?? MIST_DRIFT.share);

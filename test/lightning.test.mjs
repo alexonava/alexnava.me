@@ -644,7 +644,7 @@ test("the sky draws the flash in the banks, off the crop and the text, never in 
 test("index.js wires the lightning in film, by shot, before the first warm-up", () => {
   const index = flat(source("src/scene/index.js"));
   const registered = index.indexOf("subsystemRegistry.register(lightning);");
-  assert.ok(registered > index.indexOf("subsystemRegistry.register(starfield);"));
+  assert.ok(registered > index.indexOf("subsystemRegistry.register(solarBody);"));
   assert.ok(registered < index.indexOf('warmShaders("scene");'), "its bolt links in the warm-up");
   assert.ok(index.includes("film: () => filmActive,"));
   // The shot on screen: none while the walk drives the camera (walk.js).

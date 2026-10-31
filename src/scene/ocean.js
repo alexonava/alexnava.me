@@ -693,7 +693,6 @@ function sharedUniforms(lib, clock, plunge = null, falls = FALLS) {
     seaShadowSet: { value: { x: 0, y: 1 } },
     envMap: { value: null },
     envMapIntensity: { value: 1 },
-    flipEnvMap: { value: -1 },
     uMist: lib.RANGE_MIST,
     babelFlash: lib.FLASH_GROUND.babelFlash,
     slateText: mist.mistText,

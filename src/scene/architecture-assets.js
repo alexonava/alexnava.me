@@ -195,8 +195,6 @@ export function collectResources(asset, extraTextures = []) {
 }
 
 export function createArchitectureAssetController({
-  disabled = false,
-  includeLantern = false,
   loadAsset = loadArchitectureAsset,
   urls = ARCHITECTURE_ASSET_URLS,
   // What the watch waits on before it commits (a promise; a rejection falls back).
@@ -206,7 +204,6 @@ export function createArchitectureAssetController({
   onLanternReady = () => {},
   onRestoreWatch = () => {},
   onRestoreTree = () => {},
-  onRestoreLantern = () => {},
   onStatus = () => {},
 } = {}) {
   let disposed = false;
@@ -220,9 +217,7 @@ export function createArchitectureAssetController({
   const channels = [
     { kind: "watch", roles: [], wait: stage, ready: onWatchReady, restore: onRestoreWatch },
     { kind: "tree", roles: ["tree"], ready: onTreeReady, restore: onRestoreTree },
-    ...(includeLantern
-      ? [{ kind: "lantern", roles: ["lantern"], ready: onLanternReady, restore: onRestoreLantern }]
-      : []),
+    { kind: "lantern", roles: ["lantern"], ready: onLanternReady, restore: () => {} },
   ].map((channel) => ({ ...channel, run: null, leases: [], active: false, cleanup: null }));
 
   function safely(callback) {
@@ -364,8 +359,7 @@ export function createArchitectureAssetController({
     currentProfile = profile;
     currentAssetTier = context?.assetTier ?? profile.tier;
     live = Boolean(nextLive);
-    const tier =
-      !disabled && live && ARCHITECTURE_ASSET_BUDGETS[currentAssetTier] ? currentAssetTier : null;
+    const tier = live && ARCHITECTURE_ASSET_BUDGETS[currentAssetTier] ? currentAssetTier : null;
     const changed = tier !== selectedTier;
     if (changed) {
       selectedTier = tier;

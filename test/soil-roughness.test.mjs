@@ -222,11 +222,11 @@ test("the optional map waits for reveal and an unseen cut, retains data and reus
   assert.equal(r.owner.dispose(), false);
 });
 
-test("low startup and disabled comparisons never request optional soil data", async () => {
-  for (const options of [{ profile: { tier: "low" } }, { disabled: true }]) {
+test("a profile below its tiers never requests optional soil data", async () => {
+  for (const tier of ["low", "unknown"]) {
     let loads = 0;
     const r = rig({
-      ...options,
+      profile: { tier },
       loadImage: async () => {
         loads++;
         return bitmap();

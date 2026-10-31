@@ -1,4 +1,4 @@
-// The sky shell, its clouds and nebula, the stars and the sun.
+// The sky shell, its clouds and nebula, and the sun.
 
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -24,22 +24,13 @@ import {
 } from "three";
 import {
   createSolarBody,
-  createCelestialClock,
   SOLAR_GLOW_RADIUS,
   SOLAR_LOOK,
   SOLAR_RADIUS,
 } from "../src/scene/solar-body.js";
 import { STAR_LAYER } from "../src/scene/depth-layers.js";
-import {
-  createStarfield,
-  makeStarGeometry,
-  STAR_COUNTS,
-  STAR_MIN_FOOTPRINT,
-  STAR_TEXT_REACH,
-} from "../src/scene/starfield.js";
 import { createSceneAtmosphere } from "../src/scene/atmosphere.js";
 import {
-  CLOUD_BRUSH,
   CLOUD_ISLANDS,
   CLOUD_PLATE_GLSL,
   CLOUD_RESHAPE,
@@ -55,23 +46,11 @@ import {
   FILM_SKY_GLSL,
   GOLDEN_SKY,
 } from "../src/scene/estate-sky.js";
-import { celestialClusterDirection, NEBULA_FRAME } from "../src/scene/celestial-field.js";
+import { NEBULA_FRAME } from "../src/scene/celestial-field.js";
 import { createFilmScene } from "../src/scene/film-scene.js";
 import { flat, source } from "./support/code.mjs";
 
-test("solar clock freezes for reduced motion and resumes without a time jump", () => {
-  const clock = createCelestialClock();
-  assert.equal(clock.tick(3), 0);
-  assert.equal(clock.tick(4), 1);
-  assert.equal(clock.tick(6, true), 1);
-  assert.equal(clock.tick(16, true), 1);
-  assert.equal(clock.tick(20, false), 1);
-  assert.equal(clock.tick(21), 2);
-  assert.equal(clock.tick(19), 2);
-  assert.equal(clock.tick(NaN), 2);
-});
-
-test("the star's two parts, its tiers and its resources survive repeated transitions", () => {
+test("the star's two parts and its resources survive repeated transitions", () => {
   const parent = new Group(),
     camera = new PerspectiveCamera();
   camera.position.set(0, 2, 20);
@@ -80,7 +59,6 @@ test("the star's two parts, its tiers and its resources survive repeated transit
     parent,
     camera,
     position: new Vector3(-85, 55, -29),
-    profile: { tier: "high" },
   });
   const objects = [];
   controller.root.traverse((o) => {
@@ -96,10 +74,6 @@ test("the star's two parts, its tiers and its resources survive repeated transit
   // The glow goes down first, so the disc's smoothed edge lays over it with no seam.
   assert.ok(glow.renderOrder < disc.renderOrder);
   assert.ok(objects.every((o) => o.material.depthTest && !o.castShadow));
-  for (const tier of ["low", "high", "balanced", "low", "high"]) {
-    assert.equal(controller.applyQuality({ tier }), true);
-    assert.equal(controller.tier, tier);
-  }
   const resources = objects.flatMap((o) => [o.geometry, o.material]),
     counts = resources.map(() => 0);
   resources.forEach((r, i) => r.addEventListener("dispose", () => counts[i]++));
@@ -111,7 +85,6 @@ test("the star's two parts, its tiers and its resources survive repeated transit
     [],
     "each part's geometry and material is disposed once",
   );
-  assert.equal(controller.applyQuality({ tier: "high" }), false);
   assert.equal(controller.update({ elapsedSeconds: 20 }), false);
 });
 
@@ -196,7 +169,6 @@ test("the star is a camera's: a clipped warm-white core, a redder limb, a soft e
       parent,
       camera: new PerspectiveCamera(),
       position: new Vector3(0, 0, -60),
-      profile: { tier: "high" },
     });
   const mesh = (name) => controller.root.getObjectByName(name),
     disc = mesh("solar-disc").material.fragmentShader,
@@ -233,7 +205,6 @@ test("the star holds still: no breath, lean or shimmer, so a pause or reduced mo
     parent: new Group(),
     camera: new PerspectiveCamera(),
     position: new Vector3(0, 0, -60),
-    profile: { tier: "high" },
   });
   // Nothing of it runs on a clock: its shaders take no uniforms.
   controller.root.traverse((o) => {
@@ -248,100 +219,6 @@ test("the star holds still: no breath, lean or shimmer, so a pause or reduced mo
   controller.dispose();
 });
 
-test("seeded stars preserve positions between tiers and remain distant while camera moves", () => {
-  const a = makeStarGeometry(),
-    b = makeStarGeometry(),
-    c = makeStarGeometry(3);
-  assert.deepEqual(a.attributes.position.array, b.attributes.position.array);
-  assert.notDeepEqual(a.attributes.position.array, c.attributes.position.array);
-  let faint = 0;
-  for (let i = 0; i < a.attributes.aSize.count; i++) if (a.attributes.aSize.getX(i) < 1.8) faint++;
-  assert.ok(faint > STAR_COUNTS.high * 0.75);
-  const parent = new Group(),
-    camera = new PerspectiveCamera();
-  parent.position.y = -7;
-  const controller = createStarfield({ parent, camera, profile: { tier: "high" } });
-  camera.position.set(9, 15, 20);
-  parent.updateMatrixWorld(true);
-  controller.update({ elapsedSeconds: 0 });
-  assert.ok(controller.root.getWorldPosition(new Vector3()).distanceTo(camera.position) < 1e-8);
-  const positions = controller.root.geometry.attributes.position.array;
-  controller.applyQuality({ tier: "low" }, { pixelRatio: 2 });
-  assert.equal(controller.root.geometry.drawRange.count, STAR_COUNTS.low);
-  assert.equal(controller.root.material.uniforms.uPixelRatio.value, 2);
-  controller.applyQuality({ tier: "balanced" });
-  assert.equal(controller.root.geometry.attributes.position.array, positions);
-  assert.equal(controller.root.geometry.drawRange.count, STAR_COUNTS.balanced);
-  assert.equal(controller.root.material.depthTest, true);
-  assert.equal(controller.root.material.depthWrite, false);
-  let disposed = 0;
-  controller.root.material.addEventListener("dispose", () => disposed++);
-  controller.dispose();
-  controller.dispose();
-  assert.equal(disposed, 1);
-  assert.equal(parent.children.length, 0);
-  [a, b, c].forEach((g) => g.dispose());
-});
-
-test("faint stars keep a two-pixel footprint and their light, so they hold still as the camera drifts", () => {
-  assert.equal(STAR_MIN_FOOTPRINT, 2);
-  const stars = createStarfield({ parent: new Group(), profile: { tier: "high" } }),
-    shader = flat(stars.root.material.vertexShader);
-  assert.ok(
-    shader.includes(
-      "float size=aSize*uPixelRatio, footprint=max(size,2.0); vColor*=size*size/(footprint*footprint); gl_PointSize=footprint; }",
-    ),
-    "the point size is set last, from the footprint",
-  );
-  // Evaluate the emitted terms: never under two device pixels, and the sprite's
-  // light (colour times area) is the star's own at every size and pixel ratio.
-  const [, footprintTerm] = shader.match(/footprint=([^;]+);/),
-    [, gainTerm] = shader.match(/vColor\*=([^;]+);\s*gl_PointSize=footprint;/);
-  const footprintOf = new Function("size", "max", `return ${footprintTerm}`),
-    gainOf = new Function("size", "footprint", `return ${gainTerm}`);
-  const sizes = makeStarGeometry().attributes.aSize;
-  for (const pixelRatio of [0.5, 1, 1.25, 1.5, 2]) {
-    for (let i = 0; i < sizes.count; i += 7) {
-      const size = sizes.getX(i) * pixelRatio,
-        footprint = footprintOf(size, Math.max),
-        gain = gainOf(size, footprint);
-      assert.ok(footprint >= 2 && footprint >= size);
-      assert.ok(Math.abs(gain * footprint * footprint - size * size) < 1e-9);
-      if (size >= 2) assert.equal(gain, 1, "stars already two pixels wide are unchanged");
-    }
-  }
-  stars.dispose();
-});
-
-test("no star shows behind the name and intro; beside them stars ease back in", () => {
-  assert.equal(STAR_TEXT_REACH, 0.04);
-  const slateText = { value: { x: 0.1, y: 0.6, z: 0.5, w: 0.9 } },
-    slateAspect = { value: 0.5 };
-  const stars = createStarfield({
-      parent: new Group(),
-      profile: { tier: "high" },
-      sky: { slateText, slateAspect },
-    }),
-    { uniforms, vertexShader } = stars.root.material;
-  assert.equal(uniforms.slateText, slateText, "the sky's measured box, borrowed");
-  assert.equal(uniforms.slateAspect, slateAspect);
-  const shader = flat(vertexShader),
-    guard = shader.indexOf("vColor*=smoothstep(0.,0.040,length(starOff));");
-  // In every treatment (after the film's cloud cover closes), before the size.
-  assert.ok(
-    guard > shader.indexOf("cloudTextAt(gl_Position)); }"),
-    "outside the film's cloud block",
-  );
-  assert.ok(guard < shader.indexOf("float size=aSize*uPixelRatio"), "before the point size");
-  assert.ok(
-    shader.includes(
-      "vec2 starAt=gl_Position.xy/gl_Position.w*.5+.5; vec2 starOff=max(max(slateText.xy-starAt,starAt-slateText.zw),0.)*vec2(slateAspect,1.)/min(slateAspect,1.);",
-    ),
-    "the clouds' own distance from the box, on the screen's smaller side",
-  );
-  stars.dispose();
-});
-
 function skyMaterial() {
   return createEstateSkyMaterial({
     skyTopColor: 0x181d2d,
@@ -353,7 +230,7 @@ function skyMaterial() {
   });
 }
 
-test("nebula quality and film state reach late-bound sky and stars", () => {
+test("nebula quality and film state reach a late-bound sky", () => {
   const parent = new Group();
   const atmosphere = createSceneAtmosphere({ parent, profile: { tier: "high" } });
   atmosphere.applyQuality({ tier: "balanced" });
@@ -361,37 +238,32 @@ test("nebula quality and film state reach late-bound sky and stars", () => {
   const sky = skyMaterial();
   assert.equal(sky.uniforms.uNebulaLayers.value, 0);
   atmosphere.setSkyMaterial(sky);
-  const stars = createStarfield({
-    parent,
-    profile: { tier: "balanced" },
-    nebulaLayers: sky.uniforms.uNebulaLayers,
-  });
-  const starUniform = stars.root.material.uniforms.uNebulaLayers;
-  assert.equal(starUniform, sky.uniforms.uNebulaLayers);
-  assert.equal(starUniform.value, 2);
+  const layers = sky.uniforms.uNebulaLayers;
+  assert.equal(layers.value, 2);
   assert.equal(sky.uniforms.uClouds.value, 1, "the clouds stay on");
-  for (const [tier, layers] of [
-    ["low", 0],
-    ["high", 3],
-    ["balanced", 2],
-    ["high", 3],
+  for (const [profile, count] of [
+    [{ tier: "high" }, 3],
+    [{ tier: "balanced" }, 2],
+    [{ tier: "balanced", lean: true }, 1],
+    [{ tier: "high" }, 3],
   ]) {
-    atmosphere.applyQuality({ tier });
-    stars.applyQuality({ tier });
-    assert.equal(starUniform.value, layers);
-    assert.equal(stars.root.geometry.drawRange.count, STAR_COUNTS[tier]);
-    assert.equal(stars.root.material.uniforms.uCelestialTier.value, tier === "low" ? 0 : 1);
+    atmosphere.applyQuality(profile);
+    assert.equal(layers.value, count);
   }
-  assert.equal(starUniform.value, 3);
   atmosphere.setFilmTreatment(false);
-  assert.equal(starUniform.value, 0, "asset fallback and legacy treatment restore the old sky");
+  assert.equal(layers.value, 0, "asset fallback and legacy treatment restore the old sky");
   atmosphere.setFilmTreatment(true);
-  assert.equal(starUniform.value, 3);
-  stars.dispose();
-  assert.equal(starUniform.value, 3, "stars borrow rather than own the sky uniform");
+  assert.equal(layers.value, 3);
   atmosphere.dispose();
-  assert.equal(starUniform.value, 0);
+  assert.equal(layers.value, 0);
   sky.dispose();
+});
+
+test("the nebula frame is orthonormal", () => {
+  const n = new Vector3(...NEBULA_FRAME.center),
+    x = new Vector3(...NEBULA_FRAME.horizontal),
+    y = new Vector3(...NEBULA_FRAME.vertical);
+  assert.ok(Math.abs(n.dot(x)) < 1e-12 && Math.abs(n.dot(y)) < 1e-12 && Math.abs(x.dot(y)) < 1e-12);
 });
 
 test("sky replacement and teardown clear borrowed celestial state without disposing the material", () => {
@@ -420,86 +292,6 @@ test("sky replacement and teardown clear borrowed celestial state without dispos
   first.dispose();
   second.dispose();
   assert.equal(freed, 2);
-});
-
-test("cluster occupies existing distant star slots and leaves the low-quality sky intact", () => {
-  const a = makeStarGeometry(),
-    b = makeStarGeometry();
-  const base = a.attributes.position,
-    clustered = a.attributes.aCelestialPosition;
-  assert.equal(base.count, STAR_COUNTS.high);
-  assert.equal(clustered.count, base.count);
-  assert.deepEqual(clustered.array, b.attributes.aCelestialPosition.array);
-  let changed = 0,
-    balancedChanged = 0;
-  const center = celestialClusterDirection(0.17, -0.04);
-  for (let i = 0; i < base.count; i++) {
-    const original = new Vector3().fromBufferAttribute(base, i);
-    const next = new Vector3().fromBufferAttribute(clustered, i);
-    assert.ok(Math.abs(next.length() - 180) < 1e-4);
-    if (original.distanceTo(next) > 1e-4) {
-      changed++;
-      if (i < STAR_COUNTS.balanced) balancedChanged++;
-      assert.ok(i >= STAR_COUNTS.low, "low tier retains every original star position");
-      assert.ok(
-        next.normalize().angleTo(center) < 0.13,
-        "cluster remains a loose, bounded sky patch",
-      );
-    }
-  }
-  assert.ok(balancedChanged >= 20 && balancedChanged < 40);
-  assert.ok(changed > balancedChanged && changed < 70);
-  const n = new Vector3(...NEBULA_FRAME.center),
-    x = new Vector3(...NEBULA_FRAME.horizontal),
-    y = new Vector3(...NEBULA_FRAME.vertical);
-  assert.ok(Math.abs(n.dot(x)) < 1e-12 && Math.abs(n.dot(y)) < 1e-12 && Math.abs(x.dot(y)) < 1e-12);
-  a.dispose();
-  b.dispose();
-});
-
-test("celestial stars stay fixed in direction through camera translation, reduced motion and quality changes", () => {
-  const parent = new Group(),
-    camera = new PerspectiveCamera();
-  const layers = { value: 3 };
-  const stars = createStarfield({
-    parent,
-    camera,
-    profile: { tier: "high" },
-    nebulaLayers: layers,
-  });
-  const geometry = stars.root.geometry;
-  const positions = geometry.attributes.aCelestialPosition.array.slice();
-  const localStar = new Vector3().fromBufferAttribute(geometry.attributes.aCelestialPosition, 1222);
-  let initialDirection;
-  for (const position of [
-    [8, 12, 35],
-    [-14, 7, -20],
-  ]) {
-    camera.position.set(...position);
-    camera.updateMatrixWorld(true);
-    stars.update({ elapsedSeconds: 1 });
-    parent.updateMatrixWorld(true);
-    const ray = stars.root.localToWorld(localStar.clone()).sub(camera.position).normalize();
-    if (initialDirection) assert.ok(ray.distanceTo(initialDirection) < 1e-12);
-    initialDirection = ray;
-  }
-  stars.update({ elapsedSeconds: 2 });
-  const time = stars.root.material.uniforms.uTime.value;
-  stars.update({ elapsedSeconds: 8, reducedMotion: true });
-  stars.applyQuality({ tier: "low" });
-  assert.equal(stars.root.material.uniforms.uCelestialTier.value, 0);
-  stars.applyQuality({ tier: "balanced" });
-  assert.equal(stars.root.material.uniforms.uTime.value, time);
-  assert.equal(stars.root.geometry, geometry);
-  assert.deepEqual(geometry.attributes.aCelestialPosition.array, positions);
-  assert.equal(parent.children.length, 1, "celestial treatment adds no mesh or draw object");
-  let freed = 0;
-  geometry.addEventListener("dispose", () => freed++);
-  stars.dispose();
-  stars.dispose();
-  assert.equal(freed, 1);
-  assert.equal(parent.children.length, 0);
-  assert.equal(layers.value, 3);
 });
 
 const groundHeight = (x, z) => Math.sin(x * 0.07) + Math.cos(z * 0.04);
@@ -559,10 +351,13 @@ test("estate sky keeps one world-space shell and defaults its optional cloud pla
   assert.equal(material.uniforms.uCloudMix.value, 0);
   assert.ok(material.fragmentShader.includes(CLOUD_PLATE_GLSL));
   assert.doesNotMatch(material.fragmentShader, /gl_FragCoord/);
-  // The film gradient and horizon band are the shared functions the mountains haze toward.
+  // The film gradient is the shared function the mountains haze toward.
   assert.ok(material.fragmentShader.includes(FILM_SKY_GLSL));
   assert.match(material.fragmentShader, /col=filmSky\(altitude\);/);
-  assert.match(material.fragmentShader, /col\+=filmBand\(altitude\);\s*}\s*gl_FragColor=/);
+  assert.match(
+    material.fragmentShader,
+    /col=mix\(col,cloudCol,cover\*\.94\);\s*}\s*}\s*gl_FragColor=/,
+  );
   material.dispose();
 });
 
@@ -1233,116 +1028,6 @@ test("sky drift follows the scheduler clock, freezes for reduced motion and stop
   assert.equal(sky.uniforms.uTime.value, 25);
 });
 
-test("film stars hide behind the sky's cloud banks, on the sky's own clock and switches", () => {
-  const parent = new Group(),
-    atmosphere = createSceneAtmosphere({ parent, profile }),
-    sky = skyMaterial();
-  atmosphere.setSkyMaterial(sky);
-  const stars = createStarfield({
-    parent,
-    camera: new PerspectiveCamera(),
-    profile,
-    sky: sky.uniforms,
-    skyRadius: 130,
-  });
-  const { uniforms, vertexShader } = stars.root.material;
-  // The same uniform objects, never copies: one drift clock, film switch and tier.
-  assert.equal(uniforms.uSkyTime, sky.uniforms.uTime);
-  assert.equal(uniforms.uFilm, sky.uniforms.uFilm);
-  assert.equal(uniforms.uClouds, sky.uniforms.uClouds);
-  assert.equal(uniforms.uNebulaLayers, sky.uniforms.uNebulaLayers);
-  assert.equal(uniforms.uSkyRadius.value, 130);
-  // The banks' text guard reads the sky's own box and aspect objects too.
-  assert.equal(uniforms.uCloudReshape, sky.uniforms.uCloudReshape);
-  assert.equal(uniforms.uVortex, sky.uniforms.uVortex);
-  assert.ok(vertexShader.includes(CLOUD_VORTEX_GLSL));
-  assert.equal(uniforms.slateText, sky.uniforms.slateText);
-  assert.equal(uniforms.slateAspect, sky.uniforms.slateAspect);
-  // The stars evaluate the sky's own cloud field where their view ray leaves the
-  // shell, and dim by the bank's opacity in the sky (.94).
-  assert.ok(sky.fragmentShader.includes(cloudFieldGLSL("uTime")));
-  assert.ok(vertexShader.includes(cloudFieldGLSL("uSkyTime")));
-  assert.match(sky.fragmentShader, /col=mix\(col,cloudCol,cover\*\.94\);/);
-  const shader = flat(vertexShader);
-  assert.ok(
-    shader.includes(
-      "float skyCloudCover(vec3 direction,float cloudText){ float altitude=direction.y;",
-    ),
-  );
-  assert.ok(vertexShader.includes(CLOUD_TEXT_GLSL));
-  assert.ok(
-    shader.includes(
-      "if(uFilm>.5 && uClouds>.001){ vec3 ray=normalize((modelMatrix*vec4(starPosition,1.0)).xyz-cameraPosition);",
-    ),
-  );
-  // The guard is read where the star lands on screen, so its clip position comes first.
-  assert.ok(
-    shader.includes(
-      "vColor*=1.0-.94*skyCloudCover(normalize(cameraPosition+ray*reach),cloudTextAt(gl_Position));",
-    ),
-  );
-  assert.ok(
-    shader.indexOf("gl_Position=projectionMatrix*modelViewMatrix*vec4(starPosition,1.0);") <
-      shader.indexOf("cloudTextAt(gl_Position)"),
-  );
-  // The emitted ray-shell distance lands on the shell from anywhere inside it.
-  const reach = new Function(
-    "along",
-    "cameraPosition",
-    "uSkyRadius",
-    "dot",
-    "sqrt",
-    "max",
-    `return ${vertexShader.match(/float reach=([^;]+);/)[1]}`,
-  );
-  for (const [eye, ray] of [
-    [new Vector3(), new Vector3(0, 1, 0)],
-    [new Vector3(8, 12, 35), new Vector3(-1, 0.3, 0.2).normalize()],
-    [new Vector3(-14, 7, -20), new Vector3(0.2, 0.9, -0.1).normalize()],
-    [new Vector3(30, 2, 10), new Vector3(1, 0.02, 0.3).normalize()],
-  ]) {
-    const t = reach(eye.dot(ray), eye, 130, (a, b) => a.dot(b), Math.sqrt, Math.max);
-    assert.ok(t > 0);
-    assert.ok(Math.abs(eye.clone().addScaledVector(ray, t).length() - 130) < 1e-9);
-  }
-  // The sky's clock drives the banks over the stars; the stars' own clock does not.
-  atmosphere.update({ elapsedSeconds: 12 });
-  stars.update({ elapsedSeconds: 40 });
-  assert.equal(uniforms.uSkyTime.value, 12);
-  atmosphere.update({ elapsedSeconds: 20, reducedMotion: true });
-  assert.equal(uniforms.uSkyTime.value, 12);
-  // Film turns the cover on for both, and its exit turns it off.
-  const ground = new Mesh(new BoxGeometry(), new MeshStandardMaterial());
-  const rendering = { setFilmTreatment() {}, focusFilmShadow() {}, postprocessPipeline: {} };
-  const film = createFilmScene({ ground, groundHeight, atmosphere, rendering, skyMaterial: sky });
-  film.setActive(true);
-  assert.equal(uniforms.uFilm.value, 1);
-  film.setActive(false);
-  assert.equal(uniforms.uFilm.value, 0);
-  film.setActive(true);
-  // The stars borrow: disposing them frees neither the sky nor its uniforms' values.
-  let skyFreed = 0;
-  sky.addEventListener("dispose", () => skyFreed++);
-  assert.equal(stars.dispose(), true);
-  assert.equal(skyFreed, 0);
-  assert.deepEqual(
-    [sky.uniforms.uTime, sky.uniforms.uFilm, sky.uniforms.uClouds].map((u) => u.value),
-    [12, 1, 1],
-  );
-  atmosphere.update({ elapsedSeconds: 30 });
-  assert.equal(sky.uniforms.uTime.value, 30, "the sky keeps drifting after the stars go");
-  film.dispose();
-  atmosphere.dispose();
-  sky.dispose();
-  ground.geometry.dispose();
-  ground.material.dispose();
-  // Without a sky the stars own inert switches and draw over a clear sky.
-  const bare = createStarfield({ parent: new Group(), profile });
-  assert.equal(bare.root.material.uniforms.uFilm.value, 0);
-  assert.equal(bare.root.material.uniforms.uClouds.value, 0);
-  bare.dispose();
-});
-
 test("the maelstrom is spooky October's, with the lightning, by one date the scene starts with", () => {
   assert.deepEqual([...CLOUD_VORTEX.months], [10], "the owner's call of 2026-10-13");
   for (const [date, season] of [
@@ -1373,20 +1058,16 @@ test("the maelstrom is spooky October's, with the lightning, by one date the sce
   assert.match(index, /createLightning\(\{[^}]*date: sceneDate,? \}\)/);
 });
 
-test("the bootstrap hands the stars the sky shell's uniforms and radius", () => {
+test("the bootstrap centres the sky shell on the world origin", () => {
   const index = flat(source("src/scene/index.js"));
-  // The shell is a sphere of that radius about the world origin, as the stars assume,
-  // and its banks' text guard borrows the ground's text boxes, made just before it.
+  // The shell is a sphere of WORLD.SKY_DOME_RADIUS about the world origin, and its
+  // banks' text guard borrows the ground's text boxes, made just before it.
   assert.match(
     index,
     /const groundContacts = createSlateContacts\(estateContacts\(\)\);[^]*?const skyShell = new Mesh\(new SphereGeometry\(WORLD\.SKY_DOME_RADIUS, skyWidthSegments, skyHeightSegments\), createEstateSkyMaterial\(skyConfig, groundContacts\)\);/,
   );
   assert.equal(index.match(/createSlateContacts\(/g).length, 1);
   assert.doesNotMatch(index, /skyShell\.position/);
-  assert.match(
-    index,
-    /createStarfield\(\{ parent: atmosphereSystem\.root, camera, profile: state\.profile, sky: skyShell\.material\.uniforms, skyRadius: WORLD\.SKY_DOME_RADIUS \}\)/,
-  );
 });
 
 function overlayRig() {
@@ -1495,7 +1176,6 @@ test("every part of the star writes the star's layer mask, and the glow faces th
     parent,
     camera,
     position: new Vector3(0, 0, -60),
-    profile: { tier: "high" },
   });
   const mesh = (name) => controller.root.getObjectByName(name),
     disc = mesh("solar-disc"),
@@ -1521,7 +1201,6 @@ test("every part of the star writes the star's layer mask, and the glow faces th
 test("the cloud artwork keeps its own soft detail without procedural brush edges or bristles", () => {
   const field = cloudFieldGLSL();
   const shader = skyMaterial().fragmentShader;
-  assert.equal(CLOUD_BRUSH.on, 0);
   assert.doesNotMatch(field, /brushEdge|float be=/);
   assert.doesNotMatch(shader, /float bs=|cloudCol\*=1\.\+/);
   const artwork = shader.indexOf("cloudCol=mix(cloudCol,cp.rgb,cw);");
@@ -1545,6 +1224,4 @@ test("golden hour: an amber horizon under a dusk blue, deep enough overhead for 
   // Sunlit cloud gold, its shade a dusk blue; all given over the shell's opacity.
   assert.ok(cloudLit[0] > cloudLit[2] && cloudShade[2] > cloudShade[0]);
   assert.equal(shell, 0.52);
-  assert.ok(FILM_SKY_GLSL.includes("vec3 filmNight(vec3 c, float a, float w) { return c; }"));
-  assert.ok(FILM_SKY_GLSL.includes("vec3 filmBand(float a) { return vec3(0.); }"));
 });

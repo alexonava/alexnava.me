@@ -1,7 +1,7 @@
 import { Vector3 } from "three";
 
-// One world-oriented patch shared by the sky, dust and clustered stars. The
-// camera may translate through the estate without dragging the heavens along.
+// One world-oriented patch for the sky's nebula and dust. The camera may
+// translate through the estate without dragging the heavens along.
 const center = new Vector3(-0.9, 0.26, 0.35).normalize();
 const horizontal = new Vector3(0, 1, 0).cross(center).normalize();
 const vertical = center.clone().cross(horizontal).normalize();
@@ -10,10 +10,6 @@ export const NEBULA_FRAME = Object.freeze({
   horizontal: Object.freeze(horizontal.toArray()),
   vertical: Object.freeze(vertical.toArray()),
 });
-
-export function celestialClusterDirection(x, y) {
-  return center.clone().addScaledVector(horizontal, x).addScaledVector(vertical, y).normalize();
-}
 
 const vector = (value) => `vec3(${value.map((n) => n.toFixed(7)).join(",")})`;
 export const CELESTIAL_FIELD_GLSL = `

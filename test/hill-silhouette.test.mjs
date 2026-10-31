@@ -30,17 +30,15 @@ import {
 } from "../src/scene/hill-silhouette.js";
 import {
   buildMountains,
-  createMountainGeometry,
   MOUNTAIN_ENTRANCE,
   MOUNTAINS,
-  mountainCrests,
   mountainRows,
   sectorsInView,
   showRanges,
 } from "../src/scene/mountain-build.js";
 import { FILM_LIGHT } from "../src/scene/film-light.js";
 import { FILM_SKY_GLSL } from "../src/scene/estate-sky.js";
-import { createStarfield } from "../src/scene/starfield.js";
+import { createMountainGeometry, mountainCrests } from "./support/steps.mjs";
 
 const near = (a, b, eps = 1e-4) => assert.ok(Math.abs(a - b) < eps, `${a} != ${b}`);
 const groundHeight = (x, z) => 1.2 * Math.sin(0.05 * x) + 0.8 * Math.cos(0.04 * z);
@@ -87,19 +85,11 @@ test("innerRadius clears the directed shots' widest camera distance with margin"
   assert.ok(HILL.innerRadius > widestShotCameraDistance * 1.1);
 });
 
-test("createHillSilhouette builds a visible, shadow-free mesh, hides it on low tier, and disposes cleanly", () => {
+test("createHillSilhouette builds a visible, shadow-free mesh and disposes cleanly", () => {
   const hill = createHillSilhouette({ groundHeight });
   assert.equal(hill.mesh.name, "hill-silhouette");
   assert.equal(hill.mesh.castShadow, false);
   assert.equal(hill.mesh.receiveShadow, false);
-  assert.equal(hill.mesh.visible, true);
-  hill.applyQuality({ tier: "high" });
-  assert.equal(hill.mesh.visible, true);
-  hill.applyQuality({ tier: "balanced" });
-  assert.equal(hill.mesh.visible, true);
-  hill.applyQuality({ tier: "low" });
-  assert.equal(hill.mesh.visible, false);
-  hill.applyQuality({ tier: "high" });
   assert.equal(hill.mesh.visible, true);
   let geometryDisposed = 0,
     materialDisposed = 0;
@@ -110,8 +100,6 @@ test("createHillSilhouette builds a visible, shadow-free mesh, hides it on low t
   assert.equal(geometryDisposed, 1);
   assert.equal(materialDisposed, 1);
   assert.equal(hill.mesh.parent, null);
-  // Calling applyQuality after disposal must not resurrect visibility.
-  assert.equal(hill.applyQuality({ tier: "high" }), false);
 });
 
 test("custom radii and amplitude are honoured by the geometry factory", () => {
@@ -554,8 +542,6 @@ test("hill treatment swaps and reuses resources while restoring the original bas
   assert.notEqual(film, original);
   assert.equal(film.attributes.position.count, MOUNTAINS.radii.length * perRange);
   assert.deepEqual(statuses, ["loading", "ready"]);
-  hill.applyQuality({ tier: "low" });
-  assert.equal(hill.mesh.visible, false);
   hill.setFilmTreatment(false);
   assert.equal(hill.mesh.geometry, original);
   assert.equal(hill.mesh.material, material);
@@ -564,10 +550,7 @@ test("hill treatment swaps and reuses resources while restoring the original bas
   hill.setFilmTreatment(true);
   assert.equal(hill.mesh.geometry, film);
   assert.equal(hill.mesh.material, grade);
-  assert.equal(hill.mesh.visible, false, "treatment must not undo low-quality hiding");
-  hill.applyQuality({ tier: "balanced" });
   assert.equal(hill.mesh.visible, true);
-  assert.equal(hill.mesh.geometry, film);
   assert.deepEqual(statuses, ["loading", "ready"], "requested once");
   let count = 0;
   for (const resource of [original, material, film, grade])
@@ -586,18 +569,11 @@ test("the ranges are requested only for a visible film, keep the stand-in on fai
       requests++;
       return Promise.resolve({ buildMountains: build });
     };
-  // Low quality never requests the chunk.
-  const low = createHillSilhouette({ groundHeight, load: load() });
-  low.applyQuality({ tier: "low" });
-  low.setFilmTreatment(true);
-  assert.equal(low.ready, null);
-  assert.equal(requests, 0);
-  // A step up from low while the film is on requests it then; so does the film.
-  low.applyQuality({ tier: "balanced" });
-  assert.ok(low.ready instanceof Promise);
   const idle = createHillSilhouette({ groundHeight, load: load() });
-  idle.applyQuality({ tier: "high" });
   assert.equal(idle.ready, null, "no request until the film is on");
+  assert.equal(requests, 0);
+  idle.setFilmTreatment(true);
+  assert.ok(idle.ready instanceof Promise);
   assert.equal(requests, 1);
   // The build receives the scene's rendering and tour, and can be cancelled.
   const rendering = {},
@@ -653,7 +629,7 @@ test("the ranges are requested only for a visible film, keep the stand-in on fai
   finish(late);
   await gone.ready;
   assert.equal(freed, 1);
-  for (const hill of [low, idle, failed]) hill.dispose();
+  for (const hill of [idle, failed]) hill.dispose();
   // hill-silhouette.js never imports the chunk statically, so it stays out of the entry.
   const source = await readFile(
     new URL("../src/scene/hill-silhouette.js", import.meta.url),
@@ -1144,15 +1120,8 @@ test("foot haze keeps the ground seam but clears the exposed low Lantern-study r
   hill.dispose();
 });
 
-test("stars draw after the sky and before the mountains, which stay inside the far plane", async () => {
-  const stars = createStarfield({
-    parent: new Group(),
-    camera: new PerspectiveCamera(),
-    profile: { tier: "high" },
-  });
-  assert.ok(stars.root.renderOrder > -1 && stars.root.renderOrder < MOUNTAIN_AIR.renderOrder);
+test("the mountains stay inside the far plane", async () => {
   assert.ok(MOUNTAIN_AIR.renderOrder < 0);
-  stars.dispose();
   const window = { BabelSite: {} };
   vm.runInNewContext(await readFile(new URL("../src/scene/world.js", import.meta.url), "utf8"), {
     window,

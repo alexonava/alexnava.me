@@ -494,41 +494,6 @@ export function createSceneRendering({
           });
       });
     },
-    // Where shaders compile in parallel, links the programs a quality step
-    // will draw with before it applies, so the step lands without a compile;
-    // otherwise they link on the cut frame. Of what applyQuality() changes,
-    // only the shadow flags and the fill light enter program keys; they are
-    // set for the synchronous compile and restored before any draw. Resolves
-    // true at once when the step keeps them, else as compileShaders() does.
-    prepareQuality(nextProfile) {
-      const shadows = Boolean(nextProfile?.shadows?.enabled);
-      const fill = Boolean(nextProfile?.lighting?.extraDirectional);
-      const { shadowMap } = renderer;
-      const previous = [shadowMap.enabled, sunLight.castShadow, fillLight.visible];
-      const unchanged =
-        Boolean(shadowMap.enabled) === shadows &&
-        sunLight.castShadow === shadows &&
-        fillLight.visible === fill;
-      if (disposed || unchanged) return Promise.resolve(true);
-      shadowMap.enabled = sunLight.castShadow = shadows;
-      fillLight.visible = fill;
-      let compiled;
-      try {
-        compiled = rendering.compileShaders();
-      } finally {
-        [shadowMap.enabled, sunLight.castShadow, fillLight.visible] = previous;
-        // compile() left every material on the step's program. Lit ones return
-        // on their next draw; a version bump returns the rest from the program
-        // cache, so none draws mid-shot with a program that is still linking.
-        homeScene.traverse((object) => {
-          for (const material of [object.material].flat()) {
-            if (!material) continue;
-            material.needsUpdate = true;
-          }
-        });
-      }
-      return compiled;
-    },
     applyQuality(nextProfile, { pixelRatio } = {}) {
       if (disposed) return false;
       rendering.tier = nextProfile.tier ?? null;

@@ -49,7 +49,7 @@ const vec3 = (values) => `vec3(${values.map(glsl).join(",")})`;
 // shell's opacity, which the frame applies after it: so these divide by it.
 const ENVIRONMENT_GLSL = (shell) => {
   const { moon, ranges, ground } = NIGHT_SKY;
-  return `if(envCapture>.5){
+  return `{
 float envKey=max(dot(direction,envKeyDirection),0.);
 col+=${vec3(moon.color)}*(${glsl(moon.halo[0])}*pow(envKey,${glsl(moon.halo[1])})+${glsl(moon.glow[0])}*pow(envKey,${glsl(moon.glow[1])}))/${glsl(shell)};
 float envAz=atan(direction.z,direction.x);
@@ -185,7 +185,7 @@ export function createNightEnvironment(
     }
     material.fragmentShader = fragment.replace(
       "void main()",
-      `uniform float envCapture;\nuniform vec3 envKeyDirection;\n${FILM_UNTONE_GLSL}\nvoid main()`,
+      `uniform vec3 envKeyDirection;\n${FILM_UNTONE_GLSL}\nvoid main()`,
     );
     // The cube's faces have no name or intro behind them: the clouds' text guard
     // reads an empty box, not the live one the clone shares. The capture keeps the
@@ -194,7 +194,6 @@ export function createNightEnvironment(
     // changes the plate (refresh()). Never a lightning flash (lightning.js), even one
     // lit as it is taken.
     Object.assign(material.uniforms, {
-      envCapture: { value: 1 },
       envKeyDirection: { value: key },
       slateText: { value: { x: 2, y: 2, z: -1, w: -1 } },
       uCloudReshape: { value: 1 },

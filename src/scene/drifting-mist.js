@@ -150,12 +150,12 @@ export function setMistLights(moon, star) {
   [s.x, s.y, s.z] = star;
 }
 
-// The march per tier: high and balanced; none below. Phones and laptops (the lite
+// The march per tier: high and balanced. Phones and laptops (the lite
 // startup, index.js; "lean" here) march one step of one octave: the drift still moves.
 export function setMistTier(tier) {
   const f = MIST_UNIFORMS.mistFrame.value,
     k = tier === "high" ? 0 : 1;
-  f.y = tier === "low" ? 0 : tier === "lean" ? 1 : M.steps[k];
+  f.y = tier === "lean" ? 1 : M.steps[k];
   f.z = M.octaves[k];
 }
 

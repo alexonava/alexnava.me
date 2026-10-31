@@ -502,7 +502,7 @@ gl_FragColor=vec4(uColor*c,min(c,1.)*${STAR_LAYER});
   const mesh = new Mesh(geometry, material);
   mesh.name = "lightning-bolt";
   mesh.frustumCulled = false;
-  // After the stars (-0.75), before the film mountains (-0.5), which cover it.
+  // Before the film mountains (-0.5), which cover it.
   mesh.renderOrder = -0.6;
   // Shown, drawing nothing, until the first frame: so the scene's first shader
   // warm-up (index.js) links its program and the first bolt never stalls.

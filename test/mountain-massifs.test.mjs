@@ -19,9 +19,7 @@ import {
 } from "../src/scene/hill-silhouette.js";
 import {
   buildMountains,
-  createRangeGeometry,
   MOUNTAINS,
-  mountainCrests,
   placeRange,
   RANGE_BACKDROP,
   RANGE_LAYERS,
@@ -32,6 +30,7 @@ import {
   showRanges,
 } from "../src/scene/mountain-build.js";
 import { DEPTH_LAYER } from "../src/scene/depth-layers.js";
+import { createRangeGeometry, mountainCrests } from "./support/steps.mjs";
 
 const near = (a, b, eps = 1e-4) => assert.ok(Math.abs(a - b) < eps, `${a} != ${b}`);
 const TIERS = Object.freeze({ high: 280_000, balanced: 140_000 });
@@ -426,7 +425,6 @@ test("at a model tier the ranges load the massifs at low priority and land them 
     loadAsset: deliver(log),
     onStatus: (status) => statuses.push(status),
   });
-  hill.applyQuality({ tier: "balanced" });
   hill.setFilmTreatment(true);
   await hill.ready;
   assert.deepEqual(
@@ -484,7 +482,7 @@ test("at a model tier the ranges load the massifs at low priority and land them 
       );
 });
 
-test("a failed massif GLB lands the five rings instead; low and baseline never load them", async () => {
+test("a failed massif GLB lands the five rings instead; a scene without a model tier never loads them", async () => {
   const log = [],
     statuses = [];
   const failing = (url, options) =>
@@ -498,7 +496,6 @@ test("a failed massif GLB lands the five rings instead; low and baseline never l
     loadAsset: failing,
     onStatus: (status) => statuses.push(status),
   });
-  hill.applyQuality({ tier: "high" });
   hill.setFilmTreatment(true);
   await hill.ready;
   assert.deepEqual(statuses, ["loading", "fallback"]);
@@ -515,22 +512,17 @@ test("a failed massif GLB lands the five rings instead; low and baseline never l
   for (const role of ["mountain-ridge", "mountain-summit"])
     assert.ok(log.includes(`close ${role} normalMap`), `${role} freed`);
   hill.dispose();
-  // Low never loads them; neither does a scene without a model tier.
-  for (const options of [
-    { tier: "high", quality: "low" },
-    { tier: null, quality: "high" },
-  ]) {
+  {
     const calls = [];
     const other = createHillSilhouette({
       groundHeight: () => 0,
-      tier: options.tier,
+      tier: null,
       urls: URLS,
       loadAsset: (...args) => {
         calls.push(args);
         return Promise.reject(new Error("unexpected"));
       },
     });
-    other.applyQuality({ tier: options.quality });
     other.setFilmTreatment(true);
     await other.ready;
     assert.equal(calls.length, 0);
@@ -559,7 +551,6 @@ test("a missing photographic or AO mask texture frees all models and retains the
         },
         onStatus: (status) => statuses.push(status),
       });
-    hill.applyQuality({ tier: "high" });
     hill.setFilmTreatment(true);
     await hill.ready;
     assert.deepEqual(statuses, ["loading", "fallback"]);
@@ -589,7 +580,6 @@ test("a stalled massif GLB never holds the ranges back: past the deadline the fi
     loadAsset: stalled,
     onStatus: (status) => statuses.push(status),
   });
-  hill.applyQuality({ tier: "high" });
   hill.setFilmTreatment(true);
   const ready = hill.ready;
   await new Promise((resolve) => setImmediate(resolve));
@@ -621,7 +611,6 @@ test("a failed ranges chunk frees the massifs that arrive after it", async () =>
     loadAsset: (url, options) => gate.then(() => deliver(log)(url, options)),
     onStatus: (status) => statuses.push(status),
   });
-  hill.applyQuality({ tier: "balanced" });
   hill.setFilmTreatment(true);
   await hill.ready;
   assert.deepEqual(statuses, ["loading", "fallback"]);
@@ -642,7 +631,6 @@ test("the massif shader is the ranges' moonlit style on the models' own relief",
     urls: URLS,
     loadAsset: deliver([]),
   });
-  hill.applyQuality({ tier: "high" });
   hill.setFilmTreatment(true);
   await hill.ready;
   const mesh = hill.mesh.children[0].children[0],
@@ -774,7 +762,6 @@ test("photographic colour enters before haze and snow lighting has no threshold 
     urls: URLS,
     loadAsset: deliver([]),
   });
-  hill.applyQuality({ tier: "high" });
   hill.setFilmTreatment(true);
   await hill.ready;
   try {

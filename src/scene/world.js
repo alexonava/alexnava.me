@@ -20,7 +20,7 @@
     GROUND_RADIUS: 88,
 
     // --- Sky & atmosphere ---
-    // The sky shell's radius; the stars and the ranges take it too.
+    // The sky shell's radius; the ranges take it too.
     SKY_DOME_RADIUS: 130,
 
     // --- Lights (positions are world-space, feet-anchored) ---

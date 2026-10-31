@@ -70,10 +70,7 @@ test("a watch or tree that cannot commit fails to the title card once the camera
   );
   assert.match(index, /webglContextAvailable && !sceneFailed;/);
   // The lantern loads beside the models and warms its programs only when it commits.
-  assert.match(
-    index,
-    /includeLantern: true, onLanternReady: \(asset\) => lanternMount\.stage\(asset\)/,
-  );
+  assert.match(index, /onLanternReady: \(asset\) => lanternMount\.stage\(asset\)/);
   assert.match(index, /if \(committed\) warmShaders\("lantern"\);/);
 });
 
@@ -93,12 +90,9 @@ test("models and maps keep the startup tier, and quality samples only revealed f
     index,
     /revealed && !reducedMotion && !shaderWarmup\.pending && !adaptiveSteps\.pending \? qualityState\.sampleRevealed\?\.\(/,
   );
-  // A step links its programs when sampled and lands on a tour cut, where the
-  // crossfade's kept frame hides it; the one-off transition frames go unsampled.
-  assert.match(
-    index,
-    /const adaptiveSteps = createDeferredQualityStep\(\{ prepare: \(profile\) => rendering\.prepareQuality\(profile\) \}\);/,
-  );
+  // A step lands on a tour cut, where the crossfade's kept frame hides it; the
+  // one-off transition frames go unsampled.
+  assert.match(index, /const adaptiveSteps = createDeferredQualityStep\(\);/);
   assert.match(index, /if \(sampledProfile\) adaptiveSteps\.queue\(sampledProfile, nowMs\);/);
   assert.match(
     index,

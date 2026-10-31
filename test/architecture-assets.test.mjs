@@ -125,27 +125,24 @@ function assertReleased(parsed, expected = 1) {
 }
 
 test("architecture loads require live high/balanced quality and repeated state does not reload", async () => {
-  for (const options of [{ disabled: true }, {}]) {
-    const h = harness(options);
-    h.controller.setQuality({ tier: "high" });
-    h.controller.applyQuality({ tier: "balanced" });
-    assert.equal(h.requests.length + h.stages.length, 0);
-    h.controller.setQuality({ tier: "low" }, true);
-    h.controller.setQuality({ tier: "unknown" }, true);
-    assert.equal(h.requests.length + h.stages.length, 0);
-    h.controller.setQuality({ tier: "high" }, true);
-    const started = options.disabled ? 0 : 1;
-    assert.equal(h.requests.length, started);
-    assert.equal(h.stages.length, started);
-    h.controller.applyQuality({ tier: "high" });
-    h.controller.setLive(true);
-    assert.equal(h.requests.length, started);
-    assert.equal(h.stages.length, started);
-    h.controller.dispose();
-  }
+  const h = harness();
+  h.controller.setQuality({ tier: "high" });
+  h.controller.applyQuality({ tier: "balanced" });
+  assert.equal(h.requests.length + h.stages.length, 0);
+  h.controller.setQuality({ tier: "low" }, true);
+  h.controller.setQuality({ tier: "unknown" }, true);
+  assert.equal(h.requests.length + h.stages.length, 0);
+  h.controller.setQuality({ tier: "high" }, true);
+  assert.equal(h.requests.length, 2);
+  assert.equal(h.stages.length, 1);
+  h.controller.applyQuality({ tier: "high" });
+  h.controller.setLive(true);
+  assert.equal(h.requests.length, 2);
+  assert.equal(h.stages.length, 1);
+  h.controller.dispose();
 });
 
-test("the live gate stages the watch and requests only the selected tree", async () => {
+test("the live gate stages the watch and requests only the selected tree and lantern", async () => {
   const h = harness();
   h.controller.setQuality({ tier: "high" });
   h.controller.setQuality({ tier: "low" }, true);
@@ -153,16 +150,16 @@ test("the live gate stages the watch and requests only the selected tree", async
   h.controller.setQuality({ tier: "high" }, true);
   assert.deepEqual(
     h.requests.map(({ role }) => role),
-    ["tree"],
+    ["tree", "lantern"],
   );
   assert.deepEqual(
     h.requests.map(({ url }) => url),
-    [ARCHITECTURE_ASSET_URLS.high.tree],
+    [ARCHITECTURE_ASSET_URLS.high.tree, ARCHITECTURE_ASSET_URLS.high.lantern],
   );
   assert.equal(h.stages.length, 1);
   h.controller.applyQuality({ tier: "high" });
   h.controller.setLive(true);
-  assert.equal(h.requests.length, 1);
+  assert.equal(h.requests.length, 2);
   assert.equal(h.stages.length, 1);
   const [tree] = complete(h);
   await flush();
@@ -180,8 +177,10 @@ test("the live gate stages the watch and requests only the selected tree", async
     [
       "watch:procedural",
       "tree:procedural",
+      "lantern:procedural",
       "watch:loading",
       "tree:loading",
+      "lantern:loading",
       "tree:ready",
       "watch:ready",
     ],
@@ -206,7 +205,9 @@ test("a stale stage or tree parse after a quality change is ignored and keeps cu
     h.requests.map(({ tier, role }) => [tier, role]),
     [
       ["high", "tree"],
+      ["high", "lantern"],
       ["balanced", "tree"],
+      ["balanced", "lantern"],
     ],
   );
   assert.equal(h.stages.length, 2);
@@ -250,7 +251,7 @@ test("a rejected stage or a failed watch commit falls back without interrupting 
     assert.equal(request(h, "tree").signal.aborted, false);
     h.controller.applyQuality({ tier: "high" });
     h.controller.setLive(true);
-    assert.equal(h.requests.length, 1, "failed loads do not retry every frame");
+    assert.equal(h.requests.length, 2, "failed loads do not retry every frame");
     assert.equal(h.stages.length, 1);
     h.controller.dispose();
     assertReleased(tree);
@@ -289,10 +290,10 @@ test("tree failure is independent and a controlled tier change restages and retr
   assert.equal(lastStatus(h, "watch").status, "ready");
   assert.equal(lastStatus(h, "tree").status, "fallback");
   for (let index = 0; index < 4; index += 1) h.controller.applyQuality({ tier: "high" });
-  assert.equal(h.requests.length, 1);
+  assert.equal(h.requests.length, 2);
   assert.equal(h.stages.length, 1);
   h.controller.applyQuality({ tier: "balanced" });
-  assert.equal(h.requests.length, 2);
+  assert.equal(h.requests.length, 4);
   assert.equal(h.stages.length, 2);
   assert.ok(h.events.indexOf("watch:restore") < h.events.indexOf("watch:cleanup"));
   stage(h).resolve();
@@ -313,7 +314,10 @@ test("a pinned asset tier keeps live models through adaptive profile changes wit
   h.controller.setLive(true);
   assert.deepEqual(
     h.requests.map(({ tier, role }) => [tier, role]),
-    [["high", "tree"]],
+    [
+      ["high", "tree"],
+      ["high", "lantern"],
+    ],
   );
   assert.equal(h.stages.length, 1);
   stage(h).resolve();
@@ -326,7 +330,7 @@ test("a pinned asset tier keeps live models through adaptive profile changes wit
     assert.equal(h.controller.applyQuality({ tier }, { pixelRatio: 1, assetTier: "high" }), false);
   }
   assert.equal(h.controller.setQuality({ tier: "low" }, true, { assetTier: "high" }), false);
-  assert.equal(h.requests.length, 1, "no other tier is downloaded");
+  assert.equal(h.requests.length, 2, "no other tier is downloaded");
   assert.equal(h.stages.length, 1, "the watch is not staged again");
   assert.ok(h.requests.every(({ signal }) => !signal.aborted));
   assert.equal(h.statuses.length, statusCount, "no procedural or loading status is published");
@@ -387,7 +391,7 @@ test("low quality or closing the live gate restores before disposal and ignores 
 });
 
 test("shared scene resources dispose once and shared images close after all texture disposals", async () => {
-  const h = harness({ includeLantern: true });
+  const h = harness();
   h.controller.setQuality({ tier: "high" }, true);
   const shared = asset("shared", h.events);
   request(h, "tree").resolve(shared);
@@ -446,20 +450,20 @@ test("reopening the live gate retries failed loads once without a per-frame retr
   await flush();
   assert.equal(lastStatus(h, "watch").status, "fallback");
   assert.equal(lastStatus(h, "tree").status, "fallback");
-  assert.equal(h.requests.length, 1);
+  assert.equal(h.requests.length, 2);
   assert.equal(h.stages.length, 1);
   h.controller.setLive(true);
-  assert.equal(h.requests.length, 1);
+  assert.equal(h.requests.length, 2);
   assert.equal(h.stages.length, 1);
   h.controller.setLive(false);
   h.controller.setLive(true);
-  assert.equal(h.requests.length, 2);
+  assert.equal(h.requests.length, 4);
   assert.equal(h.stages.length, 2);
   h.controller.dispose();
 });
 
 test("optional lantern loads independently and its failure cannot block the tree", async () => {
-  const h = harness({ includeLantern: true });
+  const h = harness();
   h.controller.setQuality({ tier: "high" }, true);
   assert.deepEqual(
     h.requests.map(({ role }) => role),
@@ -483,13 +487,9 @@ test("optional lantern releases staged and late parses after tier switches, gate
     const ready = [],
       events = [];
     const h = harness({
-      includeLantern: true,
       onLanternReady(parsed, { tier }) {
         ready.push(tier);
         return () => events.push("cleanup");
-      },
-      onRestoreLantern() {
-        events.push("restore");
       },
     });
     h.controller.setQuality({ tier: "high" }, true);
@@ -513,7 +513,6 @@ test("optional lantern releases staged and late parses after tier switches, gate
       assertReleased(current, 0, "adaptive cost changes keep the startup model tier");
       h.controller.dispose();
       assertReleased(current);
-      assert.ok(events.indexOf("restore") < events.indexOf("cleanup"));
       assert.ok(events.indexOf("cleanup") < events.indexOf("balanced:geometry"));
     }
     h.controller.dispose();
@@ -521,7 +520,7 @@ test("optional lantern releases staged and late parses after tier switches, gate
 });
 
 test("opening deadline cancels only the optional lantern and releases its late parse", async () => {
-  const h = harness({ includeLantern: true });
+  const h = harness();
   h.controller.setQuality({ tier: "high" }, true);
   const late = request(h, "lantern");
   assert.equal(h.controller.cancelOptional("tree"), false);
@@ -846,7 +845,6 @@ test("the live selection takes its early requests and releases those for another
       const ready = [];
       // The default stage settles at once, so the watch commits beside the models.
       const controller = createArchitectureAssetController({
-        includeLantern: true,
         onWatchReady() {
           ready.push("watch");
         },
