@@ -280,7 +280,9 @@ vd=vxK*cloudVortex(vxE,T); d+=vd; da+=vxK*cloudVortex(vxE+vec2(dot(vxL,vxT),dot(
 export const CLOUD_PLATE_GLSL = "uniform sampler2D uCloudMap;uniform float uCloudMix;";
 // The cel sky's plate (cloud-plate.js): baked once round the sky, u = azimuth / 2pi, so
 // its light sits where the shot's sun or the moon does; it drifts on the clock as slowly
-// as the banks. Its light runs past the 8-bit plate's range (CLOUD_PLATE_LOOK.gain), and the
+// as the banks. u wraps from 1 to 0 at one azimuth, so the plate is read with seam-free
+// gradients (the smaller of the plain and the half-turned u's), or the mip jump there draws
+// a dashed line across the sky (Close-up). Its light runs past the 8-bit plate's range (CLOUD_PLATE_LOOK.gain), and the
 // moonlit shoulders keep it through a raised knee (.cap), except behind the name and intro.
 export const CLOUD_PLATE_LOOK = Object.freeze({ gain: 2.4, cap: Object.freeze([3, 4]) });
 
@@ -386,7 +388,14 @@ vec4 cp=vec4(0.);
 if(cw>.001){
 float ca=dot(${B},${B})<1e-10?0.:atan(${B}.y,${B}.x);
 vec2 cu=vec2(fract(ca*.15915494+T*.00002),.78-asin(clamp(hzS,0.,1.))*.63661977);
-cp=texture2D(uCloudMap,cu);cp.rgb*=${glslFloat(CLOUD_PLATE_LOOK.gain)};
+#if __VERSION__>=300
+vec2 cuW=vec2(fract(cu.x+.5)-.5,cu.y),gX=dFdx(cu),gY=dFdy(cu),gX2=dFdx(cuW),gY2=dFdy(cuW);
+if(abs(gX2.x)<abs(gX.x))gX.x=gX2.x;if(abs(gY2.x)<abs(gY.x))gY.x=gY2.x;
+cp=textureGrad(uCloudMap,cu,gX,gY);
+#else
+cp=texture2D(uCloudMap,cu);
+#endif
+cp.rgb*=${glslFloat(CLOUD_PLATE_LOOK.gain)};
 cp.a=clamp(cp.a+vd*.5,0.,1.)*horizonFade*uClouds*(1.-.18*cloudText);
 cover=mix(cover,cp.a,cw);
 d=mix(d,.44+.36*cp.a,cw);

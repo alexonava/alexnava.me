@@ -478,3 +478,25 @@ test("the shipped plates have a real alpha channel and stay within their deliver
     assert.ok(total <= (tier === "balanced" ? 768 * 1024 : 2 * 1024 * 1024), `${total} bytes`);
   }
 });
+
+test("the plate is read with seam-free gradients where its u wraps, and plainly on WebGL1", () => {
+  const field = cloudFieldGLSL();
+  const read = field.match(/#if __VERSION__>=300\n([\s\S]*?)#else\n([\s\S]*?)#endif/);
+  assert.ok(read, "the plate read is split by GLSL version");
+  assert.match(read[1], /cuW=vec2\(fract\(cu\.x\+\.5\)-\.5,cu\.y\)/);
+  assert.match(read[1], /cp=textureGrad\(uCloudMap,cu,gX,gY\);/);
+  assert.equal(read[2].trim(), "cp=texture2D(uCloudMap,cu);");
+  // The smaller of the two u gradients is the true one: at the wrap the plain u jumps by
+  // about 1 across a pixel while the half-turned u stays smooth, and elsewhere they agree.
+  const pick = (plain, turned) => (Math.abs(turned) < Math.abs(plain) ? turned : plain);
+  const fract = (v) => v - Math.floor(v);
+  for (const [a, b] of [
+    [0.999, 0.001],
+    [0.25, 0.252],
+    [0.499, 0.501],
+  ]) {
+    const plain = b - a;
+    const turned = fract(b + 0.5) - 0.5 - (fract(a + 0.5) - 0.5);
+    assert.ok(Math.abs(pick(plain, turned) - 0.002) < 1e-9);
+  }
+});
