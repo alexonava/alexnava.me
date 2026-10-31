@@ -9,10 +9,6 @@ import {
   Vector2,
   Vector3,
 } from "three";
-import { STAR_LAYER } from "./depth-layers.js";
-import { CLOUD_RESHAPE, FLASH_REFERENCE } from "./estate-sky.js";
-import { MIST_UNIFORMS } from "./drifting-mist.js";
-import { FLASH_GROUND, FLASH_UNIFORMS, lendFlashText } from "./film-light.js";
 
 // Lightning in the film's night storm, spooky October's (the owner's pick of the
 // storm effects, 2026-10-09: Bold, made more frequent twice; then calmed in the
@@ -70,7 +66,8 @@ import { FLASH_GROUND, FLASH_UNIFORMS, lendFlashText } from "./film-light.js";
 //   `shots`: per-shot ones, by shot name (DIRECTED_SHOTS), over the tier's.
 // - `months`: the calendar months (1-12, by the visitor's own date when the scene
 //   starts) the storm comes in: spooky October only (the owner's call of
-//   2026-10-13); any other month the night is still, with no flash or bolt.
+//   2026-10-13), the maelstrom's (estate-sky.js CLOUD_VORTEX.months); any other month
+//   the night is still, with no flash or bolt, and the scene never fetches this chunk.
 // - `cutFade`: seconds before a tour cut's capture over which a flash dims to nothing,
 //   so the dissolve's kept frame never holds one (the review of 2026-10-14).
 // - `forceAt`: a debug override for captures, empty in use: scene seconds (or
@@ -157,8 +154,6 @@ export const LIGHTNING = Object.freeze({
 
 // The most segments one bolt draws: its channel (2^detail) and its branches.
 const BOLT_SEGMENTS = 256;
-// The clouds' text guard's reach (estate-sky.js CLOUD_RESHAPE.text[1]).
-const CLOUD_TEXT_REACH = CLOUD_RESHAPE.text[1];
 // How far after its last peak an event lasts, in that pulse's decays.
 const TAIL = 6;
 const DEG = Math.PI / 180;
@@ -312,17 +307,18 @@ export function lightningLevel(event, t, attack = LIGHTNING.attack) {
 }
 
 // How much of a flash a sky direction (from the world origin, as the shell reads
-// it) keeps: 0 over The watch's reference banks (estate-sky.js FLASH_REFERENCE,
-// its crop's azimuths from its radius out), 1 clear of them; the glow is scaled by it.
-export function referenceKeep(direction) {
+// it) keeps: 0 over The watch's reference banks (`reference`, estate-sky.js
+// FLASH_REFERENCE: its crop's azimuths from its radius out), 1 clear of them; the
+// glow is scaled by it.
+export function referenceKeep(direction, reference) {
   const lift = Math.max(direction.y, 0) + 0.24;
   const bx = (direction.x / lift) * 1.1,
     by = (direction.z / lift) * 1.1;
   const bl = Math.max(Math.hypot(bx, by), 0.001);
   let az = Math.atan2(by, bx + 1e-6) / DEG;
   if (az < 0) az += 360;
-  const [w0, w1, w2, w3] = FLASH_REFERENCE.wedge,
-    [r0, r1] = FLASH_REFERENCE.radius;
+  const [w0, w1, w2, w3] = reference.wedge,
+    [r0, r1] = reference.radius;
   return 1 - smoothstep(w0, w1, az) * (1 - smoothstep(w2, w3, az)) * smoothstep(r0, r1, bl);
 }
 
@@ -434,7 +430,7 @@ export function boltPath(config, seed, az, top, flip = 1) {
 // at the far plane (behind the ranges, which cover its foot, and everything
 // else), blended by max so its joints never double, marking the star's layer in
 // alpha (depth-layers.js) so the grade's cel step and ink leave it whole.
-function createBolt() {
+function createBolt(layer) {
   const vertices = BOLT_SEGMENTS * 4;
   const geometry = new BufferGeometry();
   geometry.setAttribute("position", new BufferAttribute(new Float32Array(vertices * 3), 3));
@@ -496,7 +492,7 @@ float px=abs(vAcross)*uHalo*vWidth, core=uCore*vWidth;
 // Round caps: past an end the distance counts as across it, so bends join smoothly.
 px=length(vec2(px,max(max(-vAlong,vAlong-vLength),0.)));
 float c=(exp(-px*px/(core*core))+uGlow*exp(-px*px/(uHalo*uHalo*vWidth*vWidth*.16)))*vGlow*uLevel*step(vArrive,uGrow);
-gl_FragColor=vec4(uColor*c,min(c,1.)*${STAR_LAYER});
+gl_FragColor=vec4(uColor*c,min(c,1.)*${layer});
 }`,
   });
   const mesh = new Mesh(geometry, material);
@@ -504,8 +500,9 @@ gl_FragColor=vec4(uColor*c,min(c,1.)*${STAR_LAYER});
   mesh.frustumCulled = false;
   // Before the film mountains (-0.5), which cover it.
   mesh.renderOrder = -0.6;
-  // Shown, drawing nothing, until the first frame: so the scene's first shader
-  // warm-up (index.js) links its program and the first bolt never stalls.
+  // Shown, drawing nothing, until the first frame: so the opening's shader warm-up
+  // (index.js), or its own if it lands later, links its program and the first bolt
+  // never stalls.
   return mesh;
 }
 
@@ -538,11 +535,16 @@ function writeBolt(mesh, segments) {
 // The lightning subsystem. `sky` is the shell's uniforms (uFlash, uFlashGlow,
 // uFlashTone, uFlashCore), `rendering` lends its lights' film intensities (the
 // sky and flat light the flash adds a share of, the cool fill's direction),
-// `textGuard` is the ground's text boxes (createSlateContacts(), lent to the
-// flash's materials), `film()` whether the film is on, `shot()` the shot on
-// screen and `cutIn()` the seconds until the tour's next capture (Infinity without
-// one). `config` defaults to LIGHTNING.
+// `textGuard` is the ground's text boxes (createSlateContacts(); index.js lends them
+// to the flash's materials, film-light.js lendFlashText()), `film()` whether the film
+// is on, `shot()` the shot on screen and `cutIn()` the seconds until the tour's next
+// capture (Infinity without one). `config` defaults to LIGHTNING. A lazy chunk, it
+// imports only Three.js: `lib` lends the entry's shared values it reads and writes,
+// by their names (depth-layers.js STAR_LAYER, estate-sky.js CLOUD_RESHAPE and
+// FLASH_REFERENCE, drifting-mist.js MIST_UNIFORMS, film-light.js FLASH_GROUND and
+// FLASH_UNIFORMS).
 export function createLightning({
+  lib,
   parent,
   camera,
   rendering,
@@ -556,6 +558,16 @@ export function createLightning({
   skyRadius = 130,
   date = new Date(),
 }) {
+  const {
+    STAR_LAYER,
+    CLOUD_RESHAPE,
+    FLASH_REFERENCE,
+    MIST_UNIFORMS,
+    FLASH_GROUND,
+    FLASH_UNIFORMS,
+  } = lib;
+  // The clouds' text guard's reach.
+  const cloudTextReach = CLOUD_RESHAPE.text[1];
   // In season, by the calendar month the scene starts in.
   const season = !config.months || config.months.includes(date.getMonth() + 1);
   let tier = profile.tier === "balanced" ? "balanced" : "high",
@@ -570,9 +582,8 @@ export function createLightning({
       perShot.set(name, lightningTier({ ...settings, tiers: { shot: over } }, "shot"));
     return perShot.get(name);
   }
-  lendFlashText(textGuard);
   // Out of season no bolt is built, so its program never links.
-  const bolt = parent && season ? createBolt() : null;
+  const bolt = parent && season ? createBolt(STAR_LAYER) : null;
   if (bolt) parent.add(bolt);
   let time = 0,
     disposed = false,
@@ -629,7 +640,7 @@ export function createLightning({
       return 1 - smoothstep(0, reach, Math.hypot(fx, fy));
     };
     return Math.max(
-      near(textGuard.slateText?.value, CLOUD_TEXT_REACH),
+      near(textGuard.slateText?.value, cloudTextReach),
       near(textGuard.slateAbout?.value, settings.sky.about),
     );
   }
@@ -637,7 +648,7 @@ export function createLightning({
   // of azimuth either side keeps any (referenceKeep()): clear of the crop.
   function clearOfReference(az, alt, spread, centre) {
     const keep = (offset) =>
-      referenceKeep(shellDirection(skyDirection(az + offset, alt, view), shell));
+      referenceKeep(shellDirection(skyDirection(az + offset, alt, view), shell), FLASH_REFERENCE);
     return keep(0) >= centre && keep(-spread) > 0 && keep(spread) > 0;
   }
   // Places an event when it first lights, from the camera then: its centre (a

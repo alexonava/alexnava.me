@@ -1055,7 +1055,7 @@ test("the maelstrom is spooky October's, with the lightning, by one date the sce
   );
   assert.match(index, /vortexHere = vortexSeason && !state\.profile\.lean && cloudVortexPresent\(/);
   assert.equal(index.match(/vortexHere = (?!false;)/g).length, 1, "no other shot takes it");
-  assert.match(index, /createLightning\(\{[^}]*date: sceneDate,? \}\)/);
+  assert.match(index, /createLightning\(\{ lib: \{[^}]*\}, [^}]*date: sceneDate,? \}\)/);
 });
 
 test("the bootstrap centres the sky shell on the world origin", () => {

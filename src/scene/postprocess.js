@@ -89,7 +89,8 @@ const GRADING_SHADER = {
     uShadowCoolMix: { value: 0.34 },
     uTexelSize: { value: new Vector2(1, 1) },
     uLayerRelief: { value: 0 },
-    // The film look (FILM_LOOK): the bloom's composite and its halation tint (0: none),
+    // The film look (FILM_LOOK): the bloom's composite and its halation tint (0: none,
+    // and then never read),
     // the print toe (lift, toe) and its tint, and the ink's brush weight (vary, scale).
     tHalation: { value: null },
     uHalation: { value: new Vector3() },
@@ -174,8 +175,10 @@ void main() {
   float inkWeight = 1.0 + uInkVary.x * (2.0 * inkNoise(vUv * vec2(uTexelSize.y / uTexelSize.x, 1.0) * uInkVary.y) - 1.0);
   color = mix(color, vec3(0.035, 0.055, 0.095), clamp(inkContour * uInkMix * skyInk * inkWeight, 0.0, 1.0));
   }
+  if (uHalation != vec3(0.0)) {
   vec3 halo = texture2D(tHalation, vUv).rgb;
   color += halo * uHalation * smoothstep(${FILM_LOOK.halation.warm[0].toFixed(3)}, ${FILM_LOOK.halation.warm[1].toFixed(3)}, (halo.r - halo.b) / max(halo.r, 1e-4));
+  }
   color += uPrintTint * uPrint.x * (1.0 - smoothstep(0.0, uPrint.y, dot(color, vec3(0.299, 0.587, 0.114))));
   vec3 over = max(color - 0.75, 0.0);
   color = mix(color, min(color, 0.75) + 0.25 * (1.0 - exp(-over / 0.25)), uLayerRelief * (1.0 - scene));
@@ -860,10 +863,7 @@ class SceneRenderPass extends RenderPass {
 const BLOOM_LIT =
   ((FILM_TONE.mid * 0.787) / 0.213) ** (1 / FILM_TONE.contrast) / filmExposure() / 0.9;
 
-export function createPostprocessPipeline(renderer, scene, camera, qualityProfile, options = {}) {
-  const composer = new EffectComposer(renderer);
-  const renderPass = new SceneRenderPass(scene, camera);
-  const size = getSize(renderer);
+function createBloomPass(renderer, size) {
   const bloomPass = new UnrealBloomPass(size, 0.18, 0.45, 0.9);
   // Bloom finds the bright lights: the lit layers' (codes from .2) scene light
   // against its threshold as the tone curve shows it (BLOOM_LIT: the scene light
@@ -873,6 +873,35 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
       "float v = dot( texel.xyz, luma );",
       `float v = dot( texel.xyz, luma ) / mix( 1.0, ${BLOOM_LIT.toFixed(3)}, smoothstep( 0.17, 0.25, texel.a ) );`,
     );
+  // Bloom adds light, not depth: in film its composite keeps the layer codes.
+  Object.assign(bloomPass.blendMaterial, {
+    blendSrc: SrcAlphaFactor,
+    blendDst: OneFactor,
+    blendSrcAlpha: ZeroFactor,
+    blendDstAlpha: OneFactor,
+  });
+  // The composer sizes passes in device pixels. Bloom keeps the CSS-pixel
+  // resolution it is tuned for: its blur radius is counted in its own texels.
+  const setBloomSize = bloomPass.setSize.bind(bloomPass);
+  bloomPass.setSize = (width, height) => {
+    const ratio = renderer.getPixelRatio?.() || 1;
+    setBloomSize(width / ratio, height / ratio);
+  };
+  return bloomPass;
+}
+
+// options.bloom: whether any profile the pipeline takes can bloom (index.js: the
+// startup tier's, which the governor never climbs above); the given profile's by default.
+export function createPostprocessPipeline(renderer, scene, camera, qualityProfile, options = {}) {
+  const composer = new EffectComposer(renderer);
+  const renderPass = new SceneRenderPass(scene, camera);
+  const size = getSize(renderer);
+  // Built only where it can draw: a balanced startup creates none of its targets
+  // and links none of its programs.
+  const bloomPass =
+    (options.bloom ?? qualityProfile?.postprocessBloom === true)
+      ? createBloomPass(renderer, size)
+      : null;
   const gradingPass = new ShaderPass(GRADING_SHADER);
   // ShaderPass clones its uniforms: the tone curve's is the shared one.
   gradingPass.uniforms.uTone = FILM_TONE_UNIFORM;
@@ -885,30 +914,16 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
     renderer.extensions?.has?.("EXT_shader_texture_lod") === true
   )
     vignetteGrainPass.material.defines.LENS_LOD0 = 1;
-  // Bloom adds light, not depth: in film its composite keeps the layer codes.
-  Object.assign(bloomPass.blendMaterial, {
-    blendSrc: SrcAlphaFactor,
-    blendDst: OneFactor,
-    blendSrcAlpha: ZeroFactor,
-    blendDstAlpha: OneFactor,
-  });
   const matchMedia = options.matchMedia || globalThis.window?.matchMedia?.bind(globalThis.window);
   const onInvalidate = typeof options.onInvalidate === "function" ? options.onInvalidate : () => {};
   const transparencyQuery = matchMedia?.("(prefers-reduced-transparency: reduce)");
 
-  // The composer sizes passes in device pixels. Bloom keeps the CSS-pixel
-  // resolution it is tuned for: its blur radius is counted in its own texels.
-  const setBloomSize = bloomPass.setSize.bind(bloomPass);
-  bloomPass.setSize = (width, height) => {
-    const ratio = renderer.getPixelRatio?.() || 1;
-    setBloomSize(width / ratio, height / ratio);
-  };
-
-  // Halation reads the bloom's composite, which it draws anyway on high (no pass of its own).
-  gradingPass.uniforms.tHalation.value = bloomPass.renderTargetsHorizontal[0].texture;
-
   composer.addPass(renderPass);
-  composer.addPass(bloomPass);
+  if (bloomPass) {
+    // Halation reads the bloom's composite, which it draws anyway on high (no pass of its own).
+    gradingPass.uniforms.tHalation.value = bloomPass.renderTargetsHorizontal[0].texture;
+    composer.addPass(bloomPass);
+  }
   composer.addPass(gradingPass);
   composer.addPass(vignetteGrainPass);
 
@@ -1014,13 +1029,15 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
         }
       : baseline;
     const gradingEnabled = profile.postprocessGrading !== false;
-    const bloomEnabled = profile.postprocessBloom === true;
+    const bloomEnabled = bloomPass !== null && profile.postprocessBloom === true;
     const vignetteEnabled = profile.postprocessVignette === true && !reducedTransparency;
     const grainEnabled = profile.postprocessGrain === true;
 
-    bloomPass.enabled = bloomEnabled;
-    bloomPass.strength = settings.bloomStrength ?? 0.18;
-    bloomPass.blendMaterial.blending = film ? CustomBlending : AdditiveBlending;
+    if (bloomPass) {
+      bloomPass.enabled = bloomEnabled;
+      bloomPass.strength = settings.bloomStrength ?? 0.18;
+      bloomPass.blendMaterial.blending = film ? CustomBlending : AdditiveBlending;
+    }
     gradingPass.enabled = gradingEnabled;
     gradingPass.uniforms.uCelMix.value = film ? 0 : (settings.celMix ?? 0.24);
     gradingPass.uniforms.uInkMix.value = film ? SKY_INK.mix : 0.14;
@@ -1137,14 +1154,14 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
           composer.renderTarget2,
           prevTarget,
           renderPass.sampledTarget,
-          bloomPass.renderTargetBright,
-          ...bloomPass.renderTargetsHorizontal,
-          ...bloomPass.renderTargetsVertical,
+          bloomPass?.renderTargetBright,
+          ...(bloomPass?.renderTargetsHorizontal ?? []),
+          ...(bloomPass?.renderTargetsVertical ?? []),
         ]))
           target?.dispose();
     },
-    // Prepare every compositor program, including the high tier's bloom and
-    // scene-copy variants, without drawing or waiting on a first-use link.
+    // Prepare every compositor program, including the bloom's (where it is built)
+    // and the scene-copy variants, without drawing or waiting on a first-use link.
     // Grading also draws to the canvas when it is the last enabled pass.
     // Keep each target's captured program keys through its bounded link poll.
     compile() {
@@ -1160,10 +1177,14 @@ export function createPostprocessPipeline(renderer, scene, camera, qualityProfil
       };
       const offscreen = group([
         renderPass.copyQuad.material,
-        bloomPass.materialHighPassFilter,
-        ...bloomPass.separableBlurMaterials,
-        bloomPass.compositeMaterial,
-        bloomPass.blendMaterial,
+        ...(bloomPass
+          ? [
+              bloomPass.materialHighPassFilter,
+              ...bloomPass.separableBlurMaterials,
+              bloomPass.compositeMaterial,
+              bloomPass.blendMaterial,
+            ]
+          : []),
         gradingPass.material,
       ]);
       const screen = group([gradingPass.material, vignetteGrainPass.material]);

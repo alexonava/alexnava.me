@@ -20,10 +20,27 @@ import {
   referenceKeep,
   skyDirection,
 } from "../src/scene/lightning.js";
-import { CLOUD_RESHAPE, FLASH_REFERENCE, FLASH_SKY } from "../src/scene/estate-sky.js";
+import { STAR_LAYER } from "../src/scene/depth-layers.js";
+import {
+  CLOUD_RESHAPE,
+  CLOUD_VORTEX,
+  FLASH_REFERENCE,
+  FLASH_SKY,
+} from "../src/scene/estate-sky.js";
 import { FLASH_GROUND, FLASH_UNIFORMS, flashHook, lendFlashText } from "../src/scene/film-light.js";
 import { MIST_UNIFORMS } from "../src/scene/drifting-mist.js";
 import { flat, source } from "./support/code.mjs";
+
+// The entry's shared values the lazy chunk borrows (index.js `lib`).
+const lib = {
+  STAR_LAYER,
+  CLOUD_RESHAPE,
+  FLASH_REFERENCE,
+  MIST_UNIFORMS,
+  FLASH_GROUND,
+  FLASH_UNIFORMS,
+};
+const keep = (direction) => referenceKeep(direction, FLASH_REFERENCE);
 
 // Every pulse peak an event list holds.
 const peaksOf = (events) => events.flatMap((event) => event.peaks.map((p) => p.t));
@@ -148,10 +165,10 @@ test("a flash keeps exactly off The watch's reference banks, its crop's span", (
   assert.ok(FLASH_REFERENCE.wedge[3] <= CLOUD_RESHAPE.wedge[3]);
   for (let az = 122.5; az <= 173.5; az += 1.5)
     for (const alt of [-2, 0, 3, 8, 15, 25, 33])
-      assert.equal(referenceKeep(skyDirection(az, alt)), 0, `az ${az} alt ${alt}`);
+      assert.equal(keep(skyDirection(az, alt)), 0, `az ${az} alt ${alt}`);
   for (const az of [0, 60, 100, 200, 300])
-    for (const alt of [2, 10, 30]) assert.equal(referenceKeep(skyDirection(az, alt)), 1);
-  assert.ok(referenceKeep(skyDirection(150, 70)) === 1, "the zenith beyond the crop is free");
+    for (const alt of [2, 10, 30]) assert.equal(keep(skyDirection(az, alt)), 1);
+  assert.ok(keep(skyDirection(150, 70)) === 1, "the zenith beyond the crop is free");
 });
 
 test("a bolt's path is seeded, jagged, branching and reaches below the crest", () => {
@@ -217,6 +234,7 @@ function lightningRig({
     fill: { position: new Vector3(-30, 22, -28) },
   };
   const lightning = createLightning({
+    lib,
     parent,
     camera: lookToward(az),
     rendering: { lights },
@@ -398,12 +416,12 @@ test("no flash centres on the reference banks and no bolt reaches them", () => {
       const { level, event } = rig.lightning.state;
       if (!(level > 0)) continue;
       lit++;
-      assert.ok(referenceKeep(skyDirection(event.azimuth, event.altitude)) >= 0.98);
+      assert.ok(keep(skyDirection(event.azimuth, event.altitude)) >= 0.98);
       if (!rig.bolt.visible) continue;
       const position = rig.bolt.geometry.attributes.position;
       for (let v = 0; v < (rig.bolt.geometry.drawRange.count / 6) * 4; v++)
         assert.ok(
-          referenceKeep(new Vector3().fromBufferAttribute(position, v)) > 0,
+          keep(new Vector3().fromBufferAttribute(position, v)) > 0,
           `bolt vertex ${v} facing ${az}`,
         );
     }
@@ -531,7 +549,7 @@ test("flashHook adds the flash after a material's lights, composed and keyed, gu
   );
   assert.ok(plainShader.fragmentShader.includes("*(1.0))*material.diffuseColor;"));
   assert.equal(plain.customProgramCacheKey(), "grass|flash");
-  // The ground's text boxes guard it, lent by the lightning.
+  // The ground's text boxes guard it, lent by index.js (and the lightning).
   const contacts = {
     slateText: { value: {} },
     slateAbout: { value: {} },
@@ -641,11 +659,41 @@ test("the sky draws the flash in the banks, off the crop and the text, never in 
   assert.ok(puddles.includes("1.0+babelFlash.y*(1.0-slateBehindText())"));
 });
 
-test("index.js wires the lightning in film, by shot, before the first warm-up", () => {
+test("index.js fetches the lightning only in season and wires it in film, by shot, warmed", () => {
   const index = flat(source("src/scene/index.js"));
+  // A lazy chunk out of the entry, fetched only in its season by the scene's one date.
+  assert.doesNotMatch(index, /from "\.\/lightning\.js"/);
+  assert.ok(
+    index.includes(
+      'if (vortexSeason) import("./lightning.js") .then(({ createLightning }) => { if (runtimeDisposed) return;',
+    ),
+  );
+  // The flash's text boxes are lent before any film material links, in any month.
+  assert.ok(
+    index.indexOf("lendFlashText(groundContacts);") < index.indexOf('import("./lightning.js")'),
+  );
   const registered = index.indexOf("subsystemRegistry.register(lightning);");
   assert.ok(registered > index.indexOf("subsystemRegistry.register(solarBody);"));
-  assert.ok(registered < index.indexOf('warmShaders("scene");'), "its bolt links in the warm-up");
+  // It lands with the current quality and size; its bolt links in the opening's warm-up,
+  // else in its own.
+  assert.ok(
+    index.includes(
+      "subsystemRegistry.register(lightning); lightning.applyQuality(state.profile, { pixelRatio: renderer.getPixelRatio() }); lightning.resize(viewport);",
+    ),
+  );
+  assert.ok(index.includes('if (openingShaderStarted || canvasShown) warmShaders("lightning");'));
+  // Its season is the maelstrom's, read before the chunk is fetched.
+  assert.deepEqual([...LIGHTNING.months], [...CLOUD_VORTEX.months]);
+  // A lazy chunk imports only Three.js; the entry lends what it shares.
+  assert.deepEqual(
+    [...source("src/scene/lightning.js").matchAll(/from "([^"]+)"/g)].map((m) => m[1]),
+    ["three"],
+  );
+  assert.ok(
+    index.includes(
+      "lib: { STAR_LAYER, CLOUD_RESHAPE, FLASH_REFERENCE, MIST_UNIFORMS, FLASH_GROUND, FLASH_UNIFORMS },",
+    ),
+  );
   assert.ok(index.includes("film: () => filmActive,"));
   // The shot on screen: none while the walk drives the camera (walk.js).
   assert.ok(index.includes("shot: () => shotOnScreen()?.name ?? null,"));

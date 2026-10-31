@@ -24,8 +24,11 @@ import {
   COAST_MOOD,
   GLINT_MOOD,
   GRASS_MOOD,
+  FLASH_GROUND,
+  FLASH_UNIFORMS,
   LANTERN_MOOD,
   STONE_MOOD,
+  lendFlashText,
   shotLight,
   shotLook,
   applyShotTone,
@@ -40,7 +43,6 @@ import { ESTATE, estateLantern } from "./estate-layout.js";
 import { isWalkKey, walkAllowed } from "./walk-key.js";
 import { createRockScatter, estateContacts } from "./rock-scatter.js";
 import { createHillSilhouette } from "./hill-silhouette.js";
-import { createLightning } from "./lightning.js";
 import { createFarFires } from "./far-fires.js";
 import { markScene, measureScene, sceneNow } from "./perf-marks.js";
 import { createPropScale, LANTERN_SCALE } from "./prop-scale.js";
@@ -68,18 +70,22 @@ import { createSceneEnvironment } from "./environment.js";
 import {
   advanceMist,
   lendMistText,
+  MIST_UNIFORMS,
   setMistDatum,
   setMistLights,
   setMistShot,
   setMistTier,
 } from "./drifting-mist.js";
 import {
+  CLOUD_RESHAPE,
   CLOUD_VORTEX,
   cloudVortexCenter,
   cloudVortexInSeason,
   cloudVortexPresent,
   createEstateSkyMaterial,
+  FLASH_REFERENCE,
 } from "./estate-sky.js";
+import { STAR_LAYER } from "./depth-layers.js";
 import { createPerfReadout } from "./perf-readout.js";
 import { createSceneRendering } from "./rendering.js";
 import { createShotLevels } from "./shot-levels.js";
@@ -265,6 +271,9 @@ const GROUND_WAIT_S = 20;
       };
     const subsystemRegistry = createSceneSubsystemRegistry();
     const rendering = createSceneRendering({
+      // The governor never climbs above the startup tier, so only a startup that
+      // blooms builds the bloom.
+      bloom: qualityState.getProfile(qualityState.initialTier).postprocessBloom === true,
       container,
       debugShaders: qualityControls.debug,
       height: window.innerHeight,
@@ -481,25 +490,46 @@ const GROUND_WAIT_S = 20;
           else environmentDirty = true;
         }
       }
-      // The film storm's lightning (lightning.js): flashes in the shell's banks,
-      // now and then a far bolt in the sky, and the flash on the lights,
-      // on its own clock and only in film. Created before the first warm-up,
-      // which links the bolt's program.
-      const lightning = createLightning({
-        parent: atmosphereSystem.root,
-        camera,
-        rendering,
-        sky: skyShell.material.uniforms,
-        textGuard: groundContacts,
-        film: () => filmActive,
-        shot: () => shotOnScreen()?.name ?? null,
-        cutIn: () => tourCutIn,
-        profile: state.profile,
-        skyRadius: WORLD.SKY_DOME_RADIUS,
-        date: sceneDate,
-      });
-      subsystemRegistry.register(lightning);
-      if (qualityDebug) qualityDebug.lightning = lightning.state;
+      // The film storm's lightning (lightning.js): flashes in the shell's banks, now and
+      // then a far bolt in the sky, and the flash on the lights, on its own clock and only
+      // in film. A lazy chunk, fetched only in its season (the maelstrom's); it borrows
+      // the entry's shared values (`lib`). The flash's text boxes are lent now, before any
+      // film material links. The chunk lands long before the reveal and takes the current
+      // quality and size; landing before the opening's warm-up, its bolt's program links
+      // in that one, else in its own.
+      lendFlashText(groundContacts);
+      if (vortexSeason)
+        import("./lightning.js")
+          .then(({ createLightning }) => {
+            if (runtimeDisposed) return;
+            const lightning = createLightning({
+              lib: {
+                STAR_LAYER,
+                CLOUD_RESHAPE,
+                FLASH_REFERENCE,
+                MIST_UNIFORMS,
+                FLASH_GROUND,
+                FLASH_UNIFORMS,
+              },
+              parent: atmosphereSystem.root,
+              camera,
+              rendering,
+              sky: skyShell.material.uniforms,
+              textGuard: groundContacts,
+              film: () => filmActive,
+              shot: () => shotOnScreen()?.name ?? null,
+              cutIn: () => tourCutIn,
+              profile: state.profile,
+              skyRadius: WORLD.SKY_DOME_RADIUS,
+              date: sceneDate,
+            });
+            subsystemRegistry.register(lightning);
+            lightning.applyQuality(state.profile, { pixelRatio: renderer.getPixelRatio() });
+            lightning.resize(viewport);
+            if (qualityDebug) qualityDebug.lightning = lightning.state;
+            if (openingShaderStarted || canvasShown) warmShaders("lightning");
+          })
+          .catch(() => {});
       // The drifting mist (drifting-mist.js): the ground's text boxes are lent for its
       // text guard (MIST_DRIFT.text, off by default: it keeps every text's contrast as
       // it is); the moon key and the star light it; its clock, tier and the shot's

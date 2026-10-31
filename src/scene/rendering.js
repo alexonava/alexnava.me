@@ -23,7 +23,9 @@ import { createPostprocessPipeline } from "./postprocess.js";
 import { disposeSceneRuntimeResources } from "./runtime.js";
 import { compilePrograms, linkedPrograms } from "./shader-programs.js";
 
+// `bloom`: whether any profile it takes can bloom (postprocess.js), the startup tier's.
 export function createSceneRendering({
+  bloom,
   container,
   debugShaders = false,
   height,
@@ -72,6 +74,7 @@ export function createSceneRendering({
   container.appendChild(renderer.domElement);
 
   const postprocessPipeline = createPipeline(renderer, homeScene, camera, profile, {
+    bloom,
     onInvalidate,
   });
   const composer = postprocessPipeline.composer;

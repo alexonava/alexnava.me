@@ -76,9 +76,11 @@ function createPipeline(
     reducedTransparency = false,
     matchMedia = createMatchMedia(reducedTransparency),
     onInvalidate,
+    bloom,
   } = {},
 ) {
   return createPostprocessPipeline(createRendererMock(), {}, {}, profile, {
+    bloom,
     matchMedia,
     onInvalidate,
   });
@@ -128,15 +130,36 @@ test("high tier enables bloom, grading, vignette, and grain", () => {
   pipeline.dispose();
 });
 
-test("balanced tier disables bloom while keeping grading, vignette, and grain", () => {
-  const pipeline = createPipeline({
+test("balanced tier builds no bloom while keeping grading, vignette, and grain", () => {
+  const balanced = {
     postprocessGrading: true,
     postprocessBloom: false,
     postprocessVignette: true,
     postprocessGrain: true,
-  });
+  };
+  const pipeline = createPipeline(balanced);
 
-  assert.equal(pipeline.passes.bloom.enabled, false);
+  // A startup that never blooms creates none of its targets and links none of its programs.
+  assert.equal(pipeline.passes.bloom, null);
+  assert.deepEqual(pipeline.composer.passes, [
+    pipeline.passes.render,
+    pipeline.passes.grading,
+    pipeline.passes.vignetteGrain,
+  ]);
+  assert.equal(pipeline.passes.grading.uniforms.tHalation.value, null);
+  // A startup that blooms builds it whatever profile it is built with, off until a
+  // profile turns it on (index.js builds with high's and applies the startup tier's).
+  const high = createPipeline(balanced, { bloom: true });
+  assert.equal(high.passes.bloom.enabled, false);
+  assert.equal(high.composer.passes[1], high.passes.bloom);
+  high.setQualityProfile({ ...balanced, postprocessBloom: true });
+  assert.equal(high.passes.bloom.enabled, true);
+  high.dispose();
+  // And the high profile builds none where the startup never blooms.
+  const lean = createPipeline({ ...balanced, postprocessBloom: true }, { bloom: false });
+  assert.equal(lean.passes.bloom, null);
+  assert.deepEqual(lean.passes.grading.uniforms.uHalation.value.toArray(), [0, 0, 0]);
+  lean.dispose();
   assert.equal(pipeline.passes.grading.enabled, true);
   assert.equal(pipeline.passes.vignetteGrain.enabled, true);
   assert.equal(pipeline.passes.vignetteGrain.uniforms.uVignetteEnabled.value, 1);
@@ -153,7 +176,7 @@ test("a grading-only profile keeps only grading enabled", () => {
     postprocessGrain: false,
   });
 
-  assert.equal(pipeline.passes.bloom.enabled, false);
+  assert.equal(pipeline.passes.bloom, null);
   assert.equal(pipeline.passes.grading.enabled, true);
   assert.equal(pipeline.passes.vignetteGrain.enabled, false);
   assert.equal(pipeline.passes.vignetteGrain.uniforms.uVignetteEnabled.value, 0);
@@ -657,10 +680,11 @@ function controlledCompiler(renderer, { ready = false, onPoll = () => {} } = {})
   return { calls, settle, current };
 }
 
-function createRecordedPipeline(profile, camera = {}) {
+function createRecordedPipeline(profile, camera = {}, { bloom } = {}) {
   const draws = [];
   const renderer = createRecordingRenderer(draws);
   const pipeline = createPostprocessPipeline(renderer, { isScene: true }, camera, profile, {
+    bloom,
     matchMedia: createMatchMedia(),
   });
   const frame = () => {
@@ -779,7 +803,8 @@ test("the lens reads non-mipmapped frame targets at level zero before its per-pi
     1,
     "only lensSample's fallback reads without an explicit level",
   );
-  assert.equal(pipeline.composer.passes.length, 4);
+  // The scene, grading and the final pass (no bloom built here).
+  assert.equal(pipeline.composer.passes.length, 3);
   pipeline.dispose();
 });
 
@@ -859,7 +884,7 @@ test("a CSS resize or a lost context ends a crossfade; the same size keeps it", 
 });
 
 test("context loss retires compositor storage while preserving reusable targets and uniforms", () => {
-  const { capture, pipeline, frame } = createRecordedPipeline(GRADING_ONLY);
+  const { capture, pipeline, frame } = createRecordedPipeline(GRADING_ONLY, {}, { bloom: true });
   const kept = capture()[1][1];
   const { bloom, vignetteGrain } = pipeline.passes;
   const targets = new Set([
@@ -916,7 +941,7 @@ test("the phone text band follows each pixel's dissolve instead of switching at 
 });
 
 test("compile awaits all compositor programs once for their real targets; dispose frees the frame", async () => {
-  const { capture, draws, pipeline } = createRecordedPipeline(GRADING_ONLY);
+  const { capture, draws, pipeline } = createRecordedPipeline(GRADING_ONLY, {}, { bloom: true });
   const renderer = pipeline.composer.renderer;
   const { calls, settle, current } = controlledCompiler(renderer);
   const previous = { isWebGLRenderTarget: true };
@@ -981,6 +1006,22 @@ test("compile awaits all compositor programs once for their real targets; dispos
   const bare = createPipeline(GRADING_ONLY);
   assert.equal(await bare.compile(), false, "a renderer without compilation skips it");
   bare.dispose();
+});
+
+test("without the bloom, compile prepares only the scene copy and grading off screen", async () => {
+  const { pipeline } = createRecordedPipeline(GRADING_ONLY);
+  const renderer = pipeline.composer.renderer;
+  const { calls } = controlledCompiler(renderer, { ready: true });
+  const { render, grading, vignetteGrain } = pipeline.passes;
+  assert.equal(await pipeline.compile(), true);
+  assert.deepEqual(
+    calls.map((call) => call.objects.children.map((object) => object.material)),
+    [
+      [render.copyQuad.material, grading.material],
+      [grading.material, vignetteGrain.material],
+    ],
+  );
+  pipeline.dispose();
 });
 
 test("compositor preparation restores targets and settles false after compile or poll failure", async () => {
@@ -1366,10 +1407,14 @@ test("the final pass decodes each frame's layer from a 5-tap cross and mixes by 
 });
 
 test("the lens's heat, fringes and flare live in the final pass, in film, off the text; the heat and fringes off the kept banks", () => {
-  const { capture, frame, pipeline } = createRecordedPipeline({
-    tier: "high",
-    postprocessGrading: true,
-  });
+  const { capture, frame, pipeline } = createRecordedPipeline(
+    {
+      tier: "high",
+      postprocessGrading: true,
+    },
+    {},
+    { bloom: true },
+  );
   const final = pipeline.passes.vignetteGrain.uniforms;
   // No new pass: the scene, bloom, grading and the final pass.
   assert.equal(pipeline.composer.passes.length, 4);
@@ -1725,6 +1770,12 @@ test("the film look: halation where bloom draws, a print toe, midtone grain, and
   // Both land before the soft shoulder, which stays the last step.
   const shoulder = grading.indexOf("vec3 over = max(color - 0.75, 0.0);");
   assert.ok(grading.indexOf("color += halo * uHalation") < shoulder);
+  // Without halation (no bloom, or before the film) its tap is never read.
+  assert.ok(
+    flat(grading).includes(
+      "if (uHalation != vec3(0.0)) { vec3 halo = texture2D(tHalation, vUv).rgb; color += halo * uHalation",
+    ),
+  );
   // Only warm light bleeds: the halo's weight eases in with its red's lead over its blue.
   assert.match(
     grading,

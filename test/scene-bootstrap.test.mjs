@@ -512,6 +512,16 @@ test("the film's environment, the ground's text guard and the flame's bloom are 
   // The lantern flame's glare follows the bloom pass, not the shadow map
   // (balanced draws shadows without bloom).
   assert.match(index, /bloom: rendering\.postprocessPipeline\.passes\?\.bloom\?\.enabled === true/);
+  // The bloom is built only where the startup tier blooms: the governor never climbs
+  // above it, so a balanced startup links none of its programs.
+  assert.match(
+    index,
+    /createSceneRendering\(\{ bloom: qualityState\.getProfile\(qualityState\.initialTier\)\.postprocessBloom === true,/,
+  );
+  assert.match(
+    flat(source("src/scene/rendering.js")),
+    /createPipeline\(renderer, homeScene, camera, profile, \{ bloom, onInvalidate \}\)/,
+  );
   // sceneDebug reports the capture.
   assert.match(
     index,
