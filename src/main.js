@@ -151,7 +151,7 @@ import { createOpeningPreparation } from "./scene/opening-preparation.js";
     if (host) host.hidden = false;
   }
 
-  // scene/quality.js is in this bundle, ahead of this module.
+  // shared/quality-tier.js is in this bundle, ahead of this module.
   function readSceneQualityControls() {
     return site.scene.readSceneQualityControls(window.location?.search || "");
   }
@@ -294,20 +294,12 @@ import { createOpeningPreparation } from "./scene/opening-preparation.js";
     });
   }
 
-  // The scene's startup tier and whether it takes the lean path, from the probe the
-  // capability gate already ran (quality.js is in this bundle); a null tier when the probe
-  // left the limits unknown: the scene then probes and decides itself.
-  function readStartupQuality(capabilities) {
-    const scene = site.scene || {};
+  // The scene's startup tier, from the probe the capability gate already ran; null when
+  // the probe left the limits unknown: the scene then probes and decides itself.
+  function readStartupTier(capabilities) {
     try {
-      const caps = scene.qualityCapsFromProbe?.(capabilities);
-      if (!caps || typeof scene.createSceneQualityState !== "function") return null;
-      const state = scene.createSceneQualityState({ caps });
-      return {
-        tier: state.initialTier || null,
-        lean: state.lean === true,
-        touch: state.touchPrimary === true,
-      };
+      const caps = site.scene.qualityCapsFromProbe(capabilities);
+      return caps ? site.scene.selectStartupTier({ caps }) : null;
     } catch {
       return null;
     }
@@ -342,7 +334,7 @@ import { createOpeningPreparation } from "./scene/opening-preparation.js";
       const roles = opening.view === "tree" ? ["tree", "lantern"] : ["tree"];
       const prefetched = (scene.prefetched = new Map());
       for (const role of roles) {
-        const url = tier ? urls[tier]?.[role] : null;
+        const url = urls[tier][role];
         if (!url) continue;
         const controller = new AbortController();
         // The loading line counts tree bytes; the scene's preparation gate
@@ -383,10 +375,6 @@ import { createOpeningPreparation } from "./scene/opening-preparation.js";
     const prefetched = site.scene?.prefetched;
     prefetched?.forEach((entry) => entry.abort());
     prefetched?.clear();
-  }
-
-  async function loadAndInitScene() {
-    await site.ensureSceneReady();
   }
 
   site.ensureSceneReady = async function ensureSceneReady() {
@@ -439,8 +427,7 @@ import { createOpeningPreparation } from "./scene/opening-preparation.js";
     sceneLoadPromise = (async () => {
       const budget = startOpeningBudget();
       try {
-        const prepared =
-          site.shared.prepareWebGLCapabilities?.() ?? site.shared.getWebGLCapabilities();
+        const prepared = site.shared.prepareWebGLCapabilities();
         const capabilities =
           typeof prepared?.then === "function"
             ? await Promise.race([prepared, budget.expired])
@@ -457,8 +444,7 @@ import { createOpeningPreparation } from "./scene/opening-preparation.js";
 
         // The low tier keeps the static title card (?quality=low included): the
         // scene bundle is never requested.
-        const startup = readStartupQuality(capabilities);
-        const startupTier = latestControls?.overrideTier || startup?.tier || null;
+        const startupTier = latestControls?.overrideTier || readStartupTier(capabilities);
         if (startupTier === "low") {
           disableSceneHost();
           return false;
@@ -524,7 +510,7 @@ import { createOpeningPreparation } from "./scene/opening-preparation.js";
   function boot() {
     initUi();
     installStaticPreferenceRecovery();
-    afterFirstPaint(loadAndInitScene);
+    afterFirstPaint(() => site.ensureSceneReady());
   }
 
   if (document.readyState === "loading") {

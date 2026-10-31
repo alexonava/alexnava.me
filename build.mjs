@@ -305,8 +305,8 @@ function fingerprintChunks({ basename, entry: source }, { metafile, outputFiles 
 }
 
 // The scene loads every role. The UI can request the startup tree and lantern
-// beside the scene bundle, so it names only those: the other roles' hashes (the
-// rocks among them) then never change the UI bundle.
+// beside the scene bundle, so it names only those, with the trees' sizes: the
+// other roles' hashes (the rocks among them) then never change the UI bundle.
 // Returns the published scripts, entry first, as [{ name, text, lazy }].
 async function buildScriptBundle(
   { basename, entry, split },
@@ -318,9 +318,12 @@ async function buildScriptBundle(
 ) {
   const options = scriptBuildOptions(entry, split);
   const { urls, sizes } = architecture ?? (await architectureAssetManifest());
-  const openingModels = (manifest) =>
+  const openingModels = (manifest, roles) =>
     Object.fromEntries(
-      Object.entries(manifest).map(([tier, { tree, lantern }]) => [tier, { tree, lantern }]),
+      Object.entries(manifest).map(([tier, files]) => [
+        tier,
+        Object.fromEntries(roles.map((role) => [role, files[role]])),
+      ]),
     );
   // The scene manifests are string literals that the scene parses: an
   // object-valued define becomes a virtual module that splitting places in the
@@ -343,14 +346,19 @@ async function buildScriptBundle(
           ),
         }
       : {
-          __BABEL_ARCHITECTURE_PREFETCH_URLS__: JSON.stringify(openingModels(urls)),
-          // The same files' sizes, which the title card's loading line
-          // (src/ui/scene-loader.js) counts each download against.
-          __BABEL_ARCHITECTURE_PREFETCH_BYTES__: JSON.stringify(openingModels(sizes)),
+          __BABEL_ARCHITECTURE_PREFETCH_URLS__: JSON.stringify(
+            openingModels(urls, ["tree", "lantern"]),
+          ),
+          // The trees' sizes, which the title card's loading line
+          // (src/ui/scene-loader.js) counts their downloads against.
+          __BABEL_ARCHITECTURE_PREFETCH_BYTES__: JSON.stringify(openingModels(sizes, ["tree"])),
           __BABEL_SCENE_MODULE_PRELOADS__: JSON.stringify(sceneModulePreloads ?? []),
           __BABEL_WEBGL_PROBE_URL__: JSON.stringify(webglProbeUrl ?? ""),
           __BABEL_DOORS_URL__: JSON.stringify(doorsUrl ?? ""),
         };
+  // The capability worker posts getWebGLCapabilities() alone: shared/webgl-probe.js
+  // leaves the boot's worker spawner out of its bundle.
+  if (entry === WEBGL_PROBE_ENTRY) options.define.__BABEL_WEBGL_PROBE_WORKER__ = "true";
   if (entry === DOORS_ENTRY) {
     const { urls: paper } = await paperAssetManifest();
     options.define.__BABEL_PAPER_URLS__ = JSON.stringify({

@@ -56,7 +56,7 @@ The page is complete without scripts, once the opening's doors, which cover it f
 
 **Reduced data** (`prefers-reduced-data: reduce`, or Save-Data from `navigator.connection`, which only Chromium browsers have)
 
-- No live scene: main.js keeps the title card, and with `?sceneDebug=1` quality.js still gives the low startup tier, which keeps it too. When the probe could not read the texture limits, main.js downloads the scene bundle before `initHomeScene()` declines that tier; the title card stays either way. Only `?quality=high` or `?quality=balanced` overrides reduced data.
+- No live scene: main.js keeps the title card, and with `?sceneDebug=1` quality-tier.js still gives the low startup tier, which keeps it too. When the probe could not read the texture limits, main.js downloads the scene bundle before `initHomeScene()` declines that tier; the title card stays either way. Only `?quality=high` or `?quality=balanced` overrides reduced data.
 - The scene loads if the preference later clears, unless the address carries `?quality=high|balanced|low` or `?sceneDebug=1|true`, as under reduced motion. With `?sceneDebug=1`, a reduced-data change alone does not restart startup; clearing forced colours rechecks the current preferences even with that override.
 
 **Reduced transparency** (`prefers-reduced-transparency: reduce`)

@@ -22,7 +22,7 @@ const projectRoot = path.resolve(testDir, "..");
 
 const mainSourcePath = path.join(projectRoot, "src", "main.js");
 
-const qualitySourcePath = path.join(projectRoot, "src", "scene", "quality.js");
+const tierSourcePath = path.join(projectRoot, "src", "shared", "quality-tier.js");
 
 const webglProbePath = path.join(projectRoot, "src", "shared", "webgl-probe.js");
 
@@ -422,10 +422,10 @@ function createContext({
 
 async function loadMainWithQuality(context) {
   const probeSource = await readFile(webglProbePath, "utf8");
-  const qualitySource = await readFile(qualitySourcePath, "utf8");
+  const tierSource = await readFile(tierSourcePath, "utf8");
   const mainSource = await readFile(mainSourcePath, "utf8");
   vm.runInNewContext(probeSource, context, { filename: webglProbePath });
-  vm.runInNewContext(qualitySource, context, { filename: qualitySourcePath });
+  vm.runInNewContext(tierSource, context, { filename: tierSourcePath });
   vm.runInNewContext(classicSource(mainSource), context, { filename: mainSourcePath });
 }
 
@@ -814,9 +814,9 @@ test("preferences interrupting a pending bundle rearm recovery and initialize th
         modulePreloads: ["/scripts/scene.shared.0123abcd.js"],
         scriptOutcomes: ["pending"],
         initResult(scene) {
-          // The real scene declines the low tier selected by this actual
-          // quality helper. navigator.connection alone carries Save-Data.
-          const tier = scene.createSceneQualityState({ caps: CAPABLE }).initialTier;
+          // The real scene declines the low tier, chosen as the actual tier
+          // helper chooses it. navigator.connection alone carries Save-Data.
+          const tier = scene.selectStartupTier({ caps: CAPABLE });
           tiers.push(tier);
           return tier !== "low";
         },
@@ -910,7 +910,7 @@ test("a cached scene's preference-driven low-tier decline can rearm another elig
       // Exercise a change observed by the actual initializer after main's
       // last gate check; only the first cached initialization declines.
       if (tiers.length === 0) harness.connection.setSaveData(true);
-      const tier = scene.createSceneQualityState({ caps: CAPABLE }).initialTier;
+      const tier = scene.selectStartupTier({ caps: CAPABLE });
       tiers.push(tier);
       return tier !== "low";
     },
@@ -1000,7 +1000,7 @@ test("bundle-time preference checks preserve explicit quality and debug controls
         search,
         scriptOutcomes: ["pending"],
         initResult(scene) {
-          const tier = scene.createSceneQualityState({ caps: CAPABLE }).initialTier;
+          const tier = scene.selectStartupTier({ caps: CAPABLE });
           tiers.push(tier);
           return tier !== "low";
         },
@@ -1733,7 +1733,10 @@ const contactSource = await readFile(new URL("../src/ui/contact.js", import.meta
 
 const mainSource = await readFile(new URL("../src/main.js", import.meta.url), "utf8");
 
-const qualitySource = await readFile(new URL("../src/scene/quality.js", import.meta.url), "utf8");
+const tierSource = await readFile(
+  new URL("../src/shared/quality-tier.js", import.meta.url),
+  "utf8",
+);
 
 function createFixture({ readyState = "complete" } = {}) {
   const dom = createContactDom({ readyState });
@@ -1755,7 +1758,7 @@ function createFixture({ readyState = "complete" } = {}) {
         resolveSceneOpening,
         createOpeningPreparation,
       });
-      vm.runInContext(qualitySource, context, { filename: "src/scene/quality.js" });
+      vm.runInContext(tierSource, context, { filename: "src/shared/quality-tier.js" });
       vm.runInContext(contactSource, context, { filename: "src/ui/contact.js" });
       vm.runInContext(classicSource(mainSource), context, { filename: "src/main.js" });
     },

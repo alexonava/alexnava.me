@@ -75,7 +75,7 @@ Each row is a media query in styles.css; queries that appear in several places a
 | `(forced-colors: active), (prefers-contrast: more)`                                  | The system cursor replaces the line cursor, and the title card's grain and the loading line's star are removed. Under increased contrast alone the doors stay plain paper: no fibres, light or drawing.                                                                                                                                                                      |
 | `@supports (text-wrap: balance)`                                                     | The name balances its lines with `overflow-wrap: normal`; otherwise it breaks with `overflow-wrap: anywhere`. The 404's heading takes `text-wrap: balance` outside the query.                                                                                                                                                                                                |
 
-styles.css has no `prefers-reduced-data` query: [main.js](../src/main.js) and [quality.js](../src/scene/quality.js) read that preference ([Accessibility](ACCESSIBILITY.md#preferences)).
+styles.css has no `prefers-reduced-data` query: [main.js](../src/main.js) and [quality-tier.js](../src/shared/quality-tier.js) read that preference ([Accessibility](ACCESSIBILITY.md#preferences)).
 
 main.js also gates scene startup on forced colours before any WebGL probe, scene or model request, or loading line, regardless of quality or debug overrides. When forced colours clear it rechecks the other startup gates and starts once if eligible; CSS still hides decorative layers if the preference turns on after initialization ([Accessibility](ACCESSIBILITY.md#preferences)).
 

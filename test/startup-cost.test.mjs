@@ -346,13 +346,10 @@ test("scene quality reuses the probe's limits and opens its own context only wit
       },
     }),
   };
-  vm.runInNewContext(await source("scene/quality.js"), {
-    window,
-    document,
-    navigator: {},
-    URLSearchParams,
-    console,
-  });
+  // The scene's quality.js reads the UI bundle's tier choice, which runs first.
+  const sandbox = vm.createContext({ window, document, navigator: {}, URLSearchParams, console });
+  for (const file of ["shared/quality-tier.js", "scene/quality.js"])
+    vm.runInContext(await source(file), sandbox);
   const scene = window.BabelSite.scene;
   const probe = {
     available: true,
@@ -1351,7 +1348,7 @@ function createGround(
   };
   const ground = createGroundTextures({
     THREE: { CanvasTexture, MirroredRepeatWrapping, RepeatWrapping, SRGBColorSpace },
-    qualityProfile: { tier, textures: { groundSize }, anisotropy: { min: 1, max: 8 } },
+    qualityProfile: { tier, textures: { groundSize }, anisotropy: { max: 8 } },
     chooseAnisotropy: () => 4,
     invalidate: () => (invalidations += 1),
     onDetailStatus: (status) => statuses.push(status),

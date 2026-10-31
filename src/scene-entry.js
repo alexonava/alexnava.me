@@ -5,10 +5,10 @@
 // the start of this entry chunk's evaluation (the shared Three.js chunk it
 // imports has already evaluated by then), then shared helpers, then
 // textures.js and scene/index.js, which read helpers, palette, world and
-// quality at import time.
+// quality at import time. Only main.js loads this entry, after the UI bundle
+// (app.js) has run: the WebGL probe and the startup tier's functions are read
+// from BabelSite, never bundled again here.
 import { markSceneEvaluated } from "./scene/perf-marks.js";
-import "./shared/webgl-probe.js";
-import "./shared/motion.js";
 import "./scene/helpers.js";
 import "./scene/palette.js";
 import "./scene/world.js";

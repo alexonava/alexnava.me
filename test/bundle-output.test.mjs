@@ -138,6 +138,27 @@ test("the cold WebGL probe is a separate same-origin worker named by the UI", as
   assert.match(workerSource, /OffscreenCanvas/);
   assert.doesNotMatch(workerSource, /gl_Position/, "the capability worker contains no Three.js");
   assert.deepEqual(chunkImports(workerSource), { static: [], dynamic: [] });
+  // The worker posts the probe's result alone; spawning it and supportsWebGL are the UI's.
+  assert.match(app, /prepareWebGLCapabilities/);
+  assert.match(app, /supportsWebGL/);
+  assert.doesNotMatch(workerSource, /prepareWebGLCapabilities|supportsWebGL/);
+});
+
+test("the UI bundle and the scene each carry their own half of quality, and the probe once", async () => {
+  const app = await readFile(await findHashedScript("app"), "utf8");
+  const scene = await readSceneStatic();
+  // The UI picks the startup tier; profiles, composition and the governor are the scene's.
+  assert.match(app, /selectStartupTier/);
+  assert.doesNotMatch(app, /createSceneQualityGovernor|getSceneCompositionProfile/);
+  assert.match(scene, /createSceneQualityGovernor/);
+  // The scene reads the UI's probe, tier choice and motion query from BabelSite.
+  for (const name of [
+    "selectStartupTier",
+    "prefers-reduced-data",
+    "swiftshader",
+    "reducedMotionQuery",
+  ])
+    assert.doesNotMatch(scene, new RegExp(name, "i"), name);
 });
 
 test("scene bundle stays under the deferred-payload budget", async () => {
@@ -510,7 +531,7 @@ test("the pages publish no picture, and the share card's backdrop stays unpublis
   });
 });
 
-test("the UI carries the loading line and its opening subjects' byte sizes; the scene only reports to it", async () => {
+test("the UI carries the loading line and its trees' byte sizes; the scene only reports to it", async () => {
   const app = await readFile(await findHashedScript("app"), "utf8");
   const scene = await readSceneStatic();
   assert.match(app, /scene-loader__value/);
@@ -518,15 +539,17 @@ test("the UI carries the loading line and its opening subjects' byte sizes; the 
   assert.match(app, /scene-star/);
   assert.match(app, /sceneLoader/);
   for (const tier of ["high", "balanced"]) {
+    // The line counts the tree's bytes; the lantern's completion comes from preparation.
+    const tree = await stat(path.join(projectRoot, "images", "architecture", `tree-${tier}.glb`));
+    assert.ok(app.includes(`tree:${tree.size}`), `the UI names tree-${tier}'s ${tree.size} bytes`);
     for (const role of ["tree", "lantern"]) {
       const { size } = await stat(
         path.join(projectRoot, "images", "architecture", `${role}-${tier}.glb`),
       );
-      assert.ok(app.includes(`${role}:${size}`), `the UI names ${role}-${tier}'s ${size} bytes`);
       assert.ok(!scene.includes(`${role}:${size}`), `the scene carries no ${role}-${tier} size`);
     }
   }
-  for (const role of ROLES.filter((item) => !["tree", "lantern"].includes(item))) {
+  for (const role of ROLES.filter((item) => item !== "tree")) {
     const { size } = await stat(
       path.join(projectRoot, "images", "architecture", `${role}-high.glb`),
     );
@@ -628,7 +651,7 @@ test("early tree and lantern model revisions change only their UI manifest entri
         text: await readFile(path.join(fixture, "dist", "scripts", names[0]), "utf8"),
       };
     }
-    // The UI's model manifest: each tier's early tree and lantern URLs and sizes.
+    // The UI's model manifest: each tier's early tree and lantern URLs, and its tree's size.
     const manifest = (text) => ({
       urls: text.match(/\/images\/architecture\/[\w-]+\.[a-f0-9]{8}\.glb/g),
       // Model payloads exceed 100 bytes; the pure selector also names tree:4.
@@ -639,7 +662,7 @@ test("early tree and lantern model revisions change only their UI manifest entri
     const oldUrl = `/images/architecture/tree-high.${sha8(sourceBefore)}.glb`;
     const oldSize = `tree:${sourceBefore.length}`;
     assert.equal(was.urls.length, 4);
-    assert.equal(was.sizes.length, 4);
+    assert.equal(was.sizes.length, 2, "the loading line counts the trees alone");
     assert.equal(
       was.urls.filter((url) => url === oldUrl).length,
       1,
@@ -658,7 +681,7 @@ test("early tree and lantern model revisions change only their UI manifest entri
       sizes: was.sizes.map((size) => (size === oldSize ? `tree:${changed.length}` : size)),
     });
     // An unchanged rebuild publishes the same UI. The selected opener's
-    // lantern also changes precisely its own URL and size.
+    // lantern also changes precisely its own URL.
     assert.equal((await buildApp()).name, after.name);
     const lantern = path.join(fixture, "images", "architecture", "lantern-high.glb");
     const lanternBefore = await readFile(lantern);
@@ -670,9 +693,7 @@ test("early tree and lantern model revisions change only their UI manifest entri
       urls: manifest(after.text).urls.map((url) =>
         url.replace(sha8(lanternBefore), sha8(lanternAfter)),
       ),
-      sizes: manifest(after.text).sizes.map((size) =>
-        size === `lantern:${lanternBefore.length}` ? `lantern:${lanternAfter.length}` : size,
-      ),
+      sizes: manifest(after.text).sizes,
     });
     const rock = path.join(fixture, "images", "architecture", "lichen-rock-high.glb");
     await writeFile(rock, Buffer.concat([await readFile(rock), Buffer.from("fixture")]));

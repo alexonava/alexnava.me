@@ -319,9 +319,13 @@ test("the scene entry marks its evaluation first, and the bootstrap reuses the p
   const entry = source("src/scene-entry.js");
   assert.match(
     entry,
-    /^import \{ markSceneEvaluated \} from "\.\/scene\/perf-marks\.js";\r?\nimport "\.\/shared\/webgl-probe\.js";/m,
+    /^import \{ markSceneEvaluated \} from "\.\/scene\/perf-marks\.js";\r?\nimport "\.\/scene\/helpers\.js";/m,
   );
   assert.match(entry, /import "\.\/scene\/index\.js";\s*markSceneEvaluated\(\);\s*$/);
+  // The UI bundle has always run the probe and the tier choice before main.js
+  // loads this entry: the scene reads them from BabelSite, never bundling them again.
+  assert.doesNotMatch(entry, /shared\//);
+  assert.doesNotMatch(index, /from "\.\.\/shared\/|import "\.\.\/shared\//);
   assert.match(
     index,
     /caps: scene\.qualityCapsFromProbe\?\.\(site\.shared\?\.getWebGLCapabilities\?\.\(\)\) \?\? null/,
@@ -331,6 +335,7 @@ test("the scene entry marks its evaluation first, and the bootstrap reuses the p
   assert.match(index, /measureScene\(`shaders:\$\{label\}`, start\);/);
   for (const path of [
     "src/shared/webgl-probe.js",
+    "src/shared/quality-tier.js",
     "src/scene/quality.js",
     "src/scene/rendering.js",
   ])

@@ -1,23 +1,15 @@
 // WebGL feature probe shared by UI boot, its one-shot worker and the scene.
 //
 // `main.js` calls this before triggering the scene-bundle download so we skip
-// the network cost on browsers without hardware WebGL. `scene/helpers.js`
-// re-exposes it as `scene.supportsWebGL` for the scene-side guard at init time.
-// The cached result also carries the texture limits the quality tier reads,
-// so the scene does not open a second probe context for them.
+// the network cost on browsers without hardware WebGL. The UI bundle carries
+// it; `scene/helpers.js` re-exposes it as `scene.supportsWebGL` for the
+// scene-side guard at init time. The cached result also carries the texture
+// limits the quality tier reads, so the scene does not open a second probe
+// context for them.
 (() => {
   const scope = typeof window !== "undefined" ? window : globalThis;
   const site = (scope.BabelSite = scope.BabelSite || {});
   const shared = (site.shared = site.shared || {});
-
-  // The scene entry also imports this module. Keep the first implementation
-  // (and its cached result) when the deferred bundle executes.
-  if (
-    typeof shared.getWebGLCapabilities === "function" &&
-    typeof shared.supportsWebGL === "function"
-  ) {
-    return;
-  }
 
   const SOFTWARE_RENDERER_PATTERN =
     /swiftshader|llvmpipe|software (?:rasterizer|renderer)|microsoft basic render driver/i;
@@ -136,6 +128,11 @@
       releaseProbeContext(gl);
     }
   };
+
+  // The capability worker (webgl-probe-worker.js) posts getWebGLCapabilities()
+  // alone; its build defines __BABEL_WEBGL_PROBE_WORKER__, which leaves the
+  // boot's companions below out of its bundle.
+  if (typeof __BABEL_WEBGL_PROBE_WORKER__ !== "undefined") return;
 
   // Boot alone uses this async companion. Existing scene guards keep their
   // synchronous API and reuse the same frozen result once the worker answers.

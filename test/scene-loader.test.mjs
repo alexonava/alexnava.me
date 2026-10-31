@@ -56,7 +56,6 @@ function createHarness({
   const timingObservers = new Set();
   const visibilityListeners = new Set();
   const eventListeners = new Map();
-  const dispatched = [];
   const frames = [];
   const timers = new Map();
   let nextTimer = 1;
@@ -215,23 +214,12 @@ function createHarness({
     ...(performanceObserver ? { PerformanceObserver } : {}),
     ReadableStream,
     Response,
-    CustomEvent: class CustomEvent {
-      constructor(type, options) {
-        this.type = type;
-        this.detail = options?.detail;
-      }
-    },
     addEventListener(type, handler) {
       if (!eventListeners.has(type)) eventListeners.set(type, new Set());
       eventListeners.get(type).add(handler);
     },
     removeEventListener(type, handler) {
       eventListeners.get(type)?.delete(handler);
-    },
-    dispatchEvent(event) {
-      dispatched.push(event);
-      eventListeners.get(event.type)?.forEach((handler) => handler(event));
-      return true;
     },
     requestAnimationFrame(callback) {
       frames.push(callback);
@@ -255,12 +243,6 @@ function createHarness({
     value,
     document,
     events,
-    dispatched,
-    preparation(snapshot) {
-      window.dispatchEvent(
-        new window.CustomEvent("babel:opening-preparation", { detail: snapshot }),
-      );
-    },
     sceneLoader: window.BabelSite.sceneLoader,
     // The state as plain objects of this realm, for deep comparisons.
     state() {
@@ -558,26 +540,26 @@ test("the loading ledger resolves ordinary, explicit and scripted openings like 
   }
 });
 
-test("preparation counts completed work, holds below reveal, and cleans its event bridge", async () => {
+test("preparation counts completed work, holds below reveal, and cleans up at the reveal", async () => {
   const h = createHarness();
   h.sceneLoader.begin({ tier: "high" });
   h.sceneLoader.preparation({ status: "preparing", completed: 0, total: 4, stage: "maps" });
   completeWatch(h);
   assert.equal(h.state().progress, 0.768);
-  h.preparation({ status: "preparing", completed: 2, total: 4, stage: "programs" });
+  h.sceneLoader.preparation({ status: "preparing", completed: 2, total: 4, stage: "programs" });
   assert.equal(h.state().progress, 0.864);
   h.advance(14000);
-  h.preparation({ status: "preparing", completed: 3, total: 4, stage: "foreground" });
+  h.sceneLoader.preparation({ status: "preparing", completed: 3, total: 4, stage: "foreground" });
   h.advance(14000);
   assert.equal(h.state().status, "loading", "real preparation restarts idle time");
-  h.preparation({ status: "ready", completed: 4, total: 4, stage: "ready" });
+  h.sceneLoader.preparation({ status: "ready", completed: 4, total: 4, stage: "ready" });
   assert.equal(h.state().progress, 0.96);
   assert.equal(h.state().status, "loading", "ready work is not a revealed canvas");
   h.host.classList.add("is-ready");
   await settle();
   assert.equal(h.state().progress, 1);
   assert.equal(h.observerCount, 0);
-  h.preparation({ status: "failed", completed: 0, total: 4 });
+  h.sceneLoader.preparation({ status: "failed", completed: 0, total: 4 });
   assert.equal(h.state().status, "revealed");
 });
 
@@ -590,8 +572,6 @@ test("duplicate preparation cannot keep a stalled loader alive and terminal fail
   h.sceneLoader.preparation(snapshot);
   h.advance(4000);
   assert.equal(h.state().status, "stalled");
-  assert.equal(h.dispatched.filter((event) => event.type === "babel:opening-timeout").length, 1);
-  assert.equal(h.dispatched.at(-1).detail.reason, "idle");
   for (const status of ["fallback", "failed"]) {
     const failed = createHarness();
     failed.sceneLoader.begin();
