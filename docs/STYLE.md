@@ -14,8 +14,8 @@ The rules for visual, motion and typographic changes. Read them before changing 
 ## Palette and type
 
 - Deep navy, soot and twilight stone backgrounds; warm off-white text, never pure white; amber, brass and soft peach accents with an occasional cool twilight lift. No flat black, neon or saturated rainbow colour.
-- Display type is Cormorant Garamond, body and UI type Instrument Sans: the two self-hosted variable fonts and no others.
-- The name is Cormorant 700, `#f7f1ea`, with its soft halo, from the font's true 700 master with synthetic bold disabled; the 404's heading takes the same face, weight and halo. Eyebrows are uppercase, tracked and restrained.
+- Display type is Cormorant Garamond, body and UI type Instrument Sans: the two self-hosted fonts and no others.
+- The name is Cormorant 700, `#f7f1ea`, with its soft halo, from the font's true 700 master (the self-hosted file is that instance) with synthetic bold disabled; the 404's heading takes the same face, weight and halo. Eyebrows are uppercase, tracked and restrained.
 - All text takes the name's colour, `#f7f1ea` (`--text`), a warm off-white (the owner's rule of 2026-10-15: "i kind of want all the text to be the color of my name because the color they are looks cheap"): the intro, the eyebrow, the footer, the loading line and the 404 included. Size, weight, tracking and the footer's underlines make the hierarchy, never a dimmer grey, a fade or a brighter state; only forced colours give text the system's colours. Gold belongs to the sun and materials, not secondary text. Controls use the shared surface, line and focus tokens; no bright blue chrome or glossy buttons.
 - Selected text takes a translucent wash of the sun's amber, never system blue: warm white (`#f7f1ea`) over a 32% wash, one rule for both pages, reading above 4.5:1 on the night. Both pages declare `color-scheme: dark`.
 - The name, the intro and the 404's heading balance their lines, and the 404's text wraps pretty, so none ends on a lone word.

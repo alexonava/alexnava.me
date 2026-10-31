@@ -120,11 +120,13 @@ bitmaps; late decodes are freed without rebinding.
 
 `fonts/`. The build discovers every `fonts/*.woff2` ([build.mjs](../build.mjs) `fontAssetManifest`).
 
-| File                                |  Bytes | Weights | Role         |
-| ----------------------------------- | -----: | ------- | ------------ |
-| `cormorant-garamond-variable.woff2` | 37,640 | 300–700 | Display      |
-| `instrument-sans-variable.woff2`    | 30,092 | 400–700 | Body and UI  |
-| `OFL.txt`                           |  4,486 |         | Font license |
+| File                                |  Bytes | Weights            | Role         |
+| ----------------------------------- | -----: | ------------------ | ------------ |
+| `cormorant-garamond-variable.woff2` | 10,712 | 700 (static)       | Display      |
+| `instrument-sans-variable.woff2`    | 20,516 | 400–700 (variable) | Body and UI  |
+| `OFL.txt`                           |  4,486 |                    | Font license |
+
+Both hold Basic Latin (U+0020–007E), the no-break space and ‘ ’ “ ” – — …; Instrument Sans also the middle dot of the loading line. Each `@font-face` declares that set as its `unicode-range`, so a character outside it falls back to the stack's next font (Georgia for the name, the system sans for the rest); `test/markup-accessibility.test.mjs` fails when either page's text leaves its face's range. The name's file keeps its `-variable` name so the preloads and hashes stay put.
 
 ## Icons and share card
 
@@ -132,13 +134,13 @@ bitmaps; late decodes are freed without rebinding.
 
 | File                    |   Bytes | Pixels    | Notes                                                     |
 | ----------------------- | ------: | --------- | --------------------------------------------------------- |
-| `favicon.ico`           |   5,430 | 16 and 32 | Fallback on both pages, listed before the SVG; BMP images |
+| `favicon.ico`           |     602 | 16 and 32 | Fallback on both pages, listed before the SVG; PNG images |
 | `favicon.svg`           |   3,394 | vector    | Page icon on both pages                                   |
 | `icon.svg`              |   3,394 | vector    | Manifest, `any`; the same file as `favicon.svg`           |
 | `icon-maskable.svg`     |   3,423 | vector    | Manifest, `maskable`                                      |
 | `apple-touch-icon.png`  |   1,101 | 180×180   | Opaque palette                                            |
 | `icon-192.png`          |   1,969 | 192×192   | Palette with transparency (tRNS)                          |
-| `icon-512.png`          |  18,901 | 512×512   | RGBA                                                      |
+| `icon-512.png`          |  12,833 | 512×512   | RGBA (305 colours, too many for a palette)                |
 | `icon-maskable-512.png` |   2,928 | 512×512   | Opaque palette                                            |
 | `og.png`                | 298,049 | 1200×630  | Share card; opaque, 224-colour palette                    |
 
@@ -159,7 +161,7 @@ Runtime assets are committed in their delivered form. Local authoring helpers al
 | Slate maps                    | Baked in Blender from a supplied Meshy model                                                                                                                                                                                                                                                                                                                                       |
 | Coast detail                  | The normal/roughness tile is downsampled and packed from CC0 Poly Haven “Seaside Rock.” `tools/bake-coast-albedo.py` checks the diffuse source MD5, downsamples it to 512px and reports the colour tile's measured linear RGB mean. Original maps, metadata and the packed-data preparation are in `Assets/Materials/coast-detail-v1` ([Credits](CREDITS.md#coast-rock-detail)).   |
 | The opening's paper           | Greyscale tiles from the CC0 ambientCG "Paper 006" 1K scan: its colour's luminance against its own local mean (detail) and its displacement at half contrast (height), made by `Assets/Materials/paper-v1/make-paper.ps1` from the archived source set ([Credits](CREDITS.md#the-openings-paper)).                                                                                 |
-| Fonts                         | Variable woff2 subsets of the two OFL fonts; the subsetting is not in the repository                                                                                                                                                                                                                                                                                               |
+| Fonts                         | woff2 subsets of the two OFL fonts made with fontTools ([below](#change-a-font))                                                                                                                                                                                                                                                                                                   |
 | Icons                         | The initials traced into outlines by a Node script from Chrome's rendering of Cormorant Garamond 700 at 1000 px (marching squares, simplified to within 0.2 px), and the PNG and ICO images rendered by Chrome from the same drawings by another ([Credits](CREDITS.md)); no generator in the repository                                                                           |
 | `public/og.png`               | Rendered from `tools/og-card.html` over the backdrop ([below](#refresh-the-share-card))                                                                                                                                                                                                                                                                                            |
 | `tools/og-card-backdrop.webp` | A 1600×670 high-quality still of The broken coast at native move phase 0.5, cropped from the fully loaded live scene                                                                                                                                                                                                                                                               |
@@ -222,7 +224,15 @@ Keep the names and sizes: `apple-touch-icon.png` 180×180 and `icon-maskable-512
 
 ### Change a font
 
-The two variable fonts are the only ones the design allows ([Style](STYLE.md#palette-and-type)). To replace one, keep its file name or update every reference: the `@font-face` rule in [styles.css](../styles.css), the `<link rel="preload">`s in [index.html](../index.html) and [404.html](../404.html), the share card's own `@font-face` URLs in [tools/og-card.html](../tools/og-card.html), and `fonts/OFL.txt`'s copyright lines. `test/bundle-output.test.mjs` requires every `fonts/*.woff2` to be in the stylesheet and preloaded, each page's preloads to name exactly the stylesheet's fonts, and the two copyright lines; `test/markup-accessibility.test.mjs` holds the 404's preloads equal to the homepage's. `test/markup-accessibility.test.mjs` finds the two `@font-face` rules by file name (`cormorant-garamond-variable.woff2`, `instrument-sans-variable.woff2`) and expects weight ranges 300–700 and 400–700, so a renamed file changes that test too.
+The two fonts are the only ones the design allows ([Style](STYLE.md#palette-and-type)). The files are cut with fontTools from the two full variable woff2 fonts the site first shipped (kept in Git history under the same names), where `U` is `U+0020-007E,U+00A0,U+2013-2014,U+2018-2019,U+201C-201D,U+2026` and `F` is `kern,liga,calt,ccmp,locl,mark,mkmk,tnum,pnum`:
+
+```sh
+fonttools varLib.instancer cormorant-garamond-variable.woff2 wght=700 --update-name-table -o cg700.ttf
+pyftsubset cg700.ttf --unicodes=$U --layout-features=$F --name-IDs='*' --flavor=woff2 --output-file=fonts/cormorant-garamond-variable.woff2
+pyftsubset instrument-sans-variable.woff2 --unicodes=$U,U+00B7 --layout-features=$F --name-IDs='*' --flavor=woff2 --output-file=fonts/instrument-sans-variable.woff2
+```
+
+Copy that needs a character outside the set, or the name at another weight, means cutting the files again from those sources and widening the `unicode-range`s to match. To replace one, keep its file name or update every reference: the `@font-face` rule in [styles.css](../styles.css), the `<link rel="preload">`s in [index.html](../index.html) and [404.html](../404.html), the share card's own `@font-face` URLs in [tools/og-card.html](../tools/og-card.html), and `fonts/OFL.txt`'s copyright lines. `test/bundle-output.test.mjs` requires every `fonts/*.woff2` to be in the stylesheet and preloaded, each page's preloads to name exactly the stylesheet's fonts, and the two copyright lines; `test/markup-accessibility.test.mjs` holds the 404's preloads equal to the homepage's. `test/markup-accessibility.test.mjs` finds the two `@font-face` rules by file name (`cormorant-garamond-variable.woff2`, `instrument-sans-variable.woff2`) expects the weights 700 and 400–700, and checks every character either page shows against its face's `unicode-range`, so a renamed file changes that test too.
 
 ### Refresh the share card
 

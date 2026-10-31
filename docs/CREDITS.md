@@ -30,9 +30,13 @@
 - **Instrument Sans** by The Instrument Sans Project Authors — SIL Open Font
   License 1.1.
 
-Both are self-hosted as variable woff2 subsets in `fonts/`. Their copyright
-notices and the license text are in `fonts/OFL.txt`, which the site publishes
-beside them at `/fonts/OFL.txt`.
+Both are self-hosted as woff2 subsets in `fonts/`, modified versions under the
+license's terms: Cormorant Garamond as a static 700 instance and Instrument Sans
+as a variable font, each cut to Basic Latin and the few typographic marks the
+site uses ([Assets](ASSETS.md#fonts)). Neither font declares a Reserved Font
+Name, so the subsets keep their names. Their copyright notices and the license
+text are in `fonts/OFL.txt`, which the site publishes beside them at
+`/fonts/OFL.txt`.
 
 ## Source archive
 
