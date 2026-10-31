@@ -121,10 +121,26 @@ headers() {
 
   local apex_headers="cloudflare-audit/apex-headers.txt"
   local pages_headers="cloudflare-audit/pages-dev-headers.txt"
-  grep -Eq '^HTTP/[^ ]+[[:space:]]+200([[:space:]]|$)' "$apex_headers"
-  grep -Eiq "^content-security-policy:.*form-action 'none'.*frame-src 'none'.*worker-src 'none'" "$apex_headers"
-  grep -Eiq '^strict-transport-security:[[:space:]]*max-age=31536000' "$apex_headers"
-  grep -Eiq '^x-content-type-options:[[:space:]]*nosniff' "$apex_headers"
+  # The live policy must be exactly the one public/_headers publishes.
+  local expected_csp live_csp
+  expected_csp="$(sed -n 's/^[[:space:]]*Content-Security-Policy:[[:space:]]*//p' public/_headers | head -n 1)"
+  live_csp="$(sed -n 's/^[Cc]ontent-[Ss]ecurity-[Pp]olicy:[[:space:]]*//p' "$apex_headers" | head -n 1)"
+  if ! grep -Eq '^HTTP/[^ ]+[[:space:]]+200([[:space:]]|$)' "$apex_headers"; then
+    echo "::error::apex headers must come from a 200 response."
+    exit 1
+  fi
+  if [ -z "$expected_csp" ] || [ "$live_csp" != "$expected_csp" ]; then
+    echo "::error::apex Content-Security-Policy differs from public/_headers. Live: ${live_csp:-none}"
+    exit 1
+  fi
+  if ! grep -Eiq '^strict-transport-security:[[:space:]]*max-age=31536000' "$apex_headers"; then
+    echo "::error::apex must send Strict-Transport-Security with max-age=31536000."
+    exit 1
+  fi
+  if ! grep -Eiq '^x-content-type-options:[[:space:]]*nosniff' "$apex_headers"; then
+    echo "::error::apex must send X-Content-Type-Options: nosniff."
+    exit 1
+  fi
 
   local pages_result
   if [ "$pages_status" = "200" ]; then

@@ -16,6 +16,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      wrangler: ${{ steps.wrangler.outputs.version }}
     steps:
       - name: Check out repository
         # actions/checkout@v7.0.1
@@ -47,6 +49,19 @@ jobs:
 
       - name: Build deployable site
         run: npm run build:dist
+
+      # The preview job installs exactly the Wrangler the lockfile resolves.
+      - name: Read the locked Wrangler version
+        id: wrangler
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package-lock.json').packages['node_modules/wrangler'].version")"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Unexpected Wrangler version in package-lock.json: $version"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Upload site payload
         # actions/upload-artifact@v7.0.1
@@ -129,7 +144,9 @@ jobs:
 
       - name: Install pinned Wrangler
         if: steps.cloudflare.outputs.ready == 'true'
-        run: npm install --global --ignore-scripts --no-audit --no-fund wrangler@4.153.0
+        env:
+          WRANGLER_VERSION: ${{ needs.build.outputs.wrangler }}
+        run: npm install --global --ignore-scripts --no-audit --no-fund "wrangler@$WRANGLER_VERSION"
 
       - name: Validate preview deploy credentials
         if: steps.cloudflare.outputs.ready == 'true'

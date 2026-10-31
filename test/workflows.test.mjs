@@ -81,14 +81,16 @@ test("Cloudflare preview credentials run separately from pull-request build code
     /if: github\.event_name == 'pull_request' && github\.event\.pull_request\.head\.repo\.full_name == github\.repository/,
   );
   assert.match(preview, /uses: actions\/download-artifact@/);
-  // The preview job installs the same wrangler the lockfile resolves.
-  const lock = JSON.parse(await readProjectFile("package-lock.json"));
-  const wrangler = lock.packages["node_modules/wrangler"].version;
+  // The preview job installs the Wrangler the lockfile resolves, read by the build job.
+  const build = job(await readProjectFile(".github/workflows/ci.yml"), "build");
+  assert.match(build, /wrangler: \$\{\{ steps\.wrangler\.outputs\.version \}\}/);
+  assert.match(build, /packages\['node_modules\/wrangler'\]\.version/);
+  assert.match(build, /=~ \^\[0-9\]\+\\\.\[0-9\]\+\\\.\[0-9\]\+\$/);
+  assert.match(preview, /WRANGLER_VERSION: \$\{\{ needs\.build\.outputs\.wrangler \}\}/);
   assert.ok(
     preview.includes(
-      `npm install --global --ignore-scripts --no-audit --no-fund wrangler@${wrangler}`,
+      'npm install --global --ignore-scripts --no-audit --no-fund "wrangler@$WRANGLER_VERSION"',
     ),
-    `the preview job installs wrangler@${wrangler}`,
   );
   assert.match(
     preview,
@@ -248,6 +250,9 @@ test("Cloudflare audit scripts never follow redirects, trace commands or keep ra
     assert.match(script, /^source "\$\(dirname "\$0"\)\/headers\.sh"$/m);
   }
   assert.doesNotMatch(edge, /CLOUDFLARE_|Authorization|api\.cloudflare\.com/);
+  // The live policy is compared with the one public/_headers publishes, so the two cannot drift.
+  assert.match(audit, /Content-Security-Policy:\[\[:space:\]\]\*\/\/p' public\/_headers/);
+  assert.doesNotMatch(audit, /worker-src 'none'/);
   assert.doesNotMatch(headers, /CLOUDFLARE_|Authorization/);
 
   // The raw project response stays in the runner's temp and only jq reads it.
