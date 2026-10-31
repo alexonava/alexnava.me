@@ -1193,6 +1193,29 @@ test("pixel budgets bound the lean path and high's drawn area, never below DPR 0
   );
 });
 
+test("no governor step raises the drawn resolution, even where high's budget held it down", async () => {
+  const scene = await loadQuality(createContext());
+  const viewport = { width: 2560, height: 1440 };
+  const state = scene.createSceneQualityState({
+    caps: { maxTextureSize: 8192, maxAnisotropy: 16, gpuClass: "discrete" },
+    touchPrimary: false,
+    viewport,
+  });
+  let profile = state.getProfile();
+  assert.equal(profile.tier, "high");
+  // A 4K monitor at 150%: high draws its 3.7 MP budget, under its 1.5 cap.
+  let ratio = state.resolveDprCap(profile, viewport);
+  assert.ok(ratio < 1.25, `high draws at ${ratio}`);
+  const taken = [];
+  for (let step = state.stepDown({ profile }); step; step = state.stepDown({ profile })) {
+    const next = state.resolveDprCap(step, viewport);
+    assert.ok(next <= ratio, `${step.tier}@${step.dprCap} draws ${next} after ${ratio}`);
+    [profile, ratio] = [step, next];
+    taken.push(step.tier);
+  }
+  assert.deepEqual(taken, ["balanced", "balanced", "balanced"]);
+});
+
 test("the opening's hidden step goes one governor step at a time and stops at the floor", async () => {
   const scene = await loadQuality(createContext());
   const state = scene.createSceneQualityState({

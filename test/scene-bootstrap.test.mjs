@@ -15,6 +15,7 @@ test("the actual quality dispatch keeps a paused visible shot intact until its c
   const dispatch = new Function(
     "canvasShown",
     "site",
+    "cameraTour",
     "liveView",
     "transition",
     "nowMs",
@@ -24,8 +25,8 @@ test("the actual quality dispatch keeps a paused visible shot intact until its c
   const step = createDeferredQualityStep({ prepare: () => true });
   step.queue(profile, 0);
   await Promise.resolve();
-  const args = (visible, closed, cut) =>
-    dispatch(visible, { sceneDoors: { closed } }, { running: false }, { cut }, 60000);
+  const args = (visible, closed, cut, tour = {}) =>
+    dispatch(visible, { sceneDoors: { closed } }, tour, { running: false }, { cut }, 60000);
   assert.equal(
     step.take(args(true, false, false)),
     null,
@@ -44,6 +45,59 @@ test("the actual quality dispatch keeps a paused visible shot intact until its c
       "concealed preparation still accepts resolution relief",
     );
   }
+  // Without a tour (tour=0) no cut ever comes: a shown shot takes the step at once.
+  step.queue(profile, 0);
+  await Promise.resolve();
+  assert.equal(step.take(args(true, false, false, null)), profile);
+  assert.equal(step.pending, false, "sampling resumes");
+});
+
+test("only a tree opening's lantern deadline can drop the lantern, and never a downloaded one", () => {
+  const raw = source("src/scene/index.js");
+  const start = raw.indexOf("architectureStatus[status.kind] = status.status;");
+  const end = raw.indexOf("// Record the status first", start);
+  assert.ok(start > 0 && end > start, "locate the deadline");
+  const run = new Function(
+    "status",
+    "canvasShown",
+    "opening",
+    "lanternMount",
+    "architectureStatus",
+    "architectureAssets",
+    "window",
+    "invalidateContent",
+    `let lanternDeadline = null; ${raw.slice(start, end)} return lanternDeadline;`,
+  );
+  const deadline = (view, settled) => {
+    const timers = [];
+    const cancelled = [];
+    const architectureStatus = {};
+    const armed = run(
+      { kind: "lantern", status: "loading" },
+      false,
+      { view },
+      { committed: false },
+      architectureStatus,
+      { cancelOptional: (kind) => cancelled.push(kind) },
+      { setTimeout: (callback, ms) => timers.push([callback, ms]) },
+      () => {},
+    );
+    if (settled) architectureStatus.lantern = settled;
+    timers.forEach(([callback]) => callback());
+    return { armed, ms: timers.map(([, ms]) => ms), cancelled };
+  };
+  assert.deepEqual(
+    deadline("watch"),
+    { armed: null, ms: [], cancelled: [] },
+    "The watch never waits on it",
+  );
+  assert.deepEqual(deadline("tree").ms, [8000]);
+  assert.deepEqual(deadline("tree").cancelled, ["lantern"], "a lantern still loading at 8 s");
+  assert.deepEqual(
+    deadline("tree", "ready").cancelled,
+    [],
+    "a downloaded lantern awaits its frame",
+  );
 });
 
 test("a watch or tree that cannot commit fails to the title card once the camera knows; the lantern is optional", () => {
@@ -96,7 +150,7 @@ test("models and maps keep the startup tier, and quality samples only revealed f
   assert.match(index, /if \(sampledProfile\) adaptiveSteps\.queue\(sampledProfile, nowMs\);/);
   assert.match(
     index,
-    /const queuedProfile = adaptiveSteps\.take\(\{ cut: transition\.cut, running: canvasShown && !site\.sceneDoors\?\.closed, nowMs \}\);/,
+    /const queuedProfile = adaptiveSteps\.take\(\{ cut: transition\.cut, running: canvasShown && !site\.sceneDoors\?\.closed && \(cameraTour !== null \|\| liveView\.running\), nowMs \}\);/,
   );
   // Each shot keeps its own level (shot-levels.js): the incoming shot's, entered on its cut (and
   // at the reveal), stands in for a step queued on the outgoing shot.

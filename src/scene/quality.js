@@ -481,10 +481,18 @@
       resolutionSteps: steps.length,
     });
     // A governor tier as a profile; below balanced, the current profile at its step's cap.
-    const stepProfile = (nextTier, profile) =>
-      nextTier === "low"
-        ? { ...profile, dprCap: steps[Math.min(steps.length, governor.getResolutionLevel()) - 1] }
-        : cloneProfile(nextTier, lean);
+    // A tier keeps the pixel budget it steps from, so a large viewport's balanced never
+    // draws more pixels than its high did.
+    const stepProfile = (nextTier, profile) => {
+      if (nextTier === "low")
+        return {
+          ...profile,
+          dprCap: steps[Math.min(steps.length, governor.getResolutionLevel()) - 1],
+        };
+      const next = cloneProfile(nextTier, lean);
+      next.pixelBudget ||= profile?.pixelBudget ?? 0;
+      return next;
+    };
     // A revealed scene never steps its visuals down to low. The governor's low
     // steps preserve material settings and request each step's cap in turn (STEPS: DPR 1,
     // then 0.85; the lean path's LEAN_STEPS: 0.85, 0.7, then 0.6).

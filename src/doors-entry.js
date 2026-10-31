@@ -138,6 +138,8 @@ if (typeof scope.document === "undefined") {
           canvas.remove();
         };
         scope.addEventListener("resize", onResize);
+        // A resize while the first frame was still coming went unheard.
+        if (String([size(), ratio()]) !== String([options.size, options.ratio])) onResize();
         drawn(drawing);
       };
       const lost = (drawing, why) => {

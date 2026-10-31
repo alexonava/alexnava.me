@@ -647,6 +647,28 @@ test("forced colors releases a late asynchronous pointer grant after arming canc
   }
 });
 
+test("a second key while the walk arms or captures releases the mouse the first one captured", async () => {
+  for (const phase of ["arming", "capture"]) {
+    const rig = walkRig();
+    const integration = wireSceneWalk(rig);
+    rig.site.win.dispatchEvent(key("keydown", "Backquote"));
+    await Promise.resolve();
+    assert.equal(rig.walk.active, true);
+    assert.equal(rig.site.doc.pointerLockElement, rig.site.canvas);
+    for (let i = 0, t = 0; phase === "capture" && !rig.walk.holdsTour && i < 120; i++, t += 1 / 60)
+      rig.walk.step(t, TOUR_IDLE);
+    assert.equal(rig.walk.holdsTour, phase === "capture");
+    assert.equal(rig.walk.drives, false, "input has not attached");
+    const exits = rig.site.exits;
+
+    rig.site.win.dispatchEvent(key("keydown", "Backquote"));
+    assert.equal(rig.walk.active, false, phase);
+    assert.equal(rig.site.doc.pointerLockElement, null, phase);
+    assert.equal(rig.site.exits, exits + 1, "the capture is released exactly once");
+    integration.dispose();
+  }
+});
+
 test("the walk removes its forced-colors listener when the scene is torn down", async () => {
   const rig = walkRig();
   const integration = wireSceneWalk(rig);

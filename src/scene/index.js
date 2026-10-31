@@ -1056,14 +1056,21 @@ const GROUND_WAIT_S = 20;
         onStatus(status) {
           if (status.status === "ready") qualityState.holdSampling();
           architectureStatus[status.kind] = status.status;
+          // Only a tree opening waits on the lantern. A downloaded lantern commits on the
+          // next drawn frame, which a hidden tab postpones, so the deadline leaves it be.
           if (
             !canvasShown &&
+            opening.view === "tree" &&
             status.kind === "lantern" &&
             status.status === "loading" &&
             !lanternDeadline
           )
             lanternDeadline = window.setTimeout(() => {
-              if (!canvasShown && !lanternMount.committed)
+              if (
+                !canvasShown &&
+                !lanternMount.committed &&
+                architectureStatus.lantern === "loading"
+              )
                 architectureAssets.cancelOptional("lantern");
               invalidateContent();
             }, 8000);
@@ -1351,11 +1358,12 @@ const GROUND_WAIT_S = 20;
             ? Math.max(0, (1 - tourPhase) * cameraTour.state.dwell)
             : Infinity;
         // Each step changes the tier or, below balanced, only the pixel ratio. A
-        // running tour takes it on a cut, where the crossfade's kept frame hides
-        // its one-off work.
+        // shown tour, even paused, or walk takes it on a cut, where the crossfade's
+        // kept frame hides its one-off work; without either (tour=0) it lands at once.
         const queuedProfile = adaptiveSteps.take({
           cut: transition.cut,
-          running: canvasShown && !site.sceneDoors?.closed,
+          running:
+            canvasShown && !site.sceneDoors?.closed && (cameraTour !== null || liveView.running),
           nowMs,
         });
         // Each shot keeps its own level (shot-levels.js): at a cut the incoming shot

@@ -11,16 +11,21 @@ const source = (await readFile(new URL("../src/doors-entry.js", import.meta.url)
   "",
 );
 
-async function startDrawing(inWorker) {
+async function startDrawing(inWorker, { beforeDrawn = () => {} } = {}) {
   const lights = [];
+  const sizes = [];
   const pending = [];
   const renderer = {
     light: (value) => lights.push(structuredClone(value)),
-    resize() {},
+    resize: (size, ratio) => sizes.push([...size, ratio]),
     open: () => Promise.resolve(),
     dispose() {},
   };
-  const createPaperDoors = async () => renderer;
+  const createPaperDoors = async () => {
+    beforeDrawn(doors, context);
+    return renderer;
+  };
+  const doors = { clientWidth: 1440, clientHeight: 900, appendChild() {} };
   let worker;
   class FakeWorker {
     constructor() {
@@ -61,15 +66,17 @@ async function startDrawing(inWorker) {
   };
   vm.runInNewContext(source, context, { filename: "src/doors-entry.js:page" });
   const drawing = await new Promise((resolve, reject) => {
-    context.BabelSite.paperDoors.start(
-      { clientWidth: 1440, clientHeight: 900, appendChild() {} },
-      { tier: "high", drawn: resolve, failed: (value, why) => reject(new Error(why)) },
-    );
+    context.BabelSite.paperDoors.start(doors, {
+      tier: "high",
+      drawn: resolve,
+      failed: (value, why) => reject(new Error(why)),
+    });
   });
   assert.equal(!!worker, inWorker, "the requested rendering path was used");
   return {
     drawing,
     lights,
+    sizes,
     async flush() {
       await Promise.all(pending.splice(0));
     },
@@ -104,4 +111,23 @@ test("worker and in-page drawing receive the same lantern light", async () => {
   assert.deepEqual(workerLight, page.lights.at(-1));
   worker.drawing.dispose();
   page.drawing.dispose();
+});
+
+test("a resize before the first drawn frame reaches the drawing, and an unchanged one does not", async () => {
+  for (const inWorker of [true, false]) {
+    const turned = await startDrawing(inWorker, {
+      beforeDrawn(doors, context) {
+        // A phone turning while the paper loads.
+        Object.assign(doors, { clientWidth: 900, clientHeight: 1440 });
+        context.devicePixelRatio = 2;
+      },
+    });
+    await turned.flush();
+    assert.deepEqual(turned.sizes, [[900, 1440, 1.5]], `worker: ${inWorker}`);
+    const still = await startDrawing(inWorker);
+    await still.flush();
+    assert.deepEqual(still.sizes, [], `worker: ${inWorker}`);
+    turned.drawing.dispose();
+    still.drawing.dispose();
+  }
 });
