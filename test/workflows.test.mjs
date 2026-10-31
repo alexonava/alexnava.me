@@ -353,21 +353,27 @@ test("production deploy captures and verifies an automatic Pages rollback target
   assert.doesNotMatch(smoke, /CLOUDFLARE_(API_TOKEN|ACCOUNT_ID)/);
 });
 
-test("every workflow action is pinned to a full commit SHA with its version in a comment", async () => {
+test("every workflow action is pinned to a full commit SHA with its version on the same line", async () => {
   const workflowDir = path.join(projectRoot, ".github", "workflows");
   const workflowFiles = (await readdir(workflowDir)).filter((file) => /\.ya?ml$/.test(file));
   let uses = 0;
   for (const file of workflowFiles) {
     const lines = (await readProjectFile(path.join(".github", "workflows", file))).split(/\r?\n/);
     lines.forEach((line, index) => {
-      const action = line.match(/^\s*(?:- )?uses:\s*([^\s@]+)@(\S+)\s*$/);
+      const action = line.match(/^\s*(?:- )?uses:\s*([^\s@]+)@(\S+)(?:\s+#\s*(\S+))?\s*$/);
       if (!action || action[1].startsWith("./")) return;
       uses++;
       assert.match(action[2], /^[a-f0-9]{40}$/, `${file}: ${action[1]} must use a full commit SHA`);
+      // On the same line, so Dependabot rewrites the version when it bumps the SHA.
       assert.match(
+        action[3] ?? "",
+        /^v\d/,
+        `${file}: ${action[1]} names its version after the SHA`,
+      );
+      assert.doesNotMatch(
         lines[index - 1],
-        new RegExp(`^\\s*# ${action[1].replace(/[\\^$.*+?()[\]{}|/]/g, "\\$&")}@v\\d`),
-        `${file}: ${action[1]} names its version in the comment above`,
+        /^\s*# \S+@v\d/,
+        `${file}: ${action[1]} has a stale comment above`,
       );
     });
   }
@@ -381,7 +387,7 @@ test("checkouts never persist credentials", async () => {
     const workflow = await readProjectFile(path.join(".github", "workflows", file));
     const checkouts =
       workflow.match(
-        /uses: actions\/checkout@\S+(?:\r?\n\s+with:[\s\S]*?)?(?=\r?\n\s+- |\r?\n\s*\r?\n|$)/g,
+        /uses: actions\/checkout@\S+(?: # \S+)?(?:\r?\n\s+with:[\s\S]*?)?(?=\r?\n\s+- |\r?\n\s*\r?\n|$)/g,
       ) || [];
     for (const checkout of checkouts)
       assert.match(checkout, /persist-credentials:\s*false/, `${file}: ${checkout}`);

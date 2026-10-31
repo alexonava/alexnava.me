@@ -103,6 +103,6 @@ Settings that rewrite live responses after `_headers`. The `edge-settings` job a
 
 ## Repository controls
 
-- Every action is pinned to a full commit SHA with its version in a comment; checkouts never persist credentials; jobs get only the permissions they use.
+- Every action is pinned to a full commit SHA with its version in a comment on the same line (Dependabot rewrites it there); checkouts never persist credentials; jobs get only the permissions they use.
 - CodeQL default setup is required on `main`.
 - Dependabot updates npm and GitHub Actions weekly, except `three`, pinned at 0.160.1 for r160's legacy light units; upgrade it only with a deliberate visual review.
