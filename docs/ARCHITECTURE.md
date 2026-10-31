@@ -122,7 +122,7 @@ _lazy_ marks a chunk loaded on demand.
 
 | File                      | Role                                                |
 | ------------------------- | --------------------------------------------------- |
-| `architecture-assets.js`  | Model manifest, requests, validation, leases        |
+| `architecture-assets.js`  | Model manifest, requests, GLB reader, leases        |
 | `architecture.js`         | Tree and rock materials and grades                  |
 | `architecture-prepare.js` | _lazy_ Bounded tree geometry and normal preparation |
 | `tree-normals.js`         | Tree normal smoothing                               |
@@ -196,6 +196,8 @@ The film's ground work also prepares before publication. `environment.prepareFil
 The Python material helpers are offline authoring tools, never build or runtime requirements. `python tools/bake-coast-albedo.py --source PATH --output images/materials/coast-albedo-512.webp` requires the known diffuse source MD5, uses Pillow locally and prints the final WebP's measured linear RGB mean for `COAST_ALBEDO.mean`. [Assets](ASSETS.md) and [Credits](CREDITS.md) describe their source and format contracts.
 
 `python tools/repair-landmark-geometry.py --source-dir PATH --output-dir images/architecture` reads the two original tree GLBs and verifies their SHA-256 hashes. It computes the bounded fork-volume change and affected surface frames, verifies every approved output hash in memory, and then writes the two results; optional `--report` records the checks. Local NumPy is its only authoring dependency. Model lengths, JSON, maps, UVs, indices, AABBs and protected contacts stay fixed; runtime code performs no repair or remeshing.
+
+`node tools/strip-mountain-normals.mjs` removes the vertex normals the private mountain packager writes from the six mountain GLBs, closing up the binary chunk; it leaves a model without them as it is ([Assets](ASSETS.md#models)).
 
 The close soil shader uses world-anchored photographic grains and shallow relief, with fine cellular crumbs only where resolved. Its near detail fades from 6 to 32 units. On WebGL2 and WebGL1 with explicit texture gradients, expensive close lookups are skipped beyond their fade; gradients are computed before conditional sampling. WebGL1 without the extension retains unconditional filtered sampling. The optional 512px soil roughness owner, on high only (the lite ground has no close soil to sample it), shares neither success nor failure with the five required slate maps. It keeps a decoded bitmap for context restoration, stages bindings until a cut or still frame, and restores the borrowed uniform before disposal. `createGroundTextures.update` forwards frame eligibility to this owner.
 

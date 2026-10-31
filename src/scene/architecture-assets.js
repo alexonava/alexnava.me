@@ -1,5 +1,32 @@
-import { LoadingManager } from "three";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import {
+  Box3,
+  BufferAttribute,
+  BufferGeometry,
+  ClampToEdgeWrapping,
+  Color,
+  DoubleSide,
+  Group,
+  InterleavedBuffer,
+  InterleavedBufferAttribute,
+  LinearFilter,
+  LinearMipmapLinearFilter,
+  LinearMipmapNearestFilter,
+  LinearSRGBColorSpace,
+  Matrix4,
+  Mesh,
+  MeshStandardMaterial,
+  MirroredRepeatWrapping,
+  NearestFilter,
+  NearestMipmapLinearFilter,
+  NearestMipmapNearestFilter,
+  Object3D,
+  RepeatWrapping,
+  SRGBColorSpace,
+  Sphere,
+  Texture,
+  Vector2,
+  Vector3,
+} from "three";
 import { measureScene, sceneNow } from "./perf-marks.js";
 
 // The tree and optional lantern, the film's scattered rocks (rock-scatter.js)
@@ -37,6 +64,9 @@ export const ARCHITECTURE_ASSET_URLS =
     ? JSON.parse(__BABEL_ARCHITECTURE_URLS__)
     : STABLE_ARCHITECTURE_ASSET_URLS;
 
+// The only glTF extensions the models use; the reader below reads no others.
+const EXTENSIONS = new Set(["EXT_texture_webp", "KHR_mesh_quantization"]);
+
 function validateEmbeddedGlb(buffer, maxBytes) {
   if (buffer.byteLength < 20 || buffer.byteLength > maxBytes) {
     throw new Error("Architecture GLB exceeds payload bounds");
@@ -60,14 +90,305 @@ function validateEmbeddedGlb(buffer, maxBytes) {
   if (json.skins?.length || json.animations?.length) {
     throw new Error("Architecture assets must be static");
   }
-  const supported = new Set([
-    "EXT_texture_webp",
-    "KHR_texture_transform",
-    "KHR_mesh_quantization",
-    "KHR_materials_emissive_strength",
-  ]);
-  if ((json.extensionsRequired || []).some((extension) => !supported.has(extension))) {
-    throw new Error("Architecture GLB requires an unsupported extension");
+  if (
+    [...(json.extensionsRequired || []), ...(json.extensionsUsed || [])].some(
+      (extension) => !EXTENSIONS.has(extension),
+    )
+  ) {
+    throw new Error("Architecture GLB uses an unsupported extension");
+  }
+  // The binary chunk, when there is one, follows the JSON chunk.
+  const bin = 28 + jsonLength;
+  if (
+    json.buffers?.length &&
+    (bin > buffer.byteLength ||
+      view.getUint32(bin - 4, true) !== 0x004e4942 ||
+      view.getUint32(bin - 8, true) > buffer.byteLength - bin)
+  ) {
+    throw new Error("Invalid architecture GLB binary chunk");
+  }
+  return { json, bin };
+}
+
+// The models' part of glTF, read into the objects three r160's GLTFLoader
+// builds from it, so every consumer meets the same attributes, materials,
+// names and userData: a scene Group of node meshes, each one indexed triangle
+// primitive with one metallic-roughness material.
+const COMPONENTS = {
+  5120: Int8Array,
+  5121: Uint8Array,
+  5122: Int16Array,
+  5123: Uint16Array,
+  5125: Uint32Array,
+  5126: Float32Array,
+};
+const WIDTHS = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4 };
+// KHR_mesh_quantization's normalized integers, as values from -1 or 0 to 1.
+const QUANTIZED = { 5120: 1 / 127, 5121: 1 / 255, 5122: 1 / 32767, 5123: 1 / 65535 };
+const ATTRIBUTES = {
+  POSITION: "position",
+  NORMAL: "normal",
+  TANGENT: "tangent",
+  TEXCOORD_0: "uv",
+  COLOR_0: "color",
+};
+const FILTERS = {
+  9728: NearestFilter,
+  9729: LinearFilter,
+  9984: NearestMipmapNearestFilter,
+  9985: LinearMipmapNearestFilter,
+  9986: NearestMipmapLinearFilter,
+  9987: LinearMipmapLinearFilter,
+};
+const WRAPS = { 33071: ClampToEdgeWrapping, 33648: MirroredRepeatWrapping, 10497: RepeatWrapping };
+
+// A material's maps by slot. Colour and emission are sRGB; the rest are data.
+function materialMaps(material) {
+  const pbr = material.pbrMetallicRoughness || {};
+  return [
+    ["map", pbr.baseColorTexture, SRGBColorSpace],
+    ["metalnessMap", pbr.metallicRoughnessTexture],
+    ["roughnessMap", pbr.metallicRoughnessTexture],
+    ["normalMap", material.normalTexture],
+    ["aoMap", material.occlusionTexture],
+    ["emissiveMap", material.emissiveTexture, SRGBColorSpace],
+  ].filter(([, info]) => info);
+}
+
+// GLTFLoader's image path: Image elements on Safari, on Firefox before 98 and
+// without createImageBitmap; elsewhere ImageBitmaps, unpremultiplied and
+// without colour-space conversion.
+function imageDecoder() {
+  const agent = globalThis.navigator?.userAgent || "",
+    firefox = agent.match(/Firefox\/([0-9]+)\./);
+  if (
+    typeof createImageBitmap !== "undefined" &&
+    !/^((?!chrome|android).)*safari/i.test(agent) &&
+    !(firefox && firefox[1] < 98)
+  ) {
+    return (blob) =>
+      createImageBitmap(blob, { premultiplyAlpha: "none", colorSpaceConversion: "none" });
+  }
+  return (blob) => {
+    const url = URL.createObjectURL(blob),
+      image = new Image();
+    return new Promise((resolve, reject) => {
+      image.onload = () => resolve(image);
+      image.onerror = reject;
+      image.src = url;
+    }).finally(() => URL.revokeObjectURL(url));
+  };
+}
+
+const assignExtras = (object, def) => {
+  if (def.extras && typeof def.extras === "object") Object.assign(object.userData, def.extras);
+};
+
+async function readGlb(buffer, { json, bin }) {
+  const views = [],
+    accessors = [],
+    interleaved = new Map(),
+    names = new Map();
+  const viewBytes = (id) => {
+    const { byteOffset = 0, byteLength = 0 } = json.bufferViews[id];
+    return new Uint8Array(buffer, bin + byteOffset, byteLength);
+  };
+  // Attributes view a copy of their buffer view, as GLTFLoader's do; a view
+  // with a byte stride wider than its items becomes one InterleavedBuffer.
+  const accessor = (id) => {
+    if (accessors[id]) return accessors[id];
+    const def = json.accessors[id];
+    if (def.bufferView === undefined || def.sparse) {
+      throw new Error("Unsupported architecture accessor");
+    }
+    const Type = COMPONENTS[def.componentType],
+      size = WIDTHS[def.type],
+      width = Type.BYTES_PER_ELEMENT,
+      offset = def.byteOffset || 0,
+      stride = json.bufferViews[def.bufferView].byteStride,
+      normalized = def.normalized === true,
+      data = (views[def.bufferView] ||= viewBytes(def.bufferView).slice().buffer);
+    if (stride && stride !== width * size) {
+      const slice = Math.floor(offset / stride),
+        key = `${def.bufferView}:${def.componentType}:${slice}:${def.count}`;
+      if (!interleaved.has(key)) {
+        const array = new Type(data, slice * stride, (def.count * stride) / width);
+        interleaved.set(key, new InterleavedBuffer(array, stride / width));
+      }
+      accessors[id] = new InterleavedBufferAttribute(
+        interleaved.get(key),
+        size,
+        (offset % stride) / width,
+        normalized,
+      );
+    } else {
+      accessors[id] = new BufferAttribute(
+        new Type(data, offset, def.count * size),
+        size,
+        normalized,
+      );
+    }
+    return accessors[id];
+  };
+  // Object names as PropertyBinding.sanitizeNodeName leaves them, made unique.
+  const unique = (name) => {
+    const clean = name.replace(/\s/g, "_").replace(/[[\].:/]/g, "");
+    if (!names.has(clean)) {
+      names.set(clean, 0);
+      return clean;
+    }
+    names.set(clean, names.get(clean) + 1);
+    return `${clean}_${names.get(clean)}`;
+  };
+
+  // Every map's image decodes before anything is built. One failure fails the
+  // model: a missing PBR map must keep the fallback rather than change the asset.
+  const decode = imageDecoder(),
+    used = new Set(
+      (json.materials || []).flatMap((material) =>
+        materialMaps(material).map(([, info]) => info.index),
+      ),
+    ),
+    blobs = [...used].map((index) => {
+      const def = json.textures[index],
+        image = json.images[def.extensions?.EXT_texture_webp?.source ?? def.source];
+      return [index, new Blob([viewBytes(image.bufferView)], { type: image.mimeType })];
+    }),
+    images = new Map(blobs.map(([index, blob]) => [index, decode(blob)]));
+  const decoded = await Promise.allSettled(images.values());
+  const close = () =>
+    decoded.forEach(({ status, value }) => {
+      if (status === "fulfilled") value.close?.();
+    });
+  if (decoded.some(({ status }) => status === "rejected")) {
+    close();
+    throw new Error("Architecture image decode failed");
+  }
+
+  try {
+    const textures = new Map();
+    [...images.keys()].forEach((index, i) => {
+      const def = json.textures[index],
+        image = json.images[def.extensions?.EXT_texture_webp?.source ?? def.source],
+        sampler = json.samplers?.[def.sampler] || {},
+        texture = new Texture(decoded[i].value);
+      texture.needsUpdate = true;
+      texture.flipY = false;
+      texture.name = def.name || image.name || "";
+      texture.magFilter = FILTERS[sampler.magFilter] || LinearFilter;
+      texture.minFilter = FILTERS[sampler.minFilter] || LinearMipmapLinearFilter;
+      texture.wrapS = WRAPS[sampler.wrapS] || RepeatWrapping;
+      texture.wrapT = WRAPS[sampler.wrapT] || RepeatWrapping;
+      texture.userData.mimeType = image.mimeType;
+      textures.set(index, texture);
+    });
+
+    const material = (def) => {
+      const pbr = def.pbrMetallicRoughness || {},
+        color = pbr.baseColorFactor,
+        alphaMode = def.alphaMode || "OPAQUE",
+        params = {
+          color: new Color(1, 1, 1),
+          opacity: 1,
+          metalness: pbr.metallicFactor ?? 1,
+          roughness: pbr.roughnessFactor ?? 1,
+          transparent: alphaMode === "BLEND",
+        };
+      if (Array.isArray(color)) {
+        params.color.setRGB(color[0], color[1], color[2], LinearSRGBColorSpace);
+        params.opacity = color[3];
+      }
+      if (def.doubleSided === true) params.side = DoubleSide;
+      // GLTFLoader leaves a blended material's depth unwritten (three.js #17706).
+      if (alphaMode === "BLEND") params.depthWrite = false;
+      if (alphaMode === "MASK") params.alphaTest = def.alphaCutoff ?? 0.5;
+      if (def.normalTexture) {
+        const scale = def.normalTexture.scale ?? 1;
+        params.normalScale = new Vector2(scale, scale);
+      }
+      if (def.occlusionTexture?.strength !== undefined) {
+        params.aoMapIntensity = def.occlusionTexture.strength;
+      }
+      if (def.emissiveFactor) {
+        const [r, g, b] = def.emissiveFactor;
+        params.emissive = new Color().setRGB(r, g, b, LinearSRGBColorSpace);
+      }
+      for (const [slot, info, colorSpace] of materialMaps(def)) {
+        const texture = textures.get(info.index);
+        if (colorSpace) texture.colorSpace = colorSpace;
+        params[slot] = texture;
+      }
+      const result = new MeshStandardMaterial(params);
+      if (def.name) result.name = def.name;
+      assignExtras(result, def);
+      return result;
+    };
+
+    const mesh = (index) => {
+      const def = json.meshes[index];
+      if (def.primitives.length !== 1 || (def.primitives[0].mode ?? 4) !== 4) {
+        throw new Error("Architecture meshes must be one triangle primitive");
+      }
+      const [primitive] = def.primitives,
+        geometry = new BufferGeometry();
+      for (const [semantic, id] of Object.entries(primitive.attributes)) {
+        if (!ATTRIBUTES[semantic]) throw new Error("Unsupported architecture attribute");
+        geometry.setAttribute(ATTRIBUTES[semantic], accessor(id));
+      }
+      if (primitive.indices !== undefined) geometry.setIndex(accessor(primitive.indices));
+      assignExtras(geometry, primitive);
+      // Bounds come from POSITION's min and max, dequantized.
+      const position = json.accessors[primitive.attributes.POSITION];
+      if (position?.min && position.max) {
+        const scale = position.normalized ? QUANTIZED[position.componentType] : 1;
+        geometry.boundingBox = new Box3(
+          new Vector3().fromArray(position.min).multiplyScalar(scale),
+          new Vector3().fromArray(position.max).multiplyScalar(scale),
+        );
+        geometry.boundingSphere = geometry.boundingBox.getBoundingSphere(new Sphere());
+      }
+      const surface = material(json.materials[primitive.material]);
+      // GLTFLoader's final material: without tangents the normal map's green
+      // flips for derivative tangents (three.js #11438); without normals the
+      // surface shades flat; COLOR_0 tints it.
+      if (!geometry.attributes.tangent) surface.normalScale.y *= -1;
+      if (geometry.attributes.color) surface.vertexColors = true;
+      if (!geometry.attributes.normal) surface.flatShading = true;
+      const result = new Mesh(geometry, surface);
+      result.name = unique(def.name || `mesh_${index}`);
+      assignExtras(result, def);
+      return result;
+    };
+
+    // A node with a mesh is that mesh; its name and extras follow the mesh's.
+    const node = (index) => {
+      const def = json.nodes[index],
+        name = def.name ? unique(def.name) : "",
+        result = def.mesh === undefined ? new Object3D() : mesh(def.mesh);
+      if (def.name) {
+        result.userData.name = def.name;
+        result.name = name;
+      }
+      assignExtras(result, def);
+      if (def.matrix) result.applyMatrix4(new Matrix4().fromArray(def.matrix));
+      else {
+        if (def.translation) result.position.fromArray(def.translation);
+        if (def.rotation) result.quaternion.fromArray(def.rotation);
+        if (def.scale) result.scale.fromArray(def.scale);
+      }
+      (def.children || []).forEach((child) => result.add(node(child)));
+      return result;
+    };
+
+    const sceneDef = json.scenes[json.scene || 0],
+      scene = new Group();
+    if (sceneDef.name) scene.name = unique(sceneDef.name);
+    assignExtras(scene, sceneDef);
+    (sceneDef.nodes || []).forEach((index) => scene.add(node(index)));
+    return { scene, scenes: [scene] };
+  } catch (error) {
+    close();
+    throw error;
   }
 }
 
@@ -118,57 +439,20 @@ export async function loadArchitectureAsset(url, { signal, tier, role = "asset",
   }
   const buffer = await response.arrayBuffer();
   if (signal.aborted) throw new DOMException("Architecture load aborted", "AbortError");
-  validateEmbeddedGlb(buffer, maxBytes);
-  // Parsing embedded images cannot be aborted. Always return a completed parse:
-  // the controller owns and disposes it even when the request became stale.
-  const manager = new LoadingManager();
-  const objectUrls = new Set();
-  let imageFailed = false;
-  let parser;
-  let parsed;
-  manager.onError = () => {
-    imageFailed = true;
-  };
-  manager.setURLModifier((resourceUrl) => {
-    if (resourceUrl.startsWith("blob:")) objectUrls.add(resourceUrl);
-    return resourceUrl;
-  });
-  const loader = new GLTFLoader(manager);
-  loader.register((sourceParser) => {
-    parser = sourceParser;
-    return { name: "BabelArchitectureResources" };
-  });
+  const glb = validateEmbeddedGlb(buffer, maxBytes);
+  // Decoding embedded images cannot be aborted. Always return a completed
+  // parse: the controller owns and disposes it even when the request became stale.
   const parseStart = sceneNow();
-  try {
-    parsed = await loader.parseAsync(buffer, "");
-    // GLTFLoader intentionally turns image failures into null maps. A missing
-    // PBR map must retain our fallback instead of silently changing the asset.
-    if (imageFailed) throw new Error("Architecture image decode failed");
-    measureScene(`glb-parse:${role}`, parseStart);
-    return parsed;
-  } catch (error) {
-    const sources = await Promise.allSettled(Object.values(parser?.sourceCache || {}));
-    const resources = collectResources(
-      parsed || {},
-      sources.filter((result) => result.status === "fulfilled").map((result) => result.value),
-    );
-    Object.entries(resources).forEach(([kind, entries]) => {
-      entries.forEach((resource) => {
-        if (kind === "bitmaps") resource.close();
-        else resource.dispose?.();
-      });
-    });
-    throw error;
-  } finally {
-    objectUrls.forEach((resourceUrl) => URL.revokeObjectURL(resourceUrl));
-  }
+  const parsed = await readGlb(buffer, glb);
+  measureScene(`glb-parse:${role}`, parseStart);
+  return parsed;
 }
 
-export function collectResources(asset, extraTextures = []) {
+export function collectResources(asset) {
   const resources = {
     geometries: new Set(),
     materials: new Set(),
-    textures: new Set(extraTextures.filter((texture) => texture?.isTexture)),
+    textures: new Set(),
     bitmaps: new Set(),
   };
   const scenes = new Set([asset.scene, ...(asset.scenes || [])]);

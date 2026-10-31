@@ -62,9 +62,9 @@ test("the Meshy massifs ship as compact, quantized, object-space GLBs within the
       assert.equal(json.meshes[0].primitives.length, 1);
       const { attributes, indices, material } = json.meshes[0].primitives[0],
         type = (id) => [json.accessors[id].componentType, Boolean(json.accessors[id].normalized)];
-      assert.deepEqual(Object.keys(attributes).sort(), ["NORMAL", "POSITION", "TEXCOORD_0"]);
+      // The massif shader shades from the normal map: no vertex normals ship.
+      assert.deepEqual(Object.keys(attributes).sort(), ["POSITION", "TEXCOORD_0"]);
       assert.deepEqual(type(attributes.POSITION), [5122, true], "int16 positions");
-      assert.deepEqual(type(attributes.NORMAL), [5120, true], "int8 normals");
       assert.deepEqual(type(attributes.TEXCOORD_0), [5123, true], "uint16 UVs");
       assert.equal(json.accessors[indices].componentType, 5123, "uint16 indices");
       const m = json.materials[material];
@@ -95,11 +95,12 @@ test("the Meshy massifs ship as compact, quantized, object-space GLBs within the
 
 test("the real massifs ship the recorded mountains-v2 geometry and maps, one geometry for both tiers", () => {
   // Assets/Architecture/mountains-v2 (reports/delivery.json): the Grandes Jorasses, the Dents du Midi
-  // and the Weisshorn from public elevation data; the geometry bytes precede the maps in the buffer.
+  // and the Weisshorn from public elevation data, less the vertex normals tools/strip-mountain-normals.mjs
+  // removes; the geometry bytes precede the maps in the buffer.
   const geometry = {
-    "mountain-ridge": "6fe629fe79cb2afc0e4c9de4466a560c1c2454cb0a04f09bb963053b13f6f5b4",
-    "mountain-spine": "b9976d91c1329776d3b60c3e2ce0268bb06127d8174b0e8891d0e0a7d478143b",
-    "mountain-summit": "a1b2d9b4f966d27dbd36b91cd834de58c3abb8fc02e612ddc9416f4e5d870993",
+    "mountain-ridge": "197c2eff8e17d4d5570280c9a292e4f242f6d51586534f0c7f57b9d8af1c3c50",
+    "mountain-spine": "62985a70f3f8becc84926f13123948cb8bc8f06a4cf1ad1e460a727ba8cd2fbe",
+    "mountain-summit": "54fe3930598281d90c9751c4f85be9e9bdf4b1fdc15504954efd604ef28d9a1a",
   };
   const normal = {
     "mountain-ridge": [
@@ -126,7 +127,7 @@ test("the real massifs ship the recorded mountains-v2 geometry and maps, one geo
       assert.equal(
         digest(bytes.subarray(bin, bin + first)),
         geometry[role],
-        `${role}-${tier} preserves topology, UVs and normals`,
+        `${role}-${tier} preserves topology and UVs`,
       );
       const material = json.materials[0],
         image = (index) => {

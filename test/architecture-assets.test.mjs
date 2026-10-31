@@ -7,6 +7,7 @@ import {
   createArchitectureAssetController,
   loadArchitectureAsset,
 } from "../src/scene/architecture-assets.js";
+import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -958,8 +959,116 @@ test("every delivered model is one self-contained, static, triangle mesh", async
       assert.equal(gltf.animations?.length || 0, 0);
       const primitive = gltf.meshes[0].primitives[0];
       assert.equal(primitive.mode ?? 4, 4, "triangle topology required");
-      for (const semantic of ["POSITION", "NORMAL", "TEXCOORD_0"])
-        assert.ok(Number.isInteger(primitive.attributes[semantic]));
+      // The massifs shade from their object-space normal maps alone.
+      const semantics = role.startsWith("mountain-")
+        ? ["POSITION", "TEXCOORD_0"]
+        : ["POSITION", "NORMAL", "TEXCOORD_0"];
+      for (const semantic of semantics)
+        assert.ok(Number.isInteger(primitive.attributes[semantic]), `${name} ${semantic}`);
+    }
+  }
+});
+
+// A plain picture of what a model parses into: every own field of its objects,
+// geometry arrays by type, layout and digest, decoded images by their bytes.
+// Identities (uuid, id) and back references are left out.
+function describeParsed(value, images) {
+  if (value === null || typeof value !== "object") {
+    return typeof value === "function" ? "function" : value;
+  }
+  if (images.has(value)) return images.get(value);
+  if (ArrayBuffer.isView(value)) {
+    const bytes = Buffer.from(value.buffer, value.byteOffset, value.byteLength);
+    return {
+      type: value.constructor.name,
+      length: value.length,
+      byteOffset: value.byteOffset,
+      bufferBytes: value.buffer.byteLength,
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+    };
+  }
+  if (Array.isArray(value)) return value.map((item) => describeParsed(item, images));
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => !["uuid", "id", "parent", "_listeners"].includes(key))
+      .map(([key, item]) => [key, describeParsed(item, images)]),
+  );
+}
+
+test("the reader parses every delivered model into what three's GLTFLoader builds from it", async () => {
+  const { GLTFLoader } = await import("three/examples/jsm/loaders/GLTFLoader.js");
+  const previous = Object.fromEntries(
+    ["fetch", "self", "Image", "createImageBitmap"].map((key) => [
+      key,
+      Object.getOwnPropertyDescriptor(globalThis, key),
+    ]),
+  );
+  const nativeFetch = globalThis.fetch,
+    images = new Map();
+  // Stand-in bitmaps record the encoded bytes and the decode options.
+  globalThis.createImageBitmap = async (blob, options) => {
+    const bytes = Buffer.from(await blob.arrayBuffer()),
+      bitmap = { close() {} };
+    images.set(bitmap, {
+      type: blob.type,
+      bytes: bytes.length,
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+      options: { ...options },
+    });
+    return bitmap;
+  };
+  // GLTFLoader's WebP check loads a one-pixel image; it reads `self.URL`.
+  globalThis.Image = class {
+    set src(_url) {
+      this.height = 1;
+      queueMicrotask(() => this.onload());
+    }
+  };
+  globalThis.self = globalThis;
+  try {
+    for (const tier of ["high", "balanced"]) {
+      for (const role of ROLES) {
+        const name = `${role}-${tier}.glb`,
+          source = await readFile(path.join(projectRoot, "images", "architecture", name));
+        const bytes = source.buffer.slice(source.byteOffset, source.byteOffset + source.length);
+        const reference = await new GLTFLoader().parseAsync(bytes, "");
+        globalThis.fetch = async (url, options) =>
+          url.startsWith("blob:") ? nativeFetch(url, options) : new Response(source);
+        const parsed = await loadArchitectureAsset(`/${name}`, {
+          signal: new AbortController().signal,
+          tier,
+          role,
+        });
+        assert.equal(parsed.scenes.length, reference.scenes.length, name);
+        assert.deepEqual(
+          describeParsed(parsed.scene, images),
+          describeParsed(reference.scene, images),
+          name,
+        );
+        // The parts the scene leans on, spelled out.
+        const [mesh] = parsed.scene.children,
+          { attributes } = reference.scene.children[0].geometry;
+        for (const [key, attribute] of Object.entries(attributes)) {
+          const ours = mesh.geometry.attributes[key];
+          assert.equal(ours.isInterleavedBufferAttribute, attribute.isInterleavedBufferAttribute);
+          assert.equal(ours.array.constructor, attribute.array.constructor, `${name} ${key}`);
+          assert.equal(ours.normalized, attribute.normalized, `${name} ${key}`);
+          assert.equal(ours.itemSize, attribute.itemSize, `${name} ${key}`);
+          assert.equal(ours.count, attribute.count, `${name} ${key}`);
+        }
+        const material = reference.scene.children[0].material;
+        for (const key of ["map", "normalMap", "aoMap", "emissiveMap", "roughnessMap"]) {
+          assert.equal(Boolean(mesh.material[key]), Boolean(material[key]), `${name} ${key}`);
+          assert.equal(mesh.material[key]?.colorSpace, material[key]?.colorSpace);
+        }
+        assert.deepEqual(mesh.material.normalScale, material.normalScale, name);
+        assert.equal(mesh.material.side, material.side, name);
+      }
+    }
+  } finally {
+    for (const [key, descriptor] of Object.entries(previous)) {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      else delete globalThis[key];
     }
   }
 });
