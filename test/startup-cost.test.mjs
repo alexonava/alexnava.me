@@ -1515,6 +1515,37 @@ test("a known optional soil failure settles opening preparation without waiting 
   }
 });
 
+test("the lite ground requests no soil roughness and its opening settles on the required maps", async (t) => {
+  // Phones and laptops: index.js passes no onSoilRoughnessChange (scene-bootstrap).
+  const createGroundTextures = await loadGroundTextures(),
+    requests = recordingGroundRequests(t),
+    film = createGround(createGroundTextures, { tier: "balanced", groundSize: 512 });
+  try {
+    film.ground.setFilmActive(true);
+    let settled = false;
+    const ready = film.ground.prepareOpening().then((result) => {
+      settled = true;
+      return result;
+    });
+    await flush();
+    assert.deepEqual(
+      requests.map(({ url }) => url),
+      [
+        "/images/materials/slate-color-512.webp",
+        "/images/materials/slate-normal-512.webp",
+        "/images/materials/slate-detail-512.webp",
+      ],
+    );
+    requests.forEach(({ url, resolve }) => resolve({ ok: true, blob: async () => ({ url }) }));
+    await flush();
+    assert.equal(settled, true);
+    assert.equal(await ready, true);
+    assert.deepEqual(film.ground.openingState, { maps: "ready", soil: "fallback" });
+  } finally {
+    film.ground.dispose();
+  }
+});
+
 test("known slate failure settles hidden preparation immediately and disposal settles a pending run", async (t) => {
   const createGroundTextures = await loadGroundTextures(),
     requests = recordingGroundRequests(t),

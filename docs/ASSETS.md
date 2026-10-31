@@ -46,7 +46,7 @@ The tree is required: without it the scene returns to the title card. A Lantern 
 
 ## Slate maps
 
-`images/materials/`, lossy WebP without alpha. The nine required slate variants supply five maps per live tier. The selected required set loads once the film is on ([filmic-earth.js](../src/scene/filmic-earth.js) `FILM_GROUND_PRESETS.slate`), and [stone-detail.js](../src/scene/stone-detail.js) rejects any required map whose pixel size differs from the expected one; the procedural ground then stays. The optional soil roughness tile below has independent loading and failure handling.
+`images/materials/`, lossy WebP without alpha. The seven required slate variants supply five maps on high and three on balanced. The selected required set loads once the film is on ([filmic-earth.js](../src/scene/filmic-earth.js) `FILM_GROUND_PRESETS.slate`), and [stone-detail.js](../src/scene/stone-detail.js) rejects any required map whose pixel size differs from the expected one; the procedural ground then stays. The optional soil roughness tile below has independent loading and failure handling.
 
 | File                            |   Bytes | Size | Tier     |
 | ------------------------------- | ------: | ---- | -------- |
@@ -56,14 +56,12 @@ The tree is required: without it the scene returns to the title card. A Lantern 
 | `slate-relief-1024.webp`        |  94,770 | 1024 | high     |
 | `slate-color-512.webp`          |  65,168 | 512  | balanced |
 | `slate-normal-512.webp`         | 111,126 | 512  | balanced |
-| `slate-grit-512.webp`           |  56,578 | 512  | balanced |
-| `slate-relief-512.webp`         |  39,862 | 512  | balanced |
 | `slate-detail-512.webp`         |  24,542 | 512  | both     |
-| `slate-soil-roughness-512.webp` |   3,042 | 512  | both     |
+| `slate-soil-roughness-512.webp` |   3,042 | 512  | high     |
 
 The grit and relief maps are the close soil near the lens (mud-ground.js `SLATE_CLOSE`), which only the high tier draws: phones and laptops take the lite ground and never request them (filmic-earth.js `kindsFor`). They are greyscale albedo detail and height from CC0 PolyHaven "Dirt" ([Credits](CREDITS.md)), made by `Assets/Materials/dirt-close-v1/scripts/make-dirt-close.py`.
 
-The independent optional `slate-soil-roughness-512.webp` is 3,042 bytes, shared by both tiers. It is grayscale linear data (`NoColorSpace`), prepared before a close tree opening, or requested after other reveals, with a 12 KiB streamed-body limit and an eight-second deadline. Its owner stages it until a cut or a still frame; failure preserves all five required ground maps. The shader subtracts its encoded mean, 0.9450162550982307, before adding its close-range variation to exposed soil, leaving water and coastal bedrock alone. `tools/bake-soil-roughness.py` verifies the original 16-bit Dirt source SHA-256, normalizes before filtering and produces the 512px WebP at quality 78/method 6. The tile adds about 1.33 MiB of decoded RGBA mip storage. Adaptive quality retains the same asset; disposal restores its binding before freeing the texture and bitmap.
+The independent optional `slate-soil-roughness-512.webp` is 3,042 bytes, on high only: the close soil alone samples it, so phones and laptops never request it (index.js passes the ground no `onSoilRoughnessChange` on the lite ground). It is grayscale linear data (`NoColorSpace`), prepared before a close tree opening, or requested after other reveals, with a 12 KiB streamed-body limit and an eight-second deadline. Its owner stages it until a cut or a still frame; failure preserves all five required ground maps. The shader subtracts its encoded mean, 0.9450162550982307, before adding its close-range variation to exposed soil, leaving water and coastal bedrock alone. `tools/bake-soil-roughness.py` verifies the original 16-bit Dirt source SHA-256, normalizes before filtering and produces the 512px WebP at quality 78/method 6. The tile adds about 1.33 MiB of decoded RGBA mip storage. Adaptive quality retains the same asset; disposal restores its binding before freeing the texture and bitmap.
 
 ## Coast detail
 
@@ -172,7 +170,7 @@ Runtime assets are committed in their delivered form. Local authoring helpers al
 | Any one model, high                                                                                               | 6 MiB (6,291,456)                                  | 2,028,412 (tree) | The loader (`ARCHITECTURE_ASSET_BUDGETS`) and `bundle-output`                             |
 | Any one model, balanced                                                                                           | 3 MiB (3,145,728)                                  | 896,532 (tree)   | The same                                                                                  |
 | Complete scene, high: seven models, five slate maps, soil roughness, both optional coast maps and four sky plates | 7.25 MiB (7,602,176)                               | 6,117,586        | `bundle-output`: complete-scene budget, including all optional maps                       |
-| Complete scene, balanced                                                                                          | 3.5 MiB (3,670,016)                                | 2,733,170        | The same                                                                                  |
+| Complete scene, balanced                                                                                          | 3.5 MiB (3,670,016)                                | 2,633,688        | The same                                                                                  |
 | UI bundle and capability worker (`app.HASH.js` + `webgl-probe.HASH.js`)                                           | under 36 KiB                                       |                  | `bundle-output`: "UI and capability worker together stay under the existing LCP budget"   |
 | Scene entry and the chunks it imports statically                                                                  | under 844 KiB, exactly two files                   |                  | `bundle-output`: "scene bundle stays under the deferred-payload budget"                   |
 | `public/og.png`                                                                                                   | opaque, exactly 1200×630, at most 300 KB (300,000) | 298,049          | `hosting`: "the share image is an opaque 1200x630 PNG of at most 300 KB, as its tags say" |
@@ -187,7 +185,7 @@ The UI and the one-shot capability worker share a 36 KiB budget (34 KiB until a 
 
 The build publishes these sources only as `name.HASH.ext`, eight hex digits of the file's SHA-256, cached immutably for a year: every model, the slate maps, both coast maps, the opening's two paper maps and the fonts ([build.mjs](../build.mjs) `isFingerprintedSource`), besides the scripts and stylesheet. Pages, the stylesheet, the scene and the doors' script name only the hashed copies (the paper's through `paperAssetManifest` and `__BABEL_PAPER_URLS__`). Optional coastal URLs remain in the lazy terrain chunk, outside the entry's slate manifest. `public/` files are copied under their stable names.
 
-`test/bundle-output.test.mjs` fails when a file in `images/` is published under its plain name or is missing under its hashed name, and `test/hosting.test.mjs` expects exactly 28 fingerprinted files in `images/` (14 models, 9 slate maps, optional soil roughness, both coast maps and both paper maps); a new file there means updating that count. `images/` holds only `architecture/`, `materials/` and `paper/`, and the stylesheet requests no picture: its only URLs are the hashed fonts, the paper's hashed detail map and `data:` URIs (`test/bundle-output.test.mjs`). `.gitignore` ignores `*.png` except `og.png`, `apple-touch-icon.png`, `icon-192.png`, `icon-512.png` and `icon-maskable-512.png`, so a new PNG must be added there as an exception before Git sees it.
+`test/bundle-output.test.mjs` fails when a file in `images/` is published under its plain name or is missing under its hashed name, and `test/hosting.test.mjs` expects exactly 34 fingerprinted files in `images/` (14 models, 7 slate maps, optional soil roughness, both coast maps, 8 sky plates and both paper maps); a new file there means updating that count. `images/` holds only `architecture/`, `materials/` and `paper/`, and the stylesheet requests no picture: its only URLs are the hashed fonts, the paper's hashed detail map and `data:` URIs (`test/bundle-output.test.mjs`). `.gitignore` ignores `*.png` except `og.png`, `apple-touch-icon.png`, `icon-192.png`, `icon-512.png` and `icon-maskable-512.png`, so a new PNG must be added there as an exception before Git sees it.
 
 ## How to
 
@@ -207,7 +205,7 @@ Name the role in [build.mjs](../build.mjs) `architectureAssetManifest` and in [a
 
 ### Replace the slate maps
 
-Keep the nine required slate names and exact pixel sizes (1024 or 512; the detail map 512 on both tiers), seamless tiles, and the complete-scene budgets. stone-detail.js rejects any other size in that required set at runtime. The optional soil roughness tile follows its separate 512px loading and encoding contract above.
+Keep the seven required slate names and exact pixel sizes (1024 or 512; the detail map 512 on both tiers), seamless tiles, and the complete-scene budgets. stone-detail.js rejects any other size in that required set at runtime. The optional soil roughness tile follows its separate 512px loading and encoding contract above.
 
 ### Replace the coast detail map
 

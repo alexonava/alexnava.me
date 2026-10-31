@@ -286,6 +286,13 @@ test("the ground shading has one call site, which takes the tint and shading fro
   );
 });
 
+test("only the high ground, which has the close soil, takes the soil roughness", () => {
+  assert.match(
+    index,
+    /onSoilRoughnessChange: liteGround \? undefined : \(texture\) => \{ groundContacts\.slateSoilRoughness\.value = texture; groundContacts\.slateSoilRoughnessOn\.value = texture \? 1 : 0; invalidateContent\(\); \}/,
+  );
+});
+
 test("main.js gates the scene on preferences and capabilities, with no user-agent, Lighthouse or viewport escape hatch", () => {
   const main = source("src/main.js");
   assert.doesNotMatch(main, /userAgent|Lighthouse|Chrome-Lighthouse/i);

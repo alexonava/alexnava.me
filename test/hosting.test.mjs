@@ -411,8 +411,8 @@ test("Pages header rules resolve one cache policy for stable and fingerprinted p
   }
   assert.equal(
     fingerprintable,
-    36,
-    "14 models, 9 slate maps, optional soil roughness, 2 optional coast maps, 8 sky plates and 2 paper maps",
+    34,
+    "14 models, 7 slate maps, optional soil roughness, 2 optional coast maps, 8 sky plates and 2 paper maps",
   );
 });
 

@@ -610,11 +610,15 @@ const GROUND_WAIT_S = 20;
             if (status.status === "ready") qualityState.holdSampling();
             if (qualityDebug) qualityDebug.ground = status;
           },
-          onSoilRoughnessChange(texture) {
-            groundContacts.slateSoilRoughness.value = texture;
-            groundContacts.slateSoilRoughnessOn.value = texture ? 1 : 0;
-            invalidateContent();
-          },
+          // Only the close soil samples the soil roughness, and the lite ground has none, so
+          // phones and laptops never request it and their opening does not wait on it.
+          onSoilRoughnessChange: liteGround
+            ? undefined
+            : (texture) => {
+                groundContacts.slateSoilRoughness.value = texture;
+                groundContacts.slateSoilRoughnessOn.value = texture ? 1 : 0;
+                invalidateContent();
+              },
           onDetailChange({
             colorMap,
             normalMap,

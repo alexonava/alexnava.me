@@ -41,17 +41,19 @@ const ROLES = [
   "mountain-summit",
 ];
 
-const slateMaps = (tier) => {
-  const size = tier === "high" ? 1024 : 512;
-  return [
-    `slate-color-${size}.webp`,
-    `slate-normal-${size}.webp`,
-    "slate-detail-512.webp",
-    `slate-grit-${size}.webp`,
-    `slate-relief-${size}.webp`,
-    "slate-soil-roughness-512.webp",
-  ];
-};
+// The slate maps each tier requests: the close soil's grit, relief and roughness on high
+// alone (phones and laptops take the lite ground, which has no close soil).
+const slateMaps = (tier) =>
+  tier === "high"
+    ? [
+        "slate-color-1024.webp",
+        "slate-normal-1024.webp",
+        "slate-detail-512.webp",
+        "slate-grit-1024.webp",
+        "slate-relief-1024.webp",
+        "slate-soil-roughness-512.webp",
+      ]
+    : ["slate-color-512.webp", "slate-normal-512.webp", "slate-detail-512.webp"];
 
 after(async () => {
   assert.equal(path.dirname(path.resolve(bundleScratch)), scratchRoot);
@@ -732,11 +734,13 @@ test("models and slate maps are deferred: the scene entry names all copies, the 
       assert.ok(loaded.get(entry).includes(`/images/materials/${published}`), published);
     }
   }
+  // No tier draws a 512 close soil, so the entry names none.
+  assert.doesNotMatch(loaded.get(entry), /slate-(grit|relief)-512/);
 });
 
 test("the complete scene fits 7.25 MiB on high and 3.5 MiB on balanced, and each model the loader's limit", async () => {
   // A live scene downloads the tree, lantern, both rocks, the three
-  // Meshy massifs, the slate's five maps and both optional coastal maps.
+  // massifs, the slate maps its tier requests, both optional coastal maps and four sky plates.
   // Photographic materials have an explicit aggregate allowance; deferring
   // their requests never removes them from this full-scene accounting.
   for (const [tier, budget] of [

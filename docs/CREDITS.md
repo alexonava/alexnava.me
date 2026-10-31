@@ -147,7 +147,7 @@ commissioned.
 
 Tool: [Meshy](https://www.meshy.ai/).
 
-The close soil maps `images/materials/slate-{grit,relief}-{1024,512}.webp` are
+The close soil maps `images/materials/slate-{grit,relief}-1024.webp` are
 derived from ["Dirt"](https://polyhaven.com/a/dirt) by Charlotte Baglioni on
 Poly Haven, released under [CC0](https://polyhaven.com/license): the grit map is
 its colour's luminance against its own local mean, the relief map is a height

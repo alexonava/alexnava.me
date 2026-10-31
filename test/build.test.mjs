@@ -464,8 +464,6 @@ test("CSS asset URLs and bytes are portable across checkout line endings", async
       "relief-1024",
       "color-512",
       "normal-512",
-      "grit-512",
-      "relief-512",
       "detail-512",
       "soil-roughness-512",
     ]) {
