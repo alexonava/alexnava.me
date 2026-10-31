@@ -1135,8 +1135,9 @@ const GROUND_WAIT_S = 20;
       // itself, where it does.
       // A shot that looks at the lantern gives the line the lantern's flame instead (`kind`
       // "lantern"), its light LANTERN_GLOW world units about the flame: Lantern study, when an
-      // address or a script opens the film there, from the scene's start where the opening fit to the supplied
-      // lantern's stored outline puts it (opening-star.js openingFlame()), then the camera's.
+      // address or a script opens the film there, first where the opening fit to the supplied
+      // lantern's stored outline puts it (opening-flame.js createOpeningFlame(), once the lazy
+      // preparation chunk lands), then the camera's.
       let openingCameraStar = false;
       const openingSun = new Vector3(),
         openingWatch = new Vector3(),

@@ -1854,7 +1854,6 @@ body.scene-walk-hidden > :not(.scene-shell) {
   }
 
   .skip-link,
-  .hero-minimal,
   .site-footer__link,
   .not-found .back-link {
     transition: none;

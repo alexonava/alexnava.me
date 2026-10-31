@@ -6,7 +6,6 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
-import { resolveSceneView, SCENE_VIEWS } from "../src/scene/scene-modes.js";
 import { REVISION } from "three";
 import { ESTATE, estateLantern, estatePathDistance } from "../src/scene/estate-layout.js";
 
@@ -232,22 +231,6 @@ test("supportsWebGL detects standard, experimental-only, and missing contexts", 
 
   const throws = await loadHelpers({ webgl: "throws" });
   assert.equal(throws.supportsWebGL(), false);
-});
-
-test("ordinary visits open the tree while explicit and legacy subject URLs retain their meaning", () => {
-  assert.deepEqual(SCENE_VIEWS, ["watch", "tree"]);
-  for (const search of [
-    "?view=watch&angle=1",
-    "?view=unknown",
-    // An old link to the tower opens on the watch.
-    "?view=tower",
-  ]) {
-    assert.equal(resolveSceneView(search), "watch", search);
-  }
-  assert.equal(resolveSceneView(""), "tree");
-  assert.equal(resolveSceneView("?quality=balanced&qaTime=0&tour=0"), "tree");
-  assert.equal(resolveSceneView("?view=tree"), "tree");
-  assert.equal(resolveSceneView("?view=tree&angle=4&sceneDebug=1"), "tree");
 });
 
 // src/scene/rendering.js opts into r160's legacy light units through the

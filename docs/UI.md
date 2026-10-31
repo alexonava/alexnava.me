@@ -244,7 +244,7 @@ Nothing on the page animates in a loop but a lantern opening's light, which flic
 
 Under `prefers-reduced-motion: reduce`:
 
-- `transition: none` on the skip link, the hero block, the footer's controls (`.site-footer__link`: Contact and its links), the 404's Home link, the canvas, the title card's grain, the portrait intro's scrim and the loading line with its bar's fill. The canvas, the grain and the intro's scrim change at once at the reveal; the loading line appears and goes at once, and its bar steps to each new value. The loading line's star has no transition to remove, and the canvas, appearing at once, covers it at the reveal.
+- `transition: none` on the skip link, the footer's controls (`.site-footer__link`: Contact and its links), the 404's Home link, the canvas, the title card's grain, the portrait intro's scrim and the loading line with its bar's fill. The canvas, the grain and the intro's scrim change at once at the reveal; the loading line appears and goes at once, and its bar steps to each new value. The loading line's star has no transition to remove, and the canvas, appearing at once, covers it at the reveal.
 - `animation: none` on the hero block and the footer.
 - No doors: `.scene-doors` is `display: none`, and the script leaves it alone.
 - `scroll-behavior: auto`.

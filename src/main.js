@@ -100,12 +100,10 @@ import { createOpeningPreparation } from "./scene/opening-preparation.js";
   // The film opens on The watch, the sky alone, which shows in about two seconds on any
   // device, unless the address names a view or an angle or a script has chosen a subject.
   // Lantern study's ground takes far longer to build: about 8 s on a desktop, 8 s on a fast
-  // phone and 27 s on a mid-range one (the owner's calls: laptops 2026-10-27, phones and
-  // tablets 2026-10-28, desktops 2026-10-29, "Always The watch"; it was chosen by chance
-  // before). Chosen once, before the loading line begins and the models are requested, so
-  // the line and its light, the early requests and the scene agree: each resolves the
-  // opening through scene-modes.js resolveSceneOpening(), which keeps this choice. Its
-  // default, for an address with neither, is Lantern study.
+  // phone and 27 s on a mid-range one (the owner's call: "Always The watch"). Chosen once,
+  // before the loading line begins and the models are requested, so the line and its
+  // light, the early requests and the scene agree: each resolves the opening through
+  // scene-modes.js resolveSceneOpening(), which keeps this choice.
   const WATCH_OPENING = Object.freeze({ view: "watch", angle: 0 });
   function chooseOpening() {
     const scene = (site.scene = site.scene || {});

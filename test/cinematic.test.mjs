@@ -16,8 +16,6 @@ import {
   Vector3,
 } from "three";
 import {
-  chooseCinematicView,
-  chooseCinematicAngle,
   cinematicSafeArea,
   createCinematicCamera,
   loadPreparationTasks,
@@ -74,24 +72,6 @@ function setup(selected = "watch", width = 1440, height = 900, angle = 0) {
   };
 }
 
-test("ordinary visits open Lantern study while explicit and legacy subject URLs remain valid", () => {
-  const unexpectedRandom = () => {
-    throw new Error("opening composition must not use RNG");
-  };
-  for (const query of ["", "?quality=high", "?architecture=classic", "?setting=previous"])
-    assert.equal(chooseCinematicView(query, unexpectedRandom), "tree");
-  for (const query of [
-    "?view=unknown",
-    // The lookout's own view left with it: its old URLs open The watch.
-    "?view=tower",
-    "?angle=3",
-    "?view=orbit",
-  ])
-    assert.equal(chooseCinematicView(query, unexpectedRandom), "watch");
-  for (const view of ["watch", "tree"])
-    assert.equal(chooseCinematicView(`?view=${view}`, unexpectedRandom), view);
-});
-
 test("tree waits, fails over to the watch, preserves selection across loading and restores fallback", () => {
   const f = setup("tree");
   assert.equal(f.controller.ready, false);
@@ -121,35 +101,6 @@ test("repeated disposal is safe", () => {
   assert.equal(f.controller.dispose(), true);
   assert.equal(f.controller.dispose(), false);
   assert.equal(f.apply(), false);
-});
-
-test("valid angle overrides remain reproducible and missing or invalid angles select the first shot", () => {
-  const unexpectedRandom = () => {
-    throw new Error("opening angle must not use RNG");
-  };
-  // The watch has one angle, the tree four.
-  const counts = { watch: 1, tree: 4 };
-  for (const [view, count] of Object.entries(counts)) {
-    assert.equal(DIRECTED_SHOTS[view].length, count);
-    for (let angle = 1; angle <= count; angle++)
-      assert.equal(
-        chooseCinematicAngle(`?view=${view}&angle=${angle}`, view, unexpectedRandom),
-        angle - 1,
-      );
-  }
-  for (const [view, count] of Object.entries(counts))
-    for (const query of [
-      "",
-      `?view=${view}`,
-      "?angle=0",
-      `?angle=${count + 1}`,
-      "?angle=2.5",
-      "?angle=invalid",
-    ])
-      assert.equal(
-        chooseCinematicAngle(query, view, unexpectedRandom),
-        query === "" && view === "tree" ? 1 : 0,
-      );
 });
 
 test("short landscape uses a side-by-side safe area instead of backing out below the hero", () => {
@@ -508,8 +459,6 @@ test("prepare reports unavailable subjects, invalid angles and disposed controll
   assert.equal(f.controller.prepare("watch", 1, 390, 844), "unavailable");
   assert.equal(f.controller.prepare("watch", 9, 390, 844), "unavailable");
   assert.equal(f.controller.prepare("orbit", 0, 390, 844), "unavailable");
-  // The lookout's subject kind left with it.
-  assert.equal(f.controller.prepare("tower", 0, 390, 844), "unavailable");
   assert.equal(f.controller.prepare("watch", 0, 390, 844), "pending");
   f.controller.dispose();
   assert.equal(f.controller.prepare("watch", 0, 390, 844), "unavailable");

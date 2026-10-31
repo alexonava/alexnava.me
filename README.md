@@ -17,7 +17,6 @@ Open [http://127.0.0.1:4173/](http://127.0.0.1:4173/). Development mode builds t
 | `npm run dev`            | Watch the inputs and serve the local preview (`-- --port N`, default 4173) |
 | `npm run preview`        | Build once and serve `dist/` through Wrangler on port 4173                 |
 | `npm run watch`          | Rebuild `dist/` on every input change, without a server                    |
-| `npm run build`          | Build the publish payload in `dist/` (the same as `build:dist`)            |
 | `npm run build:dist`     | Build the publish payload in `dist/`                                       |
 | `npm run verify`         | Compile-check the scripts without writing files                            |
 | `npm test`               | Run the test suite                                                         |
@@ -36,10 +35,10 @@ Add `?view=tree&angle=2&tour=0` to stay on one shot; the [scene-mode guide](docs
 ## Layout
 
 - `index.html`, `404.html`, `styles.css`: the pages and their styles.
-- `src/`: the UI bundle (`app.js`, `main.js`, `ui/`) and the deferred scene (`scene-entry.js`, `scene/`); the UI bundle carries `shared/`, which the scene reads from `window.BabelSite`.
-- `images/`, `fonts/`: the models, slate maps and fonts, published under content hashes.
+- `src/`: the UI bundle (`app.js`, `main.js`, `ui/`), the deferred scene (`scene-entry.js`, `scene/`), the opening's paper doors (`doors-entry.js`, `doors/`) and the capability worker (`webgl-probe-worker.js`); the UI bundle carries `shared/`, which the scene reads from `window.BabelSite`.
+- `images/`, `fonts/`: the models, the slate and coast maps, the sky plates, the doors' paper maps and the fonts, published under content hashes.
 - `public/`: hosting, icon and discovery files copied to the site root.
-- `tools/`: `build-output.mjs` (staged publication of the payload), `watch.mjs` and `dev.mjs` (rebuilds and the dev server), `owned-process.mjs` (starting and stopping their child processes), `shader-compact.mjs` (the GLSL compactor), `bake-root-shade.mjs` (the tree's baked root tables) and the share card's source, `og-card.html` and `og-card-backdrop.webp`.
+- `tools/`: `build-output.mjs` (staged publication of the payload), `watch.mjs` and `dev.mjs` (rebuilds and the dev server), `owned-process.mjs` (starting and stopping their child processes), `shader-compact.mjs` (the GLSL compactor), `bake-root-shade.mjs` and `bake-lantern-outline.mjs` (the tree's baked root tables and the lantern's stored outline), `strip-mountain-normals.mjs` (the mountain models' unread normals), the Python authoring helpers `repair-landmark-geometry.py`, `bake-soil-roughness.py` and `bake-coast-albedo.py`, and the share card's source, `og-card.html` and `og-card-backdrop.webp` ([Architecture](docs/ARCHITECTURE.md#tools) lists them all).
 - `test/`: the test suite, with shared helpers in `test/support/`.
 - `.github/`: workflows and the smoke and audit scripts.
 

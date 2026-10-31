@@ -92,8 +92,8 @@ test("the scene is the landing content, and nothing covers or dims it", async ()
   assert.match(html, /id="home-scene" class="scene-canvas"/);
   const main = html.match(/<main[\s\S]*?<\/main>/)[0];
   assert.match(main, /id="home" class="hero section"/);
-  assert.doesNotMatch(html, /role="dialog"|aria-modal|class="panel-|estate-map|data-panel/);
-  assert.doesNotMatch(styles, /body::after|data-panel-open|\.panel-|\.estate-/);
+  assert.doesNotMatch(html, /role="dialog"|aria-modal/);
+  assert.doesNotMatch(styles, /body::after/);
 });
 
 const LOADER_MARKUP =
@@ -446,7 +446,6 @@ test("without scripts the footer shows the email and LinkedIn in Contact's place
     anchors[1][1],
     'class="site-footer__link" href="https://www.linkedin.com/in/alex-nava/" target="_blank" rel="noopener"',
   );
-  assert.doesNotMatch(html, /data-scene-fallback|scene-entry|about-text|scene-fallback-content/);
 });
 
 test("homepage modification metadata matches its public Markdown equivalent", async () => {

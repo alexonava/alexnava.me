@@ -1,4 +1,3 @@
-import { resolveSceneOpening } from "./scene-modes.js";
 import { Vector3 } from "three";
 import {
   DIRECTED_SHOTS,
@@ -36,15 +35,6 @@ export const loadPreparationTasks = () =>
     },
   ));
 
-export function chooseCinematicView(search = "") {
-  return resolveSceneOpening(search).view;
-}
-export function chooseCinematicAngle(search = "", view = null) {
-  const opening = resolveSceneOpening(search);
-  return view !== null && view !== opening.view
-    ? resolveSceneOpening(search, { view }).angle
-    : opening.angle;
-}
 // Stacked layouts frame the subject below the name. The others frame it beside
 // the name, right of the hero, from 32px under the top edge down to the bottom
 // bar, except portrait monitors: their name sits bottom-left, so the subject

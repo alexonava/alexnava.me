@@ -34,15 +34,10 @@ npm-debug.log*
 !icon-512.png
 !icon-maskable-512.png
 .lighthouseci/
-.tmp-lighthouse-*/
 .tmp-preview-review/
-.playwright-cli/
 
 # Node / build
 node_modules/
 dist/
 .cache/
 .wrangler/
-scripts/
-!.github/scripts/
-!.github/scripts/*.sh

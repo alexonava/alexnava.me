@@ -860,7 +860,7 @@ test("an unknown, off-frame or malformed star shows nothing, and a late report c
 
 test("a lantern opening's light is the lantern as the film's lens sees it: the report's kind, its class and the stylesheet's glare", async () => {
   const styles = await readFile(new URL("../styles.css", import.meta.url), "utf8");
-  // Lantern study, rolled by main.js chooseOpening(): the line waits for the tree too.
+  // Lantern study, which an address or a script selects: the line waits for the tree too.
   const h = createHarness({ search: "", selection: { view: "tree", angle: 1 } });
   h.sceneLoader.begin({ tier: "high" });
   assert.deepEqual(h.state().roles, ["watch", "tree"]);

@@ -78,7 +78,7 @@ The tree ships at 39,827 (high) and 26,025 (balanced) triangles, with
 `KHR_mesh_quantization` geometry and embedded WebP colour, metal-roughness and
 normal maps. The lantern ships at 3,000 triangles on both tiers, with float
 positions, quantized normals and texture coordinates, and embedded colour,
-metal-roughness, normal and emission maps: WebP at 1024 on balanced; on high,
+metal-roughness, normal and emission maps: WebP at 512 on balanced; on high,
 WebP at 2048 except the normal map, an embedded 2048 JPEG.
 
 The stand-in lantern, the iron post lantern the scene shows until the

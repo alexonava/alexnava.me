@@ -899,7 +899,7 @@ export function* rangeSteps(models, placements = RANGE_PLACEMENTS) {
   return { geometries, nearer, texture, placed };
 }
 
-// The whole Meshy build: the massifs, then the backdrop rings behind them with
+// The whole mountain build: the massifs, then the backdrop rings behind them with
 // the massifs' skyline as their nearer one. `texels` (RANGE_SKY.texture x 4
 // bytes) receives the nearer layers' skyline.
 function* composedSteps(models, texels) {

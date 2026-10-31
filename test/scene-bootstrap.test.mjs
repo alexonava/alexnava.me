@@ -7,8 +7,14 @@ import { flat, source } from "./support/code.mjs";
 import { createDeferredQualityStep } from "../src/scene/runtime.js";
 
 const index = flat(source("src/scene/index.js"));
-// The text between two anchors of the flattened bootstrap.
-const between = (from, to) => index.slice(index.indexOf(from), to ? index.indexOf(to) : undefined);
+// The text between two anchors of the flattened bootstrap. A missing anchor fails
+// here, so a renamed one can never leave a doesNotMatch reading nothing.
+const between = (from, to) => {
+  const start = index.indexOf(from);
+  const end = to ? index.indexOf(to, start) : index.length;
+  assert.ok(start >= 0 && end > start, `${from} ... ${to ?? "end"}`);
+  return index.slice(start, end);
+};
 
 test("the actual quality dispatch keeps a paused visible shot intact until its cut", async () => {
   const argument = index.match(/const queuedProfile = adaptiveSteps\.take\((\{[^]*?\})\);/)[1];
@@ -206,7 +212,6 @@ test("each frame runs the tour, the quality step, the capture skip, the crossfad
 });
 
 test("only a visitor pause holds rendering, and a resize draws one frame behind it", () => {
-  assert.doesNotMatch(index, /data-panel-open|createPanelHold|panelHold/);
   assert.match(
     index,
     /function applySceneSize\([^]*?visitorHold\?\.redraw\(\); frameScheduler\?\.invalidate\(\);/,

@@ -25,7 +25,3 @@ export function resolveSceneOpening(search = "", overrides = {}) {
   if (overrides.angle != null) angle = validAngle(overrides.angle) ? overrides.angle : 0;
   return { view, angle };
 }
-
-export function resolveSceneView(search = "") {
-  return resolveSceneOpening(search).view;
-}
