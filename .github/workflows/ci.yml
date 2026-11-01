@@ -16,16 +16,16 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      wrangler: ${{ steps.wrangler.outputs.version }}
     steps:
       - name: Check out repository
-        # actions/checkout@v7.0.1
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Set up Node.js
-        # actions/setup-node@v7.0.0
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -48,9 +48,21 @@ jobs:
       - name: Build deployable site
         run: npm run build:dist
 
+      # The preview job installs exactly the Wrangler the lockfile resolves.
+      - name: Read the locked Wrangler version
+        id: wrangler
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package-lock.json').packages['node_modules/wrangler'].version")"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Unexpected Wrangler version in package-lock.json: $version"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
       - name: Upload site payload
-        # actions/upload-artifact@v7.0.1
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: site-dist
           path: dist/
@@ -65,21 +77,18 @@ jobs:
     steps:
       # Only for lighthouserc.json; nothing is installed or built here.
       - name: Check out repository
-        # actions/checkout@v7.0.1
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Download site payload
-        # actions/download-artifact@v8.0.1
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: site-dist
           path: dist
 
       - name: Run Lighthouse CI
-        # treosh/lighthouse-ci-action@v12
-        uses: treosh/lighthouse-ci-action@3e7e23fb74242897f95c0ba9cabad3d0227b9b18
+        uses: treosh/lighthouse-ci-action@3e7e23fb74242897f95c0ba9cabad3d0227b9b18 # v12
         with:
           configPath: ./lighthouserc.json
           uploadArtifacts: true
@@ -100,14 +109,12 @@ jobs:
     # payload and a pinned Wrangler, never the pull request's code.
     steps:
       - name: Set up trusted Node.js runtime
-        # actions/setup-node@v7.0.0
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
 
       - name: Download site payload
-        # actions/download-artifact@v8.0.1
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: site-dist
           path: dist
@@ -129,7 +136,9 @@ jobs:
 
       - name: Install pinned Wrangler
         if: steps.cloudflare.outputs.ready == 'true'
-        run: npm install --global --ignore-scripts --no-audit --no-fund wrangler@4.153.0
+        env:
+          WRANGLER_VERSION: ${{ needs.build.outputs.wrangler }}
+        run: npm install --global --ignore-scripts --no-audit --no-fund "wrangler@$WRANGLER_VERSION"
 
       - name: Validate preview deploy credentials
         if: steps.cloudflare.outputs.ready == 'true'
@@ -235,8 +244,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Comment preview URL on PR
-        # actions/github-script@v9.0.0
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           PREVIEW_URL: ${{ needs.preview.outputs.preview_url }}
           COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
