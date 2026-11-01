@@ -46,6 +46,7 @@ function createHarness({
   doorsUrl = DOORS_URL,
   withDoors = true,
   moreContrast = false,
+  clock = null,
 } = {}) {
   let now = startedAt;
   const timers = new Map();
@@ -60,7 +61,7 @@ function createHarness({
   const properties = new Map();
   // The stylesheet's own opening, as the Web Animations API shows it on a half: its
   // clock, or none where the browser cannot tell.
-  let animationClock = null;
+  let animationClock = clock;
   const leaf = {
     getAnimations: () => (animationClock === null ? [] : [{ currentTime: animationClock }]),
   };
@@ -217,6 +218,16 @@ test("a script that runs after the stylesheet began opening leaves it to finish"
   assert.doesNotMatch(h.classes, /\bis-open\b/);
   h.advance(2300);
   assert.equal(h.doors.hidden, true);
+});
+
+test("the script's arrival is measured on the stylesheet's clock, which starts with its styles", () => {
+  // Styles applied 2 s in and the script 4 s in: the stylesheet opens them at 6 s, so they hold.
+  const late = createHarness({ startedAt: 4000, clock: 2000 });
+  assert.equal(late.sceneDoors.state, "held");
+  assert.match(late.classes, /\bis-held\b/);
+  const opening = createHarness({ startedAt: 4200, clock: 3900 });
+  assert.equal(opening.sceneDoors.state, "failsafe");
+  assert.doesNotMatch(opening.classes, /\bis-held\b/);
 });
 
 test("without doors (reduced motion, forced colours) nothing is held or opened", () => {

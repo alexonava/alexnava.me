@@ -21,7 +21,6 @@ export function slateMaterialUrl(kind, size) {
 
 export function createStoneDetailController({
   profile,
-  disabled = false,
   apply,
   reset,
   report = () => {},
@@ -43,7 +42,7 @@ export function createStoneDetailController({
   function applyQuality(nextProfile = {}, context = {}) {
     if (disposed) return false;
     const requested = context?.assetTier ?? nextProfile.tier;
-    const tier = !disabled && ["high", "balanced"].includes(requested) ? requested : null;
+    const tier = ["high", "balanced"].includes(requested) ? requested : null;
     if (tier === currentTier) return false;
     currentTier = tier;
     const requestRevision = ++revision;

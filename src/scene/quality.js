@@ -1,8 +1,21 @@
+// The scene's quality: tier profiles, viewport composition, the adaptive
+// governor and the quality state the scene samples.
+//
+// The startup tier's choice is the UI bundle's (shared/quality-tier.js), which
+// always runs before main.js loads this bundle; its functions are read here.
 (() => {
   const site = (window.BabelSite = window.BabelSite || {});
   const scene = (site.scene = site.scene || {});
+  const {
+    SCENE_QUALITY_TIERS: TIER_ORDER,
+    detectSaveData,
+    detectTouchPrimary,
+    isLean,
+    normalizeTier,
+    readSceneQualityControls,
+    selectSceneQualityTier,
+  } = scene;
 
-  const TIER_ORDER = ["low", "balanced", "high"];
   const CAMERA_COMPOSITION = {
     fov: 48.52,
     heightBase: 21.9,
@@ -77,10 +90,11 @@
   const SCENE_QUALITY_PROFILES = {
     high: {
       dprCap: 1.5,
-      anisotropy: { min: 1, max: 8 },
+      anisotropy: { max: 8 },
       textures: {
         groundSize: 1024,
       },
+      // The scene's fixed sky and ground segments, read from high alone (index.js).
       geometry: {
         skyWidthSegments: 24,
         skyHeightSegments: 14,
@@ -117,14 +131,9 @@
     },
     balanced: {
       dprCap: 1.25,
-      anisotropy: { min: 1, max: 6 },
+      anisotropy: { max: 6 },
       textures: {
         groundSize: 768,
-      },
-      geometry: {
-        skyWidthSegments: 20,
-        skyHeightSegments: 12,
-        circleSegments: 72,
       },
       // Mobile and slow-CPU desktops land here. The moon key's shadow map is
       // half high's size: the scene's casters hold still, so it redraws only
@@ -171,13 +180,6 @@
   const LEAN_STEPS = Object.freeze([0.85, 0.7, 0.6]);
   const STEPS = Object.freeze([1, 0.85]);
 
-  function normalizeTier(value, fallback = null) {
-    if (typeof value !== "string") return fallback;
-    const normalized = value.toLowerCase().trim();
-    if (normalized === "auto") return "auto";
-    return TIER_ORDER.includes(normalized) ? normalized : fallback;
-  }
-
   // The scene never renders the low tier: main.js and the scene keep the
   // static title card there, and a revealed scene's low step only lowers the
   // pixel ratio (createSceneQualityState). A low request reads balanced.
@@ -213,16 +215,8 @@
     };
   }
 
-  function readSceneQualityControls(search = window.location?.search || "") {
-    const params = new URLSearchParams(typeof search === "string" ? search : "");
-    const requestedTier = normalizeTier(params.get("quality"), "auto");
-    return {
-      debug: params.get("sceneDebug") === "1" || params.get("sceneDebug") === "true",
-      overrideTier: requestedTier && requestedTier !== "auto" ? requestedTier : null,
-      requestedTier,
-    };
-  }
-
+  // The scene's own probe, for limits the cached probe could not read
+  // (createSceneQualityState without caps).
   function readWebGLQualityCaps({ canvas } = {}) {
     const fallback = { maxAnisotropy: 1, maxTextureSize: 0 };
     const probeCanvas = canvas || document.createElement("canvas");
@@ -274,90 +268,6 @@
     };
   }
 
-  // shared/webgl-probe.js reads the same limits from the context it already
-  // opened. Returns null when they are unknown, so the caller probes instead.
-  function qualityCapsFromProbe(capabilities) {
-    const maxTextureSize = Number(capabilities?.maxTextureSize) || 0;
-    if (!capabilities?.available || maxTextureSize <= 0) return null;
-    return {
-      maxAnisotropy: Math.max(1, Math.round(Number(capabilities.maxAnisotropy) || 1)),
-      maxTextureSize,
-      gpuClass: capabilities.gpuClass ?? "unknown",
-    };
-  }
-
-  function selectSceneQualityTier({
-    controls,
-    navigatorInfo = {},
-    viewport = {},
-    caps = {},
-    touchPrimary = false,
-    saveData = false,
-  }) {
-    if (controls?.overrideTier) return controls.overrideTier;
-    if (isLean({ controls, caps, touchPrimary })) return "balanced";
-
-    // Respect metered connections and explicit data-saver settings before
-    // spending on the full asset load.
-    if (saveData) return "low";
-
-    const memoryLimited =
-      typeof navigatorInfo.deviceMemory === "number" && navigatorInfo.deviceMemory <= 2;
-    const cpuLimited = (navigatorInfo.hardwareConcurrency || 8) <= 4;
-    const weakCaps = (caps.maxTextureSize || 0) < 4096 || (caps.maxAnisotropy || 1) < 4;
-    const shortSide = Math.min(viewport.width || 0, viewport.height || 0);
-    const longSide = Math.max(viewport.width || 0, viewport.height || 0);
-    const phoneViewport = touchPrimary && shortSide > 0 && shortSide <= 500 && longSide <= 1000;
-
-    if (memoryLimited || weakCaps) return "low";
-    if (cpuLimited) return "balanced";
-    if (phoneViewport) return "balanced";
-
-    // iOS hides deviceMemory, so touch devices are judged by their viewport and
-    // limits: phone-shaped viewports stay balanced for battery and thermals,
-    // and larger flagship-class touch devices can reach high.
-    const flagshipCaps =
-      (caps.maxTextureSize || 0) >= 8192 &&
-      (caps.maxAnisotropy || 1) >= 8 &&
-      (navigatorInfo.hardwareConcurrency || 0) >= 6;
-    if (touchPrimary && !flagshipCaps) return "balanced";
-
-    if (shortSide > 0 && shortSide < 340) return "balanced";
-
-    return "high";
-  }
-
-  // An integrated GPU on a desktop or laptop (touch devices keep their own path).
-  function isLean({ controls, caps = {}, touchPrimary = false }) {
-    return !controls?.overrideTier && !touchPrimary && caps?.gpuClass === "integrated";
-  }
-
-  function detectTouchPrimary() {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
-      return false;
-    }
-    try {
-      return window.matchMedia("(pointer: coarse)").matches === true;
-    } catch (_err) {
-      return false;
-    }
-  }
-
-  function detectSaveData({
-    navigatorInfo = typeof navigator !== "undefined" ? navigator : {},
-  } = {}) {
-    const connection = navigatorInfo && navigatorInfo.connection;
-    if (connection && connection.saveData === true) return true;
-    if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
-      try {
-        if (window.matchMedia("(prefers-reduced-data: reduce)").matches) return true;
-      } catch (_err) {
-        // Older engines without the media feature — ignore.
-      }
-    }
-    return false;
-  }
-
   // Every composer target renders at this ratio, so fragment work grows with
   // its square: uncapped, a 3x phone would shade nine pixels per CSS pixel.
   // Apple hides deviceMemory, so phones can't be classified by memory; touch-
@@ -406,7 +316,7 @@
     const stableInitialTier = normalizeTier(initialTier, "high");
     const fixedTier = normalizeTier(overrideTier, null);
     let currentTier = fixedTier || stableInitialTier;
-    let resolutionLevel = currentTier === "low" ? 1 : 0;
+    let resolutionLevel = 0;
     let highFrameStreak = 0;
     let recoveryFrameStreak = 0;
     let lastChangeMs = 0;
@@ -439,12 +349,8 @@
 
     // One step down, as a sustained slow streak takes it: a tier, or below balanced a
     // resolution level. Returns the new tier, or null at the floor.
-    function stepDown(nowMs, floorTier) {
-      if (!(
-        indexForTier(currentTier) > indexForTier(floorTier) ||
-        (currentTier === "low" && floorTier === "low" && resolutionLevel < resolutionSteps)
-      ))
-        return null;
+    function stepDown(nowMs) {
+      if (currentTier === "low" && resolutionLevel >= resolutionSteps) return null;
       if (currentTier === "low") resolutionLevel++;
       else {
         currentTier = nextLowerTier(currentTier);
@@ -459,14 +365,8 @@
 
     return {
       // The opening's own measure of hidden frames asks for a step before the reveal.
-      stepDown(nowMs = 0, floorTier = "low") {
-        return fixedTier ? null : stepDown(nowMs, floorTier);
-      },
-      getAverageFrameTime() {
-        return samples.length ? sampleSum / samples.length : 0;
-      },
-      getInitialTier() {
-        return stableInitialTier;
+      stepDown(nowMs = 0) {
+        return fixedTier ? null : stepDown(nowMs);
       },
       getTier() {
         return currentTier;
@@ -495,8 +395,7 @@
       isFixed() {
         return Boolean(fixedTier);
       },
-      // floorTier bounds downgrades; the scene raises it once revealed.
-      sample(frameTimeMs, nowMs = 0, floorTier = "low") {
+      sample(frameTimeMs, nowMs = 0) {
         if (!Number.isFinite(frameTimeMs) || frameTimeMs < 0) return null;
 
         samples.push(frameTimeMs);
@@ -529,7 +428,7 @@
           canRecover && average <= recoveryThreshold() ? recoveryFrameStreak + 1 : 0;
 
         if (highFrameStreak >= downgradeFrames) {
-          const stepped = stepDown(nowMs, floorTier);
+          const stepped = stepDown(nowMs);
           if (stepped) return stepped;
         }
 
@@ -582,10 +481,18 @@
       resolutionSteps: steps.length,
     });
     // A governor tier as a profile; below balanced, the current profile at its step's cap.
-    const stepProfile = (nextTier, profile) =>
-      nextTier === "low"
-        ? { ...profile, dprCap: steps[Math.min(steps.length, governor.getResolutionLevel()) - 1] }
-        : cloneProfile(nextTier, lean);
+    // A tier keeps the pixel budget it steps from, so a large viewport's balanced never
+    // draws more pixels than its high did.
+    const stepProfile = (nextTier, profile) => {
+      if (nextTier === "low")
+        return {
+          ...profile,
+          dprCap: steps[Math.min(steps.length, governor.getResolutionLevel()) - 1],
+        };
+      const next = cloneProfile(nextTier, lean);
+      next.pixelBudget ||= profile?.pixelBudget ?? 0;
+      return next;
+    };
     // A revealed scene never steps its visuals down to low. The governor's low
     // steps preserve material settings and request each step's cap in turn (STEPS: DPR 1,
     // then 0.85; the lean path's LEAN_STEPS: 0.85, 0.7, then 0.6).
@@ -597,8 +504,6 @@
       governor,
       initialTier,
       lean,
-      navigatorInfo,
-      saveData,
       touchPrimary,
       getProfile(tier = governor.getTier()) {
         return cloneProfile(tier, lean);
@@ -612,7 +517,7 @@
       // One step down now, for the hidden opening's slow frames: the profile to apply,
       // or null at the floor.
       stepDown({ nowMs = 0, profile }) {
-        const nextTier = governor.stepDown(nowMs, "low");
+        const nextTier = governor.stepDown(nowMs);
         return nextTier ? stepProfile(nextTier, profile) : null;
       },
       // Takes a level a shot has kept (shot-levels.js) now: the profile to apply at this cut.
@@ -641,7 +546,7 @@
           skippedSamples -= 1;
           return null;
         }
-        const nextTier = governor.sample(frameMs, nowMs, "low");
+        const nextTier = governor.sample(frameMs, nowMs);
         if (!nextTier) return null;
         // The requested cap travels with the queued profile. Until its cut,
         // resizing keeps the active profile's cap rather than leaking a step.
@@ -673,17 +578,12 @@
     return cloneCompositionProfile("desktop");
   }
 
-  scene.SCENE_QUALITY_PROFILES = SCENE_QUALITY_PROFILES;
   scene.createSceneQualityGovernor = createSceneQualityGovernor;
   scene.createSceneQualityState = createSceneQualityState;
-  scene.detectSaveData = detectSaveData;
   scene.getSceneCompositionProfile = getSceneCompositionProfile;
   scene.resolveEffectiveDprCap = resolveEffectiveDprCap;
   scene.getSceneQualityProfile = function getSceneQualityProfile(tier) {
     return cloneProfile(normalizeTier(tier, "high"));
   };
-  scene.readSceneQualityControls = readSceneQualityControls;
-  scene.qualityCapsFromProbe = qualityCapsFromProbe;
   scene.readWebGLQualityCaps = readWebGLQualityCaps;
-  scene.selectSceneQualityTier = selectSceneQualityTier;
 })();

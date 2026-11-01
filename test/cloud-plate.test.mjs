@@ -10,7 +10,6 @@ import {
   loadCloudPlateTexture,
 } from "../src/scene/cloud-plate.js";
 import { cloudFieldGLSL, createEstateSkyMaterial } from "../src/scene/estate-sky.js";
-import { createStarfield } from "../src/scene/starfield.js";
 
 const uniforms = () => ({ uCloudMap: { value: null }, uCloudMix: { value: 0 } });
 // The moon's plate alone, for the owner's single-plate lifecycle.
@@ -356,31 +355,6 @@ test("the decoder bounds bytes and pixels, preserves alpha orientation, and clos
   assert.equal(closed, 3, "a late bitmap is closed even when its request ignored abort");
 });
 
-test("the stars borrow the actual plate and clock and never dispose either", async () => {
-  const sky = createEstateSkyMaterial({ shellOpacity: 0.52 }),
-    owned = ownedTexture();
-  const stars = createStarfield({
-    parent: new Group(),
-    camera: new PerspectiveCamera(),
-    sky: sky.uniforms,
-  });
-  const owner = createCloudPlate({
-    uniforms: sky.uniforms,
-    urls: moonOnly,
-    load: async () => owned.texture,
-  });
-  await owner.prepare();
-  owner.commit();
-  for (const key of ["uCloudMap", "uCloudMix", "uCloudReshape"])
-    assert.equal(stars.root.material.uniforms[key], sky.uniforms[key]);
-  assert.equal(stars.root.material.uniforms.uSkyTime, sky.uniforms.uTime);
-  stars.dispose();
-  assert.deepEqual(owned.counts, { disposed: 0, closed: 0 });
-  owner.dispose();
-  sky.dispose();
-  assert.deepEqual(owned.counts, { disposed: 1, closed: 1 });
-});
-
 test("the emitted cloud mask stays bounded and vanishes at the horizon, with no seam to fade", () => {
   const expression = cloudFieldGLSL()
     .match(/cp\.a=([^;]+);/)[1]
@@ -502,5 +476,27 @@ test("the shipped plates have a real alpha channel and stay within their deliver
     }
     // The owner's sky budget of 2026-10-27: about 2 MB for all of them.
     assert.ok(total <= (tier === "balanced" ? 768 * 1024 : 2 * 1024 * 1024), `${total} bytes`);
+  }
+});
+
+test("the plate is read with seam-free gradients where its u wraps, and plainly on WebGL1", () => {
+  const field = cloudFieldGLSL();
+  const read = field.match(/#if __VERSION__>=300\n([\s\S]*?)#else\n([\s\S]*?)#endif/);
+  assert.ok(read, "the plate read is split by GLSL version");
+  assert.match(read[1], /cuW=vec2\(fract\(cu\.x\+\.5\)-\.5,cu\.y\)/);
+  assert.match(read[1], /cp=textureGrad\(uCloudMap,cu,gX,gY\);/);
+  assert.equal(read[2].trim(), "cp=texture2D(uCloudMap,cu);");
+  // The smaller of the two u gradients is the true one: at the wrap the plain u jumps by
+  // about 1 across a pixel while the half-turned u stays smooth, and elsewhere they agree.
+  const pick = (plain, turned) => (Math.abs(turned) < Math.abs(plain) ? turned : plain);
+  const fract = (v) => v - Math.floor(v);
+  for (const [a, b] of [
+    [0.999, 0.001],
+    [0.25, 0.252],
+    [0.499, 0.501],
+  ]) {
+    const plain = b - a;
+    const turned = fract(b + 0.5) - 0.5 - (fract(a + 0.5) - 0.5);
+    assert.ok(Math.abs(pick(plain, turned) - 0.002) < 1e-9);
   }
 });

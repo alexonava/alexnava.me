@@ -21,13 +21,19 @@ What the repository checks:
 
 GitHub's runners have no GPU, so Lighthouse audits the static title card, not the live scene. The 404 page is not audited.
 
+Known gaps against the target, open until the owner decides:
+
+- 2.1.4 Character key shortcuts: `` ` `` and `~` start the walk, and nothing turns the shortcut off or remaps it (the live scene on a desktop only, never under reduced motion or forced colours).
+- 2.2.2 Pause, stop, hide: the tour moves on its own with no visible pause control; reduced motion keeps the title card, and a script can pause it (`BabelSite.scene.setVisitorPaused(true)`).
+- 1.4.10 Reflow: nothing checks the page at 400% zoom (320 CSS px wide).
+
 ## Keyboard
 
 1. The first stop is the skip link, Skip to main content, which slides into view on focus and moves focus to `main` (`tabindex="-1"`).
 2. The next stop is Contact, the footer's button. Enter or Space shows the email address and LinkedIn beside it (above it on phones), the next two stops; pressing it again hides them. Escape hides them from anywhere on the page and, when focus was on one of them, returns it to Contact. Without scripts the two links are the stops after the skip link.
-3. Over the live scene on a desktop, `or ~ starts the walk ([Scene modes](SCENE-MODES.md#walk)), which nothing announces: the page fades off the canvas into`visibility: hidden`, so it leaves the accessibility tree and focus with it, and the mouse is captured. The arrow keys and W, A, S and D walk and turn. The same key, or Esc twice, brings the page and the tour back. It never starts under reduced motion or forced colors, or on a touch-primary device.
+3. Over the live scene on a desktop, `` ` `` or `~` starts the walk ([Scene modes](SCENE-MODES.md#walk)), which nothing announces: the page fades off the canvas into `visibility: hidden`, so it leaves the accessibility tree and focus with it, and the mouse is captured. The arrow keys and W, A, S and D walk and turn. The same key, or Esc twice, brings the page and the tour back. It never starts under reduced motion or forced colors, or on a touch-primary device.
 
-While the live scene loads, the opening's doors cover the page, the skip link excepted: the first key that is not a modifier alone or a shortcut, the first focus and a tap on the paper part them at once ([scene-doors.js](../src/ui/scene-doors.js)), so no stop is ever under the paper. Without scripts they open on their own after 4 s.
+While the live scene loads, the opening's doors cover the page. The skip link shows above the paper, but it is `inert` with `main` and the footer until the doors part, so a screen reader finds no content under them: the first key that is not a modifier alone or a shortcut, the first focus and a tap on the paper part them at once ([scene-doors.js](../src/ui/scene-doors.js)), so no stop is ever under the paper. Without scripts they open on their own after 4 s.
 
 [contact.js](../src/ui/contact.js) owns the disclosure: `aria-expanded`, Escape and focus return. It traps no focus and makes nothing `inert`, so the page stays as it was while the links show. An address ending `#about`, `#profile`, `#experience` or `#contact` (or the same with `-text`) opens the links on load and on every `hashchange`. The footer's targets are 44 px high; the links sit 28 px apart in a row, and one 44 px row apart where they stack above Contact up to 640 px wide. [UI](UI.md#contact) describes Contact in full.
 
@@ -56,7 +62,7 @@ The page is complete without scripts, once the opening's doors, which cover it f
 
 **Reduced data** (`prefers-reduced-data: reduce`, or Save-Data from `navigator.connection`, which only Chromium browsers have)
 
-- No live scene: main.js keeps the title card, and with `?sceneDebug=1` quality.js still gives the low startup tier, which keeps it too. When the probe could not read the texture limits, main.js downloads the scene bundle before `initHomeScene()` declines that tier; the title card stays either way. Only `?quality=high` or `?quality=balanced` overrides reduced data.
+- No live scene: main.js keeps the title card, and with `?sceneDebug=1` quality-tier.js still gives the low startup tier, which keeps it too, except on the lean path (an integrated GPU on a mouse-and-keyboard machine), which is balanced before the data check and loads the scene. When the probe could not read the texture limits, main.js downloads the scene bundle before `initHomeScene()` declines the low tier; the title card stays. Otherwise only `?quality=high` or `?quality=balanced` overrides reduced data.
 - The scene loads if the preference later clears, unless the address carries `?quality=high|balanced|low` or `?sceneDebug=1|true`, as under reduced motion. With `?sceneDebug=1`, a reduced-data change alone does not restart startup; clearing forced colours rechecks the current preferences even with that override.
 
 **Reduced transparency** (`prefers-reduced-transparency: reduce`)

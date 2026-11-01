@@ -7,14 +7,21 @@ import { flat, source } from "./support/code.mjs";
 import { createDeferredQualityStep } from "../src/scene/runtime.js";
 
 const index = flat(source("src/scene/index.js"));
-// The text between two anchors of the flattened bootstrap.
-const between = (from, to) => index.slice(index.indexOf(from), to ? index.indexOf(to) : undefined);
+// The text between two anchors of the flattened bootstrap. A missing anchor fails
+// here, so a renamed one can never leave a doesNotMatch reading nothing.
+const between = (from, to) => {
+  const start = index.indexOf(from);
+  const end = to ? index.indexOf(to, start) : index.length;
+  assert.ok(start >= 0 && end > start, `${from} ... ${to ?? "end"}`);
+  return index.slice(start, end);
+};
 
 test("the actual quality dispatch keeps a paused visible shot intact until its cut", async () => {
   const argument = index.match(/const queuedProfile = adaptiveSteps\.take\((\{[^]*?\})\);/)[1];
   const dispatch = new Function(
     "canvasShown",
     "site",
+    "cameraTour",
     "liveView",
     "transition",
     "nowMs",
@@ -24,8 +31,8 @@ test("the actual quality dispatch keeps a paused visible shot intact until its c
   const step = createDeferredQualityStep({ prepare: () => true });
   step.queue(profile, 0);
   await Promise.resolve();
-  const args = (visible, closed, cut) =>
-    dispatch(visible, { sceneDoors: { closed } }, { running: false }, { cut }, 60000);
+  const args = (visible, closed, cut, tour = {}) =>
+    dispatch(visible, { sceneDoors: { closed } }, tour, { running: false }, { cut }, 60000);
   assert.equal(
     step.take(args(true, false, false)),
     null,
@@ -44,6 +51,59 @@ test("the actual quality dispatch keeps a paused visible shot intact until its c
       "concealed preparation still accepts resolution relief",
     );
   }
+  // Without a tour (tour=0) no cut ever comes: a shown shot takes the step at once.
+  step.queue(profile, 0);
+  await Promise.resolve();
+  assert.equal(step.take(args(true, false, false, null)), profile);
+  assert.equal(step.pending, false, "sampling resumes");
+});
+
+test("only a tree opening's lantern deadline can drop the lantern, and never a downloaded one", () => {
+  const raw = source("src/scene/index.js");
+  const start = raw.indexOf("architectureStatus[status.kind] = status.status;");
+  const end = raw.indexOf("// Record the status first", start);
+  assert.ok(start > 0 && end > start, "locate the deadline");
+  const run = new Function(
+    "status",
+    "canvasShown",
+    "opening",
+    "lanternMount",
+    "architectureStatus",
+    "architectureAssets",
+    "window",
+    "invalidateContent",
+    `let lanternDeadline = null; ${raw.slice(start, end)} return lanternDeadline;`,
+  );
+  const deadline = (view, settled) => {
+    const timers = [];
+    const cancelled = [];
+    const architectureStatus = {};
+    const armed = run(
+      { kind: "lantern", status: "loading" },
+      false,
+      { view },
+      { committed: false },
+      architectureStatus,
+      { cancelOptional: (kind) => cancelled.push(kind) },
+      { setTimeout: (callback, ms) => timers.push([callback, ms]) },
+      () => {},
+    );
+    if (settled) architectureStatus.lantern = settled;
+    timers.forEach(([callback]) => callback());
+    return { armed, ms: timers.map(([, ms]) => ms), cancelled };
+  };
+  assert.deepEqual(
+    deadline("watch"),
+    { armed: null, ms: [], cancelled: [] },
+    "The watch never waits on it",
+  );
+  assert.deepEqual(deadline("tree").ms, [8000]);
+  assert.deepEqual(deadline("tree").cancelled, ["lantern"], "a lantern still loading at 8 s");
+  assert.deepEqual(
+    deadline("tree", "ready").cancelled,
+    [],
+    "a downloaded lantern awaits its frame",
+  );
 });
 
 test("a watch or tree that cannot commit fails to the title card once the camera knows; the lantern is optional", () => {
@@ -70,10 +130,7 @@ test("a watch or tree that cannot commit fails to the title card once the camera
   );
   assert.match(index, /webglContextAvailable && !sceneFailed;/);
   // The lantern loads beside the models and warms its programs only when it commits.
-  assert.match(
-    index,
-    /includeLantern: true, onLanternReady: \(asset\) => lanternMount\.stage\(asset\)/,
-  );
+  assert.match(index, /onLanternReady: \(asset\) => lanternMount\.stage\(asset\)/);
   assert.match(index, /if \(committed\) warmShaders\("lantern"\);/);
 });
 
@@ -93,16 +150,13 @@ test("models and maps keep the startup tier, and quality samples only revealed f
     index,
     /revealed && !reducedMotion && !shaderWarmup\.pending && !adaptiveSteps\.pending \? qualityState\.sampleRevealed\?\.\(/,
   );
-  // A step links its programs when sampled and lands on a tour cut, where the
-  // crossfade's kept frame hides it; the one-off transition frames go unsampled.
-  assert.match(
-    index,
-    /const adaptiveSteps = createDeferredQualityStep\(\{ prepare: \(profile\) => rendering\.prepareQuality\(profile\) \}\);/,
-  );
+  // A step lands on a tour cut, where the crossfade's kept frame hides it; the
+  // one-off transition frames go unsampled.
+  assert.match(index, /const adaptiveSteps = createDeferredQualityStep\(\);/);
   assert.match(index, /if \(sampledProfile\) adaptiveSteps\.queue\(sampledProfile, nowMs\);/);
   assert.match(
     index,
-    /const queuedProfile = adaptiveSteps\.take\(\{ cut: transition\.cut, running: canvasShown && !site\.sceneDoors\?\.closed, nowMs \}\);/,
+    /const queuedProfile = adaptiveSteps\.take\(\{ cut: transition\.cut, running: canvasShown && !site\.sceneDoors\?\.closed && \(cameraTour !== null \|\| liveView\.running\), nowMs \}\);/,
   );
   // Each shot keeps its own level (shot-levels.js): the incoming shot's, entered on its cut (and
   // at the reveal), stands in for a step queued on the outgoing shot.
@@ -158,7 +212,6 @@ test("each frame runs the tour, the quality step, the capture skip, the crossfad
 });
 
 test("only a visitor pause holds rendering, and a resize draws one frame behind it", () => {
-  assert.doesNotMatch(index, /data-panel-open|createPanelHold|panelHold/);
   assert.match(
     index,
     /function applySceneSize\([^]*?visitorHold\?\.redraw\(\); frameScheduler\?\.invalidate\(\);/,
@@ -286,6 +339,13 @@ test("the ground shading has one call site, which takes the tint and shading fro
   );
 });
 
+test("only the high ground, which has the close soil, takes the soil roughness", () => {
+  assert.match(
+    index,
+    /onSoilRoughnessChange: liteGround \? undefined : \(texture\) => \{ groundContacts\.slateSoilRoughness\.value = texture; groundContacts\.slateSoilRoughnessOn\.value = texture \? 1 : 0; invalidateContent\(\); \}/,
+  );
+});
+
 test("main.js gates the scene on preferences and capabilities, with no user-agent, Lighthouse or viewport escape hatch", () => {
   const main = source("src/main.js");
   assert.doesNotMatch(main, /userAgent|Lighthouse|Chrome-Lighthouse/i);
@@ -312,9 +372,13 @@ test("the scene entry marks its evaluation first, and the bootstrap reuses the p
   const entry = source("src/scene-entry.js");
   assert.match(
     entry,
-    /^import \{ markSceneEvaluated \} from "\.\/scene\/perf-marks\.js";\r?\nimport "\.\/shared\/webgl-probe\.js";/m,
+    /^import \{ markSceneEvaluated \} from "\.\/scene\/perf-marks\.js";\r?\nimport "\.\/scene\/helpers\.js";/m,
   );
   assert.match(entry, /import "\.\/scene\/index\.js";\s*markSceneEvaluated\(\);\s*$/);
+  // The UI bundle has always run the probe and the tier choice before main.js
+  // loads this entry: the scene reads them from BabelSite, never bundling them again.
+  assert.doesNotMatch(entry, /shared\//);
+  assert.doesNotMatch(index, /from "\.\.\/shared\/|import "\.\.\/shared\//);
   assert.match(
     index,
     /caps: scene\.qualityCapsFromProbe\?\.\(site\.shared\?\.getWebGLCapabilities\?\.\(\)\) \?\? null/,
@@ -324,6 +388,7 @@ test("the scene entry marks its evaluation first, and the bootstrap reuses the p
   assert.match(index, /measureScene\(`shaders:\$\{label\}`, start\);/);
   for (const path of [
     "src/shared/webgl-probe.js",
+    "src/shared/quality-tier.js",
     "src/scene/quality.js",
     "src/scene/rendering.js",
   ])
@@ -506,6 +571,16 @@ test("the film's environment, the ground's text guard and the flame's bloom are 
   // The lantern flame's glare follows the bloom pass, not the shadow map
   // (balanced draws shadows without bloom).
   assert.match(index, /bloom: rendering\.postprocessPipeline\.passes\?\.bloom\?\.enabled === true/);
+  // The bloom is built only where the startup tier blooms: the governor never climbs
+  // above it, so a balanced startup links none of its programs.
+  assert.match(
+    index,
+    /createSceneRendering\(\{ bloom: qualityState\.getProfile\(qualityState\.initialTier\)\.postprocessBloom === true,/,
+  );
+  assert.match(
+    flat(source("src/scene/rendering.js")),
+    /createPipeline\(renderer, homeScene, camera, profile, \{ bloom, onInvalidate \}\)/,
+  );
   // sceneDebug reports the capture.
   assert.match(
     index,

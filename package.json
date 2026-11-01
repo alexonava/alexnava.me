@@ -19,7 +19,6 @@
   },
   "scripts": {
     "audit:ci": "npm audit --audit-level=high",
-    "build": "node build.mjs",
     "build:dist": "node build.mjs --dist",
     "preview": "npm run build:dist && wrangler pages dev dist --port 4173",
     "dev": "node tools/dev.mjs",
@@ -35,8 +34,5 @@
     "prettier": "3.9.10",
     "three": "0.160.1",
     "wrangler": "^4.153.0"
-  },
-  "overrides": {
-    "undici": "^7.30.1"
   }
 }

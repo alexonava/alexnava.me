@@ -63,7 +63,6 @@ export async function loadSoilRoughnessImage(
 
 export function createSoilRoughness({
   profile = { tier: "high" },
-  disabled = false,
   anisotropy = 1,
   publish = () => {},
   report = () => {},
@@ -77,7 +76,7 @@ export function createSoilRoughness({
   // Adaptive quality retains the startup asset tier. This one fixed-size tile
   // changes neither URL nor decoded storage when the renderer steps down.
   const tier = profile.tier,
-    eligible = !disabled && ["high", "balanced"].includes(tier),
+    eligible = ["high", "balanced"].includes(tier),
     status = (value) => {
       try {
         report({ status: value, tier });

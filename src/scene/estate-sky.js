@@ -19,15 +19,13 @@ export const GOLDEN_SKY = Object.freeze({
 });
 const goldenVec = (v) => `vec3(${v.map((c) => (c / GOLDEN_SKY.shell).toFixed(4)).join(",")})`;
 // The film gradient by shell altitude, shared with the mountains, which haze toward the sky
-// behind them (hill-silhouette.js). At golden hour the night's horizon band and its glow cap
-// (SKY_GLOW) take nothing: the glow is the sky's own.
+// behind them (hill-silhouette.js). At golden hour the glow is the sky's own: no horizon band
+// or glow cap lifts it.
 export const FILM_SKY_GLSL = `
 vec3 filmSky(float a) {
 vec3 c=mix(${goldenVec(GOLDEN_SKY.horizon)},${goldenVec(GOLDEN_SKY.mid)},smoothstep(-.02,.3,a));
 return mix(c,${goldenVec(GOLDEN_SKY.zenith)},smoothstep(.25,.95,a));
-}
-vec3 filmBand(float a) { return vec3(0.); }
-vec3 filmNight(vec3 c, float a, float w) { return c; }`;
+}`;
 
 // The reference banks: The watch's upper left at 1600x900 (the frame's 1100x440 top-left
 // crop), broad, swirling, layered and moonlit, where the authored bank (bankUV) lifts the
@@ -63,9 +61,9 @@ vec3 filmNight(vec3 c, float a, float w) { return c; }`;
 //   banks there burn off along their own contours and the sky about the name stays open.
 //   It works on the density, never the tone: the grade's cel step would turn a screen-space
 //   fade of tone into a hard ring about the text.
-// The uCloudReshape uniform scales both weights: 1 for the sky, the stars and the
-// environment's capture (night-environment.js), which mirrors the sky as it stands; 0
-// leaves the authored banks.
+// The uCloudReshape uniform scales both weights: 1 for the sky and the environment's
+// capture (night-environment.js), which mirrors the sky as it stands; 0 leaves the
+// authored banks.
 export const CLOUD_RESHAPE = Object.freeze({
   wedge: Object.freeze([99, 119, 176, 188]),
   radius: Object.freeze([0.85, 1.12]),
@@ -160,29 +158,9 @@ export const CLOUD_VORTEX = Object.freeze({
   protect: Object.freeze([176, 179]),
 });
 
-// The painted sky's brush (the owner's ask of 2026-10-14, "a paint brush sky theme"), in
-// the clouds' own noise space (q, after the swirl's warp), so every stroke follows the
-// banks' flow, the maelstrom's turn and the drift, and never folds the noise. Each takes
-// [amount, along, across]: a value noise stretched along the brush (`dir`, the warp's own
-// shear in noise space, which the swirl bends) at `along` and across it at `across` (per
-// noise unit):
-// - `edge`: the banks' threshold moves by up to `amount`, so each painted band ends in
-//   ragged, dry-brush strokes (high and balanced; eased off behind the name and intro,
-//   whose guard moves density only);
-// - `streak`: faint bristle lines inside the banks, their colour lighter and darker by up
-//   to `amount` before the soft knee (high only);
-// uCloudReshape scales all of it. The reference banks
-// take it too (the owner's call of 2026-10-14, "one film over all"): their shapes and
-// places stay as authored. `on`: 0 emits none of it.
-export const CLOUD_BRUSH = Object.freeze({
-  on: 0,
-  dir: Object.freeze([0.848, -0.53]),
-  edge: Object.freeze([0.035, 0.6, 10]),
-  streak: Object.freeze([0.09, 0.8, 18]),
-});
 // No specks in the banks (the re-reviews of 2026-10-15): the finest octaves (the ridged 4.3x
-// octave and `fine`) and the brush's edge move the cover threshold only where the rest of
-// the field (with its lanes, windows and pockets, the reference banks' too) comes near it.
+// octave and `fine`) move the cover threshold only where the rest of the field (with its
+// lanes, windows and pockets, the reference banks' too) comes near it.
 // Where that field lies `clear` [gone, whole] below the threshold the cover fades out, so
 // no lone speck, oval or puff floats in clear sky; where it lies `fill` [from, whole] above,
 // the cover is whole, so no pinhole or pit opens in a bank. Lanes, windows and the banks'
@@ -252,9 +230,10 @@ const B = vortexOn ? "bv" : "b",
   R = vortexOn ? "blv" : "bl";
 
 // The vortex's density at local coordinates e (CLOUD_VORTEX): its arms (crested,
-// wobbling and wisped about the spiral phase sv, on the drift clock) and ring, less its eye. Declared once beside each shader that runs cloudFieldGLSL (the shell, the
-// stars), with uVortex: xy the eye on the cloud plane, z the turn's reach (below 0: out
-// of season, or not standing in this shot: none of it), w its guard.
+// wobbling and wisped about the spiral phase sv, on the drift clock) and ring, less its
+// eye. Declared beside the shader that runs cloudFieldGLSL (the shell), with uVortex: xy
+// the eye on the cloud plane, z the turn's reach (below 0: out of season, or not standing
+// in this shot: none of it), w its guard.
 export const CLOUD_VORTEX_GLSL = vortexOn
   ? `uniform vec4 uVortex;
 float vxHash(vec2 p){vec3 q=fract(vec3(p.xyx)*.1031);q+=dot(q,q.yzx+33.33);return fract((q.x+q.y)*q.z);}
@@ -301,17 +280,18 @@ vd=vxK*cloudVortex(vxE,T); d+=vd; da+=vxK*cloudVortex(vxE+vec2(dot(vxL,vxT),dot(
 export const CLOUD_PLATE_GLSL = "uniform sampler2D uCloudMap;uniform float uCloudMix;";
 // The cel sky's plate (cloud-plate.js): baked once round the sky, u = azimuth / 2pi, so
 // its light sits where the shot's sun or the moon does; it drifts on the clock as slowly
-// as the banks. Its light runs past the 8-bit plate's range (CLOUD_PLATE_LOOK.gain), and the
+// as the banks. u wraps from 1 to 0 at one azimuth, so the plate is read with seam-free
+// gradients (the smaller of the plain and the half-turned u's), or the mip jump there draws
+// a dashed line across the sky (Close-up). Its light runs past the 8-bit plate's range (CLOUD_PLATE_LOOK.gain), and the
 // moonlit shoulders keep it through a raised knee (.cap), except behind the name and intro.
 export const CLOUD_PLATE_LOOK = Object.freeze({ gain: 2.4, cap: Object.freeze([3, 4]) });
 
-// The film's cloud field on the sky shell, as GLSL statements, shared with the stars,
-// which dim behind the banks (starfield.js). They expect `vec3 direction` (the shell
-// point's direction from the world origin), `float altitude` (its y), `float cloudText`
-// (1 behind the name and intro, easing to 0; CLOUD_TEXT_GLSL) and the uNebulaLayers,
-// uClouds and uCloudReshape uniforms in scope, and leave the bank density `d` (`da`
-// offset toward the sun), the weather terms, the reshaping's weights `open` and `bend`
-// and `cover`, the bank's opacity before the sky's .94 mix. `time` names the drift clock uniform.
+// The film's cloud field on the sky shell, as GLSL statements. They expect
+// `vec3 direction` (the shell point's direction from the world origin), `float altitude`
+// (its y), `float cloudText` (1 behind the name and intro, easing to 0; CLOUD_TEXT_GLSL)
+// and the uNebulaLayers, uClouds and uCloudReshape uniforms in scope, and leave the bank
+// density `d` (`da` offset toward the sun), the weather terms, the reshaping's weights
+// `open` and `bend` and `cover`, the bank's opacity before the sky's .94 mix. `time` names the drift clock uniform.
 // Where the plate stands in whole (uCloudMix and uCloudReshape both 1), cover, d and the
 // cloud's colour are the plate's alone, so the banks' noise is skipped (fieldOff), except
 // in the vortex, whose glow still reads the field's light (da).
@@ -408,7 +388,14 @@ vec4 cp=vec4(0.);
 if(cw>.001){
 float ca=dot(${B},${B})<1e-10?0.:atan(${B}.y,${B}.x);
 vec2 cu=vec2(fract(ca*.15915494+T*.00002),.78-asin(clamp(hzS,0.,1.))*.63661977);
-cp=texture2D(uCloudMap,cu);cp.rgb*=${glslFloat(CLOUD_PLATE_LOOK.gain)};
+#if __VERSION__>=300
+vec2 cuW=vec2(fract(cu.x+.5)-.5,cu.y),gX=dFdx(cu),gY=dFdy(cu),gX2=dFdx(cuW),gY2=dFdy(cuW);
+if(abs(gX2.x)<abs(gX.x))gX.x=gX2.x;if(abs(gY2.x)<abs(gY.x))gY.x=gY2.x;
+cp=textureGrad(uCloudMap,cu,gX,gY);
+#else
+cp=texture2D(uCloudMap,cu);
+#endif
+cp.rgb*=${glslFloat(CLOUD_PLATE_LOOK.gain)};
 cp.a=clamp(cp.a+vd*.5,0.,1.)*horizonFade*uClouds*(1.-.18*cloudText);
 cover=mix(cover,cp.a,cw);
 d=mix(d,.44+.36*cp.a,cw);
@@ -535,7 +522,7 @@ export function cloudVortexReach(x, y) {
 // along a bounded circle so lattice coordinates stay small in long sessions. The opaque
 // film shell writes the sky's depth layer (0) into alpha for the tour's staggered dissolve.
 // textGuard: the ground's createSlateContacts() uniforms, whose slateText and
-// slateAspect objects the clouds' text guard borrows (and lends on to the stars);
+// slateAspect objects the clouds' text guard borrows;
 // without it nothing is behind the text.
 export function createEstateSkyMaterial(config, textGuard = null) {
   return new ShaderMaterial({
@@ -556,7 +543,7 @@ export function createEstateSkyMaterial(config, textGuard = null) {
       uCloudMap: { value: null },
       uCloudMix: { value: 0 },
       // The vortex's eye (CLOUD_VORTEX): the star from the world origin until a shot
-      // sets it from its own lens (cloudVortexCenter()); the stars borrow it.
+      // sets it from its own lens (cloudVortexCenter()).
       uVortex: {
         value: config.starPosition
           ? cloudVortexCenter({ x: 0, y: 0, z: 0 }, config.starPosition, config.skyRadius ?? 130)
@@ -628,7 +615,6 @@ if(uNebulaLayers>0.5) col+=nebula(normalize(vWorldPosition-cameraPosition));
 if(uClouds>0.001){
 float cloudText=cloudTextAt(vCloudClip);
 ${cloudFieldGLSL("uTime")}
-col=filmNight(col,altitude,uCloudReshape*(1.-smoothstep(${glslFloat(wedge[0])},${glslFloat(wedge[1])},cloudAz)*(1.-smoothstep(${glslFloat(wedge[2])},${glslFloat(wedge[3])},cloudAz))*smoothstep(${glslFloat(radius[0])},${glslFloat(radius[1])},bl)*smoothstep(${Math.sin(((CLOUD_RESHAPE.wedgeDome[0] - 1) * Math.PI) / 180).toFixed(6)},${Math.sin((CLOUD_RESHAPE.wedgeDome[0] * Math.PI) / 180).toFixed(6)},altitude)));
 float lit=clamp(.45+(d-da)*4.0,0.0,1.0);
 float thick=smoothstep(.52,.8,d);
 vec3 cloudCol=mix(vec3(.30,.32,.46),vec3(.62,.60,.72),smoothstep(0.,.55,lit));
@@ -651,7 +637,6 @@ ${FLASH_GLSL}
 col+=vec3(.027,.03,.036)*smoothstep(.36,.54,d)*horizonFade*uClouds;
 col=mix(col,cloudCol,cover*.94);
 }
-col+=filmBand(altitude);
 }
 gl_FragColor=uFilm>.5?vec4(col*${config.shellOpacity},${DEPTH_LAYER.sky}):vec4(col,${config.shellOpacity});
 }`,

@@ -3043,11 +3043,7 @@ function* litterAttribute(values, size) {
   return new BufferAttribute(array, size);
 }
 
-export function scatterLitter(surface, groundColor) {
-  return buildNow(litterSteps(surface, groundColor));
-}
-
-function* litterSteps(surface, groundColor) {
+export function* litterSteps(surface, groundColor) {
   let seed = LITTER.seed;
   const random = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296;
   const L = LITTER,
@@ -3691,10 +3687,7 @@ export const RUSHES = Object.freeze({
   sway: 0.08,
   up: 0.35,
 });
-export function plantRushes(surface) {
-  return buildNow(rushSteps(surface));
-}
-function* rushSteps(surface) {
+export function* rushSteps(surface) {
   const R = RUSHES;
   let seed = R.seed;
   const random = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296;
@@ -3937,15 +3930,8 @@ export const WATER_BANKS = Object.freeze({
     fade: 0.9,
   }),
 });
-export function scatterBanks(surface, groundColor) {
-  const steps = bankSteps(surface, groundColor);
-  for (;;) {
-    const next = steps.next();
-    if (next.done) return next.value;
-  }
-}
-// The same, a few pieces at a time (settleRoots() builds it in idle slices).
-function* bankSteps(surface, groundColor) {
+// A few pieces at a time (settleRoots() builds it in idle slices).
+export function* bankSteps(surface, groundColor) {
   const B = WATER_BANKS,
     G = B.gravel,
     D = B.debris,
@@ -4790,7 +4776,6 @@ export function settleRoots(
       (!frame.revealed && !frame.preparing) ||
       (frame.preparing && !openingState.details) ||
       !frame.camera ||
-      frame.profile?.tier === "low" ||
       !ground.parent ||
       !lib?.createCinematicCamera ||
       !lib?.cinematicSafeArea ||
@@ -5120,10 +5105,7 @@ export function settleRoots(
 
 // POOL_FIELD over a w x h grid of heights (row by row); at(i, j) gives a
 // vertex's world [x, z].
-export function poolField(heights, w, h, at) {
-  return buildNow(poolFieldSteps(heights, w, h, at));
-}
-function* poolFieldSteps(heights, w, h, at) {
+export function* poolFieldSteps(heights, w, h, at) {
   const r = POOL_FIELD.mean,
     across = new Float32Array(w * h),
     cavity = new Float32Array(w * h);
@@ -5325,11 +5307,7 @@ function* coarseSurface(baseHeight, EARTH) {
 // That surface built at once (tools/bake-root-shade.mjs measures the roots
 // against it).
 export function terrainSurface(groundHeight, EARTH = { width: 384, subdivisions: 128 }) {
-  const steps = coarseSurface(groundHeight, EARTH);
-  for (;;) {
-    const next = steps.next();
-    if (next.done) return next.value;
-  }
+  return buildNow(coarseSurface(groundHeight, EARTH));
 }
 
 // The film terrain, a few vertices at a time: the coarse dune grid, then a

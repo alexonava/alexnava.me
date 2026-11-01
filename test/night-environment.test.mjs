@@ -370,13 +370,11 @@ test("the environment is the film sky shell's own shader, with the moon's glow, 
   assert.equal(sky.uniforms.uCloudReshape.value, 1);
   // The additions sit after the film sky, before the shell's opacity, which they divide out.
   const fragment = material.fragmentShader;
+  assert.ok(fragment.includes(`uniform vec3 envKeyDirection;\n${FILM_UNTONE_GLSL}\nvoid main()`));
+  assert.ok(fragment.indexOf("float envKey=") < fragment.indexOf("gl_FragColor=uFilm>.5?"));
   assert.ok(
-    fragment.includes(
-      `uniform float envCapture;\nuniform vec3 envKeyDirection;\n${FILM_UNTONE_GLSL}\nvoid main()`,
-    ),
+    fragment.indexOf("col=mix(col,cloudCol,cover*.94);") < fragment.indexOf("float envKey="),
   );
-  assert.ok(fragment.indexOf("if(envCapture>.5){") < fragment.indexOf("gl_FragColor=uFilm>.5?"));
-  assert.ok(fragment.indexOf("col+=filmBand(altitude);") < fragment.indexOf("if(envCapture>.5){"));
   assert.match(fragment, /\/0\.52;/);
   // Last, the sky as shown goes back through the tone curve to the scene light
   // that shows as it (film-light.js filmUntone()): the lit layers' materials take
@@ -398,7 +396,7 @@ test("the published, compacted sky shader keeps the environment's anchor", async
     await readFile(new URL("../src/scene/estate-sky.js", import.meta.url), "utf8"),
   );
   assert.equal(source.split("gl_FragColor=uFilm>.5?").length - 1, 1);
-  assert.match(source, /col\+=filmBand\(altitude\);\s*\}\s*gl_FragColor=uFilm>\.5\?/);
+  assert.match(source, /col=mix\(col,cloudCol,cover\*\.94\);\s*\}\s*\}\s*gl_FragColor=uFilm>\.5\?/);
 });
 
 test("a capture that cannot draw fails once, quietly, and never retries", () => {

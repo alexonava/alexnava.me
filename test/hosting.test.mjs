@@ -411,8 +411,8 @@ test("Pages header rules resolve one cache policy for stable and fingerprinted p
   }
   assert.equal(
     fingerprintable,
-    36,
-    "14 models, 9 slate maps, optional soil roughness, 2 optional coast maps, 8 sky plates and 2 paper maps",
+    34,
+    "14 models, 7 slate maps, optional soil roughness, 2 optional coast maps, 8 sky plates and 2 paper maps",
   );
 });
 
@@ -457,11 +457,17 @@ test("hosting files publish security.txt, raster icons and a stable manifest id"
     icoEntries.map((at) => ico[at]).sort((a, b) => a - b),
     [16, 32],
   );
-  for (const at of icoEntries)
+  for (const at of icoEntries) {
     assert.ok(
       ico.readUInt32LE(at + 12) + ico.readUInt32LE(at + 8) <= ico.length,
       "favicon.ico images lie inside the file",
     );
+    // PNG-compressed images, a fraction of the BMPs' size.
+    assert.equal(
+      ico.toString("latin1", ico.readUInt32LE(at + 12) + 1, ico.readUInt32LE(at + 12) + 4),
+      "PNG",
+    );
+  }
 
   assert.equal(manifest.id, "/");
   assert.deepEqual(

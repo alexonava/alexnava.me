@@ -100,12 +100,10 @@ import { createOpeningPreparation } from "./scene/opening-preparation.js";
   // The film opens on The watch, the sky alone, which shows in about two seconds on any
   // device, unless the address names a view or an angle or a script has chosen a subject.
   // Lantern study's ground takes far longer to build: about 8 s on a desktop, 8 s on a fast
-  // phone and 27 s on a mid-range one (the owner's calls: laptops 2026-10-27, phones and
-  // tablets 2026-10-28, desktops 2026-10-29, "Always The watch"; it was chosen by chance
-  // before). Chosen once, before the loading line begins and the models are requested, so
-  // the line and its light, the early requests and the scene agree: each resolves the
-  // opening through scene-modes.js resolveSceneOpening(), which keeps this choice. Its
-  // default, for an address with neither, is Lantern study.
+  // phone and 27 s on a mid-range one (the owner's call: "Always The watch"). Chosen once,
+  // before the loading line begins and the models are requested, so the line and its
+  // light, the early requests and the scene agree: each resolves the opening through
+  // scene-modes.js resolveSceneOpening(), which keeps this choice.
   const WATCH_OPENING = Object.freeze({ view: "watch", angle: 0 });
   function chooseOpening() {
     const scene = (site.scene = site.scene || {});
@@ -131,11 +129,11 @@ import { createOpeningPreparation } from "./scene/opening-preparation.js";
       : [];
   }
 
-  // src/shared/webgl-probe.js is bundled into both the UI and scene entries so
-  // the pre-download gate here and the in-scene check (`scene.supportsWebGL`)
-  // share one implementation. Skipping the scene-bundle download on static
-  // preference/capability paths is the reason this check happens in the UI
-  // bundle.
+  // src/shared/webgl-probe.js is bundled into the UI entry alone; the in-scene
+  // check (`scene.supportsWebGL`) reads it from BabelSite.shared, so the
+  // pre-download gate here and the scene share one implementation. Skipping
+  // the scene-bundle download on static preference/capability paths is the
+  // reason this check happens in the UI bundle.
 
   // The title card stays. A loading line already shown (ui/scene-loader.js)
   // retires below 100%, and the opening's doors (ui/scene-doors.js) part onto it.
@@ -151,7 +149,7 @@ import { createOpeningPreparation } from "./scene/opening-preparation.js";
     if (host) host.hidden = false;
   }
 
-  // scene/quality.js is in this bundle, ahead of this module.
+  // shared/quality-tier.js is in this bundle, ahead of this module.
   function readSceneQualityControls() {
     return site.scene.readSceneQualityControls(window.location?.search || "");
   }
@@ -294,20 +292,12 @@ import { createOpeningPreparation } from "./scene/opening-preparation.js";
     });
   }
 
-  // The scene's startup tier and whether it takes the lean path, from the probe the
-  // capability gate already ran (quality.js is in this bundle); a null tier when the probe
-  // left the limits unknown: the scene then probes and decides itself.
-  function readStartupQuality(capabilities) {
-    const scene = site.scene || {};
+  // The scene's startup tier, from the probe the capability gate already ran; null when
+  // the probe left the limits unknown: the scene then probes and decides itself.
+  function readStartupTier(capabilities) {
     try {
-      const caps = scene.qualityCapsFromProbe?.(capabilities);
-      if (!caps || typeof scene.createSceneQualityState !== "function") return null;
-      const state = scene.createSceneQualityState({ caps });
-      return {
-        tier: state.initialTier || null,
-        lean: state.lean === true,
-        touch: state.touchPrimary === true,
-      };
+      const caps = site.scene.qualityCapsFromProbe(capabilities);
+      return caps ? site.scene.selectStartupTier({ caps }) : null;
     } catch {
       return null;
     }
@@ -342,7 +332,7 @@ import { createOpeningPreparation } from "./scene/opening-preparation.js";
       const roles = opening.view === "tree" ? ["tree", "lantern"] : ["tree"];
       const prefetched = (scene.prefetched = new Map());
       for (const role of roles) {
-        const url = tier ? urls[tier]?.[role] : null;
+        const url = urls[tier][role];
         if (!url) continue;
         const controller = new AbortController();
         // The loading line counts tree bytes; the scene's preparation gate
@@ -383,10 +373,6 @@ import { createOpeningPreparation } from "./scene/opening-preparation.js";
     const prefetched = site.scene?.prefetched;
     prefetched?.forEach((entry) => entry.abort());
     prefetched?.clear();
-  }
-
-  async function loadAndInitScene() {
-    await site.ensureSceneReady();
   }
 
   site.ensureSceneReady = async function ensureSceneReady() {
@@ -439,8 +425,7 @@ import { createOpeningPreparation } from "./scene/opening-preparation.js";
     sceneLoadPromise = (async () => {
       const budget = startOpeningBudget();
       try {
-        const prepared =
-          site.shared.prepareWebGLCapabilities?.() ?? site.shared.getWebGLCapabilities();
+        const prepared = site.shared.prepareWebGLCapabilities();
         const capabilities =
           typeof prepared?.then === "function"
             ? await Promise.race([prepared, budget.expired])
@@ -457,8 +442,7 @@ import { createOpeningPreparation } from "./scene/opening-preparation.js";
 
         // The low tier keeps the static title card (?quality=low included): the
         // scene bundle is never requested.
-        const startup = readStartupQuality(capabilities);
-        const startupTier = latestControls?.overrideTier || startup?.tier || null;
+        const startupTier = latestControls?.overrideTier || readStartupTier(capabilities);
         if (startupTier === "low") {
           disableSceneHost();
           return false;
@@ -524,7 +508,7 @@ import { createOpeningPreparation } from "./scene/opening-preparation.js";
   function boot() {
     initUi();
     installStaticPreferenceRecovery();
-    afterFirstPaint(loadAndInitScene);
+    afterFirstPaint(() => site.ensureSceneReady());
   }
 
   if (document.readyState === "loading") {

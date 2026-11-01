@@ -1,14 +1,15 @@
-/* Both local files are variable fonts; each face declares its full wght axis
-   so 600/700 render true masters instead of synthesized bold. */
+/* The name's face is a static 700 instance (the only weight the name and the 404's
+   heading use) and the body's keeps its variable 400-700 axis, so 600 renders a true
+   master instead of synthesized bold. Both are subset to Basic Latin, the no-break
+   space and the typographic quotes, dashes and ellipsis (the body's also to the middle
+   dot); unicode-range names exactly what each file holds. */
 @font-face {
   font-family: "Cormorant Garamond";
   font-style: normal;
-  font-weight: 300 700;
+  font-weight: 700;
   font-display: swap;
   src: url("/fonts/cormorant-garamond-variable.woff2") format("woff2");
-  unicode-range:
-    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2122,
-    U+2212, U+2215;
+  unicode-range: U+0020-007E, U+00A0, U+2013-2014, U+2018-2019, U+201C-201D, U+2026;
 }
 
 @font-face {
@@ -17,9 +18,7 @@
   font-weight: 400 700;
   font-display: swap;
   src: url("/fonts/instrument-sans-variable.woff2") format("woff2");
-  unicode-range:
-    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2122,
-    U+2212, U+2215;
+  unicode-range: U+0020-007E, U+00A0, U+00B7, U+2013-2014, U+2018-2019, U+201C-201D, U+2026;
 }
 
 :root {
@@ -1855,7 +1854,6 @@ body.scene-walk-hidden > :not(.scene-shell) {
   }
 
   .skip-link,
-  .hero-minimal,
   .site-footer__link,
   .not-found .back-link {
     transition: none;

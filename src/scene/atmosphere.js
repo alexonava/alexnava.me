@@ -25,7 +25,6 @@ export function createSceneAtmosphere({ parent, profile, assetTier = profile?.ti
   function prepareClouds() {
     if (
       disposed ||
-      skyTier === "low" ||
       cloudOwner ||
       cloudPending ||
       !skyMaterial?.uniforms.uCloudMap ||
@@ -34,7 +33,7 @@ export function createSceneAtmosphere({ parent, profile, assetTier = profile?.ti
       return cloudPending ?? cloudOwner?.prepare() ?? Promise.resolve(false);
     cloudPending = import("./cloud-plate.js")
       .then((module) => {
-        if (disposed || skyTier === "low") return;
+        if (disposed) return;
         cloudOwner = module.createCloudPlate({ uniforms: skyMaterial.uniforms, tier: assetTier });
         cloudOwner.setEnabled(film);
         return cloudOwner.prepare();
@@ -49,15 +48,15 @@ export function createSceneAtmosphere({ parent, profile, assetTier = profile?.ti
   function applySkyQuality() {
     const layers = skyMaterial?.uniforms.uNebulaLayers;
     // The lean path (quality.js) draws one nebula layer.
-    if (layers)
-      layers.value = film && skyTier !== "low" ? (lean ? 1 : skyTier === "balanced" ? 2 : 3) : 0;
-    cloudOwner?.setEnabled(film && skyTier !== "low");
+    if (layers) layers.value = film ? (lean ? 1 : skyTier === "balanced" ? 2 : 3) : 0;
+    cloudOwner?.setEnabled(film);
     prepareClouds();
   }
 
-  // In film the stars and sun blend their colour as before but keep the alpha
-  // the opaque sky wrote, its depth layer (depth-layers.js), so they dissolve
-  // with the sky. film-scene.js makes the sky opaque first, so it is skipped.
+  // In film a normal or additive overlay under this root blends its colour as
+  // before but keeps the alpha the opaque sky wrote, its depth layer
+  // (depth-layers.js), so it dissolves with the sky. film-scene.js makes the sky
+  // opaque first, so it is skipped.
   const overlayBlending = new Map();
   function applyOverlayBlending() {
     if (!film) {

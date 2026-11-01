@@ -15,6 +15,8 @@ const testDir = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(testDir, "..");
 
 const qualityPath = path.join(projectRoot, "src", "scene", "quality.js");
+// The UI bundle's tier choice, which the scene's quality.js reads from BabelSite.scene.
+const tierPath = path.join(projectRoot, "src", "shared", "quality-tier.js");
 
 function createContext({
   search = "",
@@ -48,18 +50,15 @@ function createContext({
 }
 
 async function loadQuality(context) {
-  const source = await readFile(qualityPath, "utf8");
-  vm.runInNewContext(
-    source,
-    {
-      window: context.window,
-      document: context.document,
-      navigator: context.navigator,
-      console,
-      URLSearchParams,
-    },
-    { filename: qualityPath },
-  );
+  const sandbox = vm.createContext({
+    window: context.window,
+    document: context.document,
+    navigator: context.navigator,
+    console,
+    URLSearchParams,
+  });
+  for (const file of [tierPath, qualityPath])
+    vm.runInContext(await readFile(file, "utf8"), sandbox, { filename: file });
   return context.window.BabelSite.scene;
 }
 
@@ -170,6 +169,51 @@ test("selectSceneQualityTier honors explicit overrides over hardware hints", asy
   assert.equal(tier, "high");
 });
 
+test("main.js's startup tier is the one the scene's quality state starts on", async () => {
+  const scene = await loadQuality(createContext());
+  for (const search of ["", "?quality=balanced", "?quality=low", "?quality=potato"])
+    for (const caps of [
+      { maxTextureSize: 8192, maxAnisotropy: 16, gpuClass: "discrete" },
+      { maxTextureSize: 8192, maxAnisotropy: 16, gpuClass: "integrated" },
+      { maxTextureSize: 2048, maxAnisotropy: 16 },
+      { maxTextureSize: 4096, maxAnisotropy: 4 },
+    ])
+      for (const [touchPrimary, viewport] of [
+        [false, { width: 1440, height: 900 }],
+        [false, { width: 320, height: 568 }],
+        [true, { width: 390, height: 844 }],
+        [true, { width: 1024, height: 1366 }],
+      ])
+        for (const navigatorInfo of [
+          { deviceMemory: 8, hardwareConcurrency: 8 },
+          { deviceMemory: 2, hardwareConcurrency: 8 },
+          { hardwareConcurrency: 4 },
+          {},
+        ])
+          for (const saveData of [false, true]) {
+            const inputs = { search, caps, touchPrimary, viewport, navigatorInfo, saveData };
+            assert.equal(
+              scene.selectStartupTier(inputs),
+              scene.createSceneQualityState(inputs).initialTier,
+              JSON.stringify(inputs),
+            );
+          }
+  // Both read the page's address, viewport, navigator and preferences alike by default.
+  const caps = { maxTextureSize: 8192, maxAnisotropy: 16 };
+  for (const context of [
+    createContext({ search: "?quality=balanced" }),
+    createContext({ innerWidth: 390, innerHeight: 844, navigatorInfo: { hardwareConcurrency: 4 } }),
+    createContext({ navigatorInfo: { connection: { saveData: true } } }),
+    createContext({ matchMedia: (query) => ({ matches: query === "(pointer: coarse)" }) }),
+  ]) {
+    const defaults = await loadQuality(context);
+    assert.equal(
+      defaults.selectStartupTier({ caps }),
+      defaults.createSceneQualityState({ caps }).initialTier,
+    );
+  }
+});
+
 test("readSceneQualityControls parses tier query strings and debug flag", async () => {
   const scene = await loadQuality(createContext());
 
@@ -229,12 +273,14 @@ test("quality profiles expose the postprocess tier matrix", async () => {
   for (const profile of [high, balanced]) {
     assert.equal(profile.counts, undefined);
     assert.deepEqual(Object.keys(profile.textures), ["groundSize"]);
-    assert.deepEqual(Object.keys(profile.geometry).sort(), [
-      "circleSegments",
-      "skyHeightSegments",
-      "skyWidthSegments",
-    ]);
+    assert.deepEqual(Object.keys(profile.anisotropy), ["max"]);
   }
+  // The scene's fixed sky and ground segments come from high alone.
+  assert.deepEqual(Object.keys(high.geometry).sort(), [
+    "circleSegments",
+    "skyHeightSegments",
+    "skyWidthSegments",
+  ]);
   assert.equal(high.postprocessSettings.contrast, 1.1);
   assert.equal(balanced.postprocessSettings.vignetteStrength, 0.1);
 });
@@ -300,11 +346,11 @@ test("quality governor drops to low under sustained stress and ignores invalid s
   assert.equal(governor.sample(Number.NaN, 0), null, "NaN frame times are ignored");
 });
 
-function drive(governor, clock, frameMs, count, floorTier) {
+function drive(governor, clock, frameMs, count) {
   const changes = [];
   for (let frame = 0; frame < count; frame += 1) {
     clock.now += frameMs;
-    const tier = governor.sample(frameMs, clock.now, floorTier);
+    const tier = governor.sample(frameMs, clock.now);
     if (tier) changes.push({ tier, at: clock.now });
   }
   return changes;
@@ -336,21 +382,21 @@ test("quality governor never recovers while frames stay beyond the display floor
   const scene = await loadQuality(createContext());
   const governor = scene.createSceneQualityGovernor({ initialTier: "high" });
   const clock = { now: 0 };
-  const changes = drive(governor, clock, 40, 3000, "balanced");
+  const changes = drive(governor, clock, 40, 3000);
   assert.deepEqual(
     changes.map(({ tier }) => tier),
-    ["balanced"],
-    "a raised floor holds sustained 40 ms stress at balanced without oscillating",
+    ["balanced", "low"],
+    "sustained 40 ms stress steps down to the floor without oscillating",
   );
 });
 
 // Frame cost follows the governor's current tier, as it does on a device.
-function driveCosts(governor, clock, costs, count, floorTier) {
+function driveCosts(governor, clock, costs, count) {
   const changes = [];
   for (let frame = 0; frame < count; frame += 1) {
     const frameMs = costs[governor.getTier()];
     clock.now += frameMs;
-    const tier = governor.sample(frameMs, clock.now, floorTier);
+    const tier = governor.sample(frameMs, clock.now);
     if (tier) changes.push({ tier, at: clock.now });
   }
   return changes;
@@ -358,30 +404,18 @@ function driveCosts(governor, clock, costs, count, floorTier) {
 
 test("quality governor never reads a capped or GPU-bound steady rate as headroom", async () => {
   const scene = await loadQuality(createContext());
-  for (const [costs, floorTier, expected, label] of [
-    [
-      { high: 1000 / 30, balanced: 1000 / 30, low: 1000 / 30 },
-      "balanced",
-      ["balanced"],
-      "30 Hz cap",
-    ],
-    [
-      { high: 1000 / 30, balanced: 1000 / 30, low: 1000 / 30 },
-      "low",
-      ["balanced", "low"],
-      "30 Hz cap",
-    ],
-    [{ high: 40, balanced: 28, low: 25 }, "balanced", ["balanced"], "28 ms at balanced"],
-    [{ high: 40, balanced: 28, low: 25 }, "low", ["balanced", "low"], "25 ms at low"],
-    [{ high: 45, balanced: 28, low: 25 }, "balanced", ["balanced"], "45/28 ms"],
-    [{ high: 33, balanced: 25, low: 22 }, "balanced", ["balanced"], "33/25 ms"],
+  for (const [costs, label] of [
+    [{ high: 1000 / 30, balanced: 1000 / 30, low: 1000 / 30 }, "30 Hz cap"],
+    [{ high: 40, balanced: 28, low: 25 }, "25 ms at low"],
+    [{ high: 45, balanced: 28, low: 25 }, "45/28/25 ms"],
+    [{ high: 33, balanced: 25, low: 22 }, "33/25/22 ms"],
   ]) {
     const governor = scene.createSceneQualityGovernor({ initialTier: "high" });
-    const changes = driveCosts(governor, { now: 0 }, costs, 12000, floorTier);
+    const changes = driveCosts(governor, { now: 0 }, costs, 12000);
     assert.deepEqual(
       changes.map(({ tier }) => tier),
-      expected,
-      `${label} with a ${floorTier} floor steps down once per tier and never climbs back`,
+      ["balanced", "low"],
+      `${label} steps down once per tier and never climbs back`,
     );
   }
 });
@@ -392,7 +426,7 @@ test("quality governor backs off and then stops recovering when the heavier tier
   const clock = { now: 0 };
   // Balanced keeps up with a 60 Hz display; high does not.
   const costs = { high: 40, balanced: 1000 / 60, low: 1000 / 60 };
-  const changes = driveCosts(governor, clock, costs, 8000, "balanced");
+  const changes = driveCosts(governor, clock, costs, 8000);
   assert.deepEqual(
     changes.map(({ tier }) => tier),
     ["balanced", "high", "balanced", "high", "balanced"],
@@ -401,11 +435,7 @@ test("quality governor backs off and then stops recovering when the heavier tier
   const secondRecovery = changes[3].at - changes[2].at;
   assert.ok(firstRecovery >= 10000 && firstRecovery < 20000);
   assert.ok(secondRecovery >= 2 * firstRecovery - 100, "one oscillation doubles the wait");
-  assert.equal(
-    drive(governor, clock, 1000 / 60, 6000, "balanced").length,
-    0,
-    "two oscillations end recovery",
-  );
+  assert.equal(drive(governor, clock, 1000 / 60, 6000).length, 0, "two oscillations end recovery");
   assert.equal(governor.getTier(), "balanced");
 });
 
@@ -575,7 +605,6 @@ test("createSceneQualityState exposes the startup tier, its profile and the gove
   assert.equal(state.getTier(), "high");
   assert.equal(state.getProfile().dprCap, 1.5);
   assert.equal(state.getProfile().postprocessSamples, 4);
-  assert.equal(state.governor.getInitialTier(), "high");
   assert.equal(state.getProfile("balanced").dprCap, 1.25);
 });
 
@@ -801,11 +830,14 @@ test("revealed sampling excludes a short upload window after the first frame and
     saveData: false,
   });
   let sampled = 0;
+  const sample = held.governor.sample;
+  held.governor.sample = (...args) => {
+    sampled += 1;
+    return sample(...args);
+  };
   for (let timestamp = 0; timestamp < 6000; timestamp += 40) {
     if (timestamp === 4000) held.holdSampling();
-    const before = held.governor.getAverageFrameTime();
     held.sampleRevealed({ frameMs: 40 + timestamp / 1000, nowMs: timestamp, timestamp, profile });
-    if (held.governor.getAverageFrameTime() !== before) sampled += 1;
   }
   // 81 samples before the hold, then 31 after its fresh 750 ms exclusion.
   assert.equal(sampled, 112);
@@ -822,13 +854,18 @@ test("skipped samples leave the governor untouched for exactly that many frames"
   });
   const profile = state.getProfile();
   const skipped = [];
+  const sample = state.governor.sample;
+  let sampled = false;
+  state.governor.sample = (...args) => {
+    sampled = true;
+    return sample(...args);
+  };
   for (let timestamp = 0; timestamp < 4000; timestamp += 40) {
     // A tour capture drops the intervals its capture, cut and first dissolve frames delay.
     if (timestamp === 3400) state.skipSamples(3);
-    const before = state.governor.getAverageFrameTime();
+    sampled = false;
     state.sampleRevealed({ frameMs: 40 + timestamp / 1000, nowMs: timestamp, timestamp, profile });
-    const unchanged = state.governor.getAverageFrameTime() === before;
-    if (timestamp >= 760 && unchanged) skipped.push(timestamp);
+    if (timestamp >= 760 && !sampled) skipped.push(timestamp);
   }
   assert.deepEqual(skipped, [3400, 3440, 3480]);
 });
@@ -838,10 +875,9 @@ const flush = () => new Promise((resolve) => setImmediate(resolve));
 const canvas = () => ({ width: 0, height: 0, getContext: () => ({ drawImage() {} }) });
 
 async function loadQualityState() {
-  const source = await readFile(new URL("../src/scene/quality.js", import.meta.url), "utf8");
   const window = { BabelSite: {}, location: { search: "" }, innerWidth: 1440, innerHeight: 900 };
-  vm.runInNewContext(source, { window, document: {}, navigator: {}, URLSearchParams, console });
-  return window.BabelSite.scene.createSceneQualityState({
+  const scene = await loadQuality({ window, document: {}, navigator: {} });
+  return scene.createSceneQualityState({
     navigatorInfo: { deviceMemory: 8, hardwareConcurrency: 8 },
     viewport: { width: 1440, height: 900 },
     caps: { maxTextureSize: 8192, maxAnisotropy: 8 },
@@ -906,9 +942,9 @@ test("adaptive quality steps change cost settings without refetching models or t
   await flush();
   await flush();
   const settled = requests.length;
-  // The tree's model (the watch has none) and the slate (color, normal, detail,
-  // grit, relief).
-  assert.equal(settled, 1 + 5);
+  // The tree's and the lantern's models (the watch has none) and the slate (color,
+  // normal, detail, grit, relief).
+  assert.equal(settled, 2 + 5);
   restores.length = 0;
 
   // Mirrors updateSceneFrame after the reveal.
@@ -935,8 +971,6 @@ test("adaptive quality steps change cost settings without refetching models or t
   assert.deepEqual(restores, [], "live models and bound maps are never restored away");
   registry.dispose();
 });
-
-const qualitySourcePath = path.join(projectRoot, "src", "scene", "quality.js");
 
 function createSceneContext({
   search = "",
@@ -987,27 +1021,24 @@ function createStorageMock(seed = {}) {
   };
 }
 
-async function loadSceneScript(scriptPath, context) {
-  const source = await readFile(scriptPath, "utf8");
-  vm.runInNewContext(
-    source,
-    {
-      window: context.window,
-      document: context.document,
-      localStorage: context.localStorage,
-      navigator: context.navigator,
-      performance: context.performance,
-      console,
-      URLSearchParams,
-    },
-    { filename: scriptPath },
-  );
+async function loadSceneQuality(context) {
+  const sandbox = vm.createContext({
+    window: context.window,
+    document: context.document,
+    localStorage: context.localStorage,
+    navigator: context.navigator,
+    performance: context.performance,
+    console,
+    URLSearchParams,
+  });
+  for (const file of [tierPath, qualityPath])
+    vm.runInContext(await readFile(file, "utf8"), sandbox, { filename: file });
   return context.window.BabelSite.scene;
 }
 
 test("quality controls keep capable auto-tier devices on high and expose current balanced defaults", async () => {
   const context = createSceneContext({ search: "?quality=auto&sceneDebug=1" });
-  const scene = await loadSceneScript(qualitySourcePath, context);
+  const scene = await loadSceneQuality(context);
 
   const controls = scene.readSceneQualityControls(context.window.location.search);
   const tier = scene.selectSceneQualityTier({
@@ -1032,7 +1063,7 @@ test("quality controls keep capable auto-tier devices on high and expose current
 
 test("quality overrides and governor transitions are deterministic", async () => {
   const context = createSceneContext({ search: "?quality=low" });
-  const scene = await loadSceneScript(qualitySourcePath, context);
+  const scene = await loadSceneQuality(context);
 
   const controls = scene.readSceneQualityControls(context.window.location.search);
   const forced = scene.selectSceneQualityTier({
@@ -1060,7 +1091,7 @@ test("quality overrides and governor transitions are deterministic", async () =>
 
 test("composition profiles reframe portrait phones toward the estate", async () => {
   const context = createSceneContext();
-  const scene = await loadSceneScript(qualitySourcePath, context);
+  const scene = await loadSceneQuality(context);
 
   const portrait = scene.getSceneCompositionProfile({ width: 390, height: 844 });
   const compact = scene.getSceneCompositionProfile({ width: 900, height: 844 });
@@ -1160,6 +1191,29 @@ test("pixel budgets bound the lean path and high's drawn area, never below DPR 0
     1.25,
     "balanced off the lean path keeps its cap",
   );
+});
+
+test("no governor step raises the drawn resolution, even where high's budget held it down", async () => {
+  const scene = await loadQuality(createContext());
+  const viewport = { width: 2560, height: 1440 };
+  const state = scene.createSceneQualityState({
+    caps: { maxTextureSize: 8192, maxAnisotropy: 16, gpuClass: "discrete" },
+    touchPrimary: false,
+    viewport,
+  });
+  let profile = state.getProfile();
+  assert.equal(profile.tier, "high");
+  // A 4K monitor at 150%: high draws its 3.7 MP budget, under its 1.5 cap.
+  let ratio = state.resolveDprCap(profile, viewport);
+  assert.ok(ratio < 1.25, `high draws at ${ratio}`);
+  const taken = [];
+  for (let step = state.stepDown({ profile }); step; step = state.stepDown({ profile })) {
+    const next = state.resolveDprCap(step, viewport);
+    assert.ok(next <= ratio, `${step.tier}@${step.dprCap} draws ${next} after ${ratio}`);
+    [profile, ratio] = [step, next];
+    taken.push(step.tier);
+  }
+  assert.deepEqual(taken, ["balanced", "balanced", "balanced"]);
 });
 
 test("the opening's hidden step goes one governor step at a time and stops at the floor", async () => {

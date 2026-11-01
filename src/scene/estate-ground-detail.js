@@ -448,7 +448,7 @@ function* groundDetailSteps(groundHeight) {
       tier = "high",
       disposed = false;
     function apply() {
-      mesh.visible = active && tier !== "low";
+      mesh.visible = active;
       const share = tier === "balanced" ? GROWTH.balanced : 1;
       geometry.setDrawRange(0, ends[Math.max(0, Math.ceil(count * share) - 1)] ?? 0);
       // The litter's fine pieces (gravel, clods, leaves) thin out the same way.

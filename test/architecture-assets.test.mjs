@@ -7,6 +7,7 @@ import {
   createArchitectureAssetController,
   loadArchitectureAsset,
 } from "../src/scene/architecture-assets.js";
+import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -125,27 +126,24 @@ function assertReleased(parsed, expected = 1) {
 }
 
 test("architecture loads require live high/balanced quality and repeated state does not reload", async () => {
-  for (const options of [{ disabled: true }, {}]) {
-    const h = harness(options);
-    h.controller.setQuality({ tier: "high" });
-    h.controller.applyQuality({ tier: "balanced" });
-    assert.equal(h.requests.length + h.stages.length, 0);
-    h.controller.setQuality({ tier: "low" }, true);
-    h.controller.setQuality({ tier: "unknown" }, true);
-    assert.equal(h.requests.length + h.stages.length, 0);
-    h.controller.setQuality({ tier: "high" }, true);
-    const started = options.disabled ? 0 : 1;
-    assert.equal(h.requests.length, started);
-    assert.equal(h.stages.length, started);
-    h.controller.applyQuality({ tier: "high" });
-    h.controller.setLive(true);
-    assert.equal(h.requests.length, started);
-    assert.equal(h.stages.length, started);
-    h.controller.dispose();
-  }
+  const h = harness();
+  h.controller.setQuality({ tier: "high" });
+  h.controller.applyQuality({ tier: "balanced" });
+  assert.equal(h.requests.length + h.stages.length, 0);
+  h.controller.setQuality({ tier: "low" }, true);
+  h.controller.setQuality({ tier: "unknown" }, true);
+  assert.equal(h.requests.length + h.stages.length, 0);
+  h.controller.setQuality({ tier: "high" }, true);
+  assert.equal(h.requests.length, 2);
+  assert.equal(h.stages.length, 1);
+  h.controller.applyQuality({ tier: "high" });
+  h.controller.setLive(true);
+  assert.equal(h.requests.length, 2);
+  assert.equal(h.stages.length, 1);
+  h.controller.dispose();
 });
 
-test("the live gate stages the watch and requests only the selected tree", async () => {
+test("the live gate stages the watch and requests only the selected tree and lantern", async () => {
   const h = harness();
   h.controller.setQuality({ tier: "high" });
   h.controller.setQuality({ tier: "low" }, true);
@@ -153,16 +151,16 @@ test("the live gate stages the watch and requests only the selected tree", async
   h.controller.setQuality({ tier: "high" }, true);
   assert.deepEqual(
     h.requests.map(({ role }) => role),
-    ["tree"],
+    ["tree", "lantern"],
   );
   assert.deepEqual(
     h.requests.map(({ url }) => url),
-    [ARCHITECTURE_ASSET_URLS.high.tree],
+    [ARCHITECTURE_ASSET_URLS.high.tree, ARCHITECTURE_ASSET_URLS.high.lantern],
   );
   assert.equal(h.stages.length, 1);
   h.controller.applyQuality({ tier: "high" });
   h.controller.setLive(true);
-  assert.equal(h.requests.length, 1);
+  assert.equal(h.requests.length, 2);
   assert.equal(h.stages.length, 1);
   const [tree] = complete(h);
   await flush();
@@ -180,8 +178,10 @@ test("the live gate stages the watch and requests only the selected tree", async
     [
       "watch:procedural",
       "tree:procedural",
+      "lantern:procedural",
       "watch:loading",
       "tree:loading",
+      "lantern:loading",
       "tree:ready",
       "watch:ready",
     ],
@@ -206,7 +206,9 @@ test("a stale stage or tree parse after a quality change is ignored and keeps cu
     h.requests.map(({ tier, role }) => [tier, role]),
     [
       ["high", "tree"],
+      ["high", "lantern"],
       ["balanced", "tree"],
+      ["balanced", "lantern"],
     ],
   );
   assert.equal(h.stages.length, 2);
@@ -250,7 +252,7 @@ test("a rejected stage or a failed watch commit falls back without interrupting 
     assert.equal(request(h, "tree").signal.aborted, false);
     h.controller.applyQuality({ tier: "high" });
     h.controller.setLive(true);
-    assert.equal(h.requests.length, 1, "failed loads do not retry every frame");
+    assert.equal(h.requests.length, 2, "failed loads do not retry every frame");
     assert.equal(h.stages.length, 1);
     h.controller.dispose();
     assertReleased(tree);
@@ -289,10 +291,10 @@ test("tree failure is independent and a controlled tier change restages and retr
   assert.equal(lastStatus(h, "watch").status, "ready");
   assert.equal(lastStatus(h, "tree").status, "fallback");
   for (let index = 0; index < 4; index += 1) h.controller.applyQuality({ tier: "high" });
-  assert.equal(h.requests.length, 1);
+  assert.equal(h.requests.length, 2);
   assert.equal(h.stages.length, 1);
   h.controller.applyQuality({ tier: "balanced" });
-  assert.equal(h.requests.length, 2);
+  assert.equal(h.requests.length, 4);
   assert.equal(h.stages.length, 2);
   assert.ok(h.events.indexOf("watch:restore") < h.events.indexOf("watch:cleanup"));
   stage(h).resolve();
@@ -313,7 +315,10 @@ test("a pinned asset tier keeps live models through adaptive profile changes wit
   h.controller.setLive(true);
   assert.deepEqual(
     h.requests.map(({ tier, role }) => [tier, role]),
-    [["high", "tree"]],
+    [
+      ["high", "tree"],
+      ["high", "lantern"],
+    ],
   );
   assert.equal(h.stages.length, 1);
   stage(h).resolve();
@@ -326,7 +331,7 @@ test("a pinned asset tier keeps live models through adaptive profile changes wit
     assert.equal(h.controller.applyQuality({ tier }, { pixelRatio: 1, assetTier: "high" }), false);
   }
   assert.equal(h.controller.setQuality({ tier: "low" }, true, { assetTier: "high" }), false);
-  assert.equal(h.requests.length, 1, "no other tier is downloaded");
+  assert.equal(h.requests.length, 2, "no other tier is downloaded");
   assert.equal(h.stages.length, 1, "the watch is not staged again");
   assert.ok(h.requests.every(({ signal }) => !signal.aborted));
   assert.equal(h.statuses.length, statusCount, "no procedural or loading status is published");
@@ -387,7 +392,7 @@ test("low quality or closing the live gate restores before disposal and ignores 
 });
 
 test("shared scene resources dispose once and shared images close after all texture disposals", async () => {
-  const h = harness({ includeLantern: true });
+  const h = harness();
   h.controller.setQuality({ tier: "high" }, true);
   const shared = asset("shared", h.events);
   request(h, "tree").resolve(shared);
@@ -446,20 +451,20 @@ test("reopening the live gate retries failed loads once without a per-frame retr
   await flush();
   assert.equal(lastStatus(h, "watch").status, "fallback");
   assert.equal(lastStatus(h, "tree").status, "fallback");
-  assert.equal(h.requests.length, 1);
+  assert.equal(h.requests.length, 2);
   assert.equal(h.stages.length, 1);
   h.controller.setLive(true);
-  assert.equal(h.requests.length, 1);
+  assert.equal(h.requests.length, 2);
   assert.equal(h.stages.length, 1);
   h.controller.setLive(false);
   h.controller.setLive(true);
-  assert.equal(h.requests.length, 2);
+  assert.equal(h.requests.length, 4);
   assert.equal(h.stages.length, 2);
   h.controller.dispose();
 });
 
 test("optional lantern loads independently and its failure cannot block the tree", async () => {
-  const h = harness({ includeLantern: true });
+  const h = harness();
   h.controller.setQuality({ tier: "high" }, true);
   assert.deepEqual(
     h.requests.map(({ role }) => role),
@@ -483,13 +488,9 @@ test("optional lantern releases staged and late parses after tier switches, gate
     const ready = [],
       events = [];
     const h = harness({
-      includeLantern: true,
       onLanternReady(parsed, { tier }) {
         ready.push(tier);
         return () => events.push("cleanup");
-      },
-      onRestoreLantern() {
-        events.push("restore");
       },
     });
     h.controller.setQuality({ tier: "high" }, true);
@@ -513,7 +514,6 @@ test("optional lantern releases staged and late parses after tier switches, gate
       assertReleased(current, 0, "adaptive cost changes keep the startup model tier");
       h.controller.dispose();
       assertReleased(current);
-      assert.ok(events.indexOf("restore") < events.indexOf("cleanup"));
       assert.ok(events.indexOf("cleanup") < events.indexOf("balanced:geometry"));
     }
     h.controller.dispose();
@@ -521,7 +521,7 @@ test("optional lantern releases staged and late parses after tier switches, gate
 });
 
 test("opening deadline cancels only the optional lantern and releases its late parse", async () => {
-  const h = harness({ includeLantern: true });
+  const h = harness();
   h.controller.setQuality({ tier: "high" }, true);
   const late = request(h, "lantern");
   assert.equal(h.controller.cancelOptional("tree"), false);
@@ -846,7 +846,6 @@ test("the live selection takes its early requests and releases those for another
       const ready = [];
       // The default stage settles at once, so the watch commits beside the models.
       const controller = createArchitectureAssetController({
-        includeLantern: true,
         onWatchReady() {
           ready.push("watch");
         },
@@ -960,8 +959,116 @@ test("every delivered model is one self-contained, static, triangle mesh", async
       assert.equal(gltf.animations?.length || 0, 0);
       const primitive = gltf.meshes[0].primitives[0];
       assert.equal(primitive.mode ?? 4, 4, "triangle topology required");
-      for (const semantic of ["POSITION", "NORMAL", "TEXCOORD_0"])
-        assert.ok(Number.isInteger(primitive.attributes[semantic]));
+      // The massifs shade from their object-space normal maps alone.
+      const semantics = role.startsWith("mountain-")
+        ? ["POSITION", "TEXCOORD_0"]
+        : ["POSITION", "NORMAL", "TEXCOORD_0"];
+      for (const semantic of semantics)
+        assert.ok(Number.isInteger(primitive.attributes[semantic]), `${name} ${semantic}`);
+    }
+  }
+});
+
+// A plain picture of what a model parses into: every own field of its objects,
+// geometry arrays by type, layout and digest, decoded images by their bytes.
+// Identities (uuid, id) and back references are left out.
+function describeParsed(value, images) {
+  if (value === null || typeof value !== "object") {
+    return typeof value === "function" ? "function" : value;
+  }
+  if (images.has(value)) return images.get(value);
+  if (ArrayBuffer.isView(value)) {
+    const bytes = Buffer.from(value.buffer, value.byteOffset, value.byteLength);
+    return {
+      type: value.constructor.name,
+      length: value.length,
+      byteOffset: value.byteOffset,
+      bufferBytes: value.buffer.byteLength,
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+    };
+  }
+  if (Array.isArray(value)) return value.map((item) => describeParsed(item, images));
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => !["uuid", "id", "parent", "_listeners"].includes(key))
+      .map(([key, item]) => [key, describeParsed(item, images)]),
+  );
+}
+
+test("the reader parses every delivered model into what three's GLTFLoader builds from it", async () => {
+  const { GLTFLoader } = await import("three/examples/jsm/loaders/GLTFLoader.js");
+  const previous = Object.fromEntries(
+    ["fetch", "self", "Image", "createImageBitmap"].map((key) => [
+      key,
+      Object.getOwnPropertyDescriptor(globalThis, key),
+    ]),
+  );
+  const nativeFetch = globalThis.fetch,
+    images = new Map();
+  // Stand-in bitmaps record the encoded bytes and the decode options.
+  globalThis.createImageBitmap = async (blob, options) => {
+    const bytes = Buffer.from(await blob.arrayBuffer()),
+      bitmap = { close() {} };
+    images.set(bitmap, {
+      type: blob.type,
+      bytes: bytes.length,
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+      options: { ...options },
+    });
+    return bitmap;
+  };
+  // GLTFLoader's WebP check loads a one-pixel image; it reads `self.URL`.
+  globalThis.Image = class {
+    set src(_url) {
+      this.height = 1;
+      queueMicrotask(() => this.onload());
+    }
+  };
+  globalThis.self = globalThis;
+  try {
+    for (const tier of ["high", "balanced"]) {
+      for (const role of ROLES) {
+        const name = `${role}-${tier}.glb`,
+          source = await readFile(path.join(projectRoot, "images", "architecture", name));
+        const bytes = source.buffer.slice(source.byteOffset, source.byteOffset + source.length);
+        const reference = await new GLTFLoader().parseAsync(bytes, "");
+        globalThis.fetch = async (url, options) =>
+          url.startsWith("blob:") ? nativeFetch(url, options) : new Response(source);
+        const parsed = await loadArchitectureAsset(`/${name}`, {
+          signal: new AbortController().signal,
+          tier,
+          role,
+        });
+        assert.equal(parsed.scenes.length, reference.scenes.length, name);
+        assert.deepEqual(
+          describeParsed(parsed.scene, images),
+          describeParsed(reference.scene, images),
+          name,
+        );
+        // The parts the scene leans on, spelled out.
+        const [mesh] = parsed.scene.children,
+          { attributes } = reference.scene.children[0].geometry;
+        for (const [key, attribute] of Object.entries(attributes)) {
+          const ours = mesh.geometry.attributes[key];
+          assert.equal(ours.isInterleavedBufferAttribute, attribute.isInterleavedBufferAttribute);
+          assert.equal(ours.array.constructor, attribute.array.constructor, `${name} ${key}`);
+          assert.equal(ours.normalized, attribute.normalized, `${name} ${key}`);
+          assert.equal(ours.itemSize, attribute.itemSize, `${name} ${key}`);
+          assert.equal(ours.count, attribute.count, `${name} ${key}`);
+        }
+        const material = reference.scene.children[0].material;
+        for (const key of ["map", "normalMap", "aoMap", "emissiveMap", "roughnessMap"]) {
+          assert.equal(Boolean(mesh.material[key]), Boolean(material[key]), `${name} ${key}`);
+          assert.equal(mesh.material[key]?.colorSpace, material[key]?.colorSpace);
+        }
+        assert.deepEqual(mesh.material.normalScale, material.normalScale, name);
+        assert.equal(mesh.material.side, material.side, name);
+      }
+    }
+  } finally {
+    for (const [key, descriptor] of Object.entries(previous)) {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      else delete globalThis[key];
     }
   }
 });

@@ -6,14 +6,13 @@ export const TOUR_PER_SHOT = "shot";
 export const DEFAULT_TOUR_INTERVAL = TOUR_PER_SHOT;
 const TOUR_INTERVALS = [3, 5, 20];
 export const TOUR_HOLD_FALLBACK = 7;
-// The tour opens on Lantern study, then continues the existing circular sequence:
-// Close-up, Root and lantern, the sky, and Portrait. Each adjacent tree pair is
-// a change of height and bearing (Lantern study and Root and lantern nearly
-// share both, so they are kept apart); one sky shot, the owner's call of
-// 2026-10-20. The fault's three shots (ocean.js COAST_SHOTS) join once the sea has landed,
-// one between each pair and after the last: wide down the coast after
-// Portrait, the falls after Lantern study, and the bay from above after
-// Root and lantern, before The watch.
+// The tour is a circle that continues from whichever shot is on screen, so an ordinary
+// visit, which opens on The watch, goes on to Portrait. Each adjacent tree pair is a
+// change of height and bearing (Lantern study and Root and lantern nearly share both,
+// so they are kept apart); one sky shot, the owner's call. The fault's three shots
+// (ocean.js COAST_SHOTS) join once the sea has landed: wide down the coast after
+// Portrait, the falls after Lantern study, and the bay from above after Root and
+// lantern, before The watch.
 export const TOUR_ORDER = Object.freeze([
   "Lantern study",
   "Close-up",

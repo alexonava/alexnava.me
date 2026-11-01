@@ -185,15 +185,6 @@ import { resolveSceneOpening } from "../scene/scene-modes.js";
     const r = run;
     if (!loading(r)) return;
     r.status = reason === "revealed" || reason === "stalled" ? reason : "static";
-    if (r.status === "stalled") {
-      safe(() =>
-        window.dispatchEvent(
-          new window.CustomEvent("babel:opening-timeout", {
-            detail: { reason: "idle" },
-          }),
-        ),
-      )();
-    }
     r.cleanups.splice(0).forEach((cleanup) => safe(cleanup)());
     if (r.status === "revealed") {
       r.target = 1;
@@ -295,9 +286,6 @@ import { resolveSceneOpening } from "../scene/scene-modes.js";
     };
     document.addEventListener("visibilitychange", onVisibility);
     r.cleanups.push(() => document.removeEventListener("visibilitychange", onVisibility));
-    const onPreparation = (event) => preparation(event.detail);
-    window.addEventListener?.("babel:opening-preparation", onPreparation);
-    r.cleanups.push(() => window.removeEventListener?.("babel:opening-preparation", onPreparation));
     // Only visible time counts toward a stall.
     const watchdog = window.setInterval(() => {
       if (!loading(r)) return;

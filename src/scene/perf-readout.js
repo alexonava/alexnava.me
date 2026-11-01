@@ -1,4 +1,4 @@
-// ?perf=1 (quality.js readSceneQualityControls()): a small readout in the window's corner for
+// ?perf=1 (shared/quality-tier.js readSceneQualityControls()): a small readout in the window's corner for
 // checking the scene on a real phone or laptop: the frames drawn per second over the last
 // second and that second's longest gap, the shot, the drawn resolution (device pixels per CSS
 // pixel and megapixels) and the governor's level. Debug only, never on an ordinary visit; it

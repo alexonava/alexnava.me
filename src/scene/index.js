@@ -8,7 +8,6 @@ import {
   measureShot,
   measureShotSteps,
 } from "./directed-shots.js";
-import { createStarfield } from "./starfield.js";
 import { readTourInterval, createCameraTour, TOUR_IDLE, TOUR_TRANSITION } from "./camera-tour.js";
 import { createFilmScene } from "./film-scene.js";
 import { resolveSceneOpening } from "./scene-modes.js";
@@ -25,8 +24,11 @@ import {
   COAST_MOOD,
   GLINT_MOOD,
   GRASS_MOOD,
+  FLASH_GROUND,
+  FLASH_UNIFORMS,
   LANTERN_MOOD,
   STONE_MOOD,
+  lendFlashText,
   shotLight,
   shotLook,
   applyShotTone,
@@ -41,7 +43,6 @@ import { ESTATE, estateLantern } from "./estate-layout.js";
 import { isWalkKey, walkAllowed } from "./walk-key.js";
 import { createRockScatter, estateContacts } from "./rock-scatter.js";
 import { createHillSilhouette } from "./hill-silhouette.js";
-import { createLightning } from "./lightning.js";
 import { createFarFires } from "./far-fires.js";
 import { markScene, measureScene, sceneNow } from "./perf-marks.js";
 import { createPropScale, LANTERN_SCALE } from "./prop-scale.js";
@@ -69,18 +70,22 @@ import { createSceneEnvironment } from "./environment.js";
 import {
   advanceMist,
   lendMistText,
+  MIST_UNIFORMS,
   setMistDatum,
   setMistLights,
   setMistShot,
   setMistTier,
 } from "./drifting-mist.js";
 import {
+  CLOUD_RESHAPE,
   CLOUD_VORTEX,
   cloudVortexCenter,
   cloudVortexInSeason,
   cloudVortexPresent,
   createEstateSkyMaterial,
+  FLASH_REFERENCE,
 } from "./estate-sky.js";
+import { STAR_LAYER } from "./depth-layers.js";
 import { createPerfReadout } from "./perf-readout.js";
 import { createSceneRendering } from "./rendering.js";
 import { createShotLevels } from "./shot-levels.js";
@@ -266,6 +271,9 @@ const GROUND_WAIT_S = 20;
       };
     const subsystemRegistry = createSceneSubsystemRegistry();
     const rendering = createSceneRendering({
+      // The governor never climbs above the startup tier, so only a startup that
+      // blooms builds the bloom.
+      bloom: qualityState.getProfile(qualityState.initialTier).postprocessBloom === true,
       container,
       debugShaders: qualityControls.debug,
       height: window.innerHeight,
@@ -414,7 +422,7 @@ const GROUND_WAIT_S = 20;
       const vortexSeason = cloudVortexInSeason(sceneDate);
       // The slate's contact darkening (tree roots, lantern, rocks) and detail map
       // slot: uniforms, so rocks arriving or shadows switching never recompile.
-      // Its text boxes also guard the sky's cloud banks (and the stars behind them).
+      // Its text boxes also guard the sky's cloud banks.
       const groundContacts = createSlateContacts(estateContacts());
       // The lite ground reads its value noise from a baked map (noise-map.js, a lazy chunk),
       // which lands during The watch, the opening of every lite startup.
@@ -448,7 +456,6 @@ const GROUND_WAIT_S = 20;
         parent: atmosphereSystem.root,
         camera,
         position: new Vector3(...WORLD.SUN_POSITION),
-        profile: state.profile,
       });
       subsystemRegistry.register(solarBody);
       // A shot's own sun (directed-shots.js `sun`: `at`, its world direction, and
@@ -483,36 +490,46 @@ const GROUND_WAIT_S = 20;
           else environmentDirty = true;
         }
       }
-      // The stars borrow the shell's uniforms, so they hide behind its cloud banks.
-      const starfield = createStarfield({
-        parent: atmosphereSystem.root,
-        camera,
-        profile: state.profile,
-        sky: skyShell.material.uniforms,
-        skyRadius: WORLD.SKY_DOME_RADIUS,
-      });
-      subsystemRegistry.register(starfield);
-      // Golden hour: no stars yet (film-light.js FILM_LIGHT).
-      starfield.root.visible = false;
-      // The film storm's lightning (lightning.js): flashes in the shell's banks,
-      // now and then a far bolt beside the stars, and the flash on the lights,
-      // on its own clock and only in film. Created before the first warm-up,
-      // which links the bolt's program.
-      const lightning = createLightning({
-        parent: atmosphereSystem.root,
-        camera,
-        rendering,
-        sky: skyShell.material.uniforms,
-        textGuard: groundContacts,
-        film: () => filmActive,
-        shot: () => shotOnScreen()?.name ?? null,
-        cutIn: () => tourCutIn,
-        profile: state.profile,
-        skyRadius: WORLD.SKY_DOME_RADIUS,
-        date: sceneDate,
-      });
-      subsystemRegistry.register(lightning);
-      if (qualityDebug) qualityDebug.lightning = lightning.state;
+      // The film storm's lightning (lightning.js): flashes in the shell's banks, now and
+      // then a far bolt in the sky, and the flash on the lights, on its own clock and only
+      // in film. A lazy chunk, fetched only in its season (the maelstrom's); it borrows
+      // the entry's shared values (`lib`). The flash's text boxes are lent now, before any
+      // film material links. The chunk lands long before the reveal and takes the current
+      // quality and size; landing before the opening's warm-up, its bolt's program links
+      // in that one, else in its own.
+      lendFlashText(groundContacts);
+      if (vortexSeason)
+        import("./lightning.js")
+          .then(({ createLightning }) => {
+            if (runtimeDisposed) return;
+            const lightning = createLightning({
+              lib: {
+                STAR_LAYER,
+                CLOUD_RESHAPE,
+                FLASH_REFERENCE,
+                MIST_UNIFORMS,
+                FLASH_GROUND,
+                FLASH_UNIFORMS,
+              },
+              parent: atmosphereSystem.root,
+              camera,
+              rendering,
+              sky: skyShell.material.uniforms,
+              textGuard: groundContacts,
+              film: () => filmActive,
+              shot: () => shotOnScreen()?.name ?? null,
+              cutIn: () => tourCutIn,
+              profile: state.profile,
+              skyRadius: WORLD.SKY_DOME_RADIUS,
+              date: sceneDate,
+            });
+            subsystemRegistry.register(lightning);
+            lightning.applyQuality(state.profile, { pixelRatio: renderer.getPixelRatio() });
+            lightning.resize(viewport);
+            if (qualityDebug) qualityDebug.lightning = lightning.state;
+            if (openingShaderStarted || canvasShown) warmShaders("lightning");
+          })
+          .catch(() => {});
       // The drifting mist (drifting-mist.js): the ground's text boxes are lent for its
       // text guard (MIST_DRIFT.text, off by default: it keeps every text's contrast as
       // it is); the moon key and the star light it; its clock, tier and the shot's
@@ -521,13 +538,13 @@ const GROUND_WAIT_S = 20;
       setMistLights(WORLD.SUN_DIRECTION, WORLD.SUN_POSITION);
       subsystemRegistry.register({
         applyQuality(profile) {
-          setMistTier(profile?.lean || liteGround ? "lean" : profile?.tier);
+          setMistTier(liteGround ? "lean" : profile?.tier);
         },
         update(frame) {
           advanceMist(frame);
         },
       });
-      setMistTier(state.profile?.lean || liteGround ? "lean" : state.profile?.tier);
+      setMistTier(liteGround ? "lean" : state.profile?.tier);
       const environmentSystem = createSceneEnvironment({
         groundHeight,
         parent: sceneRoot,
@@ -595,8 +612,9 @@ const GROUND_WAIT_S = 20;
         box(groundContacts.slateAbout.value, [".site-footer .site-footer__label"]);
       }
       subsystemRegistry.register({
-        applyQuality(profile) {
-          groundContacts.slateContactGain.value = profile?.shadows?.enabled ? 0.6 : 1;
+        applyQuality() {
+          // Every tier draws shadows.
+          groundContacts.slateContactGain.value = 0.6;
         },
       });
       const groundTextures = createGroundTextures({
@@ -610,11 +628,15 @@ const GROUND_WAIT_S = 20;
             if (status.status === "ready") qualityState.holdSampling();
             if (qualityDebug) qualityDebug.ground = status;
           },
-          onSoilRoughnessChange(texture) {
-            groundContacts.slateSoilRoughness.value = texture;
-            groundContacts.slateSoilRoughnessOn.value = texture ? 1 : 0;
-            invalidateContent();
-          },
+          // Only the close soil samples the soil roughness, and the lite ground has none, so
+          // phones and laptops never request it and their opening does not wait on it.
+          onSoilRoughnessChange: liteGround
+            ? undefined
+            : (texture) => {
+                groundContacts.slateSoilRoughness.value = texture;
+                groundContacts.slateSoilRoughnessOn.value = texture ? 1 : 0;
+                invalidateContent();
+              },
           onDetailChange({
             colorMap,
             normalMap,
@@ -699,7 +721,6 @@ const GROUND_WAIT_S = 20;
             warmShaders("mountains", hillSilhouette.mesh);
         },
       });
-      hillSilhouette.applyQuality(state.profile);
       environmentRoot.add(hillSilhouette.mesh);
       subsystemRegistry.register(hillSilhouette);
       // The film's scattered rocks: loaded once the film is on and the tree has
@@ -939,8 +960,6 @@ const GROUND_WAIT_S = 20;
           shaderWarmup.warm(subject, (ready) => {
             measureScene(`shaders:${label}`, start);
             if (qualityDebug) (qualityDebug.shaders ||= {})[label] = ready ? "ready" : "unwarmed";
-            // warm() restores visibility; retain a quality change made while linking.
-            if (subject === hillSilhouette.mesh) hillSilhouette.applyQuality(state.profile);
             rendering.invalidateShadows();
             invalidateContent();
             resolve(ready);
@@ -974,7 +993,6 @@ const GROUND_WAIT_S = 20;
           await new Promise((resolve) => window.setTimeout(resolve, 0));
           return asset;
         },
-        includeLantern: true,
         onLanternReady: (asset) => lanternMount.stage(asset),
         // The watch waits on the sky's own programs and capture and the film's detail
         // (they link and build while the tree downloads), so its synchronous commit
@@ -1038,14 +1056,21 @@ const GROUND_WAIT_S = 20;
         onStatus(status) {
           if (status.status === "ready") qualityState.holdSampling();
           architectureStatus[status.kind] = status.status;
+          // Only a tree opening waits on the lantern. A downloaded lantern commits on the
+          // next drawn frame, which a hidden tab postpones, so the deadline leaves it be.
           if (
             !canvasShown &&
+            opening.view === "tree" &&
             status.kind === "lantern" &&
             status.status === "loading" &&
             !lanternDeadline
           )
             lanternDeadline = window.setTimeout(() => {
-              if (!canvasShown && !lanternMount.committed)
+              if (
+                !canvasShown &&
+                !lanternMount.committed &&
+                architectureStatus.lantern === "loading"
+              )
                 architectureAssets.cancelOptional("lantern");
               invalidateContent();
             }, 8000);
@@ -1110,8 +1135,9 @@ const GROUND_WAIT_S = 20;
       // itself, where it does.
       // A shot that looks at the lantern gives the line the lantern's flame instead (`kind`
       // "lantern"), its light LANTERN_GLOW world units about the flame: Lantern study, when an
-      // address or a script opens the film there, from the scene's start where the opening fit to the supplied
-      // lantern's stored outline puts it (opening-star.js openingFlame()), then the camera's.
+      // address or a script opens the film there, first where the opening fit to the supplied
+      // lantern's stored outline puts it (opening-flame.js createOpeningFlame(), once the lazy
+      // preparation chunk lands), then the camera's.
       let openingCameraStar = false;
       const openingSun = new Vector3(),
         openingWatch = new Vector3(),
@@ -1268,10 +1294,9 @@ const GROUND_WAIT_S = 20;
       let firstFrameDrawn = false;
       // The shot whose level the governor holds (shot-levels.js).
       let enteredShot = null;
-      // Governor steps link their programs at once and apply on a tour cut.
-      const adaptiveSteps = createDeferredQualityStep({
-        prepare: (profile) => rendering.prepareQuality(profile),
-      });
+      // Governor steps apply on a tour cut. Every step keeps the shadows and the fill
+      // light, so none changes a program key and none links ahead.
+      const adaptiveSteps = createDeferredQualityStep();
       // The lens's sources on screen (postprocess.js lensSource()) and its kept rect
       // (lensKeepRect()), reused each frame.
       const lensPoint = new Vector3(),
@@ -1334,11 +1359,12 @@ const GROUND_WAIT_S = 20;
             ? Math.max(0, (1 - tourPhase) * cameraTour.state.dwell)
             : Infinity;
         // Each step changes the tier or, below balanced, only the pixel ratio. A
-        // running tour takes it on a cut, where the crossfade's kept frame hides
-        // its one-off work.
+        // shown tour, even paused, or walk takes it on a cut, where the crossfade's
+        // kept frame hides its one-off work; without either (tour=0) it lands at once.
         const queuedProfile = adaptiveSteps.take({
           cut: transition.cut,
-          running: canvasShown && !site.sceneDoors?.closed,
+          running:
+            canvasShown && !site.sceneDoors?.closed && (cameraTour !== null || liveView.running),
           nowMs,
         });
         // Each shot keeps its own level (shot-levels.js): at a cut the incoming shot

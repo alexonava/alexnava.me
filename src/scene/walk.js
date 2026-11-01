@@ -455,7 +455,7 @@ export function createWalk({
     if (!forcedColors?.matches) return;
     // The hidden canvas stops drawing: restore the page without a dissolve.
     exit({ immediate: true });
-    // Arming may already have captured the mouse before input attaches.
+    // A capture granted with no walk to leave (exit releases its own) goes too.
     if (doc?.pointerLockElement === canvas) doc.exitPointerLock();
   };
   forcedColors?.addEventListener?.("change", onForcedColorsChange);
@@ -550,6 +550,8 @@ export function createWalk({
     page?.classList?.remove("scene-walk-hidden");
     clearTimeout(fadeTimer);
     fadeTimer = setTimeout(() => page?.classList?.remove("scene-walking"), c.uiFade * 1000);
+    // A walk left before it drives has no input to release the mouse its key captured.
+    if (doc?.pointerLockElement === canvas) doc.exitPointerLock();
   }
   function exit({ immediate = false } = {}) {
     if (phase === "idle") return false;

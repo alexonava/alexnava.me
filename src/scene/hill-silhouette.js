@@ -277,7 +277,7 @@ const perRange = (values, at = "vT.y") =>
 // (s0), with the cloud banks' average lift (s) and the path light the rock hazes toward (air).
 const SKY_BEHIND_GLSL = `vec3 d=normalize(vL), o=cameraPosition, W=vec3(.2126,.7152,.0722), K=vec3(.715,.625,.313);
 float b=dot(o,d), t=-b+sqrt(max(b*b-dot(o,o)+uSky.x,0.)), a=(o.y+d.y*t)*inversesqrt(uSky.x);
-vec3 s0=(filmNight(filmSky(a),a,1.)+filmBand(a))*uSky.y, lift=vec3(.24,.24,.3)*smoothstep(-.03,.17,a)*uSky.y, s=s0+lift, air=s0+${glslFloat(MOUNTAIN_AIR.lift)}*lift;
+vec3 s0=filmSky(a)*uSky.y, lift=vec3(.24,.24,.3)*smoothstep(-.03,.17,a)*uSky.y, s=s0+lift, air=s0+${glslFloat(MOUNTAIN_AIR.lift)}*lift;
 // The air glows warm toward the orb, as haze does toward a bright light (forward scattering).
 vec2 v=d.xz/max(length(d.xz),1e-4), toSun=normalize(uSun.xz-o.xz);
 air*=1.+vec3(.1,.03,-.05)*pow(max(dot(v,toSun),0.),10.);
@@ -347,12 +347,11 @@ export const RANGE_MIST_SHAPE = Object.freeze({ floor: -0.03, top: 0.016 });
 const RANGE_MIST_GLSL = `if(uMist.w>0.){float rmE=vL.y/r,rmA=atan(vL.z,vL.x),rmW=.5+.3*sin(rmA*17.+1.3)+.2*sin(rmA*41.+.4);
 c=mix(c,uMist.rgb,uMist.w*(1.-smoothstep(${glslFloat(RANGE_MIST_SHAPE.floor)},${glslFloat(RANGE_MIST_SHAPE.top)}*(.6+.8*rmW),rmE)));}`;
 
-// Film mountains: vertices ride on the camera (world = cameraPosition + position), as
-// the starfield does, so every shot and viewport gets a known backdrop. The ranges
-// (mountain-build.js) carry per vertex aTerrain (degrees below the column's crest,
-// range, a coarse vertex shade, massif height) and aForm (the
-// face's turn along the ring, its lean to the viewer, convex/concave fold, and the
-// nearer ranges' skyline in degrees).
+// Film mountains: vertices ride on the camera (world = cameraPosition + position), so
+// every shot and viewport gets a known backdrop. The ranges (mountain-build.js) carry
+// per vertex aTerrain (degrees below the column's crest, range, a coarse vertex shade,
+// massif height) and aForm (the face's turn along the ring, its lean to the viewer,
+// convex/concave fold, and the nearer ranges' skyline in degrees).
 // Each pixel is lit by the moon key: faces turn toward or away from it (wrapped
 // as the ground's are, MOUNTAIN_AIR.wrap, lit neutral grey to blue shadow),
 // broken by spurs, gullies and fine bands from polar noise whose cells stay at least
@@ -372,8 +371,8 @@ c=mix(c,uMist.rgb,uMist.w*(1.-smoothstep(${glslFloat(RANGE_MIST_SHAPE.floor)},${
 // plain's air (HORIZON_AIR, the lifted TERRAIN_HORIZON slate), and feet near the
 // floor or below the horizon haze to it over the ground's horizon distances
 // (HORIZON_HAZE), which hides where the ranges meet the plane. Transparent with no
-// blending so it draws after the stars and covers them, writing its depth layer
-// (depth-layers.js) exactly. Noise hashes reach about 1100 cells: highp.
+// blending, writing its depth layer (depth-layers.js) exactly. Noise hashes reach about
+// 1100 cells: highp.
 function mountainMaterial({ skyRadius, shellOpacity, sunPosition }) {
   const material = new ShaderMaterial({
     name: "EstateMountains",
@@ -683,11 +682,11 @@ function emptyRanges() {
 
 // The baseline keeps the South Downs ring; film swaps in the camera-centred ranges.
 // Their geometry is the lazy mountain-build.js chunk, requested only when the film
-// treatment is on at a visible quality (never on low): it builds in short slices and
-// lands at once where the change cannot show mid-shot (before the reveal, on a tour
-// cut, or while the tour is not running), otherwise fading in over the sky (0.45 s
-// under the canvas's fade-in, 1.8 s mid-shot; mountain-build.js entrance()). Until
-// then, or if the chunk fails, the film shows the empty stand-in.
+// treatment is on: it builds in short slices and lands at once where the change cannot
+// show mid-shot (before the reveal, on a tour cut, or while the tour is not running),
+// otherwise fading in over the sky (0.45 s under the canvas's fade-in, 1.8 s mid-shot;
+// mountain-build.js entrance()). Until then, or if the chunk fails, the film shows the
+// empty stand-in.
 // At a model tier (tier: high or balanced, the startup tier) the request also loads
 // the massifs' GLBs (MASSIFS.roles, at low fetch priority, beside the chunk),
 // and the build is the massifs with RANGE_BACKDROP's two rings behind them; if a GLB
@@ -733,14 +732,13 @@ export function createHillSilhouette({
       );
   };
   mesh.onBeforeRender = lightRanges;
-  // The massifs ride under the ranges' mesh, so the low tier hides them with it.
+  // The massifs ride under the ranges' mesh.
   const massifRoot = new Group();
   massifRoot.name = "film-massifs";
   massifRoot.visible = false;
   mesh.add(massifRoot);
   let disposed = false,
     active = false,
-    low = false,
     ranges = null,
     standIn = null,
     pending = null,
@@ -880,7 +878,7 @@ export function createHillSilhouette({
     massifs = null;
   }
   function request() {
-    if (pending || disposed || low || !active) return;
+    if (pending || disposed || !active) return;
     onStatus("loading");
     const wanted = ["high", "balanced"].includes(tier);
     let loaded = null;
@@ -944,13 +942,6 @@ export function createHillSilhouette({
       mesh.frustumCulled = !active;
       mesh.renderOrder = active ? MOUNTAIN_AIR.renderOrder : 0;
       massifRoot.visible = active && Boolean(massifs && ranges);
-      request();
-      return true;
-    },
-    applyQuality(profile) {
-      if (disposed) return false;
-      low = profile?.tier === "low";
-      mesh.visible = !low;
       request();
       return true;
     },

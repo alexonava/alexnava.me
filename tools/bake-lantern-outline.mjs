@@ -12,11 +12,11 @@ import { createLanternArchitecture } from "../src/scene/lantern.js";
 import { LANTERN_RESOLUTION } from "../src/scene/opening-lantern.js";
 import { glbAsset, modelBytes } from "../test/support/glb.mjs";
 
-export const LANTERN_TIERS = Object.freeze(["high", "balanced"]);
+const LANTERN_TIERS = Object.freeze(["high", "balanced"]);
 
 // The tier's lantern as the scene draws it, before the prop scale: its hull's corners as
 // integers (x, y, z in turn) and its luminous centre to 1e-4 lantern units.
-export function lanternOutline(tier) {
+function lanternOutline(tier) {
   const { root, luminousCenter, dispose } = createLanternArchitecture({
     asset: glbAsset(modelBytes("lantern", tier)),
   });

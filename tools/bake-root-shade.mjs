@@ -65,7 +65,7 @@ const HEXAGON = [
   [-1, 1],
   [0, 1],
 ];
-export function latticeClear(x, z, pitch = ROOT_LATTICE.pitch, margins = undefined) {
+function latticeClear(x, z, pitch = ROOT_LATTICE.pitch, margins = undefined) {
   let clear = Infinity;
   for (let k = 0; k < 6; k++) {
     const [ax, az] = HEXAGON[k],
@@ -316,7 +316,7 @@ export function latticeGround(base = groundBase()) {
 }
 // A lattice field at a world x/z, linear over the fine grid's triangles
 // (diagonal b-d, as the terrain), with the vertices and weights it used.
-export function latticeTriangle(wx, wz) {
+function latticeTriangle(wx, wz) {
   const { x, z, pitch, cols, rows } = ROOT_LATTICE,
     u = (wx - x) / pitch,
     v = (wz - z) / pitch;
@@ -342,7 +342,7 @@ const latticeLinear = (values, wx, wz) =>
 
 // Bake constants. The rests are small entry lips (high, over, top): the sunk
 // tree's resting roots already enter the knoll.
-export const BAKE = Object.freeze({
+const BAKE = Object.freeze({
   rest: Object.freeze({
     step: 0.2,
     low: -0.05,

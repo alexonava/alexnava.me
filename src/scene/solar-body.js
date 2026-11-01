@@ -3,8 +3,8 @@ import { starBlending } from "./depth-layers.js";
 
 // The disc's radius in world units.
 export const SOLAR_RADIUS = (6.5 * 1.15 * 0.81) / 2;
-// The sky's tiers (atmosphere.js and starfield.js read the profile's through this).
-const CELESTIAL_TIERS = Object.freeze(["high", "balanced", "low"]);
+// The sky's tiers (atmosphere.js reads the profile's through this).
+const CELESTIAL_TIERS = Object.freeze(["high", "balanced"]);
 // The star as a camera sees it (the owner's pick of 2026-10-25, "As a camera sees it", its glow
 // "bright … just … tight", the tighter of two; its lens flare is postprocess.js LENS_FX.flare):
 // the night is exposed for the moon and the clouds, so the star lies far past the exposure and
@@ -48,20 +48,6 @@ export function celestialTier(profile = {}) {
 }
 const glsl = (value) => (Number.isInteger(value) ? value.toFixed(1) : String(value));
 const vec3 = (values) => `vec3(${values.map(glsl).join(",")})`;
-export function createCelestialClock() {
-  let previous = null,
-    time = 0,
-    held = false;
-  return {
-    tick(elapsed = 0, reduced = false) {
-      const now = Number.isFinite(elapsed) ? elapsed : (previous ?? 0);
-      if (previous !== null && !reduced && !held) time += Math.max(0, now - previous);
-      previous = now;
-      held = reduced;
-      return time;
-    },
-  };
-}
 export function seededRandom(seed = 23917) {
   let state = seed >>> 0;
   return () => {
@@ -133,7 +119,7 @@ void main() {
 }
 `;
 
-export function createSolarBody({ parent, camera, position, profile = {} }) {
+export function createSolarBody({ parent, camera, position }) {
   const root = new Group(),
     parentQuaternion = new Quaternion();
   root.name = "solar-body";
@@ -171,19 +157,10 @@ export function createSolarBody({ parent, camera, position, profile = {} }) {
   disc.name = "solar-disc";
   disc.renderOrder = 100;
   root.add(disc);
-  let disposed = false,
-    tier = celestialTier(profile);
+  let disposed = false;
   const controller = {
     lifecycleOrder: 31,
     root,
-    get tier() {
-      return tier;
-    },
-    applyQuality(next = {}) {
-      if (disposed) return false;
-      tier = celestialTier(next);
-      return true;
-    },
     update() {
       if (disposed) return false;
       if (camera) {
@@ -205,6 +182,5 @@ export function createSolarBody({ parent, camera, position, profile = {} }) {
       return true;
     },
   };
-  controller.applyQuality(profile);
   return controller;
 }

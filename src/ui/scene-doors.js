@@ -188,7 +188,7 @@
     // No doors under reduced motion or forced colours (styles.css).
     if (!doors || doors.hidden || window.getComputedStyle?.(doors).display === "none") return;
     glows = Array.from(doors.querySelectorAll(".scene-doors__glow"));
-    if (now() >= FAILSAFE_MS) {
+    if ((clock() ?? now()) >= FAILSAFE_MS) {
       // The stylesheet is opening them already; let it, then take them off the page.
       state = "failsafe";
       window.setTimeout(hide, LEAVE_MS);

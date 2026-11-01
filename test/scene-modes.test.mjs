@@ -3,19 +3,22 @@ import test from "node:test";
 import {
   DEFAULT_SCENE_OPENING,
   resolveSceneOpening,
-  resolveSceneView,
+  SCENE_VIEWS,
 } from "../src/scene/scene-modes.js";
 import { DIRECTED_SHOTS } from "../src/scene/directed-shots.js";
 
-test("ordinary visits consistently resolve the Lantern study opener", () => {
+// An ordinary visit opens The watch: main.js chooseOpening() selects it before anything
+// resolves (boot.test.mjs). The resolver's own default serves a script that drives the
+// scene without that choice.
+test("with no address and no selection the resolver falls back to Lantern study", () => {
+  assert.deepEqual(SCENE_VIEWS, ["watch", "tree"]);
   assert.ok(Object.isFrozen(DEFAULT_SCENE_OPENING));
-  for (const search of ["", "?quality=high", "?sceneDebug=1", "?tour=0", "?architecture=classic"])
+  for (const search of ["", "?quality=high", "?sceneDebug=1", "?tour=0"])
     assert.deepEqual(resolveSceneOpening(search), { view: "tree", angle: 1 });
   assert.equal(DIRECTED_SHOTS.tree[DEFAULT_SCENE_OPENING.angle].name, "Lantern study");
-  assert.equal(resolveSceneView(""), "tree");
 });
 
-test("public view and angle addresses retain their existing one-based meanings", () => {
+test("public view and angle addresses count angles from one", () => {
   for (const view of ["watch", "tree"]) {
     assert.deepEqual(resolveSceneOpening(`?view=${view}`), { view, angle: 0 });
     for (let angle = 1; angle <= DIRECTED_SHOTS[view].length; angle++)

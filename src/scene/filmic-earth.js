@@ -33,7 +33,6 @@ export const FILM_GROUND_PRESETS = Object.freeze({
 export function createEarthDetail({
   preset: presetName = "slate",
   profile,
-  disabled,
   anisotropy,
   publish,
   restore,
@@ -66,7 +65,6 @@ export function createEarthDetail({
     typeof publishSoilRoughness === "function"
       ? createSoilRoughness({
           profile,
-          disabled,
           anisotropy,
           publish: publishSoilRoughness,
           report: reportSoil,
@@ -76,7 +74,6 @@ export function createEarthDetail({
       : null;
   const detail = createStoneDetailController({
     profile: { tier: "low" },
-    disabled,
     loadImage,
     report,
     kinds: preset.kinds,

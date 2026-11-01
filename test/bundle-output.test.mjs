@@ -41,17 +41,19 @@ const ROLES = [
   "mountain-summit",
 ];
 
-const slateMaps = (tier) => {
-  const size = tier === "high" ? 1024 : 512;
-  return [
-    `slate-color-${size}.webp`,
-    `slate-normal-${size}.webp`,
-    "slate-detail-512.webp",
-    `slate-grit-${size}.webp`,
-    `slate-relief-${size}.webp`,
-    "slate-soil-roughness-512.webp",
-  ];
-};
+// The slate maps each tier requests: the close soil's grit, relief and roughness on high
+// alone (phones and laptops take the lite ground, which has no close soil).
+const slateMaps = (tier) =>
+  tier === "high"
+    ? [
+        "slate-color-1024.webp",
+        "slate-normal-1024.webp",
+        "slate-detail-512.webp",
+        "slate-grit-1024.webp",
+        "slate-relief-1024.webp",
+        "slate-soil-roughness-512.webp",
+      ]
+    : ["slate-color-512.webp", "slate-normal-512.webp", "slate-detail-512.webp"];
 
 after(async () => {
   assert.equal(path.dirname(path.resolve(bundleScratch)), scratchRoot);
@@ -108,17 +110,14 @@ async function readSceneStatic() {
   return [...(await sceneScripts()).loaded.values()].join("\n");
 }
 
-test("UI and capability worker together stay under the existing LCP budget", async () => {
+test("UI and capability worker together stay under the LCP budget", async () => {
   const file = await findHashedScript("app");
   const { size } = await stat(file);
   const worker = await stat(await findHashedScript("webgl-probe"));
   const kb = (size + worker.size) / 1024;
-  // 36 kB since a laptop's opening is chosen from its GPU (webgl-probe.js gpuClass, quality.js's
-  // lean path and pixel budgets) and held doors part on a tap, key or focus again, about 1.9 kB
-  // (the owner's call of 2026-10-27, "go for performance"); 34 kB since the opening's doors
-  // (scene-doors.js), its preparation and its opener's chance (main.js, scene-modes.js,
-  // opening-preparation.js) and the lantern opening's light met (the owner's call of
-  // 2026-10-26); 30 kB before.
+  // The owner's 36 kB: the UI with the opening's doors (scene-doors.js), its preparation
+  // and choice (main.js, opening-preparation.js) and a laptop's lean path (shared/quality-tier.js),
+  // plus the worker the probe runs in.
   assert.ok(kb < 36, `app and worker total ${kb.toFixed(1)} kB; budget is 36 kB`);
 });
 
@@ -136,40 +135,55 @@ test("the cold WebGL probe is a separate same-origin worker named by the UI", as
   assert.match(workerSource, /OffscreenCanvas/);
   assert.doesNotMatch(workerSource, /gl_Position/, "the capability worker contains no Three.js");
   assert.deepEqual(chunkImports(workerSource), { static: [], dynamic: [] });
+  // The worker posts the probe's result alone; spawning it and supportsWebGL are the UI's.
+  assert.match(app, /prepareWebGLCapabilities/);
+  assert.match(app, /supportsWebGL/);
+  assert.doesNotMatch(workerSource, /prepareWebGLCapabilities|supportsWebGL/);
+});
+
+test("the UI bundle and the scene each carry their own half of quality, and the probe once", async () => {
+  const app = await readFile(await findHashedScript("app"), "utf8");
+  const scene = await readSceneStatic();
+  // The UI picks the startup tier; profiles, composition and the governor are the scene's.
+  assert.match(app, /selectStartupTier/);
+  assert.doesNotMatch(app, /createSceneQualityGovernor|getSceneCompositionProfile/);
+  assert.match(scene, /createSceneQualityGovernor/);
+  // The scene reads the UI's probe, tier choice and motion query from BabelSite.
+  for (const name of [
+    "selectStartupTier",
+    "prefers-reduced-data",
+    "swiftshader",
+    "reducedMotionQuery",
+  ])
+    assert.doesNotMatch(scene, new RegExp(name, "i"), name);
 });
 
 test("scene bundle stays under the deferred-payload budget", async () => {
   // The budget covers every byte a default visitor's scene load downloads:
-  // the entry and each chunk it imports statically. The film's terrain,
-  // ranges, rocks and lantern flame load on demand only.
+  // the entry and each chunk it imports statically. Every dynamic import
+  // loads on demand only.
   const { loaded } = await sceneScripts();
   // The entry and one shared Three.js chunk.
   assert.equal(loaded.size, 2, `scene loads ${[...loaded.keys()]}`);
   let bytes = 0;
   for (const name of loaded.keys()) bytes += (await stat(path.join(scriptsDir, name))).size;
   const kb = bytes / 1024;
-  // 844 kB since a laptop opens fast (the owner's call of 2026-10-27: the lean path, the
-  // opening that reveals as it draws and steps down hidden, the ground's early link, about
-  // 1.2 kB); 838 kB since each sun shot shows its own sun and the cel sky's lit plates (the owner's call
-  // of 2026-10-27: the per-shot sun on the cut, the plate set and the shot looks, about 2.4 kB);
-  // 835 kB since a lantern opening's light lines up from the scene's start: the supplied
-  // lantern's stored outline (opening-lantern.js) and its fit (opening-star.js openingFlame())
-  // are about 3.3 kB of it (the owner's call of 2026-10-26); 831 kB since the fault's own shots
-  // joined the tour (the owner's call of 2026-10-17: their framing rides in the terrain's chunk,
-  // the entry keeps their hooks); 830 kB since the loading line's star lines up with the
-  // opening shot's: The watch's stored outline (opening-outline.js) is about 10 kB of it.
+  // The owner's 844 kB. The watch's stored outline (opening-outline.js), which lines the
+  // loading line's star up with the opening shot's, is about 10 kB of it; the fault's shots
+  // keep only their hooks here, and their framing rides in the terrain's chunk.
   assert.ok(
     kb < 844,
     `scene bundle (${[...loaded.keys()].join(" + ")}) is ${kb.toFixed(3)} kB; budget is 844 kB`,
   );
 });
 
-test("model and task preparation, optional effects, the lite ground's noise and the walk are the only lazy chunks, and Three.js ships once", async () => {
+test("model and task preparation, optional effects, the lite ground's noise, October's lightning and the walk are the only lazy chunks, and Three.js ships once", async () => {
   const { entry, loaded, lazy } = await sceneScripts();
   assert.deepEqual(lazy.map((name) => name.replace(/\.[a-f0-9]{8}\.js$/, "")).sort(), [
     "scene.architecture-prepare",
     "scene.cloud-plate",
     "scene.lantern-flame",
+    "scene.lightning",
     "scene.mountain-build",
     "scene.noise-map",
     "scene.preparation-tasks",
@@ -508,7 +522,7 @@ test("the pages publish no picture, and the share card's backdrop stays unpublis
   });
 });
 
-test("the UI carries the loading line and its opening subjects' byte sizes; the scene only reports to it", async () => {
+test("the UI carries the loading line and its trees' byte sizes; the scene only reports to it", async () => {
   const app = await readFile(await findHashedScript("app"), "utf8");
   const scene = await readSceneStatic();
   assert.match(app, /scene-loader__value/);
@@ -516,15 +530,17 @@ test("the UI carries the loading line and its opening subjects' byte sizes; the 
   assert.match(app, /scene-star/);
   assert.match(app, /sceneLoader/);
   for (const tier of ["high", "balanced"]) {
+    // The line counts the tree's bytes; the lantern's completion comes from preparation.
+    const tree = await stat(path.join(projectRoot, "images", "architecture", `tree-${tier}.glb`));
+    assert.ok(app.includes(`tree:${tree.size}`), `the UI names tree-${tier}'s ${tree.size} bytes`);
     for (const role of ["tree", "lantern"]) {
       const { size } = await stat(
         path.join(projectRoot, "images", "architecture", `${role}-${tier}.glb`),
       );
-      assert.ok(app.includes(`${role}:${size}`), `the UI names ${role}-${tier}'s ${size} bytes`);
       assert.ok(!scene.includes(`${role}:${size}`), `the scene carries no ${role}-${tier} size`);
     }
   }
-  for (const role of ROLES.filter((item) => !["tree", "lantern"].includes(item))) {
+  for (const role of ROLES.filter((item) => item !== "tree")) {
     const { size } = await stat(
       path.join(projectRoot, "images", "architecture", `${role}-high.glb`),
     );
@@ -626,7 +642,7 @@ test("early tree and lantern model revisions change only their UI manifest entri
         text: await readFile(path.join(fixture, "dist", "scripts", names[0]), "utf8"),
       };
     }
-    // The UI's model manifest: each tier's early tree and lantern URLs and sizes.
+    // The UI's model manifest: each tier's early tree and lantern URLs, and its tree's size.
     const manifest = (text) => ({
       urls: text.match(/\/images\/architecture\/[\w-]+\.[a-f0-9]{8}\.glb/g),
       // Model payloads exceed 100 bytes; the pure selector also names tree:4.
@@ -637,7 +653,7 @@ test("early tree and lantern model revisions change only their UI manifest entri
     const oldUrl = `/images/architecture/tree-high.${sha8(sourceBefore)}.glb`;
     const oldSize = `tree:${sourceBefore.length}`;
     assert.equal(was.urls.length, 4);
-    assert.equal(was.sizes.length, 4);
+    assert.equal(was.sizes.length, 2, "the loading line counts the trees alone");
     assert.equal(
       was.urls.filter((url) => url === oldUrl).length,
       1,
@@ -656,7 +672,7 @@ test("early tree and lantern model revisions change only their UI manifest entri
       sizes: was.sizes.map((size) => (size === oldSize ? `tree:${changed.length}` : size)),
     });
     // An unchanged rebuild publishes the same UI. The selected opener's
-    // lantern also changes precisely its own URL and size.
+    // lantern also changes precisely its own URL.
     assert.equal((await buildApp()).name, after.name);
     const lantern = path.join(fixture, "images", "architecture", "lantern-high.glb");
     const lanternBefore = await readFile(lantern);
@@ -668,9 +684,7 @@ test("early tree and lantern model revisions change only their UI manifest entri
       urls: manifest(after.text).urls.map((url) =>
         url.replace(sha8(lanternBefore), sha8(lanternAfter)),
       ),
-      sizes: manifest(after.text).sizes.map((size) =>
-        size === `lantern:${lanternBefore.length}` ? `lantern:${lanternAfter.length}` : size,
-      ),
+      sizes: manifest(after.text).sizes,
     });
     const rock = path.join(fixture, "images", "architecture", "lichen-rock-high.glb");
     await writeFile(rock, Buffer.concat([await readFile(rock), Buffer.from("fixture")]));
@@ -732,11 +746,13 @@ test("models and slate maps are deferred: the scene entry names all copies, the 
       assert.ok(loaded.get(entry).includes(`/images/materials/${published}`), published);
     }
   }
+  // No tier draws a 512 close soil, so the entry names none.
+  assert.doesNotMatch(loaded.get(entry), /slate-(grit|relief)-512/);
 });
 
 test("the complete scene fits 7.25 MiB on high and 3.5 MiB on balanced, and each model the loader's limit", async () => {
   // A live scene downloads the tree, lantern, both rocks, the three
-  // Meshy massifs, the slate's five maps and both optional coastal maps.
+  // massifs, the slate maps its tier requests, both optional coastal maps and four sky plates.
   // Photographic materials have an explicit aggregate allowance; deferring
   // their requests never removes them from this full-scene accounting.
   for (const [tier, budget] of [

@@ -272,7 +272,7 @@ function summits(table, seed, cells) {
 // get warped, shouldered flanks; the low windows keep their 2.6 degree ceiling.
 // As the backdrop behind the massifs (RANGE_BACKDROP) a range has no
 // authored peaks and its noise rises to capScale of the background caps.
-function* crestSteps(range, backdrop = null) {
+export function* crestSteps(range, backdrop = null) {
   const {
     columns,
     share,
@@ -378,12 +378,6 @@ function* crestSteps(range, backdrop = null) {
   return crest;
 }
 
-// Crest elevation in degrees per range and column, near range first; as the
-// massifs' backdrop (RANGE_BACKDROP) with `backdrop`.
-export function mountainCrests(backdrop = null) {
-  return MOUNTAINS.share.map((_, range) => run(crestSteps(range, backdrop)));
-}
-
 // Periodic box smooth and max filter over `radius` columns each way.
 function smoothRing(values, radius) {
   const n = values.length,
@@ -436,7 +430,7 @@ export function mountainRows(crest, smoothed = MOUNTAINS.smooth.map((r) => smoot
 //   clamped +-1; the nearer ranges' skyline in degrees, -90 on the near range).
 // backdrop: build only its ranges, with its crests; nearer: the massifs'
 // skyline per column (degrees), which the backdrop's mist rises from too.
-function* geometrySteps({ backdrop = null, nearer = null } = {}) {
+export function* geometrySteps({ backdrop = null, nearer = null } = {}) {
   const { radii, rows: rowRadius, columns, slope: slopeGain, lean, massif, smooth } = MOUNTAINS;
   const built = backdrop ? backdrop.ranges : radii.map((_, range) => range),
     crests = [];
@@ -558,12 +552,6 @@ function run(steps) {
     const next = steps.next();
     if (next.done) return next.value;
   }
-}
-
-// The whole geometry at once (tests): the five rings, or with { backdrop,
-// nearer } the backdrop behind the massifs.
-export function createMountainGeometry(options) {
-  return run(geometrySteps(options));
 }
 
 // The massifs: three real Alpine massifs from public elevation data (the owner's
@@ -747,7 +735,7 @@ function facesCamera(p, a, b, c) {
 
 // The snowline's reference along a massif, as the rings' (massif): its
 // skyline's maximum over 3 degrees each way, then averaged over 4.
-export function rangeMassif({ values }) {
+function rangeMassif({ values }) {
   const { bin } = RANGE_SKY,
     n = values.length,
     wide = Math.round(3 / bin),
@@ -782,7 +770,7 @@ export function rangeMassif({ values }) {
 //   which the shader turns the object-space normal map into the world,
 // and the GLB's uv. Also returns the massifs' skyline per ring column (the
 // backdrop's nearer skyline) and the nearer layers' skyline texels (RANGE_SKY).
-function* rangeSteps(models, placements = RANGE_PLACEMENTS) {
+export function* rangeSteps(models, placements = RANGE_PLACEMENTS) {
   const { bin } = RANGE_SKY,
     { count: sectors, seam } = MOUNTAINS.sectors,
     width = 360 / sectors;
@@ -911,13 +899,7 @@ function* rangeSteps(models, placements = RANGE_PLACEMENTS) {
   return { geometries, nearer, texture, placed };
 }
 
-// The massifs and their backdrop at once (tests): models as placeRange()
-// takes them, keyed by role.
-export function createRangeGeometry(models, placements = RANGE_PLACEMENTS) {
-  return run(rangeSteps(models, placements));
-}
-
-// The whole Meshy build: the massifs, then the backdrop rings behind them with
+// The whole mountain build: the massifs, then the backdrop rings behind them with
 // the massifs' skyline as their nearer one. `texels` (RANGE_SKY.texture x 4
 // bytes) receives the nearer layers' skyline.
 function* composedSteps(models, texels) {
@@ -1009,7 +991,7 @@ export function sectorsInView(camera) {
 // seconds of drawn frames (each frame's step at most 0.1 s, so a hidden or
 // paused page resumes where it left off). The fade blends the mountain
 // material by a constant alpha over what the canvas already shows there (the
-// sky, its clouds and stars), its depth-layer code too, so the grade's sky-only
+// sky and its clouds), its depth-layer code too, so the grade's sky-only
 // cel step and ink (postprocess.js) ease off with the colour and no band pops.
 // Literal three constants (CustomBlending 5, AddEquation 100,
 // ConstantAlphaFactor 213, OneMinusConstantAlphaFactor 214) keep this chunk

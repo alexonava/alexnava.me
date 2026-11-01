@@ -247,7 +247,6 @@ test("only The watch opens on the star; other openings and stale outlines give n
   };
   assert.ok(openingStar(base));
   assert.equal(openingStar({ ...base, selected: "tree" }), null);
-  assert.equal(openingStar({ ...base, selected: "tower" }), null, "the lookout's view is gone");
   assert.equal(openingStar({ ...base, angle: 1 }), null);
   assert.equal(openingStar({ ...base, tier: "low" }), null, "no outline for a tier");
   assert.equal(openingStar({ ...base, width: 0 }), null);

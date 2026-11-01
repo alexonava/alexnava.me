@@ -10,12 +10,13 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // The UI entry stays small for first paint. The scene entry carries Three.js
 // and the scene's runtime, then main.js loads it after the hero has rendered.
-// The scene is an ES module split by esbuild: code reached only through a
-// dynamic import() (the film's terrain, ranges, rocks and lantern flame)
-// becomes a lazy chunk, and code it shares with the entry (Three.js)
-// becomes one static chunk that the entry imports. Every chunk keeps the scene.*.js prefix and a content hash.
-// The scene builds first: the UI names the scene's static chunks so main.js
-// can preload them beside the entry (see buildScripts).
+// The scene is an ES module split by esbuild: every dynamically imported
+// module becomes a lazy chunk named after its file, and code it shares with
+// the entry (Three.js) becomes one static chunk that the entry imports. Every
+// chunk keeps the scene.*.js prefix and a content hash.
+// The scene builds first, then the capability worker and the doors: the UI
+// names the scene's static chunks so main.js can preload them beside the
+// entry, and the worker's and the doors' URLs (see buildScripts).
 const APP_ENTRY = "src/app.js";
 const SCENE_ENTRY = "src/scene-entry.js";
 const WEBGL_PROBE_ENTRY = "src/webgl-probe-worker.js";
@@ -58,6 +59,8 @@ const STATIC_FILES = [
   ...PUBLIC_FILES.map((file) => ({ source: `${PUBLIC_DIR}/${file}`, destination: file })),
   { source: `${PUBLIC_DIR}/site-agents.md`, destination: "AGENTS.md" },
 ];
+// Watched as a whole. Every file in images/ is fingerprinted, so fonts/ alone
+// publishes a plain copy (its licence).
 const STATIC_DIRS = ["fonts", "images"];
 // Sources the build publishes only as hashed copies (path relative to the
 // project root, any separator).
@@ -167,10 +170,10 @@ async function fontAssetManifest() {
   return { urls, files };
 }
 
-// The film slate's maps (images/materials/slate-*.webp) are hashed too:
-// { source name: hashed URL }, which the scene entry reads (stone-detail.js).
 // The sky's plates, by key (src/scene/cloud-plate.js CLOUD_PLATES restates them).
 const CLOUD_PLATE_KEYS = ["moon", "close-up", "root-and-lantern", "broken-coast"];
+// The film slate's maps (images/materials/slate-*.webp) are hashed too:
+// { source name: hashed URL }, which the scene entry reads (stone-detail.js).
 const SLATE_MAPS = [
   "color-1024",
   "normal-1024",
@@ -178,8 +181,6 @@ const SLATE_MAPS = [
   "relief-1024",
   "color-512",
   "normal-512",
-  "grit-512",
-  "relief-512",
   "detail-512",
   "soil-roughness-512",
 ];
@@ -307,22 +308,24 @@ function fingerprintChunks({ basename, entry: source }, { metafile, outputFiles 
 }
 
 // The scene loads every role. The UI can request the startup tree and lantern
-// beside the scene bundle, so it names only those: the other roles' hashes (the
-// rocks among them) then never change the UI bundle.
+// beside the scene bundle, so it names only those, with the trees' sizes: the
+// other roles' hashes (the rocks among them) then never change the UI bundle.
 // Returns the published scripts, entry first, as [{ name, text, lazy }].
 async function buildScriptBundle(
   { basename, entry, split },
-  architecture,
-  materials,
+  { architecture, materials, paper },
   sceneModulePreloads,
   webglProbeUrl,
   doorsUrl,
 ) {
   const options = scriptBuildOptions(entry, split);
-  const { urls, sizes } = architecture ?? (await architectureAssetManifest());
-  const openingModels = (manifest) =>
+  const { urls, sizes } = architecture;
+  const openingModels = (manifest, roles) =>
     Object.fromEntries(
-      Object.entries(manifest).map(([tier, { tree, lantern }]) => [tier, { tree, lantern }]),
+      Object.entries(manifest).map(([tier, files]) => [
+        tier,
+        Object.fromEntries(roles.map((role) => [role, files[role]])),
+      ]),
     );
   // The scene manifests are string literals that the scene parses: an
   // object-valued define becomes a virtual module that splitting places in the
@@ -331,33 +334,29 @@ async function buildScriptBundle(
     entry === SCENE_ENTRY
       ? {
           __BABEL_ARCHITECTURE_URLS__: JSON.stringify(JSON.stringify(urls)),
-          __BABEL_MATERIAL_URLS__: JSON.stringify(
-            JSON.stringify((materials ?? (await materialAssetManifest())).urls),
-          ),
-          __BABEL_COAST_MATERIAL_URL__: JSON.stringify(
-            (materials ?? (await materialAssetManifest())).coastUrl,
-          ),
-          __BABEL_COAST_ALBEDO_URL__: JSON.stringify(
-            (materials ?? (await materialAssetManifest())).coastAlbedoUrl,
-          ),
-          __BABEL_CLOUD_PLATE_URLS__: JSON.stringify(
-            JSON.stringify((materials ?? (await materialAssetManifest())).cloudPlateUrls),
-          ),
+          __BABEL_MATERIAL_URLS__: JSON.stringify(JSON.stringify(materials.urls)),
+          __BABEL_COAST_MATERIAL_URL__: JSON.stringify(materials.coastUrl),
+          __BABEL_COAST_ALBEDO_URL__: JSON.stringify(materials.coastAlbedoUrl),
+          __BABEL_CLOUD_PLATE_URLS__: JSON.stringify(JSON.stringify(materials.cloudPlateUrls)),
         }
       : {
-          __BABEL_ARCHITECTURE_PREFETCH_URLS__: JSON.stringify(openingModels(urls)),
-          // The same files' sizes, which the title card's loading line
-          // (src/ui/scene-loader.js) counts each download against.
-          __BABEL_ARCHITECTURE_PREFETCH_BYTES__: JSON.stringify(openingModels(sizes)),
+          __BABEL_ARCHITECTURE_PREFETCH_URLS__: JSON.stringify(
+            openingModels(urls, ["tree", "lantern"]),
+          ),
+          // The trees' sizes, which the title card's loading line
+          // (src/ui/scene-loader.js) counts their downloads against.
+          __BABEL_ARCHITECTURE_PREFETCH_BYTES__: JSON.stringify(openingModels(sizes, ["tree"])),
           __BABEL_SCENE_MODULE_PRELOADS__: JSON.stringify(sceneModulePreloads ?? []),
           __BABEL_WEBGL_PROBE_URL__: JSON.stringify(webglProbeUrl ?? ""),
           __BABEL_DOORS_URL__: JSON.stringify(doorsUrl ?? ""),
         };
+  // The capability worker posts getWebGLCapabilities() alone: shared/webgl-probe.js
+  // leaves the boot's worker spawner out of its bundle.
+  if (entry === WEBGL_PROBE_ENTRY) options.define.__BABEL_WEBGL_PROBE_WORKER__ = "true";
   if (entry === DOORS_ENTRY) {
-    const { urls: paper } = await paperAssetManifest();
     options.define.__BABEL_PAPER_URLS__ = JSON.stringify({
-      detail: paper["/images/paper/paper-detail.webp"],
-      height: paper["/images/paper/paper-height.webp"],
+      detail: paper.urls["/images/paper/paper-detail.webp"],
+      height: paper.urls["/images/paper/paper-height.webp"],
     });
   }
   const result = await build(options);
@@ -371,8 +370,9 @@ async function buildScriptBundle(
 // static import (the shared Three.js chunk) only after downloading and parsing
 // the whole entry, one round trip later; the UI bundle therefore names those
 // chunks, and main.js adds a modulepreload for each beside the entry script.
-// The lazily imported chunks are not named. Returns [{ script, chunks }].
-async function buildScripts(architecture, materials) {
+// The lazily imported chunks are not named. `assets` holds the architecture,
+// material and paper manifests. Returns [{ script, chunks }].
+async function buildScripts(assets) {
   const built = [];
   let sceneModulePreloads;
   let webglProbeUrl;
@@ -380,8 +380,7 @@ async function buildScripts(architecture, materials) {
   for (const script of SCRIPT_ENTRIES) {
     const chunks = await buildScriptBundle(
       script,
-      architecture,
-      materials,
+      assets,
       sceneModulePreloads,
       webglProbeUrl,
       doorsUrl,
@@ -439,7 +438,7 @@ async function writePayload(DIST_DIR) {
   const paper = await paperAssetManifest();
 
   const scriptPaths = {};
-  for (const { script, chunks } of await buildScripts(architecture, materials)) {
+  for (const { script, chunks } of await buildScripts({ architecture, materials, paper })) {
     for (const { name, text } of chunks) await writeFile(join(DIST_SCRIPTS_DIR, name), text);
     scriptPaths[script.basename] = `/scripts/${chunks[0].name}`;
 
@@ -481,16 +480,13 @@ async function writePayload(DIST_DIR) {
     }),
   );
   // Fingerprinted sources publish only under their hashed names: the fonts,
-  // every model, the slate maps and the opening's paper. Nothing the
-  // build writes names their source paths, so no plain copy is kept.
-  await Promise.all(
-    STATIC_DIRS.map((dir) =>
-      cp(join(__dirname, dir), join(DIST_DIR, dir), {
-        recursive: true,
-        filter: (source) => !isFingerprintedSource(relative(__dirname, source)),
-      }),
-    ),
-  );
+  // every model, the slate, coast and sky maps and the opening's paper.
+  // Nothing the build writes names their source paths, so no plain copy is
+  // kept; images/ holds nothing else, and fonts/ keeps its licence.
+  await cp(join(__dirname, "fonts"), join(DIST_DIR, "fonts"), {
+    recursive: true,
+    filter: (source) => !isFingerprintedSource(relative(__dirname, source)),
+  });
 
   // A font, model or map revision receives a new URL.
   await mkdir(join(DIST_DIR, "fonts"), { recursive: true });
@@ -540,10 +536,7 @@ async function writePayload(DIST_DIR) {
   console.log(`hashed assets: css/${cssHashedName}`);
 }
 
-export async function buildDist(
-  outputDirectory = join(__dirname, "dist"),
-  { retainAssets = false } = {},
-) {
+async function buildDist(outputDirectory = join(__dirname, "dist"), { retainAssets = false } = {}) {
   await publishBuild({
     projectRoot: __dirname,
     outputDirectory,
@@ -580,8 +573,11 @@ async function main() {
       directories: BUILD_INPUT_DIRS,
     });
   } else if (mode === "--check") {
-    const architecture = await architectureAssetManifest();
-    await buildScripts(architecture, await materialAssetManifest());
+    await buildScripts({
+      architecture: await architectureAssetManifest(),
+      materials: await materialAssetManifest(),
+      paper: await paperAssetManifest(),
+    });
     console.log(`verified ${SCRIPT_ENTRIES.map(({ entry }) => entry).join(", ")}`);
   } else {
     await buildDist(outputDirectory, { retainAssets });

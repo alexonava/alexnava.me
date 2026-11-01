@@ -30,9 +30,13 @@
 - **Instrument Sans** by The Instrument Sans Project Authors — SIL Open Font
   License 1.1.
 
-Both are self-hosted as variable woff2 subsets in `fonts/`. Their copyright
-notices and the license text are in `fonts/OFL.txt`, which the site publishes
-beside them at `/fonts/OFL.txt`.
+Both are self-hosted as woff2 subsets in `fonts/`, modified versions under the
+license's terms: Cormorant Garamond as a static 700 instance and Instrument Sans
+as a variable font, each cut to Basic Latin and the few typographic marks the
+site uses ([Assets](ASSETS.md#fonts)). Neither font declares a Reserved Font
+Name, so the subsets keep their names. Their copyright notices and the license
+text are in `fonts/OFL.txt`, which the site publishes beside them at
+`/fonts/OFL.txt`.
 
 ## Source archive
 
@@ -74,7 +78,7 @@ The tree ships at 39,827 (high) and 26,025 (balanced) triangles, with
 `KHR_mesh_quantization` geometry and embedded WebP colour, metal-roughness and
 normal maps. The lantern ships at 3,000 triangles on both tiers, with float
 positions, quantized normals and texture coordinates, and embedded colour,
-metal-roughness, normal and emission maps: WebP at 1024 on balanced; on high,
+metal-roughness, normal and emission maps: WebP at 512 on balanced; on high,
 WebP at 2048 except the normal map, an embedded 2048 JPEG.
 
 The stand-in lantern, the iron post lantern the scene shows until the
@@ -147,7 +151,7 @@ commissioned.
 
 Tool: [Meshy](https://www.meshy.ai/).
 
-The close soil maps `images/materials/slate-{grit,relief}-{1024,512}.webp` are
+The close soil maps `images/materials/slate-{grit,relief}-1024.webp` are
 derived from ["Dirt"](https://polyhaven.com/a/dirt) by Charlotte Baglioni on
 Poly Haven, released under [CC0](https://polyhaven.com/license): the grit map is
 its colour's luminance against its own local mean, the relief map is a height

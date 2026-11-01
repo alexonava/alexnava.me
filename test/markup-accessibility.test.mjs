@@ -92,8 +92,8 @@ test("the scene is the landing content, and nothing covers or dims it", async ()
   assert.match(html, /id="home-scene" class="scene-canvas"/);
   const main = html.match(/<main[\s\S]*?<\/main>/)[0];
   assert.match(main, /id="home" class="hero section"/);
-  assert.doesNotMatch(html, /role="dialog"|aria-modal|class="panel-|estate-map|data-panel/);
-  assert.doesNotMatch(styles, /body::after|data-panel-open|\.panel-|\.estate-/);
+  assert.doesNotMatch(html, /role="dialog"|aria-modal/);
+  assert.doesNotMatch(styles, /body::after/);
 });
 
 const LOADER_MARKUP =
@@ -446,7 +446,6 @@ test("without scripts the footer shows the email and LinkedIn in Contact's place
     anchors[1][1],
     'class="site-footer__link" href="https://www.linkedin.com/in/alex-nava/" target="_blank" rel="noopener"',
   );
-  assert.doesNotMatch(html, /data-scene-fallback|scene-entry|about-text|scene-fallback-content/);
 });
 
 test("homepage modification metadata matches its public Markdown equivalent", async () => {
@@ -569,14 +568,15 @@ test("every contact address sits inside Cloudflare email_off markers", async () 
   assert.doesNotMatch(outside, /mailto:|[\w.+-]+@[\w-]+\.[a-z]{2,}/i);
 });
 
-test("variable font faces supply real weights", async () => {
+test("font faces supply real weights", async () => {
   const styles = await readStyles();
   const html = await readIndexHtml();
   const faces = styles.match(/@font-face\s*\{[^}]*\}/g) || [];
   assert.equal(faces.length, 2);
+  // The name's face is its static 700 instance; the body's keeps the variable axis.
   assert.match(
     faces.find((face) => face.includes("cormorant-garamond-variable.woff2")),
-    /font-weight:\s*300 700;/,
+    /font-weight:\s*700;/,
   );
   assert.match(
     faces.find((face) => face.includes("instrument-sans-variable.woff2")),
@@ -589,6 +589,38 @@ test("variable font faces supply real weights", async () => {
   assert.ok(fontUrls.length >= 4);
   for (const url of fontUrls) await access(path.join(projectRoot, url));
   assert.match(styles, /\.hero h1\s*\{[^}]*font-weight:\s*700;[^}]*font-synthesis-weight:\s*none;/);
+});
+
+test("every character the pages show lies in its face's subset", async () => {
+  const styles = await readStyles();
+  const faces = styles.match(/@font-face\s*\{[^}]*\}/g) || [];
+  const range = (file) => {
+    const declared = faces.find((face) => face.includes(file)).match(/unicode-range:([^;]+);/)[1];
+    const spans = declared.split(",").map((span) => {
+      const [from, to = from] = span.trim().slice(2).split("-");
+      return [parseInt(from, 16), parseInt(to, 16)];
+    });
+    return (char) =>
+      spans.some(([from, to]) => char.codePointAt(0) >= from && char.codePointAt(0) <= to);
+  };
+  const display = range("cormorant-garamond-variable.woff2");
+  const body = range("instrument-sans-variable.woff2");
+  const entities = { amp: "&", middot: "·", nbsp: " ", lt: "<", gt: ">", quot: '"' };
+  const text = (html) =>
+    html
+      .replace(/<!--[\s\S]*?-->|<script[\s\S]*?<\/script>|<[^>]+>/g, " ")
+      .replace(/&(\w+);/g, (_, name) => entities[name])
+      .replace(/\s+/g, " ");
+  for (const page of [await readIndexHtml(), await readNotFoundHtml()]) {
+    const bodyHtml = page.slice(page.indexOf("<body"));
+    const headings = bodyHtml.match(/<h1>[\s\S]*?<\/h1>/g);
+    for (const char of text(headings.join(" ")))
+      assert.ok(display(char), `name face lacks ${char}`);
+    for (const char of text(bodyHtml.replace(/<h1>[\s\S]*?<\/h1>/g, "")))
+      assert.ok(body(char), `body face lacks ${char}`);
+  }
+  // The loading line's live value is digits and a percent sign.
+  for (const char of "0123456789%") assert.ok(body(char));
 });
 
 test("forced colors and high-contrast modes keep system colors and the system cursor", async () => {

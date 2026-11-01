@@ -70,7 +70,6 @@ import {
   channelCarve,
   driftLeaves,
   plantReeds,
-  scatterBanks,
   STREAM_REEDS,
   streamBedAt,
   streamCarve,
@@ -79,7 +78,6 @@ import {
   WATER_BANKS,
   riverRadius,
   riverBedAt,
-  plantRushes,
   PEBBLE_DOME,
   FALLEN_LEAF,
   RUSHES,
@@ -87,7 +85,6 @@ import {
   STREAM_LINES,
   streamDistance,
   POOL_FIELD,
-  poolField,
   PUDDLE_MIRROR,
   LINK_WAIT_MS,
   prelinkSlateGround,
@@ -106,7 +103,6 @@ import {
   rootShade,
   rootSupportHeight,
   rootSupportLifts,
-  scatterLitter,
   settleRoots,
   SHADE_ALPHABET,
   SHADING_EARLY,
@@ -156,6 +152,7 @@ import { LANTERN_AUTHORING_HEIGHT } from "../src/scene/lantern.js";
 import { createEstateGroundDetail } from "../src/scene/estate-ground-detail.js";
 import { createFilmScene } from "../src/scene/film-scene.js";
 import { plainDunes } from "./support/terrain.mjs";
+import { plantRushes, poolField, scatterBanks, scatterLitter } from "./support/steps.mjs";
 
 test("rain stands where the soil lies below its neighbours, never on the pinned ground", () => {
   // The cavity is the local mean height less the height: a bowl holds water
