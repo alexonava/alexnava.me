@@ -81,14 +81,16 @@ test("Cloudflare preview credentials run separately from pull-request build code
     /if: github\.event_name == 'pull_request' && github\.event\.pull_request\.head\.repo\.full_name == github\.repository/,
   );
   assert.match(preview, /uses: actions\/download-artifact@/);
-  // The preview job installs the same wrangler the lockfile resolves.
-  const lock = JSON.parse(await readProjectFile("package-lock.json"));
-  const wrangler = lock.packages["node_modules/wrangler"].version;
+  // The preview job installs the Wrangler the lockfile resolves, read by the build job.
+  const build = job(await readProjectFile(".github/workflows/ci.yml"), "build");
+  assert.match(build, /wrangler: \$\{\{ steps\.wrangler\.outputs\.version \}\}/);
+  assert.match(build, /packages\['node_modules\/wrangler'\]\.version/);
+  assert.match(build, /=~ \^\[0-9\]\+\\\.\[0-9\]\+\\\.\[0-9\]\+\$/);
+  assert.match(preview, /WRANGLER_VERSION: \$\{\{ needs\.build\.outputs\.wrangler \}\}/);
   assert.ok(
     preview.includes(
-      `npm install --global --ignore-scripts --no-audit --no-fund wrangler@${wrangler}`,
+      'npm install --global --ignore-scripts --no-audit --no-fund "wrangler@$WRANGLER_VERSION"',
     ),
-    `the preview job installs wrangler@${wrangler}`,
   );
   assert.match(
     preview,
@@ -248,6 +250,9 @@ test("Cloudflare audit scripts never follow redirects, trace commands or keep ra
     assert.match(script, /^source "\$\(dirname "\$0"\)\/headers\.sh"$/m);
   }
   assert.doesNotMatch(edge, /CLOUDFLARE_|Authorization|api\.cloudflare\.com/);
+  // The live policy is compared with the one public/_headers publishes, so the two cannot drift.
+  assert.match(audit, /Content-Security-Policy:\[\[:space:\]\]\*\/\/p' public\/_headers/);
+  assert.doesNotMatch(audit, /worker-src 'none'/);
   assert.doesNotMatch(headers, /CLOUDFLARE_|Authorization/);
 
   // The raw project response stays in the runner's temp and only jq reads it.
@@ -348,21 +353,27 @@ test("production deploy captures and verifies an automatic Pages rollback target
   assert.doesNotMatch(smoke, /CLOUDFLARE_(API_TOKEN|ACCOUNT_ID)/);
 });
 
-test("every workflow action is pinned to a full commit SHA with its version in a comment", async () => {
+test("every workflow action is pinned to a full commit SHA with its version on the same line", async () => {
   const workflowDir = path.join(projectRoot, ".github", "workflows");
   const workflowFiles = (await readdir(workflowDir)).filter((file) => /\.ya?ml$/.test(file));
   let uses = 0;
   for (const file of workflowFiles) {
     const lines = (await readProjectFile(path.join(".github", "workflows", file))).split(/\r?\n/);
     lines.forEach((line, index) => {
-      const action = line.match(/^\s*(?:- )?uses:\s*([^\s@]+)@(\S+)\s*$/);
+      const action = line.match(/^\s*(?:- )?uses:\s*([^\s@]+)@(\S+)(?:\s+#\s*(\S+))?\s*$/);
       if (!action || action[1].startsWith("./")) return;
       uses++;
       assert.match(action[2], /^[a-f0-9]{40}$/, `${file}: ${action[1]} must use a full commit SHA`);
+      // On the same line, so Dependabot rewrites the version when it bumps the SHA.
       assert.match(
+        action[3] ?? "",
+        /^v\d/,
+        `${file}: ${action[1]} names its version after the SHA`,
+      );
+      assert.doesNotMatch(
         lines[index - 1],
-        new RegExp(`^\\s*# ${action[1].replace(/[\\^$.*+?()[\]{}|/]/g, "\\$&")}@v\\d`),
-        `${file}: ${action[1]} names its version in the comment above`,
+        /^\s*# \S+@v\d/,
+        `${file}: ${action[1]} has a stale comment above`,
       );
     });
   }
@@ -376,7 +387,7 @@ test("checkouts never persist credentials", async () => {
     const workflow = await readProjectFile(path.join(".github", "workflows", file));
     const checkouts =
       workflow.match(
-        /uses: actions\/checkout@\S+(?:\r?\n\s+with:[\s\S]*?)?(?=\r?\n\s+- |\r?\n\s*\r?\n|$)/g,
+        /uses: actions\/checkout@\S+(?: # \S+)?(?:\r?\n\s+with:[\s\S]*?)?(?=\r?\n\s+- |\r?\n\s*\r?\n|$)/g,
       ) || [];
     for (const checkout of checkouts)
       assert.match(checkout, /persist-credentials:\s*false/, `${file}: ${checkout}`);
