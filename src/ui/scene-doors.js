@@ -9,9 +9,10 @@
 // the scene's reveal (which comes as soon as it draws, scene/opening-presentation.js), on
 // every static path, when the loading line retires, and at once on a tap on the paper, a
 // key or keyboard focus (the owner's call of 2026-10-27), so nothing the visitor reaches for
-// waits under it: a scene still preparing then fades in over the title card. Concealed
-// content is inert while they are closed. Once open they leave the page (hidden) after
-// their opening.
+// waits under it: a scene still preparing then fades in over the title card. The page
+// under them stays in the accessibility tree (the doors themselves are aria-hidden), so a
+// screen reader reads it and its activation parts them like a tap. Once open they leave
+// the page (hidden) after their opening.
 //
 // On the live path the loading line's begin() upgrades them: the paper doors' own script
 // (src/doors-entry.js) draws the sheets as real paper over the stylesheet's, in a worker
@@ -217,10 +218,11 @@
     onVisibility();
 
     // Nothing waits under the paper: a tap on it (held doors take the pointer, styles.css),
-    // a key or keyboard focus parts them at once. A modifier alone or a browser shortcut
-    // does not, nor focus returning to the page itself. The tap is the click itself, which
-    // lands on the paper: parted on the press, a touch's click would be aimed afresh at the
-    // control under it.
+    // a key or keyboard focus parts them at once, and so does a screen reader's activation
+    // of the page under them, which arrives as a click with no key or pointer. A modifier
+    // alone or a browser shortcut does not, nor focus returning to the page itself. The tap
+    // is the click itself, which lands on the paper: parted on the press, a touch's click
+    // would be aimed afresh at the control under it.
     const onInput = (event) => {
       if (event?.type === "keydown") {
         if (event.ctrlKey || event.metaKey || event.altKey || MODIFIER_KEYS.has(event.key)) return;
@@ -231,20 +233,16 @@
       }
       open("input");
     };
-    doors.addEventListener("click", onInput);
+    document.addEventListener("click", onInput, true);
     document.addEventListener("keydown", onInput, true);
     document.addEventListener("focusin", onInput, true);
 
-    const content = Array.from(document.querySelectorAll?.(".skip-link, main, footer") ?? []);
-    const borrowed = content.map((element) => [element, element.inert]);
-    for (const element of content) element.inert = true;
     cleanups.push(
       () => window.clearInterval(tick),
       () => document.removeEventListener("visibilitychange", onVisibility),
-      () => doors.removeEventListener("click", onInput),
+      () => document.removeEventListener("click", onInput, true),
       () => document.removeEventListener("keydown", onInput, true),
       () => document.removeEventListener("focusin", onInput, true),
-      () => borrowed.forEach(([element, inert]) => (element.inert = inert)),
     );
   }
 
