@@ -178,7 +178,7 @@ function createHarness({
     },
     // A tap on the paper.
     touch() {
-      listeners.get("doors:click")?.({ type: "click" });
+      listeners.get("click")?.({ type: "click", target: doors });
     },
     listening: (type) => listeners.has(type),
     body: document.body,
@@ -254,7 +254,6 @@ test("a static path opens the doors at once and they leave the page", () => {
 
 test("a prepared reveal waits only for the canvas fade, and never opens while hidden", () => {
   const h = createHarness();
-  assert.ok(h.content.every((node) => node.inert));
   h.sceneDoors.open("revealed");
   assert.equal(h.sceneDoors.closed, true);
   h.advance(479);
@@ -265,6 +264,11 @@ test("a prepared reveal waits only for the canvas fade, and never opens while hi
   h.setHidden(false);
   assert.match(h.classes, /\bis-open\b/);
   assert.equal(h.sceneDoors.closed, false);
+});
+
+test("held doors leave the page under them to assistive tech", () => {
+  const h = createHarness();
+  assert.equal(h.sceneDoors.state, "held");
   assert.deepEqual(
     h.content.map((node) => node.inert),
     [false, true, false],
@@ -274,6 +278,8 @@ test("a prepared reveal waits only for the canvas fade, and never opens while hi
 test("a tap on the paper, a key or keyboard focus parts held doors at once", () => {
   for (const [what, act] of [
     ["tap", (h) => h.touch()],
+    // A screen reader's activation of Contact under the paper: a click, no key or pointer.
+    ["activation", (h) => h.fire("click", { type: "click", target: { tag: "button" } })],
     ["key", (h) => h.fire("keydown", { type: "keydown", key: "Tab" })],
     ["focus", (h) => h.fire("focusin", { type: "focusin", target: { tag: "a" } })],
   ]) {
@@ -281,7 +287,7 @@ test("a tap on the paper, a key or keyboard focus parts held doors at once", () 
     act(h);
     assert.match(h.classes, /\bis-open\b/, what);
     assert.equal(h.sceneDoors.state, "open", what);
-    for (const type of ["doors:click", "keydown", "focusin"]) {
+    for (const type of ["click", "keydown", "focusin"]) {
       assert.equal(h.listening(type), false, `${what}: the ${type} listener is released`);
     }
     h.advance(2300);

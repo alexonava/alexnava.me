@@ -25,7 +25,7 @@ Known gaps against the target, open until the owner decides:
 
 - 2.1.4 Character key shortcuts: `` ` `` and `~` start the walk, and nothing turns the shortcut off or remaps it (the live scene on a desktop only, never under reduced motion or forced colours).
 - 2.2.2 Pause, stop, hide: the tour moves on its own with no visible pause control; reduced motion keeps the title card, and a script can pause it (`BabelSite.scene.setVisitorPaused(true)`).
-- 1.4.10 Reflow: nothing checks the page at 400% zoom (320 CSS px wide).
+- 1.4.10 Reflow: no automated check. At 400% zoom on short windows (320×256, 320×200, 480×270) the footer follows the intro in the page, so Contact and its links never cover it; this was checked by hand on 2026-11-01 ([UI](UI.md#layout)).
 
 ## Keyboard
 
@@ -33,7 +33,7 @@ Known gaps against the target, open until the owner decides:
 2. The next stop is Contact, the footer's button. Enter or Space shows the email address and LinkedIn beside it (above it on phones), the next two stops; pressing it again hides them. Escape hides them from anywhere on the page and, when focus was on one of them, returns it to Contact. Without scripts the two links are the stops after the skip link.
 3. Over the live scene on a desktop, `` ` `` or `~` starts the walk ([Scene modes](SCENE-MODES.md#walk)), which nothing announces: the page fades off the canvas into `visibility: hidden`, so it leaves the accessibility tree and focus with it, and the mouse is captured. The arrow keys and W, A, S and D walk and turn. The same key, or Esc twice, brings the page and the tour back. It never starts under reduced motion or forced colors, or on a touch-primary device.
 
-While the live scene loads, the opening's doors cover the page. The skip link shows above the paper, but it is `inert` with `main` and the footer until the doors part, so a screen reader finds no content under them: the first key that is not a modifier alone or a shortcut, the first focus and a tap on the paper part them at once ([scene-doors.js](../src/ui/scene-doors.js)), so no stop is ever under the paper. Without scripts they open on their own after 4 s.
+While the live scene loads, the opening's doors cover the page. The doors are `aria-hidden` and the page under them is not `inert`, so a screen reader reads the skip link, the identity, the intro and Contact while the paper is up. The first key that is not a modifier alone or a shortcut, the first focus, a tap on the paper and a screen reader's activation (a click with no key or pointer) part them at once ([scene-doors.js](../src/ui/scene-doors.js)), so no stop stays under the paper. Without scripts they open on their own after 4 s.
 
 [contact.js](../src/ui/contact.js) owns the disclosure: `aria-expanded`, Escape and focus return. It traps no focus and makes nothing `inert`, so the page stays as it was while the links show. An address ending `#about`, `#profile`, `#experience` or `#contact` (or the same with `-text`) opens the links on load and on every `hashchange`. The footer's targets are 44 px high; the links sit 28 px apart in a row, and one 44 px row apart where they stack above Contact up to 640 px wide. [UI](UI.md#contact) describes Contact in full.
 

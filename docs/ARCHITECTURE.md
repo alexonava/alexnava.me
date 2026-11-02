@@ -343,7 +343,8 @@ status holds the camera and tour at phase zero until the sheets begin parting. A
 keyboard focus parts held doors at once, and the doors' own cap parts them after 10 s of
 visible time (the held CSS backstop is 11 s); a scene still preparing then fades in over the
 title card, and its own deadlines (the functional 15 s stall / 30 s total) still retire it.
-The skip link, main and footer borrow `inert` while the doors are closed.
+The page under the doors stays in the accessibility tree (the doors are `aria-hidden`); any
+click while they are held, a screen reader's activation included, parts them.
 
 ### Adaptive frame pacing
 
