@@ -128,8 +128,10 @@ const LANTERN_GLOW = 0.35;
 const OPENING_FRAME_MS = 40;
 // A cut to one of the tree's shots waits, on the outgoing shot's last frame, until the film's
 // own ground has landed (film-scene.js landed), at most this long: after a Watch opening a
-// slower phone or laptop would otherwise cut to Portrait over the placeholder ground.
-const GROUND_WAIT_S = 20;
+// slower phone or laptop would otherwise cut to Portrait over the placeholder ground. 6 s (20
+// before): a slow browser stayed on The watch's clouds far too long (the owner's note of
+// 2026-11-02, his pick of a 6 s cap).
+const GROUND_WAIT_S = 6;
 
 (() => {
   const site = (window.BabelSite = window.BabelSite || {});

@@ -1802,7 +1802,9 @@ c+=seaGGX(n,E,mix(.6,.18,wet),.04)*mix(.2,1.,wet)*(1.-.8*b);
 // water whitening at the lip, across the whole shelf (inland of it the terrain paints the river).
 if(cliffRiver.w>0.&&vC.y<.03){
 vec2 rd=vW.xz-cliffRiver.xy;float ra=-dot(rd,cliffFlow),rx=abs(rd.x*cliffFlow.y-rd.y*cliffFlow.x);
-float river=1.-smoothstep(cliffRiver.w-.6,cliffRiver.w+.2,rx+.35*(seaNoise(vec2(ra*.9,3.1))-.5));
+// It stays inside the water's own edges (the cap's and the falls'): past them it painted the banks' slopes
+// as dark mirror water with white streaks.
+float river=1.-smoothstep(cliffRiver.w-1.4,cliffRiver.w-.6,rx+.35*(seaNoise(vec2(ra*.9,3.1))-.5));
 if(river>0.){
 float rush=seaNoise(vec2(rx*1.7,ra*.6+seaTime*2.6))*.6+seaNoise(vec2(rx*4.3,ra*1.5+seaTime*4.))*.4;
 vec3 rn=normalize(vec3(cliffFlow.x*(rush-.5)*.3,1.,cliffFlow.y*(rush-.5)*.3)),RR=reflect(-E,rn);RR.y=max(RR.y,.08);
@@ -2665,7 +2667,10 @@ export function fallsGeometry(drop, height, falls = FALLS, level = SEA.level) {
         w = attrs[source * 2],
         v = attrs[source * 2 + 1],
         front = smooth(0.85, 1.05, v),
-        out = depths[c] * front * (1 - depth),
+        // The upper face leaves the brink on the river surface it carries (the
+        // guide) and takes its outward depth only as the water drops away;
+        // reaching it at once rolled a thick tube over the lip, seen from above.
+        out = depths[c] * smooth(0.85, 1.45, v) * (1 - depth),
         down = depths[c] * (1 - front) * depth,
         bulge = 0.08 * Math.sin(depth * Math.PI) * Math.sign(w);
       body.set(

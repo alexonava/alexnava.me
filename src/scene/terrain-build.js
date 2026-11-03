@@ -2776,7 +2776,8 @@ function earlyFade(rendering, ms) {
 export const SHADING_EARLY = 150;
 // How long the shaded program's link is waited on before the switch's draw takes what
 // remains of it: past its slowest measured compile on an integrated GPU (about 5 s), and
-// inside the tour's hold for the ground (index.js GROUND_WAIT_S).
+// within The watch's 6 s hold plus the tour's 6 s wait for the ground (index.js
+// GROUND_WAIT_S) after a Watch opening; a slower link cuts over the placeholder ground.
 export const LINK_WAIT_MS = 12000;
 
 // The estate tufts (estate-ground-detail.js) on the film terrain: a blade

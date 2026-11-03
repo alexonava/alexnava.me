@@ -226,9 +226,10 @@ export const DISSOLVE_BRUSH = Object.freeze({
 // them, a lattice's braces and the sky among them come in together and softly, never as a
 // stencil of the outgoing frame or shards of it (the re-checks of 2026-10-15). `foot` [full,
 // gone] (the star's disc radii, from the lens's source): where its frame shows sky, the
-// outgoing star (disc and glow) fades whole over `fade` of the progress into that frame's
-// own sky about it (`ring` radii out, along its ray), and the place then dissolves as sky,
-// a little after; nothing of the incoming shot shows early through it. The incoming star
+// outgoing star (disc and glow) stays with its frame and fades whole over `leave` [from, to]
+// of the progress, as the rest of that frame does (the owner's note of 2026-11-02: the sun
+// left before the camera), into that frame's own sky about it (`ring` radii out, along its
+// ray) while the incoming shot comes in under it; nothing of the incoming shot shows early through it. The incoming star
 // turns as one when the outgoing frame's nearest layer over its disc turns. `on`: 0 keeps the hard mask.
 export const DISSOLVE_SOFT = Object.freeze({
   on: 1,
@@ -237,7 +238,7 @@ export const DISSOLVE_SOFT = Object.freeze({
   wash: Object.freeze([0.15, 0.6]),
   foot: Object.freeze([2, 3]),
   ring: 3.3,
-  fade: 0.15,
+  leave: Object.freeze([0.2, 0.9]),
 });
 
 // The shallow focus softens ground nearer the lens than its focus by at most
@@ -682,17 +683,16 @@ void main() {
         ? `
     if (uLayered > 0.5) {
       // Each frame's star (DISSOLVE_SOFT.foot), where that frame shows sky, fades whole. The
-      // outgoing one fades into its own frame's sky about it (starSky), and the place then turns
-      // as sky, DISSOLVE_SOFT.fade later; the incoming one comes when the outgoing frame's nearest layer over
+      // outgoing one fades with its frame (DISSOLVE_SOFT.leave) into its own frame's sky about it
+      // (starSky) as the incoming shot comes in under it; the incoming one comes when the outgoing frame's nearest layer over
       // its disc turns (starTurn), so it never shows through that layer early.
       vec2 aspect = lensAspect();
       if (uStarPrev.w > 0.0) {
         float foot = (1.0 - smoothstep(${lensNumber(DISSOLVE_SOFT.foot[0])}, ${lensNumber(DISSOLVE_SOFT.foot[1])}, length((prevUv - uStarPrev.xy) * aspect) / uStarPrev.z)) * (1.0 - smoothstep(0.25, 0.3, lensSample(tPrev, prevUv).a));
-        turnPrev = smoothstep(0.0, ${lensNumber(DISSOLVE_SOFT.fade)}, uProgress);
+        turnPrev = smoothstep(${lensNumber(DISSOLVE_SOFT.leave[0])}, ${lensNumber(DISSOLVE_SOFT.leave[1])}, uProgress);
         if (foot > 0.0) {
           prevTexel.rgb = mix(prevTexel.rgb, starSky(prevUv, uStarPrev.xy, uStarPrev.z, aspect, prevTexel.rgb), foot * turnPrev);
-          float late = min(start + ${lensNumber(DISSOLVE_SOFT.fade)}, 1.0 - span);
-          w = mix(w, min(w, smoothstep(late, late + span, uProgress)), foot);
+          w = mix(w, min(w, turnPrev), foot);
         }
       }
       if (uStar.w > 0.0) {

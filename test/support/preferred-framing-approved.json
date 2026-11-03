@@ -17,7 +17,7 @@
       "region": [0.5, 1],
       "targetHeight": 0.66,
       "azimuth": -16,
-      "hold": 9,
+      "hold": 6,
       "portrait": {
         "azimuth": -12,
         "anchor": [0.28, 0.54],
