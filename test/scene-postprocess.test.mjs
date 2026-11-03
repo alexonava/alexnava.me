@@ -1345,14 +1345,18 @@ test("the final pass decodes each frame's layer from a 5-tap cross and mixes by 
       `if (uLayered > 0.5) w = mix(w, smoothstep(0.0, 1.0, uProgress), smoothstep(${DISSOLVE_SOFT.wash[0]}, ${DISSOLVE_SOFT.wash[1]}, subNow));`,
     ),
   );
-  // The outgoing star fades whole into its own frame's sky about it (`ring` radii out, only sky
-  // taps), and the place then turns as sky, `fade` later: no porthole onto the incoming shot.
+  // The outgoing star stays with its frame and fades whole over `leave`, as the rest of the
+  // frame does, into its own frame's sky about it (`ring` radii out, only sky taps), while the
+  // incoming shot comes in under it on the same turn: no porthole onto the incoming shot.
   assert.ok(
     DISSOLVE_SOFT.foot[0] < DISSOLVE_SOFT.foot[1] && DISSOLVE_SOFT.foot[1] >= 2.78,
     "the glow's reach",
   );
   assert.ok(DISSOLVE_SOFT.ring > DISSOLVE_SOFT.foot[1], "the ring lies outside the footprint");
-  assert.ok(DISSOLVE_SOFT.fade > 0 && DISSOLVE_SOFT.fade < LAYER_STAGGER.window);
+  assert.ok(
+    DISSOLVE_SOFT.leave[0] >= LAYER_STAGGER.step && DISSOLVE_SOFT.leave[1] < 1,
+    "the star leaves with its frame, not ahead of it",
+  );
   assert.doesNotMatch(shader, /starCode/);
   const skyAt = shader.indexOf("vec3 starSky(");
   const sky = shader.slice(skyAt, shader.indexOf("\n}\n", skyAt));
@@ -1361,12 +1365,9 @@ test("the final pass decodes each frame's layer from a 5-tap cross and mixes by 
   assert.match(sky, /return weight > 1e-4 \? sum \/ weight : own;/);
   assert.match(
     shader,
-    /turnPrev = smoothstep\(0\.0, [0-9.]+, uProgress\);\s*if \(foot > 0\.0\) \{\s*prevTexel\.rgb = mix\(prevTexel\.rgb, starSky\(prevUv, uStarPrev\.xy, uStarPrev\.z, aspect, prevTexel\.rgb\), foot \* turnPrev\);/,
+    /turnPrev = smoothstep\([0-9.]+, [0-9.]+, uProgress\);\s*if \(foot > 0\.0\) \{\s*prevTexel\.rgb = mix\(prevTexel\.rgb, starSky\(prevUv, uStarPrev\.xy, uStarPrev\.z, aspect, prevTexel\.rgb\), foot \* turnPrev\);/,
   );
-  assert.match(
-    shader,
-    /float late = min\(start \+ [0-9.]+, 1\.0 - span\);\s*w = mix\(w, min\(w, smoothstep\(late, late \+ span, uProgress\)\), foot\);/,
-  );
+  assert.match(shader, /w = mix\(w, min\(w, turnPrev\), foot\);/);
   // The incoming star turns as one when the outgoing frame's nearest layer over its disc turns.
   const turnAt = shader.indexOf("float starTurn(");
   const turn = shader.slice(turnAt, shader.indexOf("\n}\n", turnAt));

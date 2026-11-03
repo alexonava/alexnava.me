@@ -117,7 +117,7 @@ test("tour defaults to per-shot holds even when a link chooses its opening compo
   const f = setup();
   const tour = createCameraTour({ camera: f.controller });
   assert.equal(tour.state.interval, "shot");
-  assert.equal(tour.state.dwell, 9);
+  assert.equal(tour.state.dwell, 6);
   assert.equal(createCameraTour({ camera: f.controller, interval: 7 }).state.interval, "shot");
   assert.ok(Object.isFrozen(TOUR_IDLE) && Object.isFrozen(TOUR_TRANSITION));
   assert.equal(tour.transition, tour.transition, "one reused transition object");
@@ -188,10 +188,10 @@ test("the five tour views wrap with small drift and cached repeat framing", () =
 });
 
 test("each tour shot holds for its own time, capture to capture, with no wildcard", () => {
-  assert.deepEqual(tourHolds, [9, 9, 6, 6, 6]);
+  assert.deepEqual(tourHolds, [6, 9, 6, 6, 6]);
   assert.equal(
     tourHolds.reduce((sum, hold) => sum + hold, 0),
-    36,
+    33,
   );
   assert.equal(TOUR_HOLD_FALLBACK, 7);
   assert.equal(TOUR_TRANSITION.dissolve, 1);
@@ -207,7 +207,7 @@ test("each tour shot holds for its own time, capture to capture, with no wildcar
     const captures = [],
       dwells = [];
     const count = tourHolds.length;
-    f.run(0, 36 * 2 + 1, (time) => {
+    f.run(0, 33 * 2 + 1, (time) => {
       if (f.transition.capture) captures.push([time, f.name]);
       if (f.transition.cut) dwells.push(f.tour.state.dwell);
     });
@@ -231,32 +231,32 @@ test("a capture frame keeps the outgoing shot, then the cut dissolves in from th
   f.render(0);
   idle(f);
   assert.equal(f.tour.running, true);
-  close(f.render(8.9), 8.9 / 9);
+  close(f.render(5.9), 5.9 / 6);
   idle(f);
-  assert.equal(f.render(9), 1, "the outgoing shot sits at its final pose");
+  assert.equal(f.render(6), 1, "the outgoing shot sits at its final pose");
   assert.equal(f.name, "The watch");
   const { zoom, ...capture } = f.transition;
   assert.deepEqual(capture, { capture: true, cut: false, progress: 1 });
   // The watch's dolly-zoom keeps its subject's size at the cut, so the kept
   // frame takes only the minimum push.
   close(zoom, TOUR_TRANSITION.minZoom);
-  close(f.render(9.016), 0.016 / 9, 1e-6);
+  close(f.render(6.016), 0.016 / 9, 1e-6);
   assert.equal(f.name, "Portrait");
   const cut = f.transition;
   assert.equal(cut.cut, true);
   assert.equal(cut.capture, false);
   close(cut.progress, 0.016, 1e-6);
   close(cut.zoom, TOUR_TRANSITION.minZoom);
-  f.render(9.5);
+  f.render(6.5);
   close(f.transition.progress, 0.5, 1e-6);
   assert.equal(f.transition.cut, false);
-  f.render(9.95);
+  f.render(6.95);
   assert.ok(f.transition.progress > 0.9 && f.transition.progress < 1);
-  f.render(10.05);
+  f.render(7.05);
   idle(f);
-  f.render(17.99);
+  f.render(14.99);
   idle(f);
-  f.render(18.01);
+  f.render(15.01);
   assert.equal(f.transition.capture, true, "Portrait holds 9 seconds from its capture");
   assert.equal(f.name, "Portrait");
   f.dispose();
@@ -420,7 +420,7 @@ test("setInterval switches between fixed cadences and per-shot holds as a hard r
   f.tour.next();
   f.tour.next();
   assert.equal(f.tour.state.name, "The watch");
-  assert.equal(f.tour.state.dwell, 9, "The watch's own hold, the tour wrapped");
+  assert.equal(f.tour.state.dwell, 6, "The watch's own hold, the tour wrapped");
   f.dispose();
 });
 
@@ -437,37 +437,37 @@ test("the upcoming shot is prepared once per shot, after its dissolve and never 
     first ??= time;
     seen = calls.length;
   };
-  f.run(0, 9.1, watch);
+  f.run(0, 6.1, watch);
   assert.deepEqual(calls, [["tree", 0]]);
   assert.ok(first >= 2 && first <= 2.06, `prepared at ${first}`);
   assert.equal(f.name, "Portrait");
-  f.run(9.1, 10.9, watch);
+  f.run(6.1, 7.9, watch);
   assert.equal(calls.length, 1, "nothing is prepared during a dissolve");
-  f.run(10.9, 11.15, watch);
+  f.run(7.9, 8.15, watch);
   assert.deepEqual(calls[1], ["tree", 1], "Lantern study follows Portrait");
   f.tour.prepareNext();
   assert.deepEqual(calls[2], ["tree", 1], "prepareNext re-issues the upcoming shot");
   seen = calls.length;
 
   // A resize mid-dissolve is re-issued once, after the dissolve.
-  f.run(11.15, 18.15, watch);
+  f.run(8.15, 15.15, watch);
   assert.equal(f.name, "Lantern study");
   assert.ok(f.transition.progress < 1);
   f.tour.prepareNext();
   assert.equal(calls.length, 3);
-  f.run(18.15, 21, watch);
+  f.run(15.15, 18, watch);
   assert.deepEqual(calls.slice(3), [["tree", 2]], "Close-up follows Lantern study");
 
   // A paused tour prepares nothing; resuming prepares when due.
-  f.run(21, 24.2, watch);
+  f.run(18, 21.2, watch);
   assert.equal(f.name, "Close-up");
-  f.run(24.2, 25, watch);
+  f.run(21.2, 22, watch);
   f.tour.setPaused(true);
   f.tour.prepareNext();
-  f.run(25, 49, watch);
+  f.run(22, 46, watch);
   assert.equal(calls.length, 4);
   f.tour.setPaused(false);
-  f.run(49, 51, watch);
+  f.run(46, 48, watch);
   assert.deepEqual(calls.slice(4), [["tree", 3]]);
   f.dispose();
 
@@ -796,14 +796,14 @@ test("a cut the next shot cannot take yet waits on the outgoing shot's last fram
     for (let k = 1; k <= 14 * 20; k++) {
       const phase = f.render(k / 20, { cutReady: false });
       if (f.transition.capture || f.transition.cut) cutEarly = true;
-      if (k / 20 > 9.1) {
+      if (k / 20 > 6.1) {
         assert.equal(phase, 1, "its last frame");
         assert.equal(f.tour.waiting, true);
       }
     }
     assert.equal(cutEarly, false, "no capture or cut while the next shot cannot show");
     assert.equal(f.name, "The watch");
-    close(f.tour.waited, 5, 0.06);
+    close(f.tour.waited, 8, 0.06);
     f.render(14.05);
     assert.equal(f.transition.capture, true, "ready: the capture frame comes at once");
     f.render(14.1);

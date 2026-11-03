@@ -110,7 +110,9 @@ export const DIRECTED_SHOTS = {
       targetHeight: 0.66,
       azimuth: -16,
       anchor: [0.45, 0.54],
-      hold: 9,
+      // 6 s, as the tree's other shots (9 before: the owner's note of 2026-11-02, it stayed
+      // too long on the clouds before its cut).
+      hold: 6,
       ground: { ...AFTER_RAIN, mist: { ...AFTER_RAIN.mist, amount: 0.75 } },
       // Portrait screens, narrower, aim left of centre, the star whole to its right, and keep
       // the gentler dolly zoom (the wider one crops the star there). Portrait monitors take it

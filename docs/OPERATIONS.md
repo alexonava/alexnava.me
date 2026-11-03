@@ -43,7 +43,7 @@ Lighthouse (`lighthouserc.json`) audits the homepage from the built `dist/` thre
 
 ## Opening and tour review
 
-The query-free live page opens The watch on every device; `?view=tree&angle=2` and `?view=watch` pin each. Before reviewing a release, compare a fresh first reveal of each with a warmed reference. The query-free page reveals The watch, the sky alone, and loading consumes none of its nine-second move. On the tree link the tree, supplied or fallback lantern, physical soil and water, root/bank details, nearby rocks and visible foreground must appear together, and loading consumes none of its six-second move.
+The query-free live page opens The watch on every device; `?view=tree&angle=2` and `?view=watch` pin each. Before reviewing a release, compare a fresh first reveal of each with a warmed reference. The query-free page reveals The watch, the sky alone, and loading consumes none of its six-second move. On the tree link the tree, supplied or fallback lantern, physical soil and water, root/bank details, nearby rocks and visible foreground must appear together, and loading consumes none of its six-second move.
 
 Compare all eight shots at native move start, quarter, middle, three-quarter and end on high and balanced, with desktop, tall, tablet and both phone orientations. Include full moving tours and the wrap back to The watch. Keep baseline and candidate distributions separate and bind captures to their exact source and output hashes. Camera-pose or deterministic-clock review copies are evidence tools; performance measurements and the three default Lighthouse runs use the normal production distribution and native timing.
 

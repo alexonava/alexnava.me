@@ -501,7 +501,7 @@ test("the walk holds the tour, drives the camera between its cuts, and lands con
 test("a cut to a tree shot waits for the film's own ground, which may land while the tour waits", () => {
   // After a Watch opening a slower device built the ground after the cut to Portrait, which
   // then showed the placeholder ground (Alex's report of 2026-10-28).
-  assert.match(index, /const GROUND_WAIT_S = 20;/);
+  assert.match(index, /const GROUND_WAIT_S = 6;/);
   assert.match(
     index,
     /const groundPending = filmActive && filmScene\?\.active === true && !filmScene\.landed && !filmScene\.failed && cameraTour\?\.nextShot\?\.subject === "tree";/,

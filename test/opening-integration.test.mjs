@@ -136,7 +136,7 @@ function harness({
     },
     qualityDebug: {},
     OPENING_FRAME_MS: 40,
-    GROUND_WAIT_S: 20,
+    GROUND_WAIT_S: 6,
     filmActive: false,
     // A fitted camera has already loaded this shared helper; keep its import
     // resolved while the resource owners below remain independently async.
