@@ -33,6 +33,6 @@
     "esbuild": "^0.28.2",
     "prettier": "3.9.10",
     "three": "0.160.1",
-    "wrangler": "^4.153.0"
+    "wrangler": "^4.159.0"
   }
 }
